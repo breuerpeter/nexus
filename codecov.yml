@@ -1,0 +1,14 @@
+coverage:
+  status:
+    project:
+      default:
+        threshold: 1%
+    patch: off
+
+# cpu-pytest runs on every push; gpu-pytest is path-filtered. Carry each flag's
+# last upload forward so total coverage doesn't dip when one job doesn't run.
+flag_management:
+  default_rules:
+    carryforward: true
+
+comment: false

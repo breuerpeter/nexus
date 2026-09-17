@@ -1,0 +1,24 @@
+name: Bug
+description: Something is broken or behaves differently from what it should
+type: Bug
+body:
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Steps anyone can follow to see the bug.
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed result
+      description: What happens at the end of the steps. This is the bug itself.
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+      description: What should happen instead.
+  - type: textarea
+    id: system
+    attributes:
+      label: System information
+      description: Versions and hardware, where they could matter.

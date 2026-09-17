@@ -1,0 +1,79 @@
+name: px4-bump
+
+# Keeps the PX4 pin fresh with attribution instead of floating: reads scripts/ci/px4.ref
+# (line 1 = `repo@sha`, line 2 = `track=<branch>`), checks the tracked branch's tip, and when
+# it moved opens a bump PR on `ci/px4-bump`. The `gpu` label is added by hand (never by the
+# workflow — GPU spend is a manual call): label the PR to make the flight gate fly the new
+# PX4 before the bump merges; merging is what records the tested pin. The pin
+# file is data, not policy: this checkout tracks breuerpeter/newton, and upstream main once
+# that work merges — #17/#18. Dispatch after
+# pushing PX4 changes for an immediate bump; otherwise weekly.
+
+on:
+  schedule:
+    - cron: "17 2 * * 1" # Mondays 02:17 UTC — ahead of the benchmark matrix
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.CI_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CI_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+      - name: Check the tracked branch and open the bump PR
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          REF_FILE=scripts/ci/px4.ref
+          IFS=@ read -r REPO CUR_SHA < "$REF_FILE"
+          TRACK=$(grep -oP '^track=\K.+' "$REF_FILE")
+          URL="https://github.com/$REPO.git"
+          # Run OUTSIDE the checkout: actions/checkout persists the App token as an
+          # http.extraheader in the workspace git config, which would ride this tokenless
+          # ls-remote too (a persisted token once made it fail: "Repository not found").
+          TIP=$(cd "$(mktemp -d)" && git ls-remote "$URL" "refs/heads/$TRACK" | cut -f1)
+          if [ -z "$TIP" ]; then
+            echo "tracked branch '$TRACK' not found on $REPO" >&2
+            exit 1
+          fi
+          if [ "$TIP" = "$CUR_SHA" ]; then
+            echo "pin already at the $TRACK tip ($TIP) — nothing to bump"
+            exit 0
+          fi
+          sed -i "1s|.*|$REPO@$TIP|" "$REF_FILE"
+          branch="ci/px4-bump"
+          git config user.name "nexus-ci"
+          git config user.email "ci@users.noreply.github.com"
+          git checkout -B "$branch"
+          git add "$REF_FILE"
+          git commit -m "chore(ci): bump the PX4 pin to $TRACK @ ${TIP:0:12}"
+          git push -f origin "$branch"
+          if PR_URL=$(gh pr create --head "$branch" \
+            --title "chore(ci): bump the PX4 pin to $TRACK @ ${TIP:0:12}" \
+            --body "Automated PX4 pin bump: \`$REPO\` branch \`$TRACK\` moved \`${CUR_SHA:0:12}\` → \`${TIP:0:12}\`.
+
+          Add the \`gpu\` label to make the flight gate fly this PX4 before merge."); then
+            PR_NUM="${PR_URL##*/}"
+          else
+            # Only the PR-already-exists case is benign (branch was force-updated above).
+            PR_NUM=$(gh api "repos/$GITHUB_REPOSITORY/pulls?head=${GITHUB_REPOSITORY%%/*}:$branch&state=open" -q '.[0].number' 2>/dev/null || true)
+            if [ -z "$PR_NUM" ] || [ "$PR_NUM" = "null" ]; then
+              echo "gh pr create failed and no open PR exists for $branch" >&2
+              exit 1
+            fi
+            echo "PR already open (#$PR_NUM) — branch force-updated"
+          fi
+          echo "bump PR #$PR_NUM opened — add the gpu label to fly it"

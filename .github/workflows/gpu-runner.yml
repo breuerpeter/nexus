@@ -1,0 +1,282 @@
+name: gpu-runner
+
+# Reusable GPU-CI lifecycle: spin up an EPHEMERAL AWS-EC2 GPU box (machulav/ec2-github-runner), run a
+# caller-supplied command on it, then tear it down — every gpu-* workflow calls this so the start/stop
+# plumbing lives in one place. Ephemeral ⇒ safe on any pull request (a fresh disposable box per run). Runs in
+# Freefly's AWS account (multi-region — placement discovered per run, see #26); the box boots the
+# latest AWS Deep Learning Base GPU AMI
+# (NVIDIA drivers + Docker + nvidia-container-toolkit, resolved at runtime), and the container jobs
+# (isaac-lab / isaacsim / px4-sitl) docker-pull their image per run. On push, schedule and dispatch
+# runs the EC2 instance role grants s3:PutObject to the CI artifacts bucket so a command's --upload
+# works via the instance profile; PR runs, same-repo or fork, launch with no instance profile and
+# no Cesium token, since nothing a PR run does needs them. The bucket's public/* prefix is SERVED
+# THROUGH CLOUDFRONT (docs .rrd embeds + the bench feed), so treat everything uploaded there as
+# public. A CI output that is not published rides a GitHub artifact.
+#
+# Provisioning (one-time): vars AWS_GPU_INSTANCE_PROFILE, the instance profile a main-push run
+# attaches so its uploads need no keys, NEXUS_BUCKET, the artifacts bucket those uploads write to,
+# and AWS_RUNNER_RESOURCE_TAG where tagged subnets opt in; var CI_APP_CLIENT_ID and secret
+# CI_APP_PRIVATE_KEY, the GitHub App (repo permissions Administration, Contents and Pull requests,
+# each read and write) whose per-job tokens register the self-hosted runner; vars AWS_GPU_ROLE_ARN
+# (OIDC) and AWS_REGION_CANDIDATES (placement preference order — us-west-2 leads, colocated with
+# the consolidated bucket; no static subnets, discovery finds default-VPC subnets per region);
+# the environment external-pr-approval with required reviewers, the per-run approval of the fork
+# path. Callers pass `secrets: inherit`.
+
+on:
+  workflow_call:
+    inputs:
+      command:
+        description: "Shell command to run on the GPU box (does the work + any --upload)"
+        required: true
+        type: string
+      ref:
+        description: "Git ref to check out"
+        type: string
+        default: ""
+      instance-type:
+        type: string
+        default: g5.2xlarge # 1× A10G, 8 vCPU — the validated type; bump to a larger
+        # g5/g6e for heavy isaac-lab training (768 vCPU on-demand G/VT quota available in-region).
+      artifact-name:
+        type: string
+        default: ""
+      artifact-path:
+        type: string
+        default: ""
+      coverage-flags:
+        description: "If set, upload ./coverage.xml to Codecov under this flag (the command must emit it)"
+        type: string
+        default: ""
+      fetch-depth:
+        description: "Checkout fetch depth (0 = full history, for base-vs-head comparisons)"
+        type: number
+        default: 1
+      caches:
+        description: "Extra caches to restore/save on the box (space-separated: px4 acados)"
+        type: string
+        default: ""
+
+env:
+  AWS_REGION: eu-central-1 # the OIDC/STS session entry region only — instance placement is discovered
+
+jobs:
+  # The fork path's approval: a labeled fork PR's pull_request_target run waits here for a
+  # maintainer's per-run approval on the external-pr-approval environment (required reviewers).
+  # The label opens the path, the approval is the spend act, once per run — a later push waits
+  # for its own. Every other event skips this job. It lives here, not in the callers, because a
+  # job with `uses:` cannot carry an environment.
+  approve-fork:
+    if: >-
+      ${{ github.event_name == 'pull_request_target' &&
+          github.event.pull_request.head.repo.fork == true &&
+          contains(github.event.pull_request.labels.*.name, 'gpu') }}
+    runs-on: ubuntu-latest
+    environment: external-pr-approval
+    permissions: {}
+    steps:
+      - run: echo "approved ${{ github.event.pull_request.head.sha }}"
+
+  start-runner:
+    # THE GPU-spend gate, enforced once here rather than by each caller: an allowlist of the
+    # events that may start the paid instance. workflow_dispatch: a maintainer's act. push and
+    # schedule: main and the cron. pull_request: same-repo branches carrying the `gpu` label, which
+    # is the spend approval. pull_request_target: fork PRs whose labeled run approve-fork approved.
+    # Anything else — a same-repo pull_request_target, a fork pull_request — starts nothing. It
+    # belongs with the job that starts the paid instance — a caller cannot forget it, and changing
+    # the policy is one edit.
+    needs: approve-fork
+    # !cancelled() is load-bearing: the implicit success() would skip this job whenever
+    # approve-fork skipped, which is every event but the fork path.
+    if: >-
+      ${{ !cancelled() && (
+          github.event_name == 'workflow_dispatch' ||
+          github.event_name == 'push' || github.event_name == 'schedule' ||
+          (github.event_name == 'pull_request' &&
+           github.event.pull_request.head.repo.fork == false &&
+           contains(github.event.pull_request.labels.*.name, 'gpu')) ||
+          (github.event_name == 'pull_request_target' && needs.approve-fork.result == 'success')) }}
+    runs-on: ubuntu-latest
+    permissions: { id-token: write, contents: read } # OIDC — no static AWS keys
+    outputs:
+      label: ${{ steps.start.outputs.label }}
+      ec2-instance-id: ${{ steps.start.outputs.ec2-instance-id }}
+      region: ${{ steps.start.outputs.region }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false } # only the discovery script is needed; no pushes
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ vars.AWS_GPU_ROLE_ARN }}
+      # Capacity via BREADTH, not retries (#26, the upstream newton pattern): discover eligible
+      # placements at run time — tagged resources and each candidate region's default VPC (a subnet
+      # per AZ, zero provisioning), in AWS_REGION_CANDIDATES order (us-west-2 first — colocated
+      # with the consolidated bucket). The action tries entries in order; quota-less regions just
+      # fail over (~10 s each).
+      - name: Discover runner placements
+        id: discover
+        env:
+          AWS_REGION_CANDIDATES: ${{ vars.AWS_REGION_CANDIDATES || 'us-west-2 eu-central-1 us-east-1 us-east-2' }}
+          AWS_INSTANCE_TYPE: ${{ inputs.instance-type }}
+          # The opt-in tag key on subnets and security groups, a name in the account and not a line
+          # here. Unset: discovery skips the tagged step and places on each region's default VPC.
+          AWS_RUNNER_RESOURCE_TAG: ${{ vars.AWS_RUNNER_RESOURCE_TAG }}
+        run: python3 scripts/ci/discover_aws_runner_config.py
+      # One App token per job, minted right before its use and revoked when the job ends: it
+      # never crosses into `run` or `stop-runner`, which mint their own.
+      - id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.CI_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CI_APP_PRIVATE_KEY }}
+          permission-administration: write # registers the runner (generate-jitconfig)
+      - id: start
+        uses: machulav/ec2-github-runner@v2
+        with:
+          mode: start
+          github-token: ${{ steps.app-token.outputs.token }}
+          ec2-instance-type: ${{ inputs.instance-type }}
+          availability-zones-config: ${{ steps.discover.outputs.availability-zones-config }}
+          # The instance profile (s3:PutObject for the docs .rrd uploads) rides push, schedule and
+          # dispatch runs only: nothing a PR run does uploads, and an approved fork's code must not
+          # be able to write to the CI artifacts bucket. The condition is negated on purpose — in an Actions
+          # expression `cond && '' || 'x'` yields 'x' for both truth values.
+          iam-role-name: ${{ (github.event_name != 'pull_request' && github.event_name != 'pull_request_target') && vars.AWS_GPU_INSTANCE_PROFILE || '' }}
+          # The DL AMI's default root is 35 GB — the OS+CUDA stack alone nearly fills it, and the
+          # isaacsim-runtime image pull (benchmark matrix) then kills the runner with disk
+          # exhaustion (job dies, logs never upload). 100 GB gp3 costs cents per ephemeral run.
+          block-device-mappings: >-
+            [{"DeviceName": "${{ steps.discover.outputs.root-device }}", "Ebs": {"VolumeSize": 100, "VolumeType": "gp3", "DeleteOnTermination": true}}]
+          pre-runner-script: |
+            sudo usermod -aG docker ubuntu || true
+            sudo systemctl enable docker || true
+            sudo systemctl start docker || true
+
+  run:
+    needs: start-runner
+    # Explicit, because the implicit success() skips a job when any job above it skipped, not only
+    # its direct need: approve-fork skips on every event but the fork path, so without this line the
+    # box started and stopped with no work done while the callers' contexts reported success.
+    if: ${{ !cancelled() && needs.start-runner.result == 'success' }}
+    runs-on: ${{ needs.start-runner.outputs.label }} # the ephemeral GPU box
+    permissions: { contents: read, packages: read } # packages — GHCR pulls (px4-sitl / isaacsim images)
+    steps:
+      # The box's runner service exports no $HOME; anything running `git config --global`
+      # (e.g. the codecov wrapper) dies on it, and ~-paths resolve inconsistently.
+      - name: Set HOME
+        run: |
+          echo "HOME=$(getent passwd "$(id -u)" | cut -d: -f6)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        with:
+          # The fork path checks out the approved run's frozen head sha: on pull_request_target
+          # github.sha is the base branch's head, and the merge ref would move under a later push.
+          ref: "${{ inputs.ref || (github.event_name == 'pull_request_target' && github.event.pull_request.head.sha) || github.sha }}"
+          fetch-depth: ${{ inputs.fetch-depth }}
+          # Nothing on the box pushes; persisted credentials also leak into every git call as an
+          # http.extraheader (the trap that broke px4-bump's tokened ls-remote).
+          persist-credentials: false
+      # cache-local-path is explicit because the ephemeral runner starts with no $HOME —
+      # setup-uv would otherwise compute a literal "undefined/.cache/uv" cache dir.
+      - uses: astral-sh/setup-uv@v6
+        with: { enable-cache: true, cache-local-path: /tmp/setup-uv-cache }
+      - name: Log in to GHCR # the px4-sitl / isaacsim-runtime images are repo packages
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Restore Warp kernel cache
+        uses: actions/cache@v4
+        with: { path: ~/.cache/warp, key: "warp-${{ hashFiles('uv.lock', 'nexus/**/*.py') }}" }
+      - name: Restore PX4 SITL checkout+build cache
+        # The membership checks wrap inputs.caches in spaces so one name cannot prefix-match
+        # another.
+        if: contains(format(' {0} ', inputs.caches), ' px4 ')
+        uses: actions/cache@v4
+        # px4.ref (the per-repo pin, moved only by px4-bump PRs) and provision_px4.sh (its
+        # interim airframe patch is baked into the cached build) both key the cache — editing
+        # either must invalidate it, because the job's own PX4 build is incremental over
+        # whatever this cache restored.
+        with: { path: ~/code/px4, key: "px4-${{ hashFiles('scripts/ci/px4.ref', 'scripts/ci/provision_px4.sh') }}" }
+      - name: Restore acados cache
+        if: contains(format(' {0} ', inputs.caches), ' acados ')
+        uses: actions/cache@v4
+        with: { path: ~/.cache/nexus/acados, key: "acados-${{ hashFiles('scripts/setup_acados.sh') }}" }
+      - name: Fail early when a main-push run has no instance profile
+        # Only push, schedule and dispatch attach one, and only they upload; a PR run passes an empty
+        # name on purpose, so the check is the same expression the attach step reads.
+        if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target' && vars.AWS_GPU_INSTANCE_PROFILE == ''
+        run: |
+          echo "::error::set the repo variable AWS_GPU_INSTANCE_PROFILE: this run uploads and needs an instance profile"
+          exit 1
+      - name: Run
+        env:
+          # Only the benchmark matrix's cesium cells read it, on schedule and dispatch: PR runs of
+          # either event get an empty value (negated on purpose, see iam-role-name), as does any
+          # repo without the secret — cesium cells then skip.
+          CESIUM_ION_TOKEN: ${{ (github.event_name != 'pull_request' && github.event_name != 'pull_request_target') && secrets.CESIUM_ION_TOKEN || '' }}
+          # The artifacts bucket an --upload run writes to: a name in the account, so a setting.
+          NEXUS_BUCKET: ${{ vars.NEXUS_BUCKET }}
+        # A PR run, same-repo or fork, must reach the command with no instance profile on the box
+        # and no Cesium token. The guard fails the run otherwise, so a change that brings either
+        # back is caught on its first PR run. IMDS answers 404 for iam/info when no profile is attached.
+        run: |
+          case "$GITHUB_EVENT_NAME" in pull_request|pull_request_target)
+            imds=$(curl -sX PUT http://169.254.169.254/latest/api/token -H "X-aws-ec2-metadata-token-ttl-seconds: 60" || true)
+            iam=$(curl -s -o /dev/null -w '%{http_code}' -H "X-aws-ec2-metadata-token: $imds" http://169.254.169.254/latest/meta-data/iam/info || true)
+            echo "PR run: iam/info returned $iam, CESIUM_ION_TOKEN length ${#CESIUM_ION_TOKEN}"
+            if [ "$iam" != 404 ] || [ -n "$CESIUM_ION_TOKEN" ]; then
+              echo "::error::a PR run must carry no instance profile and no Cesium token"
+              exit 1
+            fi ;;
+          esac
+          ${{ inputs.command }}
+      - name: Upload coverage to Codecov
+        if: ${{ inputs.coverage-flags != '' }}
+        uses: codecov/codecov-action@v5
+        with:
+          # The fork path's code ran earlier in this job on the same box and could rewrite this
+          # action before it starts, so the token stays off pull_request_target runs; their upload
+          # fails soft (fail_ci_if_error: false). Other runs keep it: Codecov takes an upload with
+          # no token only from a fork's branch.
+          token: ${{ github.event_name != 'pull_request_target' && secrets.CODECOV_TOKEN || '' }}
+          files: ./coverage.xml
+          flags: ${{ inputs.coverage-flags }}
+          fail_ci_if_error: false
+      - name: Upload artifacts
+        if: ${{ always() && inputs.artifact-name != '' }}
+        uses: actions/upload-artifact@v4
+        # include-hidden-files: upload-artifact >= 4.4 silently drops dot-paths by default, and the
+        # examples harness writes to the gitignored dot-dir .eval-artifacts.
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: ${{ inputs.artifact-path }}
+          include-hidden-files: true
+
+  stop-runner:
+    needs: [start-runner, run]
+    runs-on: ubuntu-latest
+    # Tear the box down even if the command failed — but only if there IS a box. When the spend
+    # gate skips start-runner there is no instance id, and an unconditional teardown fails with
+    # "The 'ec2-instance-id' input is required for the 'stop' mode", burying the real reason.
+    if: ${{ always() && needs.start-runner.result == 'success' }}
+    permissions: { id-token: write, contents: read }
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # The instance may have launched in any discovered region — stop it where it lives.
+          aws-region: ${{ needs.start-runner.outputs.region || env.AWS_REGION }}
+          role-to-assume: ${{ vars.AWS_GPU_ROLE_ARN }}
+      - id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.CI_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CI_APP_PRIVATE_KEY }}
+          permission-administration: write # removes the runner registration
+      - uses: machulav/ec2-github-runner@v2
+        with:
+          mode: stop
+          github-token: ${{ steps.app-token.outputs.token }}
+          label: ${{ needs.start-runner.outputs.label }}
+          ec2-instance-id: ${{ needs.start-runner.outputs.ec2-instance-id }}

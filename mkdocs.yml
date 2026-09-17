@@ -1,0 +1,175 @@
+site_name: nexus
+site_description: GPU-accelerated drone simulation
+site_url: https://breuerpeter.github.io/nexus/
+repo_url: https://github.com/breuerpeter/nexus
+repo_name: breuerpeter/nexus
+copyright: 'Copyright © 2026 Peter Breuer · <a href="/nexus/license/">Apache 2.0</a>'
+
+theme:
+  name: material
+  favicon: assets/favicon.ico
+  logo: assets/logo.svg
+  features:
+    - navigation.tracking # update the URL anchor while scrolling
+    - navigation.tabs # top-level sections as header tabs
+    - navigation.sections
+    - navigation.indexes # documents can be attached to sections as index pages
+    - navigation.top
+    - navigation.footer
+    - content.code.copy
+    - toc.follow # right-hand TOC tracks scroll (keeps the API-symbol list in sync)
+    - content.action.edit
+    - content.action.source
+  palette:
+    - scheme: default # indigo header in light mode
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: black # dark slate header in dark mode
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+extra:
+  generator: false
+  social:
+    - icon: fontawesome/brands/linkedin
+      link: https://www.linkedin.com/in/peter-breuer/
+      name: Peter Breuer on LinkedIn
+
+watch:
+  - nexus
+
+extra_css:
+  - stylesheets/extra.css
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+  # <model-viewer> renders the glTF asset previews (docs/reference/assets/vehicles.md) client-side.
+  # Vendored (not CDN-loaded) so the docs work without third-party network access; the
+  # config module repoints its Draco decoder at the local javascripts/draco/ copy.
+  - path: javascripts/model-viewer.min.js
+    type: module
+  - path: javascripts/model-viewer-config.js
+    type: module
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - def_list
+  - toc:
+      permalink: true
+      title: On this page
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.snippets: # lets docs/changelog.md include the repo-root CHANGELOG.md
+      base_path: ["."]
+      check_paths: true
+  - pymdownx.emoji: # renders :material-*: / :octicons-*: icons (e.g. the landing-page cards)
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.superfences # required by (and pairs with) content tabs
+  - pymdownx.tabbed: # content tabs, e.g. the vehicle preview's "Base" tab
+      alternate_style: true
+
+hooks:
+  # Generates the <model-viewer> vehicle previews from registry.yaml (model-preview markers).
+  - docs/hooks/vehicle_previews.py
+  # Renders benchmark tables from the committed docs/data/*.json (benchmark-* / example-stats markers).
+  - docs/hooks/benchmarks.py
+
+# The hook lives under docs/ (mkdocs convention) but is build tooling, not site content.
+exclude_docs: |
+  hooks/
+  CLAUDE.md
+
+plugins:
+  - search
+  # Open Graph / Twitter preview cards (og:image). Needs the imaging stack (cairosvg + Cairo/Pango
+  # system libs), so it's gated on CI — local `mkdocs serve` skips it; cards generate in the docs CI
+  # build that deploys to Pages. Preview locally with `CI=true uv run --group docs mkdocs build`.
+  - social:
+      enabled: !ENV [CI, false]
+      cards_layout_dir: tools/logo
+      cards_layout: nexus-card
+      cards_layout_options:
+        background_color: "#0b1622"
+        color: "#ffffff"
+  # API reference from Google-style docstrings. griffe analyzes the source statically (no import),
+  # so it never executes the warp/Newton stack. We document the curated public API (nexus.*),
+  # not the private _src layout.
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            # Rendering polish — mirrors the FastAPI/Pydantic reference look.
+            show_symbol_type_heading: true   # colored class/method/attr badge in each heading
+            show_symbol_type_toc: true       # same badges in the right-hand table of contents
+            docstring_section_style: spacy   # clean Args/Returns blocks instead of plain lists
+            signature_crossrefs: true        # clickable type cross-references in signatures
+            separate_signature: true
+            show_signature_annotations: true
+            unwrap_annotated: true           # show `Annotated[X, …]` params as just `X`
+            merge_init_into_class: true
+            members_order: source
+            filters: ["!^_"]                 # hide private/underscore members
+            show_if_no_docstring: true       # show the full public surface, documented or not
+            show_root_heading: true
+            show_root_full_path: false       # heading is the short name; imports given in page prose
+            show_source: true
+            heading_level: 2  # each symbol is an H2 under its page H1 (one page per area)
+
+validation:
+  not_found: warn
+  nav:
+    omitted_files: ignore
+    absolute_links: ignore
+
+nav:
+  - Home: index.md
+  - Guide:
+    - guide/index.md
+    - Quickstart: guide/quickstart.md
+    - Running: guide/running.md
+    - Converting scenes: guide/convert-scenes.md
+    - Bringing your own assets: guide/your-own-assets.md
+    - Examples:
+      - examples/index.md
+      - PID waypoint tour: examples/pid.md
+      - Differentiable design optimization: examples/design-optimization.md
+      - acados NMPC: examples/mpc-acados.md
+      - Sampling MPC slalom: examples/mpc-sampling.md
+      - Astro Max RL (Isaac Lab): examples/isaac-lab-rl.md
+      - PX4 SITL flight (conformed actuator): examples/px4-sitl.md
+    - Contributing:
+      - guide/contributing/index.md
+      - guide/contributing/development.md
+      - guide/contributing/documentation.md
+      - guide/contributing/reporting-issues.md
+      - guide/contributing/pull-requests.md
+  - Design:
+    - design/index.md
+    - Architecture: design/architecture.md
+    - Execution & determinism: design/execution.md
+    - Real system ↔ simulation: design/real-vs-sim.md
+    - Conventions: design/conventions.md
+  - Reference:
+    - reference/index.md
+    - API reference:
+      - reference/api/index.md
+      - Simulation: reference/api/simulation.md
+      - Core types: reference/api/core.md
+      - Configuration: reference/api/configuration.md
+      - Operator: reference/api/operator.md
+      - Logging: reference/api/logging.md
+    - Assets:
+      - reference/assets/index.md
+      - Vehicles: reference/assets/vehicles.md
+      - Scenes: reference/assets/scenes.md
+    - Benchmarking: reference/benchmarking.md
+    - Changelog:
+      - reference/changelog/index.md

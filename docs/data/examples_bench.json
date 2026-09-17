@@ -1,0 +1,261 @@
+{
+  "_meta": {
+    "sha": "b7d6504465c6",
+    "recorded": "2026-08-16",
+    "gpu": "NVIDIA A10G"
+  },
+  "entries": [
+    {
+      "name": "reached[pid]",
+      "unit": "",
+      "value": 4,
+      "biggerIsBetter": true
+    },
+    {
+      "name": "final_dist_m[pid]",
+      "unit": "m",
+      "value": 0.2842,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "rtf[pid]",
+      "unit": "x realtime",
+      "value": 6.24,
+      "biggerIsBetter": true
+    },
+    {
+      "name": "ape_trans_rmse_m[pid]",
+      "unit": "m",
+      "value": 0.8246764648411486,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "ape_trans_max_m[pid]",
+      "unit": "m",
+      "value": 1.6421748981393096,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "final_err_m[pid]",
+      "unit": "m",
+      "value": 0.2841972307648455,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "gradient_cosine[gain_tuning]",
+      "unit": "",
+      "value": 1.0,
+      "biggerIsBetter": true
+    },
+    {
+      "name": "opt_hold_m[gain_tuning]",
+      "unit": "m",
+      "value": 0.2716,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "opt_final_m[gain_tuning]",
+      "unit": "m",
+      "value": 0.2716,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "base_final_m[gain_tuning]",
+      "unit": "m",
+      "value": 3.1547,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "rtf[gain_tuning]",
+      "unit": "x realtime",
+      "value": 5.369,
+      "biggerIsBetter": true
+    },
+    {
+      "name": "ape_trans_rmse_m[gain_tuning]",
+      "unit": "m",
+      "value": 0.6556907627460736,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "ape_trans_max_m[gain_tuning]",
+      "unit": "m",
+      "value": 1.3702082620444072,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "final_err_m[gain_tuning]",
+      "unit": "m",
+      "value": 0.27156837830929237,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "mass_rel_err[mass_recovery]",
+      "unit": "",
+      "value": 0.0003,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "true_mass_kg[mass_recovery]",
+      "unit": "",
+      "value": 12.852,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "recovered_mass_kg[mass_recovery]",
+      "unit": "",
+      "value": 12.8559,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "wall_s[mass_recovery]",
+      "unit": "s",
+      "value": 41.9,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "reached[sampling_mpc]",
+      "unit": "",
+      "value": 3,
+      "biggerIsBetter": true
+    },
+    {
+      "name": "final_dist_m[sampling_mpc]",
+      "unit": "m",
+      "value": 0.0023,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "min_clearance_m[sampling_mpc]",
+      "unit": "m",
+      "value": 0.938,
+      "biggerIsBetter": true
+    },
+    {
+      "name": "max_tilt_deg[sampling_mpc]",
+      "unit": "deg",
+      "value": 35.0,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "path_wiggle[sampling_mpc]",
+      "unit": "",
+      "value": 1.258,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "nose_err_deg[sampling_mpc]",
+      "unit": "deg",
+      "value": 16.1,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "rtf[sampling_mpc]",
+      "unit": "x realtime",
+      "value": 0.299,
+      "biggerIsBetter": true
+    },
+    {
+      "name": "ape_trans_rmse_m[sampling_mpc]",
+      "unit": "m",
+      "value": 0.6064936565560548,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "ape_trans_max_m[sampling_mpc]",
+      "unit": "m",
+      "value": 1.1674460402715003,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "final_err_m[sampling_mpc]",
+      "unit": "m",
+      "value": 0.0022652226024491916,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "final_dist_m[acados_nmpc]",
+      "unit": "m",
+      "value": 0.0205,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "track_rmse_m[acados_nmpc]",
+      "unit": "m",
+      "value": 0.0205,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "track_max_m[acados_nmpc]",
+      "unit": "m",
+      "value": 0.0623,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "max_tilt_deg[acados_nmpc]",
+      "unit": "deg",
+      "value": 15.8,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "nose_err_deg[acados_nmpc]",
+      "unit": "deg",
+      "value": 11.4,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "rtf[acados_nmpc]",
+      "unit": "x realtime",
+      "value": 0.431,
+      "biggerIsBetter": true
+    },
+    {
+      "name": "ape_trans_rmse_m[acados_nmpc]",
+      "unit": "m",
+      "value": 0.02161809575791725,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "ape_trans_max_m[acados_nmpc]",
+      "unit": "m",
+      "value": 0.05800384898846389,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "ape_rot_rmse_deg[acados_nmpc]",
+      "unit": "deg",
+      "value": 17.854698902062538,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "ape_rot_max_deg[acados_nmpc]",
+      "unit": "deg",
+      "value": 38.8710894576103,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "climb_m[px4_sitl]",
+      "unit": "m",
+      "value": 5.04,
+      "biggerIsBetter": true
+    },
+    {
+      "name": "time_to_takeoff_s[px4_sitl]",
+      "unit": "s",
+      "value": 22.8,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "px4_warnings[px4_sitl]",
+      "unit": "",
+      "value": 0,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "rtf[px4_sitl]",
+      "unit": "x realtime",
+      "value": 1.942,
+      "biggerIsBetter": true
+    }
+  ]
+}

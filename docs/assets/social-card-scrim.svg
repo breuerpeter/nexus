@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <!-- Legibility scrim over the photo: darkest through the vertical centre band, where the centred
+       wordmark+tagline lockup sits, lifting toward the top and bottom so the drone photo stays
+       visible. Tuned for white/slate type on the #0b1622 brand dark. -->
+  <defs>
+    <linearGradient id="scrim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"    stop-color="#08111c" stop-opacity="0.32"/>
+      <stop offset="0.30" stop-color="#08111c" stop-opacity="0.63"/>
+      <stop offset="0.65" stop-color="#08111c" stop-opacity="0.63"/>
+      <stop offset="1"    stop-color="#08111c" stop-opacity="0.32"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#scrim)"/>
+</svg>

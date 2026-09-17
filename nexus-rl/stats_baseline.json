@@ -1,0 +1,15 @@
+{
+  "_comment": "Regression baseline for the Astro Max RL TRAINING half. scripts/ci/check_rl_stats.py compares a fresh training run against this and FAILS if a key stat regresses beyond tolerance. The deploy-side gates (deploy_steps_per_sec, final_tracking_error_m, pose APE) live with the examples evaluation harness in scripts/ci/examples_baselines.json (goto_policy). The 'value' fields were recorded by the first green gpu-rl run on the pinned CI runner (run 30020021108, 2026-07-23, 300 iters).",
+  "hardware": "GPU CI runner: g5.2xlarge, 1x A10G",
+  "train": {
+    "num_envs": 2048,
+    "steps_per_sec": {
+      "value": 119515,
+      "min_frac": 0.75
+    },
+    "train_seconds": {
+      "value": 123.38,
+      "max_frac": 1.3
+    }
+  }
+}

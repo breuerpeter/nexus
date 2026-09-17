@@ -1,0 +1,58 @@
+.venv/
+site/
+__pycache__/
+*.pyc
+# glTF asset previews are generated from USD (tools/prepare_asset_upload.py) and served
+# from CloudFront in production; the local copy is just for `mkdocs serve`.
+docs/assets/models/*.glb
+
+# Build / packaging artifacts
+dist/
+build/
+*.egg-info/
+
+# Tool caches
+.ruff_cache/
+.pytest_cache/
+.import_linter_cache/
+.mypy_cache/
+
+# Isaac accessor probe scratch (S-4a precursor); curated evidence lives in docs/assets/
+work/
+*.rrd
+.rl-artifacts/
+
+# airspeed velocity (asv): generated envs / results / html dashboard (see asv.conf.json)
+asv/env/
+asv/results/
+asv/html/
+
+# mkdocs social-card plugin build cache
+.cache/
+
+# acados build (provisioned by scripts/setup_acados.sh; uv path source resolves through this symlink)
+.acados
+
+# SITL flight-gate run artifacts (scripts/ci/run_sitl_example.sh output dir)
+.eval-artifacts/
+assets/local/
+# Content-addressed download cache (newton-assets resolver default in a source checkout).
+assets/cache/
+# console-upload staging (files named as their final S3 object keys)
+assets/upload/
+
+# Secrets — Cesium ion access token (CESIUM_ION_TOKEN); managed locally, never committed
+.cesium_token
+
+# Claude Code local state — keep only the checked-in project skills
+/.claude/*
+!/.claude/skills/
+scripts/probes/_pid_parity_ref.npz
+.sitl-artifacts/
+
+# Claude Code per-checkout instructions; never committed
+CLAUDE.local.md
+
+# Vale fetches the prose styles that .vale.ini pins; only the vocabulary is ours.
+.vale/styles/*
+!.vale/styles/config/

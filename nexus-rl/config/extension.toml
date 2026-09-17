@@ -1,0 +1,17 @@
+# Isaac Sim / Isaac Lab extension metadata (the Direct-workflow template convention). This project trains
+# kitless (no Kit extension manager loads it), so this is here for convention + discoverability.
+[package]
+version = "0.1.0"
+title = "Newton RL — Astro Max"
+description = "Astro Max RL tasks on Isaac Lab over the standalone Newton physics backend (kitless)."
+authors = ["Freefly Systems Inc."]
+repository = "https://github.com/breuerpeter/nexus"
+category = "nexus"
+keywords = ["rl", "isaac lab", "newton", "drone", "quadrotor"]
+
+[dependencies]
+# No Kit extension dependencies — the task package is consumed via gymnasium registration, not the Kit
+# extension manager.
+
+[[python.module]]
+name = "nexus_rl"

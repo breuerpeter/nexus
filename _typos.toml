@@ -1,0 +1,29 @@
+# Domain terms the typo checker (crate-ci/typos) should treat as correct.
+[default]
+# AWS service-quota codes (e.g. L-DB2E81BA) trip the checker on trailing substrings like "BA".
+extend-ignore-re = ["L-[0-9A-Z]{6,}"]
+
+[default.extend-words]
+# PX4 / aviation domain
+SITL = "SITL"
+sitl = "sitl"
+HITL = "HITL"
+hitl = "hitl"
+NED = "NED"
+ned = "ned"
+FRD = "FRD"
+frd = "frd"
+# hardware / sim domain
+SOM = "SOM"             # System on Module
+THR = "THR"             # PX4 throttle param prefix (THR_MDL_FAC, …)
+thr = "thr"
+MIS = "MIS"             # PX4 mission param prefix (MIS_TAKEOFF_ALT, …)
+mis = "mis"             # the "mis-" prefix (mis-route, …)
+IST = "IST"             # IST8310 magnetometer
+artic = "artic"         # abbrev. of "articulation" (Isaac Sim create_articulation_view → _artic_view)
+LOD = "LOD"             # level of detail
+UE = "UE"               # Unreal Engine
+PN = "PN"               # PNG
+empy = "empy"           # the empy templating package (PX4 build dep)
+precesses = "precesses" # gyroscopic precession (a real word)
+GAE = "GAE"             # generalized advantage estimation (RL)

@@ -1,0 +1,108 @@
+name: gpu-examples
+
+# ALL examples on the GPU runner — the flight-performance + speed regression gate.
+# scripts/ci/evaluate_examples.py runs each one, scores it (evo pose APE + the example's own stats
+# + the steady RTF), and gates against scripts/ci/examples_baselines.json. The command is three
+# sequential evals chained with && (any failure reds the required context): the non-PX4 examples,
+# then px4_sitl on the tracked pin (scripts/ci/px4.ref, tokenless clone). Prerequisites are
+# provisioned in-command: the PX4 checkout via scripts/ci/provision_px4.sh (cached per pin) and
+# acados via scripts/setup_acados.sh (cached) — no --skip-missing, so a broken provision fails
+# loudly. The PX4 build is evaluate_examples.py's own, made per eval before its first example
+# (warm from the cache). With --upload it refreshes the docs .rrd embeds + the bench trend feed
+# (main / dispatch only); on main pushes a data-refresh PR updates docs/data/examples_bench.json.
+# goto_policy still rides the isaac-lab workflow (it needs a freshly trained policy). Advisory; a
+# labeled fork PR flies through pull_request_target on per-run approval (gpu-runner.yml).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "nexus/examples/**"
+      - "nexus/_src/**"
+      - "scripts/ci/evaluate_examples.py"
+      - "scripts/ci/examples_baselines.json"
+      - "scripts/ci/provision_px4.sh"
+      - "scripts/ci/px4.ref"
+      - "docker/px4-sitl/**"
+  # Offered on EVERY PR; runs only once the `gpu` label is applied — the label IS the
+  # GPU-spend approval (environment required-reviewers need an Enterprise plan here).
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  # The fork path: fires for every PR; gpu-runner.yml narrows it to labeled fork PRs with a
+  # per-run approval and checks out the approved head sha, never the base.
+  pull_request_target:
+    types: [opened, synchronize, reopened, labeled]
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: "Upload the recordings + benchmark data to the CI artifacts bucket"
+        type: boolean
+        default: false
+      update-baselines:
+        description: "Re-record baseline values on the runner (updated file rides the artifact)"
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write # OIDC — gpu-runner assumes the AWS role to start/stop the box
+  contents: read
+  packages: read # GHCR pull of the px4-sitl toolchain image
+
+concurrency:
+  # One group per PR per event: the two events of one PR must not cancel each other, and on
+  # pull_request_target github.ref is the base branch, which would pool every fork PR with main.
+  group: gpu-examples-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The GPU-spend gate lives in gpu-runner.yml, once, on the job that starts the instance.
+  gpu:
+    uses: ./.github/workflows/gpu-runner.yml
+    with:
+      caches: px4 acados
+      command: >-
+        (command -v cmake >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq cmake)) &&
+        bash scripts/setup_acados.sh &&
+        uv run --group ci --extra examples python scripts/ci/evaluate_examples.py
+        --only pid,gain_tuning,mass_recovery,sampling_mpc,acados_nmpc
+        ${{ inputs.update-baselines && '--update-baselines' || '' }}
+        ${{ (github.event_name == 'push' || inputs.upload) && '--upload' || '' }} &&
+        bash scripts/ci/provision_px4.sh &&
+        uv run --group ci --extra examples python scripts/ci/evaluate_examples.py --only px4_sitl
+        ${{ inputs.update-baselines && '--update-baselines' || '' }}
+        ${{ (github.event_name == 'push' || inputs.upload) && '--upload' || '' }}
+      artifact-name: examples-eval
+      artifact-path: .eval-artifacts
+    secrets: inherit
+
+  # The branch-protection context. A job that calls a reusable workflow reports its checks as
+  # "<job> / <inner job>", never under its own name, so the protected name has to come from a
+  # job this workflow owns.
+  examples:
+    needs: gpu
+    # Skip when the leg skipped, so this reports `skipped` — which satisfies the required context
+    # without claiming the GPU work passed, and keeps it out of the successful list. `always()` with
+    # the explicit != 'skipped' is load-bearing: a bare `needs:` would ALSO skip on failure, and a
+    # skipped required check counts as satisfied, so a red leg would stop blocking the merge.
+    if: ${{ always() && needs.gpu.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report the GPU leg's result
+        run: |
+          echo "GPU leg: ${{ needs.gpu.result }}"
+          [ "${{ needs.gpu.result }}" = "success" ] || exit 1
+
+  data-refresh:
+    # The result check is explicit: gpu-runner's approve-fork skips on a push, and the implicit
+    # success() would skip this job for it.
+    if: ${{ !cancelled() && needs.gpu.result == 'success' && github.event_name == 'push' }}
+    needs: gpu
+    uses: ./.github/workflows/data-refresh.yml
+    permissions:
+      contents: write
+      pull-requests: write
+    with:
+      artifact-name: examples-eval
+      src: examples_bench.json
+      dest: docs/data/examples_bench.json
+    secrets: inherit

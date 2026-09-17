@@ -1,0 +1,24 @@
+# Minimal MediaMTX for the A2 video transport. Remux-only (no transcode): the publisher
+# must emit a WebRTC-compatible codec (H.264 baseline/main, no B-frames). RTSP in :8554,
+# WebRTC/WHEP out :8889. Host networking is used (compose), so MediaMTX gathers the
+# laptop's LAN IP as a WebRTC host candidate automatically for same-subnet WLAN clients.
+logLevel: info
+rtspAddress: :8554
+webrtcAddress: :8889
+# RTSP readers MUST use TCP (interleaved). Tablets on WLAN default to UDP, where sustained
+# packet loss starves the decoder and the player freezes on the last decoded frame while
+# MAVLink telemetry (tiny, TCP :5790) keeps flowing — the GH #32 "frozen FPV, moving map"
+# symptom, reproduced 2026-07-22 with a healthy renderer. Standard clients retry with TCP
+# when a UDP SETUP is refused. The sim's ffmpeg publisher already pushes TCP (unaffected).
+rtspTransports: [tcp]
+# If the tablet cannot establish WebRTC over WLAN, list the laptop's LAN IP here:
+# webrtcAdditionalHosts: [192.168.1.x]
+paths:
+  # One path per authored vehicle camera (isaacsim --stream: FpvCam -> cam1, DownCam -> cam2, …).
+  # all_others accepts any additional cam<n> a multi-camera vehicle publishes without re-editing.
+  cam1:
+    source: publisher
+  cam2:
+    source: publisher
+  all_others:
+    source: publisher

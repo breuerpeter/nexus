@@ -1,0 +1,34 @@
+name: cpu-pytest
+
+# The full pytest suite on CPU (ubuntu) — free, fast, the per-PR merge gate. GPU-gated tests
+# (tests/runtimes/test_capture.py) auto-skip here; gpu-pytest.yml runs the same suite on a GPU.
+# No path filter so it's a clean required check (a path-filtered required check stays stuck-pending
+# on PRs that don't match — see plan §4 decision #2).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cpu-pytest-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cpu-pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv run --extra policy --with pytest --with pytest-cov pytest tests --cov=nexus --cov-report=xml -q
+      - uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          flags: cpu
+          fail_ci_if_error: false

@@ -1,0 +1,88 @@
+# Custom social-card layout for nexus — the "nexus" wordmark across the top of a dark card,
+# with the page title + description below. Beats the built-in `default` layout, whose 144px square logo
+# slot crops our ~6.6:1 wordmark to a fragment. Adapted from material/plugins/social/templates/default.yml.
+# Background/text colour come from `cards_layout_options` in mkdocs.yml; the wordmark is theme.logo
+# (assets/logo.svg — the variant meant for dark backgrounds).
+
+definitions:
+  - &background_color >-
+    {{ layout.background_color or "#0b1622" }}
+
+  - &color >-
+    {{ layout.color or "#ffffff" }}
+
+  - &font_family >-
+    {%- if layout.font_family -%}
+      {{ layout.font_family }}
+    {%- elif config.theme.font is mapping -%}
+      {{ config.theme.font.get("text", "Roboto") }}
+    {%- else -%}
+      Roboto
+    {%- endif -%}
+
+  - &page_title >-
+    {%- if layout.title -%}
+      {{ layout.title }}
+    {%- else -%}
+      {{ page.meta.get("title", page.title) }}
+    {%- endif -%}
+
+  - &page_title_with_site_name >-
+    {%- if not page.is_homepage -%}
+      {{ page.meta.get("title", page.title) }} - {{ config.site_name }}
+    {%- else -%}
+      {{ config.site_name }}
+    {%- endif -%}
+
+  - &page_description >-
+    {%- if layout.description -%}
+      {{ layout.description }}
+    {%- else -%}
+      {{ page.meta.get("description", config.site_description) | x }}
+    {%- endif -%}
+
+  # The wordmark — theme.logo (assets/logo.svg), the dark-background variant.
+  - &logo >-
+    {%- if layout.logo -%}
+      {{ layout.logo }}
+    {%- elif config.theme.logo -%}
+      {{ config.docs_dir }}/{{ config.theme.logo }}
+    {%- endif -%}
+
+# Meta tags (identical to the built-in default layout)
+tags:
+  og:type: website
+  og:title: *page_title_with_site_name
+  og:description: *page_description
+  og:image: "{{ image.url }}"
+  og:image:type: "{{ image.type }}"
+  og:image:width: "{{ image.width }}"
+  og:image:height: "{{ image.height }}"
+  og:url: "{{ page.canonical_url }}"
+  twitter:card: summary_large_image
+  twitter:title: *page_title_with_site_name
+  twitter:description: *page_description
+  twitter:image: "{{ image.url }}"
+
+# -----------------------------------------------------------------------------
+
+size: { width: 1200, height: 630 }
+layers:
+  # Background
+  - background:
+      color: *background_color
+
+  # Photo background (Astro, snow), covering the card; then a faint legibility scrim.
+  - background:
+      image: "{{ config.docs_dir }}/assets/images/astro_snow.jpg"
+  - background:
+      image: "{{ config.docs_dir }}/assets/social-card-scrim.svg"
+
+  # Wordmark + tagline lockup — the single assets/lockup.svg also used under the README header,
+  # so the wordmark→tagline spacing is defined once (in the SVG) and is identical in both places.
+  # width:height kept at the lockup's ~4.39:1 (7858x1788) so nothing is cropped or stretched.
+  # Centred in the 1200x630 card: x = (1200-900)/2, y = (630-205)/2.
+  - size: { width: 900, height: 205 }
+    offset: { x: 150, y: 213 }
+    background:
+      image: "{{ config.docs_dir }}/assets/lockup.svg"

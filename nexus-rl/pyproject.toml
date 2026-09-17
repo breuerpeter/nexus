@@ -1,0 +1,42 @@
+[build-system]
+requires = ["uv_build>=0.11.0,<1"]
+build-backend = "uv_build"
+
+[project]
+name = "nexus-rl"
+version = "0.1.0"
+description = "Astro Max RL on Isaac Lab over the standalone Newton physics backend (kitless)."
+requires-python = "==3.12.*"
+license = "Apache-2.0"
+authors = [{ name = "Peter Breuer" }]
+# A separate uv project (own venv) so Isaac Lab — a heavy, prerelease-pinned stack — stays OUT of the
+# core nexus environment. It depends on the core via an editable path source (see [tool.uv.sources]);
+# training + the core's FR-7 deploy then share the same Newton 1.3.0 (parity).
+dependencies = [
+    "nexus-sim",
+    "isaaclab[all,newton]==3.0.0b2",
+]
+
+[tool.uv.sources]
+nexus-sim = { path = "..", editable = true }
+warp-lang = { index = "nvidia" }
+
+[[tool.uv.index]]
+name = "nvidia"
+url = "https://pypi.nvidia.com/"
+# Not `explicit`: isaaclab[all]'s transitive deps (e.g. omniverseclient) live only on this index, so it
+# must be searchable as a general fallback (paired with index-strategy = unsafe-best-match below).
+
+[tool.uv]
+# isaaclab 3.0.0b2 *declares* warp-lang==1.13.0 / newton==1.2.1 as hard pins, but its code runs on the
+# framework's newton 1.3.0 / warp 1.14.0 (smoke-validated: the RL example trains). Override the stale pins
+# so the whole stack co-resolves on one Newton (also unifies train + the core deploy on Newton 1.3.0).
+# Re-validate if isaaclab is bumped — an override masks a genuine future incompatibility until runtime.
+override-dependencies = ["newton[sim]==1.3.0", "warp-lang==1.14.0"]
+prerelease = "if-necessary-or-explicit"  # permit the pinned isaaclab==3.0.0b2 prerelease, not arbitrary ones
+environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]  # isaaclab ships only this env
+index-strategy = "unsafe-best-match"  # isaaclab[all]'s deps span PyPI + the nvidia index
+
+[tool.uv.build-backend]
+module-name = "nexus_rl"
+module-root = "src"

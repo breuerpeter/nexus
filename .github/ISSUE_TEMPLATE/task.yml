@@ -1,0 +1,8 @@
+name: Task
+description: Chore, refactor, or infrastructure work that is neither a bug nor a feature
+type: Task
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What needs doing

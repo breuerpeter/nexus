@@ -1,0 +1,9 @@
+name: Feature
+description: A new capability, or an enhancement to one that exists
+type: Feature
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: One paragraph. What it does and why it is worth doing.

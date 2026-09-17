@@ -1,0 +1,82 @@
+name: data-refresh
+
+# Reusable: open (or refresh) a PR that updates ONE committed docs-data JSON from a CI artifact.
+# CI never pushes numbers to main — the diff is reviewed and merged like any change, and the docs
+# rebuild from the committed file (docs/hooks/benchmarks.py). Benchmark numbers are a published
+# claim about how the simulator performs, so a hardware or mission change that moves them should be
+# read by someone before it lands, not discovered later in the history.
+#
+# One branch per data file (ci/data-refresh-<stem>), so the examples leg and the matrix leg never
+# contend for the same branch and neither has to race the other's push to main.
+#
+# Uses a GitHub App token (CI_APP_CLIENT_ID + CI_APP_PRIVATE_KEY, minted per job) rather than
+# GITHUB_TOKEN so the PR triggers the normal checks (GITHUB_TOKEN-created PRs don't, which would
+# leave required checks pending forever).
+
+on:
+  workflow_call:
+    inputs:
+      artifact-name:
+        description: "CI artifact holding the fresh data"
+        required: true
+        type: string
+      src:
+        description: "Path of the data file inside the artifact"
+        required: true
+        type: string
+      dest:
+        description: "Repo path to update (under docs/data/)"
+        required: true
+        type: string
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.CI_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CI_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: .data-refresh
+      - name: Open / refresh the data PR
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          SRC: .data-refresh/${{ inputs.src }}
+          DEST: ${{ inputs.dest }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$(dirname "$DEST")"
+          cp "$SRC" "$DEST"
+          if git diff --quiet -- "$DEST" && git ls-files --error-unmatch "$DEST" >/dev/null 2>&1; then
+            echo "no data change — nothing to refresh"
+            exit 0
+          fi
+          branch="ci/data-refresh-$(basename "$DEST" .json)"
+          git config user.name "nexus-ci"
+          git config user.email "ci@users.noreply.github.com"
+          git checkout -B "$branch"
+          git add "$DEST"
+          git commit -m "chore(data): refresh $DEST from CI (${GITHUB_SHA:0:12})"
+          git push -f origin "$branch"
+          if ! gh pr create --head "$branch" --title "chore(data): refresh $DEST" \
+            --body "Automated benchmark-data refresh from run ${{ github.run_id }} @ \`${GITHUB_SHA:0:12}\`."; then
+            # Only the PR-already-exists case is benign — anything else must fail the job.
+            state="$(gh pr view "$branch" --json state -q .state 2>/dev/null || true)"
+            if [ "$state" != "OPEN" ]; then
+              echo "gh pr create failed and no open PR exists for $branch" >&2
+              exit 1
+            fi
+            echo "PR already open — branch force-updated"
+          fi

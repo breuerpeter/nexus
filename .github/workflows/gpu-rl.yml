@@ -1,0 +1,67 @@
+name: gpu-rl
+
+# The Astro Max RL pipeline on the GPU runner: train → record → deploy + the stats regression
+# gate (scripts/ci/run_rl_example.sh → check_rl_stats.py). Advisory. Runs on main pushes touching
+# the RL surface; on PRs it is offered on EVERY PR but runs
+# only when the `gpu` label is applied (the label is the GPU-spend approval — see gpu-examples.yml
+# for the same convention). Uploads the docs .rrds only on main / dispatch (never from PRs). A
+# labeled fork PR flies through pull_request_target on per-run approval (gpu-runner.yml).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "nexus-rl/**"
+      - "nexus/examples/controllers/policy/**"
+      - "scripts/ci/run_rl_example.sh"
+      - "scripts/ci/check_rl_stats.py"
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  # The fork path: fires for every PR; gpu-runner.yml narrows it to labeled fork PRs with a
+  # per-run approval and checks out the approved head sha, never the base.
+  pull_request_target:
+    types: [opened, synchronize, reopened, labeled]
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: "Upload the recordings to the docs bucket"
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write # OIDC — gpu-runner assumes the AWS role to start/stop the box
+  contents: read
+  packages: read # gpu-runner's GHCR login step (harmless here; required by the shared run job)
+
+concurrency:
+  # One group per PR per event: the two events of one PR must not cancel each other, and on
+  # pull_request_target github.ref is the base branch, which would pool every fork PR with main.
+  group: gpu-rl-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The GPU-spend gate lives in gpu-runner.yml, once, on the job that starts the instance.
+  gpu:
+    uses: ./.github/workflows/gpu-runner.yml
+    with:
+      # UPLOAD=1 on main pushes and dispatch-with-upload (never on PRs); run_rl_example.sh self-resolves
+      # the USD and S3-uploads the .rrds via the runner's instance profile when UPLOAD=1.
+      command: ${{ (github.event_name == 'push' || inputs.upload) && 'UPLOAD=1' || '' }} bash scripts/ci/run_rl_example.sh
+      artifact-name: rl-example
+      artifact-path: .rl-artifacts
+    secrets: inherit
+
+  # The branch-protection context — see the note in gpu-examples.yml.
+  rl:
+    needs: gpu
+    # Skip when the leg skipped, so this reports `skipped` — which satisfies the required context
+    # without claiming the GPU work passed, and keeps it out of the successful list. `always()` with
+    # the explicit != 'skipped' is load-bearing: a bare `needs:` would ALSO skip on failure, and a
+    # skipped required check counts as satisfied, so a red leg would stop blocking the merge.
+    if: ${{ always() && needs.gpu.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report the GPU leg's result
+        run: |
+          echo "GPU leg: ${{ needs.gpu.result }}"
+          [ "${{ needs.gpu.result }}" = "success" ] || exit 1

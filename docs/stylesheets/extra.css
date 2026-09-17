@@ -1,0 +1,91 @@
+/* Home landing page (docs/index.md), sidebar-free via `hide: navigation, toc`. The
+   hero banner is full-bleed — edge to edge, flush under the header — while the prose
+   and cards sit in a centred reading column the width of every other page. Scoped by
+   `:has(.hero)`, a marker only the landing page carries. A full-bleed banner needs a
+   sidebar-free page (it would otherwise paint over the nav), so these rules are the
+   direct cost of that, not a workaround. */
+
+/* Sidebar-free hands the article the full 61rem grid; keep the reading column at the
+   width other pages get (that grid less the two 12.1rem sidebars and ~1.2rem padding)
+   and centre it, so the prose lines up with the rest of the docs. */
+body:has(.hero) .md-content__inner {
+  max-width: 34.4rem;
+  margin-inline: auto;
+  padding-top: 0; /* banner flush under the header */
+}
+body:has(.hero) .md-content__inner::before {
+  display: none; /* drop Material's .4rem top-spacer pseudo */
+}
+body:has(.hero) .md-main__inner {
+  margin-top: 0; /* drop the grid's top gap so the banner meets the header */
+}
+body:has(.hero) .md-content__button {
+  display: none; /* a hero landing page needs no "edit this page" button */
+}
+body:has(.hero) .md-typeset > h1 {
+  display: none; /* Material injects an <h1>Home</h1> when a page has no heading; the
+                    banner is the title here, so drop it (its alt text names the page) */
+}
+
+/* The banner breaks out of the reading column to span the viewport; Material's
+   `html { overflow-x: hidden }` clips the 100vw strip cleanly to the edges. */
+.md-typeset p:has(> .hero) {
+  margin: 0 0 1.2rem; /* neutralise the wrapping paragraph so the banner sits flush */
+}
+.md-typeset .hero {
+  display: block;
+  width: 100vw;
+  max-width: none; /* override Material's `.md-typeset img { max-width: 100% }` so 100vw wins */
+  margin-left: calc(50% - 50vw);
+  height: clamp(200px, 26vw, 360px);
+  object-fit: cover; /* crop the ~3.4:1 lockup to the strip height; it's centred, so it survives */
+  object-position: center;
+}
+
+/* Shrink the wordmark in the header (default is 1.2rem) */
+.md-header__button.md-logo img {
+  height: 0.7rem;
+}
+
+/* The mobile nav drawer header stacks the logo over the site name, but the logo
+   wordmark already reads "nexus", so the text label below is a redundant second
+   "nexus". The logo is absolutely positioned, so zeroing the font hides the
+   text node without shrinking the logo; collapse the empty space it left. */
+.md-nav__title[for="__drawer"] {
+  font-size: 0;
+  height: 3.8rem;
+  padding-top: 0;
+}
+
+/* The wordmark logo already reads "nexus", so hide the redundant site-name
+   topic in the header. Material stacks two topics — site name first, page title
+   second — and swaps them on scroll; with the first hidden, the page title slides
+   in via the default morph only once scrolled down (when the tabs are gone). */
+.md-header__topic:first-child {
+  display: none;
+}
+
+/* Uniform heading treatment across ALL docs pages: h3 section headings carry a
+   bottom rule (Material's `hr` idiom — h1/h2 have none), h4 matches h3's size and
+   both are non-bold, so the rule under h3 alone distinguishes a section heading
+   from the titles beneath it. h5 is non-bold too. */
+.md-typeset h3 {
+  border-bottom: .05rem solid var(--md-default-fg-color--lightest);
+  padding-bottom: .2rem;
+}
+.md-typeset h4 {
+  font-size: 1.25em; /* = h3 */
+  font-weight: 400;
+}
+.md-typeset h5 {
+  font-weight: 400;
+}
+
+/* The interface-diagram plugin's diagram.css (loaded after this file) re-sizes h4
+   to 1.15em and rules it on the diagram pages; the leading `body` out-specifies it
+   so the uniform treatment above wins there too — no !important. */
+body .md-typeset:has(a.diagram-link) h4 {
+  font-size: 1.25em;
+  border-bottom: none;
+  padding-bottom: 0;
+}

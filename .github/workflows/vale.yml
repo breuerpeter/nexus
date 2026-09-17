@@ -1,0 +1,48 @@
+name: vale
+
+# Prose lint for Markdown and for the comments and docstrings in Python.
+
+on:
+  pull_request:
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: vale-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The gate, a required check on main: the lines a pull request adds.
+  vale-changed:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vale-cli/vale-action@v3
+        with:
+          version: 3.20.0
+          filter_mode: added
+          fail_level: any
+
+  # The whole repo, nightly and on demand, as a check run with annotations. Main carries zero alerts,
+  # so a red run means something leaked past the gate: a bypassed merge, a package bumped to a
+  # version with new rules, or a word dropped from the accept list.
+  vale-all:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vale-cli/vale-action@v3
+        with:
+          version: 3.20.0
+          filter_mode: nofilter
+          fail_level: any
+          reporter: github-check
+          # The synced style packages ship their own READMEs.
+          glob: "!.vale/**"

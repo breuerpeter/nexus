@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "rerun": {
+      "command": "uv",
+      "args": ["run", "rerun", "viewer-mcp"]
+    }
+  }
+}

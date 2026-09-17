@@ -1,0 +1,70 @@
+name: docker-images
+
+# Build + push the container images to GHCR so the gpu-* jobs (and the decoupled SITL / Isaac Sim
+# workflows) pull them instead of anyone building by hand. `${{ github.repository }}` resolves the
+# path to ghcr.io/<this repository>/<name>, the prefix nexus/_src/containers.py names.
+#
+# Notes:
+# - isaacsim-runtime is FROM nvcr.io/nvidia/isaac-sim:6.0.0, which is PUBLIC (anonymously pullable),
+#   so no NGC auth is needed — but the base is ≈20 GB, so this leg frees disk first. If it still
+#   doesn't fit the hosted runner, move that leg to the EC2 GPU runner via gpu-runner.yml. px4-sitl
+#   is FROM ubuntu (small). isaac-lab-base is NOT built here — the RL job pulls it from NVIDIA.
+# - After the first push, set each GHCR package to **Public** (package settings) so the ephemeral CI
+#   runner can `docker pull` without auth. (GHCR packages are private by default; visibility is
+#   independent of repo visibility.)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docker/**"
+      - ".github/workflows/docker-images.yml"
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false # a failing isaacsim leg (e.g. no NGC key yet) must not block px4-sitl
+      matrix:
+        include:
+          - { name: px4-sitl, context: docker/px4-sitl, large: false }
+          - { name: isaacsim-runtime, context: docker/isaacsim, large: true }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space (large NVIDIA base)
+        if: ${{ matrix.large }}
+        uses: jlumbroso/free-disk-space@main
+        with: { docker-images: false }
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.name }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.context }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

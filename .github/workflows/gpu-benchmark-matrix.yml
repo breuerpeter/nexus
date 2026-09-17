@@ -1,0 +1,57 @@
+name: gpu-benchmark-matrix
+
+# The RTF benchmark matrix (scripts/ci/benchmark_matrix.py): ONE PX4 4-waypoint mission across
+# {vehicle × scene × device × runtime} on the pinned A10G runner — the standalone table plus the
+# isaacsim table (GHCR isaacsim-runtime container; cesium cells need the CESIUM_ION_TOKEN secret
+# and are skipped without it). Scheduled + dispatch only, NOT per-push: the isaacsim cells cost
+# minutes each. Ends with a data-refresh PR updating docs/data/rtf_matrix.json — the docs
+# Benchmarking page changes only through that reviewed diff.
+
+on:
+  schedule:
+    - cron: "17 3 * * 1" # Mondays 03:17 UTC
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "standalone | isaacsim (empty = the full matrix)"
+        type: string
+        default: ""
+
+permissions:
+  id-token: write # OIDC — gpu-runner assumes the AWS role to start/stop the box
+  contents: read
+  packages: read # GHCR pulls (px4-sitl + isaacsim-runtime images)
+
+concurrency:
+  group: gpu-benchmark-matrix
+  cancel-in-progress: false
+
+jobs:
+  matrix:
+    uses: ./.github/workflows/gpu-runner.yml
+    with:
+      caches: px4
+      command: >-
+        bash scripts/ci/provision_px4.sh &&
+        docker compose -f docker/docker-compose.yml pull isaacsim &&
+        uv run python scripts/ci/benchmark_matrix.py
+        --out .eval-artifacts/matrix/rtf_matrix.json
+        ${{ inputs.only != '' && format('--only {0}', inputs.only) || '' }}
+      artifact-name: benchmark-matrix
+      artifact-path: .eval-artifacts
+    secrets: inherit
+
+  data-refresh:
+    needs: matrix
+    # The result check is explicit: gpu-runner's approve-fork skips on schedule and dispatch, and
+    # the implicit success() would skip this job for it.
+    if: ${{ !cancelled() && needs.matrix.result == 'success' }}
+    uses: ./.github/workflows/data-refresh.yml
+    permissions:
+      contents: write
+      pull-requests: write
+    with:
+      artifact-name: benchmark-matrix
+      src: matrix/rtf_matrix.json
+      dest: docs/data/rtf_matrix.json
+    secrets: inherit

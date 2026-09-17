@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "en-US"
+early_access: false
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: true
+  auto_review:
+    enabled: true
+    drafts: true
+  tools:
+    github-checks:
+      timeout_ms: 900000
+  path_instructions:
+    - path: "packages/**"
+      instructions: |
+        If a change modifies user-facing behavior (new feature, changed API,
+        new config option), check that the docs/ are updated accordingly.
+    - path: "docs/**"
+      instructions: |
+        Verify all code examples are correct and runnable.
+chat:
+  auto_reply: true
+issue_enrichment:
+  auto_enrich:
+    enabled: true

@@ -1,0 +1,69 @@
+# One pattern per line. An entry exempts the word from every rule that flags it: the spelling
+# dictionary, Google.Acronyms, the heading-case rule, and the word-choice rules alike.
+
+# Product, company, and library names
+Astro
+Astro Max
+Freefly
+Freefly Systems
+nexus
+Newton
+Isaac Lab
+Isaac Sim
+Rerun
+PX4
+Michroma
+Omniverse
+codecov
+RTX
+CUDA
+NVENC
+QGroundControl
+MAVLink
+PyTorch
+CloudFront
+PhysX
+MJWarp
+Nsight
+Perfetto
+ProjectAirSim
+PegasusSimulator
+MkDocs
+NuttX
+Esri
+Wiris
+DLPack
+OpenUSD
+CasADi
+LiDAR
+acados
+ruckig
+
+# Formats, protocols, standards, and identifiers whose expansion helps nobody or cannot be written
+SPZ
+SURE
+NGSP
+OBJ
+JPG
+JPEG
+LTE
+NTRIP
+SBUS
+WHEP
+FXAA
+NETD
+AMSL
+SPDX
+BSD
+VPC
+SIL
+NFR
+
+# Domain words the spelling dictionary lacks
+waypoints?
+quadrotor
+lidar
+prims?
+setpoints?
+viewport
+Perceptron

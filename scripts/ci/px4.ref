@@ -1,0 +1,4 @@
+PX4/PX4-Autopilot@2de9ea3e0823391b648204cc3921bdd490442e46
+track=breuerpeter/newton
+# Line 1: the PX4 pin (repo@sha) provision_px4.sh builds; line 2: the branch px4-bump.yml
+# tracks (breuerpeter/newton until PX4 PR #27706 merges, then main — see the tracking issues).

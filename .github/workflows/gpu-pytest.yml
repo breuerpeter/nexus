@@ -1,0 +1,61 @@
+name: gpu-pytest
+
+# The full pytest suite on the GPU runner — same suite as cpu-pytest, but on warp-cuda + MuJoCo-GPU,
+# so it exercises the CUDA paths and runs tests/runtimes/test_capture.py (which auto-skips on CPU).
+# The command provisions the PX4 checkout at the scripts/ci/px4.ref pin first (provision_px4.sh, cached
+# per pin as in gpu-examples), so tests/controllers/test_px4_gcs_link.py flies a real PX4 SITL here;
+# that module skips wherever no PX4 checkout is provisioned, cpu-pytest included.
+# Advisory (not a required check). Offered on EVERY PR; runs only once the `gpu` label is applied —
+# the label IS the GPU-spend approval. A labeled fork PR flies through pull_request_target, each
+# run approved by a maintainer on the external-pr-approval environment; main pushes fly. The gate
+# lives in gpu-runner.yml.
+
+on:
+  push:
+    branches: [main]
+    paths: ["nexus/**", "tests/**", "pyproject.toml", "uv.lock"]
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  # The fork path: fires for every PR; gpu-runner.yml narrows it to labeled fork PRs with a
+  # per-run approval and checks out the approved head sha, never the base.
+  pull_request_target:
+    types: [opened, synchronize, reopened, labeled]
+  workflow_dispatch:
+
+permissions:
+  id-token: write # OIDC — gpu-runner assumes the AWS role to start/stop the box
+  contents: read
+  packages: read # GHCR pull of the px4-sitl toolchain image the PX4 SITL tests build and fly with
+
+concurrency:
+  # One group per PR per event: the two events of one PR must not cancel each other, and on
+  # pull_request_target github.ref is the base branch, which would pool every fork PR with main.
+  group: gpu-pytest-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The GPU-spend gate lives in gpu-runner.yml, once, on the job that starts the instance.
+  gpu:
+    uses: ./.github/workflows/gpu-runner.yml
+    with:
+      caches: px4
+      command: >-
+        bash scripts/ci/provision_px4.sh &&
+        uv run --extra policy --with pytest --with pytest-cov pytest tests --cov=nexus --cov-report=xml -q
+      coverage-flags: gpu
+    secrets: inherit
+
+  # The branch-protection context — see the note in gpu-examples.yml.
+  gpu-pytest:
+    needs: gpu
+    # Skip when the leg skipped, so this reports `skipped` — which satisfies the required context
+    # without claiming the GPU work passed, and keeps it out of the successful list. `always()` with
+    # the explicit != 'skipped' is load-bearing: a bare `needs:` would ALSO skip on failure, and a
+    # skipped required check counts as satisfied, so a red leg would stop blocking the merge.
+    if: ${{ always() && needs.gpu.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report the GPU leg's result
+        run: |
+          echo "GPU leg: ${{ needs.gpu.result }}"
+          [ "${{ needs.gpu.result }}" = "success" ] || exit 1

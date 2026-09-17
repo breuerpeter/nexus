@@ -1,0 +1,76 @@
+# registry.yaml — the checked-in vehicle/scene catalog.
+#
+# S3 holds only content-addressed blobs; this file is the semantic <-> content binding. Every
+# vehicle variant is a `name` handle plus its USD and PX4 spec. A launch names the variant it flies,
+# `--vehicle astro_max_fpv`, and a launch that names none flies `defaults.vehicle`. The name is what
+# the run's receipt records.
+#
+# Assets are referenced by `{name, sha256}`, completed against `assets.base` below into a
+# self-contained `.usdz` at <base>/assets/usd/{vehicles,scenes}/<name>-<sha256>.usdz; see
+# nexus/_src/assets/resolver.py. An entry may carry a full `url` instead, which is how a catalog
+# names a blob hosted somewhere else, or a local file. Each USD carries
+# the actuator map as motor:* and propeller:* attrs on the actuator joint prims AND — for the FPV mods —
+# an authored FpvCam the isaacsim renderer uses; both non-physical (nexus model unchanged).
+#
+# NOTE: `px4.airframe` is the SITL airframe MAKE TARGET, minus PX4's `none_` prefix — `none` is
+# PX4's "no simulator" (external/HIL) prefix, and the launcher prepends it, so `astro_max` here runs
+# `make px4_sitl none_astro_max`. The same target resolves on both PX4 trees CI flies (one
+# numbers it 1002113_…, the other 80000_…). All variants
+# currently share it — TODO: give each its own airframe once payload mass is modeled.
+
+# Where this catalog's blobs live. A project with its own catalog names its own base here.
+assets:
+  base: https://d2837jz4fvtxko.cloudfront.net/public
+
+vehicles:
+  - name: astro_max_base
+    usd: { name: astro_max_base, sha256: d2f538aaeeef4c2a951cac3f9e062003e7c4cc6e5e78b2960076b69a393f92e8 }
+    px4: { airframe: astro_max }        # `make px4_sitl none_astro_max`
+
+  - name: astro_max_fpv
+    usd: { name: astro_max_fpv, sha256: 9dc55c51a6912faacf2614a7b3e244bf10233f440a8dd920490857df03daf5ad }
+    px4: { airframe: astro_max }        # TODO: dedicated airframe (shares base's for now)
+
+  - name: astro_max_fpv_lr1
+    usd: { name: astro_max_fpv_lr1, sha256: 19a421c4ce15f7df87debc08b9fd784be01a12ebd7fd3a631d0a3f49dd6f13a2 }
+    px4: { airframe: astro_max }        # TODO: dedicated airframe (shares base's for now)
+
+  - name: astro_max_fpv_flux
+    usd: { name: astro_max_fpv_flux, sha256: cb08b52200b184bb885e01a825d9a70a5f795d4715103d7318eafea827a245ed }
+    px4: { airframe: astro_max }        # TODO: dedicated airframe (shares base's for now)
+
+  - name: astro_max_fpv_wiris
+    usd: { name: astro_max_fpv_wiris, sha256: a02c1a9a1eef0b5e4007e59bab75876fa4cbf8675e537f3fb8ec4f6cf6a33f6e }
+    px4: { airframe: astro_max }        # TODO: dedicated airframe (shares base's for now)
+
+# The scene USD is the single authority on what it is: authored UsdPhysics collision schemas ->
+# simulation geometry (ModelBuilder); no physics schemas -> visual-only; and since the stage-5
+# round every scene usdz also carries its own SKY (dome+sun) and — where it needs one — its stage
+# render recipe (customLayerData.renderSettings, auto-applied when the renderer opens the scene as
+# the root stage). Conventions: ONE root prim (defaultPrim, plain Xform, no root xformOps) so the
+# runtime places `start` with a single session-layer translate; cesium is exempt (georef-anchored,
+# absolute /Cesium* paths). See scripts/assets/scene_root.py.
+scenes:
+  empty:                              # flat ground (default); sky-only usdz, no static geometry
+    usd: { name: empty, sha256: ab15e88be59c0ee93e63160c34b08485e3136d1f88313f24dcd67e482ecbed05 }
+    geodetic_origin: null
+
+  slalom:                             # three obstacle pillars for the sampling-MPC demo; the USD authors
+                                      # physics:collisionEnabled=false -> cost-only (no contact dynamics)
+    usd: { name: slalom, sha256: 2f9984c07ece550ad30a002b73552d2e0fa37bc2b493690fb1f8f99e5676c92b }
+    geodetic_origin: null
+
+  cesium:                             # live-streamed globe visual world (Google Photorealistic 3D
+                                      # Tiles via Cesium for Omniverse). The USD ships the tileset.
+    usd: { name: cesium, sha256: d9c245d450dfb30089d7e2c6a011d90cd552482f931ba48313e361bb3266315a }
+    # DEFAULT anchor (Woodinville). alt = the surface's WGS84 ELLIPSOIDAL height — authoritative
+    # DATA applied directly as the cesium georeference origin height (street at local z=0) and the
+    # GPS reference altitude. Measured by flying the Flux lidar over the streamed tiles (ground
+    # mode of the below-vehicle returns); if the street sits off z=0, tweak it HERE — no code, no
+    # reconversion. isaacsim runtime only; needs CESIUM_ION_TOKEN. Fly any location with
+    # `--scene cesium --geo <lat>,<lon>[,<alt>]` (e.g. San Francisco: `--geo 37.7942,-122.3954,-32`).
+    geodetic_origin: { lat: 47.747944, lon: -122.163917, alt: -6.2 }
+
+defaults:
+  vehicle: astro_max_base  # what `nexus run` flies when the command line names no vehicle
+  scene: empty

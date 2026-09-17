@@ -1,0 +1,43 @@
+name: release-please
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+    steps:
+      - id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.CI_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CI_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          token: ${{ steps.app-token.outputs.token }} # an App-opened release PR runs its checks
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  publish:
+    # Build + publish to PyPI in the same run, only when a release was just cut. The App token
+    # that cuts the release could start a separate `release: published` workflow; publishing
+    # stays here by choice, so one run holds the release and the wheel it ships.
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write          # PyPI Trusted Publishing (OIDC) — no token secret
+    environment: pypi          # configure the environment + Trusted Publisher on PyPI before enabling
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv build
+      - run: uv publish --trusted-publishing always
