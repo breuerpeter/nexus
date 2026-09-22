@@ -106,6 +106,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { persist-credentials: false } # only the discovery script is needed; no pushes
+      # TEMPORARY. The assume is refused with "Not authorized to perform
+      # sts:AssumeRoleWithWebIdentity" while the role's trust policy names this repository. Print
+      # the three claims the trust matches on, never the token itself, so the mismatch is visible.
+      # Remove this step once the cause is known.
+      - name: Show the OIDC claims
+        run: |
+          t=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+              "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
+          p=$(printf '%s' "$t" | cut -d. -f2)
+          printf '%s%s' "$p" "$(printf '=%.0s' $(seq 1 $(( (4 - ${#p} % 4) % 4 ))))" \
+            | tr '_-' '/+' | base64 -d | jq '{iss, aud, sub}'
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ env.AWS_REGION }}
