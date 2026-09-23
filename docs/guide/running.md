@@ -118,9 +118,9 @@ uv run nexus run --scene cesium --geo 37.7942,-122.3954 --view   # SF (cesium de
 A cesium scene is just a `geodetic_origin`, latitude and longitude, in the registry. At startup
 the run measures the surface height from the streamed tiles: an iterative depth probe aligns the
 street with the physics ground to centimetres, so new locations need no calibration. Tile
-selection runs one hidden-cost viewport per camera, and the RTX lidar reflects off the tiles. The
-whole config, two cameras at 24 fps plus full logging, holds >=1x realtime on the reference
-machine. Without a token the run warns and falls back to a plain sky, and the flight continues.
+selection runs one hidden-cost viewport per camera, and the RTX lidar reflects off the tiles.
+[Benchmarking](../reference/benchmarking.md) lists the measured real-time factor of each vehicle
+on this scene. Without a token the run warns and falls back to a plain sky, and the flight continues.
 The Cesium ion and Google Maps Platform terms govern the streamed tiles: see
 [the license page](../license.md#hosted-assets).
 
