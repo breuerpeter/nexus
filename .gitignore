@@ -5,7 +5,6 @@ __pycache__/
 # glTF asset previews are generated from USD (tools/prepare_asset_upload.py) and served
 # from CloudFront in production; the local copy is just for `mkdocs serve`.
 docs/assets/models/*.glb
-
 # Build / packaging artifacts
 dist/
 build/
