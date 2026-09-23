@@ -22,7 +22,13 @@ name: gpu-runner
 # the self-hosted runner; var AWS_REGION_CANDIDATES (placement preference order — us-west-2 leads,
 # colocated with the consolidated bucket; no static subnets, discovery finds default-VPC subnets per region);
 # the environment external-pr-approval with required reviewers, the per-run approval of the fork
-# path. Callers pass `secrets: inherit`.
+# path. Callers in this repo pass `secrets: inherit`.
+#
+# A caller under another owner: `secrets: inherit` passes nothing across owners, so it passes each
+# secret declared below by name, and those it lacks stay empty. Its own settings, not lines here: the
+# AWS role's trust admits the caller's OIDC subject, and the GitHub App is installed on the caller,
+# where the runner registers, and on each repo named in read-repositories. The placement script
+# comes from this file's own repo and commit, so the caller needs no copy of it.
 
 on:
   workflow_call:
@@ -57,6 +63,18 @@ on:
         description: "Extra caches to restore/save on the box (space-separated: px4 acados)"
         type: string
         default: ""
+      read-repositories:
+        description: "Repos under the caller's owner (comma-separated) the command reads with $REPO_READ_TOKEN"
+        type: string
+        default: ""
+    secrets:
+      AWS_GPU_ROLE_ARN: { required: false }
+      AWS_GPU_INSTANCE_PROFILE: { required: false }
+      AWS_RUNNER_RESOURCE_TAG: { required: false }
+      NEXUS_BUCKET: { required: false }
+      CI_APP_PRIVATE_KEY: { required: false }
+      CESIUM_ION_TOKEN: { required: false }
+      CODECOV_TOKEN: { required: false }
 
 env:
   AWS_REGION: eu-central-1 # the OIDC/STS session entry region only — instance placement is discovered
@@ -104,8 +122,13 @@ jobs:
       ec2-instance-id: ${{ steps.start.outputs.ec2-instance-id }}
       region: ${{ steps.start.outputs.region }}
     steps:
+      # This file's own repo and commit, not the caller's: only the discovery script is needed, and a
+      # caller under another owner has no copy of it. No pushes.
       - uses: actions/checkout@v4
-        with: { persist-credentials: false } # only the discovery script is needed; no pushes
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          persist-credentials: false
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ env.AWS_REGION }}
@@ -215,8 +238,19 @@ jobs:
             echo "::error::set the repo secret AWS_GPU_INSTANCE_PROFILE: this run uploads and needs an instance profile"
             exit 1
           fi
+      # A read-only token for the repos the command clones, minted right before its use. Never on
+      # pull_request_target: the command there is a fork's code.
+      - id: read-token
+        if: inputs.read-repositories != '' && github.event_name != 'pull_request_target'
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.CI_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CI_APP_PRIVATE_KEY }}
+          repositories: ${{ inputs.read-repositories }}
+          permission-contents: read
       - name: Run
         env:
+          REPO_READ_TOKEN: ${{ steps.read-token.outputs.token }}
           # Only the benchmark matrix's cesium cells read it, on schedule and dispatch: PR runs of
           # either event get an empty value (negated on purpose, see iam-role-name), as does any
           # repo without the secret — cesium cells then skip.
