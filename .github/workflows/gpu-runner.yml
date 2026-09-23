@@ -13,13 +13,14 @@ name: gpu-runner
 # THROUGH CLOUDFRONT (docs .rrd embeds + the bench feed), so treat everything uploaded there as
 # public. A CI output that is not published rides a GitHub artifact.
 #
-# Provisioning (one-time): vars AWS_GPU_INSTANCE_PROFILE, the instance profile a main-push run
+# Provisioning (one-time): secrets AWS_GPU_INSTANCE_PROFILE, the instance profile a main-push run
 # attaches so its uploads need no keys, NEXUS_BUCKET, the artifacts bucket those uploads write to,
-# and AWS_RUNNER_RESOURCE_TAG where tagged subnets opt in; var CI_APP_CLIENT_ID and secret
-# CI_APP_PRIVATE_KEY, the GitHub App (repo permissions Administration, Contents and Pull requests,
-# each read and write) whose per-job tokens register the self-hosted runner; vars AWS_GPU_ROLE_ARN
-# (OIDC) and AWS_REGION_CANDIDATES (placement preference order — us-west-2 leads, colocated with
-# the consolidated bucket; no static subnets, discovery finds default-VPC subnets per region);
+# AWS_RUNNER_RESOURCE_TAG where tagged subnets opt in, and AWS_GPU_ROLE_ARN (OIDC). They name
+# resources in an AWS account, so they are secrets and the runner masks them in the public logs.
+# Var CI_APP_CLIENT_ID and secret CI_APP_PRIVATE_KEY, the GitHub App (repo permissions
+# Administration, Contents and Pull requests, each read and write) whose per-job tokens register
+# the self-hosted runner; var AWS_REGION_CANDIDATES (placement preference order — us-west-2 leads,
+# colocated with the consolidated bucket; no static subnets, discovery finds default-VPC subnets per region);
 # the environment external-pr-approval with required reviewers, the per-run approval of the fork
 # path. Callers pass `secrets: inherit`.
 
@@ -108,7 +109,7 @@ jobs:
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ env.AWS_REGION }}
-          role-to-assume: ${{ vars.AWS_GPU_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_GPU_ROLE_ARN }}
       # Capacity via BREADTH, not retries (#26, the upstream newton pattern): discover eligible
       # placements at run time — tagged resources and each candidate region's default VPC (a subnet
       # per AZ, zero provisioning), in AWS_REGION_CANDIDATES order (us-west-2 first — colocated
@@ -121,7 +122,7 @@ jobs:
           AWS_INSTANCE_TYPE: ${{ inputs.instance-type }}
           # The opt-in tag key on subnets and security groups, a name in the account and not a line
           # here. Unset: discovery skips the tagged step and places on each region's default VPC.
-          AWS_RUNNER_RESOURCE_TAG: ${{ vars.AWS_RUNNER_RESOURCE_TAG }}
+          AWS_RUNNER_RESOURCE_TAG: ${{ secrets.AWS_RUNNER_RESOURCE_TAG }}
         run: python3 scripts/ci/discover_aws_runner_config.py
       # One App token per job, minted right before its use and revoked when the job ends: it
       # never crosses into `run` or `stop-runner`, which mint their own.
@@ -142,7 +143,7 @@ jobs:
           # dispatch runs only: nothing a PR run does uploads, and an approved fork's code must not
           # be able to write to the CI artifacts bucket. The condition is negated on purpose — in an Actions
           # expression `cond && '' || 'x'` yields 'x' for both truth values.
-          iam-role-name: ${{ (github.event_name != 'pull_request' && github.event_name != 'pull_request_target') && vars.AWS_GPU_INSTANCE_PROFILE || '' }}
+          iam-role-name: ${{ (github.event_name != 'pull_request' && github.event_name != 'pull_request_target') && secrets.AWS_GPU_INSTANCE_PROFILE || '' }}
           # The DL AMI's default root is 35 GB — the OS+CUDA stack alone nearly fills it, and the
           # isaacsim-runtime image pull (benchmark matrix) then kills the runner with disk
           # exhaustion (job dies, logs never upload). 100 GB gp3 costs cents per ephemeral run.
@@ -205,11 +206,15 @@ jobs:
         with: { path: ~/.cache/nexus/acados, key: "acados-${{ hashFiles('scripts/setup_acados.sh') }}" }
       - name: Fail early when a main-push run has no instance profile
         # Only push, schedule and dispatch attach one, and only they upload; a PR run passes an empty
-        # name on purpose, so the check is the same expression the attach step reads.
-        if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target' && vars.AWS_GPU_INSTANCE_PROFILE == ''
+        # name on purpose. A step's `if:` cannot read a secret, so the check reads it from env.
+        if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target'
+        env:
+          AWS_GPU_INSTANCE_PROFILE: ${{ secrets.AWS_GPU_INSTANCE_PROFILE }}
         run: |
-          echo "::error::set the repo variable AWS_GPU_INSTANCE_PROFILE: this run uploads and needs an instance profile"
-          exit 1
+          if [ -z "$AWS_GPU_INSTANCE_PROFILE" ]; then
+            echo "::error::set the repo secret AWS_GPU_INSTANCE_PROFILE: this run uploads and needs an instance profile"
+            exit 1
+          fi
       - name: Run
         env:
           # Only the benchmark matrix's cesium cells read it, on schedule and dispatch: PR runs of
@@ -217,7 +222,7 @@ jobs:
           # repo without the secret — cesium cells then skip.
           CESIUM_ION_TOKEN: ${{ (github.event_name != 'pull_request' && github.event_name != 'pull_request_target') && secrets.CESIUM_ION_TOKEN || '' }}
           # The artifacts bucket an --upload run writes to: a name in the account, so a setting.
-          NEXUS_BUCKET: ${{ vars.NEXUS_BUCKET }}
+          NEXUS_BUCKET: ${{ secrets.NEXUS_BUCKET }}
         # A PR run, same-repo or fork, must reach the command with no instance profile on the box
         # and no Cesium token. The guard fails the run otherwise, so a change that brings either
         # back is caught on its first PR run. IMDS answers 404 for iam/info when no profile is attached.
@@ -267,7 +272,7 @@ jobs:
         with:
           # The instance may have launched in any discovered region — stop it where it lives.
           aws-region: ${{ needs.start-runner.outputs.region || env.AWS_REGION }}
-          role-to-assume: ${{ vars.AWS_GPU_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_GPU_ROLE_ARN }}
       - id: app-token
         uses: actions/create-github-app-token@v3
         with:
