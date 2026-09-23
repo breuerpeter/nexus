@@ -51,16 +51,14 @@ SIBLING = """\
 vehicles:
   - name: sibling_vehicle
     usd: { url: "file:///sibling.usdz", sha256: "0" }
-scenes:
-  empty: {}
-defaults: { vehicle: sibling_vehicle, scene: empty }
+defaults: { vehicle: sibling_vehicle }
 """
 
 
-def test_a_registry_beside_the_run_wins_over_the_one_in_the_wheel(tmp_path, monkeypatch):
-    """A registry beside the run wins over the one in the wheel: `nexus.registry.yaml` in the working
-    directory or a parent is the catalog a run flies, and where no parent holds one the run flies the
-    catalog the wheel ships.
+def test_a_registry_beside_the_run_extends_the_one_in_the_wheel(tmp_path, monkeypatch):
+    """A registry beside the run extends the one in the wheel: `nexus.registry.yaml` in the working
+    directory or a parent adds its entries to the catalog a run flies, and where no parent holds one
+    the run flies only the catalog the wheel ships.
     """
     project = tmp_path / "sibling"
     (project / "scripts").mkdir(parents=True)
@@ -71,7 +69,7 @@ def test_a_registry_beside_the_run_wins_over_the_one_in_the_wheel(tmp_path, monk
     monkeypatch.chdir(tmp_path)  # no parent of this one holds a registry
     shipped = [v.name for v in load_registry().vehicles]
 
-    assert (beside, "astro_max_base" in shipped) == (["sibling_vehicle"], True)
+    assert ("sibling_vehicle" in beside, "sibling_vehicle" in shipped) == (True, False)
 
 
 def test_an_entry_addresses_its_own_blob():
