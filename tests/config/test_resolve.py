@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+import nexus
 from nexus._src.config import LaunchConfig, NoMatchError, Registry, TestedConfig, resolve
 
 
@@ -223,8 +224,9 @@ def test_a_run_says_which_catalog_it_flew(tmp_path, monkeypatch, caplog):
 
 def test_a_launch_that_names_a_dropped_variant_fails_before_it_flies(tmp_path, monkeypatch):
     """A launch that names a dropped variant fails before it flies: the shipped catalog no longer
-    carries `astro_max_fpv_lr1`, so resolution stops and says no vehicle has that name.
+    carries `astro_max_fpv_lr1`, so the launch stops and says no vehicle has that name.
     """
     monkeypatch.chdir(tmp_path)  # no nexus.registry.yaml beside the run
     with pytest.raises(NoMatchError, match="no vehicle named 'astro_max_fpv_lr1'"):
-        resolve(LaunchConfig().set_vehicle("astro_max_fpv_lr1"), fetch=False)
+        with nexus.Sim(vehicle="astro_max_fpv_lr1"):
+            pass

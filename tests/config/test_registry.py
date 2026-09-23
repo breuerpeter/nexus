@@ -2,6 +2,7 @@
 
 import pytest
 
+import nexus
 from nexus._src.config import NoMatchError, Registry, RegistryError, load_registry
 
 
@@ -104,23 +105,21 @@ def test_the_shipped_catalog_resolves_exactly_as_today():
     assert astro.url == f"{base}/vehicles/astro_max_base-{astro.sha256}.usdz"
 
 
-def test_the_shipped_catalog_names_two_vehicles(tmp_path, monkeypatch):
+def test_the_shipped_catalog_names_two_vehicles():
     """The shipped catalog names two vehicles, `astro_max_base` and `astro_max_fpv`: the payload
     variants leave the tree, and a project that wants one brings it in its own catalog.
     """
-    monkeypatch.chdir(tmp_path)  # no nexus.registry.yaml beside the run
-    assert [v.name for v in load_registry().vehicles] == ["astro_max_base", "astro_max_fpv"]
+    assert [v.name for v in nexus.Registry.from_yaml().vehicles] == ["astro_max_base", "astro_max_fpv"]
 
 
 HOSTED = "https://d2837jz4fvtxko.cloudfront.net/public/assets/usd/vehicles"
 
 
-def test_the_two_astro_max_vehicles_keep_the_usds_they_fly_today(tmp_path, monkeypatch):
+def test_the_two_astro_max_vehicles_keep_the_usds_they_fly_today():
     """`astro_max_base` and `astro_max_fpv` keep the USDs they fly today: the published USDs, pinned
     by hash, stay the source of record once the scripts that authored them leave the tree.
     """
-    monkeypatch.chdir(tmp_path)  # no nexus.registry.yaml beside the run
-    reg = load_registry()
+    reg = nexus.Registry.from_yaml()
     assert [reg.by_name(name).usd.url for name in ("astro_max_base", "astro_max_fpv")] == [
         f"{HOSTED}/astro_max_base-d2f538aaeeef4c2a951cac3f9e062003e7c4cc6e5e78b2960076b69a393f92e8.usdz",
         f"{HOSTED}/astro_max_fpv-9dc55c51a6912faacf2614a7b3e244bf10233f440a8dd920490857df03daf5ad.usdz",
