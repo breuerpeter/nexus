@@ -1,5 +1,7 @@
 """Registry resolution: name lookup, load-time validation, and asset-reference expansion."""
 
+import logging
+
 import pytest
 
 import nexus
@@ -124,3 +126,83 @@ def test_the_two_astro_max_vehicles_keep_the_usds_they_fly_today():
         f"{HOSTED}/astro_max_base-d2f538aaeeef4c2a951cac3f9e062003e7c4cc6e5e78b2960076b69a393f92e8.usdz",
         f"{HOSTED}/astro_max_fpv-9dc55c51a6912faacf2614a7b3e244bf10233f440a8dd920490857df03daf5ad.usdz",
     ]
+
+
+BUNDLED_ASTRO = f"{HOSTED}/astro_max_base-d2f538aaeeef4c2a951cac3f9e062003e7c4cc6e5e78b2960076b69a393f92e8.usdz"
+BUNDLED_EMPTY_SHA = "ab15e88be59c0ee93e63160c34b08485e3136d1f88313f24dcd67e482ecbed05"
+REPIN_SHA = "1111111111111111111111111111111111111111111111111111111111111111"
+
+PROJECT = """\
+assets:
+  base: s3://example-bucket/catalog
+vehicles:
+  - name: project_vehicle
+    usd: { name: project_vehicle, sha256: abc }
+defaults: { vehicle: project_vehicle }
+"""
+
+REPIN = f"""\
+scenes:
+  empty:
+    usd: {{ url: "file:///empty.usdz", sha256: {REPIN_SHA} }}
+"""
+
+
+def _warnings(caplog):
+    return [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+def test_a_project_catalog_that_lists_only_its_own_entries_also_flies_the_bundled_ones(tmp_path, monkeypatch, caplog):
+    """A project catalog that lists only its own entries also flies the bundled vehicles and scenes:
+    a `nexus.registry.yaml` with one vehicle and no scene resolves its vehicle, `astro_max_base` and
+    `empty`, and no warning prints.
+    """
+    (tmp_path / "nexus.registry.yaml").write_text(PROJECT)
+    monkeypatch.chdir(tmp_path)
+
+    with caplog.at_level(logging.WARNING):
+        reg = load_registry()
+        resolved = (reg.by_name("project_vehicle").name, reg.by_name("astro_max_base").name, "empty" in reg.scenes)
+
+    assert (resolved, _warnings(caplog)) == (("project_vehicle", "astro_max_base", True), [])
+
+
+def test_each_entry_resolves_against_its_own_catalogs_base(tmp_path, monkeypatch):
+    """Each entry resolves against its own catalog's base: a project entry under the project's
+    `s3://` base, a bundled entry under the public CloudFront prefix.
+    """
+    (tmp_path / "nexus.registry.yaml").write_text(PROJECT)
+    monkeypatch.chdir(tmp_path)
+
+    reg = load_registry()
+
+    assert (reg.by_name("project_vehicle").usd.url, reg.by_name("astro_max_base").usd.url) == (
+        "s3://example-bucket/catalog/assets/usd/vehicles/project_vehicle-abc.usdz",
+        BUNDLED_ASTRO,
+    )
+
+
+def test_a_name_in_both_catalogs_takes_the_projects_entry_with_a_warning(tmp_path, monkeypatch, caplog):
+    """A name in both catalogs: the project's entry wins, with a warning. A project catalog that
+    redefines `empty` with another hash resolves `empty` to the project's hash, and one warning names
+    `empty` and both hashes.
+    """
+    (tmp_path / "nexus.registry.yaml").write_text(REPIN)
+    monkeypatch.chdir(tmp_path)
+
+    with caplog.at_level(logging.WARNING):
+        sha = load_registry().scenes["empty"].usd.sha256
+    named = [all(s in m for s in ("empty", REPIN_SHA, BUNDLED_EMPTY_SHA)) for m in _warnings(caplog)]
+
+    assert (sha, named) == (REPIN_SHA, [True])
+
+
+def test_a_catalog_named_by_path_also_extends_the_bundled_one(tmp_path, monkeypatch):
+    """A catalog named by path also extends the bundled one: a file with one vehicle, loaded by
+    `load_registry(path)`, resolves the bundled `astro_max_base` too.
+    """
+    named = tmp_path / "project.yaml"
+    named.write_text(PROJECT)
+    monkeypatch.chdir(tmp_path)
+
+    assert load_registry(named).by_name("astro_max_base").usd.url == BUNDLED_ASTRO
