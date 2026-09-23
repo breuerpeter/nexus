@@ -31,18 +31,6 @@ vehicles:
     usd: { name: astro_max_fpv, sha256: 9dc55c51a6912faacf2614a7b3e244bf10233f440a8dd920490857df03daf5ad }
     px4: { airframe: astro_max }        # TODO: dedicated airframe (shares base's for now)
 
-  - name: astro_max_fpv_lr1
-    usd: { name: astro_max_fpv_lr1, sha256: 19a421c4ce15f7df87debc08b9fd784be01a12ebd7fd3a631d0a3f49dd6f13a2 }
-    px4: { airframe: astro_max }        # TODO: dedicated airframe (shares base's for now)
-
-  - name: astro_max_fpv_flux
-    usd: { name: astro_max_fpv_flux, sha256: cb08b52200b184bb885e01a825d9a70a5f795d4715103d7318eafea827a245ed }
-    px4: { airframe: astro_max }        # TODO: dedicated airframe (shares base's for now)
-
-  - name: astro_max_fpv_wiris
-    usd: { name: astro_max_fpv_wiris, sha256: a02c1a9a1eef0b5e4007e59bab75876fa4cbf8675e537f3fb8ec4f6cf6a33f6e }
-    px4: { airframe: astro_max }        # TODO: dedicated airframe (shares base's for now)
-
 # The scene USD is the single authority on what it is: authored UsdPhysics collision schemas ->
 # simulation geometry (ModelBuilder); no physics schemas -> visual-only; and since the stage-5
 # round every scene usdz also carries its own SKY (dome+sun) and — where it needs one — its stage
