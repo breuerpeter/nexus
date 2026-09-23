@@ -144,7 +144,7 @@ defaults: { vehicle: project_vehicle }
 REPIN = f"""\
 scenes:
   empty:
-    usd: {{ url: "file:///empty.usdz", sha256: {REPIN_SHA} }}
+    usd: {{ url: "file:///empty.usdz", sha256: "{REPIN_SHA}" }}
 """
 
 
