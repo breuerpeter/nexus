@@ -87,5 +87,4 @@ for setup and the conventional-commit / pre-commit workflow, and
 ## License
 
 Licensed under the [Apache License 2.0](LICENSE). © 2026 Peter Breuer
-
 The hosted vehicle and scene assets and the Astro photograph in the banner aren't Apache-licensed. See [docs/license.md](docs/license.md).
