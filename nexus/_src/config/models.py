@@ -129,10 +129,10 @@ class LaunchConfig(_Base):
     ``None`` takes the registry's ``defaults.vehicle``.
     """
     registry: str | None = None
-    """Path to the catalog this run flies, the ``--registry`` value.
+    """Path to the catalog that extends the bundled one for this run, the ``--registry`` value.
 
     ``None`` takes the nearest ``nexus.registry.yaml`` in the working directory or a directory over
-    it, and the catalog bundled in the wheel when no directory holds one.
+    it, and only the catalog bundled in the wheel when no directory holds one.
     """
     scene: str | None = None
     """Name of the static scene to stand up, keyed into the registry's ``scenes``, or a local

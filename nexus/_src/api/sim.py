@@ -74,9 +74,9 @@ class Sim:
     Args:
         vehicle: Registry vehicle *name*, for example ``"astro_max_fpv"``, or a local .usd path;
             ``None`` takes the registry's default vehicle.
-        registry: Path to the catalog to fly. ``None`` takes the nearest ``nexus.registry.yaml`` in
-            the working directory or a directory over it, and the catalog bundled in the wheel when
-            no directory holds one.
+        registry: Path to a catalog that extends the bundled one. ``None`` takes the nearest
+            ``nexus.registry.yaml`` in the working directory or a directory over it, and only the
+            catalog bundled in the wheel when no directory holds one.
         control: Control kind: ``"px4-sitl"``. PX4 is the one first-class controller; an
             example controller self-assembles its orchestrator and enters via
             :meth:`from_orchestrator` instead.

@@ -96,8 +96,8 @@ class Registry(_Base):
     """The checked-in vehicle/scene catalog, where its blobs live, and the defaults a bare launch flies.
 
     Resolution is by name: a launch names a :class:`VehicleVariant` and one that names none takes
-    ``defaults.vehicle``. Built from the bundled ``registry.yaml`` via :func:`load_registry` in the
-    common case, or from a catalog a project beside the framework keeps.
+    ``defaults.vehicle``. Built by :func:`load_registry` from the bundled ``registry.yaml``,
+    extended by the catalog a project beside the framework keeps.
     """
 
     assets: Assets = Field(default_factory=Assets)
@@ -270,7 +270,7 @@ def load_registry(path: str | pathlib.Path | None = None) -> Registry:
     """Load + validate the bundled catalog, extended by the one :func:`registry_path` picks for *path*.
 
     A project catalog lists only what it adds; see :func:`_extend` for how a name in both resolves.
-    Validation runs on the merged catalog, so a project entry may name a bundled scene as its default.
+    Validation runs on the merged catalog, so a project's defaults can name a bundled scene.
     """
     bundled = Registry.from_yaml(_DEFAULT_REGISTRY)
     source = registry_path(path)
