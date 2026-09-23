@@ -34,8 +34,8 @@ def sim_argparser(description: str | None = None) -> argparse.ArgumentParser:
     )  # fmt: skip
     p.add_argument(
         "--registry", default=None,
-        help="path to the catalog to fly; omit to take the nearest nexus.registry.yaml at or above the\n"
-        "working directory, else the one bundled in the wheel",
+        help="path to a catalog that extends the bundled one; omit to take the nearest\n"
+        "nexus.registry.yaml at or above the working directory, else only the bundled one",
     )  # fmt: skip
     p.add_argument("--control", default="px4-sitl", help="control kind (px4-sitl)")
     p.add_argument(

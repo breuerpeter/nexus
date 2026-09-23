@@ -13,6 +13,7 @@ import yaml
 from pydantic import Field, model_validator
 
 from nexus._src.assets.resolver import hosted_url
+from nexus._src.core import logger
 
 from .models import AssetRef, GeodeticOrigin, Px4Spec, _Base
 
@@ -95,8 +96,8 @@ class Registry(_Base):
     """The checked-in vehicle/scene catalog, where its blobs live, and the defaults a bare launch flies.
 
     Resolution is by name: a launch names a :class:`VehicleVariant` and one that names none takes
-    ``defaults.vehicle``. Built from the bundled ``registry.yaml`` via :func:`load_registry` in the
-    common case, or from a catalog a project beside the framework keeps.
+    ``defaults.vehicle``. Built by :func:`load_registry` from the bundled ``registry.yaml``,
+    extended by the catalog a project beside the framework keeps.
     """
 
     assets: Assets = Field(default_factory=Assets)
@@ -220,14 +221,61 @@ def discover_registry(start: str | pathlib.Path | None = None) -> pathlib.Path |
 
 
 def registry_path(path: str | pathlib.Path | None = None) -> pathlib.Path:
-    """The catalog a run flies: *path* when it names one, else the nearest discovered one, else the
-    catalog bundled in the wheel. Naming the file explicitly always wins over the walk up.
+    """The catalog a run flies on top of the bundled one: *path* when it names one, else the nearest
+    discovered one, else the catalog bundled in the wheel. Naming the file explicitly always wins over
+    the walk up.
     """
     if path is not None:
         return pathlib.Path(path)
     return discover_registry() or _DEFAULT_REGISTRY
 
 
+def _sha(usd: AssetRef | None) -> str | None:
+    return usd.sha256 if usd is not None else None
+
+
+def _extend(bundled: Registry, project: Registry) -> Registry:
+    """*project* laid over *bundled*: a project entry replaces the bundled entry of the same name, and
+    each replacement warns with both hashes, so a stale copy of a bundled entry never flies silently.
+
+    Both catalogs have completed their compact refs against their own ``assets.base`` already, so
+    each entry keeps its own catalog's URL. The project's ``defaults`` win key by key, and its
+    ``assets`` stays the catalog's, since that base is where the project's new blobs go.
+    """
+    shipped = {v.name: v for v in bundled.vehicles}
+    for v in project.vehicles:
+        if v.name in shipped:
+            logger.warning(
+                f"vehicle {v.name!r}: the project's entry (sha256 {_sha(v.usd)}) replaces the bundled one "
+                f"(sha256 {_sha(shipped[v.name].usd)})"
+            )
+    for name, scene in project.scenes.items():
+        if name in bundled.scenes:
+            logger.warning(
+                f"scene {name!r}: the project's entry (sha256 {_sha(scene.usd)}) replaces the bundled one "
+                f"(sha256 {_sha(bundled.scenes[name].usd)})"
+            )
+    own = {v.name for v in project.vehicles}
+    return Registry(
+        assets=project.assets,
+        vehicles=[v for v in bundled.vehicles if v.name not in own] + project.vehicles,
+        scenes={**bundled.scenes, **project.scenes},
+        defaults=bundled.defaults.model_copy(
+            update=project.defaults.model_dump(include=project.defaults.model_fields_set)
+        ),
+    )
+
+
 def load_registry(path: str | pathlib.Path | None = None) -> Registry:
-    """Load + validate the catalog :func:`registry_path` picks for *path*."""
-    return Registry.from_yaml(registry_path(path))
+    """Load + validate the bundled catalog, extended by the one :func:`registry_path` picks for *path*.
+
+    A project catalog lists only what it adds; see :func:`_extend` for how a name in both resolves.
+    Validation runs on the merged catalog, so a project's defaults can name a bundled scene.
+    """
+    bundled = Registry.from_yaml(_DEFAULT_REGISTRY)
+    source = registry_path(path)
+    if source.resolve() == _DEFAULT_REGISTRY.resolve():
+        return bundled
+    reg = _extend(bundled, Registry.model_validate(yaml.safe_load(source.read_text()) or {}))
+    reg.validate()
+    return reg

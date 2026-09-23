@@ -11,17 +11,20 @@ registry beside it, with no fork of this one and no patch on top of it.
 
 ## How a run finds its catalog
 
-In order, first hit wins:
+A run always loads the catalog bundled in the package. It then looks for a catalog of your own, in
+order, first hit wins:
 
 1. the path a run names: `nexus run --registry <path>`, or `Sim(registry=<path>)` in a script
 2. the nearest **`nexus.registry.yaml`** in the working directory or a directory over it, the same
    walk up that `uv`, `ruff` and `pytest` do for their own files
-3. the catalog bundled in the package
 
-A run loads exactly one catalog, and nothing merges it with the bundled one, so what you fly is
-always answerable by reading a single file. Every run names the catalog it loaded in its first log
-line and records the path in its tested-config receipt, so a recording says which catalog produced
-it.
+Your catalog extends the bundled one, so it lists only what you add, and a run can still fly every
+bundled vehicle and scene. A name that both catalogs define takes your entry, and the load logs a
+warning with the name and both hashes. That's how you pin a bundled asset to another version on
+purpose, and how a stale copy of a bundled entry shows up. Your `defaults` win key by key, so a
+catalog that sets only `defaults.vehicle` still flies the bundled default scene. Every run names
+the catalog it loaded in its first log line and records the path in its tested-config receipt, so a
+recording says which catalog produced it.
 
 ## What a registry looks like
 
@@ -38,16 +41,13 @@ vehicles:
   - name: in_progress
     usd: { url: "file:///home/me/assets/draft.usdz", sha256: 9ab2…40f }     # still being authored
 
-scenes:
-  empty: {}
-
-defaults: { vehicle: my_quad, scene: empty }
+defaults: { vehicle: my_quad }   # the scene stays the bundled default
 ```
 
-An entry either carries a full `url` or a compact `{name, sha256}` that the catalog's `assets.base`
-completes into `<base>/assets/usd/{vehicles,scenes}/<name>-<sha256>.usdz`. The sha256 is the version
-pin: the resolver verifies it on fetch, and because it sits in the key the object never changes and
-caches forever.
+An entry either carries a full `url` or a compact `{name, sha256}` that its own catalog's
+`assets.base` completes into `<base>/assets/usd/{vehicles,scenes}/<name>-<sha256>.usdz`. The sha256
+is the version pin: the resolver verifies it on fetch, and because it sits in the key the object
+never changes and caches forever.
 
 The scheme of the URL decides how a run reads it. `https://` is an anonymous GET with no
 credentials. `file://` reads from disk. `s3://` shells out to the `aws` command-line tool, so the
