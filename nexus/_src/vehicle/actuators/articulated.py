@@ -131,7 +131,7 @@ class ArticulatedRotors:
             raise ValueError(
                 "ArticulatedRotors requires rotor motors on model.actuators: author them as "
                 "NewtonActuator prims (NewtonPIDControlAPI + NewtonDCMotorClampingAPI) on the vehicle "
-                "USD's rotor joints (see scripts/assets/author_astro_variants.py); add_usd parses them "
+                "USD's rotor joints; add_usd parses them "
                 "automatically. There is no in-code fallback (the USD is the single authority)."
             )
         self.model = model

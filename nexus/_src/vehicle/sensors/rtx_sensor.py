@@ -21,8 +21,8 @@ if TYPE_CHECKING:  # the frame is duck-typed at runtime; this is the annotation 
 def _prim_sensor_attr(prim, name: str, fallback, kind: str):
     """Read an authored ``sensor:<name>`` custom attr off an RTX prim; the vehicle USD is the
     single authority for its sensors' render params, resolution and rate. Falls back, with a warning,
-    only for legacy assets authored before the attrs existed; re-author with
-    ``scripts/assets/author_astro_variants.py`` to silence it.
+    only for legacy assets authored before the attrs existed; author the attr on the prim to
+    silence it.
     """
     attr = prim.GetAttribute(f"sensor:{name}")
     if attr and attr.HasAuthoredValue():

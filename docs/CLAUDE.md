@@ -7,7 +7,7 @@
   under `javascripts/`. The hook `hooks/vehicle_previews.py` generates them from
   `nexus/_src/config/registry.yaml` wherever it finds a `<!-- model-preview: <name> -->`
   marker. `<name>` is the Universal Scene Description (USD) filename stem, for example
-  `astro_max_fpv_lr1`. The `.glb` is the content-addressed sibling of the vehicle's USD on
+  `astro_max_fpv`. The `.glb` is the content-addressed sibling of the vehicle's USD on
   CloudFront. When a local copy exists under `assets/local/` at the repo root, the site serves
   that copy instead: a preview before publishing, injected into the site without writing into
   `docs/`.

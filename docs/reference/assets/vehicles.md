@@ -16,38 +16,20 @@ one in code. See [Conventions](../../design/conventions.md).
 Astro is an industrial quadrotor for professional applications such as mapping and
 inspection. Learn more on the [Freefly Systems](https://freeflysystems.com/) website.
 
-Astro Max ships in a base build and with payloads, each built around a
-First Person View (FPV) camera. Each is a registry vehicle of its own, named `astro_max_base`,
-`astro_max_fpv`, `astro_max_fpv_lr1`, `astro_max_fpv_flux`, or `astro_max_fpv_wiris`:
+The registry carries two Astro Max vehicles: `astro_max_base`, the base build, and
+`astro_max_fpv`, which adds a First Person View (FPV) camera.
 
-=== "Base"
+### Base
 
-    <!-- Interactive 3D preview, injected from registry.yaml by docs/hooks/vehicle_previews.py.
-         Serves the .glb sibling of the vehicle's USD on CloudFront (or a local assets/local/
-         copy when present, for preview-before-publish). -->
+<!-- Interactive 3D preview, injected from registry.yaml by docs/hooks/vehicle_previews.py.
+     Serves the .glb sibling of the vehicle's USD on CloudFront (or a local assets/local/
+     copy when present, for preview-before-publish). -->
 
-    <!-- model-preview: astro_max_base -->
+<!-- model-preview: astro_max_base -->
 
-=== "With FPV camera"
+### FPV
 
-    <!-- model-preview: astro_max_fpv -->
-
-=== "FPV and LR1 payload"
-
-    <!-- model-preview: astro_max_fpv_lr1 -->
-
-=== "FPV and Flux LiDAR payload"
-
-    <!-- model-preview: astro_max_fpv_flux -->
-
-=== "FPV and Wiris IR payload"
-
-    <!-- model-preview: astro_max_fpv_wiris -->
-
-    The IR camera is a thermal sensor, not a second colour one: it renders the scene's
-    emission as an LWIR image and is published on its own `ir1` stream, advertised THERMAL
-    so the Ground Control Station (GCS) shows it beside the EO feed. The name reflects the
-    camera the payload represents; it is not a product-accurate model of the Workswell Wiris.
+<!-- model-preview: astro_max_fpv -->
 
 !!! warning
     The simulation doesn't claim to accurately mimic the flight dynamics of Astro.

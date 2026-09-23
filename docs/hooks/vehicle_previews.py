@@ -2,7 +2,7 @@
 
 Replaces `<!-- model-preview: <name> -->` markers in any page with an interactive glTF
 preview of the vehicle whose Universal Scene Description (USD) filename stem is `<name>`,
-for example `astro_max_fpv_lr1`. The glb is the content-addressed `.glb` sibling of the
+for example `astro_max_fpv`. The glb is the content-addressed `.glb` sibling of the
 vehicle's USD on CloudFront, under the flat scheme `usd/vehicles/<name>-<sha>.glb`, so the
 URL derives from `registry.yaml`: adding a vehicle there makes its preview available with
 no page edits.

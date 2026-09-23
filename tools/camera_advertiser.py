@@ -27,7 +27,7 @@ the GCS's receiver-1 routing key.
 
 Run (topology A, any time after mavp2p is up; reconnects until then):
 
-    uv run python tools/camera_advertiser.py                     # astro_max_fpv_lr1: cam1 + cam2
+    uv run python tools/camera_advertiser.py                     # a two-camera vehicle: cam1 + cam2
     uv run python tools/camera_advertiser.py --pip               # both at once via the thermal slot
     uv run python tools/camera_advertiser.py --streams cam1      # single-camera vehicles
     uv run python tools/camera_advertiser.py --streams cam1,ir1:640x512@24   # EO + a real IR feed

@@ -4,7 +4,10 @@ import hashlib
 import logging
 from pathlib import Path
 
-from nexus._src.config import LaunchConfig, Registry, TestedConfig, resolve
+import pytest
+
+import nexus
+from nexus._src.config import LaunchConfig, NoMatchError, Registry, TestedConfig, resolve
 
 
 def _reg(vehicle_usd):
@@ -217,3 +220,13 @@ def test_a_run_says_which_catalog_it_flew(tmp_path, monkeypatch, caplog):
         rl = resolve(LaunchConfig(), fetch=False)
 
     assert (rl.tested_config.registry, str(registry) in caplog.text) == (str(registry), True)
+
+
+def test_a_launch_that_names_a_dropped_variant_fails_before_it_flies(tmp_path, monkeypatch):
+    """A launch that names a dropped variant fails before it flies: the shipped catalog no longer
+    carries `astro_max_fpv_lr1`, so the launch stops and says no vehicle has that name.
+    """
+    monkeypatch.chdir(tmp_path)  # no nexus.registry.yaml beside the run
+    with pytest.raises(NoMatchError, match="no vehicle named 'astro_max_fpv_lr1'"):
+        with nexus.Sim(vehicle="astro_max_fpv_lr1"):
+            pass

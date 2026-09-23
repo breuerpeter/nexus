@@ -59,11 +59,7 @@ runs on the lean standalone runtime.
 
 - `--vehicle` accepts a registry vehicle name, such as `astro_max_fpv`, **or a local `.usd`/`.usdz`
   path**. Omit it for the registry's default vehicle.
-  Two scripts author the four local Astro Max variants into `assets/local/`: base, with
-  the First Person View (FPV) camera `FpvCam`, with `Lr1Cam`, and with the Flux lidar.
-  `scripts/assets/author_astro_variants.py` runs on the host, and
-  `scripts/assets/author_lidar_variant.py` runs in the container, for the schema-complete
-  `OmniLidar`. Every variant also carries the analytic PX4 suite, an Inertial Measurement Unit (IMU),
+  Every Astro Max vehicle carries the analytic PX4 suite, an Inertial Measurement Unit (IMU),
   mag, barometer, and Global Positioning System (GPS) as `sensor:*` prims. The vehicle USD is the
   single authority for all sensors, and a PX4 vehicle USD authoring none fails the build loudly.
 - Cameras log JPEG frames and a `Pinhole` frustum to `cameras/<name>`. The lidar logs world-frame
@@ -122,9 +118,9 @@ uv run nexus run --scene cesium --geo 37.7942,-122.3954 --view   # SF (cesium de
 A cesium scene is just a `geodetic_origin`, latitude and longitude, in the registry. At startup
 the run measures the surface height from the streamed tiles: an iterative depth probe aligns the
 street with the physics ground to centimetres, so new locations need no calibration. Tile
-selection runs one hidden-cost viewport per camera, and the RTX lidar reflects off the tiles. The
-whole config, two cameras at 24 fps plus full logging, holds >=1x realtime on the reference
-machine. Without a token the run warns and falls back to a plain sky, and the flight continues.
+selection runs one hidden-cost viewport per camera, and the RTX lidar reflects off the tiles.
+[Benchmarking](../reference/benchmarking.md) lists the measured real-time factor of each vehicle
+on this scene. Without a token the run warns and falls back to a plain sky, and the flight continues.
 The Cesium ion and Google Maps Platform terms govern the streamed tiles: see
 [the license page](../license.md#hosted-assets).
 
