@@ -98,7 +98,7 @@ def assemble(
     if not specs:
         raise ValueError(
             "no sensor:* prims authored in the vehicle USD: this assembly builds the USD-authored "
-            "analytic sensor suite (see scripts/assets/author_astro_variants.py)"
+            "analytic sensor suite, so author it as sensor:* prims under the base body"
         )
     sensors = [
         *build_sensors(specs, seedtree=seedtree, dt=dt, gps_init=gps, ref_alt=ref_alt),

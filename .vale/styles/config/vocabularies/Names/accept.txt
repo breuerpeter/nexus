@@ -58,6 +58,7 @@ BSD
 VPC
 SIL
 NFR
+FPV
 
 # Domain words the spelling dictionary lacks
 waypoints?

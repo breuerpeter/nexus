@@ -4,7 +4,7 @@ runtime} cells on the pinned runner hardware, producing the data the docs Benchm
 
 Two tables:
     standalone: astro_max_base × empty × {cpu, cuda}
-    isaacsim:   {base, fpv, fpv_lr1, fpv_flux} × {empty, cesium} × cuda
+    isaacsim:   {base, fpv} × {empty, cesium} × cuda
 
 Per cell: run ``scripts/ci/benchmark_cell.py`` (plain Python for standalone, via ``nexus
 script`` for isaacsim) and collect its ``--stats-json``. The cell is a whole flight, since its own sim
@@ -37,7 +37,7 @@ from benchmark_cell import ALT, MISSION
 from nexus._src.containers import client
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-VEHICLES = ("astro_max_base", "astro_max_fpv", "astro_max_fpv_lr1", "astro_max_fpv_flux")
+VEHICLES = ("astro_max_base", "astro_max_fpv")
 SCENES = ("empty", "cesium")
 KIT_LOGS = pathlib.Path.home() / ".cache" / "nexus" / "logs"  # bind-mounted out of the Kit container
 

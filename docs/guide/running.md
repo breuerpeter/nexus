@@ -59,11 +59,7 @@ runs on the lean standalone runtime.
 
 - `--vehicle` accepts a registry vehicle name, such as `astro_max_fpv`, **or a local `.usd`/`.usdz`
   path**. Omit it for the registry's default vehicle.
-  Two scripts author the four local Astro Max variants into `assets/local/`: base, with
-  the First Person View (FPV) camera `FpvCam`, with `Lr1Cam`, and with the Flux lidar.
-  `scripts/assets/author_astro_variants.py` runs on the host, and
-  `scripts/assets/author_lidar_variant.py` runs in the container, for the schema-complete
-  `OmniLidar`. Every variant also carries the analytic PX4 suite, an Inertial Measurement Unit (IMU),
+  Every Astro Max vehicle carries the analytic PX4 suite, an Inertial Measurement Unit (IMU),
   mag, barometer, and Global Positioning System (GPS) as `sensor:*` prims. The vehicle USD is the
   single authority for all sensors, and a PX4 vehicle USD authoring none fails the build loudly.
 - Cameras log JPEG frames and a `Pinhole` frustum to `cameras/<name>`. The lidar logs world-frame
