@@ -33,11 +33,13 @@ def _warp_device_guard():
 def pytest_make_collect_report(collector):
     """Fail a test file whose import changes the Warp default device."""
     report = yield
-    if isinstance(collector, pytest.Module) and (left := _left_changed()):
-        report.outcome = "failed"
-        report.longrepr = (
-            f"{collector.path.name} sets the Warp default device to {left} at import: scope it in its tests"
-        )
+    if isinstance(collector, pytest.Module):
+        left = _left_changed()  # put the device back even when the import failed
+        if left and report.passed:  # a failed import keeps its own traceback
+            report.outcome = "failed"
+            report.longrepr = (
+                f"{collector.path.name} sets the Warp default device to {left} at import: scope it in its tests"
+            )
     return report
 
 
