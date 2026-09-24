@@ -57,10 +57,8 @@ class _Controller:
 @pytest.fixture(scope="module")
 def flight_paths(tmp_path_factory, rrd_entities):
     """Fly a short run once and return the entity paths its recording carries."""
-    import warp as wp
-
-    wp.set_device("cpu")
     import newton
+    import warp as wp
 
     from nexus._src.core.clock import Clock
     from nexus._src.core.environment import ConstantEnvironment
@@ -73,24 +71,24 @@ def flight_paths(tmp_path_factory, rrd_entities):
     tmp = tmp_path_factory.mktemp("flight")
     usd = str(tmp / "mini.usda")
     _author_min_usd(usd)
-    mb = newton.ModelBuilder()
-    USDBuilder({"usd_path": usd}, None).build(mb)
-    model = mb.finalize()
-
     cfg = {"physics": {"dt": DT, "solver": "semi_implicit", "contacts": False, "spawn": {"pos": [0.0, 0.0, 5.0]}}}
     rrd = str(tmp / "flight.rrd")
-    orch = Orchestrator(
-        clock=Clock(DT),
-        environment=ConstantEnvironment(),
-        physics=NewtonPhysics(model=model, cfg=cfg),
-        actuator=_Actuator(),
-        sensors=[],
-        controller=_Controller(),
-        logger=Logger(model, serve=False, record_to_rrd=rrd),
-        max_steps=STEPS,
-    )
-    orch.attach_recorder(Recorder(dt=DT))
-    orch.run()
+    with wp.ScopedDevice("cpu"):
+        mb = newton.ModelBuilder()
+        USDBuilder({"usd_path": usd}, None).build(mb)
+        model = mb.finalize()
+        orch = Orchestrator(
+            clock=Clock(DT),
+            environment=ConstantEnvironment(),
+            physics=NewtonPhysics(model=model, cfg=cfg),
+            actuator=_Actuator(),
+            sensors=[],
+            controller=_Controller(),
+            logger=Logger(model, serve=False, record_to_rrd=rrd),
+            max_steps=STEPS,
+        )
+        orch.attach_recorder(Recorder(dt=DT))
+        orch.run()
     return rrd_entities(rrd)
 
 

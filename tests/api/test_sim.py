@@ -6,6 +6,7 @@ assets / Newton physics / PX4: it exercises the Sim wiring, not the sim.
 
 import threading
 
+import numpy as np
 import pytest
 import warp as wp
 
@@ -47,11 +48,13 @@ class _FakeOrch:
             return False
         self.steps += 1
         if self._rec is not None:  # the physics tap snapshots the airframe, as the real loop does per tick
-            v = _FakeView()
+            device = self._rec.buf.device  # record where the channel lives, whatever the default device is now
+            v = _FakeView(device)
             wp.launch(
                 record_body,
                 dim=1,
                 inputs=(v.body_q, v.body_qd, 0, self._rec.dt, self._rec.maxlen, self._rec.buf, self._rec.counter),
+                device=device,
             )
             wp.synchronize()
         return True
@@ -75,24 +78,23 @@ class _T:
 
 
 class _FakeView:
-    import numpy as _np
-    import warp as _wp
-
-    # Device arrays the physics tap reads: body_q = [p, q-xyzw], body_qd = [lin(0:3), ang(3:6)].
-    body_q = _wp.array(_np.array([[0.0, 0.0, 4.0, 0.0, 0.0, 0.0, 1.0]], dtype=_np.float32), dtype=_wp.transform)
-    body_qd = _wp.array(_np.zeros((1, 6), dtype=_np.float32), dtype=_wp.spatial_vector)
+    def __init__(self, device=None):
+        # Device arrays the physics tap reads: body_q = [p, q-xyzw], body_qd = [lin(0:3), ang(3:6)].
+        q = np.array([[0.0, 0.0, 4.0, 0.0, 0.0, 0.0, 1.0]], dtype=np.float32)
+        self.body_q = wp.array(q, dtype=wp.transform, device=device)
+        self.body_qd = wp.array(np.zeros((1, 6), dtype=np.float32), dtype=wp.spatial_vector, device=device)
 
     def positions(self):
-        return self._np.array([[0.0, 0.0, 4.0]])
+        return np.array([[0.0, 0.0, 4.0]])
 
     def orientations(self):
-        return self._np.array([[0.0, 0.0, 0.0, 1.0]])
+        return np.array([[0.0, 0.0, 0.0, 1.0]])
 
     def linear_velocities(self):
-        return self._np.zeros((1, 3))
+        return np.zeros((1, 3))
 
     def angular_velocities(self):
-        return self._np.zeros((1, 3))
+        return np.zeros((1, 3))
 
 
 def test_sim_start_drives_setup_observes_and_stops(monkeypatch):
