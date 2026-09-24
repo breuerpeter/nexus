@@ -11,9 +11,11 @@ from pathlib import Path
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 # Known-benign lines a warnings gate must not count, so it flags only warnings about the
-# *simulation*: mag interference, health / estimator / sensor / arming failures.
-# - "[param]": PX4 firmware boot artifacts. The none_astro_max airframe / this PX4 build
-#   reference parameters that aren't present in the build.
+# *simulation*: mag interference, health / estimator / sensor / arming failures. Each entry is a
+# regular expression for one message, searched in the line.
+# - "Parameter <name> not found.": the boot-time line `param set` and `param set-default` print
+#   when the none_astro_max airframe names a parameter this PX4 build lacks. Every other `param` failure, such as a
+#   corrupt file, a rejected value or a failed save, still gates.
 # - "no heading reference": the pre-arm Extended Kalman Filter (EKF) convergence transient on a
 #   fresh boot; heading aligns from the first mag samples, and the operator's failure-free settle
 #   wait rides it out. Allowlisted by content so every other pre-arm warning, mag interference
@@ -23,7 +25,7 @@ _ANSI = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 #   logging-capacity artifact, not a sim problem, and none of the four feeds the gates here. Each
 #   entry names its topic, so a different topic overflowing still gates.
 WARN_ALLOWLIST: tuple[str, ...] = (
-    "[param]",
+    r"Parameter \w+ not found\.",
     "Preflight Fail: no heading reference",
     "Too many subscriptions, failed to add: collision_constraints",
     "Too many subscriptions, failed to add: obstacle_distance",
@@ -34,7 +36,7 @@ WARN_ALLOWLIST: tuple[str, ...] = (
 
 def px4_warnings(log_path: str | Path) -> list[str]:
     """PX4 log lines at warn or error level, over the whole log, that point to a *sim* problem,
-    excluding only the content-allowlisted known-benign lines in ``WARN_ALLOWLIST``.
+    excluding only the known-benign lines that match a message pattern in ``WARN_ALLOWLIST``.
 
     Args:
         log_path: The SITL log to scan. An unreadable path yields no warnings.
@@ -50,7 +52,7 @@ def px4_warnings(log_path: str | Path) -> list[str]:
     for line in text.splitlines():
         if not re.search(r"\b(WARN|ERROR)\s+\[", line):
             continue
-        if any(a in line for a in WARN_ALLOWLIST):
+        if any(re.search(a, line) for a in WARN_ALLOWLIST):
             continue
         hits.append(line.strip())
     return hits
