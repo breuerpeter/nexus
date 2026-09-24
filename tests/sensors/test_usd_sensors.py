@@ -7,13 +7,12 @@ import pytest
 
 pytest.importorskip("pxr")
 pytest.importorskip("warp")
-import warp as wp
 
-wp.set_device("cpu")
+from nexus._src.core.seedtree import SeedTree
+from nexus._src.vehicle.sensors import BaroSensor, GpsSensor, ImuSensor, MagSensor
+from nexus._src.vehicle.sensors.usd import SensorSpec, build_sensors, parse_sensor_prims
 
-from nexus._src.core.seedtree import SeedTree  # noqa: E402
-from nexus._src.vehicle.sensors import BaroSensor, GpsSensor, ImuSensor, MagSensor  # noqa: E402
-from nexus._src.vehicle.sensors.usd import SensorSpec, build_sensors, parse_sensor_prims  # noqa: E402
+pytestmark = pytest.mark.usefixtures("warp_cpu")
 
 _GPS_INIT = {"lat": 47.7, "lon": -122.1, "alt": 5.0}
 

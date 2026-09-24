@@ -1,6 +1,6 @@
 """Captured execution strategy, architecture.md §5: the in-process device region replays from a
-CUDA graph. Auto-skips without a CUDA device; restores the CPU device afterward so the bit-exact
-determinism gate, which is CPU, stays unaffected.
+CUDA graph. Auto-skips without a CUDA device; each test scopes the device it needs with
+``wp.ScopedDevice``, so the default device is the same after it.
 """
 
 import numpy as np
@@ -33,12 +33,9 @@ def _stub_orch(*, phys_cap=True, act_cap=True, sens_cap=True, ctrl_host=False, c
 
 def test_execution_strategy_cpu_is_always_eager():
     """No CUDA device -> eager, regardless of the components' capturable markers, since capture needs CUDA."""
-    try:
-        wp.set_device("cpu")
+    with wp.ScopedDevice("cpu"):
         assert _stub_orch(ctrl_host=True)._execution_strategy() == "eager"
         assert _stub_orch(ctrl_cap=True)._execution_strategy() == "eager"
-    finally:
-        wp.set_device("cpu")
 
 
 def test_execution_strategy_routes_on_cuda():
@@ -49,8 +46,7 @@ def test_execution_strategy_routes_on_cuda():
     """
     if not wp.is_cuda_available():
         pytest.skip("no CUDA device")
-    try:
-        wp.set_device("cuda:0")
+    with wp.ScopedDevice("cuda:0"):
         assert _stub_orch(ctrl_host=True)._execution_strategy() == "captured-host-exchange"
         assert _stub_orch(ctrl_cap=True)._execution_strategy() == "captured-inprocess"
         # host_boundary wins over capturable; PX4 marks neither, but guard the precedence anyway
@@ -61,8 +57,6 @@ def test_execution_strategy_routes_on_cuda():
         # neither marker, an in-process host solver such as a Model Predictive Control (MPC), acados or
         # torch policy -> everything but the controller still captures; the exchange runs at the host seam
         assert _stub_orch()._execution_strategy() == "captured-host-exchange"
-    finally:
-        wp.set_device("cpu")
 
 
 def test_host_rate_sensor_does_not_veto_capture():
@@ -87,11 +81,8 @@ def test_host_rate_sensor_does_not_veto_capture():
     assert orch._graph_sensors == [imu] and orch._host_sensors == [rtx]  # the partition
     if not wp.is_cuda_available():
         pytest.skip("no CUDA device")
-    try:
-        wp.set_device("cuda:0")
+    with wp.ScopedDevice("cuda:0"):
         assert orch._execution_strategy() == "captured-host-exchange"
-    finally:
-        wp.set_device("cpu")
 
 
 def test_host_sensors_sampled_at_host_seam():
@@ -148,8 +139,7 @@ def test_run_captured_pid_loop_executes():
         orch.on_tick = lambda view, t, n: q_list.append(orch.physics.state0.body_q.numpy().copy())
         return orch
 
-    try:
-        wp.set_device("cuda:0")
+    with wp.ScopedDevice("cuda:0"):
         q1 = []
         run_captured(build(q1, max_steps=None), steps=12)
         q = np.array(q1)
@@ -158,8 +148,6 @@ def test_run_captured_pid_loop_executes():
         q2 = []
         build(q2, max_steps=2).run()  # eager, 2 steps: compare the first step, pre-chaos
         np.testing.assert_allclose(q[0], np.array(q2)[0], atol=1e-5)
-    finally:
-        wp.set_device("cpu")
 
 
 class _WarpView:
@@ -182,8 +170,7 @@ def test_captured_sensor_noise_dithers_per_replay():
     from nexus._src.core.seedtree import SeedTree
     from nexus._src.vehicle.sensors import ImuSensor
 
-    try:
-        wp.set_device("cuda:0")
+    with wp.ScopedDevice("cuda:0"):
         view = _WarpView((0.0, 0.0, 1.0), (0.0, 0.0, 0.0, 1.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
         env = EnvSample(gravity_world=(0.0, 0.0, -9.81), mag_ned=(0.21, 0.05, 0.43))
         s = ImuSensor(SeedTree(42), 0.004)  # noise on, the default
@@ -198,8 +185,6 @@ def test_captured_sensor_noise_dithers_per_replay():
         b = s._out.numpy().copy()
         assert not np.allclose(a[:6], b[:6])  # acc+gyro noise dithers across replays
         np.testing.assert_allclose(a[6:], b[6:], atol=1e-6)  # quat stable, static state
-    finally:
-        wp.set_device("cpu")
 
 
 def test_captured_px4_sensors_match_eager():
@@ -213,8 +198,7 @@ def test_captured_px4_sensors_match_eager():
     from nexus._src.core.seedtree import SeedTree
     from nexus._src.vehicle.sensors import BaroSensor, GpsSensor, ImuSensor, MagSensor
 
-    try:
-        wp.set_device("cuda:0")
+    with wp.ScopedDevice("cuda:0"):
         view = _WarpView((1.0, -2.0, 3.0), (0.0, 0.0, 0.0, 1.0), (0.5, -0.1, 0.2), (0.3, -0.4, 0.5))
         env = EnvSample(gravity_world=(0.0, 0.0, -9.81), mag_ned=(0.21, 0.05, 0.43))
 
@@ -253,5 +237,3 @@ def test_captured_px4_sensors_match_eager():
         assert (m_cap.lat_deg, m_cap.lon_deg, m_cap.alt_m) == pytest.approx(
             (m_eager.lat_deg, m_eager.lon_deg, m_eager.alt_m)
         )
-    finally:
-        wp.set_device("cpu")

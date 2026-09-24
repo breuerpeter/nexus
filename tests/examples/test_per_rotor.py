@@ -31,7 +31,7 @@ from nexus.examples._lib import (
     rigid_body_wrench_batched,
 )
 
-wp.set_device("cpu")
+pytestmark = pytest.mark.usefixtures("warp_cpu")
 
 RPM_PER_RADS = 60.0 / (2.0 * np.pi)
 _CT, _CD, _RPM_MAX = 0.000003463, 0.05, 3800.0

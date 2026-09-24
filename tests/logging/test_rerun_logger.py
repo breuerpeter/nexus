@@ -284,14 +284,12 @@ def test_log_image_no_logger_side_throttle(tmp_path, monkeypatch):
     assert n["c"] == 2  # both frames logged: no logger-side throttle
 
 
+@pytest.mark.usefixtures("warp_cpu")
 def test_scene_logged_via_log_state(tmp_path):
     """Logger.log(t, state) drives NVIDIA Newton's ViewerRerun.log_state, so the vehicle
     geometry + its evolving pose land in the recording.
     """
     pytest.importorskip("pxr")
-    import warp as wp
-
-    wp.set_device("cpu")
     import newton
     from pxr import Usd, UsdGeom, UsdPhysics
 

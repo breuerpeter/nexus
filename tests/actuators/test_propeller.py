@@ -13,11 +13,12 @@ as a string." The marker opts the module out, since kernel asserts here don't ne
 import math
 
 import numpy as np
+import pytest
 import warp as wp
 
 from nexus._src.vehicle.actuators import RPM_PER_RADS, propeller_force
 
-wp.set_device("cpu")
+pytestmark = pytest.mark.usefixtures("warp_cpu")
 
 CT = 3.463e-6  # N/min²
 KF = CT * RPM_PER_RADS**2  # thrust = kf·Ω² == ct·rpm², with Ω in rad/s

@@ -11,6 +11,8 @@ import pytest
 pytest.importorskip("pxr")
 pytest.importorskip("newton")
 
+pytestmark = pytest.mark.usefixtures("warp_cpu")
+
 
 def _author_min_usd(path: str) -> None:
     from pxr import Usd, UsdGeom, UsdPhysics
@@ -27,9 +29,6 @@ def _author_min_usd(path: str) -> None:
 
 
 def test_usd_builder_loads_body_and_mass(tmp_path):
-    import warp as wp
-
-    wp.set_device("cpu")
     import newton
 
     from nexus._src.physics.builders.usd import USDBuilder
@@ -52,11 +51,8 @@ def test_usd_builder_spawns_frd_init_attitude(tmp_path):
     body inverted → PX4 reads an upside-down attitude and refuses to arm. Asserts the resting body
     orientation is 180° about X.
     """
-    import numpy as np
-    import warp as wp
-
-    wp.set_device("cpu")
     import newton
+    import numpy as np
 
     from nexus._src.physics.builders.usd import USDBuilder
 
@@ -79,11 +75,9 @@ def test_usd_builder_spawn_att_override(tmp_path):
     """``cfg['spawn_att']`` overrides the default FRD init attitude, for example for a USD authored
     in a different frame: here identity, leaving the body unrotated.
     """
+    import newton
     import numpy as np
     import warp as wp
-
-    wp.set_device("cpu")
-    import newton
 
     from nexus._src.physics.builders.usd import USDBuilder
 
@@ -105,9 +99,6 @@ def test_usd_builder_fixed_base_raises(tmp_path):
     """A USD that pins the base to the world, with no floating base, must fail loudly, not ship a drone
     with zero degrees of freedom; a fixed base link is a common export quirk.
     """
-    import warp as wp
-
-    wp.set_device("cpu")
     import newton
     from pxr import Usd, UsdGeom, UsdPhysics
 

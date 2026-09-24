@@ -16,16 +16,15 @@ import pytest
 pytest.importorskip("newton")
 pytest.importorskip("warp")
 
-import warp as wp
-
 from nexus._src.config import LaunchConfig
 from nexus._src.runtimes.assembly import build_scenario
 from nexus._src.runtimes.launch import resolve_to_vehicle_builder
 from nexus.examples.controllers.pid.assembly import build_pid_orchestrator
 
+pytestmark = pytest.mark.usefixtures("warp_cpu")  # the build's force_cpu sets the device; the scope puts it back
+
 
 def _run(steps: int):
-    wp.set_device("cpu")
     cfg = build_scenario()
     cfg["physics"]["force_cpu"] = True
     vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle("astro_max_base"))
