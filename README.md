@@ -2,7 +2,6 @@
 
 <br />
 <br />
-
 [![PyPI](https://img.shields.io/pypi/v/nexus.svg)](https://pypi.org/project/nexus/)
 [![Docs](https://img.shields.io/badge/docs-breuerpeter.github.io-blue.svg)](https://breuerpeter.github.io/nexus/)
 
