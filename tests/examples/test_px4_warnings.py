@@ -101,3 +101,13 @@ def test_every_other_sim_warning_still_gates(tmp_path):
     assert px4_warnings(_write(tmp_path, log)) == [
         "WARN  [health] Preflight Fail: Strong magnetic interference",
     ]
+
+
+def test_ekf2_missing_data_still_gates(tmp_path):
+    """An ``ekf2 missing data`` line still gates wherever it fires: when a PX4 log carries the line,
+    the gate counts it, since EKF2 missing its data is a real sim fault.
+    """
+    log = "WARN  [health_and_arming_checks] Preflight Fail: ekf2 missing data\n"
+    assert px4_warnings(_write(tmp_path, log)) == [
+        "WARN  [health_and_arming_checks] Preflight Fail: ekf2 missing data",
+    ]
