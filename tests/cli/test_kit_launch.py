@@ -36,11 +36,11 @@ def _env(tmp_path: Path) -> dict:
 
 
 def test_the_host_fetches_the_vehicle_and_the_scene_before_the_kit_container_starts(tmp_path):
-    """Under `nexus run`, the host fetches the vehicle and the `--scene` into the host cache before
-    the Kit container starts, under any `--runtime`.
+    """Before the Kit container starts, the host fetches the vehicle and the scene the run renders.
 
-    The container has no credentials for an `s3://` catalog, so what it flies must already be in the
-    cache the host fills. `--runtime isaacsim` skips the probe that fetches the vehicle today.
+    The Kit container reads the run's assets from the host's cache and has no credentials for an
+    `s3://` catalog, so what it renders must already be in that cache. The vehicle carries a camera
+    prim, so the run needs Kit.
     """
     vehicle = tmp_path / "assets" / "v.usda"
     scene = tmp_path / "assets" / "s.usda"
@@ -56,7 +56,7 @@ def test_the_host_fetches_the_vehicle_and_the_scene_before_the_kit_container_sta
     assert exe, "no `nexus` command on the path"
 
     subprocess.run(
-        [exe, "run", "--runtime", "isaacsim", "--vehicle", "v", "--scene", "s", "--registry", str(registry)],
+        [exe, "run", "--vehicle", "v", "--scene", "s", "--registry", str(registry)],
         cwd=tmp_path,
         env=_env(tmp_path),
         check=False,
