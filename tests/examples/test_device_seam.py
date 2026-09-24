@@ -18,9 +18,9 @@ import warp as wp
 
 wp.set_device("cpu")
 
+from nexus._src.build.launch import resolve_to_vehicle_builder  # noqa: E402
 from nexus._src.config import LaunchConfig  # noqa: E402
 from nexus._src.core.schema import Measurement, SimTime  # noqa: E402
-from nexus._src.runtimes.launch import resolve_to_vehicle_builder  # noqa: E402
 from nexus.examples._lib import RigidBodyRotors, build_rotor_mixer_from_model  # noqa: E402
 from nexus.examples._lib.observation import WarpObservationSensor  # noqa: E402
 from nexus.examples.controllers.pid import PidController  # noqa: E402

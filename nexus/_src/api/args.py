@@ -1,9 +1,7 @@
 """The shared command-line arg surface, import-light BY DESIGN and stdlib only.
 
-The ``nexus`` command-line tool parses args before any runtime boots, and inside the Kit container
-``warp``/``newton`` only become importable after ``SimulationApp`` starts, when the ``isaacsim.pip.newton``
-extension adds them to ``sys.path``. So the parser must not live with ``Sim``, whose module pulls the whole
-physics stack: this module imports nothing but the stdlib. ``Sim``-side consumers get these via
+The ``nexus`` command-line tool parses args before the run builds, so the parser must not live with
+``Sim``, whose module pulls the whole physics stack: this module imports nothing but the stdlib. ``Sim``-side consumers get these via
 ``nexus._src.api`` / ``na.sim_argparser`` as before.
 """
 

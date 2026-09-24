@@ -10,7 +10,7 @@ the Forward-Right-Down (FRD) body frame; this layer only encodes wire units and 
 It also owns the PX4 Software In The Loop (SITL) peer end to end: ``prepare`` builds it,
 ``connect`` launches it, ``close`` stops it. This controller is the one thing that already knows it
 talks to a PX4, since it holds the Hardware In The Loop (HIL) socket and the ULog artifact, so the
-autopilot's lifecycle belongs here, and reaches both runtimes through the
+autopilot's lifecycle belongs here, and reaches every run through the
 single ``build_from_launch`` seam.
 """
 

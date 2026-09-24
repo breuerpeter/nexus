@@ -10,9 +10,9 @@ host seam; everything else captures, the captured-host-exchange strategy.
 
 from __future__ import annotations
 
+from nexus._src.build.assembly import resolve_device
 from nexus._src.core import Clock, ConstantEnvironment, Orchestrator, logger
 from nexus._src.physics import NewtonPhysics
-from nexus._src.runtimes.assembly import resolve_device
 
 
 def build_sampling_mpc_orchestrator(
@@ -45,7 +45,7 @@ def build_sampling_mpc_orchestrator(
     logger.info(f"device: {resolve_device(cfg)}")
     dt = cfg["physics"]["dt"]
     if vehicle_builder is None:
-        raise ValueError("vehicle_builder is required (resolve it via runtimes.launch.resolve_scenario)")
+        raise ValueError("vehicle_builder is required (resolve it via build.launch.resolve_scenario)")
     builder = vehicle_builder
     if not cfg.get("scene_usd_path"):
         raise ValueError("the sampling MPC needs a scene with obstacles (resolve with scene='slalom')")

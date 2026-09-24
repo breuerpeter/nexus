@@ -70,9 +70,8 @@ class Control(_Base):
 
 
 class Runtime(_Base):
-    backend: Literal["standalone", "isaacsim"] = "standalone"
-    # "auto" resolves per runtime: CUDA when present, the captured default. An EXPLICIT "cpu" is
-    # the bit-exact determinism authority and every runtime honors it, including the Isaac runtime.
+    # "auto" resolves to CUDA when present, the captured default. An EXPLICIT "cpu" is the bit-exact
+    # determinism authority, and every run honors it, one that renders included.
     device: str = "auto"
     seed: int = 42
     dt: float = 0.004
@@ -160,8 +159,7 @@ class LaunchConfig(_Base):
     runtime: Runtime = Field(default_factory=Runtime)
     """Solver, device, timestep, and determinism settings for the run.
 
-    Defaults to the standalone backend on ``cpu`` with the ``mujoco`` solver and bit-exact
-    determinism.
+    Defaults to the ``auto`` device with the ``mujoco`` solver and bit-exact determinism.
     """
     sensors: dict[str, Any] = Field(default_factory=dict)
     """Per-sensor configuration overrides, keyed by sensor name.
@@ -212,8 +210,8 @@ class LaunchConfig(_Base):
 
         ``resolve()`` reads a value with a path separator or a ``.usd`` suffix as a file, every other
         value as a registry name, and ``None`` as the registry's default vehicle, so this setter takes
-        a ``--vehicle`` command-line value unchanged. Shared by ``Sim`` and the isaacsim runtime so
-        both selection surfaces behave identically.
+        a ``--vehicle`` command-line value unchanged. ``Sim`` and the command-line tool both select
+        through it, so the two behave identically.
 
         Args:
             vehicle: The registry name, the local ``.usd`` path, or ``None`` for the registry default.

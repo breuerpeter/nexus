@@ -121,9 +121,10 @@ class Orchestrator:
             controller: Control boundary. ``connect()`` binds and waits for the peer;
                 ``exchange(meas, t, timeout)`` returns controls or ``None``;
                 ``close()`` tears down. Can expose ``host_boundary`` / ``capturable``.
-            renderer: Optional render-lifecycle object, for example the Isaac RtxFrame: the loop
-                calls only ``on_physics_ready()``/``close()``; the host-rate RTX camera *sensors*
-                drive rendering itself at the host seam.
+            renderer: Optional render-lifecycle object, for example the Kit render peer's
+                :class:`~nexus._src.rendering.KitRenderer`: the loop calls only
+                ``on_physics_ready()``/``close()``; the host-rate RTX camera *sensors* drive
+                rendering itself at the host seam.
             logger: Optional :class:`~nexus._src.logging.Logger`: the recording
                 sink + shared log calls. ``None`` ⇒ no recording and no per-tick log
                 fan-out, for max speed. When present, each loggable component's
@@ -150,9 +151,10 @@ class Orchestrator:
         # Sensor partition; architecture: sensors are the one abstraction, renderables are just sensors:
         # * in-graph sensors: the physics-rate suite, Inertial Measurement Unit (IMU), Global Positioning
         #   System (GPS), baro, mag and obs: sampled every tick, join the captured CUDA graph when capturable.
-        # * host-rate sensors, ``host_rate = True``: Kit/RTX renderables, camera and lidar: inherently
-        #   low-rate and host-bound, because kit.update can't join a Warp graph, sampled at the host seam of
-        #   every loop and self-decimating to their own rate. They never veto the captured strategy.
+        # * host-rate sensors, ``host_rate = True``: RTX renderables, camera and lidar: inherently
+        #   low-rate and host-bound, because their frames come from the Kit peer over a socket, sampled at
+        #   the host seam of every loop and self-decimating to their own rate. They never veto the
+        #   captured strategy.
         self._graph_sensors = [s for s in self.sensors if not getattr(s, "host_rate", False)]
         self._host_sensors = [s for s in self.sensors if getattr(s, "host_rate", False)]
         self.controller = controller
@@ -319,8 +321,8 @@ class Orchestrator:
 
     def _sample_host(self, state, env, t, meas) -> None:
         """Host-rate sensors, RTX camera/lidar with ``host_rate = True``, sampled at every loop's host
-        seam. Each self-decimates to its own rate, so calling per tick is cheap; their work, kit.update
-        and annotator grabs, is host-bound and must never enter the captured graph.
+        seam. Each self-decimates to its own rate, so calling per tick is cheap; their work, the
+        exchange with the Kit peer, is host-bound and must never enter the captured graph.
         """
         for s in self._host_sensors:
             s.sample(state, env, t, meas)
@@ -610,9 +612,8 @@ class Orchestrator:
 
     def _make_profiler(self, label: str) -> LoopProfiler:
         """Always-on loop profiler, integer-ns marks, noise at 250 Hz. The shared ``--profile``
-        flag, ``diagnostics.profile``, adds periodic reports + carb.profiler zone mirroring, so Kit
-        backends see the loop; ``--trace <path>`` buffers a Chrome/Perfetto trace exported at the
-        end of the run.
+        flag, ``diagnostics.profile``, adds periodic reports; ``--trace <path>`` buffers a
+        Chrome/Perfetto trace exported at the end of the run.
         """
         deep = diagnostics.profile
         prof = LoopProfiler(
@@ -620,7 +621,6 @@ class Orchestrator:
             dt=self.clock.dt,
             report_every_s=5.0 if deep else 0.0,
             trace_path=diagnostics.trace,
-            use_carb=deep,
         )
         if self.renderer is not None and hasattr(self.renderer, "set_profiler"):
             self.renderer.set_profiler(prof)  # detail spans inside the render seam: render/grab
@@ -680,16 +680,14 @@ class Orchestrator:
         ``run_stats``.
         """
         state = self.physics.reset()  # build + settle the vehicle at the NED origin
-        # Renderer warm-up hook, optional and output-only: physics is now steppable, solver kernels
-        # compiled, but PX4 lockstep hasn't started: the safe window for a renderer's multi-second
-        # cold shader compile; rendering before the first solve crashes, and during lockstep it stalls.
-        if self.renderer is not None and hasattr(self.renderer, "on_physics_ready"):
-            self.renderer.on_physics_ready()
-            # Re-fetch the live state in case the hook advanced it; it must not rebuild it.
-            state = self.physics.current_state
         try:
-            # Inside the try: from here on the controller owns a live peer, the PX4 container it
-            # launches, so every exit path has to reach the `finally`'s controller.close().
+            # Renderer warm-up hook, before PX4 lockstep starts: the Kit peer connects and warms its
+            # stage here, which takes seconds and would stall the lockstep. Inside the try: a peer
+            # that fails its start must still reach the `finally`, which removes its container.
+            if self.renderer is not None and hasattr(self.renderer, "on_physics_ready"):
+                self.renderer.on_physics_ready()
+            # From here on the controller owns a live peer, the PX4 container it launches, so every
+            # exit path has to reach the `finally`'s controller.close().
             self.controller.connect()  # bind tcpin:4560 and return listening, then start the peer
             strategy = self._execution_strategy()
             logger.info(f"execution strategy: {strategy}")

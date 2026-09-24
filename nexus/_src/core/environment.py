@@ -62,8 +62,8 @@ class ConstantEnvironment:
         gravity_world: tuple[float, float, float] = (0.0, 0.0, -9.81),
     ) -> ConstantEnvironment:
         """Build the environment with the WMM field at the GPS origin, computed from PX4's own coarse
-        WMM table in :mod:`geomag` so PX4's strict mag arming check passes exactly. The PX4 runtimes,
-        standalone and isaacsim, use this with ``cfg.sensors.gps.init`` so the field tracks the origin.
+        WMM table in :mod:`geomag` so PX4's strict mag arming check passes exactly. The PX4 assembly
+        uses this with ``cfg.sensors.gps.init`` so the field tracks the origin.
         """
         decl, incl, strength = geomag.field_at(lat_deg, lon_deg)
         return cls(

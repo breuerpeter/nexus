@@ -10,7 +10,7 @@
 # nexus/_src/assets/resolver.py. An entry may carry a full `url` instead, which is how a catalog
 # names a blob hosted somewhere else, or a local file. Each USD carries
 # the actuator map as motor:* and propeller:* attrs on the actuator joint prims AND — for the FPV mods —
-# an authored FpvCam the isaacsim renderer uses; both non-physical (nexus model unchanged).
+# an authored FpvCam the Kit render peer renders; both non-physical (nexus model unchanged).
 #
 # NOTE: `px4.airframe` is the SITL airframe MAKE TARGET, minus PX4's `none_` prefix — `none` is
 # PX4's "no simulator" (external/HIL) prefix, and the launcher prepends it, so `astro_max` here runs
@@ -55,7 +55,7 @@ scenes:
     # DATA applied directly as the cesium georeference origin height (street at local z=0) and the
     # GPS reference altitude. Measured by flying the Flux lidar over the streamed tiles (ground
     # mode of the below-vehicle returns); if the street sits off z=0, tweak it HERE — no code, no
-    # reconversion. isaacsim runtime only; needs CESIUM_ION_TOKEN. Fly any location with
+    # reconversion. Renders only for a camera vehicle; needs CESIUM_ION_TOKEN. Fly any location with
     # `--scene cesium --geo <lat>,<lon>[,<alt>]` (e.g. San Francisco: `--geo 37.7942,-122.3954,-32`).
     geodetic_origin: { lat: 47.747944, lon: -122.163917, alt: -6.2 }
 

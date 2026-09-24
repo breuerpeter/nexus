@@ -55,15 +55,14 @@ class Actuator(Protocol):
 class Sensor(Protocol):
     # Optional class markers:
     #   capturable = True:  sample_wp/read split exists; the sensor joins the captured CUDA graph.
-    #   host_rate = True:   a Kit/RTX renderable, camera or lidar: host-bound + low-rate; sampled at the
+    #   host_rate = True:   an RTX renderable, camera or lidar: host-bound + low-rate; sampled at the
     #                         host seam of every loop, self-decimating to its own rate. Never vetoes the
     #                         captured strategy; excluded from the capture gate + the graph.
     def sample(self, state: newton.State, env: EnvSample, t: SimTime, out: Measurement) -> None:
         """Fill this sensor's fields into the shared per-tick Measurement (FRD).
 
-        Reads body state from the live ``newton.State``, the shared contract, so the
-        component is runtime-agnostic, the same in ``runtime-standalone`` and
-        ``runtime-isaacsim``. The orchestrator fans the live state to every sensor per tick.
+        Reads body state from the live ``newton.State``, the shared contract. The orchestrator
+        fans the live state to every sensor per tick.
         """
 
 

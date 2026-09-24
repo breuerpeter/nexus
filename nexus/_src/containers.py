@@ -2,41 +2,26 @@
 
 The governing rule for the two ways this repo talks to docker: **the SDK where this repo owns the
 container definition, compose where compose owns it.** A peer the flight starts and stops as part of
-its own lifecycle, which today means PX4 Software In The Loop (SITL) from
-:mod:`nexus._src.vehicle.controllers.px4.sitl`, runs from here, so the ordering a runbook used to write
-as a warning becomes code. The ``isaacsim`` service stays a compose service: the sim doesn't run it
-as a peer, it re-execs into it, and compose owns that definition.
-
-Inside the Kit container this process reaches the daemon through a bind-mounted
-``/var/run/docker.sock``: sibling containers, not docker-in-docker, so no nested daemon and no
-``--privileged``.
+its own lifecycle runs from here, so the ordering a runbook used to write as a warning becomes code:
+PX4 Software In The Loop (SITL) from :mod:`nexus._src.vehicle.controllers.px4.sitl`, and the Kit
+render peer from :mod:`nexus._src.rendering.peer`. Compose keeps only the ground services a runbook
+brings up by hand, in ``docker/docker-compose.yml``.
 """
 
 from __future__ import annotations
 
 import os
-import sys
 import threading
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from docker.models.containers import Container
 
-DOCKER_SOCKET = "/var/run/docker.sock"
-
-
 # The registry path the project's images live under: ``docker-images.yml`` pushes them there.
 IMAGE_PREFIX = "ghcr.io/breuerpeter/nexus"
 
 
 _client = None
-
-
-def _in_kit() -> bool:
-    """True when this process is a booted Kit app, the isaacsim runtime, judged by the booted app rather
-    than importability: ``import isaacsim`` exists but is unusable before ``SimulationApp`` starts.
-    """
-    return "isaacsim" in sys.modules and "omni.kit.app" in sys.modules
 
 
 def client():
@@ -46,39 +31,24 @@ def client():
         docker.DockerClient: A client connected to the daemon, from ``docker.from_env()``.
 
     Raises:
-        RuntimeError: The daemon is unreachable, with the fix named: inside the Kit container that's
-            the missing socket mount, on the host it's a daemon that isn't running.
+        RuntimeError: The daemon is unreachable; the message names its address and the fix.
     """
     global _client
     if _client is not None:
         return _client
     from docker.errors import DockerException
-    from docker.transport.unixconn import UnixHTTPAdapter
 
     import docker
-
-    # Kit's omni.services.pip_archive prebundles requests 2.32.0, which looks an adapter's
-    # connection up through the PRIVATE `_get_connection`; docker-py overrides only the public
-    # `get_connection_with_tls_context`, so requests bypasses its unix-socket pool and every daemon
-    # call dies on a "Not supported URL scheme http+docker" error. That prebundle precedes
-    # site-packages on sys.path, so the entrypoint's dep sync can't replace it, and Kit's own
-    # extensions depend on it. Point the private name at docker's own lookup; a requests that never
-    # calls it never triggers this.
-    UnixHTTPAdapter._get_connection = lambda self, request, verify=None, proxies=None, cert=None: self.get_connection(
-        request.url, proxies
-    )
 
     try:
         _client = docker.from_env()
         _client.ping()
     except DockerException as exc:
-        fix = (
-            f"mount the host daemon socket into the Kit container ({DOCKER_SOCKET}:{DOCKER_SOCKET} "
-            "in docker/docker-compose.yml)"
-            if _in_kit()
-            else f"start the docker daemon and check {DOCKER_SOCKET} is readable"
-        )
-        raise RuntimeError(f"cannot reach the docker daemon: {fix}") from exc
+        # The address as a URL, never a bare path: a missing daemon has no socket file to name.
+        host = os.environ.get("DOCKER_HOST") or "unix:///var/run/docker.sock"
+        raise RuntimeError(
+            f"cannot reach the Docker daemon at {host}: start it, or point DOCKER_HOST at one that runs"
+        ) from exc
     return _client
 
 

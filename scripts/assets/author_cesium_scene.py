@@ -7,7 +7,7 @@ prim WITHOUT a token. The runtime then just loads this scene and injects the two
 the ``CESIUM_ION_TOKEN``, a secret never baked into a public asset, and the georef lat/lon.
 
 Kit-only: the Cesium USD schema needs registering at Kit boot through PXR_PLUGINPATH_NAME, which the
-container entrypoint exports, so run it through the command-line tool on a Kit-capable host, for example black:
+Kit image sets, so run it through the command-line tool on a Kit-capable host:
 
   uv run nexus script scripts/assets/author_cesium_scene.py --out assets/local/cesium.usd
 

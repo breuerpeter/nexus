@@ -42,7 +42,7 @@ def _usd_ref(tmp_path) -> dict:
 
 
 def test_resolve_to_vehicle_builder_uses_resolved_usd(tmp_path):
-    from nexus._src.runtimes.launch import resolve_to_vehicle_builder
+    from nexus._src.build.launch import resolve_to_vehicle_builder
 
     ref = _usd_ref(tmp_path)
     reg = _registry(ref)
@@ -68,7 +68,7 @@ def test_non_px4_control_kinds_are_rejected():
 
 
 def test_scenario_from_launch_honors_dt_seed_device(tmp_path):
-    from nexus._src.runtimes.launch import _scenario_from_launch
+    from nexus._src.build.launch import _scenario_from_launch
 
     lc = LaunchConfig.from_dict({"vehicle": "astro", "runtime": {"dt": 0.01, "seed": 7, "device": "cpu"}})
     cfg = _scenario_from_launch(lc)
@@ -94,7 +94,7 @@ def test_scene_threads_uniformly_and_anchors_gps(tmp_path, monkeypatch):
     Ground Control Station (GCS) minimap matches the camera feed: the Woodinville-versus-SF bug.
     Runtime-*neutral* since the controller unbind: the one launch glue does this for every runtime.
     """
-    import nexus._src.runtimes.launch as L
+    import nexus._src.build.launch as L
 
     reg = Registry.from_dict(
         {
@@ -137,7 +137,7 @@ def test_build_from_launch_prepares_the_px4_peer(tmp_path, monkeypatch):
     airframe reaches the controller, and the peer gets *prepared*, its incremental build, before the
     orchestrator exists: the build has to stay outside the sim's 30 s preroll window, see GH #39.
     """
-    import nexus._src.runtimes.launch as L
+    import nexus._src.build.launch as L
     from nexus._src.vehicle.controllers.px4 import controller as C
 
     order = []

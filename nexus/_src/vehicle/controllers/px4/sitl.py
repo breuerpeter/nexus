@@ -39,9 +39,9 @@ def _container_kwargs() -> dict:
     """The shared run kwargs for the PX4 SITL container: image, user, mounts, workdir. Callers add
     naming/networking/env on top.
 
-    The user is the checkout's owner, not this process: inside the Kit container the process is
-    root, and building as uid 0 would leave the host checkout's ``build/`` tree root-owned and break
-    the next host-side build. On the host the owner is the same value ``os.getuid()`` would give.
+    The user is the checkout's owner, not this process: a process running as root, building as
+    uid 0, would leave the checkout's ``build/`` tree root-owned and break the next build as its
+    owner. For a process the owner runs, that's the same value ``os.getuid()`` would give.
     """
     px4 = px4_dir()  # resolved per call, not at import: a test, or a caller, can set $PX4_DIR later
     st = px4.stat() if px4.exists() else None

@@ -1,89 +1,14 @@
-# Newton sim stack: the services a decoupled PX4 flight needs BESIDES PX4 itself. They share host
-# networking so PX4 SITL dials into the simulator's HIL server on the host's :4560 (and the GCS
-# MAVLink on :18570) exactly as in a real decoupled flight — the simulator can be EITHER the lean
-# standalone runtime (run on the host: `uv run nexus run …`) OR the in-process `isaacsim`
-# runtime service below (Isaac Sim + Newton physics backend). Both serve :4560 identically.
+# Newton sim stack: the ground services a decoupled PX4 flight uses BESIDES the sim and PX4. They
+# share host networking so PX4 SITL dials into the simulator's HIL server on the host's :4560 (and the
+# GCS MAVLink on :18570) exactly as in a real decoupled flight — the simulator runs on the host:
+# `uv run nexus run …`.
 #
-# PX4 SITL is NOT a service here. Its container has ONE definition —
-# nexus/_src/vehicle/controllers/px4/sitl.py, which is also what starts and stops it — and a
-# second copy in this file drifted from that one for months before anyone noticed. The sim now
-# starts PX4 itself, from inside this container too (through the mounted daemon socket below),
-# so no runbook step launches it any more.
-# docker/README.md says where the image it runs comes from.
-#
-# --- isaacsim ---
-# The in-process Isaac Sim runtime (GPU/RTX; NVIDIA container runtime). Hosts the SAME core
-# Orchestrator + components as the standalone runtime, with Isaac's Newton (MuJoCo) physics backend
-# and the IsaacExperimentalStateView. Only EXTERNAL Python deps are baked into the image; the
-# nexus package is bind-mounted (NEXUS_DIR) and added to PYTHONPATH at run time, so code edits
-# need no rebuild. Local image build/iteration: `docker compose build isaacsim`.
+# PX4 SITL and the Kit render peer are NOT services here. The sim starts and stops both itself,
+# through the docker SDK: PX4's container is defined once in nexus/_src/vehicle/controllers/px4/sitl.py
+# and the Kit peer's in nexus/_src/rendering/peer.py. A second copy of a peer's definition in this
+# file drifted from the one the sim runs for months before anyone noticed.
+# docker/README.md says where the images come from.
 services:
-  isaacsim:
-    build:
-      context: ./isaacsim
-    image: ghcr.io/breuerpeter/nexus/isaacsim-runtime:latest
-    # Isaac Sim writes to its own dirs under /isaac-sim (logs, caches) owned by the image user, so
-    # the runtime runs as root (matches the validated spike); it only READS the bind-mounted repo
-    # and writes caches into dedicated mounts (no host-home pollution).
-    user: root
-    network_mode: host            # serve the HIL link on localhost:4560 + Rerun on :9876
-    gpus: all                     # RTX via the NVIDIA container runtime
-    working_dir: ${NEXUS_DIR:-${HOME}/code/nexus}
-    environment:
-      - NEXUS_DIR=${NEXUS_DIR:-${HOME}/code/nexus}
-      - ACCEPT_EULA=Y
-      - PRIVACY_CONSENT=Y
-      - OMNI_KIT_ACCEPT_EULA=YES
-      - NVIDIA_DRIVER_CAPABILITIES=all
-      - NEXUS_ASSET_CACHE=/assets-cache         # resolved USD cache (mounted; reuses the host's)
-      - CESIUM_ION_TOKEN=${CESIUM_ION_TOKEN:-}   # --scene cesium: ion token for the streamed globe
-      # The HOST path of the PX4 checkout: the daemon that creates the PX4 container is the host's,
-      # so it bind-mounts a host path. The checkout itself is not mounted into this container.
-      - PX4_DIR=${PX4_DIR:-${HOME}/code/px4}
-      - NEXUS_DATA=${NEXUS_DATA:-${HOME}/data}
-    volumes:
-      # The workspace (code). Every mount below whose source must ALREADY EXIST -- the two checkouts
-      # and the daemon socket -- takes create_host_path: false, because docker otherwise CREATES it
-      # root-owned and the container runs against an empty directory, which reads as a broken image
-      # rather than a wrong path. Cache mounts are the opposite case and keep the short syntax.
-      # `nexus run` derives this one from its own checkout, so nothing has to be exported.
-      - type: bind
-        source: ${NEXUS_DIR:-${HOME}/code/nexus}
-        target: ${NEXUS_DIR:-${HOME}/code/nexus}
-        bind:
-          create_host_path: false
-      - ${HOME}/.cache/nexus/assets:/assets-cache:rw          # reuse the already-resolved astro_max USD
-      - ${HOME}/.cache/nexus/logs:/root/.cache/nexus/logs:rw  # .rrd recordings land host-side
-      - ${HOME}/.cache/newton-isaac/warp:/isaac-sim/.cache/warp:rw   # Warp kernel cache (cold-start cost)
-      - ${HOME}/.cache/newton-isaac/pip:/root/.cache/pip:rw          # pip cache + deps stamp (entrypoint dep sync)
-      - ${HOME}/.cache/newton-isaac/kit:/isaac-sim/kit/cache:rw      # Kit shader/asset cache
-      - ${HOME}/.cache/newton-isaac/ov:/root/.cache/ov:rw
-      - ${HOME}/.cache/newton-isaac/computecache:/root/.cache/nvidia/ComputeCache:rw
-      # The host daemon socket, so the controller can start PX4 SITL from in here — SIBLING
-      # containers, not docker-in-docker: no nested daemon and no --privileged. This service already
-      # runs as root with host networking and a rw mount of the repo, so it is not a new boundary.
-      - type: bind
-        source: /var/run/docker.sock
-        target: /var/run/docker.sock
-        bind:
-          create_host_path: false   # else a missing socket becomes a root-owned DIRECTORY there
-      # The PX4 checkout, READ-ONLY. The launcher reads it in whatever process calls it, which here
-      # is this container: it checks the checkout exists and stats it for the PX4 container's user.
-      # Read-only is the honest permission — Kit never writes here. The BUILD runs in the PX4
-      # sibling container, which the HOST daemon gives its own rw mount of this same path.
-      - type: bind
-        source: ${PX4_DIR:-${HOME}/code/px4}
-        target: ${PX4_DIR:-${HOME}/code/px4}
-        read_only: true
-        bind:
-          create_host_path: false
-      # Big inputs the checkout must not hold — photogrammetry scans, splat exports, converted
-      # scenes. Identity-mapped like the repo and the PX4 checkout above: a path typed on the host
-      # means the same path inside, which is what lets ONE documented command run from either side.
-      # rw: the converters write their --out beside the input.
-      - ${NEXUS_DATA:-${HOME}/data}:${NEXUS_DATA:-${HOME}/data}:rw
-    command: ["run", "--runtime", "isaacsim", "--vehicle", "astro_max_fpv", "--control", "px4-sitl", "--view"]
-
   # Companion mavlink-router stand-in (laptop-only fallback): serve the GCS a MAVLink TCP
   # endpoint on :5790, routed to PX4 SITL's UDP GCS link (:18570). The representative demo now
   # runs the REAL mavlink-router on the emulated companion computer instead, so this
