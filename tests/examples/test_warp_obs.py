@@ -13,7 +13,7 @@ pytest.importorskip("warp")
 import newton
 import warp as wp
 
-wp.set_device("cpu")
+pytestmark = pytest.mark.usefixtures("warp_cpu")
 
 
 def _single_body():

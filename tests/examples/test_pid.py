@@ -75,12 +75,12 @@ def test_default_gains_shape():
     assert DEFAULT_GAINS.shape == (NUM_GAINS,)
 
 
+@pytest.mark.usefixtures("warp_cpu")
 def test_law_warp_matches_numpy():
     """The Warp kernel and the NumPy mirror *must* agree: single source of truth."""
     wp = pytest.importorskip("warp")
     from nexus.examples.controllers.pid import pid_law
 
-    wp.set_device("cpu")
     rng = np.random.default_rng(0)
     hover = hover_action(1.9)
     for _ in range(20):

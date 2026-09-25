@@ -11,11 +11,10 @@ from nexus._src.core.schema import PositionGoal, Waypoints
 pytest.importorskip("warp")
 pytest.importorskip("newton")
 
+pytestmark = pytest.mark.usefixtures("warp_cpu")
+
 
 def _controller():
-    import warp as wp
-
-    wp.set_device("cpu")
     import newton
 
     from nexus.examples.controllers.sampling_mpc import SamplingMPCController

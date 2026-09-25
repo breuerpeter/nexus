@@ -23,9 +23,9 @@ def test_accept_setpoint_rejects_unsupported_variant():
         PidController(goal_w=(0.0, 0.0, 1.0), thrust_to_weight=1.9).accept_setpoint(Waypoints(points=[(0.0, 0.0, 1.0)]))
 
 
+@pytest.mark.usefixtures("warp_cpu")
 def test_accept_setpoint_assigns_the_bound_device_goal_buffer():
-    wp = pytest.importorskip("warp")
-    wp.set_device("cpu")
+    pytest.importorskip("warp")
     from nexus.examples._lib.observation import WarpObservationSensor
 
     sensor = WarpObservationSensor(goal_w=(0.0, 0.0, 1.0))

@@ -342,9 +342,9 @@ class Sim:
         """Drive the run's setup, returning once the first control tick has completed.
 
         One step: the orchestrator's first ``step()`` runs physics reset, the wait for the Kit
-        render peer to boot and warm its stage when the vehicle renders, ``controller.connect()``,
-        which binds ``:4560`` and launches the PX4 container, and the preroll wait for the peer,
-        then flies one tick.
+        render peer to boot and warm its stage when the vehicle renders, the seed row and the graph
+        capture, ``controller.connect()``, which binds ``:4560`` and launches the PX4 container, and
+        the preroll wait for the peer, then flies one tick.
         So for a PX4 sim this is the "lockstep is up" verb, and it returns with one observation
         row already recorded and the captured graph replayed once.
 

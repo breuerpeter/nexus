@@ -16,14 +16,14 @@ pytest.importorskip("warp")
 import newton
 import warp as wp
 
-wp.set_device("cpu")
+from nexus._src.build.launch import resolve_to_vehicle_builder
+from nexus._src.config import LaunchConfig
+from nexus._src.core.schema import Measurement, SimTime
+from nexus.examples._lib import RigidBodyRotors, build_rotor_mixer_from_model
+from nexus.examples._lib.observation import WarpObservationSensor
+from nexus.examples.controllers.pid import PidController
 
-from nexus._src.build.launch import resolve_to_vehicle_builder  # noqa: E402
-from nexus._src.config import LaunchConfig  # noqa: E402
-from nexus._src.core.schema import Measurement, SimTime  # noqa: E402
-from nexus.examples._lib import RigidBodyRotors, build_rotor_mixer_from_model  # noqa: E402
-from nexus.examples._lib.observation import WarpObservationSensor  # noqa: E402
-from nexus.examples.controllers.pid import PidController  # noqa: E402
+pytestmark = pytest.mark.usefixtures("warp_cpu")
 
 _ACT_CFG = {"ct": 0.000003463, "cd": 0.05, "rpm_max": 3800.0}  # astro-max thrust map, from freefly:actuator:*
 

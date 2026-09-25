@@ -196,6 +196,10 @@ jobs:
           # The fork path checks out the approved run's frozen head sha: on pull_request_target
           # github.sha is the base branch's head, and the merge ref would move under a later push.
           ref: "${{ inputs.ref || (github.event_name == 'pull_request_target' && github.event.pull_request.head.sha) || github.sha }}"
+          # actions/checkout refuses a fork's code on pull_request_target unless the step opts in. The
+          # fork path opts in on purpose: a maintainer approves each run on external-pr-approval, and the
+          # box gets a read-only token, no instance profile, no Cesium token and no Codecov token.
+          allow-unsafe-pr-checkout: ${{ github.event_name == 'pull_request_target' }}
           fetch-depth: ${{ inputs.fetch-depth }}
           # Nothing on the box pushes; persisted credentials also leak into every git call as an
           # http.extraheader (the trap that broke px4-bump's tokened ls-remote).

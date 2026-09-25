@@ -27,8 +27,10 @@ Hardware In The Loop (HIL) link on `:4560`.
 
 **Clean log gate.** The flight asserts **zero PX4 warnings**, the `px4_warnings` metric gated to 0.
 A healthy closed-loop SITL run must not log a single `WARN` or `ERROR` line about the sim. Two
-known-benign lines are content-allowlisted: boot-time `[param] not found` firmware artifacts, and
-the pre-arm "no heading reference" transient while PX4's EKF2 estimator converges. The takeoff
+known-benign lines are content-allowlisted. One is the boot-time `Parameter <name> not found.` line
+for a parameter the airframe sets and this PX4 build lacks, and every other `param` failure still
+gates. The other is the pre-arm "no heading reference" transient while PX4's EKF2 estimator
+converges. The takeoff
 script's failure-free wait rides that transient out. This caught a real fidelity bug. The environment
 fed the magnetometer a *Zurich* World Magnetic Model (WMM) field while the
 Global Positioning System (GPS) origin is *Seattle*, so PX4's strict mag check, `EKF2_MAG_CHK_STR`,
