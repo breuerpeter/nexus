@@ -13,9 +13,9 @@ pytest.importorskip("torch")
 pytest.importorskip("newton")
 
 import nexus as na
+from nexus._src.build.assembly import build_scenario
+from nexus._src.build.launch import resolve_to_vehicle_builder
 from nexus._src.config import LaunchConfig
-from nexus._src.runtimes.assembly import build_scenario
-from nexus._src.runtimes.launch import resolve_to_vehicle_builder
 from nexus.examples.controllers.policy.assembly import build_policy_orchestrator
 from nexus.examples.controllers.policy.goto import flight
 
