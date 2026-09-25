@@ -1,15 +1,13 @@
 {
-  "_comment": "Regression baseline for the Astro Max RL TRAINING half. scripts/ci/check_rl_stats.py compares a fresh training run against this and FAILS if a key stat regresses beyond tolerance. The deploy-side gates (deploy_steps_per_sec, final_tracking_error_m, pose APE) live with the examples evaluation harness in scripts/ci/examples_baselines.json (goto_policy). The 'value' fields were recorded by the first green gpu-rl run on the pinned CI runner (run 30020021108, 2026-07-23, 300 iters).",
+  "_comment": "Regression baseline for the Astro Max RL TRAINING half. scripts/ci/check_rl_stats.py compares a fresh training run against this and FAILS if a guarded stat regresses. The learning metrics gate with absolute floors under the spread four seed-42 runs measured on 2026-09-25, success_rate 0.987 to 1.000 and mean reward 124 to 127 (nexus#15): a pinned seed gives a policy draw, not a policy, but these statistics over the 2048 envs are tight. Wall-clock stats (steps_per_sec, train_seconds) print as monitored and never gate: no throughput baseline holds on a shared runner. The deploy-side gates live with the examples evaluation harness in scripts/ci/examples_baselines.json (goto_policy, goto_policy_fresh).",
   "hardware": "GPU CI runner: g5.2xlarge, 1x A10G",
   "train": {
     "num_envs": 2048,
-    "steps_per_sec": {
-      "value": 119515,
-      "min_frac": 0.75
+    "success_rate": {
+      "min": 0.9
     },
-    "train_seconds": {
-      "value": 123.38,
-      "max_frac": 1.3
+    "mean_reward": {
+      "min": 110.0
     }
   }
 }

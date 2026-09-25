@@ -51,7 +51,7 @@ def _rows(stdout: str, status: str) -> set[str]:
 
 def test_baseline_is_well_formed():
     assert BASELINE["train"]["num_envs"] == 2048
-    assert "min_frac" in BASELINE["train"]["steps_per_sec"]
+    assert {"steps_per_sec", "train_seconds"}.isdisjoint(BASELINE["train"])  # wall clock prints, never gates
     assert "deploy" not in BASELINE  # deploy gates live in scripts/ci/examples_baselines.json now
 
 
