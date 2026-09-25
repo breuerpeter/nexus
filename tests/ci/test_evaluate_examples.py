@@ -7,6 +7,8 @@ artifacts run on the GPU runner. The GPU runner also covers evo-dependent scorin
 import importlib.util
 import json
 import pathlib
+import subprocess
+import sys
 
 import numpy as np
 
@@ -16,6 +18,123 @@ BASELINES = json.loads((ROOT / "scripts" / "ci" / "examples_baselines.json").rea
 _spec = importlib.util.spec_from_file_location("evaluate_examples", ROOT / "scripts" / "ci" / "evaluate_examples.py")
 evaluate_examples = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_spec and evaluate_examples)
+
+# A tour the hosted policy flies: every waypoint reached, on the path the runner recorded.
+_HEALTHY_FLIGHT = {
+    "waypoints": 3,
+    "reached": 3,
+    "control_steps": 1560,
+    "deploy_steps_per_sec": 150.0,
+    "final_tracking_error_m": 0.02,
+    "ape_trans_rmse_m": BASELINES["goto_policy"]["ape_trans_rmse_m"]["value"],
+    "ape_trans_max_m": 0.9,
+}
+
+
+def _fake_flights(monkeypatch, stats_by_name: dict[str, dict], rtf: float = 2.0) -> None:
+    """Stand in for the example processes at the process boundary: each named flight's dump lands in
+    the harness's artifact dir as the example would write it, and every other process the harness
+    asks for answers empty.
+    """
+
+    def run(cmd, **kwargs):
+        if cmd[:2] == ["uv", "run"]:
+            name = cmd[cmd.index("nexus.examples") + 1]
+            out = pathlib.Path(kwargs["env"]["NEXUS_EVAL_OUT"])
+            (out / f"{name}.json").write_text(json.dumps({"stats": stats_by_name[name], "results": {"rtf": rtf}}))
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(subprocess, "run", run)
+
+
+def _harness(monkeypatch, *argv: str) -> int:
+    """Run the harness's command line in-process and return its exit code."""
+    monkeypatch.setattr(sys, "argv", ["evaluate_examples.py", *argv])
+    return evaluate_examples.main()
+
+
+def _rows(out: str, status: str) -> set[str]:
+    """The metric names of the gate-table rows shown with *status*."""
+    return {line.split()[0] for line in out.splitlines() if status in line.split()[-2:]}
+
+
+def test_a_deploy_flights_wall_clock_numbers_never_fail_a_leg(capsys):
+    """A deploy flight's wall-clock numbers never fail a leg: given the committed
+    `scripts/ci/examples_baselines.json` and a `goto_policy` flight scored at half the recorded
+    `deploy_steps_per_sec` and `rtf`, when the harness gates it, then the table shows both as
+    `(monitored)` and the run passes.
+    """
+    slow = {**_HEALTHY_FLIGHT, "deploy_steps_per_sec": 74.9, "rtf": 1.07}  # half of the recorded 149.8 and 2.135
+
+    failed = evaluate_examples._gate("goto_policy", slow, BASELINES)
+
+    monitored = _rows(capsys.readouterr().out, "(monitored)")
+    assert (failed, {"deploy_steps_per_sec", "rtf"} <= monitored) == ([], True)
+
+
+def test_the_wall_clock_numbers_still_reach_the_trend_record(tmp_path, monkeypatch):
+    """The wall-clock numbers still reach the trend record: given a scored deploy flight, when the
+    harness writes `benchmark.json` and `examples_bench.json`, then they carry its
+    `deploy_steps_per_sec` and `rtf` entries as today.
+    """
+    policy = tmp_path / "policy.pt"
+    policy.write_bytes(b"an exported policy")
+    _fake_flights(monkeypatch, {"goto_policy": _HEALTHY_FLIGHT})
+    out = tmp_path / "out"
+
+    _harness(monkeypatch, "--only", "goto_policy", "--policy", str(policy), "--out", str(out))
+
+    trend = {e["name"] for e in json.loads((out / "benchmark.json").read_text())}
+    docs = {e["name"] for e in json.loads((out / "examples_bench.json").read_text())["entries"]}
+    assert {"deploy_steps_per_sec[goto_policy]", "rtf[goto_policy]"} <= trend & docs
+
+
+def test_the_fresh_flight_gates_on_completing_only(tmp_path, monkeypatch, capsys):
+    """The fresh policy's flight gates on completing only: given the fresh policy's flight scored at 1 of
+    3 reached, `final_tracking_error_m` 3.1 and an `ape_trans_rmse_m` above the hosted flight's bound,
+    when the harness gates it, then every metric shows `(monitored)` and the run passes.
+    """
+    policy = tmp_path / "policy.pt"
+    policy.write_bytes(b"a fresh export")
+    one_of_three = {**_HEALTHY_FLIGHT, "reached": 1, "final_tracking_error_m": 3.1, "ape_trans_rmse_m": 5.0}
+    _fake_flights(monkeypatch, {"goto_policy_fresh": one_of_three})
+
+    rc = _harness(monkeypatch, "--only", "goto_policy_fresh", "--policy", str(policy), "--out", str(tmp_path / "out"))
+
+    out = capsys.readouterr().out
+    gated = _rows(out, "ok") | _rows(out, "REGRESSED")
+    assert (rc, gated, {"reached", "final_tracking_error_m", "ape_trans_rmse_m"} <= _rows(out, "(monitored)")) == (
+        0, set(), True,
+    )  # fmt: skip
+
+
+def test_a_fresh_export_the_deploy_side_cannot_fly_fails_the_leg(tmp_path, monkeypatch, capsys, torchscript_policy):
+    """A fresh export the deploy side cannot fly fails the leg: given an export whose observation width
+    is not the deploy controller's, a 12-input policy, when the harness runs the fresh policy's flight,
+    then it lists the flight under `FAILED examples` and exits 1.
+    """
+    narrow = torchscript_policy(obs_dim=12)
+
+    rc = _harness(monkeypatch, "--only", "goto_policy", "--policy", narrow, "--out", str(tmp_path / "out"))
+
+    assert (rc, "FAILED examples: goto_policy" in capsys.readouterr().out) == (1, True)
+
+
+def test_a_hosted_policy_the_runner_cannot_fetch_fails_the_leg(tmp_path, monkeypatch, capfd):
+    """A hosted policy the runner cannot fetch fails the leg: given the catalog's base unreachable, a
+    dead proxy in the environment and an empty asset cache, when the harness runs the hosted policy's
+    flight, then it lists the flight under `FAILED examples`, the log carries the `--policy` hint, and
+    it exits 1.
+    """
+    monkeypatch.setenv("NEXUS_ASSET_CACHE", str(tmp_path / "cache"))  # empty: nothing to hit
+    for proxy in ("https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY"):
+        monkeypatch.setenv(proxy, "http://127.0.0.1:9")  # the discard port: no proxy answers
+
+    rc = _harness(monkeypatch, "--only", "goto_policy", "--out", str(tmp_path / "out"))
+
+    out, err = capfd.readouterr()
+    hinted = "--policy" in err and "train.py" in err
+    assert (rc, "FAILED examples: goto_policy" in out, hinted) == (1, True, True)
 
 
 def test_baselines_cover_every_example():

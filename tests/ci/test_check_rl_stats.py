@@ -26,13 +26,27 @@ def _run(tmp_path, train):
     )
 
 
+def _recorded(key: str, fallback: float) -> float:
+    """The baseline's recorded value for *key*, or *fallback* while the baseline has no such rule."""
+    rule = BASELINE["train"].get(key)
+    return rule["value"] if isinstance(rule, dict) and rule.get("value") is not None else fallback
+
+
 # Healthy stats: exactly the baseline values, so this passes by construction whatever the pinned
-# hardware numbers are. The baseline is re-recorded per CI runner, so no literals here.
+# hardware numbers are. The baseline is re-recorded per CI runner, so no literals here. The learning
+# metrics fall back to the values four seed-42 runs measured, until the runner records its own.
 _HEALTHY_TRAIN = {
     "num_envs": BASELINE["train"]["num_envs"],
-    "steps_per_sec": BASELINE["train"]["steps_per_sec"]["value"],
-    "train_seconds": BASELINE["train"]["train_seconds"]["value"],
+    "steps_per_sec": _recorded("steps_per_sec", 119515.0),
+    "train_seconds": _recorded("train_seconds", 123.38),
+    "success_rate": _recorded("success_rate", 0.99),
+    "mean_reward": _recorded("mean_reward", 125.0),
 }
+
+
+def _rows(stdout: str, status: str) -> set[str]:
+    """The metric names of the table rows that end in *status*."""
+    return {line.split()[0] for line in stdout.splitlines() if line.strip().endswith(status)}
 
 
 def test_baseline_is_well_formed():
@@ -41,17 +55,51 @@ def test_baseline_is_well_formed():
     assert "deploy" not in BASELINE  # deploy gates live in scripts/ci/examples_baselines.json now
 
 
-def test_healthy_stats_pass(tmp_path):
+def test_a_healthy_training_run_passes_the_leg(tmp_path):
+    """A healthy training run passes the leg: given the committed `nexus-rl/stats_baseline.json` and a
+    training stats file at the runner's recorded `success_rate` and mean reward, when
+    `scripts/ci/check_rl_stats.py --train-stats` runs, then every row shows `ok` and it exits 0.
+    """
     r = _run(tmp_path, _HEALTHY_TRAIN)
-    assert r.returncode == 0, r.stdout + r.stderr
+
+    shown = _rows(r.stdout, "ok")
+    assert (r.returncode, _rows(r.stdout, "REGRESSED"), {"train.success_rate", "train.mean_reward"} <= shown) == (
+        0, set(), True,
+    ), r.stdout + r.stderr  # fmt: skip
 
 
-def test_throughput_regression_fails(tmp_path):
-    rule = BASELINE["train"]["steps_per_sec"]
-    bad = {**_HEALTHY_TRAIN, "steps_per_sec": rule["value"] * rule["min_frac"] * 0.9}  # under the floor
-    r = _run(tmp_path, bad)
-    assert r.returncode == 1
-    assert "steps_per_sec" in r.stdout
+def test_a_training_runs_wall_clock_numbers_never_fail_the_leg(tmp_path):
+    """A training run's wall-clock numbers never fail the leg: given the committed
+    `nexus-rl/stats_baseline.json` and a training stats file at half the recorded `steps_per_sec` and
+    twice the `train_seconds`, when `scripts/ci/check_rl_stats.py --train-stats` runs, then it exits 0
+    and prints both numbers.
+    """
+    slow = {
+        **_HEALTHY_TRAIN,
+        "steps_per_sec": _HEALTHY_TRAIN["steps_per_sec"] / 2,
+        "train_seconds": _HEALTHY_TRAIN["train_seconds"] * 2,
+    }
+
+    r = _run(tmp_path, slow)
+
+    assert (r.returncode, "steps_per_sec" in r.stdout, "train_seconds" in r.stdout) == (0, True, True), (
+        r.stdout + r.stderr
+    )
+
+
+def test_a_training_run_that_fails_to_learn_fails_the_leg(tmp_path):
+    """A training run that fails to learn fails the leg: given the committed `nexus-rl/stats_baseline.json`
+    and a training stats file with `success_rate` 0.6 and a mean reward under the bound, when
+    `scripts/ci/check_rl_stats.py --train-stats` runs, then the table shows `REGRESSED` on both and it
+    exits 1.
+    """
+    unlearned = {**_HEALTHY_TRAIN, "success_rate": 0.6, "mean_reward": 60.0}
+
+    r = _run(tmp_path, unlearned)
+
+    assert (r.returncode, _rows(r.stdout, "REGRESSED")) == (1, {"train.success_rate", "train.mean_reward"}), (
+        r.stdout + r.stderr
+    )
 
 
 def test_num_envs_change_flagged(tmp_path):
