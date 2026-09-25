@@ -32,7 +32,7 @@ _KIT_HOME = "/kit-home"
 
 
 class KitPeerError(RuntimeError):
-    """The Kit render peer couldn't start; the message names the cause."""
+    """The Kit render peer couldn't start, or died mid-flight; the message names the cause."""
 
 
 def _build_files(root: Path) -> list[Path]:

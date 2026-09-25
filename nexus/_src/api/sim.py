@@ -381,6 +381,8 @@ class Sim:
 
         Raises:
             RuntimeError: Called outside the ``Sim`` context manager.
+            KitPeerError: The vehicle renders and its Kit render peer died mid-flight; the run's
+                teardown has run and closed the recording.
         """
         if self._orch is None:
             raise RuntimeError("Sim.run() called outside the context manager (use `with na.Sim(...) as sim:`)")
@@ -399,6 +401,8 @@ class Sim:
 
         Raises:
             RuntimeError: Called outside the ``Sim`` context manager.
+            KitPeerError: The vehicle renders and its Kit render peer died mid-flight; the run's
+                teardown has run and closed the recording.
         """
         if self._orch is None:
             raise RuntimeError("sim.step() called outside the context manager (use `with na.Sim(...) as sim:`)")

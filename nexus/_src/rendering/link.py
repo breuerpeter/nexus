@@ -142,22 +142,25 @@ class KitRenderer:
             time.sleep(0.5)
 
     def _receive(self, timeout: float, what: str) -> tuple[dict, list]:
-        """The peer's next message, waiting at most ``timeout`` and failing at once if the peer dies."""
+        """The peer's next message, waiting at most ``timeout`` and failing at once if the peer dies.
+
+        A failure is a ``KitPeerError``, never a ``ConnectionError``: the loop takes a
+        ``ConnectionError`` as a run's normal end, the autopilot's disconnect, and a dead peer must end
+        the run with an error.
+        """
         deadline = time.monotonic() + timeout
         while not select.select([self._sock], [], [], 1.0)[0]:
             if not self._peer.alive():
-                raise ConnectionError(self._died(f"died while this run waited for {what}"))
+                raise KitPeerError(self._died(f"died while this run waited for {what}"))
             if time.monotonic() > deadline:
-                raise ConnectionError(
-                    self._died(f"sent nothing within {timeout:.0f}s while this run waited for {what}")
-                )
+                raise KitPeerError(self._died(f"sent nothing within {timeout:.0f}s while this run waited for {what}"))
         self._sock.settimeout(FRAME_TIMEOUT_S)
         try:
             header, blobs = recv(self._sock)
         except (OSError, ConnectionError) as exc:
-            raise ConnectionError(self._died(f"closed the link while this run waited for {what} ({exc})")) from exc
+            raise KitPeerError(self._died(f"closed the link while this run waited for {what} ({exc})")) from exc
         if header.get("op") == "error":
-            raise ConnectionError(self._died(f"failed: {header.get('message')}"))
+            raise KitPeerError(self._died(f"failed: {header.get('message')}"))
         return header, blobs
 
     def on_physics_ready(self) -> None:
@@ -173,10 +176,7 @@ class KitRenderer:
         # The Cesium ion token crosses here and nowhere else: never in the container's environment.
         token = os.environ.get("CESIUM_ION_TOKEN") or None
         send(self._sock, {"op": "setup", **self.setup, "cesium_ion_token": token, "sensors": sensors})
-        try:
-            header, _ = self._receive(STARTUP_TIMEOUT_S, "the ready")
-        except ConnectionError as exc:
-            raise KitPeerError(str(exc)) from exc
+        header, _ = self._receive(STARTUP_TIMEOUT_S, "the ready")
         if header.get("op") != "ready":
             raise KitPeerError(self._died(f"answered the setup with {header.get('op')!r}"))
         logger.info(f"Kit render peer ready in {time.monotonic() - t0:.0f}s: {len(self.sensors)} RTX sensor(s)")
@@ -199,8 +199,8 @@ class KitRenderer:
         """At a tick where any sensor is due: take the frame before, then send this one's poses.
 
         Raises:
-            ConnectionError: The peer died or failed; the message names it, and the loop ends the
-                run as it does for a lost autopilot.
+            KitPeerError: The peer died or failed; the message names it, and the run ends with this
+                error after its teardown, its recording closed.
         """
         now = float(t.sim_time)
         if now == self._last_t:
@@ -217,7 +217,7 @@ class KitRenderer:
             try:
                 send(self._sock, {"op": "frame", "t": now, "paths": paths, "due": due}, [np.stack(mats)])
             except OSError as exc:
-                raise ConnectionError(self._died(f"closed the link ({exc})")) from exc
+                raise KitPeerError(self._died(f"closed the link ({exc})")) from exc
         self._pending = True
 
     def close(self) -> None:

@@ -4,6 +4,7 @@ import pytest
 
 from nexus._src.core.orchestrator import Orchestrator
 from nexus._src.core.schema import Controls, SimTime
+from nexus._src.rendering.peer import KitPeerError
 
 
 class _Clock:
@@ -60,13 +61,13 @@ class _Controller:
         self.closed = True
 
 
-def _orch(**kw):
+def _orch(sensors=(), **kw):
     return Orchestrator(
         clock=_Clock(),
         environment=_Env(),
         physics=_Physics(),
         actuator=_Actuator(),
-        sensors=[],
+        sensors=list(sensors),
         controller=_Controller(),
         **kw,
     )
@@ -144,3 +145,22 @@ def test_closing_a_run_that_never_stepped_closes_the_renderer():
     orch.close()
 
     assert orch.renderer.closed
+
+
+class _DyingSensor:
+    """A host-rate sensor whose peer dies mid-flight, as an RTX sensor's Kit peer can."""
+
+    host_rate = True
+
+    def sample(self, state, env, t, meas):
+        raise KitPeerError("the Kit render peer died while this run waited for a frame")
+
+
+def test_a_kit_peer_that_dies_mid_flight_ends_the_run_with_its_error():
+    """Not the autopilot's disconnect, which ends a run normally: the error surfaces after the teardown."""
+    orch = _orch(sensors=[_DyingSensor()], renderer=_Renderer())
+
+    with pytest.raises(KitPeerError, match="Kit render peer"):
+        orch.run()
+
+    assert orch.renderer.closed and orch.controller.closed

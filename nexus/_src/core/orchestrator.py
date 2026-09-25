@@ -714,7 +714,9 @@ class Orchestrator:
                 self._record_tick()  # seed one observation row, the same contract as captured
                 yield from self._loop(state)
         except ConnectionError as e:
-            logger.info(str(e))
+            logger.info(
+                str(e)
+            )  # the autopilot's disconnect: a run's normal end. A dying Kit peer raises KitPeerError, which ends the run with it
         finally:
             if self.renderer is not None and hasattr(self.renderer, "close"):
                 self.renderer.close()  # for example flush+close the First Person View (FPV) encoder, an output-only seam
