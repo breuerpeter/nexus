@@ -1,8 +1,10 @@
 name: gpu-rl
 
-# The Astro Max RL pipeline on the GPU runner: train → record → deploy + the stats regression
-# gate (scripts/ci/run_rl_example.sh → check_rl_stats.py). Advisory. Runs on main pushes touching
-# the RL surface; on PRs it is offered on EVERY PR but runs
+# The Astro Max RL pipeline on the GPU runner: train, then the swarm recording and the fresh
+# export's flight concurrently, then the training-stats gate (scripts/ci/run_rl_example.sh →
+# check_rl_stats.py). The learning metrics gate with a margin; the fresh flight and every wall-clock
+# number are reported, and the hosted policy's exact deploy gate rides gpu-examples. Advisory. Runs
+# on main pushes touching the RL surface; on PRs it is offered on EVERY PR but runs
 # only when the `gpu` label is applied (the label is the GPU-spend approval — see gpu-examples.yml
 # for the same convention). Uploads the docs .rrds only on main / dispatch (never from PRs). A
 # labeled fork PR flies through pull_request_target on per-run approval (gpu-runner.yml).
