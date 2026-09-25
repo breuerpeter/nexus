@@ -29,12 +29,38 @@ from rsl_rl.runners import OnPolicyRunner
 DEFAULT_TASK = "Newton-AstroMax-GoTo-Direct-v0"
 
 
+def final_metrics(runner: OnPolicyRunner, log_dir: str) -> dict:
+    """The last iteration's learning metrics, the numbers rsl_rl printed and wrote to the run's event
+    file: ``success_rate`` (``Metrics/success_rate``) and ``mean_reward`` (``Train/mean_reward``),
+    each averaged over the envs. The CI regression check gates them with a margin, since they're
+    tight statistics where the trained policy itself is one draw.
+    """
+    from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
+
+    writer = getattr(runner.logger, "writer", None)
+    if writer is not None:
+        writer.flush()  # the writer flushes every 10 s, so the final iteration can still sit in its queue
+    events = EventAccumulator(log_dir)
+    events.Reload()
+    tags = events.Tags()["scalars"]
+    metrics = {}
+    for key, tag in (("success_rate", "Metrics/success_rate"), ("mean_reward", "Train/mean_reward")):
+        if tag in tags:
+            metrics[key] = round(float(events.Scalars(tag)[-1].value), 4)
+    return metrics
+
+
 def main() -> dict:
     ap = argparse.ArgumentParser()
     ap.add_argument("--task", default=DEFAULT_TASK)
     ap.add_argument("--num_envs", type=int, default=2048)
     ap.add_argument("--max_iterations", type=int, default=250)
-    ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument(
+        "--seed", type=int, default=42,
+        help="pins the random draws, the initial weights, start states and exploration noise, and not the "
+        "trained policy: the GPU physics step is not bit-reproducible, so two runs at one seed end as two "
+        "policies with the same statistics",
+    )  # fmt: skip
     ap.add_argument("--log_dir", default="/work/iclogs/nexus_rl")
     ap.add_argument("--entropy", type=float, default=None, help="override the agent cfg entropy_coef")
     ap.add_argument("--save_interval", type=int, default=10, help="checkpoint cadence (model_{it}.pt)")
@@ -88,6 +114,7 @@ def main() -> dict:
         runner.learn(num_learning_iterations=iters)
         rec["train_seconds"] = round(time.time() - t0, 2)
         rec["steps_per_sec"] = round(num_envs * agent_cfg.num_steps_per_env * iters / (time.time() - t0), 1)
+        rec.update(final_metrics(runner, log_dir))
         export_dir = os.path.join(log_dir, "exported")
         runner.export_policy_to_jit(path=export_dir, filename="policy.pt")
         runner.export_policy_to_onnx(path=export_dir, filename="policy.onnx")

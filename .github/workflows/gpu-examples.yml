@@ -10,8 +10,10 @@ name: gpu-examples
 # loudly. The PX4 build is evaluate_examples.py's own, made per eval before its first example
 # (warm from the cache). With --upload it refreshes the docs .rrd embeds + the bench trend feed
 # (main / dispatch only); on main pushes a data-refresh PR updates docs/data/examples_bench.json.
-# goto_policy still rides the isaac-lab workflow (it needs a freshly trained policy). Advisory; a
-# labeled fork PR flies through pull_request_target on per-run approval (gpu-runner.yml).
+# goto_policy flies the hosted policy here: given a policy the flight is bit-reproducible, so it is
+# the exact deploy gate, on the leg that already runs for the deploy-side paths. The rl leg's fresh
+# export flies as goto_policy_fresh on gpu-rl. Advisory; a labeled fork PR flies through
+# pull_request_target on per-run approval (gpu-runner.yml).
 
 on:
   push:
@@ -64,7 +66,7 @@ jobs:
         (command -v cmake >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq cmake)) &&
         bash scripts/setup_acados.sh &&
         uv run --group ci --extra examples python scripts/ci/evaluate_examples.py
-        --only pid,gain_tuning,mass_recovery,sampling_mpc,acados_nmpc
+        --only pid,gain_tuning,mass_recovery,sampling_mpc,acados_nmpc,goto_policy
         ${{ inputs.update-baselines && '--update-baselines' || '' }}
         ${{ (github.event_name == 'push' || inputs.upload) && '--upload' || '' }} &&
         bash scripts/ci/provision_px4.sh &&

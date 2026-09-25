@@ -1,14 +1,22 @@
-"""The goto_policy example's policy resolution: the hosted policy from the catalog's base, or the
-``--policy`` override. No GPU, no network: the base is a ``file://`` directory.
+"""The goto_policy example: its policy resolution, the hosted policy from the catalog's base or the
+``--policy`` override, with no GPU and no network since the base is a ``file://`` directory; and
+its flight, which repeats bit for bit on the Newton CPU backend.
 """
 
 import hashlib
 import re
 
+import numpy as np
 import pytest
 
 pytest.importorskip("torch")
+pytest.importorskip("newton")
 
+import nexus as na
+from nexus._src.config import LaunchConfig
+from nexus._src.runtimes.assembly import build_scenario
+from nexus._src.runtimes.launch import resolve_to_vehicle_builder
+from nexus.examples.controllers.policy.assembly import build_policy_orchestrator
 from nexus.examples.controllers.policy.goto import flight
 
 
@@ -69,3 +77,31 @@ def test_policy_override_that_is_not_a_file_exits_naming_it(tmp_path):
 
     with pytest.raises(SystemExit, match=re.escape("nope.pt")):
         flight._resolve_policy(str(missing))
+
+
+def _fly_tour(policy: str, steps: int) -> tuple[np.ndarray, np.ndarray]:
+    """Fly the example's tour with *policy* for *steps* control steps on the CPU backend, as the
+    example does, and return the recorded positions and ``xyzw`` quaternions of the base body.
+    """
+    cfg = build_scenario()
+    cfg["physics"]["force_cpu"] = True
+    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle("astro_max_base"))
+    orch = build_policy_orchestrator(cfg, policy_path=policy, vehicle_builder=vb, max_steps=steps)
+    with na.Sim.from_orchestrator(orch) as sim:
+        sim.operator.set_mission(flight.WAYPOINTS)
+        sim.run()
+    traj = sim.physics[sim.base_body].history()
+    return np.array([s.position for s in traj]), np.array([s.quat_xyzw for s in traj])
+
+
+@pytest.mark.usefixtures("warp_cpu")  # the build's force_cpu sets the device; the scope puts it back
+def test_a_policy_flies_the_same_path_every_time(torchscript_policy):
+    """A policy flies the same path every time: given one exported policy, when the tour flies twice,
+    then the recorded `est_pos` and `est_quat_xyzw` of the two flights are equal element for element.
+    """
+    policy = torchscript_policy()
+
+    pos_1, quat_1 = _fly_tour(policy, steps=200)
+    pos_2, quat_2 = _fly_tour(policy, steps=200)
+
+    assert (len(pos_1) > 0, np.array_equal(pos_1, pos_2), np.array_equal(quat_1, quat_2)) == (True, True, True)

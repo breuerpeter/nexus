@@ -68,3 +68,6 @@ prims?
 setpoints?
 viewport
 Perceptron
+
+# The status the examples harness prints for a gate row that holds.
+ok
