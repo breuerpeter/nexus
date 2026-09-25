@@ -48,20 +48,24 @@ WAYPOINTS = [(1.5, 1.0, 1.5), (-1.5, 1.0, 2.0), (-0.5, -0.5, 1.8)]  # a small to
 POLICY_ASSET = {"name": "goto_policy", "sha256": "6b3edb018f540934bb0aa2c0a23be357684d3a911c9fd986978041a4473902d0"}
 
 
-def _resolve_policy(override: str | None) -> str:
+def _resolve_policy(override: str | None, asset: dict = POLICY_ASSET) -> str:
     """The exported TorchScript policy this flight deploys: the ``--policy`` override, a fresh
-    local export, when given, else the hosted :data:`POLICY_ASSET` fetched + sha-verified into the
-    asset cache, offline after the first fetch.
+    local export, when given, else the hosted *asset*, a ``{name, sha256}`` pin, fetched from the
+    catalog's ``assets.base`` and sha-verified into the asset cache, offline after the first fetch.
     """
     if override:
         if not os.path.isfile(override):
             raise SystemExit(f"--policy {override!r} is not a file (expected an exported policy.pt)")
         return override
-    from nexus._src.assets.resolver import CDN, fetch
+    from nexus._src.assets.resolver import fetch, hosted_url
+    from nexus._src.config import load_registry
 
-    name, sha = POLICY_ASSET["name"], POLICY_ASSET["sha256"]
+    name, sha = asset["name"], asset["sha256"]
     try:
-        return str(fetch(f"{CDN}/policies/{name}-{sha}.pt", sha, filename=f"{name}.pt"))
+        base = load_registry().assets.base
+        if not base:
+            raise ValueError("the catalog names no assets.base to fetch the hosted policy from")
+        return str(fetch(hosted_url(base, "policies", name, sha, "pt"), sha, filename=f"{name}.pt"))
     except Exception as exc:
         raise SystemExit(
             f"could not fetch the hosted policy ({exc}): pass --policy /path/to/exported/policy.pt "

@@ -51,7 +51,7 @@ def _glb_targets() -> dict[str, tuple[str, str]]:
         name, sha = usd.get("name"), usd.get("sha256")
         if not (name and sha and base):  # an entry with a URL of its own carries no derivable preview
             continue
-        targets.setdefault(name, (hosted_url(base, "vehicles", name, sha, "glb"), f"{name}-{sha}.glb"))
+        targets.setdefault(name, (hosted_url(base, "usd/vehicles", name, sha, "glb"), f"{name}-{sha}.glb"))
     return targets
 
 
