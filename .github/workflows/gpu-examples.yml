@@ -62,8 +62,10 @@ concurrency:
 jobs:
   # The GPU-spend gate lives in gpu-runner.yml, once, on the job that starts the instance.
   # An entry names the setup its example needs on a fresh box and the caches gpu-runner restores
-  # for it; fail-fast is off so one red example never cancels the others' evidence.
+  # for it; fail-fast is off so one red example never cancels the others' evidence. The name keeps
+  # the setup command out of the check names.
   gpu:
+    name: ${{ matrix.example }}
     strategy:
       fail-fast: false
       matrix:

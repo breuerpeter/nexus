@@ -210,7 +210,7 @@ def main() -> int:
         print(json.dumps({"cells": [{**c, "tag": _tag(c)} for c in cells], "skipped": skipped}))
         return 0
 
-    work = pathlib.Path(args.work).resolve()  # the cell runs from ROOT, whatever this process's cwd
+    work = pathlib.Path(args.work).resolve()  # the cell runs from the repo root, whatever this process's cwd
     work.mkdir(parents=True, exist_ok=True)
     out = pathlib.Path(args.out)
 
