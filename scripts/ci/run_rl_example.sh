@@ -24,7 +24,7 @@ if [ -z "${VEHICLE_USD:-}" ]; then
     "from nexus._src.config import LaunchConfig, resolve; print(resolve(LaunchConfig().set_vehicle('astro_max_base')).vehicle_usd_path)")"
 fi
 
-echo "===== TRAIN + RECORD SWARM (host, kitless, nexus-rl project) ====="
+echo "===== TRAIN (host, kitless, nexus-rl project) ====="
 # `uv run --project nexus-rl` resolves + installs Isaac Lab on the Newton backend on demand (own
 # venv, no container), then runs. The trained checkpoints land under --log_dir; record_demo replays them.
 ( cd "$REPO" && uv run --project nexus-rl python nexus-rl/scripts/rsl_rl/train.py \
