@@ -563,11 +563,8 @@ class Sim:
         if self._orch is None:
             return
         self._orch.stop()
-        if self._ran:
-            # Step/run-driven: close the tick generator so its teardown, the RTF stamp plus controller
-            # and logs close, runs. A no-op if run() already drove to completion and exhausted the generator.
-            self._orch.close()
-        else:
-            # Entered but never driven: close the Logger built at construction so the .rrd flushes or
-            # the :9876 server releases; the run's own finally would otherwise have done this.
-            self._orch._close_logs()
+        # Step/run-driven, this closes the tick generator so its teardown, the RTF stamp plus renderer,
+        # controller and logs close, runs; a no-op if run() drove to completion. Entered but never
+        # driven, it stops the renderer's peer, started at build, and closes the Logger built at
+        # construction, so the .rrd flushes or the :9876 server releases.
+        self._orch.close()

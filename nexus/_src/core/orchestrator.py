@@ -195,6 +195,7 @@ class Orchestrator:
         # The tick generator backing run()/step(), the in-process driving seam, lazily created on the
         # first step(), None between runs. run() exhausts it; Sim.step() advances it one tick.
         self._ticks_iter = None
+        self._stepped = False  # a first step() ran, or close() tore down a run that never stepped
         self.preroll_timeout = preroll_timeout
         self.exchange_timeout = exchange_timeout
         # Bound the steady loop; None = run until the controller ends it, the PX4 default.
@@ -679,11 +680,12 @@ class Orchestrator:
         disconnect, or closes early, via :meth:`close` on ``stop()`` mid-step. The live RTF lands in
         ``run_stats``.
         """
-        state = self.physics.reset()  # build + settle the vehicle at the NED origin
         try:
+            # Inside the try from the first line: the renderer's peer started at build, so a reset or a
+            # peer start that fails must still reach the `finally`, which removes its container.
+            state = self.physics.reset()  # build + settle the vehicle at the NED origin
             # Renderer warm-up hook, before PX4 lockstep starts: the Kit peer connects and warms its
-            # stage here, which takes seconds and would stall the lockstep. Inside the try: a peer
-            # that fails its start must still reach the `finally`, which removes its container.
+            # stage here, which takes seconds and would stall the lockstep.
             if self.renderer is not None and hasattr(self.renderer, "on_physics_ready"):
                 self.renderer.on_physics_ready()
             # From here on the controller owns a live peer, the PX4 container it launches, so every
@@ -723,6 +725,7 @@ class Orchestrator:
         no wall-clock.
         """
         if self._ticks_iter is None:
+            self._stepped = True
             self._ticks_iter = self._ticks()
         try:
             next(self._ticks_iter)
@@ -742,10 +745,18 @@ class Orchestrator:
             pass
 
     def close(self) -> None:
-        """Tear down a partially stepped run, ``Sim.stop()`` after ``step()``s: close the tick
-        generator, running its ``finally``, RTF stamp + controller/logs teardown. Idempotent: a no-op if
-        the run already finished, ``run()`` completed / ``step()`` returned ``False``.
+        """Tear down the run, ``Sim.stop()``. A partially stepped run closes its tick generator, running
+        its ``finally``, RTF stamp + renderer/controller/logs teardown. A run that never stepped closes
+        the renderer, whose peer started at build, and the logs. Idempotent: a no-op once the run has
+        finished, ``run()`` completed / ``step()`` returned ``False``, or closed.
         """
         if self._ticks_iter is not None:
             self._ticks_iter.close()  # GeneratorExit → the loop's finally, RTF, + _ticks' finally, close
             self._ticks_iter = None
+        elif not self._stepped:
+            self._stepped = True  # torn down: a later close() is a no-op
+            try:
+                if self.renderer is not None and hasattr(self.renderer, "close"):
+                    self.renderer.close()
+            finally:
+                self._close_logs()

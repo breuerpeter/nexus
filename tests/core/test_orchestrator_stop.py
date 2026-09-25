@@ -103,3 +103,44 @@ def test_a_controller_that_raises_on_close_still_finalizes_the_recording():
         orch.run()  # the failure still surfaces: re-raised, not swallowed
 
     assert closed_logs == [True], "the recording teardown was skipped by the controller failure"
+
+
+class _Renderer:
+    """A renderer that owns a peer, as the Kit render peer does: close() is what stops it."""
+
+    def __init__(self):
+        self.closed = False
+
+    def on_physics_ready(self):
+        pass
+
+    def close(self):
+        self.closed = True
+
+
+def test_a_physics_reset_that_fails_still_closes_the_renderer():
+    """The renderer's peer starts at build, before the run: a reset that raises, a Warp kernel that
+    fails to compile, must not leave that container running.
+    """
+
+    def boom():
+        raise RuntimeError("CUDA kernel build failed")
+
+    orch = _orch(renderer=_Renderer())
+    orch.physics.reset = boom
+
+    with pytest.raises(RuntimeError, match="CUDA kernel build failed"):
+        orch.run()
+
+    assert orch.renderer.closed
+
+
+def test_closing_a_run_that_never_stepped_closes_the_renderer():
+    """A caller that builds a run and leaves without stepping it, a `Sim` entered and exited, still
+    stops the renderer's peer, which started at build.
+    """
+    orch = _orch(renderer=_Renderer())
+
+    orch.close()
+
+    assert orch.renderer.closed

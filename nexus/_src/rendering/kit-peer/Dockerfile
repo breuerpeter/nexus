@@ -33,6 +33,10 @@ RUN mkdir -p /isaac-sim/kit/data /isaac-sim/kit/logs /isaac-sim/kit/cache \
 
 COPY . /nexus-kit/
 
+# The base's check greps Kit's log under the image user's home, which the peer, with its own HOME,
+# never writes, so every healthy peer read as unhealthy. The render link says whether the peer lives.
+HEALTHCHECK NONE
+
 USER isaac-sim
 ENTRYPOINT ["/isaac-sim/python.sh"]
 CMD ["/nexus-kit/serve.py"]
