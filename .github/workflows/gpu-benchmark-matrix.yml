@@ -3,9 +3,12 @@ name: gpu-benchmark-matrix
 # The RTF benchmark matrix (scripts/ci/benchmark_matrix.py): ONE PX4 4-waypoint mission across
 # {vehicle × scene × device × runtime} on the pinned A10G runner — the standalone table plus the
 # isaacsim table (GHCR isaacsim-runtime container; cesium cells need the CESIUM_ION_TOKEN secret
-# and are skipped without it). Scheduled + dispatch only, NOT per-push: the isaacsim cells cost
-# minutes each. Ends with a data-refresh PR updating docs/data/rtf_matrix.json — the docs
-# Benchmarking page changes only through that reviewed diff.
+# and are skipped without it). One box per cell: a measured flight cannot share a GPU, the RTF
+# being the whole deliverable, nor PX4's fixed ports, so `plan` lists the cells, `cell` flies each
+# on a box of its own through gpu-runner.yml, and `merge` joins their results over the committed
+# matrix. Scheduled + dispatch only, NOT per-push: the isaacsim cells cost minutes each. Ends with a
+# data-refresh PR updating docs/data/rtf_matrix.json — the docs Benchmarking page changes only
+# through that reviewed diff.
 
 on:
   schedule:
@@ -27,25 +30,76 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  matrix:
+  # The cells to fly, and the cesium cells skipped without the token, as one JSON for the matrix
+  # below and for merge's _meta. No GPU: the listing is a lookup.
+  plan:
+    runs-on: ubuntu-latest
+    permissions: { contents: read }
+    outputs:
+      plan: ${{ steps.plan.outputs.plan }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - id: plan
+        env:
+          CESIUM_ION_TOKEN: ${{ secrets.CESIUM_ION_TOKEN }}
+          ONLY: ${{ inputs.only }}
+        run: echo "plan=$(python3 scripts/ci/benchmark_matrix.py --list ${ONLY:+--only "$ONLY"})" >> "$GITHUB_OUTPUT"
+
+  # The GPU-spend gate lives in gpu-runner.yml, once, on the job that starts the instance.
+  # fail-fast is off so one red cell never cancels the others' numbers.
+  cell:
+    name: ${{ matrix.cell.tag }}
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix:
+        cell: ${{ fromJSON(needs.plan.outputs.plan).cells }}
     uses: ./.github/workflows/gpu-runner.yml
     with:
       caches: px4
+      cache-scope: ${{ matrix.cell.tag }}
+      # Only an isaacsim cell pulls the Kit image; a standalone cell flies on the host.
       command: >-
         bash scripts/ci/provision_px4.sh &&
-        docker compose -f docker/docker-compose.yml pull isaacsim &&
-        uv run python scripts/ci/benchmark_matrix.py
-        --out .eval-artifacts/matrix/rtf_matrix.json
-        ${{ inputs.only != '' && format('--only {0}', inputs.only) || '' }}
-      artifact-name: benchmark-matrix
+        ${{ matrix.cell.runtime == 'isaacsim' && 'docker compose -f docker/docker-compose.yml pull isaacsim &&' || '' }}
+        uv run python scripts/ci/benchmark_matrix.py --cell ${{ matrix.cell.tag }} --work .eval-artifacts/matrix
+      artifact-name: benchmark-cell-${{ matrix.cell.tag }}
       artifact-path: .eval-artifacts
     secrets: inherit
 
+  # The cell results join over the committed matrix into the one benchmark-matrix artifact the
+  # data-refresh PR reads. A red cell skips this, so a partial matrix never becomes a data PR; the
+  # cells' own artifacts keep what did fly. No GPU.
+  merge:
+    needs: [plan, cell]
+    if: ${{ !cancelled() && needs.cell.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: benchmark-cell-*
+          path: .eval-artifacts
+          merge-multiple: true
+      - env:
+          PLAN: ${{ needs.plan.outputs.plan }}
+        run: >-
+          python3 scripts/ci/benchmark_matrix.py --merge --plan "$PLAN"
+          --work .eval-artifacts/matrix --out .eval-artifacts/matrix/rtf_matrix.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-matrix
+          path: .eval-artifacts
+          include-hidden-files: true
+
   data-refresh:
-    needs: matrix
-    # The result check is explicit: gpu-runner's approve-fork skips on schedule and dispatch, and
-    # the implicit success() would skip this job for it.
-    if: ${{ !cancelled() && needs.matrix.result == 'success' }}
+    needs: merge
+    # The result check is explicit: merge skips when a cell is red, and the implicit success()
+    # would skip this job for it without a word.
+    if: ${{ !cancelled() && needs.merge.result == 'success' }}
     uses: ./.github/workflows/data-refresh.yml
     permissions:
       contents: write

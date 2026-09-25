@@ -28,8 +28,8 @@ with `--log` on: recording is part of the measured configuration.
 
 <!-- benchmark-matrix -->
 
-The scheduled `gpu-benchmark-matrix` workflow produces the matrix on the CI runner, a g5.2xlarge
-with one A10G, and refreshes it via a data PR. Cells that structurally don't exist aren't shown.
+The scheduled `gpu-benchmark-matrix` workflow produces the matrix on CI, each cell on a g5.2xlarge
+box of its own with one A10G, and refreshes it via a data PR. Cells that structurally don't exist aren't shown.
 Visual-only scenes contribute nothing on the standalone runtime, whose physics loads only
 `UsdPhysics`-authored geometry. CPU is the bit-exact determinism authority rather than a
 performance configuration, so it's displayed only in the standalone reference row.
