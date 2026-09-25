@@ -24,6 +24,9 @@ from fractions import Fraction
 import numpy as np
 
 VEHICLE_ROOT = "/Vehicle"
+# The bound on the wait for the renderer's first frame; under the host's 1800 s ready wait, so the
+# peer's own error reaches it.
+FIRST_FRAME_TIMEOUT_S = 1500.0
 
 
 def log(msg: str) -> None:
@@ -311,8 +314,7 @@ class Renderer:
             if cheap >= 5:
                 break
         self._setup_nurec_splat()
-        for _ in range(8):  # shader and denoiser compile; a grab skips cold frames, so this needs no annotator
-            self._rep.orchestrator.step()
+        self._render_first_frame()
         # The RTX sensor clock, all parts driven from the host's sim time:
         # 1. the timeline plays forever, since RTX annotators collect only during playback, with
         #    /app/player/playSimulations off so no engine steps;
@@ -348,6 +350,32 @@ class Renderer:
         if self._scene is not None:
             self._scene.on_ready(self._app)  # the Cesium streaming drain
         log(f"warm-up + drain {time.time() - t0:.1f}s")
+
+    def _render_first_frame(self) -> None:
+        """Step the renderer until every camera product has rendered once; only then can the peer say ready.
+
+        On a machine with a cold shader cache Kit's RTX renderer comes up minutes after the boot, and
+        a ready answered before then starves the loop: each frame pays the compile, every grab
+        returns nothing, and the flight fails its mission. The steps also compile the shaders and the
+        denoiser the flight needs, so at least the eight of a warm pipeline run. The lidar attaches
+        after the timeline plays, so this wait skips it.
+        """
+        cameras = [s for s in self.sensors if not isinstance(s, _Points)]
+        t0 = time.time()
+        reported = 0.0
+        steps = 0
+        while True:
+            self._rep.orchestrator.step()
+            steps += 1
+            if steps >= 8 and all(s.grab(None) for s in cameras):
+                log(f"first frame after {steps} steps, {time.time() - t0:.0f}s")
+                return
+            elapsed = time.time() - t0
+            if elapsed > FIRST_FRAME_TIMEOUT_S:
+                raise RuntimeError(f"the renderer rendered no frame within {elapsed:.0f}s for {len(cameras)} camera(s)")
+            if elapsed - reported >= 30.0:
+                reported = elapsed
+                log(f"waiting for the renderer's first frame: {elapsed:.0f}s")
 
     def _attr(self, path: str):
         """The Fabric world-matrix attr of ``path``, created on first sight; ``None`` if the stage lacks the prim.

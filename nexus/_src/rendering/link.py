@@ -148,7 +148,9 @@ class KitRenderer:
             if not self._peer.alive():
                 raise ConnectionError(self._died(f"died while this run waited for {what}"))
             if time.monotonic() > deadline:
-                raise ConnectionError(self._died(f"sent no {what} within {timeout:.0f}s"))
+                raise ConnectionError(
+                    self._died(f"sent nothing within {timeout:.0f}s while this run waited for {what}")
+                )
         self._sock.settimeout(FRAME_TIMEOUT_S)
         try:
             header, blobs = recv(self._sock)

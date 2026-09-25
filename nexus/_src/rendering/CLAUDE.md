@@ -18,6 +18,9 @@ renderer the loop drives and the link the RTX sensors ride.
   cache `~/.cache/nexus/kit/cache`.
 - No secret goes in the peer's environment: Kit prints its whole environment into the console
   at every boot, and the console is a log file. The Cesium ion token rides the setup message.
+- The peer answers ready only after every camera product has rendered once. On a machine with a
+  cold shader cache the RTX renderer comes up minutes after Kit's boot, and a ready before that
+  starves the loop. The console prints the wait every 30 s.
 - The peer's console is `~/.cache/nexus/logs/console-*.log`: its own lines start `[kit-peer]`, and
   every 240 frames one of them splits a frame's time into the wait for the host, the render and
   the send.
