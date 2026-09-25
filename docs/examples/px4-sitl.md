@@ -86,8 +86,8 @@ set by `PX4_DIR` with default `~/code/px4`, and a CUDA host.
 
 ## Regression gate
 
-`scripts/ci/evaluate_examples.py` runs this example with the rest of the default set on the GPU
-runner, in the `gpu-examples` workflow via the shared `gpu-runner.yml`. `scripts/ci/provision_px4.sh`
+`scripts/ci/evaluate_examples.py` runs this example on a GPU box of its own, one box per example,
+in the `gpu-examples` workflow via the shared `gpu-runner.yml`. `scripts/ci/provision_px4.sh`
 provisions the PX4 checkout from the pin in `scripts/ci/px4.ref`. The script then gates the fresh run
 against `scripts/ci/examples_baselines.json`. It fails if the closed-loop takeoff stops working,
 checked by `takeoff_confirmed` and `climb_m`, or if PX4 warns about the sim, checked by

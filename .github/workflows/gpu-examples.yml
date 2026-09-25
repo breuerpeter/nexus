@@ -2,14 +2,17 @@ name: gpu-examples
 
 # ALL examples on the GPU runner — the flight-performance + speed regression gate.
 # scripts/ci/evaluate_examples.py runs each one, scores it (evo pose APE + the example's own stats
-# + the steady RTF), and gates against scripts/ci/examples_baselines.json. The command is three
-# sequential evals chained with && (any failure reds the required context): the non-PX4 examples,
-# then px4_sitl on the tracked pin (scripts/ci/px4.ref, tokenless clone). Prerequisites are
-# provisioned in-command: the PX4 checkout via scripts/ci/provision_px4.sh (cached per pin) and
-# acados via scripts/setup_acados.sh (cached) — no --skip-missing, so a broken provision fails
-# loudly. The PX4 build is evaluate_examples.py's own, made per eval before its first example
-# (warm from the cache). With --upload it refreshes the docs .rrd embeds + the bench trend feed
-# (main / dispatch only); on main pushes a data-refresh PR updates docs/data/examples_bench.json.
+# + the steady RTF), and gates against scripts/ci/examples_baselines.json. One box per example,
+# through a matrix over gpu-runner.yml: a measured flight cannot share a GPU, and two on one box
+# collide on PX4's fixed ports, so the leg takes the slowest example plus one boot, and any red
+# example reds the required context. Each box provisions what its example needs, in-command: the
+# PX4 checkout via scripts/ci/provision_px4.sh (cached per pin) for px4_sitl on the tracked pin
+# (scripts/ci/px4.ref, tokenless clone), acados via scripts/setup_acados.sh (cached) for
+# acados_nmpc — no --skip-missing, so a broken provision fails loudly. The PX4 build is
+# evaluate_examples.py's own, made before the example (warm from the cache). The merge job joins
+# the boxes' parts into the one examples-eval artifact. With --upload each box refreshes its
+# example's docs .rrd embed + the bench trend feed (main / dispatch only); on main pushes a
+# data-refresh PR updates docs/data/examples_bench.json.
 # goto_policy flies the hosted policy here: given a policy the flight is bit-reproducible, so it is
 # the exact deploy gate, on the leg that already runs for the deploy-side paths. The rl leg's fresh
 # export flies as goto_policy_fresh on gpu-rl. Advisory; a labeled fork PR flies through
@@ -58,24 +61,61 @@ concurrency:
 
 jobs:
   # The GPU-spend gate lives in gpu-runner.yml, once, on the job that starts the instance.
+  # An entry names the setup its example needs on a fresh box and the caches gpu-runner restores
+  # for it; fail-fast is off so one red example never cancels the others' evidence.
   gpu:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { example: pid }
+          - { example: gain_tuning }
+          - { example: mass_recovery }
+          - { example: sampling_mpc }
+          - { example: goto_policy }
+          - example: acados_nmpc
+            caches: acados
+            setup: >-
+              (command -v cmake >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq cmake)) &&
+              bash scripts/setup_acados.sh
+          - example: px4_sitl
+            caches: px4
+            setup: bash scripts/ci/provision_px4.sh
     uses: ./.github/workflows/gpu-runner.yml
     with:
-      caches: px4 acados
+      cache-scope: ${{ matrix.example }}
+      caches: ${{ matrix.caches || '' }}
       command: >-
-        (command -v cmake >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq cmake)) &&
-        bash scripts/setup_acados.sh &&
+        ${{ matrix.setup || 'true' }} &&
         uv run --group ci --extra examples python scripts/ci/evaluate_examples.py
-        --only pid,gain_tuning,mass_recovery,sampling_mpc,acados_nmpc,goto_policy
-        ${{ inputs.update-baselines && '--update-baselines' || '' }}
-        ${{ (github.event_name == 'push' || inputs.upload) && '--upload' || '' }} &&
-        bash scripts/ci/provision_px4.sh &&
-        uv run --group ci --extra examples python scripts/ci/evaluate_examples.py --only px4_sitl
+        --only ${{ matrix.example }}
         ${{ inputs.update-baselines && '--update-baselines' || '' }}
         ${{ (github.event_name == 'push' || inputs.upload) && '--upload' || '' }}
-      artifact-name: examples-eval
+      artifact-name: examples-eval-${{ matrix.example }}
       artifact-path: .eval-artifacts
     secrets: inherit
+
+  # The parts, one per example, join into the one examples-eval artifact a reader and the
+  # data-refresh PR expect: every recording and score file, one benchmark.json, one
+  # examples_bench.json and, on update-baselines, one examples_baselines.json. No GPU.
+  merge:
+    needs: gpu
+    if: ${{ !cancelled() && needs.gpu.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: examples-eval-*
+          path: .eval-parts
+      - run: python3 scripts/ci/merge_eval_parts.py .eval-parts .eval-artifacts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: examples-eval
+          path: .eval-artifacts
+          include-hidden-files: true
 
   # The branch-protection context. A job that calls a reusable workflow reports its checks as
   # "<job> / <inner job>", never under its own name, so the protected name has to come from a
@@ -95,10 +135,10 @@ jobs:
           [ "${{ needs.gpu.result }}" = "success" ] || exit 1
 
   data-refresh:
-    # The result check is explicit: gpu-runner's approve-fork skips on a push, and the implicit
-    # success() would skip this job for it.
-    if: ${{ !cancelled() && needs.gpu.result == 'success' && github.event_name == 'push' }}
-    needs: gpu
+    # The result check is explicit: merge skips when an example is red, and the implicit success()
+    # would skip this job for it without a word.
+    if: ${{ !cancelled() && needs.merge.result == 'success' && github.event_name == 'push' }}
+    needs: merge
     uses: ./.github/workflows/data-refresh.yml
     permissions:
       contents: write

@@ -28,12 +28,17 @@ import argparse
 import json
 import os
 import pathlib
+import random
 import shutil
 import subprocess
 import sys
 import time
 
 import numpy as np
+
+# The one definition of the bench-entry merge, shared with the job that joins the per-example
+# parts of a run. This file runs from scripts/ci, so the sibling is an import away.
+from merge_eval_parts import merge_entries
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 BASELINES = ROOT / "scripts" / "ci" / "examples_baselines.json"
@@ -284,40 +289,64 @@ def _gpu_name() -> str:
     return gpu.splitlines()[0] if gpu else "unknown"
 
 
-def _merge_entries(prior: list, fresh: list[dict]) -> list[dict]:
-    """Merge ``fresh`` entries over ``prior`` by entry name, fresh winning."""
-    merged = {e["name"]: e for e in prior if isinstance(e, dict) and "name" in e}
-    merged.update({e["name"]: e for e in fresh})
-    return list(merged.values())
-
-
-def _merged_bench(fresh: list[dict], key: str) -> list[dict]:
-    """Merge fresh entries over the bucket's current ``key`` content, by entry name.
-
-    The examples, RL and matrix CI legs publish disjoint metric sets, so a plain
-    overwrite would clobber the other legs' entries at the fixed keys.
-    """
+def _bench_feed(key: str, into: pathlib.Path) -> tuple[list, str | None]:
+    """The feed at ``key`` and the ETag of that read, or an empty feed and ``None`` for no key."""
+    got = subprocess.run(
+        ["aws", "s3api", "get-object", "--bucket", bucket(), "--key", key, str(into)],
+        capture_output=True, text=True, check=False,
+    )  # fmt: skip
+    if got.returncode != 0:
+        if "NoSuchKey" in got.stderr:
+            return [], None
+        raise RuntimeError(f"get-object {key}: {got.stderr.strip()}")
     try:
-        prior = json.loads(
-            subprocess.run(["aws", "s3", "cp", f"s3://{bucket()}/{key}", "-"], capture_output=True, check=True).stdout
-        )
-    except (subprocess.CalledProcessError, json.JSONDecodeError):
+        prior = json.loads(into.read_text())
+    except json.JSONDecodeError:
         prior = []
-    return _merge_entries(prior, fresh)
+    return prior, json.loads(got.stdout)["ETag"]
+
+
+def _publish_bench(fresh: list[dict], key: str, out: pathlib.Path) -> None:
+    """Merge ``fresh`` over the feed at ``key`` and write it back, as one step.
+
+    The examples, RL and matrix CI legs publish disjoint metric sets at the same fixed keys, and
+    the examples leg uploads from one box per example at once, so a plain read-merge-write would
+    drop what another box wrote meanwhile. The write holds only while the key still carries the
+    ETag the read saw, or still doesn't exist; a 412 or 409 reads and merges again.
+    """
+    scratch = out / f"merged-{pathlib.Path(key).name}"
+    for attempt in range(1, 21):
+        prior, etag = _bench_feed(key, scratch)
+        scratch.write_text(json.dumps(merge_entries(prior, fresh), indent=2))
+        condition = ["--if-match", etag] if etag else ["--if-none-match", "*"]
+        print(f"uploading {scratch.name} -> s3://{bucket()}/{key} (try {attempt})", flush=True)
+        # Fixed keys, for stable docs URLs; max-age=300 so a re-upload propagates within ~5 min.
+        put = subprocess.run(
+            ["aws", "s3api", "put-object", "--bucket", bucket(), "--key", key, "--body", str(scratch),
+             "--content-type", "application/json", "--cache-control", "max-age=300", *condition],
+            capture_output=True, text=True, check=False,
+        )  # fmt: skip
+        if put.returncode == 0:
+            scratch.unlink()
+            return
+        if not any(code in put.stderr for code in ("PreconditionFailed", "ConditionalRequestConflict")):
+            raise RuntimeError(f"put-object {key}: {put.stderr.strip()}")
+        time.sleep(random.uniform(0.5, 3.0))
+    raise RuntimeError(f"{key}: another leg kept writing the feed for {attempt} tries")
 
 
 def _merged_local(path: pathlib.Path, fresh: list[dict]) -> list[dict]:
     """Merge fresh entries over ``path``'s current entries, by entry name.
 
     Split CI invocations sharing one --out dir, as the flight gate runs the eval once per PX4
-    pin, would otherwise clobber the earlier invocation's entries; this is _merged_bench's local twin.
+    pin, would otherwise clobber the earlier invocation's entries; this is _publish_bench's local twin.
     """
     try:
         data = json.loads(path.read_text())
         prior = data["entries"] if isinstance(data, dict) else data
     except (OSError, ValueError, KeyError):
         prior = []
-    return _merge_entries(prior, fresh)
+    return merge_entries(prior, fresh)
 
 
 def _upload(out: pathlib.Path, metas: dict[str, dict]) -> None:
@@ -343,10 +372,7 @@ def _upload(out: pathlib.Path, metas: dict[str, dict]) -> None:
         print("no scored metrics, skipping bench feed upload", flush=True)
         return
     for key in (f"public/ci/bench/{sha[:12]}.json", "public/ci/bench/latest.json"):
-        merged = out / f"merged-{pathlib.Path(key).name}"
-        merged.write_text(json.dumps(_merged_bench(fresh, key), indent=2))
-        cp(merged, key, "application/json")
-        merged.unlink()
+        _publish_bench(fresh, key, out)
 
 
 def main() -> int:
