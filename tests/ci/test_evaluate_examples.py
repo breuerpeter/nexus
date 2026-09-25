@@ -31,17 +31,17 @@ _HEALTHY_FLIGHT = {
 }
 
 
-def _fake_flights(monkeypatch, stats_by_name: dict[str, dict], rtf: float = 2.0) -> None:
-    """Stand in for the example processes at the process boundary: each named flight's dump lands in
-    the harness's artifact dir as the example would write it, and every other process the harness
-    asks for answers empty.
+def _fake_flight(monkeypatch, stats: dict, rtf: float = 2.0) -> None:
+    """Stand in for the example process at the process boundary: the flight's dump lands where the
+    harness points the example, named after the example as it would write it, and every other
+    process the harness asks for answers empty.
     """
 
     def run(cmd, **kwargs):
         if cmd[:2] == ["uv", "run"]:
-            name = cmd[cmd.index("nexus.examples") + 1]
+            example = cmd[cmd.index("nexus.examples") + 1]
             out = pathlib.Path(kwargs["env"]["NEXUS_EVAL_OUT"])
-            (out / f"{name}.json").write_text(json.dumps({"stats": stats_by_name[name], "results": {"rtf": rtf}}))
+            (out / f"{example}.json").write_text(json.dumps({"stats": stats, "results": {"rtf": rtf}}))
         return subprocess.CompletedProcess(cmd, 0, "", "")
 
     monkeypatch.setattr(subprocess, "run", run)
@@ -77,12 +77,10 @@ def test_the_wall_clock_numbers_still_reach_the_trend_record(tmp_path, monkeypat
     harness writes `benchmark.json` and `examples_bench.json`, then they carry its
     `deploy_steps_per_sec` and `rtf` entries as today.
     """
-    policy = tmp_path / "policy.pt"
-    policy.write_bytes(b"an exported policy")
-    _fake_flights(monkeypatch, {"goto_policy": _HEALTHY_FLIGHT})
+    _fake_flight(monkeypatch, _HEALTHY_FLIGHT)
     out = tmp_path / "out"
 
-    _harness(monkeypatch, "--only", "goto_policy", "--policy", str(policy), "--out", str(out))
+    _harness(monkeypatch, "--only", "goto_policy", "--out", str(out))
 
     trend = {e["name"] for e in json.loads((out / "benchmark.json").read_text())}
     docs = {e["name"] for e in json.loads((out / "examples_bench.json").read_text())["entries"]}
@@ -97,7 +95,7 @@ def test_the_fresh_flight_gates_on_completing_only(tmp_path, monkeypatch, capsys
     policy = tmp_path / "policy.pt"
     policy.write_bytes(b"a fresh export")
     one_of_three = {**_HEALTHY_FLIGHT, "reached": 1, "final_tracking_error_m": 3.1, "ape_trans_rmse_m": 5.0}
-    _fake_flights(monkeypatch, {"goto_policy_fresh": one_of_three})
+    _fake_flight(monkeypatch, one_of_three)
 
     rc = _harness(monkeypatch, "--only", "goto_policy_fresh", "--policy", str(policy), "--out", str(tmp_path / "out"))
 
@@ -115,9 +113,9 @@ def test_a_fresh_export_the_deploy_side_cannot_fly_fails_the_leg(tmp_path, monke
     """
     narrow = torchscript_policy(obs_dim=12)
 
-    rc = _harness(monkeypatch, "--only", "goto_policy", "--policy", narrow, "--out", str(tmp_path / "out"))
+    rc = _harness(monkeypatch, "--only", "goto_policy_fresh", "--policy", narrow, "--out", str(tmp_path / "out"))
 
-    assert (rc, "FAILED examples: goto_policy" in capsys.readouterr().out) == (1, True)
+    assert (rc, "FAILED examples: goto_policy_fresh" in capsys.readouterr().out) == (1, True)
 
 
 def test_a_hosted_policy_the_runner_cannot_fetch_fails_the_leg(tmp_path, monkeypatch, capfd):

@@ -67,23 +67,16 @@
     }
   },
   "goto_policy": {
-    "rtf": {
-      "value": 2.135,
-      "min_frac": 0.8
-    },
     "reached": 3,
     "final_tracking_error_m": {
       "max": 0.1
     },
-    "deploy_steps_per_sec": {
-      "value": 149.8,
-      "min_frac": 0.7
-    },
     "ape_trans_rmse_m": {
-      "value": 0.5244,
+      "value": 0.533,
       "max_frac": 1.3
     }
   },
+  "goto_policy_fresh": {},
   "gain_tuning": {
     "rtf": {
       "value": 6.354,
