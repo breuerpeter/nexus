@@ -228,7 +228,7 @@ def main(argv: list[str]) -> int:
     if not base:
         parser.error("this catalog declares no assets.base: pass --base <url> to say where to publish")
     compact = base.rstrip("/") == catalog_base.rstrip("/")  # only the catalog's own base completes a compact ref
-    usd_url = hosted_url(base, kind_dir, name, sha)
+    usd_url = hosted_url(base, f"usd/{kind_dir}", name, sha)
 
     print(f"kind      {kind_dir[:-1]}")
     print(f"name      {name}")
@@ -237,7 +237,7 @@ def main(argv: list[str]) -> int:
     print(f"  {usd}  ->  {usd_url}")
 
     if is_vehicle:
-        glb_url = hosted_url(base, kind_dir, name, sha, "glb")
+        glb_url = hosted_url(base, f"usd/{kind_dir}", name, sha, "glb")
         glb_local = LOCAL_ASSETS / f"{name}-{sha}.glb"
         print(f"  {glb_local}  ->  {glb_url}")
         print("\nconverting to glb (isolated bpy env) ...")

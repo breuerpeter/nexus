@@ -71,3 +71,6 @@ setpoints?
 viewport
 shaders?
 Perceptron
+
+# The status the examples harness prints for a gate row that holds.
+ok

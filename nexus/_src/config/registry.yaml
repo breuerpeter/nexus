@@ -7,7 +7,8 @@
 #
 # Assets are referenced by `{name, sha256}`, completed against `assets.base` below into a
 # self-contained `.usdz` at <base>/assets/usd/{vehicles,scenes}/<name>-<sha256>.usdz; see
-# nexus/_src/assets/resolver.py. An entry may carry a full `url` instead, which is how a catalog
+# nexus/_src/assets/resolver.py, which also places an example's hosted policy at
+# <base>/assets/policies/<name>-<sha256>.pt. An entry may carry a full `url` instead, which is how a catalog
 # names a blob hosted somewhere else, or a local file. Each USD carries
 # the actuator map as motor:* and propeller:* attrs on the actuator joint prims AND — for the FPV mods —
 # an authored FpvCam the Kit render peer renders; both non-physical (nexus model unchanged).

@@ -50,6 +50,27 @@ def warp_cpu():
         yield
 
 
+@pytest.fixture
+def torchscript_policy(tmp_path):
+    """Write a small TorchScript policy, ``obs[obs_dim] -> action[4]`` in [-1, 1], under ``tmp_path``.
+
+    A stand-in for an exported ``policy.pt``: the same interface the goto_policy example deploys,
+    with fixed random weights, so a test can fly it without training one.
+    """
+    torch = pytest.importorskip("torch")
+
+    def _write(obs_dim: int = 16, name: str = "policy.pt") -> str:
+        torch.manual_seed(0)
+        net = torch.nn.Sequential(
+            torch.nn.Linear(obs_dim, 64), torch.nn.Tanh(), torch.nn.Linear(64, 4), torch.nn.Tanh()
+        )
+        path = tmp_path / name
+        torch.jit.script(net).save(str(path))
+        return str(path)
+
+    return _write
+
+
 @pytest.fixture(scope="session")
 def rrd_entities():
     """Read the entity paths a written ``.rrd`` carries, through the bundled command-line tool.
