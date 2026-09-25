@@ -25,8 +25,10 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-# Hosted assets are self-contained ``.usdz`` on a flat, content-addressed scheme under a registry's
-# base: ``<base>/assets/usd/{vehicles,scenes}/<name>-<sha256>.usdz``, where ``<name>`` is
+# Hosted assets sit on a flat, content-addressed scheme under a registry's base:
+# ``<base>/assets/<kind>/<name>-<sha256>.<ext>``, where ``<kind>`` is the whole folder under
+# ``assets/``: ``usd/vehicles`` and ``usd/scenes`` for the self-contained ``.usdz`` files and their
+# ``.glb`` previews, ``policies`` for an example's exported ``.pt`` policy. ``<name>`` is
 # human-readable and the sha in the key makes objects immutable, cached forever. This is the single
 # source of truth for the scheme; the base is the registry's own, so where the blobs live is data a
 # catalog carries and not a name in this package. The docs preview hook and
@@ -34,13 +36,14 @@ from pathlib import Path
 
 
 def hosted_url(base: str, kind: str, name: str, sha256: str, ext: str = "usdz") -> str:
-    """URL of a content-addressed hosted asset under *base*. ``kind`` is ``vehicles`` or ``scenes``.
+    """URL of a content-addressed hosted asset under *base*. ``kind`` is the folder under
+    ``assets/``: ``usd/vehicles``, ``usd/scenes`` or ``policies``.
 
     The scheme of *base* decides how :func:`fetch` reads it: ``https://`` anonymously, ``file://``
     from disk, and ``s3://`` through the ``aws`` command-line tool's credential chain. An entry that
     carries a full URL of its own never reaches here.
     """
-    return f"{base.rstrip('/')}/assets/usd/{kind}/{name}-{sha256}.{ext}"
+    return f"{base.rstrip('/')}/assets/{kind}/{name}-{sha256}.{ext}"
 
 
 def default_cache() -> Path:

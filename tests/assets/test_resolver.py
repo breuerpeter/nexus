@@ -45,12 +45,20 @@ def test_hosted_url_schemes():
     # A literal pin on the content-addressed layout, so a drive-by change to it fails loudly. Where a
     # catalog keeps its blobs is its own base; the layout under that base is the framework's.
     assert (
-        hosted_url("https://cdn.example/public", "vehicles", "astro", "abc")
+        hosted_url("https://cdn.example/public", "usd/vehicles", "astro", "abc")
         == "https://cdn.example/public/assets/usd/vehicles/astro-abc.usdz"
     )
     assert (
-        hosted_url("s3://a-bucket/catalog/", "scenes", "site", "abc")
+        hosted_url("s3://a-bucket/catalog/", "usd/scenes", "site", "abc")
         == "s3://a-bucket/catalog/assets/usd/scenes/site-abc.usdz"
+    )
+
+
+def test_hosted_url_policies_kind():
+    # A hosted policy is a sibling tree of the USD one: the kind is the whole folder under assets/.
+    assert (
+        hosted_url("https://cdn.example/public", "policies", "goto_policy", "abc", "pt")
+        == "https://cdn.example/public/assets/policies/goto_policy-abc.pt"
     )
 
 
