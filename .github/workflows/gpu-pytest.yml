@@ -4,7 +4,9 @@ name: gpu-pytest
 # so it exercises the CUDA paths and runs tests/runtimes/test_capture.py (which auto-skips on CPU).
 # The command provisions the PX4 checkout at the scripts/ci/px4.ref pin first (provision_px4.sh, cached
 # per pin as in gpu-examples), so tests/controllers/test_px4_gcs_link.py flies a real PX4 SITL here;
-# that module skips wherever no PX4 checkout is provisioned, cpu-pytest included.
+# that module skips wherever no PX4 checkout is provisioned, cpu-pytest included. The 25 slowest
+# tests print at the end: whether the leg's minutes are a few GPU flights or many small tests
+# decides whether it can fan out like gpu-examples.
 # Advisory (not a required check). Offered on EVERY PR; runs only once the `gpu` label is applied —
 # the label IS the GPU-spend approval. A labeled fork PR flies through pull_request_target, each
 # run approved by a maintainer on the external-pr-approval environment; main pushes fly. The gate
@@ -41,7 +43,7 @@ jobs:
       caches: px4
       command: >-
         bash scripts/ci/provision_px4.sh &&
-        uv run --extra policy --with pytest --with pytest-cov pytest tests --cov=nexus --cov-report=xml -q
+        uv run --extra policy --with pytest --with pytest-cov pytest tests --cov=nexus --cov-report=xml -q --durations=25
       coverage-flags: gpu
     secrets: inherit
 
