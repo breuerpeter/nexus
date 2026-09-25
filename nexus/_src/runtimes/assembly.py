@@ -259,8 +259,9 @@ def run_captured_host_exchange(orch: Orchestrator, *, steps: int | None = None, 
         return orch
     orch.clock.rtf = rtf  # rtf=0, the default: run as fast as the controller keeps up; rtf>0 throttles
     state = orch.physics.reset()
-    orch.controller.connect()  # a host-boundary controller dials in here, for example PX4 on tcpin:4560
     try:
+        # The loop connects the controller itself, after its capture: a host-boundary controller
+        # dials in there, for example PX4 on tcpin:4560.
         for _ in orch._loop_captured_host_exchange(state, steps=steps):  # generator; exhaust it
             pass
     except ConnectionError as e:

@@ -514,6 +514,11 @@ class Orchestrator:
         The preroll re-samples each iteration likewise. ``steps`` defaults to ``max_steps``; ``None``
         runs until the controller ends the run, on disconnect / ``stop()``.
 
+        The loop connects the controller itself, after the seed row and the capture, so it compiles
+        and loads every kernel it launches before a peer is up. From the moment PX4 dials in, it
+        logs a ``poll timeout`` error for each 1 s of wall time that brings no message, and on a cold
+        kernel cache the first launches here compile for longer than that.
+
         A generator: one control tick per ``yield``, the step() driving seam: ``run()`` exhausts it,
         ``Sim.step()`` advances it one tick. The loop captures the graph once before the first yield.
         """
@@ -522,14 +527,35 @@ class Orchestrator:
         steps = self.max_steps if steps is None else steps
         dt = self.clock.dt
         meas = Measurement()
-        # Pre-roll: sense the settled state once, which seeds the IMU finite-diff so capture runs first=0,
-        # then stream the sensor feed until the controller's first exchange completes; an external
-        # host-boundary peer takes seconds to dial in; an in-process controller answers on the first try.
+        # Sense the settled state once, which seeds the IMU finite-diff so capture runs first=0.
         t = self.clock.advance()
         env = self.environment.sample(None, t)
         for s in self._graph_sensors:
             s.sample_wp(state, env, t)
-        wp.synchronize()
+        # Seed one observation row: the settled pre-flight state, which is a datum in its own right,
+        # the pose every climb measures against. The eager loop seeds one too, so both strategies
+        # record the same pre-flight row. It also warms the record kernels' module load, so that
+        # happens outside the capture below.
+        self._record_tick()
+        wp.synchronize()  # complete the seed row's launches before the capture below opens
+
+        # Capture the device region before the first tick: any other stream op during CUDA stream
+        # capture kills the capture, and the run would then die silently with PX4 lockstep frozen
+        # mid-boot. Replays are safe. The graph reads the actuator's persistent command buffers, which
+        # the first write_controls below fills before the first replay.
+        with wp.ScopedCapture() as cap:
+            self.physics.clear_forces(state)
+            self.actuator.forces_wp(state)
+            self.physics.step(state, env, dt)
+            for s in self._graph_sensors:
+                s.sample_wp(state, env, t)
+            self._record_tick()  # capturable observation tap, post-step groundtruth; no-op if not observing
+        graph = cap.graph
+
+        # Pre-roll: connect, then stream the sensor feed until the controller's first exchange
+        # completes; an external host-boundary peer takes seconds to dial in; an in-process controller
+        # answers on the first try.
+        self.controller.connect()  # bind tcpin:4560 and return listening, then start the peer
         controls = None
         host = getattr(self.controller, "host_boundary", False)
         if host:
@@ -547,25 +573,7 @@ class Orchestrator:
             raise ConnectionError(f"controller did not establish lockstep within {self.preroll_timeout}s")
         if host:
             logger.info("controller lockstep established")
-        # Seed one observation row: the settled pre-flight state, which is a datum in its own right,
-        # the pose every climb measures against. The eager loop seeds one too, so both strategies
-        # record the same pre-flight row. It also warms the record kernels' module load, so that
-        # happens outside the capture below.
-        self._record_tick()
-        wp.synchronize()  # complete the seed row's launches before the capture below opens
-
-        # Capture the device region, with controls already seeded into the actuator buffer, before the
-        # first tick: any other stream op during CUDA stream capture kills the capture, and the run
-        # would then die silently with PX4 lockstep frozen mid-boot. Replays are safe.
-        self.actuator.write_controls(controls)
-        with wp.ScopedCapture() as cap:
-            self.physics.clear_forces(state)
-            self.actuator.forces_wp(state)
-            self.physics.step(state, env, dt)
-            for s in self._graph_sensors:
-                s.sample_wp(state, env, t)
-            self._record_tick()  # capturable observation tap, post-step groundtruth; no-op if not observing
-        graph = cap.graph
+        self.actuator.write_controls(controls)  # H2D for the first replay, host seam
         count = 0
         t0 = time.monotonic()
         warmup_steps = 250
@@ -669,9 +677,10 @@ class Orchestrator:
         """The single execution path, as a generator that yields once per control tick, driving both
         ``run()``, which exhausts it, and ``Sim.step()``, which advances it one tick.
 
-        Resets physics, which builds + settles the vehicle at the NED origin, connects the controller,
-        which binds its port and starts its peer; the wait for the peer is the preroll, not this call.
-        Then it resolves the execution strategy and delegates to the matching loop.
+        Resets physics, which builds + settles the vehicle at the NED origin, resolves the execution
+        strategy and delegates to the matching loop. The controller connects, which binds its port and
+        starts its peer, before the in-process and eager loops, and inside the host-exchange loop after
+        its capture; the wait for the peer is the preroll, not the connect.
         Every loop is a generator; it ``yield``s per tick and step-drives, for every control kind
         alike: a host-boundary peer, PX4, and an in-process autopilot both advance one tick per
         ``next()``. Common setup runs before the first tick; teardown, renderer/controller/logs close,
@@ -688,18 +697,20 @@ class Orchestrator:
             # Re-fetch the live state in case the hook advanced it; it must not rebuild it.
             state = self.physics.current_state
         try:
-            # Inside the try: from here on the controller owns a live peer, the PX4 container it
-            # launches, so every exit path has to reach the `finally`'s controller.close().
-            self.controller.connect()  # bind tcpin:4560 and return listening, then start the peer
+            # Inside the try: from the connect on, the controller owns a live peer, the PX4 container
+            # it launches, so every exit path has to reach the `finally`'s controller.close().
             strategy = self._execution_strategy()
             logger.info(f"execution strategy: {strategy}")
             if strategy == "captured-host-exchange":
-                # The host-exchange captured loop owns its own streaming preroll, since it must re-sample
-                # the sensor feed while the peer dials in, and its own seed row.
+                # The host-exchange captured loop owns its own connect, after its capture, and its own
+                # streaming preroll, since it must re-sample the sensor feed while the peer dials in,
+                # and its own seed row.
                 yield from self._loop_captured_host_exchange(state)
             elif strategy == "captured-inprocess":
+                self.controller.connect()  # before the capture: a controller reserves its buffers here
                 yield from self._loop_captured_inprocess(state)
             else:
+                self.controller.connect()  # bind tcpin:4560 and return listening, then start the peer
                 self._preroll(state)
                 self._record_tick()  # seed one observation row, the same contract as captured
                 yield from self._loop(state)
