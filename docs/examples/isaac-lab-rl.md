@@ -80,6 +80,10 @@ uv run --extra policy -m nexus.examples goto_policy \
   --policy .rl-artifacts/rl/exported/policy.pt
 ```
 
+Without `--policy`, `uv run --extra policy -m nexus.examples goto_policy` flies the hosted policy
+the example pins: a content-addressed `.pt` fetched from the catalog's `assets.base` into the asset
+cache, sha-verified, and offline after the first fetch.
+
 Defaults reproduce the preceding recordings: training seed 42, and the script defaults set the
 recorder's snapshot iterations and the 3-waypoint deploy tour. Override the deploy tour with
 repeated `--waypoint X Y Z`.
