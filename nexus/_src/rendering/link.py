@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import select
 import socket
 import struct
@@ -167,7 +168,9 @@ class KitRenderer:
         t0 = time.monotonic()
         self._connect()
         sensors = [{"path": s.path, "output": s.output, "width": s.width, "height": s.height} for s in self.sensors]
-        send(self._sock, {"op": "setup", **self.setup, "sensors": sensors})
+        # The Cesium ion token crosses here and nowhere else: never in the container's environment.
+        token = os.environ.get("CESIUM_ION_TOKEN") or None
+        send(self._sock, {"op": "setup", **self.setup, "cesium_ion_token": token, "sensors": sensors})
         try:
             header, _ = self._receive(STARTUP_TIMEOUT_S, "the ready")
         except ConnectionError as exc:

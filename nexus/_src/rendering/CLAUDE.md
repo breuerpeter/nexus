@@ -16,6 +16,8 @@ renderer the loop drives and the link the RTX sensors ride.
 - The container runs as the host user with the image's `isaac-sim` group, gid `1234`, added, since
   only that group can read `/isaac-sim`. Kit's `HOME` is `~/.cache/nexus/kit/home` and its shader
   cache `~/.cache/nexus/kit/cache`.
+- No secret goes in the peer's environment: Kit prints its whole environment into the console
+  at every boot, and the console is a log file. The Cesium ion token rides the setup message.
 - The peer's console is `~/.cache/nexus/logs/console-*.log`: its own lines start `[kit-peer]`, and
   every 240 frames one of them splits a frame's time into the wait for the host, the render and
   the send.

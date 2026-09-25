@@ -2,7 +2,7 @@
 
 import os
 
-from nexus._src.rendering.peer import KitPeer
+from nexus._src.rendering.peer import KitPeer, run_script
 
 
 def _usd(folder, name="v.usda"):
@@ -36,3 +36,19 @@ def test_the_container_runs_as_the_user(daemon, tmp_path):
     """So every file it writes into a mounted cache belongs to the user."""
     KitPeer([_usd(tmp_path / "project")], cache_dir=tmp_path / "cache").start()
     assert daemon.runs[0]["user"] == f"{os.getuid()}:{os.getgid()}"
+
+
+def test_the_container_environment_holds_no_ion_token(daemon, tmp_path, monkeypatch):
+    """Kit prints its whole environment into the console at every boot, and the host keeps the console as a log."""
+    monkeypatch.setenv("CESIUM_ION_TOKEN", "ion-secret")
+    KitPeer([_usd(tmp_path / "project")], cache_dir=tmp_path / "cache").start()
+    assert "ion-secret" not in daemon.runs[0]["environment"].values()
+
+
+def test_a_kit_script_container_environment_holds_no_ion_token(daemon, tmp_path, monkeypatch):
+    monkeypatch.setenv("CESIUM_ION_TOKEN", "ion-secret")
+    monkeypatch.chdir(tmp_path)
+    script = tmp_path / "convert.py"
+    script.write_text("")
+    run_script([str(script)])
+    assert "ion-secret" not in daemon.runs[0]["environment"].values()

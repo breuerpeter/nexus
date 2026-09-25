@@ -18,15 +18,20 @@ from nexus._src.rendering.peer import KIT_DIR, KitPeer
 wire = runpy.run_path(str(KIT_DIR / "link.py"))
 
 
-def _peer_serving(delay_s=0.0, die_after_setup=False):
-    """A stand-in Kit peer: answers every frame with a 2x2 color image stamped with the request's time."""
+def _peer_serving(delay_s=0.0, die_after_setup=False, setups=None):
+    """A stand-in Kit peer: answers every frame with a 2x2 color image stamped with the request's time.
+
+    ``setups``, when given, collects each setup message the peer receives.
+    """
 
     def serve(port):
         with socket.create_server(("127.0.0.1", port)) as listener:
             conn, _ = listener.accept()
             with conn:
                 wire["send"](conn, {"op": "hello"})
-                wire["recv"](conn)  # setup
+                setup, _ = wire["recv"](conn)
+                if setups is not None:
+                    setups.append(setup)
                 wire["send"](conn, {"op": "ready"})
                 if die_after_setup:
                     return
@@ -118,3 +123,11 @@ def test_a_peer_that_dies_mid_flight_stops_the_run_naming_it(daemon, tmp_path):
     with pytest.raises(ConnectionError, match="Kit render peer"):
         for t in (0.1, 0.2):
             renderer.tick(_tick(t), _state())
+
+
+def test_the_peer_gets_the_ion_token_in_the_setup(daemon, tmp_path, monkeypatch):
+    monkeypatch.setenv("CESIUM_ION_TOKEN", "ion-secret")
+    setups = []
+    renderer, _ = _renderer(daemon, tmp_path, _peer_serving(setups=setups))
+    renderer.close()
+    assert setups[0]["cesium_ion_token"] == "ion-secret"

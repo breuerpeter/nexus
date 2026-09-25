@@ -138,9 +138,9 @@ class KitPeer:
             **_kit_caches(),
             str(logs): {"bind": str(logs), "mode": "rw"},  # the --benchmark JSON beside the run's .rrd
         }
+        # No secret goes in the environment: Kit prints its whole environment into the console at
+        # every boot, and the console is a log file. The ion token rides the setup message instead.
         env = {"HOME": _KIT_HOME, "ACCEPT_EULA": "Y", "PRIVACY_CONSENT": "Y", "OMNI_KIT_ACCEPT_EULA": "YES"}
-        if os.environ.get("CESIUM_ION_TOKEN"):
-            env["CESIUM_ION_TOKEN"] = os.environ["CESIUM_ION_TOKEN"]
         self.port = _free_port()
         self.log_path = logs / f"console-{time.strftime('%Y%m%d-%H%M%S')}.log"
         try:
@@ -235,9 +235,8 @@ def run_script(argv: list[str]) -> int:
     if data.is_dir() and not data.is_relative_to(cwd):
         volumes[str(data)] = {"bind": str(data), "mode": "rw"}
     env = {"HOME": _KIT_HOME, "ACCEPT_EULA": "Y", "PRIVACY_CONSENT": "Y", "OMNI_KIT_ACCEPT_EULA": "YES"}
-    for name in ("CESIUM_ION_TOKEN", "NEXUS_DATA"):
-        if os.environ.get(name):
-            env[name] = os.environ[name]
+    if os.environ.get("NEXUS_DATA"):
+        env["NEXUS_DATA"] = os.environ["NEXUS_DATA"]
     try:
         container = client().containers.run(
             tag,

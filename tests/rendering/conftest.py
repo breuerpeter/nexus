@@ -7,6 +7,7 @@ import pytest
 from docker.errors import NotFound
 
 import nexus._src.containers as containers
+import nexus._src.rendering.peer as peer
 
 
 class _Container:
@@ -20,6 +21,9 @@ class _Container:
 
     def logs(self, **kwargs):
         yield from ()
+
+    def wait(self):
+        return {"StatusCode": 0}
 
     def remove(self, force=False):
         self.status = "removed"
@@ -66,5 +70,6 @@ def daemon(monkeypatch, tmp_path):
     """The stand-in daemon, with the home folder in the test's folder so the peer's caches land there."""
     d = Daemon()
     monkeypatch.setattr(containers, "client", lambda: d)
+    monkeypatch.setattr(peer, "client", lambda: d)  # the peer module holds the name it imported
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     return d

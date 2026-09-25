@@ -202,7 +202,7 @@ class Renderer:
         world = setup.get("scene") or ""
         from cesium_globe import CesiumGlobe
 
-        self._scene = CesiumGlobe() if world and CesiumGlobe.matches(world) else None
+        self._scene = CesiumGlobe(setup.get("cesium_ion_token")) if world and CesiumGlobe.matches(world) else None
         ctx = omni.usd.get_context()
         if world:
             if not ctx.open_stage(world):

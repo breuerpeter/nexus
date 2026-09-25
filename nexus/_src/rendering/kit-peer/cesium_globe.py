@@ -2,17 +2,17 @@
 for Omniverse, anchored at the scene's geodetic origin so the First Person View (FPV) camera flies
 over the real place the Global Positioning System (GPS) says it's at.
 
-Claimed by content: a scene Universal Scene Description (USD) file carrying a
-``CesiumTilesetPrim``. The scene USD, authored by ``scripts/assets/author_cesium_scene.py``, ships
-the tileset structure, which is the georeference plus CesiumData plus the ion tileset plus the
-culling, quality and cache tuning; the sky, dome and sun prims; and the photoreal render recipe,
+Claimed by content: a scene Universal Scene Description (USD) file carrying a ``CesiumTilesetPrim``.
+The scene USD, authored by ``scripts/assets/author_cesium_scene.py``, ships the tileset structure,
+which is the georeference plus CesiumData plus the ion tileset plus the culling, quality and cache
+tuning; the sky, dome and sun prims; and the photoreal render recipe,
 ``customLayerData.renderSettings``, which Kit applies when the peer opens the scene as the root
 stage, where its absolute ``/Cesium*`` paths compose natively. This handler injects the two
-runtime-only bits, the ``CESIUM_ION_TOKEN`` secret and the resolved georef of lat, lon and alt,
-both on the session layer, and runs the live machinery no USD can carry: per-camera tile-selection
-viewports and the streaming drain before the flight. The alt is data, the registry scene's
-``geodetic_origin.alt`` or ``--geo lat,lon,alt``: the WGS84 ellipsoidal height of the surface,
-applied as the georeference origin height so the street sits at local z=0, with no runtime
+runtime-only bits, the ion token the host sends in the setup message and the resolved georef of lat,
+lon and alt, both on the session layer, and runs the live machinery no USD can carry: per-camera
+tile-selection viewports and the streaming drain before the flight. The alt is data, the registry
+scene's ``geodetic_origin.alt`` or ``--geo lat,lon,alt``: the WGS84 ellipsoidal height of the
+surface, applied as the georeference origin height so the street sits at local z=0, with no runtime
 ground probing. Tile geometry streams into Fabric, usdrt, and never exists as stage prims.
 """
 
@@ -34,7 +34,8 @@ def _log(msg: str) -> None:
 class CesiumGlobe:
     keeps_default_viewport = True  # tile selection reuses the boot viewport
 
-    def __init__(self):
+    def __init__(self, token: str | None):
+        self._token = (token or "").strip()  # the host's CESIUM_ION_TOKEN, from the setup message
         self._sel: dict = {}  # camera prim path -> its tile-selection camera's transform op
         self._active = False  # compose succeeded → on_ready runs the drain
 
@@ -57,12 +58,12 @@ class CesiumGlobe:
         up one tile-selection viewport per sensor camera. A missing prerequisite or any failure warns
         and keeps the asset's own sky: the flight goes on, only the tiles are missing.
 
-        Config: ``CESIUM_ION_TOKEN``, required; extensions folder from ``NEXUS_CESIUM_EXTS``,
+        Config: the ion token, required; extensions folder from ``NEXUS_CESIUM_EXTS``,
         default ``/cesium-exts``. The georef injection comes before enabling the tile engine: Cesium
         computes ``cesium:ecefToUsdTransform`` once, when it first reads the georeference, and a
         later override doesn't retrigger it.
         """
-        token = os.environ.get("CESIUM_ION_TOKEN", "").strip()
+        token = self._token
         ext_dir = os.environ.get("NEXUS_CESIUM_EXTS", "/cesium-exts")
         checks = (
             (os.path.isdir(ext_dir), f"extensions not at {ext_dir!r} (rebuild the Kit image or set NEXUS_CESIUM_EXTS)"),
