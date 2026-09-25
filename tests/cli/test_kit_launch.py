@@ -16,7 +16,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 
-# A vehicle Universal Scene Description (USD) file with one camera prim: an RTX sensor, so `--runtime auto` picks the Kit runtime.
+# A vehicle Universal Scene Description (USD) file with one camera prim: an RTX sensor, so the run starts the Kit peer.
 CAMERA_USD = '#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\ndef Xform "vehicle" {\n    def Camera "cam" {}\n}\n'
 PLAIN_USD = '#usda 1.0\n(\n    defaultPrim = "world"\n)\ndef Xform "world" {}\n'
 
