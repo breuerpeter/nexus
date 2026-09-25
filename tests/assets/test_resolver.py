@@ -55,7 +55,7 @@ def test_hosted_url_schemes():
 
 
 def test_hosted_url_policies_kind():
-    # A hosted policy is a sibling tree of the USD one: the kind is the whole folder under assets/.
+    # A hosted policy is a sibling tree of the usdz one: the kind is the whole folder under assets/.
     assert (
         hosted_url("https://cdn.example/public", "policies", "goto_policy", "abc", "pt")
         == "https://cdn.example/public/assets/policies/goto_policy-abc.pt"

@@ -1,7 +1,7 @@
 Hosted assets are content-addressed on a flat scheme,
 `<base>/assets/<kind>/<name>-<sha256>.<ext>`, where `<kind>` is `usd/vehicles` or `usd/scenes` for a
 Universal Scene Description (USD) file and its `.glb` preview, and `policies` for an example's
-exported `.pt` policy; `<name>` is the file's stem and `<base>` is what a catalog declares in its
+exported `.pt` policy. `<name>` is the file's stem and `<base>` is what a catalog declares in its
 `assets` block. The bucket behind the published base is a setting, `$NEXUS_BUCKET`, rather than a
 line here, so no checkout carries an account's name.
 
