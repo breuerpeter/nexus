@@ -44,7 +44,7 @@ the props spin physically in every renderer. The tracking error of the `acados` 
 Predictive Control (NMPC) example **halved** when it switched to the same actuator.
 
 The sim speed is the **real-time factor of the flight itself**: sim-time advanced divided by wall-time,
-with PX4 in the lockstep loop. The orchestrator reports it on exit. The standalone runtime runs on the
+with PX4 in the lockstep loop. The orchestrator reports it on exit. The loop runs on the
 **GPU** under the **captured execution strategy**, which `--device auto` selects automatically: a
 CUDA-graph replay of the device region, with the PX4 MAVLink seam at the host boundary. The per-tick
 budget is roughly **53% GPU step**, **20% PX4 MAVLink exchange**, and **27% `.rrd` logging**. The GPU

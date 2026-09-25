@@ -12,9 +12,12 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
   under `nexus/examples/controllers/<name>/`. Shared example machinery lives in
   `nexus/examples/_lib/`. It ships in the wheel, and `nexus-rl` imports from it. Core must
   never import `nexus.examples`, an import-linter contract in `.importlinter`. Run any
-  example with `uv run -m nexus.examples <name>` or RTX-rendered via
-  `uv run nexus script nexus.examples <name>`. Read `nexus/examples/CLAUDE.md`
+  example with `uv run -m nexus.examples <name>`. Read `nexus/examples/CLAUDE.md`
   before adding or changing an example.
+- **RTX sensors render in the Kit render peer**, a container the run starts on the host when the
+  vehicle's Universal Scene Description (USD) file authors a `Camera` or `OmniLidar` prim. The loop
+  never runs inside Kit, and no module imports Kit, an import-linter contract. Read
+  `nexus/_src/rendering/CLAUDE.md` before changing the peer, its image, or the render link.
 - **`evo` is GPLv3** → it lives only in the `ci` dependency-group and never ships as a dependency.
   Examples dump plain `.npz` and JSON files, and only `scripts/ci/evaluate_examples.py` imports
   `evo` to score them.

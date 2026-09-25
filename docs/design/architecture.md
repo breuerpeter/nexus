@@ -63,26 +63,26 @@ fault-wrappable:
 | `Actuator` | `forces(controls, state, env) → Wrench` |
 | `Sensor` | `sample(state, env, t) → Measurement`, where a camera sensor uses a renderer |
 | `Controller` | `exchange(measurements, t) → Controls`, one method, many implementations |
-| `Renderer` | standalone debug viewers, or in-process RTX in Isaac Sim |
+| `Renderer` | the Kit render peer's lifecycle: RTX sensors render in a container fed poses over a socket |
 | `Recorder`, `Capturable` | cross-cutting observability and capture-capability markers |
 
 The **scene and the vehicle aren't code interfaces**: they come from
 Universal Scene Description (USD). A single `USDBuilder` reads the vehicle model through
 `ModelBuilder.add_usd`. There is no hand-written builder to swap.
 
-**Reading state across runtimes.** Components never call a runtime API directly. They read the
-live `newton.State`, `body_q` as a transform and `body_qd` as a spatial vector, through Warp kernels.
+**Reading state.** Components never call an engine API directly. They read the live
+`newton.State`, `body_q` as a transform and `body_qd` as a spatial vector, through Warp kernels.
 Those kernels pin one canonical convention: **`XYZW` quaternions, world-frame velocity taken at the
-center of mass, Z-up in sim**. Because both runtimes are tensors-over-Newton-over-USD, the same
-sensor, actuator, or controller runs verbatim in each. This is the mechanism behind *one component
-set, two runtimes*. The only place that reorders a quaternion is the PX4 IMU wire, which expects
-scalar-first `WXYZ`.
+center of mass, Z-up in sim**. Because every run is tensors-over-Newton-over-USD, the same sensor,
+actuator, or controller runs verbatim in a CI test and in a rendered flight. The only place that
+reorders a quaternion is the PX4 IMU wire, which expects scalar-first `WXYZ`.
 
 **Dependency injection.** The **core injects** the cross-cutting handles a component needs: its
 `Recorder`, a seeded Random Number Generator (RNG) sub-stream, the `SeedTree`, and the logger. So a
 component holds no global state, and a test can construct it standalone. Module boundaries form a
-Directed Acyclic Graph (DAG) with the core at the root, and `import-linter` enforces them in CI. The
-core can never import the Isaac Sim runtime.
+Directed Acyclic Graph (DAG) with the core at the root, and `import-linter` enforces them in CI. No
+module imports Kit: the Kit render peer's program ships as package data that nothing imports, and
+the contract forbids `omni`, `usdrt`, `isaacsim` and `carb` in every tier.
 
 ## Controllers and the operator plane
 
@@ -127,8 +127,8 @@ Observability is cross-cutting, split into a **write** side and a **read** side:
 - **One central Rerun sink.** A single `Logger`, injected into every component, owns the one
   Rerun recording, writing under namespaced entity paths such as `physics/…`, `sensors/…`,
   `operator/…`, and `controller/…` on a shared `sim_time` timeline. It can serve a live viewer over
-  gRPC on port `9876` or write a durable `.rrd`. Out-of-process producers, PX4's own logger and the
-  Isaac Sim runtime, merge into the same view. Logging is **output-only**: nothing reads it back
+  gRPC on port `9876` or write a durable `.rrd`. Out-of-process producers merge into the same view:
+  PX4's own logger, and the Kit render peer, whose frames the camera sensors log on the host. Logging is **output-only**: nothing reads it back
   into the loop, so it can't perturb determinism. It decimates to a configurable rate, 50 Hz by
   default, so it doesn't cap the real-time factor.
 - **The Recorder read-seam.** Components record typed samples into device-side ring buffers: body
@@ -157,7 +157,9 @@ exactly what it simulated. Vehicle assets are content-addressed. The
 
 The framework ships as a single **`nexus`** package in a `uv` workspace. All source lives under
 `nexus/_src/<area>/` and the public API is re-exported from `nexus`. Never import from
-`_src`. Extras isolate the heavy optional dependencies, `policy` for Torch, `upload` for S3, and
-`isaacsim` for the RTX runtime, rather than separate packages. The RL trainer is a **separate
+`_src`. Extras isolate the heavy optional dependencies, such as `policy` for Torch and `acados` for
+the Nonlinear Model Predictive Control (NMPC) example, rather than separate packages. The Kit render peer is no extra: its program and
+Dockerfile ship in the wheel as package data, and each machine builds the Kit image on its first
+RTX run. The RL trainer is a **separate
 `uv` project**, `nexus-rl`, depending on the framework via an editable
 path, so the prerelease Isaac Lab stack stays out of the core environment.
