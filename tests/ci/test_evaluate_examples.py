@@ -91,7 +91,7 @@ def test_the_wall_clock_numbers_still_reach_the_trend_record(tmp_path, monkeypat
 
 def test_the_fresh_flight_gates_on_completing_only(tmp_path, monkeypatch, capsys):
     """The fresh policy's flight gates on completing only: given the fresh policy's flight scored at 1 of
-    3 reached, `final_tracking_error_m` 3.1 and an `ape_trans_rmse_m` above the hosted flight's bound,
+    3 reached, `final_tracking_error_m` 3.1 and an `ape_trans_rmse_m` over the hosted flight's bound,
     when the harness gates it, then every metric shows `(monitored)` and the run passes.
     """
     policy = tmp_path / "policy.pt"
@@ -109,8 +109,8 @@ def test_the_fresh_flight_gates_on_completing_only(tmp_path, monkeypatch, capsys
 
 
 def test_a_fresh_export_the_deploy_side_cannot_fly_fails_the_leg(tmp_path, monkeypatch, capsys, torchscript_policy):
-    """A fresh export the deploy side cannot fly fails the leg: given an export whose observation width
-    is not the deploy controller's, a 12-input policy, when the harness runs the fresh policy's flight,
+    """A fresh export the deploy side can't fly fails the leg: given an export whose observation width
+    isn't the deploy controller's, a 12-input policy, when the harness runs the fresh policy's flight,
     then it lists the flight under `FAILED examples` and exits 1.
     """
     narrow = torchscript_policy(obs_dim=12)
@@ -121,7 +121,7 @@ def test_a_fresh_export_the_deploy_side_cannot_fly_fails_the_leg(tmp_path, monke
 
 
 def test_a_hosted_policy_the_runner_cannot_fetch_fails_the_leg(tmp_path, monkeypatch, capfd):
-    """A hosted policy the runner cannot fetch fails the leg: given the catalog's base unreachable, a
+    """A hosted policy the runner can't fetch fails the leg: given the catalog's base unreachable, a
     dead proxy in the environment and an empty asset cache, when the harness runs the hosted policy's
     flight, then it lists the flight under `FAILED examples`, the log carries the `--policy` hint, and
     it exits 1.
