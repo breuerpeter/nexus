@@ -25,7 +25,7 @@ def _catalog_with_base(tmp_path, monkeypatch):
 
 
 def test_hosted_policy_is_fetched_from_the_catalog_base(tmp_path, monkeypatch):
-    """The hosted policy is fetched from the catalog's `assets.base` at
+    """The example fetches the hosted policy from the catalog's `assets.base` at
     `<base>/assets/policies/<name>-<sha>.pt`.
     """
     data = b"a torchscript policy"
@@ -42,7 +42,7 @@ def test_hosted_policy_is_fetched_from_the_catalog_base(tmp_path, monkeypatch):
 
 
 def test_unreachable_hosted_policy_exits_with_the_policy_hint(tmp_path, monkeypatch):
-    """A hosted policy the base cannot serve exits with the `--policy` hint, not a traceback."""
+    """A hosted policy the base can't serve exits with the `--policy` hint, not a traceback."""
     _catalog_with_base(tmp_path, monkeypatch)  # an empty base: nothing to fetch
 
     with pytest.raises(SystemExit) as exc:

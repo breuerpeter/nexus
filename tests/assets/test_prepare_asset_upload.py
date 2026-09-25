@@ -16,7 +16,7 @@ _spec.loader.exec_module(prepare_asset_upload)
 
 
 def test_scene_upload_url_keeps_the_usd_layout(tmp_path, capsys):
-    """The vehicle and scene USD and GLB URLs do not change: a scene uploads to
+    """The vehicle and scene usdz and glb URLs don't change: a scene still uploads to
     `<base>/assets/usd/scenes/<name>-<sha>.usdz`.
     """
     data = b"a self-contained scene"
