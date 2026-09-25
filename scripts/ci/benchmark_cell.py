@@ -1,15 +1,11 @@
 #!/usr/bin/env python3
 # Acronyms: Forward Left Up (FLU).
 r"""One benchmark-matrix cell: a whole PX4 flight in one process, parameterized by the standard CLI
-flags. The SAME file runs on both runtimes (the matrix runner picks the entry):
+flags. Every cell runs the same way; a vehicle with a camera renders it in the Kit peer, which the
+sim starts itself:
 
-    standalone:  uv run python scripts/ci/benchmark_cell.py --vehicle astro_max_base --device cpu \\
-                     --log --stats-json .eval-artifacts/matrix/cell.json
-    isaacsim:    uv run nexus script scripts/ci/benchmark_cell.py --vehicle astro_max_fpv \\
-                     --scene cesium --log --stats-json …
-
-(``nexus script`` re-runs the file inside the booted Kit container; ``na.Sim`` detects the
-booted Kit and builds through the isaacsim glue: the identical script, one code path per cell.)
+    uv run python scripts/ci/benchmark_cell.py --vehicle astro_max_fpv --scene cesium --device cuda \\
+        --log --stats-json .eval-artifacts/matrix/cell.json
 
 The sim owns PX4: it builds it, serves HIL on :4560, starts the container, and kills it on the way
 out. So the cell flies THE 4-waypoint mission itself and no external peer's death can end its run.

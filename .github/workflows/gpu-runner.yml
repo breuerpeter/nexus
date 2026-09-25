@@ -6,7 +6,7 @@ name: gpu-runner
 # Freefly's AWS account (multi-region — placement discovered per run, see #26); the box boots the
 # latest AWS Deep Learning Base GPU AMI
 # (NVIDIA drivers + Docker + nvidia-container-toolkit, resolved at runtime), and the container jobs
-# (isaac-lab / isaacsim / px4-sitl) docker-pull their image per run. On push, schedule and dispatch
+# docker-pull their px4-sitl image per run; an RTX run builds the Kit image on the box. On push, schedule and dispatch
 # runs the EC2 instance role grants s3:PutObject to the CI artifacts bucket so a command's --upload
 # works via the instance profile; PR runs, same-repo or fork, launch with no instance profile and
 # no Cesium token, since nothing a PR run does needs them. The bucket's public/* prefix is SERVED
@@ -168,7 +168,7 @@ jobs:
           # expression `cond && '' || 'x'` yields 'x' for both truth values.
           iam-role-name: ${{ (github.event_name != 'pull_request' && github.event_name != 'pull_request_target') && secrets.AWS_GPU_INSTANCE_PROFILE || '' }}
           # The DL AMI's default root is 35 GB — the OS+CUDA stack alone nearly fills it, and the
-          # isaacsim-runtime image pull (benchmark matrix) then kills the runner with disk
+          # Kit image build on NVIDIA's base (benchmark matrix) then kills the runner with disk
           # exhaustion (job dies, logs never upload). 100 GB gp3 costs cents per ephemeral run.
           block-device-mappings: >-
             [{"DeviceName": "${{ steps.discover.outputs.root-device }}", "Ebs": {"VolumeSize": 100, "VolumeType": "gp3", "DeleteOnTermination": true}}]
@@ -184,7 +184,7 @@ jobs:
     # box started and stopped with no work done while the callers' contexts reported success.
     if: ${{ !cancelled() && needs.start-runner.result == 'success' }}
     runs-on: ${{ needs.start-runner.outputs.label }} # the ephemeral GPU box
-    permissions: { contents: read, packages: read } # packages — GHCR pulls (px4-sitl / isaacsim images)
+    permissions: { contents: read, packages: read } # packages — the GHCR pull of the px4-sitl image
     steps:
       # The box's runner service exports no $HOME; anything running `git config --global`
       # (e.g. the codecov wrapper) dies on it, and ~-paths resolve inconsistently.
@@ -204,7 +204,7 @@ jobs:
       # setup-uv would otherwise compute a literal "undefined/.cache/uv" cache dir.
       - uses: astral-sh/setup-uv@v6
         with: { enable-cache: true, cache-local-path: /tmp/setup-uv-cache }
-      - name: Log in to GHCR # the px4-sitl / isaacsim-runtime images are repo packages
+      - name: Log in to GHCR # the px4-sitl image is a repo package
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
