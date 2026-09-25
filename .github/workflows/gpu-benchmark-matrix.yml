@@ -63,7 +63,7 @@ jobs:
       command: >-
         bash scripts/ci/provision_px4.sh &&
         ${{ matrix.cell.runtime == 'isaacsim' && 'docker compose -f docker/docker-compose.yml pull isaacsim &&' || '' }}
-        uv run python scripts/ci/benchmark_matrix.py --cell ${{ matrix.cell.tag }} --work .eval-artifacts/matrix
+        uv run python scripts/ci/benchmark_matrix.py --cell ${{ matrix.cell.tag }} --work .eval-artifacts/matrix --cell-timeout 60
       artifact-name: benchmark-cell-${{ matrix.cell.tag }}
       artifact-path: .eval-artifacts
     secrets: inherit
