@@ -273,6 +273,17 @@ def _sha() -> str:
     )
 
 
+def _gpu_name() -> str:
+    """The GPU's name from nvidia-smi, for the bench feed's ``_meta``, or ``unknown`` on a box without one."""
+    try:
+        gpu = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"], capture_output=True, text=True, check=False
+        ).stdout.strip()
+    except FileNotFoundError:  # no nvidia-smi on the box, such as CPU CI
+        return "unknown"
+    return gpu.splitlines()[0] if gpu else "unknown"
+
+
 def _merge_entries(prior: list, fresh: list[dict]) -> list[dict]:
     """Merge ``fresh`` entries over ``prior`` by entry name, fresh winning."""
     merged = {e["name"]: e for e in prior if isinstance(e, dict) and "name" in e}
@@ -400,10 +411,7 @@ def main() -> int:
     (out / "benchmark.json").write_text(json.dumps(_merged_local(out / "benchmark.json", entries), indent=2))
     # The docs-data twin, docs/data/examples_bench.json via the data-refresh PR: the same entries,
     # self-describing with the hardware the numbers belong to. _meta refreshes on every write.
-    gpu = subprocess.run(
-        ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"], capture_output=True, text=True, check=False
-    ).stdout.strip()
-    meta = {"sha": _sha()[:12], "recorded": time.strftime("%Y-%m-%d"), "gpu": gpu.splitlines()[0] if gpu else "unknown"}
+    meta = {"sha": _sha()[:12], "recorded": time.strftime("%Y-%m-%d"), "gpu": _gpu_name()}
     (out / "examples_bench.json").write_text(
         json.dumps({"_meta": meta, "entries": _merged_local(out / "examples_bench.json", entries)}, indent=2) + "\n"
     )

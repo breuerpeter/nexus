@@ -193,6 +193,15 @@ def test_gate_flags_missing_metric():
     assert failed == ["goto_policy.rtf (missing)"]
 
 
+def test_the_gpu_name_reads_unknown_without_nvidia_smi(tmp_path, monkeypatch):
+    """The bench feed's hardware note reads `unknown` on a box without nvidia-smi, such as CPU CI, and
+    the harness carries on.
+    """
+    monkeypatch.setenv("PATH", str(tmp_path))  # an empty directory: no nvidia-smi anywhere on it
+
+    assert evaluate_examples._gpu_name() == "unknown"
+
+
 def test_merged_local_merges_by_name_fresh_winning(tmp_path):
     first = [{"name": "rtf[pid]", "value": 1.0}, {"name": "ape[pid]", "value": 0.1}]
     fresh = [{"name": "rtf[px4_sitl]", "value": 2.0}, {"name": "ape[pid]", "value": 0.2}]
