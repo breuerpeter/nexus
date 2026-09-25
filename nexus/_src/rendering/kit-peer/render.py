@@ -175,6 +175,7 @@ class Renderer:
         self._benchmark_path = setup.get("benchmark")
         self._benchmark = None
         self._epoch = None  # (sim time, {path: matrix}) of the last request: what the next render shows
+        self._last_due: list[int] = []  # the sensors that request asked for
         self._attrs: dict = {}  # prim path -> its Fabric worldMatrix attr, None for a path the stage lacks
         self._time_attr = None
         self.update_s = 0.0  # wall time inside app.update, summed; the rest of a frame is poses and reads
@@ -419,18 +420,35 @@ class Renderer:
                     if x.path in poses
                 }
             )
-        shown_t, shown = self._epoch if self._epoch is not None else (t, poses)
-        self._epoch = (t, poses)
+        # Kit renders one update behind: this update shows the request before this one, so the outputs
+        # carry that request's time. The first request has no frame to show yet, and the last one's
+        # frame comes back with the close.
+        previous, self._epoch, self._last_due = self._epoch, (t, poses), list(due)
         t0 = time.perf_counter()
         self._app.update()
         self.update_s += time.perf_counter() - t0
+        if previous is None:
+            return t, []
+        shown_t, shown = previous
+        return shown_t, self._grab(due, shown)
+
+    def _grab(self, due: list[int], shown: dict) -> list:
+        """The due sensors' outputs from the frame just rendered, which shows the ``shown`` poses."""
         out = []
         for i in due:
             sensor = self.sensors[i]
             out += [(i, name, arr) for name, arr in sensor.grab(shown.get(sensor.path))]
-        return shown_t, out
+        return out
 
-    def close(self) -> None:
+    def close(self) -> tuple[float | None, list]:
+        """Render the last request, whose frame no reply carried yet, and return it with the sim time it shows."""
+        last: tuple[float | None, list] = (None, [])
+        if self._epoch is not None:
+            shown_t, shown = self._epoch
+            self._epoch = None
+            self._app.update()
+            last = (shown_t, self._grab(self._last_due, shown))
         if self._benchmark is not None and self._benchmark_path:
             self._benchmark.finish(os.path.expanduser(self._benchmark_path))
             self._benchmark = None
+        return last

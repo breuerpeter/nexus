@@ -19,12 +19,20 @@ wire = runpy.run_path(str(KIT_DIR / "link.py"))
 
 
 def _peer_serving(delay_s=0.0, die_after_setup=False, setups=None):
-    """A stand-in Kit peer: answers every frame with a 2x2 color image stamped with the request's time.
+    """A stand-in Kit peer that renders one request behind, as Kit does: a frame reply carries the
+    request before it, stamped with that request's time, the first reply carries nothing, and the
+    close renders the last request and returns it with ``closed``. Each image is 2x2 color.
 
     ``setups``, when given, collects each setup message the peer receives.
     """
 
     def serve(port):
+        image = np.zeros((2, 2, 3), dtype=np.uint8)
+
+        def outputs(t, due):
+            arrays = [{"sensor": i, "name": "color", "dtype": "uint8", "shape": [2, 2, 3]} for i in due]
+            return {"t": t, "arrays": arrays}, [image] * len(arrays)
+
         with socket.create_server(("127.0.0.1", port)) as listener:
             conn, _ = listener.accept()
             with conn:
@@ -35,20 +43,20 @@ def _peer_serving(delay_s=0.0, die_after_setup=False, setups=None):
                 wire["send"](conn, {"op": "ready"})
                 if die_after_setup:
                     return
+                shown = None  # (t, due) of the last request: what the next render shows
                 while True:
                     try:
                         header, _ = wire["recv"](conn)
                     except ConnectionError:
                         return
                     if header["op"] == "close":
-                        wire["send"](conn, {"op": "closed"})
+                        reply, blobs = outputs(*shown) if shown else ({"arrays": []}, [])
+                        wire["send"](conn, {"op": "closed", **reply}, blobs)
                         return
                     time.sleep(delay_s)
-                    image = np.zeros((2, 2, 3), dtype=np.uint8)
-                    arrays = [
-                        {"sensor": i, "name": "color", "dtype": "uint8", "shape": [2, 2, 3]} for i in header["due"]
-                    ]
-                    wire["send"](conn, {"op": "frame", "t": header["t"], "arrays": arrays}, [image] * len(arrays))
+                    reply, blobs = outputs(shown[0], header["due"]) if shown else ({"t": header["t"], "arrays": []}, [])
+                    shown = (header["t"], header["due"])
+                    wire["send"](conn, {"op": "frame", **reply}, blobs)
 
     return serve
 
@@ -110,9 +118,10 @@ def test_a_due_tick_returns_before_the_peer_answers(daemon, tmp_path):
 
 
 def test_the_next_due_tick_takes_the_frame_the_peer_was_rendering(daemon, tmp_path):
+    """The reply to the second request carries the first request's frame, taken at the third tick."""
     renderer, camera = _renderer(daemon, tmp_path, _peer_serving(delay_s=0.3))
-    renderer.tick(_tick(0.1), _state())
-    renderer.tick(_tick(0.2), _state())
+    for t in (0.1, 0.2, 0.3):
+        renderer.tick(_tick(t), _state())
     frames = list(camera.frames)
     renderer.close()
     assert frames == [0.1]

@@ -10,6 +10,8 @@ renderer the loop drives and the link the RTX sensors ride.
 - Any change under `kit-peer/` changes `image_tag()`, a hash of that folder minus what
   `.dockerignore` leaves out, so the next RTX run rebuilds the image. A change anywhere else never
   does.
+- Kit renders one update behind, so a frame reply carries the request before it: the first reply
+  carries nothing, and the close renders the last request and returns its frame with `closed`.
 - The wire format lives twice, in `link.py` and `kit-peer/link.py`: change both.
   `tests/rendering/test_link.py` drives the host end against a stand-in peer that frames through
   `kit-peer/link.py`.

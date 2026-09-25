@@ -98,8 +98,12 @@ def main() -> int:
                 log("the host closed the link")
                 break
             if header["op"] == "close":
-                renderer.close()
-                link.send(conn, {"op": "closed"})
+                shown, outputs = renderer.close()  # the last request's frame rides the closed reply
+                arrays = [
+                    {"sensor": i, "name": name, "dtype": str(arr.dtype), "shape": list(arr.shape)}
+                    for i, name, arr in outputs
+                ]
+                link.send(conn, {"op": "closed", "t": shown, "arrays": arrays}, [arr for _, _, arr in outputs])
                 break
             t1 = time.perf_counter()
             mats = np.frombuffer(blobs[0], dtype=np.float64).reshape(-1, 4, 4)

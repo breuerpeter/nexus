@@ -7,7 +7,8 @@ way; the two stay twins because the peer imports no nexus module.
 The link pipelines the rendering. At a frame's due tick it sends the sim time and a world matrix per
 prim path, and the loop flies on; the frame comes back on a later due tick, and the loop waits only
 when the peer is still rendering the frame before. A frame then costs the loop the slower of physics
-and render rather than their sum, and the link drops no frame: the last one arrives at close.
+and render rather than their sum, and the link drops no frame: Kit renders one update behind, so a
+reply carries the request before it, and the close renders the last.
 """
 
 from __future__ import annotations
@@ -188,8 +189,12 @@ class KitRenderer:
         self._pending = False
         with self._span("render.wait"):
             header, blobs = self._receive(FRAME_TIMEOUT_S, "a frame")
+        self._emit(header, blobs)
+
+    def _emit(self, header: dict, blobs: list) -> None:
+        """Hand each output a frame message carries to its sensor, stamped with the sim time it shows."""
         outputs: dict[int, dict] = {}
-        for spec, blob in zip(header["arrays"], blobs, strict=True):
+        for spec, blob in zip(header.get("arrays", []), blobs, strict=True):
             arr = np.frombuffer(blob, dtype=spec["dtype"]).reshape(spec["shape"])
             outputs.setdefault(int(spec["sensor"]), {})[spec["name"]] = arr
         for i, arrays in outputs.items():
@@ -226,7 +231,8 @@ class KitRenderer:
             if self._sock is not None:
                 self._take()
                 send(self._sock, {"op": "close"})
-                self._receive(30.0, "the close")
+                header, blobs = self._receive(30.0, "the close")
+                self._emit(header, blobs)  # the last request's frame, which the close rendered
         except Exception as exc:
             logger.warning(f"Kit render peer teardown: {exc}")
         finally:
