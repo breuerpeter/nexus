@@ -8,7 +8,8 @@ name: gpu-runner
 # Freefly's AWS account (multi-region — placement discovered per run, see #26); the box boots the
 # latest AWS Deep Learning Base GPU AMI
 # (NVIDIA drivers + Docker + nvidia-container-toolkit, resolved at runtime), and the container jobs
-# docker-pull their px4-sitl image per run; an RTX run builds the Kit image on the box. On push, schedule and dispatch
+# docker-pull their px4-sitl image per run; an RTX run builds the Kit image on the box and restores
+# Kit's caches when its caller asks. On push, schedule and dispatch
 # runs the EC2 instance role grants s3:PutObject to the CI artifacts bucket so a command's --upload
 # works via the instance profile; PR runs, same-repo or fork, launch with no instance profile and
 # no Cesium token, since nothing a PR run does needs them. The bucket's public/* prefix is SERVED
@@ -62,7 +63,7 @@ on:
         type: number
         default: 1
       caches:
-        description: "Extra caches to restore/save on the box (space-separated: px4 acados)"
+        description: "Extra caches to restore/save on the box (space-separated: px4 acados kit)"
         type: string
         default: ""
       cache-scope:
@@ -250,6 +251,23 @@ jobs:
         if: contains(format(' {0} ', inputs.caches), ' acados ')
         uses: actions/cache@v4
         with: { path: ~/.cache/nexus/acados, key: "acados-${{ hashFiles('scripts/setup_acados.sh') }}" }
+      # The Kit peer's own caches, its shader cache and the home Kit writes its user caches into,
+      # so an RTX cell boots warm on a fresh box. Keyed on the peer folder, the files the image
+      # builds from, and on the caller's cache-scope as the kernel cache is, with a prefix fallback:
+      # the shader cache is keyed by shader content, so an older entry still saves most compiles.
+      # Cesium's request cache stays out, so a cesium cell keeps streaming its tiles cold, which is
+      # what its RTF measures.
+      - name: Restore Kit caches
+        if: contains(format(' {0} ', inputs.caches), ' kit ')
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/nexus/kit
+            !~/.cache/nexus/kit/home/.cache/ov/cesium-request-cache.sqlite*
+          key: kit-${{ hashFiles('nexus/_src/rendering/kit-peer/**') }}-${{ inputs.cache-scope }}
+          restore-keys: |
+            kit-${{ hashFiles('nexus/_src/rendering/kit-peer/**') }}-
+            kit-
       - name: Fail early when a main-push run has no instance profile
         # Only push, schedule and dispatch attach one, and only they upload; a PR run passes an empty
         # name on purpose. A step's `if:` cannot read a secret, so the check reads it from env.

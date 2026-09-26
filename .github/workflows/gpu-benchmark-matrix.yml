@@ -3,12 +3,13 @@ name: gpu-benchmark-matrix
 # The RTF benchmark matrix (scripts/ci/benchmark_matrix.py): ONE PX4 4-waypoint mission across
 # {vehicle × scene × device} on the pinned A10G runner — the physics table plus the RTX table, whose
 # camera renders in the Kit peer the cell starts; an RTX cell builds the Kit image on its box, as a
-# user's first RTX run does. Cesium cells need the CESIUM_ION_TOKEN secret and are skipped without
-# it. One box per cell: a measured flight cannot share a GPU, the RTF being the whole deliverable,
-# nor PX4's fixed ports, so `plan` lists the cells, `cell` flies each on a box of its own through
-# gpu-runner.yml, and `merge` joins their results over the committed matrix. Scheduled + dispatch
-# only, NOT per-push: the RTX cells cost minutes each. Ends with a data-refresh PR updating
-# docs/data/rtf_matrix.json — the docs Benchmarking page changes only through that reviewed diff.
+# user's first RTX run does, and restores the peer's caches from the last run, so Kit boots warm.
+# Cesium cells need the CESIUM_ION_TOKEN secret and are skipped without it. One box per cell: a
+# measured flight cannot share a GPU, the RTF being the whole deliverable, nor PX4's fixed ports,
+# so `plan` lists the cells, `cell` flies each on a box of its own through gpu-runner.yml, and
+# `merge` joins their results over the committed matrix. Scheduled + dispatch only, NOT per-push:
+# the RTX cells cost minutes each. Ends with a data-refresh PR updating docs/data/rtf_matrix.json —
+# the docs Benchmarking page changes only through that reviewed diff.
 
 on:
   schedule:
@@ -61,7 +62,8 @@ jobs:
         cell: ${{ fromJSON(needs.plan.outputs.plan).cells }}
     uses: ./.github/workflows/gpu-runner.yml
     with:
-      caches: px4
+      # An RTX cell restores the Kit peer's caches too, so Kit boots warm on its fresh box.
+      caches: ${{ matrix.cell.renders && 'px4 kit' || 'px4' }}
       cache-scope: ${{ matrix.cell.tag }}
       command: >-
         bash scripts/ci/provision_px4.sh &&
