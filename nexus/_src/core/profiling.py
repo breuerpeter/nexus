@@ -8,7 +8,7 @@ ring buffers.
   top-level bucket; whatever no bucket claims lands in ``other``, so the buckets always reconcile
   to the measured tick time.
 * **Spans add nested detail.** ``span(name)``, a context manager, times a sub-region inside a phase,
-  for example the Kit render inside ``sensors.host``; spans inform, they don't partition.
+  for example the render link's wait inside ``sensors.host``; spans inform, they don't partition.
 * **Always-on and cheap.** Accumulation is two ``perf_counter_ns`` reads and an integer add per mark,
   about 1 µs/tick for the whole loop, noise at 250 Hz. Percentiles come from a fixed ring of per-tick
   totals; nothing allocates or formats on the hot path.
@@ -16,8 +16,6 @@ ring buffers.
   the harvest of elapsed times comes a few ticks later, when the events are long complete, never a sync.
 * **Deep traces on demand.** ``trace_path`` buffers spans as integer tuples and exports Chrome/Perfetto
   trace-event JSON, ``ph:"X"`` spans + ``ph:"C"`` counters, on ``close()``; drag it onto ui.perfetto.dev.
-  Inside Kit, ``use_carb`` mirrors phases into ``carb.profiler`` zones, so Kit's tracy/nvtx/cpu
-  backends, ``/app/profilerBackend``, see the sim loop with zero extra plumbing.
 
 One report line per run, and periodically with ``report_every_s``::
 
@@ -50,7 +48,6 @@ class LoopProfiler:
         dt: float,
         report_every_s: float = 0.0,
         trace_path: str | None = None,
-        use_carb: bool = False,
     ):
         self.label = label
         self._dt_ns = int(dt * 1e9)
@@ -71,14 +68,6 @@ class LoopProfiler:
         self._trace: list | None = [] if trace_path else None
         self._trace_path = trace_path
         self._trace_t0 = time.perf_counter_ns()
-        self._carb = None
-        if use_carb:
-            try:  # inside Kit only; zones then reach any /app/profilerBackend: cpu, tracy or nvtx
-                import carb.profiler
-
-                self._carb = carb.profiler
-            except Exception:
-                self._carb = None
         # GPU event pool; gpu_begin fills it lazily on a CUDA device
         self._gpu_pool: list | None = None
         self._gpu_pending: list = []
@@ -91,8 +80,6 @@ class LoopProfiler:
         if self._t_run0 == 0:
             self._t_run0 = self._t_report = self._win_t0 = now
         self._t_tick0 = self._t_last = now
-        if self._carb is not None:
-            self._carb.begin(1, "tick")
 
     def mark(self, phase: str) -> None:
         """Close the current phase segment: everything since the last mark belongs to *phase*."""
@@ -105,14 +92,10 @@ class LoopProfiler:
     def span(self, name: str):
         """Nested detail timing; doesn't partition the tick."""
         t0 = time.perf_counter_ns()
-        if self._carb is not None:
-            self._carb.begin(1, name)
         try:
             yield
         finally:
             t1 = time.perf_counter_ns()
-            if self._carb is not None:
-                self._carb.end(1)
             self._span_ns[name] = self._span_ns.get(name, 0) + (t1 - t0)
             self._span_n[name] = self._span_n.get(name, 0) + 1
             if self._trace is not None and len(self._trace) < _TRACE_CAP:
@@ -123,15 +106,13 @@ class LoopProfiler:
         total = now - self._t_tick0
         self._ring[self._ticks % _RING] = total
         # Window RTF over wall-clock boundary-to-boundary spans; summed in-tick time would exclude
-        # the inter-tick seam, for example Kit render/present between step() calls, and overstate speed.
+        # the inter-tick seam, for example a caller's own work between step() calls, and overstate speed.
         self._win_ticks += 1
         if self._win_ticks == _WIN:
             self._win_rtfs.append(_WIN * self._dt_ns / max(1, now - self._win_t0))
             self._win_t0 = now
             self._win_ticks = 0
         self._ticks += 1
-        if self._carb is not None:
-            self._carb.end(1)
         if self._trace is not None and len(self._trace) < _TRACE_CAP:
             self._trace.append(("tick", self._t_tick0, total, 0))
         self._harvest_gpu()

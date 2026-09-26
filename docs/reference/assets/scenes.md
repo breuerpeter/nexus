@@ -11,19 +11,18 @@ A scene is the **static world** the vehicle flies in. Pick one by name with
 See [Converting scenes](../../guide/convert-scenes.md).
 
 **A scene is data: one self-contained Universal Scene Description (USD) file, ingested the same
-way as the vehicle USD.** The simulation adds it to its one world, the Newton `ModelBuilder` or
-the Kit stage, alongside the vehicle. The physics engine takes exactly each prim that authors a
-`UsdPhysics` schema, such as the slalom pillars, whose authored `physics:collisionEnabled = false`
-makes them cost-only. The renderer shows everything. The USD is the single authority on what it
-contributes, with no scene kinds, flags, or names in code. The one extension point is a *scene
-handler* in `nexus._src.scene`, claimed by USD content. A scene type whose world can't live
-in a stage prim ships its machinery there: the token injection, tile streaming, and ground-align
-probe of the cesium globe.
+way as the vehicle USD.** The physics adds it to the Newton `ModelBuilder`. When the vehicle
+renders, the Kit render peer opens it as its stage, alongside the vehicle. The physics engine takes
+exactly each prim that authors a `UsdPhysics` schema, such as the slalom pillars, whose authored
+`physics:collisionEnabled = false` makes them cost-only. The renderer shows everything. The USD is
+the single authority on what it contributes, with no scene kinds, flags, or names in code. A scene
+type whose world can't live in a stage prim gets live machinery in the Kit peer's program, which
+claims the scene by its USD content. The cesium globe's token injection and tile streaming live
+there, in `nexus/_src/rendering/kit-peer/cesium_globe.py`.
 
-Scenes are also **runtime-agnostic**: any scene runs on any runtime. Rendering is a runtime
-property. `--runtime auto` picks the Isaac Sim runtime when the *vehicle* USD authors RTX sensors,
-and there the scene is visible. The headless standalone runtime simulates every physics prim of
-the same scene without a render.
+Any scene flies with any vehicle. Whether it shows depends on the vehicle: a vehicle whose USD
+authors RTX sensors renders them in the Kit peer, and there the scene is visible. A vehicle with none
+simulates every physics prim of the same scene without a render.
 
 | Scene | Description |
 |---|---|

@@ -20,23 +20,24 @@ from pathlib import Path
 
 SENSOR_TYPE_ATTR = "sensor:type"
 _PREFIX = "sensor:"
-_RTX_PRIM_TYPES = ("Camera", "OmniLidar")  # + radar prim types as they land
 
 
 def vehicle_rtx_sensor_prims(usd_path: str | Path) -> list[str]:
-    """Paths of RTX-sensor prims authored in the vehicle USD, from a host-side ``usd-core`` scan.
+    """Paths of the RTX-sensor prims under the vehicle's root prim, from a host-side ``usd-core`` scan.
 
-    RTX sensors need Kit to produce their measurement, so their presence drives the runtime
-    decision, ``--runtime auto`` → isaacsim, and the renderless warning in :class:`Sim`.
+    RTX sensors render in the Kit peer, so their presence is what starts it; a vehicle with none
+    starts no container.
     """
     from pxr import Usd
 
+    from .rtx_stage import discover_rtx_prims
+
     stage = Usd.Stage.Open(str(usd_path), Usd.Stage.LoadAll)
-    return [
-        prim.GetPath().pathString
-        for prim in stage.TraverseAll()
-        if prim.GetTypeName() in _RTX_PRIM_TYPES and not prim.GetPath().pathString.startswith("/OmniverseKit")
-    ]
+    root = stage.GetDefaultPrim()
+    if not root:
+        return []
+    prims = discover_rtx_prims(stage, str(root.GetPath()))
+    return prims["camera"] + prims["lidar"]
 
 
 @dataclass(frozen=True)

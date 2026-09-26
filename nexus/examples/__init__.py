@@ -11,8 +11,8 @@ waypoints, lives in the script, and each records its flight ``.rrd``. Some need 
 for example ``--extra acados`` for ``acados_nmpc`` and ``--extra policy`` for ``goto_policy``, or
 take an optional flag, such as ``goto_policy --policy`` and ``px4_sitl --timeout``; the shared
 diagnostics flags ``--profile``, ``--trace``, and ``--benchmark`` work on every example. See each
-example's module docstring. They all also run RTX-rendered under the Isaac runtime:
-``nexus script nexus.examples <name>``.
+example's module docstring. A vehicle that authors RTX sensors renders them in the Kit peer
+container, which the example starts on its own.
 """
 
 from __future__ import annotations

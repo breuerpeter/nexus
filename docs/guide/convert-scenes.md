@@ -1,5 +1,5 @@
 ---
-description: "Convert a photogrammetry mesh or Gaussian splat into a flyable visual world: container conversion, start pick, preview flight, and publishing to the registry."
+description: "Convert a photogrammetry mesh or Gaussian splat into a flyable visual world: conversion in the Kit container, start pick, preview flight, and publishing to the registry."
 ---
 
 # Converting scenes
@@ -13,15 +13,17 @@ authored **sky** of dome plus sun. There is no in-code sky. The scene file, a
 Universal Scene Description (USD), owns its lighting. See
 [what every scene file carries](../reference/assets/scenes.md#what-every-scene-file-carries).
 
-Keep the scans under **`NEXUS_DATA`**, default `~/data`. That's the directory the Isaac Sim
-container mounts at the *same* path it has on the host. So a path you type in step 1 is the path
-step 3 flies, with no per-command `-v`, and the same command works from either side.
+Keep the scans under **`NEXUS_DATA`**, default `~/data`. The Kit container mounts that folder at
+the *same* path it has on the host. So a path you type in step 1 is the path step 3 flies, with no
+per-command `-v`.
 
 ## 1. Convert
 
-Both converters need a booted Kit app, which `nexus script` provides: it runs them inside the
-`isaacsim` container, launching it if it isn't up. Progress traces on **stderr**. Kit swallows
-stdout.
+Both converters need a booted Kit app, which `nexus script` provides: it runs them in the Kit image
+with Kit booted. On a machine with no image it builds the image first, see
+[RTX cameras and lidar](running.md#rtx-cameras-and-lidar). Run them from the checkout root. The
+container mounts it at the same path, and the converters import `scripts.assets.scene_root` from
+there. Progress traces on **stderr**. Kit swallows stdout.
 
 ```bash
 # photogrammetry OBJ (a dir with .obj + .mtl + textures) -> one .usdz
@@ -54,11 +56,12 @@ omit `alt`.
 ## 3. Preview-fly it unregistered
 
 ```bash
-uv run nexus run --runtime isaacsim --vehicle astro_max_fpv --control px4-sitl \
+uv run nexus run --vehicle astro_max_fpv --control px4-sitl \
     --scene "$NEXUS_DATA/scans/my_site_splat.usdz" --log
 ```
 
-A local `--scene` path flies the file in place, from the scene's own origin. Inspect the
+A local `--scene` path flies the file in place, from the scene's own origin: the Kit container reads
+it at its host path. Inspect the
 `.rrd` in Rerun, and check `fpvcam`.
 
 ## 4. Publish

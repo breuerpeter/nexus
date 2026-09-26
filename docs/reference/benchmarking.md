@@ -1,5 +1,5 @@
 ---
-description: "The measured performance of nexus: the Real Time Factor (RTF) matrix across vehicles, scenes, devices and runtimes, per-example metrics, and how the CI regression gates keep the numbers honest."
+description: "The measured performance of nexus: the Real Time Factor (RTF) matrix across vehicles, scenes and devices, per-example metrics, and how the CI regression gates keep the numbers honest."
 ---
 
 # Benchmarking
@@ -17,7 +17,7 @@ compilation and initial settle happen. Whole-run wall time is never used as a sp
 Alongside the steady figure, the loop profiler records an RTF **window series** of 1000-tick
 windows, first window dropped, whose min / avg / max / σ show how stable a run is.
 
-**The benchmark mission**: one PX4 flight, the same for every matrix cell and both runtimes. It
+**The benchmark mission**: one PX4 flight, the same for every matrix cell. It
 arms, runs `AUTO.TAKEOFF`, then flies a 4-waypoint `DO_REPOSITION` mission with confirmed arrival
 at each waypoint. The script `scripts/ci/benchmark_cell.py` flies it against the `Px4Offboard`
 operator. PX4 Software In The Loop (SITL) runs in the loop, in lockstep on `:4560`, so these
@@ -30,9 +30,11 @@ with `--log` on: recording is part of the measured configuration.
 
 The scheduled `gpu-benchmark-matrix` workflow produces the matrix on the CI runner, a g5.2xlarge
 with one A10G, and refreshes it via a data PR. Cells that structurally don't exist aren't shown.
-Visual-only scenes contribute nothing on the standalone runtime, whose physics loads only
-`UsdPhysics`-authored geometry. CPU is the bit-exact determinism authority rather than a
-performance configuration, so it's displayed only in the standalone reference row.
+A visual-only scene changes nothing for a vehicle that renders nothing, since physics loads only
+`UsdPhysics`-authored geometry, so the physics table flies the empty scene alone. In the RTX table
+the vehicle's camera renders in the Kit peer container beside the loop. CPU is the bit-exact
+determinism authority rather than a performance configuration, so it's displayed only in the
+physics reference row.
 
 ## Per-example performance
 
