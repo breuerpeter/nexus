@@ -58,9 +58,11 @@ Interfaces are the contract. Representation isn't mandated. **Inside a captured 
 region** all components share one device representation, Warp by default, and any
 CUDA-array-interface or DLPack framework can join zero-copy. **Across a host boundary** a component
 can be any language, process, or device, at the cost of a per-tick copy and no capture or automatic
-differentiation across that seam. For the current stack there is exactly **one** such boundary: the
-PX4 controller. In the Isaac Sim runtime, RTX rendering shares the same device stage in-process, so
-it adds no marshalling boundary.
+differentiation across that seam. For the current stack there are **two** such boundaries: the PX4
+controller, every tick, and the RTX sensors, at their render rate. The Kit render peer runs in a
+process of its own. At a frame's due tick the host copies the body poses and sends them, a few
+hundred bytes. It takes the frame on a later tick, so the loop waits only when the peer falls a full
+frame behind.
 
 ## Determinism
 

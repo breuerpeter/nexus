@@ -1,14 +1,11 @@
 """The RTX thermal camera: the Long Wave Infrared (LWIR) feed over a camera prim marked ``ir``.
 
-The same render product as the electro-optical camera, read back as radiance and turned into
-kelvin, then into the operator's 8-bit image, through the one invertible band law in
-:mod:`nexus._src.vehicle.sensors.lwir`.
+The Kit peer renders the same kind of render product as the electro-optical camera and returns its
+radiance and depth; here on the host the radiance turns into kelvin, then into the operator's 8-bit
+image, through the one invertible band law in :mod:`nexus._src.vehicle.sensors.lwir`.
 """
 
 from __future__ import annotations
-
-import contextlib
-from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -17,14 +14,11 @@ from nexus._src.core import logger
 from .rtsp import RtspPublisher
 from .rtx_sensor import RtxMountedSensor, _prim_sensor_attr
 
-if TYPE_CHECKING:  # the frame is duck-typed at runtime; this is the annotation only
-    from nexus._src.rendering.frame import RtxFrame
-
 
 class RtxThermalSensor(RtxMountedSensor):
-    """RTX thermal sensor, Long Wave Infrared (LWIR): the ``PtSelfIllumination`` Arbitrary Output
-    Variable (AOV) on the authored camera prim -> an 8-bit white-hot image via ``Logger.log_image``,
-    at ``cameras/<name>``, and, when streaming, the :class:`RtspPublisher`.
+    """RTX thermal sensor, Long Wave Infrared (LWIR): the peer's radiance, the ``PtSelfIllumination``
+    Arbitrary Output Variable (AOV) on the authored camera prim, -> an 8-bit white-hot image via
+    ``Logger.log_image``, at ``cameras/<name>``, and, when streaming, the :class:`RtspPublisher`.
 
     The scene encodes temperature as OmniPBR emission, the band law in
     :mod:`~nexus._src.vehicle.sensors.lwir`, with ``emissive_color.r = 1.0`` so red
@@ -43,6 +37,7 @@ class RtxThermalSensor(RtxMountedSensor):
     """
 
     KIND = "cameras"
+    output = "radiance_depth"
     RADIANCE_PER_INTENSITY = 0.318  # measured OmniPBR transfer, ~1/pi, stable across 6.0.0/6.0.1
     SAT_INTENSITY = 12000.0  # white clamp ~= 1520 K under the scene law, thermal.py, K=3.0
     SKY_DEPTH_M = 20000.0  # beyond the terrain ring -> the dome
@@ -56,35 +51,23 @@ class RtxThermalSensor(RtxMountedSensor):
     AMBIENT_SIGMA = 0.02
     NOISE_SIGMA = 0.008  # NETD-style grain
 
-    def __init__(self, frame: RtxFrame, prim_path: str, *, stream_url: str | None = None):
-        import omni.replicator.core as rep
-        import omni.usd
-
+    def __init__(self, link, prim, *, path: str, body: int, cfg, stream_url: str | None = None):
         # Render params from the AUTHORED prim, exactly as RtxCameraSensor does; the vehicle USD is
         # the single authority. What comes back is smaller, the DLSS-internal grid, so nothing
-        # downstream of the annotator can assume these numbers; see _emit_size.
-        cam_prim = omni.usd.get_context().get_stage().GetPrimAtPath(prim_path)
-        self.width = int(_prim_sensor_attr(cam_prim, "width", 1280, "RtxThermalSensor"))
-        self.height = int(_prim_sensor_attr(cam_prim, "height", 1024, "RtxThermalSensor"))
-        rate_hz = float(_prim_sensor_attr(cam_prim, "rate_hz", frame.cfg.render_hz, "RtxThermalSensor"))
-        self._rp = rep.create.render_product(prim_path, (self.width, self.height))
-        self._ir = rep.AnnotatorRegistry.get_annotator("PtSelfIllumination")
-        self._ir.attach(self._rp)
-        try:  # depth on the same product separates the dome: full-res buffer, strided to the AOV grid
-            self._depth = rep.AnnotatorRegistry.get_annotator("distance_to_image_plane")
-            self._depth.attach(self._rp)
-        except Exception as exc:
-            self._depth = None
-            logger.warning(f"RtxThermalSensor {prim_path}: no depth annotator, sky unmasked: {exc!r}")
+        # downstream of the render can assume these numbers; see _emit_size.
+        self.width = int(_prim_sensor_attr(prim, "width", 1280, "RtxThermalSensor"))
+        self.height = int(_prim_sensor_attr(prim, "height", 1024, "RtxThermalSensor"))
+        rate_hz = float(_prim_sensor_attr(prim, "rate_hz", cfg.render_hz, "RtxThermalSensor"))
         # authored intrinsics -> the Rerun Pinhole; logged on the first frame, at the EMITTED size
-        self._focal_mm = float(cam_prim.GetAttribute("focalLength").Get() or 12.0)
-        self._h_aperture_mm = float(cam_prim.GetAttribute("horizontalAperture").Get() or 36.0)
-        self._v_aperture_mm = float(cam_prim.GetAttribute("verticalAperture").Get() or 0.0) or None
+        self._focal_mm = float(prim.GetAttribute("focalLength").Get() or 12.0)
+        self._h_aperture_mm = float(prim.GetAttribute("horizontalAperture").Get() or 36.0)
+        self._v_aperture_mm = float(prim.GetAttribute("verticalAperture").Get() or 0.0) or None
+        self._bitrate = cfg.bitrate
         self._stream_url = stream_url
         self._publisher = None  # also first-frame: the encoder needs the emitted size, not the authored one
         self._entity = None
         self._rng = np.random.default_rng(0)
-        super().__init__(frame, prim_path, rate_hz=rate_hz)
+        super().__init__(link, prim, path=path, body=body, rate_hz=rate_hz)
 
     def set_logger(self, logger_) -> None:
         """Take the Logger, but defer the pinhole: it needs the emitted image size, and no frame
@@ -121,33 +104,26 @@ class RtxThermalSensor(RtxMountedSensor):
                 width=w,
                 height=h,
                 fps=max(1, round(self.rate_hz)),
-                bitrate=self._frame.cfg.bitrate,
+                bitrate=self._bitrate,
                 rtsp_url=self._stream_url,
             )
 
-    def _grab_and_emit(self, t) -> None:
-        prof = self._frame._prof
-        ctx = prof.span(f"grab.{self.name}") if prof is not None else contextlib.nullcontext()
-        with ctx:
-            data = np.asarray(self._ir.get_data())
-            if data.ndim != 3 or data.size == 0:
-                return  # cold pipeline: skip, keep the loop alive
-            rad = data[..., 0].astype(np.float32)  # red carries temperature: emissive_color.r = 1
-            self._emit_size(rad.shape)
-            img = self._post(rad, self._sky_mask(rad.shape))
-            if self._logger is not None:
-                self._logger.log_image(self._entity or f"cameras/{self.name}", img, sim_time=t)
-            if self._publisher is not None:
-                self._publisher.push(img)
+    def emit(self, arrays: dict, t_shown: float) -> None:
+        rad = arrays.get("radiance")
+        if rad is None:
+            return
+        self._emit_size(rad.shape)
+        img = self._post(rad, self._sky_mask(rad.shape, arrays.get("depth")))
+        if self._logger is not None:
+            self._logger.log_image(self._entity or f"cameras/{self.name}", img, sim_time=t_shown)
+        if self._publisher is not None:
+            self._publisher.push(img)
 
-    def _sky_mask(self, shape) -> np.ndarray:
+    def _sky_mask(self, shape, depth) -> np.ndarray:
         """Dome pixels on the AOV grid, True = sky, from the full-res depth buffer, strided down."""
-        if self._depth is None:
+        if depth is None or depth.size == 0:
             return np.zeros(shape, dtype=bool)
-        d = np.asarray(self._depth.get_data())
-        if d.size == 0:
-            return np.zeros(shape, dtype=bool)
-        d = d.reshape(d.shape[0], d.shape[1]).astype(np.float32)
+        d = depth.reshape(depth.shape[0], depth.shape[1]).astype(np.float32)
         if d.shape != tuple(shape):
             sy, sx = max(d.shape[0] // shape[0], 1), max(d.shape[1] // shape[1], 1)
             d = d[::sy, ::sx][: shape[0], : shape[1]]

@@ -33,8 +33,9 @@ import time
 import numpy as np
 
 import nexus as na
+from nexus._src.build.launch import resolve_scenario
 from nexus._src.config import LaunchConfig
-from nexus._src.runtimes.launch import default_renderer_factory, resolve_scenario
+from nexus._src.rendering import rtx_renderer
 from nexus.examples._lib import dump_run
 from nexus.examples.controllers.policy.assembly import build_policy_orchestrator
 
@@ -92,7 +93,7 @@ def main() -> None:
         vehicle_builder=builder,
         max_steps=MAX_STEPS,
         rerun=True,  # the .rrd is the demo's artifact
-        renderer_factory=default_renderer_factory(),  # RTX under `nexus script`, headless otherwise
+        renderer_factory=rtx_renderer(builder, cfg),  # the Kit peer, when the vehicle authors RTX sensors
     )
     with na.Sim.from_orchestrator(orch) as sim:
         sim.operator.set_mission(WAYPOINTS)  # the operator sequences these, advances on arrival, owns the stop

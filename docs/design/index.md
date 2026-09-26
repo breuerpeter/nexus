@@ -1,5 +1,5 @@
 ---
-description: "What nexus is, the modular-component model behind it, and the foundational design decisions: single physics engine, one component set across two runtimes, Universal Scene Description (USD) as the single authority."
+description: "What nexus is, the modular-component model behind it, and the foundational design decisions: single physics engine, one loop with rendering as a peer, Universal Scene Description (USD) as the single authority."
 ---
 
 # Design
@@ -51,15 +51,16 @@ over the same Newton physics. The framework consumes only its exported policy.
 These stances shape everything else and are load-bearing across the codebase:
 
 - **A single physics engine, NVIDIA Newton on Warp.** No solver zoo, no second backend. The
-  modularity that matters is sensors, controllers, scene, and *runtimes*, not physics engines.
+  modularity that matters is sensors, controllers, scene, and renderer, not physics engines.
   The same Newton dynamics run everywhere.
-- **One component set, two runtimes.** Each component exists once, and two runtimes reuse it
-  verbatim. The lean, headless **standalone** runtime is the authority for CI and
-  determinism. The **Isaac Sim** runtime adds in-process RTX rendering, Cesium worlds, and video
-  streaming. The core never imports Isaac Sim or Omniverse.
+- **One loop, rendering as a peer.** Every run's loop runs in one process on the host, rendered or
+  not, and it's the authority for CI and determinism. A vehicle that authors RTX sensors renders
+  them in the **Kit render peer**, a container holding Isaac Sim, Cesium worlds, and no nexus code.
+  The host sends it poses, takes back frames, and streams the video itself. No nexus module imports
+  Isaac Sim or Omniverse.
 - **Neutral USD is the single vehicle and scene authority.** A vehicle is one OpenUSD model,
   authored once, carrying geometry, mass, rotor joints, motor and propeller parameters, and the
-  whole sensor suite. Both runtimes and the training app consume it unchanged. The framework
+  whole sensor suite. The loop, the Kit peer and the training app consume it unchanged. The framework
   **only ever builds models from USD** and never synthesizes one in code. See
   [Conventions](conventions.md).
 - **RL is a separate consumer.** `nexus-rl` depends on the framework, not the reverse. The

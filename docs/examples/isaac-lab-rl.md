@@ -21,9 +21,9 @@ hover-success and mean-distance curves climb over `train_iter`.
 *Early takes crash and scatter. Late takes all converge on their goals. A blank viewer means the
 recording isn't uploaded yet: run the pipeline below, then `scripts/ci/evaluate_examples.py --upload`.*
 
-## Deploy: flying waypoints on the core runtime
+## Deploy: flying waypoints on the framework
 
-The exported `policy.pt` flies through the **standalone runtime**, with `uv` and no container, on
+The exported `policy.pt` flies through the **framework's own loop**, with `uv` and no container, on
 the single-body `RigidBodyRotors` actuator. That actuator is the **same** Collective Thrust and
 Body Rate (CTBR) mixer and per-rotor motor model the policy trained against: byte-shared Warp
 kernels rather than a reimplementation. The drone tours a sequence of waypoints. The next sphere
@@ -75,7 +75,7 @@ uv run --project nexus-rl python nexus-rl/scripts/rsl_rl/train.py \
 uv run --project nexus-rl python nexus-rl/scripts/rsl_rl/record_demo.py \
   --log_dir .rl-artifacts/rl --out astromax_rl.rrd
 
-# --- 3) DEPLOY: flies the policy on the standalone runtime + records the waypoint tour ---
+# --- 3) DEPLOY: flies the policy on the framework + records the waypoint tour ---
 uv run --extra policy -m nexus.examples goto_policy \
   --policy .rl-artifacts/rl/exported/policy.pt
 ```

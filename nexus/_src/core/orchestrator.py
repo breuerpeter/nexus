@@ -121,9 +121,10 @@ class Orchestrator:
             controller: Control boundary. ``connect()`` binds and waits for the peer;
                 ``exchange(meas, t, timeout)`` returns controls or ``None``;
                 ``close()`` tears down. Can expose ``host_boundary`` / ``capturable``.
-            renderer: Optional render-lifecycle object, for example the Isaac RtxFrame: the loop
-                calls only ``on_physics_ready()``/``close()``; the host-rate RTX camera *sensors*
-                drive rendering itself at the host seam.
+            renderer: Optional render-lifecycle object, for example the Kit render peer's
+                :class:`~nexus._src.rendering.KitRenderer`: the loop calls only
+                ``on_physics_ready()``/``close()``; the host-rate RTX camera *sensors* drive
+                rendering itself at the host seam.
             logger: Optional :class:`~nexus._src.logging.Logger`: the recording
                 sink + shared log calls. ``None`` ⇒ no recording and no per-tick log
                 fan-out, for max speed. When present, each loggable component's
@@ -150,9 +151,10 @@ class Orchestrator:
         # Sensor partition; architecture: sensors are the one abstraction, renderables are just sensors:
         # * in-graph sensors: the physics-rate suite, Inertial Measurement Unit (IMU), Global Positioning
         #   System (GPS), baro, mag and obs: sampled every tick, join the captured CUDA graph when capturable.
-        # * host-rate sensors, ``host_rate = True``: Kit/RTX renderables, camera and lidar: inherently
-        #   low-rate and host-bound, because kit.update can't join a Warp graph, sampled at the host seam of
-        #   every loop and self-decimating to their own rate. They never veto the captured strategy.
+        # * host-rate sensors, ``host_rate = True``: RTX renderables, camera and lidar: inherently
+        #   low-rate and host-bound, because their frames come from the Kit peer over a socket, sampled at
+        #   the host seam of every loop and self-decimating to their own rate. They never veto the
+        #   captured strategy.
         self._graph_sensors = [s for s in self.sensors if not getattr(s, "host_rate", False)]
         self._host_sensors = [s for s in self.sensors if getattr(s, "host_rate", False)]
         self.controller = controller
@@ -193,6 +195,7 @@ class Orchestrator:
         # The tick generator backing run()/step(), the in-process driving seam, lazily created on the
         # first step(), None between runs. run() exhausts it; Sim.step() advances it one tick.
         self._ticks_iter = None
+        self._stepped = False  # a first step() ran, or close() tore down a run that never stepped
         self.preroll_timeout = preroll_timeout
         self.exchange_timeout = exchange_timeout
         # Bound the steady loop; None = run until the controller ends it, the PX4 default.
@@ -319,8 +322,8 @@ class Orchestrator:
 
     def _sample_host(self, state, env, t, meas) -> None:
         """Host-rate sensors, RTX camera/lidar with ``host_rate = True``, sampled at every loop's host
-        seam. Each self-decimates to its own rate, so calling per tick is cheap; their work, kit.update
-        and annotator grabs, is host-bound and must never enter the captured graph.
+        seam. Each self-decimates to its own rate, so calling per tick is cheap; their work, the
+        exchange with the Kit peer, is host-bound and must never enter the captured graph.
         """
         for s in self._host_sensors:
             s.sample(state, env, t, meas)
@@ -618,9 +621,8 @@ class Orchestrator:
 
     def _make_profiler(self, label: str) -> LoopProfiler:
         """Always-on loop profiler, integer-ns marks, noise at 250 Hz. The shared ``--profile``
-        flag, ``diagnostics.profile``, adds periodic reports + carb.profiler zone mirroring, so Kit
-        backends see the loop; ``--trace <path>`` buffers a Chrome/Perfetto trace exported at the
-        end of the run.
+        flag, ``diagnostics.profile``, adds periodic reports; ``--trace <path>`` buffers a
+        Chrome/Perfetto trace exported at the end of the run.
         """
         deep = diagnostics.profile
         prof = LoopProfiler(
@@ -628,7 +630,6 @@ class Orchestrator:
             dt=self.clock.dt,
             report_every_s=5.0 if deep else 0.0,
             trace_path=diagnostics.trace,
-            use_carb=deep,
         )
         if self.renderer is not None and hasattr(self.renderer, "set_profiler"):
             self.renderer.set_profiler(prof)  # detail spans inside the render seam: render/grab
@@ -688,17 +689,15 @@ class Orchestrator:
         disconnect, or closes early, via :meth:`close` on ``stop()`` mid-step. The live RTF lands in
         ``run_stats``.
         """
-        state = self.physics.reset()  # build + settle the vehicle at the NED origin
-        # Renderer warm-up hook, optional and output-only: physics is now steppable, solver kernels
-        # compiled, but PX4 lockstep hasn't started: the safe window for a renderer's multi-second
-        # cold shader compile; rendering before the first solve crashes, and during lockstep it stalls.
-        if self.renderer is not None and hasattr(self.renderer, "on_physics_ready"):
-            self.renderer.on_physics_ready()
-            # Re-fetch the live state in case the hook advanced it; it must not rebuild it.
-            state = self.physics.current_state
         try:
-            # Inside the try: from the connect on, the controller owns a live peer, the PX4 container
-            # it launches, so every exit path has to reach the `finally`'s controller.close().
+            # Inside the try from the first line: the renderer's peer started at build, so a reset or a
+            # peer start that fails must still reach the `finally`, which removes its container, and
+            # from the connect on the controller owns a live peer too, the PX4 container it launches.
+            state = self.physics.reset()  # build + settle the vehicle at the NED origin
+            # Renderer warm-up hook, before PX4 lockstep starts: the Kit peer connects and warms its
+            # stage here, which takes seconds and would stall the lockstep.
+            if self.renderer is not None and hasattr(self.renderer, "on_physics_ready"):
+                self.renderer.on_physics_ready()
             strategy = self._execution_strategy()
             logger.info(f"execution strategy: {strategy}")
             if strategy == "captured-host-exchange":
@@ -715,7 +714,9 @@ class Orchestrator:
                 self._record_tick()  # seed one observation row, the same contract as captured
                 yield from self._loop(state)
         except ConnectionError as e:
-            logger.info(str(e))
+            logger.info(
+                str(e)
+            )  # the autopilot's disconnect: a run's normal end. A dying Kit peer raises KitPeerError, which ends the run with it
         finally:
             if self.renderer is not None and hasattr(self.renderer, "close"):
                 self.renderer.close()  # for example flush+close the First Person View (FPV) encoder, an output-only seam
@@ -736,6 +737,7 @@ class Orchestrator:
         no wall-clock.
         """
         if self._ticks_iter is None:
+            self._stepped = True
             self._ticks_iter = self._ticks()
         try:
             next(self._ticks_iter)
@@ -755,10 +757,18 @@ class Orchestrator:
             pass
 
     def close(self) -> None:
-        """Tear down a partially stepped run, ``Sim.stop()`` after ``step()``s: close the tick
-        generator, running its ``finally``, RTF stamp + controller/logs teardown. Idempotent: a no-op if
-        the run already finished, ``run()`` completed / ``step()`` returned ``False``.
+        """Tear down the run, ``Sim.stop()``. A partially stepped run closes its tick generator, running
+        its ``finally``, RTF stamp + renderer/controller/logs teardown. A run that never stepped closes
+        the renderer, whose peer started at build, and the logs. Idempotent: a no-op once the run has
+        finished, ``run()`` completed / ``step()`` returned ``False``, or closed.
         """
         if self._ticks_iter is not None:
             self._ticks_iter.close()  # GeneratorExit → the loop's finally, RTF, + _ticks' finally, close
             self._ticks_iter = None
+        elif not self._stepped:
+            self._stepped = True  # torn down: a later close() is a no-op
+            try:
+                if self.renderer is not None and hasattr(self.renderer, "close"):
+                    self.renderer.close()
+            finally:
+                self._close_logs()

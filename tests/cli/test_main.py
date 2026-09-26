@@ -1,56 +1,40 @@
-"""``nexus`` command-line tool parsing/validation: the command surface only, no runtime boots.
+"""``nexus`` command-line tool parsing/validation: the command surface only, no run starts."""
 
-The test monkeypatches the dispatch targets: ``_run_standalone``, the Sim path; ``resolve_runtime``, the
-auto selection driven by the vehicle's Universal Scene Description (USD); and ``run_isaacsim``. No Kit, no sim.
-"""
-
+import hashlib
 import importlib
 
 import pytest
 
 cli = importlib.import_module("nexus._src.cli.main")
-detect = importlib.import_module("nexus._src.cli.detect")
 
-
-def _run(monkeypatch, argv, runtime="standalone"):
-    """Invoke the command-line tool with *argv*; a stub pins auto-resolution to *runtime*."""
-    captured = {}
-
-    def fake_standalone(args):
-        captured.update(runtime="standalone", args=args)
-
-    monkeypatch.setattr(cli, "_run_standalone", fake_standalone)
-    monkeypatch.setattr(detect, "resolve_runtime", lambda args: runtime if args.runtime == "auto" else args.runtime)
-    monkeypatch.setattr("sys.argv", ["nexus", *argv])
-    cli.main()
-    return captured
-
-
-def test_auto_default_routes_standalone_without_rtx(monkeypatch):
-    """--runtime defaults to auto; a vehicle without RTX prims routes to the standalone Sim path."""
-    cap = _run(monkeypatch, ["run"])
-    assert cap["runtime"] == "standalone"
-    assert cap["args"].runtime == "auto"
-
-
-def test_stream_on_a_cameraless_vehicle_errors(monkeypatch):
-    """--stream needs RTX camera sensors; a vehicle that resolves standalone rejects it."""
-    with pytest.raises(SystemExit):
-        _run(monkeypatch, ["run", "--stream"], runtime="standalone")
-
-
-def test_explicit_standalone_skips_detection(monkeypatch):
-    cap = _run(monkeypatch, ["run", "--runtime", "standalone"])
-    assert cap["runtime"] == "standalone"
+PLAIN_USD = '#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\ndef Xform "vehicle" {}\n'
 
 
 def test_log_and_view_are_exclusive(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["nexus", "run", "--log", "--view"])
     with pytest.raises(SystemExit):
-        _run(monkeypatch, ["run", "--log", "--view"])
+        cli.main()
+
+
+def test_stream_on_a_vehicle_without_a_camera_fails_before_the_run(monkeypatch, tmp_path):
+    """--stream publishes the camera feeds, so a vehicle that authors no camera has nothing to stream."""
+    pytest.importorskip("pxr")
+    usd = tmp_path / "plain.usda"
+    usd.write_text(PLAIN_USD)
+    registry = tmp_path / "catalog.yaml"
+    registry.write_text(
+        "vehicles:\n  - name: plain\n"
+        f'    usd: {{ url: "{usd.as_uri()}", sha256: {hashlib.sha256(usd.read_bytes()).hexdigest()} }}\n'
+        "scenes:\n  empty: {}\n"
+    )
+    monkeypatch.setenv("NEXUS_ASSET_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setattr("sys.argv", ["nexus", "run", "--stream", "--vehicle", "plain", "--registry", str(registry)])
+    with pytest.raises(ValueError, match="camera"):
+        cli.main()
 
 
 def test_rtx_prim_scan_reads_the_authored_camera(tmp_path):
-    """A vehicle USD carrying a camera prim → the auto-runtime detector finds it.
+    """A vehicle Universal Scene Description (USD) file with a camera prim under its root prim: the scan that starts Kit finds it.
 
     Deterministic and self-contained: author a synthetic vehicle USD with an FpvCam camera prim
     via pxr, then scan it: no cached/downloaded asset, no network, no prep scripts.

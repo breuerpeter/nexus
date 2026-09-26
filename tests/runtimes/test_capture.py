@@ -119,9 +119,9 @@ def test_run_captured_pid_loop_executes():
     """
     if not wp.is_cuda_available():
         pytest.skip("no CUDA device")
+    from nexus._src.build.assembly import build_scenario, run_captured
+    from nexus._src.build.launch import resolve_to_vehicle_builder
     from nexus._src.config import LaunchConfig
-    from nexus._src.runtimes.assembly import build_scenario, run_captured
-    from nexus._src.runtimes.launch import resolve_to_vehicle_builder
     from nexus.examples.controllers.pid.assembly import build_pid_orchestrator
 
     def build(q_list, max_steps):

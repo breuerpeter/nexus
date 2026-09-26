@@ -11,8 +11,7 @@ Two rules for the component seams, then the structure of every shipped vehicle.
 A seam lives at or below its consumer: in the caller's own package, or lower in the import layers
 `.importlinter` fixes. The orchestrator drives `Clock`, `Physics`, `Actuator`, `Sensor`,
 `Controller`, `Renderer` and `Recorder` and sits at the bottom layer, so those contracts live in
-`core/`. `SceneHandler`'s consumers are the render frame and the stage compose, both higher in the layers
-than `scene/`, so it lives beside its implementations in `scene/base.py`. A contract that sits higher
+`core/`. A contract that sits higher
 than its consumer ends up written twice: once where the consumer can import it, once beside the
 implementations. That's how the actuator seam came to exist in two files before this rule.
 
@@ -20,12 +19,13 @@ implementations. That's how the actuator seam came to exist in two files before 
 
 Three tiers. A vehicle or a scene **declares** a component in its Universal Scene Description (USD)
 when the component is a property of the machine or of the site. `Controller`, `Actuator`, `Sensor`
-and `Companion` are the vehicle's. What a scene contributes is the scene's. The `Operator` and the
-`Renderer` of the runtime are properties of the run, not of either, so they stay **arguments**. `Clock`, `Physics`, `Recorder` and `Logger` are the
+and `Companion` are the vehicle's. What a scene contributes is the scene's. The `Operator` is a
+property of the run, not of either, so it stays an **argument**. The `Renderer` follows from the
+vehicle: a sensor that needs Kit starts the Kit render peer. `Clock`, `Physics`, `Recorder` and `Logger` are the
 framework's own architecture, **fixed**: one implementation each, configured by settings rather than
 swapped, so none gets a resolver or a published Protocol. Fixed is about publishing no resolver, not
-about which directory the implementation sits in: `_src/physics/` imports `newton` and
-`_src/rendering/` imports Kit, which `.importlinter` keeps out of `core/`.
+about which directory the implementation sits in: `_src/physics/` imports `newton`, which
+`.importlinter` keeps out of `core/`, and no module imports Kit, which runs only in the Kit peer.
 
 ## The vehicle model
 

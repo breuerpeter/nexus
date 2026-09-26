@@ -2,12 +2,9 @@
 
 from typing import TYPE_CHECKING
 
-# Lazy re-exports, per Python Enhancement Proposal (PEP) 562. `import nexus` must stay
-# import-light: the isaacsim runtime runs inside a Kit container where NVIDIA `newton` only becomes
-# importable after `SimulationApp` boots, because the `isaacsim.pip.newton` extension adds it to
-# sys.path at startup. So the package top level can't eagerly pull the physics/runtime stack, which
-# imports `newton` at module load. Otherwise `python -m nexus._src.cli.main run --runtime isaacsim`
-# dies with `ModuleNotFoundError: newton` before it ever boots the app. Each public name resolves on
+# Lazy re-exports, per Python Enhancement Proposal (PEP) 562. `import nexus` stays import-light:
+# the physics stack imports `newton` and `warp` at module load, which takes seconds, and the
+# command-line tool parses its arguments before the run needs either. Each public name resolves on
 # first attribute access instead, so `from nexus import Sim` and `nexus.Sim` stay the same
 # for callers, and that holds for every name.
 _LAZY_EXPORTS = {

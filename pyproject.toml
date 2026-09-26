@@ -38,16 +38,14 @@ dependencies = [
     "trimesh>=4.6.8",
     "scipy>=1.11.0",
     "rerun-sdk>=0.34.1,<0.35",
-    # The docker daemon client: the framework starts the PX4 SITL container it flies against
-    # (nexus/_src/containers.py). Pure Python over requests/urllib3, which are already in the
-    # tree, and the Kit image's entrypoint syncs project.dependencies at container start — so this
-    # reaches the isaacsim runtime with no image rebuild.
+    # The docker daemon client: the framework starts the PX4 SITL container it flies against and
+    # the Kit render peer (nexus/_src/containers.py). Pure Python over requests/urllib3, which
+    # are already in the tree.
     "docker>=7.1.0",
 ]
 
 [project.optional-dependencies]
 policy   = ["torch"]
-isaacsim = []
 examples = ["ruckig>=0.14"]  # jerk-limited reference trajectory the MPC examples track
 acados   = ["casadi>=3.6", "ruckig>=0.14", "acados_template"]  # waypoint_tracking.py: NMPC codegen
 # Isaac Lab RL training is NOT an extra of the core — it lives in the separate `nexus-rl` uv
@@ -65,7 +63,7 @@ Issues = "https://github.com/breuerpeter/nexus/issues"
 Changelog = "https://github.com/breuerpeter/nexus/blob/main/CHANGELOG.md"
 
 [tool.uv]
-# The framework is Linux-x86_64 only in practice (CUDA GPU, PX4 SITL, Isaac runtimes), so restrict the
+# The framework is Linux-x86_64 only in practice (CUDA GPU, PX4 SITL, the Kit render peer), so restrict the
 # universal lock to that environment to keep resolution deterministic. (The Isaac Lab newton/warp pin
 # overrides + prerelease + index-strategy moved to nexus-rl, which is the only consumer of isaaclab.)
 environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]

@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
-"""The RTF benchmark matrix: ONE PX4 4-waypoint mission flown across {vehicle × scene × device ×
-runtime} cells on the pinned runner hardware, producing the data the docs Benchmarking page renders.
+"""The RTF benchmark matrix: ONE PX4 4-waypoint mission flown across {vehicle × scene × device}
+cells on the pinned runner hardware, producing the data the docs Benchmarking page renders.
 
 Two tables:
-    standalone: astro_max_base × empty × {cpu, cuda}
-    isaacsim:   {base, fpv} × {empty, cesium} × cuda
+    physics: astro_max_base × empty × {cpu, cuda}, no renderer
+    rtx:     astro_max_fpv × {empty, cesium} × cuda, its camera rendered by the Kit peer
 
-Per cell: run ``scripts/ci/benchmark_cell.py`` (plain Python for standalone, via ``nexus
-script`` for isaacsim) and collect its ``--stats-json``. The cell is a whole flight, since its own sim
-starts and stops PX4 and flies the mission, so this runner only sequences cells, times them out and
-merges their numbers. Writes ``docs/data/rtf_matrix.json`` (consumed by ``docs/hooks/benchmarks.py``
-at docs build) plus github-action-benchmark-style entries next to the per-cell artifacts.
+Per cell: run ``scripts/ci/benchmark_cell.py`` on the host and collect its ``--stats-json``. The
+cell is a whole flight, since its own sim starts and stops PX4 and, for an RTX cell, the Kit
+peer, and flies the mission, so this runner only sequences cells, times them out and merges their
+numbers. The first RTX cell on a fresh runner builds the Kit image, as a user's first RTX run does.
+Writes ``docs/data/rtf_matrix.json`` (consumed by ``docs/hooks/benchmarks.py`` at docs build)
+plus github-action-benchmark-style entries next to the per-cell artifacts.
 
 cesium cells stream Google 3D Tiles (needs ``$CESIUM_ION_TOKEN``; RTF varies with network) and are
-skipped with a note when the token is absent. isaacsim cells run with ``--benchmark`` so the
-Kit-side recorders (GPU frametime, VRAM, RSS, RTF stability) collect too; their JSON lands in
-``~/.cache/nexus/logs`` (bind-mounted out of the container) and is attached to the cell result.
+skipped with a note when the token is absent. RTX cells run with ``--benchmark`` so the Kit-side
+recorders (GPU frametime, VRAM, RSS, RTF stability) collect too; the peer writes their JSON into
+``~/.cache/nexus/logs``, and this runner attaches it to the cell result.
 
 CI flies one cell per GPU box, since a measured flight cannot share a GPU or PX4's fixed ports, in
 three steps of which only the middle one needs a GPU or a nexus install: ``--list`` prints the cells
@@ -23,7 +24,7 @@ to fly and the tags skipped as one JSON for the workflow matrix, ``--cell <tag>`
 leaves its result beside its stats, and ``--merge`` joins the results the boxes uploaded over the
 committed matrix. With none of the three, the cells fly one after another on this machine.
 
-    uv run python scripts/ci/benchmark_matrix.py [--only standalone|isaacsim] [--out docs/data/rtf_matrix.json]
+    uv run python scripts/ci/benchmark_matrix.py [--only physics|rtx] [--out docs/data/rtf_matrix.json]
     python3 scripts/ci/benchmark_matrix.py --list [--only …]
     uv run python scripts/ci/benchmark_matrix.py --cell <tag> [--work <dir>]
     python3 scripts/ci/benchmark_matrix.py --merge --plan '<the --list output>' [--work <dir>] [--out …]
@@ -40,26 +41,27 @@ import sys
 import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-VEHICLES = ("astro_max_base", "astro_max_fpv")
 SCENES = ("empty", "cesium")
-AXES = ("runtime", "device", "vehicle", "scene")
-KIT_LOGS = pathlib.Path.home() / ".cache" / "nexus" / "logs"  # bind-mounted out of the Kit container
+KIT_LOGS = pathlib.Path.home() / ".cache" / "nexus" / "logs"  # where the Kit peer writes its benchmark JSON
 
 
 def _cells(only: str | None) -> list[dict]:
     cells = []
-    if only in (None, "standalone"):
+    if only in (None, "physics"):
         cells += [
-            {"runtime": "standalone", "device": d, "vehicle": "astro_max_base", "scene": "empty"}
-            for d in ("cpu", "cuda")
+            {"renders": False, "device": d, "vehicle": "astro_max_base", "scene": "empty"} for d in ("cpu", "cuda")
         ]
-    if only in (None, "isaacsim"):
-        cells += [{"runtime": "isaacsim", "device": "cuda", "vehicle": v, "scene": s} for v in VEHICLES for s in SCENES]
+    if only in (None, "rtx"):
+        cells += [{"renders": True, "device": "cuda", "vehicle": "astro_max_fpv", "scene": s} for s in SCENES]
     return cells
 
 
+def _key(cell: dict) -> tuple:
+    return tuple(cell.get(k) for k in ("vehicle", "scene", "device"))
+
+
 def _tag(cell: dict) -> str:
-    return "-".join(cell[k] for k in AXES)
+    return "-".join(_key(cell))
 
 
 def _plan(only: str | None) -> tuple[list[dict], list[str]]:
@@ -78,53 +80,52 @@ def _ok(result: dict) -> bool:
 
 
 def _kill_kit() -> None:
-    """Force-remove any leftover isaacsim-runtime container: a hung cell's ``docker compose run``
-    container survives killing the host client and would serve a stale sim on :4560 to the next
-    cell, misattributing its numbers.
+    """Force-remove any leftover Kit render peer: a hung cell's peer survives killing the cell's
+    process and would hold the GPU the next cell renders on, misattributing its numbers.
     """
-    from nexus._src.containers import client  # here, not at the top: --list and --merge run with no nexus install
+    # Imported here, not at the top: --list and --merge run with no nexus install.
+    from nexus._src.containers import client
+    from nexus._src.rendering.peer import LABEL
 
-    for c in client().containers.list(filters={"label": "com.docker.compose.service=isaacsim"}):
+    for c in client().containers.list(all=True, filters={"label": f"{LABEL}=kit"}):
         c.remove(force=True)
 
 
 def _run_cell(cell: dict, work: pathlib.Path, budget_s: float, cell_timeout: float) -> dict:
     stats_json = work / f"{_tag(cell)}.json"
-    entry = ["python"] if cell["runtime"] == "standalone" else ["nexus", "script"]
     # fmt: off
     cmd = [
-        "uv", "run", *entry, "scripts/ci/benchmark_cell.py",
+        "uv", "run", "python", "scripts/ci/benchmark_cell.py",
         "--vehicle", cell["vehicle"], "--scene", cell["scene"], "--device", cell["device"],
         "--log", "--stats-json", str(stats_json),
     ]
     # fmt: on
     env = {**os.environ, "NEWTON_CELL_FLY_S": str(budget_s)}
     kit_before: set[pathlib.Path] = set()
-    if cell["runtime"] == "isaacsim":
-        cmd.append("--benchmark")  # Kit-side recorders: the shared diagnostics flag rides argv into Kit
+    if cell["renders"]:
+        cmd.append("--benchmark")  # the Kit peer's recorders: the shared diagnostics flag reaches it in the setup
         kit_before = set(KIT_LOGS.glob("benchmark-*.json"))
     print(f"\n===== {_tag(cell)}: {' '.join(cmd)} =====", flush=True)
 
     result = dict(cell)
-    if cell["runtime"] == "isaacsim":
+    if cell["renders"]:
         _kill_kit()
     stats_json.unlink(missing_ok=True)  # a stale per-tag file must never pass for fresh data
-    # One wall leash for the whole cell, because the cell is now the whole flight: it builds PX4,
-    # boots, where a cold Kit boot plus Warp compile measured ~17 min on a fresh CI box, reaches
-    # lockstep, flies, and dumps its stats. A stale sim on :4560 needs no pre-check any more: it
-    # surfaces as the cell's own bind failure.
+    # One wall leash for the whole cell, because the cell is the whole flight: it builds PX4 and,
+    # for the first RTX cell, the Kit image, boots, reaches lockstep, flies, and dumps its stats.
+    # A stale sim on :4560 needs no pre-check: it surfaces as the cell's own bind failure.
     try:
         subprocess.run(cmd, cwd=ROOT, env=env, timeout=cell_timeout, check=False)
     except subprocess.TimeoutExpired:
         result["error"] = f"cell did not finish within {cell_timeout:.0f}s"
     finally:
-        if cell["runtime"] == "isaacsim":
-            _kill_kit()  # killing the host client doesn't stop the compose-run Kit container
+        if cell["renders"]:
+            _kill_kit()  # a cell killed by the leash leaves its peer behind
     if stats_json.exists():
         result.update(json.loads(stats_json.read_text()))
     else:
         result.setdefault("error", "cell dumped no stats")
-    if cell["runtime"] == "isaacsim":
+    if cell["renders"]:
         fresh = sorted(set(KIT_LOGS.glob("benchmark-*.json")) - kit_before)
         if fresh:
             result["kit"] = json.loads(fresh[-1].read_text())
@@ -151,17 +152,14 @@ def _finish(results: list[dict], skipped: list[str], box: dict, out: pathlib.Pat
     """Write the matrix and the bench entries from the fresh cells; 1 when any fresh cell failed."""
     fresh = list(results)
     # Partial runs, with --only or cesium skipped without a token, must not clobber cells they didn't
-    # fly: merge fresh cells over the committed matrix, keyed by the cell axes. The refresh PR
-    # diff then shows exactly the re-measured cells.
+    # fly: merge fresh cells over the committed matrix, keyed by the cell axes, and drop committed
+    # cells the matrix no longer flies. The refresh PR diff then shows exactly the re-measured cells.
     committed = ROOT / "docs" / "data" / "rtf_matrix.json"
     if committed.exists():
-
-        def _key(c: dict):
-            return tuple(c.get(k) for k in AXES)
-
         fresh_keys = {_key(c) for c in results}
+        flown = {_key(c) for c in _cells(None)}
         prior = json.loads(committed.read_text()).get("cells", [])
-        results = results + [c for c in prior if _key(c) not in fresh_keys]
+        results = results + [c for c in prior if _key(c) in flown and _key(c) not in fresh_keys]
 
     sha = (
         os.environ.get("GITHUB_SHA")
@@ -176,7 +174,7 @@ def _finish(results: list[dict], skipped: list[str], box: dict, out: pathlib.Pat
 
     bench = [
         {
-            "name": f"rtf[{c['vehicle']}|{c['runtime']}|{c['device']}|{c['scene']}]",
+            "name": f"rtf[{c['vehicle']}|{c['device']}|{c['scene']}]",
             "unit": "x realtime",
             "value": c["rtf"],
             "biggerIsBetter": True,
@@ -194,7 +192,7 @@ def _finish(results: list[dict], skipped: list[str], box: dict, out: pathlib.Pat
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--only", choices=["standalone", "isaacsim"], default=None, help="run one table only")
+    ap.add_argument("--only", choices=["physics", "rtx"], default=None, help="run one table only")
     ap.add_argument("--list", action="store_true", help="print the cells to fly and the tags skipped as JSON")
     ap.add_argument("--cell", default=None, metavar="TAG", help="fly one cell and leave its result in --work")
     ap.add_argument("--merge", action="store_true", help="join the cell results in --work into the matrix")

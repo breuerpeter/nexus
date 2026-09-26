@@ -1,14 +1,14 @@
 ---
-description: "Differentiable design optimization, Model Predictive Control (MPC) waypoint tracking, and Isaac Lab RL: runnable examples on the standalone and Isaac runtimes."
+description: "Differentiable design optimization, Model Predictive Control (MPC) waypoint tracking, and Isaac Lab RL: runnable examples on the framework, plus the Isaac Lab training app."
 ---
 
 # Examples
 
-Runnable examples on the in-repo standalone runtime, plus the Isaac Lab RL app, a separate
-`uv` project. Launch any with `uv run -m nexus.examples <name>`, and `--list` shows them all.
-Each example is zero-arg: its configuration lives in the script. Each records an interactive
-[Rerun](https://rerun.io) `.rrd` of its flight and needs a CUDA device. They also run RTX-rendered
-under the Isaac runtime: `uv run nexus script nexus.examples <name>`.
+Runnable examples on the framework, plus the Isaac Lab RL app, a separate `uv` project. Launch any
+with `uv run -m nexus.examples <name>`, and `--list` shows them all. Each example is zero-arg: its
+configuration lives in the script. Each records an interactive [Rerun](https://rerun.io) `.rrd` of
+its flight and needs a CUDA device. A vehicle that authors RTX sensors renders them in the Kit
+render peer, which the example starts on its own.
 
 <div class="grid cards" markdown>
 

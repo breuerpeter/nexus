@@ -1,14 +1,14 @@
 name: gpu-benchmark-matrix
 
 # The RTF benchmark matrix (scripts/ci/benchmark_matrix.py): ONE PX4 4-waypoint mission across
-# {vehicle × scene × device × runtime} on the pinned A10G runner — the standalone table plus the
-# isaacsim table (GHCR isaacsim-runtime container; cesium cells need the CESIUM_ION_TOKEN secret
-# and are skipped without it). One box per cell: a measured flight cannot share a GPU, the RTF
-# being the whole deliverable, nor PX4's fixed ports, so `plan` lists the cells, `cell` flies each
-# on a box of its own through gpu-runner.yml, and `merge` joins their results over the committed
-# matrix. Scheduled + dispatch only, NOT per-push: the isaacsim cells cost minutes each. Ends with a
-# data-refresh PR updating docs/data/rtf_matrix.json — the docs Benchmarking page changes only
-# through that reviewed diff.
+# {vehicle × scene × device} on the pinned A10G runner — the physics table plus the RTX table, whose
+# camera renders in the Kit peer the cell starts; an RTX cell builds the Kit image on its box, as a
+# user's first RTX run does. Cesium cells need the CESIUM_ION_TOKEN secret and are skipped without
+# it. One box per cell: a measured flight cannot share a GPU, the RTF being the whole deliverable,
+# nor PX4's fixed ports, so `plan` lists the cells, `cell` flies each on a box of its own through
+# gpu-runner.yml, and `merge` joins their results over the committed matrix. Scheduled + dispatch
+# only, NOT per-push: the RTX cells cost minutes each. Ends with a data-refresh PR updating
+# docs/data/rtf_matrix.json — the docs Benchmarking page changes only through that reviewed diff.
 
 on:
   schedule:
@@ -16,14 +16,14 @@ on:
   workflow_dispatch:
     inputs:
       only:
-        description: "standalone | isaacsim (empty = the full matrix)"
+        description: "physics | rtx (empty = the full matrix)"
         type: string
         default: ""
 
 permissions:
   id-token: write # OIDC — gpu-runner assumes the AWS role to start/stop the box
   contents: read
-  packages: read # GHCR pulls (px4-sitl + isaacsim-runtime images)
+  packages: read # GHCR pull of the px4-sitl image
 
 concurrency:
   group: gpu-benchmark-matrix
@@ -59,10 +59,8 @@ jobs:
     with:
       caches: px4
       cache-scope: ${{ matrix.cell.tag }}
-      # Only an isaacsim cell pulls the Kit image; a standalone cell flies on the host.
       command: >-
         bash scripts/ci/provision_px4.sh &&
-        ${{ matrix.cell.runtime == 'isaacsim' && 'docker compose -f docker/docker-compose.yml pull isaacsim &&' || '' }}
         uv run python scripts/ci/benchmark_matrix.py --cell ${{ matrix.cell.tag }} --work .eval-artifacts/matrix
       artifact-name: benchmark-cell-${{ matrix.cell.tag }}
       artifact-path: .eval-artifacts

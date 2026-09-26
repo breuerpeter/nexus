@@ -5,9 +5,8 @@ Python, with ground-truth observation read off the ``Recorder`` seam in ``_src/r
 ``BodyState`` / ``JointState`` / ``SensorSample`` are its public per-entity read types.
 
 Lazy re-exports, per Python Enhancement Proposal (PEP) 562 and mirroring the top-level package: importing
-this package, or a light submodule such as ``.args``, must not pull the physics stack. Inside the Kit
-container ``warp``/``newton`` only become importable after ``SimulationApp`` boots, and the command-line
-tool imports ``api.args`` before that.
+this package, or a light submodule such as ``.args``, must not pull the physics stack: the command-line
+tool imports ``api.args`` to parse its arguments before the run builds.
 """
 
 from typing import TYPE_CHECKING
