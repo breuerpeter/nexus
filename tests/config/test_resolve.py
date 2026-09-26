@@ -1,6 +1,7 @@
 """End-to-end resolution: name -> variant -> tested-config receipt, plus fetch."""
 
 import hashlib
+import json
 import logging
 from pathlib import Path
 
@@ -230,3 +231,11 @@ def test_a_launch_that_names_a_dropped_variant_fails_before_it_flies(tmp_path, m
     with pytest.raises(NoMatchError, match="no vehicle named 'astro_max_fpv_lr1'"):
         with nexus.Sim(vehicle="astro_max_fpv_lr1"):
             pass
+
+
+def test_the_receipt_carries_no_environment_field():
+    """The `environment` launch key and the receipt's `environment` field go, since nothing reads them."""
+    reg = _reg({"url": "https://x/astro.usdz", "sha256": "deadbeef"})
+    rl = resolve(LaunchConfig().set_vehicle("black"), reg, fetch=False)
+
+    assert "environment" not in json.loads(rl.tested_config.to_json())
