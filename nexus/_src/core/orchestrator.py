@@ -118,9 +118,10 @@ class Orchestrator:
                 exposes ``sample(state, env, t, meas)``, eager, or
                 ``sample_wp(state, env, t)`` + ``read(meas)``, captured. Stored as a
                 list; each can expose ``capturable``.
-            controller: Control boundary. ``connect()`` binds and waits for the peer;
-                ``exchange(meas, t, timeout)`` returns controls or ``None``;
-                ``close()`` tears down. Can expose ``host_boundary`` / ``capturable``.
+            controller: Control boundary. ``connect()`` binds and starts the peer, and the
+                preroll waits for it; ``exchange(meas, t, timeout)`` returns controls or ``None``;
+                ``close()`` tears down. Can expose ``host_boundary`` / ``capturable``, and
+                ``attached``, false until the peer dials in, which holds the preroll's clock.
             renderer: Optional render-lifecycle object, for example the Kit render peer's
                 :class:`~nexus._src.rendering.KitRenderer`: the loop calls only
                 ``on_physics_ready()``/``close()``; the host-rate RTX camera *sensors* drive
@@ -334,7 +335,9 @@ class Orchestrator:
             logger.info("Waiting for the controller to start lockstep...")
         deadline = time.monotonic() + self.preroll_timeout
         while time.monotonic() < deadline:
-            t = self.clock.advance()
+            # Hold the sim clock until the peer has dialed in: time spent waiting would start the peer's
+            # clock late, and PX4 times its boot checks from its first stamp.
+            t = self.clock.advance() if getattr(self.controller, "attached", True) else self.clock.now()
             env = self.environment.sample(None, t)
             meas = self._sample(state, env, t)
             controls = self.controller.exchange(meas, t, timeout=0.05)
@@ -565,7 +568,8 @@ class Orchestrator:
             logger.info("Waiting for the controller to start lockstep...")
         deadline = time.monotonic() + self.preroll_timeout
         while time.monotonic() < deadline:
-            t = self.clock.advance()
+            # Hold the sim clock until the peer has dialed in, as the eager preroll does.
+            t = self.clock.advance() if getattr(self.controller, "attached", True) else self.clock.now()
             for s in self._graph_sensors:
                 s.sample_wp(state, env, t)  # re-sample, state static, noise dithers -> live feed
                 s.read(meas)
