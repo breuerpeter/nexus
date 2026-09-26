@@ -105,6 +105,16 @@ class Px4MavlinkController:
             return None
         return max(ulogs, key=os.path.getmtime)
 
+    @property
+    def attached(self) -> bool:
+        """Whether PX4 has dialed in: the HIL link accepted its connection.
+
+        The accept is lazy, on the first receive, so this turns true during the exchange that meets
+        PX4's connection. The preroll holds the sim clock until then, so PX4's first sensor stamp is
+        near zero even when PX4 took long to dial in.
+        """
+        return self.mav is not None and self.mav.port is not None
+
     def artifacts(self) -> dict:
         """This controller's contribution to Sim.artifacts(): the PX4 ULog and the PX4 console log
         of the container it started. Keeps the PX4-specific keys out of the generic Sim API.
