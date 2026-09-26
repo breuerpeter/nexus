@@ -21,9 +21,9 @@ hover-success and mean-distance curves climb over `train_iter`.
 *Early takes crash and scatter. Late takes all converge on their goals. A blank viewer means the
 recording isn't uploaded yet: run the pipeline below, then `scripts/ci/evaluate_examples.py --upload`.*
 
-## Deploy: flying waypoints on the core runtime
+## Deploy: flying waypoints on the framework
 
-The exported `policy.pt` flies through the **standalone runtime**, with `uv` and no container, on
+The exported `policy.pt` flies through the **framework's own loop**, with `uv` and no container, on
 the single-body `RigidBodyRotors` actuator. That actuator is the **same** Collective Thrust and
 Body Rate (CTBR) mixer and per-rotor motor model the policy trained against: byte-shared Warp
 kernels rather than a reimplementation. The drone tours a sequence of waypoints. The next sphere
@@ -43,8 +43,8 @@ CI-measured deploy stats on the pinned runner, see [Benchmarking](../reference/b
 
 ## Key stats
 
-Measured on the pinned GPU CI runner, a g5.2xlarge with 1× A10G. That runner refreshes them, and a
-regression test guards them so they can't silently get worse. See [CI](#ci-and-regression).
+Measured on the pinned GPU CI runner, a g5.2xlarge with 1× A10G. That runner refreshes them, and
+[CI](#ci-and-regression) says which of them gate and which only report.
 
 | Metric | Value |
 |--------|-------|
@@ -75,28 +75,48 @@ uv run --project nexus-rl python nexus-rl/scripts/rsl_rl/train.py \
 uv run --project nexus-rl python nexus-rl/scripts/rsl_rl/record_demo.py \
   --log_dir .rl-artifacts/rl --out astromax_rl.rrd
 
-# --- 3) DEPLOY: flies the policy on the standalone runtime + records the waypoint tour ---
+# --- 3) DEPLOY: flies the policy on the framework + records the waypoint tour ---
 uv run --extra policy -m nexus.examples goto_policy \
   --policy .rl-artifacts/rl/exported/policy.pt
 ```
 
-Defaults reproduce the preceding recordings: training seed 42, and the script defaults set the
-recorder's snapshot iterations and the 3-waypoint deploy tour. Override the deploy tour with
-repeated `--waypoint X Y Z`.
+Without `--policy`, `uv run --extra policy -m nexus.examples goto_policy` flies the hosted policy
+the example pins: a content-addressed `.pt` fetched from the catalog's `assets.base` into the asset
+cache, sha-verified, and offline after the first fetch.
+
+A `--seed` pins the random draws, the initial weights, the start states and the exploration noise,
+and not the trained policy. The Newton physics step on the GPU isn't bit-reproducible, and PPO
+turns a last-bit difference into a different policy. Two runs at seed 42 end as two policies with
+the same statistics: about 0.99 hover success and a mean reward of 124 to 127 over the 2048 envs.
+Their weights differ, and so do their waypoint tours. What stays bit-reproducible is the deploy
+flight of one exported policy: fly the same `policy.pt` twice and the trajectories match element
+for element. The script defaults set the recorder's snapshot iterations and the 3-waypoint deploy
+tour.
 
 ## CI and regression
 
-The whole pipeline runs end-to-end through `scripts/ci/run_rl_example.sh`: train → record →
-deploy → stats. The `gpu-rl` workflow drives it, through the shared `gpu-runner.yml`, on an
-**ephemeral, fixed-GPU Amazon Web Services (AWS) EC2 runner**, a g5.2xlarge with 1× A10G. A fixed
-instance is what makes these numbers reproducible, and a fresh box per run keeps the
-repository safe.
-`scripts/ci/check_rl_stats.py` checks the fresh stats against `nexus-rl/stats_baseline.json`
-and fails if a key stat regresses beyond tolerance. The key stats are training and deploy
-throughput, and convergence, through the deploy tracking error. So the preceding numbers can't
-silently get worse. A unit test on CPU CI, `tests/ci/test_check_rl_stats.py`, covers the gate's
-logic. Runner setup and the one-time re-baseline on the A10G live in the project's GPU-CI
-runbook.
+Two GPU legs cover the pipeline, each on an **ephemeral, fixed-GPU Amazon Web Services (AWS) EC2
+runner**, a g5.2xlarge with 1× A10G. Each gate reads the kind of quantity it fits:
+
+- **The hosted policy's flight is an exact gate.** `gpu-examples` flies `goto_policy`, the hosted
+  policy, beside the other examples through `scripts/ci/evaluate_examples.py`. Given a policy, the
+  flight is bit-reproducible. Its waypoint count, final tracking error, and pose
+  Absolute Pose Error (APE) gate against `scripts/ci/examples_baselines.json` with tight bounds.
+  A deploy-side change shows exactly, on the leg that already runs for the deploy-side paths.
+- **The training statistics gate with a margin.** `gpu-rl` runs `scripts/ci/run_rl_example.sh`:
+  train, then the swarm recording and the fresh export's flight concurrently, then
+  `scripts/ci/check_rl_stats.py` against `nexus-rl/stats_baseline.json`. The final hover success
+  and mean reward over the 2048 envs are tight statistics where the policy is one draw, so they
+  gate with absolute floors under the measured spread.
+- **The fresh export's flight gates on completing only.** The flight is one draw, so the harness
+  reports its tour, `goto_policy_fresh`, and gates nothing in it. An export the deploy side can't
+  load or fly still fails the leg.
+- **No gate reads the wall clock.** Training throughput, the deploy control loop's throughput and
+  the real-time factor go to the benchmark feed. No throughput baseline holds on a shared runner.
+
+Unit tests on CPU CI, `tests/ci/test_check_rl_stats.py` and `tests/ci/test_evaluate_examples.py`,
+cover both gates' logic. Runner setup and the one-time re-baseline on the A10G live in the
+project's GPU-CI runbook.
 
 ## How the learning works: reinforcement learning and proximal policy optimization at a high level
 

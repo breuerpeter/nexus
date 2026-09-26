@@ -31,8 +31,8 @@ flight-stack development cycles.
   [`docs/design/conventions.md`](docs/design/conventions.md).
 - **Differentiable examples**: gradient-based design optimization and Model Predictive Control (MPC)
   waypoint tracking, plus reinforcement learning on Isaac Lab.
-- **Two runtimes**: a headless standalone runtime for CI and an Isaac-Sim-backed
-  runtime for photorealistic rendering.
+- **Photorealistic sensors**: a vehicle's RTX cameras and lidar render in an Isaac Sim container
+  beside the loop, which the run builds and starts itself. A vehicle without them runs headless.
 
 ## Installation
 
@@ -53,7 +53,7 @@ Development uses [`uv`](https://docs.astral.sh/uv/):
 git clone https://github.com/breuerpeter/nexus.git
 cd nexus
 uv sync                 # install the framework
-uv run nexus run   # run a scenario in the standalone runtime
+uv run nexus run   # fly the default vehicle against PX4 SITL
 ```
 
 ## Quickstart

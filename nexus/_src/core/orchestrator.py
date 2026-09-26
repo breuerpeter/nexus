@@ -122,9 +122,10 @@ class Orchestrator:
                 preroll waits for it; ``exchange(meas, t, timeout)`` returns controls or ``None``;
                 ``close()`` tears down. Can expose ``host_boundary`` / ``capturable``, and
                 ``attached``, false until the peer dials in, which holds the preroll's clock.
-            renderer: Optional render-lifecycle object, for example the Isaac RtxFrame: the loop
-                calls only ``on_physics_ready()``/``close()``; the host-rate RTX camera *sensors*
-                drive rendering itself at the host seam.
+            renderer: Optional render-lifecycle object, for example the Kit render peer's
+                :class:`~nexus._src.rendering.KitRenderer`: the loop calls only
+                ``on_physics_ready()``/``close()``; the host-rate RTX camera *sensors* drive
+                rendering itself at the host seam.
             logger: Optional :class:`~nexus._src.logging.Logger`: the recording
                 sink + shared log calls. ``None`` ⇒ no recording and no per-tick log
                 fan-out, for max speed. When present, each loggable component's
@@ -151,9 +152,10 @@ class Orchestrator:
         # Sensor partition; architecture: sensors are the one abstraction, renderables are just sensors:
         # * in-graph sensors: the physics-rate suite, Inertial Measurement Unit (IMU), Global Positioning
         #   System (GPS), baro, mag and obs: sampled every tick, join the captured CUDA graph when capturable.
-        # * host-rate sensors, ``host_rate = True``: Kit/RTX renderables, camera and lidar: inherently
-        #   low-rate and host-bound, because kit.update can't join a Warp graph, sampled at the host seam of
-        #   every loop and self-decimating to their own rate. They never veto the captured strategy.
+        # * host-rate sensors, ``host_rate = True``: RTX renderables, camera and lidar: inherently
+        #   low-rate and host-bound, because their frames come from the Kit peer over a socket, sampled at
+        #   the host seam of every loop and self-decimating to their own rate. They never veto the
+        #   captured strategy.
         self._graph_sensors = [s for s in self.sensors if not getattr(s, "host_rate", False)]
         self._host_sensors = [s for s in self.sensors if getattr(s, "host_rate", False)]
         self.controller = controller
@@ -194,6 +196,7 @@ class Orchestrator:
         # The tick generator backing run()/step(), the in-process driving seam, lazily created on the
         # first step(), None between runs. run() exhausts it; Sim.step() advances it one tick.
         self._ticks_iter = None
+        self._stepped = False  # a first step() ran, or close() tore down a run that never stepped
         self.preroll_timeout = preroll_timeout
         self.exchange_timeout = exchange_timeout
         # Bound the steady loop; None = run until the controller ends it, the PX4 default.
@@ -320,8 +323,8 @@ class Orchestrator:
 
     def _sample_host(self, state, env, t, meas) -> None:
         """Host-rate sensors, RTX camera/lidar with ``host_rate = True``, sampled at every loop's host
-        seam. Each self-decimates to its own rate, so calling per tick is cheap; their work, kit.update
-        and annotator grabs, is host-bound and must never enter the captured graph.
+        seam. Each self-decimates to its own rate, so calling per tick is cheap; their work, the
+        exchange with the Kit peer, is host-bound and must never enter the captured graph.
         """
         for s in self._host_sensors:
             s.sample(state, env, t, meas)
@@ -517,6 +520,11 @@ class Orchestrator:
         The preroll re-samples each iteration likewise. ``steps`` defaults to ``max_steps``; ``None``
         runs until the controller ends the run, on disconnect / ``stop()``.
 
+        The loop connects the controller itself, after the seed row and the capture, so it compiles
+        and loads every kernel it launches before a peer is up. From the moment PX4 dials in, it
+        logs a ``poll timeout`` error for each 1 s of wall time that brings no message, and on a cold
+        kernel cache the first launches here compile for longer than that.
+
         A generator: one control tick per ``yield``, the step() driving seam: ``run()`` exhausts it,
         ``Sim.step()`` advances it one tick. The loop captures the graph once before the first yield.
         """
@@ -525,14 +533,35 @@ class Orchestrator:
         steps = self.max_steps if steps is None else steps
         dt = self.clock.dt
         meas = Measurement()
-        # Pre-roll: sense the settled state once, which seeds the IMU finite-diff so capture runs first=0,
-        # then stream the sensor feed until the controller's first exchange completes; an external
-        # host-boundary peer takes seconds to dial in; an in-process controller answers on the first try.
+        # Sense the settled state once, which seeds the IMU finite-diff so capture runs first=0.
         t = self.clock.advance()
         env = self.environment.sample(None, t)
         for s in self._graph_sensors:
             s.sample_wp(state, env, t)
-        wp.synchronize()
+        # Seed one observation row: the settled pre-flight state, which is a datum in its own right,
+        # the pose every climb measures against. The eager loop seeds one too, so both strategies
+        # record the same pre-flight row. It also warms the record kernels' module load, so that
+        # happens outside the capture below.
+        self._record_tick()
+        wp.synchronize()  # complete the seed row's launches before the capture below opens
+
+        # Capture the device region before the first tick: any other stream op during CUDA stream
+        # capture kills the capture, and the run would then die silently with PX4 lockstep frozen
+        # mid-boot. Replays are safe. The graph reads the actuator's persistent command buffers, which
+        # the first write_controls below fills before the first replay.
+        with wp.ScopedCapture() as cap:
+            self.physics.clear_forces(state)
+            self.actuator.forces_wp(state)
+            self.physics.step(state, env, dt)
+            for s in self._graph_sensors:
+                s.sample_wp(state, env, t)
+            self._record_tick()  # capturable observation tap, post-step groundtruth; no-op if not observing
+        graph = cap.graph
+
+        # Pre-roll: connect, then stream the sensor feed until the controller's first exchange
+        # completes; an external host-boundary peer takes seconds to dial in; an in-process controller
+        # answers on the first try.
+        self.controller.connect()  # bind tcpin:4560 and return listening, then start the peer
         controls = None
         host = getattr(self.controller, "host_boundary", False)
         if host:
@@ -551,25 +580,7 @@ class Orchestrator:
             raise ConnectionError(f"controller did not establish lockstep within {self.preroll_timeout}s")
         if host:
             logger.info("controller lockstep established")
-        # Seed one observation row: the settled pre-flight state, which is a datum in its own right,
-        # the pose every climb measures against. The eager loop seeds one too, so both strategies
-        # record the same pre-flight row. It also warms the record kernels' module load, so that
-        # happens outside the capture below.
-        self._record_tick()
-        wp.synchronize()  # complete the seed row's launches before the capture below opens
-
-        # Capture the device region, with controls already seeded into the actuator buffer, before the
-        # first tick: any other stream op during CUDA stream capture kills the capture, and the run
-        # would then die silently with PX4 lockstep frozen mid-boot. Replays are safe.
-        self.actuator.write_controls(controls)
-        with wp.ScopedCapture() as cap:
-            self.physics.clear_forces(state)
-            self.actuator.forces_wp(state)
-            self.physics.step(state, env, dt)
-            for s in self._graph_sensors:
-                s.sample_wp(state, env, t)
-            self._record_tick()  # capturable observation tap, post-step groundtruth; no-op if not observing
-        graph = cap.graph
+        self.actuator.write_controls(controls)  # H2D for the first replay, host seam
         count = 0
         t0 = time.monotonic()
         warmup_steps = 250
@@ -614,9 +625,8 @@ class Orchestrator:
 
     def _make_profiler(self, label: str) -> LoopProfiler:
         """Always-on loop profiler, integer-ns marks, noise at 250 Hz. The shared ``--profile``
-        flag, ``diagnostics.profile``, adds periodic reports + carb.profiler zone mirroring, so Kit
-        backends see the loop; ``--trace <path>`` buffers a Chrome/Perfetto trace exported at the
-        end of the run.
+        flag, ``diagnostics.profile``, adds periodic reports; ``--trace <path>`` buffers a
+        Chrome/Perfetto trace exported at the end of the run.
         """
         deep = diagnostics.profile
         prof = LoopProfiler(
@@ -624,7 +634,6 @@ class Orchestrator:
             dt=self.clock.dt,
             report_every_s=5.0 if deep else 0.0,
             trace_path=diagnostics.trace,
-            use_carb=deep,
         )
         if self.renderer is not None and hasattr(self.renderer, "set_profiler"):
             self.renderer.set_profiler(prof)  # detail spans inside the render seam: render/grab
@@ -673,9 +682,10 @@ class Orchestrator:
         """The single execution path, as a generator that yields once per control tick, driving both
         ``run()``, which exhausts it, and ``Sim.step()``, which advances it one tick.
 
-        Resets physics, which builds + settles the vehicle at the NED origin, connects the controller,
-        which binds its port and starts its peer; the wait for the peer is the preroll, not this call.
-        Then it resolves the execution strategy and delegates to the matching loop.
+        Resets physics, which builds + settles the vehicle at the NED origin, resolves the execution
+        strategy and delegates to the matching loop. The controller connects, which binds its port and
+        starts its peer, before the in-process and eager loops, and inside the host-exchange loop after
+        its capture; the wait for the peer is the preroll, not the connect.
         Every loop is a generator; it ``yield``s per tick and step-drives, for every control kind
         alike: a host-boundary peer, PX4, and an in-process autopilot both advance one tick per
         ``next()``. Common setup runs before the first tick; teardown, renderer/controller/logs close,
@@ -683,32 +693,34 @@ class Orchestrator:
         disconnect, or closes early, via :meth:`close` on ``stop()`` mid-step. The live RTF lands in
         ``run_stats``.
         """
-        state = self.physics.reset()  # build + settle the vehicle at the NED origin
-        # Renderer warm-up hook, optional and output-only: physics is now steppable, solver kernels
-        # compiled, but PX4 lockstep hasn't started: the safe window for a renderer's multi-second
-        # cold shader compile; rendering before the first solve crashes, and during lockstep it stalls.
-        if self.renderer is not None and hasattr(self.renderer, "on_physics_ready"):
-            self.renderer.on_physics_ready()
-            # Re-fetch the live state in case the hook advanced it; it must not rebuild it.
-            state = self.physics.current_state
         try:
-            # Inside the try: from here on the controller owns a live peer, the PX4 container it
-            # launches, so every exit path has to reach the `finally`'s controller.close().
-            self.controller.connect()  # bind tcpin:4560 and return listening, then start the peer
+            # Inside the try from the first line: the renderer's peer started at build, so a reset or a
+            # peer start that fails must still reach the `finally`, which removes its container, and
+            # from the connect on the controller owns a live peer too, the PX4 container it launches.
+            state = self.physics.reset()  # build + settle the vehicle at the NED origin
+            # Renderer warm-up hook, before PX4 lockstep starts: the Kit peer connects and warms its
+            # stage here, which takes seconds and would stall the lockstep.
+            if self.renderer is not None and hasattr(self.renderer, "on_physics_ready"):
+                self.renderer.on_physics_ready()
             strategy = self._execution_strategy()
             logger.info(f"execution strategy: {strategy}")
             if strategy == "captured-host-exchange":
-                # The host-exchange captured loop owns its own streaming preroll, since it must re-sample
-                # the sensor feed while the peer dials in, and its own seed row.
+                # The host-exchange captured loop owns its own connect, after its capture, and its own
+                # streaming preroll, since it must re-sample the sensor feed while the peer dials in,
+                # and its own seed row.
                 yield from self._loop_captured_host_exchange(state)
             elif strategy == "captured-inprocess":
+                self.controller.connect()  # before the capture: a controller reserves its buffers here
                 yield from self._loop_captured_inprocess(state)
             else:
+                self.controller.connect()  # bind tcpin:4560 and return listening, then start the peer
                 self._preroll(state)
                 self._record_tick()  # seed one observation row, the same contract as captured
                 yield from self._loop(state)
         except ConnectionError as e:
-            logger.info(str(e))
+            logger.info(
+                str(e)
+            )  # the autopilot's disconnect: a run's normal end. A dying Kit peer raises KitPeerError, which ends the run with it
         finally:
             if self.renderer is not None and hasattr(self.renderer, "close"):
                 self.renderer.close()  # for example flush+close the First Person View (FPV) encoder, an output-only seam
@@ -729,6 +741,7 @@ class Orchestrator:
         no wall-clock.
         """
         if self._ticks_iter is None:
+            self._stepped = True
             self._ticks_iter = self._ticks()
         try:
             next(self._ticks_iter)
@@ -748,10 +761,18 @@ class Orchestrator:
             pass
 
     def close(self) -> None:
-        """Tear down a partially stepped run, ``Sim.stop()`` after ``step()``s: close the tick
-        generator, running its ``finally``, RTF stamp + controller/logs teardown. Idempotent: a no-op if
-        the run already finished, ``run()`` completed / ``step()`` returned ``False``.
+        """Tear down the run, ``Sim.stop()``. A partially stepped run closes its tick generator, running
+        its ``finally``, RTF stamp + renderer/controller/logs teardown. A run that never stepped closes
+        the renderer, whose peer started at build, and the logs. Idempotent: a no-op once the run has
+        finished, ``run()`` completed / ``step()`` returned ``False``, or closed.
         """
         if self._ticks_iter is not None:
             self._ticks_iter.close()  # GeneratorExit → the loop's finally, RTF, + _ticks' finally, close
             self._ticks_iter = None
+        elif not self._stepped:
+            self._stepped = True  # torn down: a later close() is a no-op
+            try:
+                if self.renderer is not None and hasattr(self.renderer, "close"):
+                    self.renderer.close()
+            finally:
+                self._close_logs()

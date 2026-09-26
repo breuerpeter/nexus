@@ -63,8 +63,8 @@ def recover_mass(
     true mass. Returns the convergence history. ``inv_mass`` is the differentiable leaf the SemiImplicit
     integrator actually consumes; reported back as mass = 1/inv_mass.
     """
+    from nexus._src.build.launch import resolve_to_vehicle_builder
     from nexus._src.config import LaunchConfig
-    from nexus._src.runtimes.launch import resolve_to_vehicle_builder
 
     # Single rigid body collapsed from the vehicle Universal Scene Description (USD): the open-loop world-+z
     # thrust is frame-agnostic, so the Forward Right Down (FRD) body works unchanged here; only the body

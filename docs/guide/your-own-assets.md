@@ -45,8 +45,9 @@ defaults: { vehicle: my_quad }   # the scene stays the bundled default
 ```
 
 An entry either carries a full `url` or a compact `{name, sha256}` that its own catalog's
-`assets.base` completes into `<base>/assets/usd/{vehicles,scenes}/<name>-<sha256>.usdz`. The sha256
-is the version pin: the resolver verifies it on fetch, and because it sits in the key the object
+`assets.base` completes into `<base>/assets/usd/{vehicles,scenes}/<name>-<sha256>.usdz`. The hosted
+policy the `goto_policy` example flies sits beside them at `<base>/assets/policies/<name>-<sha256>.pt`.
+The sha256 is the version pin: the resolver verifies it on fetch, and because it sits in the key the object
 never changes and caches forever.
 
 The scheme of the URL decides how a run reads it. `https://` is an anonymous GET with no

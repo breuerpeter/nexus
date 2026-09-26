@@ -1,15 +1,14 @@
-"""Opt-in system-envelope benchmarking via Isaac's ``isaacsim.benchmark.services`` recorders.
+"""Opt-in Kit benchmarking through Isaac's ``isaacsim.benchmark.services`` recorders.
 
-The shared ``--benchmark`` flag records what the loop profiler structurally can't see: real render GPU
-frametime from HydraEngineStats, Video Random Access Memory (VRAM) + host memory, process CPU%,
-app-update frametime and windowed Real Time Factor (RTF) stability. It writes one JSON next to the
-flight logs plus one info-level summary line. Complements, and doesn't replace,
-``core/profiling.LoopProfiler``: that one partitions the sim's own tick at the loop seams; these see
-the Kit/system envelope. The recorders come straight from the registry, not via ``BaseIsaacBenchmark``,
-whose init silently bails without a Nucleus assets root and assumes World.
+The shared ``--benchmark`` flag records what the host's loop profiler can't see from outside this
+process: the render GPU frametime from HydraEngineStats, Video Random Access Memory (VRAM) and host
+memory, process CPU load, app-update frametime and windowed Real Time Factor (RTF) stability. It
+writes one JSON the host names in the setup message, plus one summary line on the console. The
+recorders come straight from the registry, not through ``BaseIsaacBenchmark``, whose init bails
+without a Nucleus assets root and assumes World.
 
-PhysX-bound recorders, physics_frametime and physics_step_interval, stay out: physics here is
-Newton/Warp, their PhysX zones never fire. render_frametime stays out: it needs async rendering.
+The PhysX recorders, physics_frametime and physics_step_interval, stay out: Kit simulates nothing.
+render_frametime stays out: it needs async rendering.
 """
 
 from __future__ import annotations
@@ -17,9 +16,11 @@ from __future__ import annotations
 import json
 import time
 
-from nexus._src.core import logger
-
 _RECORDERS = ("hardware", "runtime", "app_frametime", "gpu_frametime", "memory", "cpu_continuous", "rtf_stability")
+
+
+def _log(msg: str) -> None:
+    print(f"[kit-peer] benchmark: {msg}", flush=True)
 
 
 class KitBenchmark:
@@ -48,13 +49,13 @@ class KitBenchmark:
                     getattr(rec, "start_collecting", lambda: None)()
                     self._recs.append((name, rec))
                 except Exception as exc:
-                    logger.warning(f"benchmark: recorder {name!r} unavailable ({exc!r})")
-            logger.info(f"benchmark: recording [{', '.join(n for n, _ in self._recs)}]")
+                    _log(f"recorder {name!r} unavailable ({exc!r})")
+            _log(f"recording [{', '.join(n for n, _ in self._recs)}]")
         except Exception as exc:
-            logger.warning(f"benchmark: isaacsim.benchmark.services unavailable ({exc!r})")
+            _log(f"isaacsim.benchmark.services unavailable ({exc!r})")
 
-    def finish(self, out_path: str | None = None) -> dict:
-        """Stop recorders, log a one-line summary, optionally write the full JSON."""
+    def finish(self, out_path: str) -> None:
+        """Stop the recorders, log a one-line summary and write the full JSON to ``out_path``."""
         metrics: dict = {"wall_s": round(time.time() - self._t0, 1)}
         for name, rec in self._recs:
             try:
@@ -72,12 +73,10 @@ class KitBenchmark:
             if any(s in k.lower() for s in ("mean fps", "real time factor", "gpu memory", "rss", "frametime"))
             and not any(s in k.lower() for s in ("stdev", "min", "max", "samples"))
         }
-        logger.info(f"benchmark: {json.dumps(headline)}")
-        if out_path:
-            try:
-                with open(out_path, "w") as f:
-                    json.dump(metrics, f, indent=1, default=str)
-                logger.info(f"benchmark: full metrics -> {out_path}")
-            except Exception as exc:
-                logger.warning(f"benchmark: write failed ({exc!r})")
-        return metrics
+        _log(json.dumps(headline))
+        try:
+            with open(out_path, "w") as f:
+                json.dump(metrics, f, indent=1, default=str)
+            _log(f"full metrics -> {out_path}")
+        except Exception as exc:
+            _log(f"write failed ({exc!r})")

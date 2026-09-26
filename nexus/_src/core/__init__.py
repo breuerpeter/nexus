@@ -4,8 +4,7 @@ orchestrator, SeedTree, ConstantEnvironment, Scenario loader, plugin registry.
 The transform between the world frame and the North East Down (NED) and Forward Right Down (FRD)
 frames lives in ``nexus._src.transform``, not here: it's the one warp-dependent leaf, and
 keeping it out of ``core`` is what lets ``core``, and so ``import nexus``, stay backend-agnostic
-and importable without warp. The Isaac Sim runtime needs that, since Kit only puts warp on the path
-after SimulationApp boots.
+and importable without warp.
 """
 
 from . import interfaces

@@ -10,11 +10,10 @@ with ``usd-core``; it's host-side and unit-tested, with no Kit dependency. The p
 from __future__ import annotations
 
 # --- FPV camera mount math: the single source of truth for the authored FpvCam -----------
-# This module bakes the FPV camera into the vehicle USD as a body-child once; the renderer,
-# runtimes/isaacsim/fpv_renderer.py, just creates a render product on that authored prim, with no
-# in-code camera and no per-frame posing. The mount/intrinsics below mirror the old FpvConfig
-# defaults; change them here + re-author the vehicle USD to move the camera. The constants live
-# here to keep this assets module decoupled from the Isaac runtime package.
+# This module bakes the FPV camera into the vehicle USD as a body-child once; the Kit render peer
+# just creates a render product on that authored prim, with no in-code camera. The mount/intrinsics
+# below mirror the old FpvConfig defaults; change them here + re-author the vehicle USD to move the
+# camera. The constants live here to keep this assets module decoupled from the render peer.
 #
 # Forward Right Down (FRD) body → USD camera basis; USD cameras look down -Z, up +Y, right +X:
 #   forward, +X body → cam -Z ; up, -Z body → cam +Y ; right, +Y body → cam +X.

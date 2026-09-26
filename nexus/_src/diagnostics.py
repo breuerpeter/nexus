@@ -6,10 +6,10 @@ tested-config receipt reproduces byte-for-byte. They're process-scoped by nature
 profiler, and used to ride env vars: ``NEWTON_PROFILE`` / ``NEWTON_TRACE`` / ``NEWTON_BENCHMARK``.
 This module keeps that process-global scope but gives it a typed, documented surface the entry
 points fill from parsed args, ``Sim.from_args`` and the examples launcher call :meth:`configure`,
-and the instrumented seams read: the orchestrator's profiler, the Isaac ``RtxFrame`` benchmark.
+and the instrumented seams read: the orchestrator's profiler, the Kit render peer's benchmark.
 
 Import-light BY DESIGN, stdlib only: the examples launcher and the command-line tool configure it
-before any runtime, or Kit, boots.
+before the run builds.
 """
 
 from __future__ import annotations
@@ -22,11 +22,11 @@ class Diagnostics:
     """The per-process diagnostics switches; see the module docstring."""
 
     profile: bool = False
-    """Deep loop profiling: periodic per-tick breakdown reports every 5 s, plus carb zone mirroring in Kit."""
+    """Deep loop profiling: periodic per-tick breakdown reports every 5 s."""
     trace: str | None = None
     """Write a Chrome/Perfetto trace of the loop spans to this path on exit."""
     benchmark: bool = False
-    """Isaac Sim runtime: attach Isaac's ``benchmark.services`` recorders, ``KitBenchmark``."""
+    """RTX runs: the Kit render peer records Isaac's ``benchmark.services`` metrics beside the run's ``.rrd``."""
 
     def configure(self, args: object) -> None:
         """Load the shared flags from a parsed-args namespace, skipping missing attributes.
@@ -50,7 +50,7 @@ def add_diagnostics_args(p):
     """
     p.add_argument(
         "--profile", action="store_true",
-        help="deep loop profiling: periodic per-tick breakdown reports (5 s) + Kit zone mirroring",
+        help="deep loop profiling: periodic per-tick breakdown reports (5 s)",
     )  # fmt: skip
     p.add_argument(
         "--trace", default=None, metavar="PATH",
@@ -58,7 +58,7 @@ def add_diagnostics_args(p):
     )  # fmt: skip
     p.add_argument(
         "--benchmark", action="store_true",
-        help="isaacsim runtime: attach Isaac's benchmark.services recorders (KitBenchmark)",
+        help="RTX runs: the Kit render peer records its benchmark.services metrics to ~/.cache/nexus/logs",
     )  # fmt: skip
     return p
 

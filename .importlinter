@@ -11,7 +11,7 @@ type = layers
 layers =
     nexus._src.cli
     nexus._src.api
-    nexus._src.runtimes
+    nexus._src.build
     nexus._src.rendering
     nexus._src.physics : nexus._src.operator
     nexus._src.scene
@@ -31,30 +31,15 @@ source_modules =
 forbidden_modules =
     nexus.examples
 
-; Every tier that can run outside the Isaac container is a source here. The ones left out are Kit
-; by nature: rendering IS the Kit frame, runtimes.isaacsim boots Kit, cli.main launches the
-; container, and scene.cesium needs Kit viewports for the streamed globe. api is out too, since it
-; imports runtimes.launch, api/sim.py:25, which reaches Kit through the isaacsim runtime.
-[importlinter:contract:kit-only-in-the-rtx-sensors]
-name = Kit stays out of the core and the vehicle, bar the RTX sensors
+; Every Kit call lives in the Kit render peer's program, kit-peer/, package data that no module
+; imports, so Kit stays out of every tier with no exception.
+[importlinter:contract:no-kit]
+name = Kit stays out of every tier
 type = forbidden
 source_modules =
-    nexus._src.core
-    nexus._src.physics
-    nexus._src.operator
-    nexus._src.recording
-    nexus._src.logging
-    nexus._src.config
-    nexus._src.assets
-    nexus._src.transform
-    nexus._src.vehicle
+    nexus
 forbidden_modules =
     omni
     usdrt
     isaacsim
-ignore_imports =
-    nexus._src.vehicle.sensors.rtx_sensor -> omni
-    nexus._src.vehicle.sensors.rtx_sensor -> usdrt
-    nexus._src.vehicle.sensors.rtx_camera -> omni
-    nexus._src.vehicle.sensors.rtx_thermal -> omni
-    nexus._src.vehicle.sensors.rtx_lidar -> omni
+    carb

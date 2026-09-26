@@ -1,8 +1,8 @@
 """Shared example machinery: code that more than one example needs but the core doesn't ship.
 
 Examples import from here with absolute imports, ``from nexus.examples._lib import ...``,
-which work under every launcher: ``python -m nexus.examples``, ``nexus script``,
-and plain ``python path/to/flight.py``. Ships in the wheel as the examples themselves do.
+which work under every launcher: ``python -m nexus.examples`` and plain
+``python path/to/flight.py``. Ships in the wheel as the examples themselves do.
 
 The single-body actuator world lives here, and the examples that collapse the model to one rigid
 body run it: :mod:`rotors` holds the summed-base-wrench ``Rotors`` and ``RigidBodyRotors``;

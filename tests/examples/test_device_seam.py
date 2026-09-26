@@ -16,9 +16,9 @@ pytest.importorskip("warp")
 import newton
 import warp as wp
 
+from nexus._src.build.launch import resolve_to_vehicle_builder
 from nexus._src.config import LaunchConfig
 from nexus._src.core.schema import Measurement, SimTime
-from nexus._src.runtimes.launch import resolve_to_vehicle_builder
 from nexus.examples._lib import RigidBodyRotors, build_rotor_mixer_from_model
 from nexus.examples._lib.observation import WarpObservationSensor
 from nexus.examples.controllers.pid import PidController

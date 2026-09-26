@@ -1,4 +1,4 @@
-"""The core orchestrator assembly, shared by every runtime, per §12.
+"""The core orchestrator assembly, shared by every run, per §12.
 
 Controller-agnostic by construction: the assembly wires the plant, ``NewtonPhysics`` from nexus's
 own ModelBuilder + solvers, the shipped ``ArticulatedRotors`` actuator, the sensor suite authored in
@@ -8,14 +8,14 @@ controller**. Which controller flies is a decision one layer up: the launch glue
 ``nexus/examples/controllers/*/assembly.py``, reusing the helpers here,
 ``build_scenario`` / ``resolve_device``.
 
-No component binds to a runtime either: the same assembly runs identically in either host, the
-headless process or the Isaac Sim Kit app. A runtime differs in exactly one seam, injected per build::
+Rendering enters through one seam, injected per build::
 
     renderer_factory(physics, vehicle_builder, cfg) -> (renderer, extra_sensors)
 
-``None``, the headless default, renders nothing; the Isaac runtime passes a factory that stands up
-the RtxFrame + the vehicle USD's authored RTX camera/lidar sensors. Called after the physics build,
-since a renderer maps its stage prims onto the model's bodies.
+``None`` renders nothing; :func:`~nexus._src.rendering.rtx_renderer` returns a factory that maps the
+model's bodies onto the Kit peer's render stage and builds the vehicle USD's authored RTX
+camera/lidar sensors over the render link. Called after the physics build, since the render poses
+the stage prims from the model's bodies.
 """
 
 from __future__ import annotations
@@ -56,7 +56,7 @@ def assemble(
     extra_sensors: list | None = None,
     settings: dict | None = None,
 ) -> Assembly:
-    """Assemble the shared core components around the runtime-constructed ``physics`` and the
+    """Assemble the shared core components around the constructed ``physics`` and the
     caller-supplied ``controller``; which controller flies is the launch layer's decision.
     ``settings`` is the run's effective configuration for the viewer's Settings tab; the launch
     glue passes the tested-config receipt.
@@ -102,15 +102,15 @@ def assemble(
         )
     sensors = [
         *build_sensors(specs, seedtree=seedtree, dt=dt, gps_init=gps, ref_alt=ref_alt),
-        *(extra_sensors or []),  # runtime extras, for example USD-discovered RTX camera sensors, host-rate
+        *(extra_sensors or []),  # the renderer's sensors, for example USD-discovered RTX cameras, host-rate
     ]
     # World Magnetic Model (WMM) field at the GPS origin, the autopilot's own coarse table, so strict mag
     # arming checks pass.
     environment = ConstantEnvironment.from_gps(gps["lat"], gps["lon"])
 
     # The central Rerun recording, §10: built here because it needs the physics Model; the import is
-    # lazy so rerun is only pulled in when logging is on. Resilient on the Isaac path: a missing rerun
-    # stack in the Kit env must never block the flight; warn and fly without the sink.
+    # lazy so rerun is only pulled in when logging is on. Resilient: a logging stack that fails to
+    # build must never block the flight; warn and fly without the sink.
     sink = None
     if rerun:
         try:
@@ -183,11 +183,11 @@ def build_orchestrator(
     settings: dict | None = None,
 ) -> Orchestrator:
     """The core orchestrator: the one ``NewtonPhysics`` + the one shared assembly around the
-    caller-supplied ``controller``; a runtime differs only in its renderer, architecture.md §12.
+    caller-supplied ``controller``; a run differs only in its renderer, architecture.md §12.
 
     ``renderer_factory(physics, vehicle_builder, cfg) -> (renderer, extra_sensors)`` is the one
-    runtime seam: called after the physics build, since the renderer maps stage prims onto model
-    bodies; ``None``, the headless default, renders nothing.
+    rendering seam: called after the physics build, since the render poses stage prims from the
+    model's bodies; ``None`` renders nothing.
     ``preroll_timeout`` covers a host-boundary controller's boot, since an autopilot in a container
     needs a generous window.
     """
@@ -259,8 +259,9 @@ def run_captured_host_exchange(orch: Orchestrator, *, steps: int | None = None, 
         return orch
     orch.clock.rtf = rtf  # rtf=0, the default: run as fast as the controller keeps up; rtf>0 throttles
     state = orch.physics.reset()
-    orch.controller.connect()  # a host-boundary controller dials in here, for example PX4 on tcpin:4560
     try:
+        # The loop connects the controller itself, after its capture: a host-boundary controller
+        # dials in there, for example PX4 on tcpin:4560.
         for _ in orch._loop_captured_host_exchange(state, steps=steps):  # generator; exhaust it
             pass
     except ConnectionError as e:

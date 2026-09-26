@@ -15,9 +15,9 @@ this builder from here, because examples ship in the wheel.
 
 from __future__ import annotations
 
+from nexus._src.build.assembly import resolve_device
 from nexus._src.core import Clock, ConstantEnvironment, Orchestrator, logger
 from nexus._src.physics import NewtonPhysics
-from nexus._src.runtimes.assembly import resolve_device
 
 
 def build_pid_orchestrator(
@@ -61,7 +61,7 @@ def build_pid_orchestrator(
     rtf = cfg["physics"].get("rtf", 0)
 
     if vehicle_builder is None:
-        raise ValueError("vehicle_builder is required (resolve it via runtimes.launch.resolve_scenario)")
+        raise ValueError("vehicle_builder is required (resolve it via build.launch.resolve_scenario)")
     builder = vehicle_builder
     act = builder.actuator_params()  # aero/thrust map from the vehicle USD, hash-pinned and not in cfg
     single_body = cfg["physics"].get("solver") == "semi_implicit"

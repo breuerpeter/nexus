@@ -61,22 +61,22 @@ def _matrix_tables() -> str:
             return ""
         return f"{w['min']:.2f} / {w['avg']:.2f} / {w['max']:.2f} (σ {w['std']:.2f})"
 
-    standalone = [c for c in cells if c.get("runtime") == "standalone" and c.get("rtf") is not None]
-    if standalone:
-        out += ["**Standalone runtime** (headless physics, no renderer)", ""]
+    physics = [c for c in cells if not c.get("renders") and c.get("rtf") is not None]
+    if physics:
+        out += ["**Physics only** (a vehicle with no RTX sensor, no renderer)", ""]
         out += ["| Vehicle | Scene | Device | Steady RTF | Window min / avg / max |", "|---|---|---|---|---|"]
         out += [
             f"| `{c['vehicle']}` | `{c['scene']}` | {c['device']} | **{c['rtf']:.2f}×** | {win(c)} |"
-            for c in standalone
+            for c in physics
         ]
         out.append("")
 
-    isaac = [c for c in cells if c.get("runtime") == "isaacsim" and c.get("rtf") is not None]
-    if isaac:
-        vehicles = list(dict.fromkeys(c["vehicle"] for c in isaac))
-        scenes = list(dict.fromkeys(c["scene"] for c in isaac))
-        by = {(c["vehicle"], c["scene"]): c for c in isaac}
-        out += ["**Isaac Sim runtime** (RTX rendering, GPU)", ""]
+    rtx = [c for c in cells if c.get("renders") and c.get("rtf") is not None]
+    if rtx:
+        vehicles = list(dict.fromkeys(c["vehicle"] for c in rtx))
+        scenes = list(dict.fromkeys(c["scene"] for c in rtx))
+        by = {(c["vehicle"], c["scene"]): c for c in rtx}
+        out += ["**RTX rendering** (the camera rendered by the Kit peer, GPU)", ""]
         out += ["| Vehicle | " + " | ".join(f"`{s}`" for s in scenes) + " |", "|---|" + "---|" * len(scenes)]
         for v in vehicles:
             row = [f"**{by[(v, s)]['rtf']:.2f}×**" if (v, s) in by else "" for s in scenes]
@@ -85,7 +85,7 @@ def _matrix_tables() -> str:
         if any(s == "cesium" for s in scenes):
             out += ["<small>`cesium` streams Google 3D Tiles over the network: its RTF varies with tile traffic.</small>", ""]
     else:
-        out += ["*Isaac Sim cells pending the first scheduled `gpu-benchmark-matrix` run.*", ""]
+        out += ["*RTX cells pending the first scheduled `gpu-benchmark-matrix` run.*", ""]
 
     out.append(_stamp(meta) + f"<br><small>Mission: takeoff to {meta.get('alt_m', '?')} m, then waypoints `{meta.get('mission', '?')}` (x,y,z world offsets [m] from the takeoff point; +x is north).</small>")
     return "\n".join(out)

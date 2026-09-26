@@ -19,7 +19,6 @@ Universal Scene Description (USD) file of cost-only capsules. The operator seque
 .rrd is the demo's artifact.
 
     uv run --extra examples -m nexus.examples sampling_mpc     # flies + asserts + writes the .rrd
-    uv run nexus script nexus.examples sampling_mpc      # the same, RTX-rendered under Kit
 
 Needs a Compute Unified Device Architecture (CUDA) device for the batched rollout + graph-captured
 optimization.
@@ -32,8 +31,9 @@ import itertools
 import numpy as np
 
 import nexus as na
+from nexus._src.build.launch import resolve_scenario
 from nexus._src.config import LaunchConfig
-from nexus._src.runtimes.launch import default_renderer_factory, resolve_scenario
+from nexus._src.rendering import rtx_renderer
 from nexus.examples._lib import dump_run
 from nexus.examples.controllers.sampling_mpc.assembly import build_sampling_mpc_orchestrator
 
@@ -57,7 +57,7 @@ def main() -> None:
         vehicle_builder=builder,
         max_steps=MAX_STEPS,
         rerun=True,  # the .rrd is the demo's artifact
-        renderer_factory=default_renderer_factory(),  # RTX under `nexus script`, headless otherwise
+        renderer_factory=rtx_renderer(builder, cfg),  # the Kit peer, when the vehicle authors RTX sensors
     )
     # reached_m=0.5 matches the demo's leg spacing: the operator advances to the next waypoint this close;
     # final_hold_s lets the stochastic MPC settle on the final waypoint before the operator ends the run.

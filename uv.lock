@@ -912,7 +912,7 @@ requires-dist = [
     { name = "usd-core", specifier = ">=25.5,<26.5" },
     { name = "warp-lang", specifier = ">=1.14.0", index = "https://pypi.nvidia.com/" },
 ]
-provides-extras = ["policy", "isaacsim", "examples", "acados", "all"]
+provides-extras = ["policy", "examples", "acados", "all"]
 
 [package.metadata.requires-dev]
 ci = [{ name = "evo", specifier = ">=1.36" }]

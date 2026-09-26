@@ -8,7 +8,8 @@ docs/assets/models/*.glb
 
 # Build / packaging artifacts
 dist/
-build/
+# Only the root build/ folder: nexus/_src/build/ is a package.
+/build/
 *.egg-info/
 
 # Tool caches

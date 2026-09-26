@@ -98,8 +98,8 @@ class AstroMaxWaypointRollout:
         vel_weight: float = 0.2,
         ramp_time_weight: bool = True,
     ):
+        from nexus._src.build.launch import resolve_to_vehicle_builder
         from nexus._src.config import LaunchConfig
-        from nexus._src.runtimes.launch import resolve_to_vehicle_builder
 
         vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle("astro_max_base"))
         # Single rigid body collapsed from the astro-max USD, the same seam the sampling
@@ -386,8 +386,9 @@ def main():
     def fly(gains, name: str):
         # The deploy flight IS the standard orchestrator run, on the same collapsed single-body plant
         # the tuning ran on: the example-owned PID assembly with solver=semi_implicit.
+        from nexus._src.build.launch import resolve_scenario
         from nexus._src.config import LaunchConfig
-        from nexus._src.runtimes.launch import default_renderer_factory, resolve_scenario
+        from nexus._src.rendering import rtx_renderer
         from nexus.examples.controllers.pid.assembly import build_pid_orchestrator
 
         launch = LaunchConfig().set_vehicle("astro_max_base")
@@ -401,7 +402,7 @@ def main():
             moment_scale=MS,
             max_steps=2750,
             rerun=True,
-            renderer_factory=default_renderer_factory(),
+            renderer_factory=rtx_renderer(vb2, cfg),  # the Kit peer, when the vehicle authors RTX sensors
         )
         with na.Sim.from_orchestrator(orch, reached_m=0.15, final_hold_s=3.0) as sim:
             sim.operator.set_mission([GOAL])

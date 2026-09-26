@@ -3,7 +3,7 @@ PropellerModels, from :mod:`~nexus._src.vehicle.actuators.propeller`, + the summ
 :mod:`~nexus.examples._lib.coupling`. It replaces the old two-class split of ``RigidBodyRotors`` +
 ``ArticulatedRotors``: there is no body-coupling axis baked into the class. Every consumer, RL train +
 deploy, Proportional Integral Derivative (PID), policy, sampling Model Predictive Control (MPC),
-design-opt, and the PX4 flight path on both runtimes, runs this actuator at the highest fidelity that
+design-opt, and the PX4 flight path, runs this actuator at the highest fidelity that
 runs everywhere, airflow propeller + motor lag, summing the per-rotor wrench into one base-body wrench,
 ``state.body_f[base]``.
 

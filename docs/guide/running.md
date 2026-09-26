@@ -20,6 +20,8 @@ the live recording over **gRPC 9876**.
 - QGroundControl installed, with **Virtual Joystick** enabled under
   `Application Settings` → `General` → `Virtual Joystick`.
 - Docker. The `px4-sitl` image pulls from the GitHub Container Registry (GHCR) on first run.
+- For a vehicle with a camera or lidar: an NVIDIA GPU and the NVIDIA Container Toolkit, since its
+  sensors render in the Kit container. See [RTX cameras and lidar](#rtx-cameras-and-lidar).
 - A PX4-Autopilot checkout at `$PX4_DIR`, default `~/code/px4`, on the `p/newton`
   branch. The sim builds and runs it but doesn't supply it.
 
@@ -50,12 +52,27 @@ Attaches as a *client* to nexus's recording. `--connect` defaults to
 :9876 first. `uv run` launches the viewer bundled with the framework, so its
 version matches the logger.
 
-## Isaac Sim runtime: RTX cameras + lidar
+## RTX cameras and lidar
 
-The vehicle Universal Scene Description (USD) file decides the runtime, with no flags. If it
-carries RTX sensor prims, `Camera` or `OmniLidar`, `nexus run` detects them and
-auto-launches the Isaac Sim container from `docker/docker-compose.yml`. A sensor-less vehicle
-runs on the lean standalone runtime.
+The vehicle Universal Scene Description (USD) file decides, with no flags. A `Camera` or
+`OmniLidar` prim under the vehicle's root is an RTX sensor, and a run with one starts the **Kit
+render peer**. That container renders the sensors while the loop flies on the host. The run sends it
+the poses at each frame and takes the frames back a tick later. A vehicle with no such prim starts
+no container.
+
+- The first RTX run on a machine builds the Kit image from `nexus/_src/rendering/kit-peer/`, which
+  ships in the package. The build pulls NVIDIA's `nvcr.io/nvidia/isaac-sim:6.0.1`, about 21 GB,
+  with no NGC login, and adds Cesium for Omniverse and the peer program. Later
+  runs reuse the image. The tag is a hash of that folder, so an update rebuilds the image only when
+  it changes the peer.
+- Kit boots in the background while PX4 builds and the physics compiles. Its shader cache lives in
+  `~/.cache/nexus/kit/`, so the first boot is the slow one. The container's console goes to
+  `~/.cache/nexus/logs/console-*.log`, next to the run's recording.
+- The container runs as you and reads the asset cache and the folder of a local `--vehicle` or
+  `--scene` file at their host paths, read-only, so everything it writes under `~/.cache/nexus`
+  stays yours.
+- A run whose Kit container can't start fails and names the cause, for example an unreachable
+  Docker daemon. A Kit container that dies mid-flight ends the run the way a lost autopilot does.
 
 - `--vehicle` accepts a registry vehicle name, such as `astro_max_fpv`, **or a local `.usd`/`.usdz`
   path**. Omit it for the registry's default vehicle.
@@ -65,10 +82,6 @@ runs on the lean standalone runtime.
 - Cameras log JPEG frames and a `Pinhole` frustum to `cameras/<name>`. The lidar logs world-frame
   `Points3D` to `lidar/<name>`. `--debug` records the axes-only scene, which gives small `.rrd`s,
   and is the default for verification flights.
-- Recording sanity: `uv run --extra policy python tools/analyze_rrd_video.py [file.rrd]` reports the
-  real frame rate, counting distinct frames, and whether the camera and body poses coincide.
-- Runtime invariants, to check after container upgrades: `scripts/probes/` covers captured-physics
-  validity and camera rigidity.
 
 ## Profiling
 
@@ -76,19 +89,19 @@ Every run carries an always-on loop profiler: integer-nanosecond phase marks, at
 The end-of-run `profile [...]` line reports the sliding-window Real Time Factor (RTF), the tick p50
 and p95, and the per-phase partition, plus the CUDA-event-timed GPU batch. In the partition,
 `exchange` is the PX4 lockstep wait, `gpu+read` is the device batch plus the D2H sync,
-`sensors.host` is the RTX render seam, and `other` is an explicit residual. The same numbers land
+`sensors.host` is the RTX render link, and `other` is an explicit residual. The same numbers land
 in `Orchestrator.run_stats["profile"]`.
 
 Every entry point shares the deep-diagnostics flags below. `nexus run` and the
 examples launcher, `uv run -m nexus.examples <name> --profile`, spell them identically:
 
-- `--profile`: periodic reports every 5 s, plus detail spans `render.kit` and `grab.<camera>`.
-  Inside Kit the phases also mirror into `carb.profiler` zones. Pick a backend with
-  `--/app/profilerBackend=cpu|tracy|nvtx` for Tracy or Nsight deep dives.
+- `--profile`: periodic reports every 5 s. On an RTX run the detail spans `render.send` and
+  `render.wait` show what a frame costs the loop: the pose send, and the wait for a frame the peer
+  hasn't finished.
 - `--trace <path>`: buffers spans and writes a Chrome or Perfetto trace on exit. Drag it onto
   [ui.perfetto.dev](https://ui.perfetto.dev).
-- `--benchmark`, on the `isaacsim` runtime: the `isaacsim.benchmark.services` recorders from Isaac
-  capture the system envelope the loop profiler can't see. They record render **GPU** frame time
+- `--benchmark`, on an RTX run: the Kit peer runs the `isaacsim.benchmark.services` recorders from
+  Isaac, which capture the system envelope the loop profiler can't see. They record render **GPU** frame time
   from `HydraEngineStats`, GPU memory plus host Resident Set Size (RSS), process CPU%, app-update
   frame time, and windowed-RTF stability. It writes one summary `INFO` line plus a full
   `benchmark-<ts>.json` next to the flight logs. It complements the profiler: the profiler
@@ -102,23 +115,22 @@ QGroundControl auto-connects. Arm and fly with the on-screen virtual joysticks.
 Sim physics and PX4 state both appear in the Rerun viewer, because they share the
 `nexus` recording.
 
-## Worlds for the FPV camera on the `isaacsim` runtime
+## Worlds for the FPV camera
 
-A vehicle whose USD authors RTX sensors, such as the `astro_max_fpv` variant's `FpvCam`, routes to
-the **`isaacsim`** runtime automatically: `--runtime auto` launches the Kit container.
-The FPV camera's world comes from the registry scene:
+A vehicle whose USD authors RTX sensors, such as the `astro_max_fpv` variant's `FpvCam`, renders
+them in the Kit peer. The FPV camera's world comes from the registry scene:
 
 ```bash
 # photoreal geolocated globe: Google Photorealistic 3D Tiles streamed live at
 # the scene's lat/lon, via Cesium for Omniverse v0.29.0:
 export CESIUM_ION_TOKEN=<your ion access token>      # cesium.com/ion → Access Tokens
-uv run nexus run --scene cesium --geo 37.7942,-122.3954 --view   # SF (cesium defaults to Seattle)
+uv run nexus run --vehicle astro_max_fpv --scene cesium --geo 37.7942,-122.3954,-32 --view   # SF
 ```
 
-A cesium scene is just a `geodetic_origin`, latitude and longitude, in the registry. At startup
-the run measures the surface height from the streamed tiles: an iterative depth probe aligns the
-street with the physics ground to centimetres, so new locations need no calibration. Tile
-selection runs one hidden-cost viewport per camera, and the RTX lidar reflects off the tiles.
+A cesium scene is just a `geodetic_origin` in the registry: latitude, longitude, and the WGS84
+ellipsoidal height of the street, which sets the globe so the street sits on the physics ground.
+If it sits off, tweak the registry value, with no conversion. Tile selection runs one
+hidden-cost viewport per camera, and the RTX lidar reflects off the tiles.
 [Benchmarking](../reference/benchmarking.md) lists the measured real-time factor of each vehicle
 on this scene. Without a token the run warns and falls back to a plain sky, and the flight continues.
 The Cesium ion and Google Maps Platform terms govern the streamed tiles: see

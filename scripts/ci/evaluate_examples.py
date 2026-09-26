@@ -52,22 +52,28 @@ def bucket() -> str:
     return name
 
 
-# name, the launcher key, -> how to run it. "requires" gates availability: --skip-missing skips, else fails.
+# name, the harness key, -> how to run it: "uv" the extras, "launcher" the example when the key is a
+# second flight of one example, "requires" gates availability: --skip-missing skips, else fails.
 EXAMPLES: dict[str, dict] = {
     "pid": {"uv": []},
     "gain_tuning": {"uv": ["--extra", "examples"]},
     "mass_recovery": {"uv": []},
     "sampling_mpc": {"uv": ["--extra", "examples"]},
     "acados_nmpc": {"uv": ["--extra", "acados"], "requires": "acados"},
-    "goto_policy": {"uv": ["--extra", "policy"], "requires": "policy"},
+    # goto_policy flies the hosted policy, the zero-arg example: given a policy the flight is
+    # bit-reproducible, so it carries the tight deploy gates. goto_policy_fresh flies the policy the
+    # rl leg just trained, one draw from a training that's not reproducible, so its baselines block
+    # is empty: it gates on completing only, and the harness reports its numbers.
+    "goto_policy": {"uv": ["--extra", "policy"]},
+    "goto_policy_fresh": {"uv": ["--extra", "policy"], "launcher": "goto_policy", "requires": "policy"},
     "px4_sitl": {"uv": [], "requires": "px4"},
 }
 # The default set = everything the consolidated gpu-examples leg runs. The workflow provides the PX4
 # checkout via scripts/ci/provision_px4.sh and acados via scripts/setup_acados.sh; main() below warms
 # the PX4 *build*, from the one container definition in nexus._src.vehicle.controllers.px4.sitl.
-# goto_policy needs a freshly trained policy and rides the isaac-lab workflow with --only goto_policy.
+# goto_policy_fresh rides the gpu-rl workflow: --only goto_policy_fresh --policy <the fresh export>.
 # Local runs without the PX4/acados prerequisites: add --skip-missing.
-DEFAULT_SET = ["pid", "gain_tuning", "mass_recovery", "sampling_mpc", "acados_nmpc", "px4_sitl"]
+DEFAULT_SET = ["pid", "gain_tuning", "mass_recovery", "sampling_mpc", "acados_nmpc", "goto_policy", "px4_sitl"]
 
 # Metrics where bigger is better; for everything else numeric, smaller is better.
 _BIGGER = {"rtf", "reached", "gradient_cosine", "deploy_steps_per_sec", "climb_m", "min_clearance_m"}
@@ -101,12 +107,20 @@ def _available(requires: str | None, args: argparse.Namespace) -> tuple[bool, st
     return False, f"unknown requirement {requires!r}"
 
 
-def _run_example(name: str, spec: dict, out: pathlib.Path, timeout: float, extra_args: list[str]) -> bool:
+def _dump_dir(name: str, spec: dict, out: pathlib.Path) -> pathlib.Path:
+    """Where *name*'s example dumps its artifacts: ``out`` itself, or a subdirectory of it for a
+    second flight of one example, since the example names its dump after its launcher.
+    """
+    return out / name if spec.get("launcher", name) != name else out
+
+
+def _run_example(name: str, spec: dict, dump: pathlib.Path, timeout: float, extra_args: list[str]) -> bool:
     # Examples run with zero REQUIRED args: their configuration lives in the script, and recording is
     # always on. Per-example inputs such as a fresh policy checkpoint ride optional flags.
-    cmd = ["uv", "run", *spec.get("uv", []), "-m", "nexus.examples", name, *extra_args]
+    cmd = ["uv", "run", *spec.get("uv", []), "-m", "nexus.examples", spec.get("launcher", name), *extra_args]
     print(f"\n===== {name}: {' '.join(cmd)} =====", flush=True)
-    env = {**os.environ, "NEXUS_EVAL_OUT": str(out)}
+    dump.mkdir(parents=True, exist_ok=True)
+    env = {**os.environ, "NEXUS_EVAL_OUT": str(dump)}
     try:
         rc = subprocess.run(cmd, cwd=ROOT, env=env, timeout=timeout, check=False).returncode
     except subprocess.TimeoutExpired:
@@ -259,6 +273,17 @@ def _sha() -> str:
     )
 
 
+def _gpu_name() -> str:
+    """The GPU's name from nvidia-smi, for the bench feed's ``_meta``, or ``unknown`` on a box without one."""
+    try:
+        gpu = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"], capture_output=True, text=True, check=False
+        ).stdout.strip()
+    except FileNotFoundError:  # no nvidia-smi on the box, such as CPU CI
+        return "unknown"
+    return gpu.splitlines()[0] if gpu else "unknown"
+
+
 def _merge_entries(prior: list, fresh: list[dict]) -> list[dict]:
     """Merge ``fresh`` entries over ``prior`` by entry name, fresh winning."""
     merged = {e["name"]: e for e in prior if isinstance(e, dict) and "name" in e}
@@ -332,7 +357,7 @@ def main() -> int:
     ap.add_argument("--update-baselines", action="store_true", help="record fresh metric values into the baselines")
     ap.add_argument("--out", default=str(ROOT / ".eval-artifacts"), help="artifact dir (also $NEXUS_EVAL_OUT)")
     ap.add_argument("--timeout", type=float, default=1800.0, help="per-example subprocess budget [s]")
-    ap.add_argument("--policy", default=None, help="exported policy.pt for the goto_policy leg (gates it)")
+    ap.add_argument("--policy", default=None, help="exported policy.pt that goto_policy_fresh flies")
     ap.add_argument("--baselines", default=str(BASELINES))
     args = ap.parse_args()
 
@@ -367,10 +392,11 @@ def main() -> int:
             failed_runs.append(name)
             continue
         extra = ["--policy", args.policy] if EXAMPLES[name].get("requires") == "policy" else []
-        if not _run_example(name, EXAMPLES[name], out, args.timeout, extra):
+        dump = _dump_dir(name, EXAMPLES[name], out)
+        if not _run_example(name, EXAMPLES[name], dump, args.timeout, extra):
             failed_runs.append(name)
             continue
-        scored[name], metas[name] = _score(name, out)
+        scored[name], metas[name] = _score(EXAMPLES[name].get("launcher", name), dump)
         # Recordings otherwise live only in the cache under the home directory and die with the ephemeral runner
         # unless --upload runs; a copy here rides the GitHub artifact too.
         rrd = metas[name].get("rrd")
@@ -385,10 +411,7 @@ def main() -> int:
     (out / "benchmark.json").write_text(json.dumps(_merged_local(out / "benchmark.json", entries), indent=2))
     # The docs-data twin, docs/data/examples_bench.json via the data-refresh PR: the same entries,
     # self-describing with the hardware the numbers belong to. _meta refreshes on every write.
-    gpu = subprocess.run(
-        ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"], capture_output=True, text=True, check=False
-    ).stdout.strip()
-    meta = {"sha": _sha()[:12], "recorded": time.strftime("%Y-%m-%d"), "gpu": gpu.splitlines()[0] if gpu else "unknown"}
+    meta = {"sha": _sha()[:12], "recorded": time.strftime("%Y-%m-%d"), "gpu": _gpu_name()}
     (out / "examples_bench.json").write_text(
         json.dumps({"_meta": meta, "entries": _merged_local(out / "examples_bench.json", entries)}, indent=2) + "\n"
     )

@@ -5,7 +5,7 @@ framework package. Install it and run the command-line tool:
 
 ```bash
 uv sync                 # installs the framework
-uv run nexus run   # run a scenario in the standalone runtime
+uv run nexus run   # fly the default vehicle against PX4 SITL
 ```
 
 ## Pre-commit hooks

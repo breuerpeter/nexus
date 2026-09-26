@@ -35,7 +35,7 @@ def _expand_usd(data, kind: str, base: str | None):
                 raise RegistryError(f"{kind[:-1]} {name!r} names no url and the registry has no assets.base")
             data = {
                 **data,
-                "usd": {"url": hosted_url(base, kind, name, sha), "sha256": sha, "filename": f"{name}.usdz"},
+                "usd": {"url": hosted_url(base, f"usd/{kind}", name, sha), "sha256": sha, "filename": f"{name}.usdz"},
             }
     return data
 

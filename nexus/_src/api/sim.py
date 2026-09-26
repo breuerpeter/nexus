@@ -17,11 +17,11 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from nexus._src.api.args import save_run_artifacts, sim_argparser  # noqa: F401  # re-export; defs are import-light
+from nexus._src.build.launch import build_from_launch
 from nexus._src.config import LaunchConfig
 from nexus._src.core import logger
 from nexus._src.operator import InProcessOperator
 from nexus._src.recording import ChannelMap, Recorder
-from nexus._src.runtimes.launch import build_from_launch as _neutral_build_from_launch
 
 if TYPE_CHECKING:
     from nexus._src.core import Orchestrator
@@ -36,25 +36,6 @@ _HOST_BOUNDARY_KINDS = ("px4-sitl",)
 # Wall-clock budget for PX4 to answer on the operator link, :14540, once the sim starts stepping
 # for it: the same 30 s Px4Offboard's own blocking connect allows.
 _PX4_LINK_TIMEOUT_S = 30.0
-
-
-def build_from_launch(launch, **kwargs):
-    """Build the orchestrator through the glue of the runtime this process is *in*.
-
-    Inside a booted Kit app, since the Isaac Sim container runs examples under Kit's Python, route
-    through the isaacsim launch glue so the vehicle's authored RTX sensors render: the *same*
-    neutral routing plus the renderer factory. Per stage 3, any orchestrator setup runs identically
-    in both runtimes, and a runtime differs only in its injected renderer. Everywhere else: the
-    neutral, renderless glue. Detection is by the booted app, not importability: `import isaacsim`
-    exists but is unusable before SimulationApp starts.
-    """
-    import sys
-
-    if "isaacsim" in sys.modules and "omni.kit.app" in sys.modules:
-        from nexus._src.runtimes.isaacsim.launch import build_from_launch as _isaac_build
-
-        return _isaac_build(launch, **kwargs)
-    return _neutral_build_from_launch(launch, **kwargs)
 
 
 class Sim:
@@ -87,6 +68,9 @@ class Sim:
         observe: Attach a ``Recorder`` so :attr:`physics` and :attr:`sensors` read ground truth.
         log: Record the run to a ``.rrd``; ``False`` runs headless with no recorder, at max speed.
         view: Serve the Rerun recording live on ``:9876`` instead of writing a ``.rrd`` file.
+        stream: Publish each RTX camera's feed over Real Time Streaming Protocol (RTSP) to MediaMTX,
+            which needs an NVENC-capable ``ffmpeg`` on this host; without it, frames go to the
+            recording only.
         cache_dir: Override the asset cache directory; ``None`` = the framework default.
         max_steps: Cap the run at this many control steps; ``None`` = the launch-config default.
         rtf: Real-time-factor throttle. ``0``, the default, runs unthrottled, as fast as the
@@ -113,6 +97,7 @@ class Sim:
         observe: bool = True,
         log: bool = False,
         view: bool = False,
+        stream: bool = False,
         debug: bool = False,
         cache_dir: str | None = None,
         solver: str | None = None,
@@ -154,6 +139,7 @@ class Sim:
         self._launch.output.log = log
         self._launch.output.view = view
         self._launch.output.debug = debug  # axes-only scene: coordinate triads, no meshes → a small .rrd
+        self._stream = stream
         self._cache_dir = cache_dir
         self._observe = observe
         self._in_process = self._launch.control.kind not in _HOST_BOUNDARY_KINDS
@@ -237,6 +223,7 @@ class Sim:
             "solver": getattr(args, "solver", None),
             "log": getattr(args, "log", False),
             "view": getattr(args, "view", False),
+            "stream": getattr(args, "stream", False),
             "debug": getattr(args, "debug", False),
             "max_steps": getattr(args, "max_steps", None),
             "rtf": getattr(args, "rtf", 0.0),
@@ -249,23 +236,8 @@ class Sim:
         if self._prebuilt_orch is not None:
             self._orch = self._prebuilt_orch  # a self-assembled example's orchestrator, via from_orchestrator
         else:
-            self._orch = build_from_launch(self._launch, cache_dir=self._cache_dir)
-        # The API can't teleport the caller's process into the Kit container the way the command-line
-        # tool re-execs itself: an RTX vehicle on the plain host runs physics-correct but *renderless*.
-        # Say so loudly. The fix: `nexus script <your-script>`, which auto-launches the
-        # container and boots Kit before handing off.
-        if getattr(self._orch, "renderer", None) is None:
-            usd_path = getattr(getattr(self._orch.physics, "vehicle_builder", None), "cfg", {}).get("usd_path")
-            if usd_path:
-                from nexus._src.vehicle.sensors.usd import vehicle_rtx_sensor_prims
-
-                prims = vehicle_rtx_sensor_prims(usd_path)
-                if prims:
-                    logger.warning(
-                        f"vehicle authors RTX sensors {prims} but no renderer is available in this "
-                        "process: flying RENDERLESS. Run it under the Isaac Sim runtime: "
-                        "`nexus script <your-script> [args]` (auto-launches the Kit container)."
-                    )
+            # A vehicle that authors RTX sensors starts the Kit render peer here, from the host.
+            self._orch = build_from_launch(self._launch, cache_dir=self._cache_dir, stream=self._stream)
         if self._observe:
             # Attach the observation sink: each recordable component registers its capturable channels;
             # physics → one per body plus per joint. dt → the per-row snapshot time, counter × dt.
@@ -369,9 +341,10 @@ class Sim:
     def start(self, timeout: float | None = None) -> None:
         """Drive the run's setup, returning once the first control tick has completed.
 
-        One step: the orchestrator's first ``step()`` runs physics reset, the renderer warm-up,
-        the multi-second Kit shader compile, ``controller.connect()``, which binds ``:4560``
-        and launches the PX4 container, and the preroll wait for the peer, then flies one tick.
+        One step: the orchestrator's first ``step()`` runs physics reset, the wait for the Kit
+        render peer to boot and warm its stage when the vehicle renders, the seed row and the graph
+        capture, ``controller.connect()``, which binds ``:4560`` and launches the PX4 container, and
+        the preroll wait for the peer, then flies one tick.
         So for a PX4 sim this is the "lockstep is up" verb, and it returns with one observation
         row already recorded and the captured graph replayed once.
 
@@ -380,13 +353,13 @@ class Sim:
 
         Args:
             timeout: Override the assembly's ``preroll_timeout``: seconds to wait for the peer
-                to establish lockstep, 30 s standalone, 120 s under Isaac Sim. ``None`` keeps
-                it. This is where the unbounded time is: physics reset and the Kit warm-up have
-                bounds by their own nature.
+                to establish lockstep, 30 s by default. ``None`` keeps it. This is where the
+                unbounded time is: physics reset and the Kit peer's start have bounds of their own.
 
         Raises:
             RuntimeError: Called outside the ``Sim`` context manager, or the run ended during
                 setup, for example when PX4 never connected on ``:4560``.
+            KitPeerError: The vehicle renders and its Kit render peer failed to start.
         """
         if self._orch is None:
             raise RuntimeError("Sim.start() called outside the context manager (use `with na.Sim(...) as sim:`)")
@@ -408,6 +381,8 @@ class Sim:
 
         Raises:
             RuntimeError: Called outside the ``Sim`` context manager.
+            KitPeerError: The vehicle renders and its Kit render peer died mid-flight; the run's
+                teardown has run and closed the recording.
         """
         if self._orch is None:
             raise RuntimeError("Sim.run() called outside the context manager (use `with na.Sim(...) as sim:`)")
@@ -426,6 +401,8 @@ class Sim:
 
         Raises:
             RuntimeError: Called outside the ``Sim`` context manager.
+            KitPeerError: The vehicle renders and its Kit render peer died mid-flight; the run's
+                teardown has run and closed the recording.
         """
         if self._orch is None:
             raise RuntimeError("sim.step() called outside the context manager (use `with na.Sim(...) as sim:`)")
@@ -590,11 +567,8 @@ class Sim:
         if self._orch is None:
             return
         self._orch.stop()
-        if self._ran:
-            # Step/run-driven: close the tick generator so its teardown, the RTF stamp plus controller
-            # and logs close, runs. A no-op if run() already drove to completion and exhausted the generator.
-            self._orch.close()
-        else:
-            # Entered but never driven: close the Logger built at construction so the .rrd flushes or
-            # the :9876 server releases; the run's own finally would otherwise have done this.
-            self._orch._close_logs()
+        # Step/run-driven, this closes the tick generator so its teardown, the RTF stamp plus renderer,
+        # controller and logs close, runs; a no-op if run() drove to completion. Entered but never
+        # driven, it stops the renderer's peer, started at build, and closes the Logger built at
+        # construction, so the .rrd flushes or the :9876 server releases.
+        self._orch.close()
