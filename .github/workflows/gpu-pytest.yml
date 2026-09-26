@@ -41,6 +41,7 @@ jobs:
     uses: ./.github/workflows/gpu-runner.yml
     with:
       caches: px4
+      cache-scope: pytest
       command: >-
         bash scripts/ci/provision_px4.sh &&
         uv run --extra policy --with pytest --with pytest-cov pytest tests --cov=nexus --cov-report=xml -q --durations=25
