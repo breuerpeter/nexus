@@ -18,7 +18,16 @@ skipped with a note when the token is absent. RTX cells run with ``--benchmark``
 recorders (GPU frametime, VRAM, RSS, RTF stability) collect too; the peer writes their JSON into
 ``~/.cache/nexus/logs``, and this runner attaches it to the cell result.
 
+CI flies one cell per GPU box, since a measured flight cannot share a GPU or PX4's fixed ports, in
+three steps of which only the middle one needs a GPU or a nexus install: ``--list`` prints the cells
+to fly and the tags skipped as one JSON for the workflow matrix, ``--cell <tag>`` flies one cell and
+leaves its result beside its stats, and ``--merge`` joins the results the boxes uploaded over the
+committed matrix. With none of the three, the cells fly one after another on this machine.
+
     uv run python scripts/ci/benchmark_matrix.py [--only physics|rtx] [--out docs/data/rtf_matrix.json]
+    python3 scripts/ci/benchmark_matrix.py --list [--only …]
+    uv run python scripts/ci/benchmark_matrix.py --cell <tag> [--work <dir>]
+    python3 scripts/ci/benchmark_matrix.py --merge --plan '<the --list output>' [--work <dir>] [--out …]
 """
 
 from __future__ import annotations
@@ -30,13 +39,6 @@ import pathlib
 import subprocess
 import sys
 import time
-
-# The mission the cell flies, for the recorded metadata only, imported rather than restated so
-# there is one definition of it. This file runs from scripts/ci, so the cell is an import away.
-from benchmark_cell import ALT, MISSION
-
-from nexus._src.containers import client
-from nexus._src.rendering.peer import LABEL
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCENES = ("empty", "cesium")
@@ -62,10 +64,29 @@ def _tag(cell: dict) -> str:
     return "-".join(_key(cell))
 
 
+def _plan(only: str | None) -> tuple[list[dict], list[str]]:
+    """The cells to fly and the tags skipped: a cesium cell needs ``$CESIUM_ION_TOKEN``."""
+    cells, skipped = [], []
+    for cell in _cells(only):
+        if cell["scene"] == "cesium" and not os.environ.get("CESIUM_ION_TOKEN"):
+            skipped.append(_tag(cell))
+        else:
+            cells.append(cell)
+    return cells, skipped
+
+
+def _ok(result: dict) -> bool:
+    return not result.get("error") and bool(result.get("mission_ok"))
+
+
 def _kill_kit() -> None:
     """Force-remove any leftover Kit render peer: a hung cell's peer survives killing the cell's
     process and would hold the GPU the next cell renders on, misattributing its numbers.
     """
+    # Imported here, not at the top: --list and --merge run with no nexus install.
+    from nexus._src.containers import client
+    from nexus._src.rendering.peer import LABEL
+
     for c in client().containers.list(all=True, filters={"label": f"{LABEL}=kit"}):
         c.remove(force=True)
 
@@ -111,26 +132,25 @@ def _run_cell(cell: dict, work: pathlib.Path, budget_s: float, cell_timeout: flo
     return result
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--only", choices=["physics", "rtx"], default=None, help="run one table only")
-    ap.add_argument("--out", default=str(ROOT / "docs" / "data" / "rtf_matrix.json"))
-    ap.add_argument("--work", default=str(ROOT / ".eval-artifacts" / "matrix"), help="per-cell artifact dir")
-    ap.add_argument("--budget", type=float, default=600.0, help="per-cell flight budget [sim s]")
-    ap.add_argument("--cell-timeout", type=float, default=2400.0, help="per-cell wall leash [s]")
-    args = ap.parse_args()
-    work = pathlib.Path(args.work)
-    work.mkdir(parents=True, exist_ok=True)
+def _box_meta() -> dict:
+    """What the box that flew a cell knows for ``_meta``: its GPU, and the mission the cell flies."""
+    # An import, not a copy, keeps one definition of the mission. It sits here, not at the top,
+    # because it imports nexus and the merge runs on a box without it.
+    from benchmark_cell import ALT, MISSION
 
-    results: list[dict] = []
-    skipped: list[str] = []
-    for cell in _cells(args.only):
-        if cell["scene"] == "cesium" and not os.environ.get("CESIUM_ION_TOKEN"):
-            print(f"skipping {_tag(cell)}: CESIUM_ION_TOKEN not set", flush=True)
-            skipped.append(_tag(cell))
-            continue
-        results.append(_run_cell(cell, work, args.budget, args.cell_timeout))
+    gpu = subprocess.run(
+        ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"], capture_output=True, text=True, check=False
+    ).stdout.strip()
+    return {
+        "gpu": gpu.splitlines()[0] if gpu else "unknown",
+        "mission": "; ".join(f"{x:g},{y:g},{z:g}" for x, y, z in MISSION),
+        "alt_m": ALT,
+    }
 
+
+def _finish(results: list[dict], skipped: list[str], box: dict, out: pathlib.Path, work: pathlib.Path) -> int:
+    """Write the matrix and the bench entries from the fresh cells; 1 when any fresh cell failed."""
+    fresh = list(results)
     # Partial runs, with --only or cesium skipped without a token, must not clobber cells they didn't
     # fly: merge fresh cells over the committed matrix, keyed by the cell axes, and drop committed
     # cells the matrix no longer flies. The refresh PR diff then shows exactly the re-measured cells.
@@ -139,7 +159,7 @@ def main() -> int:
         fresh_keys = {_key(c) for c in results}
         flown = {_key(c) for c in _cells(None)}
         prior = json.loads(committed.read_text()).get("cells", [])
-        results += [c for c in prior if _key(c) in flown and _key(c) not in fresh_keys]
+        results = results + [c for c in prior if _key(c) in flown and _key(c) not in fresh_keys]
 
     sha = (
         os.environ.get("GITHUB_SHA")
@@ -147,18 +167,7 @@ def main() -> int:
             ["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True
         ).stdout.strip()
     )
-    gpu = subprocess.run(
-        ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"], capture_output=True, text=True, check=False
-    ).stdout.strip()
-    meta = {
-        "sha": sha[:12],
-        "recorded": time.strftime("%Y-%m-%d"),
-        "gpu": gpu.splitlines()[0] if gpu else "unknown",
-        "mission": "; ".join(f"{x:g},{y:g},{z:g}" for x, y, z in MISSION),
-        "alt_m": ALT,
-        "skipped": skipped,
-    }
-    out = pathlib.Path(args.out)
+    meta = {"sha": sha[:12], "recorded": time.strftime("%Y-%m-%d"), **box, "skipped": skipped}
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps({"_meta": meta, "cells": results}, indent=2) + "\n")
     print(f"\nwrote {out} ({len(results)} cells, {len(skipped)} skipped)", flush=True)
@@ -175,10 +184,61 @@ def main() -> int:
     ]
     (work / "benchmark.json").write_text(json.dumps(bench, indent=2))
 
-    bad = [_tag(c) for c in results if c.get("error") or not c.get("mission_ok")]
+    bad = [_tag(c) for c in fresh if not _ok(c)]
     if bad:
         print(f"FAILED cells: {', '.join(bad)}", flush=True)
     return 1 if bad else 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--only", choices=["physics", "rtx"], default=None, help="run one table only")
+    ap.add_argument("--list", action="store_true", help="print the cells to fly and the tags skipped as JSON")
+    ap.add_argument("--cell", default=None, metavar="TAG", help="fly one cell and leave its result in --work")
+    ap.add_argument("--merge", action="store_true", help="join the cell results in --work into the matrix")
+    ap.add_argument("--plan", default=None, help="with --merge: the --list output, for the skipped cells")
+    ap.add_argument("--out", default=str(ROOT / "docs" / "data" / "rtf_matrix.json"))
+    ap.add_argument("--work", default=str(ROOT / ".eval-artifacts" / "matrix"), help="per-cell artifact dir")
+    ap.add_argument("--budget", type=float, default=600.0, help="per-cell flight budget [sim s]")
+    ap.add_argument("--cell-timeout", type=float, default=2400.0, help="per-cell wall leash [s]")
+    args = ap.parse_args()
+
+    if args.list:
+        cells, skipped = _plan(args.only)
+        print(json.dumps({"cells": [{**c, "tag": _tag(c)} for c in cells], "skipped": skipped}))
+        return 0
+
+    work = pathlib.Path(args.work).resolve()  # the cell runs from the repo root, whatever this process's cwd
+    work.mkdir(parents=True, exist_ok=True)
+    out = pathlib.Path(args.out)
+
+    if args.cell:
+        cell = next((c for c in _cells(None) if _tag(c) == args.cell), None)
+        if cell is None:
+            ap.error(f"unknown cell {args.cell!r}; the tags: {', '.join(_tag(c) for c in _cells(None))}")
+        result = _run_cell(cell, work, args.budget, args.cell_timeout)
+        # The result and what only this box knows, for --merge on a box with no GPU.
+        (work / f"{args.cell}.cell.json").write_text(json.dumps({"result": result, **_box_meta()}, indent=2) + "\n")
+        if not _ok(result):
+            print(f"FAILED cell: {args.cell}: {result.get('error') or 'mission not completed'}", flush=True)
+            return 1
+        return 0
+
+    if args.merge:
+        parts = sorted(work.glob("*.cell.json"))
+        if not parts:
+            print(f"no cell result under {work}", flush=True)
+            return 1
+        loaded = [json.loads(p.read_text()) for p in parts]
+        skipped = json.loads(args.plan)["skipped"] if args.plan else []
+        box = {k: loaded[0][k] for k in ("gpu", "mission", "alt_m")}
+        return _finish([p["result"] for p in loaded], skipped, box, out, work)
+
+    cells, skipped = _plan(args.only)
+    for tag in skipped:
+        print(f"skipping {tag}: CESIUM_ION_TOKEN not set", flush=True)
+    results = [_run_cell(cell, work, args.budget, args.cell_timeout) for cell in cells]
+    return _finish(results, skipped, _box_meta(), out, work)
 
 
 if __name__ == "__main__":

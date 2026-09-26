@@ -46,6 +46,7 @@ jobs:
   gpu:
     uses: ./.github/workflows/gpu-runner.yml
     with:
+      cache-scope: rl
       # UPLOAD=1 on main pushes and dispatch-with-upload (never on PRs); run_rl_example.sh self-resolves
       # the USD and S3-uploads the .rrds via the runner's instance profile when UPLOAD=1.
       command: ${{ (github.event_name == 'push' || inputs.upload) && 'UPLOAD=1' || '' }} bash scripts/ci/run_rl_example.sh

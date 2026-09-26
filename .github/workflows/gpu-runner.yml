@@ -2,7 +2,9 @@ name: gpu-runner
 
 # Reusable GPU-CI lifecycle: spin up an EPHEMERAL AWS-EC2 GPU box (machulav/ec2-github-runner), run a
 # caller-supplied command on it, then tear it down — every gpu-* workflow calls this so the start/stop
-# plumbing lives in one place. Ephemeral ⇒ safe on any pull request (a fresh disposable box per run). Runs in
+# plumbing lives in one place, and a caller that fans out calls it once per cell through a matrix, one
+# box per cell, since a measured flight shares neither a GPU nor PX4's fixed ports. Ephemeral ⇒ safe
+# on any pull request (a fresh disposable box per run). Runs in
 # Freefly's AWS account (multi-region — placement discovered per run, see #26); the box boots the
 # latest AWS Deep Learning Base GPU AMI
 # (NVIDIA drivers + Docker + nvidia-container-toolkit, resolved at runtime), and the container jobs
@@ -61,6 +63,10 @@ on:
         default: 1
       caches:
         description: "Extra caches to restore/save on the box (space-separated: px4 acados)"
+        type: string
+        default: ""
+      cache-scope:
+        description: "The name of this call's kernel-cache entry: a matrix passes its cell, and calls that share a scope share an entry"
         type: string
         default: ""
       read-repositories:
@@ -214,9 +220,22 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # The kernel cache is keyed on the versions that shape the kernels, read from uv.lock, and on
+      # the caller's cache-scope. A key is written once and the first saver wins, so boxes saving
+      # under one key would keep the first box's kernels only; a scope with no entry yet restores
+      # another scope's on the same versions, which shares most kernels, and compiles the
+      # difference. A key over every nexus module missed on any Python edit.
+      - name: Compute the Warp cache key
+        id: warp-key
+        run: |
+          v() { awk -v n="$1" '$0 == "name = \"" n "\"" { f = 1 } f && /^version = / { gsub(/"/, "", $3); print $3; exit }' uv.lock; }
+          echo "versions=warp-$(v warp-lang)-newton-$(v newton)-mujoco-warp-$(v mujoco-warp)" >> "$GITHUB_OUTPUT"
       - name: Restore Warp kernel cache
         uses: actions/cache@v4
-        with: { path: ~/.cache/warp, key: "warp-${{ hashFiles('uv.lock', 'nexus/**/*.py') }}" }
+        with:
+          path: ~/.cache/warp
+          key: ${{ steps.warp-key.outputs.versions }}-${{ inputs.cache-scope }}
+          restore-keys: ${{ steps.warp-key.outputs.versions }}-
       - name: Restore PX4 SITL checkout+build cache
         # The membership checks wrap inputs.caches in spaces so one name cannot prefix-match
         # another.

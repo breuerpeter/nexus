@@ -15,6 +15,9 @@ import numpy as np
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 BASELINES = json.loads((ROOT / "scripts" / "ci" / "examples_baselines.json").read_text())
 
+# Loaded as it runs, `python scripts/ci/evaluate_examples.py`: its own folder first on sys.path,
+# where its sibling merge_eval_parts lives.
+sys.path.insert(0, str(ROOT / "scripts" / "ci"))
 _spec = importlib.util.spec_from_file_location("evaluate_examples", ROOT / "scripts" / "ci" / "evaluate_examples.py")
 evaluate_examples = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_spec and evaluate_examples)

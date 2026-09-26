@@ -15,4 +15,6 @@ in the script, and it records its flight `.rrd`. The launcher map is `_EXAMPLES`
   scores it on `evo` pose Absolute Pose Error (APE), the example's stats, and the steady
   Real Time Factor (RTF), and gates against `scripts/ci/examples_baselines.json`. An example dumps
   its trajectory and stats with `_lib/eval_dump.py`. Only the harness imports `evo`, which is
-  GPLv3 and lives in the `ci` dependency-group.
+  GPLv3 and lives in the `ci` dependency-group. The `gpu-examples` workflow flies one example per
+  GPU box, `--only <name>`, and `scripts/ci/merge_eval_parts.py` joins the boxes' dumps into the
+  one `examples-eval` artifact.
