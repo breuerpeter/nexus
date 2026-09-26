@@ -44,7 +44,11 @@ jobs:
         env:
           CESIUM_ION_TOKEN: ${{ secrets.CESIUM_ION_TOKEN }}
           ONLY: ${{ inputs.only }}
-        run: echo "plan=$(python3 scripts/ci/benchmark_matrix.py --list ${ONLY:+--only "$ONLY"})" >> "$GITHUB_OUTPUT"
+        # The assignment carries the listing's exit status, so a rejected `only` or a broken script
+        # reds this job with its message, rather than handing the matrix an empty plan.
+        run: |
+          plan=$(python3 scripts/ci/benchmark_matrix.py --list ${ONLY:+--only "$ONLY"})
+          echo "plan=$plan" >> "$GITHUB_OUTPUT"
 
   # The GPU-spend gate lives in gpu-runner.yml, once, on the job that starts the instance.
   # fail-fast is off so one red cell never cancels the others' numbers.
