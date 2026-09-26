@@ -52,3 +52,47 @@ def test_a_kit_script_container_environment_holds_no_ion_token(daemon, tmp_path,
     script.write_text("")
     run_script([str(script)])
     assert "ion-secret" not in daemon.runs[0]["environment"].values()
+
+
+def test_the_script_container_runs_as_the_user(daemon, tmp_path, monkeypatch):
+    """The script container runs as the user, so every file it writes belongs to the user."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "convert.py").write_text("")
+    run_script([str(tmp_path / "convert.py")])
+    assert daemon.runs[0]["user"] == f"{os.getuid()}:{os.getgid()}"
+
+
+def test_the_script_container_mounts_the_working_folder_at_its_host_path(daemon, tmp_path, monkeypatch):
+    """The script container mounts the working folder read-write at its host path, and works in it."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "convert.py").write_text("")
+    run_script([str(tmp_path / "convert.py")])
+    run = daemon.runs[0]
+    assert (run["volumes"][str(tmp_path)], run["working_dir"]) == ({"bind": str(tmp_path), "mode": "rw"}, str(tmp_path))
+
+
+def test_the_script_container_mounts_nexus_data_at_its_host_path(daemon, tmp_path, monkeypatch):
+    """The script container mounts `$NEXUS_DATA` read-write at its host path, so a path typed on the host
+    means the same file inside.
+    """
+    data = tmp_path / "data"
+    data.mkdir()
+    work = tmp_path / "work"
+    work.mkdir()
+    monkeypatch.setenv("NEXUS_DATA", str(data))
+    monkeypatch.chdir(work)
+    (work / "convert.py").write_text("")
+    run_script([str(work / "convert.py")])
+    assert daemon.runs[0]["volumes"][str(data)] == {"bind": str(data), "mode": "rw"}
+
+
+def test_every_folder_the_script_container_writes_exists_as_the_user_before_it_starts(daemon, tmp_path, monkeypatch):
+    """The script container creates its cache folders as the user: docker would create a missing bind
+    source owned by root, which a later host run can't write.
+    """
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "convert.py").write_text("")
+    run_script([str(tmp_path / "convert.py")])
+    run = daemon.runs[0]
+    writable = [src for src, spec in run["volumes"].items() if spec["mode"] == "rw"]
+    assert writable and {run["seen"][src] for src in writable} == {(True, os.getuid())}
