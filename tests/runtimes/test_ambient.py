@@ -1,8 +1,9 @@
 """The ambient values a run's sensors read resolve at build from the scene's geodetic origin.
 
-Real builds on the Warp CPU backend: the hosted ``astro_max_base`` vehicle, fetched through the
-catalog, a stand-in controller that answers at once, and one tick at rest on the ground. Each build
-settles a Newton model, so the flights are module-scoped. Skipped without newton or pxr.
+Beside the launch tests, since pytest skips a directory named ``build``. Real builds on the Warp CPU
+backend: the hosted ``astro_max_base`` vehicle, fetched through the catalog, a stand-in controller
+that answers at once, and one tick at rest on the ground. Each build settles a Newton model, so the
+flights are module-scoped. Skipped without newton or pxr.
 """
 
 import math
@@ -155,8 +156,7 @@ def test_the_imu_reports_the_gravity_the_physics_applies(gravity_five_vehicle):
     applied = float(np.linalg.norm(orch.physics.model.gravity.numpy()[0]))
     reported = math.hypot(meas.xacc, meas.yacc, meas.zacc)
 
-    body_q = orch.physics.current_state.body_q.numpy()[0]
-    assert False, f"CI probe: the IMU reports {reported}, the physics applies {applied}, body_q {body_q}, meas {meas}"
+    assert reported == pytest.approx(applied, abs=0.1), f"the IMU reports {reported}, the physics applies {applied}"
 
 
 def test_the_barometer_reports_the_sites_pressure_and_temperature(gravity_five_vehicle):
