@@ -1,7 +1,7 @@
 {
   "_meta": {
-    "sha": "b7d6504465c6",
-    "recorded": "2026-08-16",
+    "sha": "cab8ef92bd31",
+    "recorded": "2026-09-26",
     "gpu": "NVIDIA A10G"
   },
   "entries": [
@@ -20,7 +20,7 @@
     {
       "name": "rtf[pid]",
       "unit": "x realtime",
-      "value": 6.24,
+      "value": 6.522,
       "biggerIsBetter": true
     },
     {
@@ -68,7 +68,7 @@
     {
       "name": "rtf[gain_tuning]",
       "unit": "x realtime",
-      "value": 5.369,
+      "value": 6.253,
       "biggerIsBetter": true
     },
     {
@@ -110,7 +110,7 @@
     {
       "name": "wall_s[mass_recovery]",
       "unit": "s",
-      "value": 41.9,
+      "value": 41.6,
       "biggerIsBetter": false
     },
     {
@@ -206,7 +206,7 @@
     {
       "name": "rtf[acados_nmpc]",
       "unit": "x realtime",
-      "value": 0.431,
+      "value": 0.438,
       "biggerIsBetter": true
     },
     {
@@ -234,15 +234,69 @@
       "biggerIsBetter": false
     },
     {
+      "name": "waypoints[goto_policy]",
+      "unit": "",
+      "value": 3,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "reached[goto_policy]",
+      "unit": "",
+      "value": 3,
+      "biggerIsBetter": true
+    },
+    {
+      "name": "control_steps[goto_policy]",
+      "unit": "",
+      "value": 1784,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "deploy_steps_per_sec[goto_policy]",
+      "unit": "1/s",
+      "value": 218.8,
+      "biggerIsBetter": true
+    },
+    {
+      "name": "final_tracking_error_m[goto_policy]",
+      "unit": "m",
+      "value": 0.0681,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "rtf[goto_policy]",
+      "unit": "x realtime",
+      "value": 2.124,
+      "biggerIsBetter": true
+    },
+    {
+      "name": "ape_trans_rmse_m[goto_policy]",
+      "unit": "m",
+      "value": 0.532961473423712,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "ape_trans_max_m[goto_policy]",
+      "unit": "m",
+      "value": 1.2502447737208084,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "final_err_m[goto_policy]",
+      "unit": "m",
+      "value": 0.06812382200688456,
+      "biggerIsBetter": false
+    },
+    {
       "name": "climb_m[px4_sitl]",
       "unit": "m",
-      "value": 5.04,
+      "value": 5.03,
       "biggerIsBetter": true
     },
     {
       "name": "time_to_takeoff_s[px4_sitl]",
       "unit": "s",
-      "value": 22.8,
+      "value": 68.1,
       "biggerIsBetter": false
     },
     {
@@ -252,9 +306,15 @@
       "biggerIsBetter": false
     },
     {
+      "name": "east_err_m[px4_sitl]",
+      "unit": "m",
+      "value": 2.48,
+      "biggerIsBetter": false
+    },
+    {
       "name": "rtf[px4_sitl]",
       "unit": "x realtime",
-      "value": 1.942,
+      "value": 2.285,
       "biggerIsBetter": true
     }
   ]
