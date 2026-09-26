@@ -113,6 +113,11 @@ def gravity_five_vehicle(tmp_path_factory):
     stage.GetRootLayer().subLayerPaths.append(hosted)
     UsdPhysics.Scene(stage.OverridePrim("/PhysicsScene")).CreateGravityMagnitudeAttr(5.0)
     stage.GetRootLayer().Save()
+    reopened = Usd.Stage.Open(str(path))
+    prim = reopened.GetPrimAtPath("/PhysicsScene")
+    assert prim, f"the hosted vehicle did not compose under the layer: {hosted!r} {reopened.GetUsedLayers()}"
+    composed = UsdPhysics.Scene(prim).GetGravityMagnitudeAttr().Get()
+    assert composed == 5.0, f"the layer's gravity did not compose over the hosted vehicle: {composed}"
     return _one_tick(LaunchConfig().set_vehicle(str(path)).set_scene("empty"), _catalog(tmp))
 
 
@@ -148,8 +153,9 @@ def test_the_imu_reports_the_gravity_the_physics_applies(gravity_five_vehicle):
     """The IMU reports the gravity the physics applies, one value."""
     orch, meas = gravity_five_vehicle
     applied = float(np.linalg.norm(orch.physics.model.gravity.numpy()[0]))
+    reported = math.hypot(meas.xacc, meas.yacc, meas.zacc)
 
-    assert math.hypot(meas.xacc, meas.yacc, meas.zacc) == pytest.approx(applied, abs=0.1)
+    assert reported == pytest.approx(applied, abs=0.1), f"the IMU reports {reported}, the physics applies {applied}"
 
 
 def test_the_barometer_reports_the_sites_pressure_and_temperature(gravity_five_vehicle):
