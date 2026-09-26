@@ -28,8 +28,8 @@ with `--log` on: recording is part of the measured configuration.
 
 <!-- benchmark-matrix -->
 
-The scheduled `gpu-benchmark-matrix` workflow produces the matrix on the CI runner, a g5.2xlarge
-with one A10G, and refreshes it via a data PR. Cells that structurally don't exist aren't shown.
+The scheduled `gpu-benchmark-matrix` workflow produces the matrix on CI, each cell on a g5.2xlarge
+box of its own with one A10G, and refreshes it via a data PR. Cells that structurally don't exist aren't shown.
 A visual-only scene changes nothing for a vehicle that renders nothing, since physics loads only
 `UsdPhysics`-authored geometry, so the physics table flies the empty scene alone. In the RTX table
 the vehicle's camera renders in the Kit peer container beside the loop. CPU is the bit-exact
