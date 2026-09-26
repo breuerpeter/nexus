@@ -155,7 +155,8 @@ def test_the_imu_reports_the_gravity_the_physics_applies(gravity_five_vehicle):
     applied = float(np.linalg.norm(orch.physics.model.gravity.numpy()[0]))
     reported = math.hypot(meas.xacc, meas.yacc, meas.zacc)
 
-    assert reported == pytest.approx(applied, abs=0.1), f"the IMU reports {reported}, the physics applies {applied}"
+    body_q = orch.physics.current_state.body_q.numpy()[0]
+    assert False, f"CI probe: the IMU reports {reported}, the physics applies {applied}, body_q {body_q}, meas {meas}"
 
 
 def test_the_barometer_reports_the_sites_pressure_and_temperature(gravity_five_vehicle):
