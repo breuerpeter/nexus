@@ -9,12 +9,44 @@ pass a Wrench value type: Physics reads ``state.body_f``.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
 from .schema import Controls, EnvSample, Measurement, Setpoint, SimTime
 
 if TYPE_CHECKING:
     import newton
+
+
+@dataclass(slots=True)
+class Tick:
+    """The context one control tick hands every stage: the shared state and buffers a stage reads and
+    writes in place. ``controls`` binds to the controller's persistent device buffer once, before the
+    warm pass, so the actuator's device stage reads the same buffer every replay.
+    """
+
+    state: Any
+    env: EnvSample
+    t: SimTime
+    dt: float
+    meas: Measurement
+    controls: Any = None
+
+
+@dataclass(frozen=True, slots=True)
+class Stage:
+    """One unit of a component's per-tick work, the shape every loop component states in its
+    ``stages()``. A ``device`` stage joins the CUDA graph; a ``host`` stage runs between graph replays.
+    ``run(tick)`` does the work; a host stage returns ``False`` when it produced nothing because its
+    peer didn't answer, which the preroll retries and the steady loop ends the run on. A ``warm``
+    stage runs once before any capture, so every device buffer it allocates exists first.
+    """
+
+    name: str
+    kind: Literal["device", "host"]
+    run: Callable[[Tick], Any]
+    warm: bool = True
 
 
 @runtime_checkable

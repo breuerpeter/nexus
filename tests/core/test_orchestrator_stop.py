@@ -2,6 +2,7 @@
 
 import pytest
 
+from nexus._src.core.interfaces import Stage
 from nexus._src.core.orchestrator import Orchestrator
 from nexus._src.core.schema import Controls, SimTime
 from nexus._src.rendering.peer import KitPeerError
@@ -39,14 +40,25 @@ class _Physics:
     def step(self, state, env, dt):
         return state
 
+    def stages(self):
+        return [
+            Stage("clear", "device", lambda tick: self.clear_forces(tick.state)),
+            Stage("step", "device", lambda tick: self.step(tick.state, tick.env, tick.dt)),
+        ]
+
 
 class _Actuator:
     def forces(self, controls, state, env):
         pass
 
+    def stages(self):
+        return [Stage("forces", "device", lambda tick: self.forces(tick.controls, tick.state, tick.env))]
+
 
 class _Controller:
-    """Lockstep stand-in: returns controls immediately, so preroll succeeds at once."""
+    """Lockstep stand-in: returns controls immediately, so preroll succeeds at once. Its work is the
+    PX4 shape, a ``read`` and an ``exchange`` host stage.
+    """
 
     def __init__(self):
         self.closed = False
@@ -59,6 +71,13 @@ class _Controller:
 
     def close(self):
         self.closed = True
+
+    def stages(self):
+        def exchange(tick):
+            tick.controls = self.exchange(tick.meas, tick.t, None)
+            return tick.controls is not None
+
+        return [Stage("read", "host", lambda tick: None), Stage("exchange", "host", exchange)]
 
 
 def _orch(sensors=(), **kw):
@@ -148,12 +167,15 @@ def test_closing_a_run_that_never_stepped_closes_the_renderer():
 
 
 class _DyingSensor:
-    """A host-rate sensor whose peer dies mid-flight, as an RTX sensor's Kit peer can."""
+    """A sensor whose work is a host stage and whose peer dies mid-flight, as an RTX sensor's Kit peer can."""
 
     host_rate = True
 
     def sample(self, state, env, t, meas):
         raise KitPeerError("the Kit render peer died while this run waited for a frame")
+
+    def stages(self):
+        return [Stage("sample", "host", lambda tick: self.sample(tick.state, tick.env, tick.t, tick.meas))]
 
 
 def test_a_kit_peer_that_dies_mid_flight_ends_the_run_with_its_error():
