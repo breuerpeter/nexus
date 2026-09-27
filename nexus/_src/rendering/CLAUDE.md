@@ -7,6 +7,9 @@ renderer the loop drives and the link the RTX sensors ride.
 - A module in `kit-peer/` runs as a top-level module in the image, so its name must not shadow a
   Kit package: the Cesium handler is `cesium_globe.py` because Cesium's extension is the `cesium`
   package.
+- `scripts/assets/kit_container.py` starts the same image for the Kit-only asset scripts and
+  imports `ensure_image`, `_kit_caches`, `_KIT_HOME`, `ISAAC_SIM_GID`, `LABEL` and `client` from
+  `peer.py`: renaming or moving one of them changes that file too.
 - Any change under `kit-peer/` changes `image_tag()`, a hash of that folder minus what
   `.dockerignore` leaves out, so the next RTX run rebuilds the image. A change anywhere else never
   does.
