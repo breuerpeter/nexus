@@ -5,11 +5,12 @@ name: gpu-examples
 # + the steady RTF), and gates against scripts/ci/examples_baselines.json. One box per example,
 # through a matrix over gpu-runner.yml: a measured flight cannot share a GPU, and two on one box
 # collide on PX4's fixed ports, so the leg takes the slowest example plus one boot, and any red
-# example reds the required context. Each box provisions what its example needs, in-command: the
-# PX4 checkout via scripts/ci/provision_px4.sh (cached per pin) for px4_sitl on the tracked pin
-# (scripts/ci/px4.ref, tokenless clone), acados via scripts/setup_acados.sh (cached) for
-# acados_nmpc — no --skip-missing, so a broken provision fails loudly. The PX4 build is
-# evaluate_examples.py's own, made before the example (warm from the cache). The merge job joins
+# example reds the required context. Each box provisions what its example needs, in-command:
+# acados via scripts/setup_acados.sh (cached) for acados_nmpc — no --skip-missing, so a broken
+# provision fails loudly. px4_sitl provisions nothing by hand: evaluate_examples.py fetches the PX4
+# tree the controller pins and builds it before the example, the way a user's first run does, and
+# the box caches that tree and the px4-sitl image under the pin (scripts/ci/px4_image_cache.sh
+# saves and loads the image). The merge job joins
 # the boxes' parts into the one examples-eval artifact. With --upload each box refreshes its
 # example's docs .rrd embed + the bench trend feed (main / dispatch only); on main pushes a
 # data-refresh PR updates docs/data/examples_bench.json.
@@ -26,9 +27,7 @@ on:
       - "nexus/_src/**"
       - "scripts/ci/evaluate_examples.py"
       - "scripts/ci/examples_baselines.json"
-      - "scripts/ci/provision_px4.sh"
-      - "scripts/ci/px4.ref"
-      - "docker/px4-sitl/**"
+      - "scripts/ci/px4_image_cache.sh"
   # Offered on EVERY PR; runs only once the `gpu` label is applied — the label IS the
   # GPU-spend approval (environment required-reviewers need an Enterprise plan here).
   pull_request:
@@ -51,7 +50,6 @@ on:
 permissions:
   id-token: write # OIDC — gpu-runner assumes the AWS role to start/stop the box
   contents: read
-  packages: read # GHCR pull of the px4-sitl toolchain image
 
 concurrency:
   # One group per PR per event: the two events of one PR must not cancel each other, and on
@@ -61,9 +59,9 @@ concurrency:
 
 jobs:
   # The GPU-spend gate lives in gpu-runner.yml, once, on the job that starts the instance.
-  # An entry names the setup its example needs on a fresh box and the caches gpu-runner restores
-  # for it; fail-fast is off so one red example never cancels the others' evidence. The name keeps
-  # the setup command out of the check names.
+  # An entry names the setup its example needs on a fresh box and the cache entry gpu-runner
+  # restores for it; fail-fast is off so one red example never cancels the others' evidence. The
+  # name keeps the setup command out of the check names.
   gpu:
     name: ${{ matrix.example }}
     strategy:
@@ -76,23 +74,30 @@ jobs:
           - { example: sampling_mpc }
           - { example: goto_policy }
           - example: acados_nmpc
-            caches: acados
+            cache-path: ~/.cache/nexus/acados
+            cache-key: "acados-${{ hashFiles('scripts/setup_acados.sh') }}"
             setup: >-
               (command -v cmake >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq cmake)) &&
               bash scripts/setup_acados.sh
           - example: px4_sitl
-            caches: px4
-            setup: bash scripts/ci/provision_px4.sh
+            cache-path: |
+              ~/.cache/nexus/px4
+              ~/.cache/nexus/ci/px4-sitl.tar
+            cache-key: "px4-${{ hashFiles('nexus/_src/vehicle/controllers/px4/px4.ref', 'nexus/_src/vehicle/controllers/px4/checkout.py', 'nexus/_src/vehicle/controllers/px4/px4-sitl/Dockerfile') }}"
+            setup: bash scripts/ci/px4_image_cache.sh load
+            teardown: bash scripts/ci/px4_image_cache.sh save
     uses: ./.github/workflows/gpu-runner.yml
     with:
       cache-scope: ${{ matrix.example }}
-      caches: ${{ matrix.caches || '' }}
+      cache-path: ${{ matrix.cache-path || '' }}
+      cache-key: ${{ matrix.cache-key || '' }}
       command: >-
         ${{ matrix.setup || 'true' }} &&
         uv run --group ci --extra examples python scripts/ci/evaluate_examples.py
         --only ${{ matrix.example }}
         ${{ inputs.update-baselines && '--update-baselines' || '' }}
-        ${{ (github.event_name == 'push' || inputs.upload) && '--upload' || '' }}
+        ${{ (github.event_name == 'push' || inputs.upload) && '--upload' || '' }} &&
+        ${{ matrix.teardown || 'true' }}
       artifact-name: examples-eval-${{ matrix.example }}
       artifact-path: .eval-artifacts
     secrets: inherit

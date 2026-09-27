@@ -14,13 +14,13 @@ bind source owned by root, and a root-owned asset cache failed every later host 
 
 from __future__ import annotations
 
-import hashlib
 import os
 import socket
 import sys
 import time
 from pathlib import Path
 
+from nexus._src import containers
 from nexus._src.containers import client, run_container, stop_container
 from nexus._src.core import logger
 
@@ -35,23 +35,9 @@ class KitPeerError(RuntimeError):
     """The Kit render peer couldn't start, or died mid-flight; the message names the cause."""
 
 
-def _build_files(root: Path) -> list[Path]:
-    """The files the image build reads: the folder, minus what ``.dockerignore`` leaves out."""
-    return sorted(
-        p
-        for p in root.rglob("*")
-        if p.is_file() and "__pycache__" not in p.relative_to(root).parts and p.suffix != ".pyc"
-    )
-
-
 def image_tag(root: Path = KIT_DIR) -> str:
     """The Kit image's tag: ``nexus-kit:`` and a hash of the files the build reads under ``root``."""
-    h = hashlib.sha256()
-    for path in _build_files(root):
-        data = path.read_bytes()
-        h.update(f"{path.relative_to(root).as_posix()}\0{len(data)}\0".encode())
-        h.update(data)
-    return f"{IMAGE}:{h.hexdigest()[:12]}"
+    return containers.image_tag(root, IMAGE)
 
 
 def ensure_image() -> str:
@@ -64,25 +50,12 @@ def ensure_image() -> str:
         KitPeerError: The build failed; the message carries the build's own error.
         RuntimeError: The docker daemon is unreachable; see :func:`nexus._src.containers.client`.
     """
-    from docker.errors import ImageNotFound
-
-    tag = image_tag()
-    c = client()
     try:
-        c.images.get(tag)
-        return tag
-    except ImageNotFound:
-        pass
-    logger.info(f"building the Kit image {tag} from {KIT_DIR}: once per machine and per peer change")
-    for chunk in c.api.build(path=str(KIT_DIR), tag=tag, rm=True, decode=True):
-        if "error" in chunk:
-            raise KitPeerError(f"building the Kit image {tag} failed: {chunk['error'].strip()}")
-        line = chunk.get("stream")
-        if line:
-            sys.stderr.write(line)
-            sys.stderr.flush()
-    logger.info(f"built the Kit image {tag}")
-    return tag
+        return containers.ensure_image(KIT_DIR, IMAGE)
+    except RuntimeError as exc:
+        if "cannot reach the Docker daemon" in str(exc):
+            raise
+        raise KitPeerError(str(exc)) from exc
 
 
 def _free_port() -> int:

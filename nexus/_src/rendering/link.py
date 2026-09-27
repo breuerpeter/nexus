@@ -1,8 +1,8 @@
 """The host's end of the render link, and the renderer seam the loop drives.
 
-A message is a 4-byte big-endian header length, the header as UTF-8 JSON, then the binary blobs
-the header lists by size under ``blobs``. The peer's end, ``kit-peer/link.py``, frames the same
-way; the two stay twins because the peer imports no nexus module.
+The framing, a 4-byte big-endian header length, the header as UTF-8 JSON, then the binary blobs
+the header lists by size under ``blobs``, lives once, in ``kit-peer/link.py``: the peer program
+imports it as a sibling file, and this module loads the same file, so the two ends can't drift.
 
 The link pipelines the rendering. At a frame's due tick it sends the sim time and a world matrix per
 prim path, and the loop flies on; the frame comes back on a later due tick, and the loop waits only
@@ -14,50 +14,28 @@ reply carries the request before it, and the close renders the last.
 from __future__ import annotations
 
 import contextlib
-import json
 import os
+import runpy
 import select
 import socket
-import struct
 import time
 
 import numpy as np
 
 from nexus._src.core import logger
 
-from .peer import KitPeer, KitPeerError
+from .peer import KIT_DIR, KitPeer, KitPeerError
 
-_LEN = struct.Struct("!I")
 STARTUP_TIMEOUT_S = 1800.0  # a cold boot compiles shaders; a Cesium scene streams its tiles first
 FRAME_TIMEOUT_S = 60.0  # no frame for this long means a hung peer
 
 
-def send(sock: socket.socket, header: dict, blobs: list = ()) -> None:
-    """Send one message: ``header`` plus ``blobs``, each a bytes-like object."""
-    views = [memoryview(b).cast("B") for b in blobs]
-    head = json.dumps({**header, "blobs": [v.nbytes for v in views]}).encode()
-    sock.sendall(_LEN.pack(len(head)) + head)
-    for v in views:
-        sock.sendall(v)
-
-
-def _read(sock: socket.socket, n: int) -> bytearray:
-    buf = bytearray(n)
-    view = memoryview(buf)
-    got = 0
-    while got < n:
-        k = sock.recv_into(view[got:], n - got)
-        if k == 0:
-            raise ConnectionError("the link closed")
-        got += k
-    return buf
-
-
-def recv(sock: socket.socket) -> tuple[dict, list[bytearray]]:
-    """Read one message: its header and its blobs."""
-    (n,) = _LEN.unpack(_read(sock, _LEN.size))
-    header = json.loads(_read(sock, n))
-    return header, [_read(sock, size) for size in header.get("blobs", [])]
+# The one framing module, ``kit-peer/link.py``: package data in a folder with a hyphen in its name,
+# so it runs by path rather than importing by a dotted name, and writes no bytecode beside the
+# program, which the image tag hashes around.
+_wire = runpy.run_path(str(KIT_DIR / "link.py"))
+send = _wire["send"]
+recv = _wire["recv"]
 
 
 def pose_matrices(body_q) -> np.ndarray:

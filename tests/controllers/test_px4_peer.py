@@ -109,8 +109,8 @@ def daemon(monkeypatch, tmp_path):
     monkeypatch.setattr(containers, "client", lambda: d)
     px4 = tmp_path / "px4"
     px4.mkdir()
+    (px4 / "Makefile").write_text("px4_sitl:\n")  # what marks a folder as a PX4 tree
     monkeypatch.setenv("PX4_DIR", str(px4))
-    monkeypatch.delenv("PX4_IMAGE", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("NEXUS_ASSET_CACHE", str(tmp_path / "assets"))
     return d
@@ -222,6 +222,18 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
+def _free_instance() -> int:
+    """A PX4 instance whose HIL port, 4560 + N, nothing on this machine holds."""
+    for instance in range(20, 200):
+        with socket.socket() as s:
+            try:
+                s.bind(("127.0.0.1", 4560 + instance))
+            except OSError:
+                continue
+            return instance
+    raise RuntimeError("no free PX4 instance")
+
+
 def _dial(port: int, within: float = 5.0) -> socket.socket | None:
     """A socket connected to the port, dialing again until something listens, or ``None``."""
     deadline = time.monotonic() + within
@@ -268,8 +280,8 @@ class _Autopilot(threading.Thread):
 def test_a_managed_peer_starts_when_the_run_starts_and_stops_when_the_run_closes(daemon, run):
     """A managed peer starts when the run starts and stops when the run closes.
 
-    Given a PX4 run whose peer is managed and a stand-in docker daemon, when the run enters and exits,
-    then the daemon sees one container start before the controller connects and one stop at close.
+    Given a PX4 run with a managed peer and a stand-in docker daemon, when the run enters and exits,
+    then the daemon records one container start before the controller connects and one stop at close.
     """
     loop = run({"realization": "managed"})
     started = [r["name"] for r in daemon.runs if r.get("detach", True)]  # the build's own foreground make aside
@@ -283,11 +295,12 @@ def test_an_external_peer_starts_no_process_and_the_run_waits_on_its_hil_port(da
     """An external peer starts no process: the run listens on its HIL address and waits for the
     autopilot to dial in.
 
-    Given a PX4 run whose peer is external and a stand-in docker daemon, when the run enters, then the
-    daemon sees no container and the controller waits on the run's HIL port.
+    Given a PX4 run with an external peer and a stand-in docker daemon, when the run enters, then the
+    daemon records no container and the controller waits on the run's HIL port, 4560 + instance.
     """
-    port = _free_port()
-    loop = run({"realization": "external", "ports": {"hil": port}})
+    instance = _free_instance()
+    port = 4560 + instance
+    loop = run({"realization": "external", "instance": instance})
 
     stepping = threading.Thread(target=loop.step, daemon=True)  # the preroll waits for the autopilot
     stepping.start()
@@ -325,24 +338,25 @@ def test_a_peer_that_dies_ends_the_run_as_the_controllers_disconnect(daemon, cap
 def test_the_peers_ports_come_from_the_run(daemon, run):
     """The peer's ports come from the run, not from the peer.
 
-    Given a run whose launch names its PX4 ports and a stand-in docker daemon, when the peer starts,
-    then the container's command carries those ports and nothing else names them.
+    PX4 Software In The Loop (SITL) numbers every port from its instance, so the run names the instance. Given a run whose
+    launch names its PX4 instance and a stand-in docker daemon, when the peer starts, then the
+    container's command carries that instance and no port literal.
     """
-    ports = {"hil": 25601, "offboard": 25602, "gcs": 25603}
-    loop = run({"realization": "managed", "ports": ports})
+    loop = run({"realization": "managed", "instance": 3})
 
-    request = json.dumps([[r.get("command"), r.get("environment")] for r in daemon.runs], default=str)
+    launches = [r for r in daemon.runs if r.get("detach", True)]
+    request = json.dumps([[r.get("command"), r.get("environment")] for r in launches], default=str)
     loop.close()
 
-    named = [str(p) for p in ports.values() if str(p) in request]
-    defaults = [p for p in ("4560", "14540", "14550") if p in request]
-    assert (named, defaults) == (["25601", "25602", "25603"], []), request
+    instance = ["-i", "3"] if any("-i" in r["command"] and "3" in r["command"] for r in launches) else []
+    literals = [p for p in ("4560", "14540", "14550") if p in request]
+    assert (len(launches), instance, literals) == (1, ["-i", "3"], []), request
 
 
 def test_the_peers_console_log_stays_in_the_runs_artifacts(daemon, assembly, catalog, tmp_path, monkeypatch):
     """The peer's console log stays in the run's artifacts.
 
-    Given a PX4 run whose peer is managed, when the run closes, then its artifacts list the peer's
+    Given a PX4 run with a managed peer, when the run closes, then its artifacts list the peer's
     console log path.
     """
     project = tmp_path / "nexus.registry.yaml"

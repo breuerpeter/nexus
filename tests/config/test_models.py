@@ -70,3 +70,11 @@ def test_non_px4_control_kinds_rejected():
     for kind in ("policy", "builtin", "sampling-mpc", "acados", "external"):
         with pytest.raises(ValidationError):
             LaunchConfig.from_dict({"control": {"kind": kind}})
+
+
+def test_the_px4_peer_numbers_every_address_from_its_instance():
+    """PX4 Software In The Loop (SITL) dials the sim on 4560 + N, streams offboard to 14540 + N and takes
+    N + 1 as its system id.
+    """
+    px4 = LaunchConfig.from_dict({"peers": {"px4": {"instance": 3}}}).peers.px4
+    assert (px4.realization, px4.hil_port, px4.offboard_port, px4.system_id) == ("managed", 4563, 14543, 4)

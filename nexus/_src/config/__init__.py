@@ -12,6 +12,8 @@ from .models import (
     GeodeticOrigin,
     LaunchConfig,
     Output,
+    Peers,
+    Px4Peer,
     Px4Spec,
     Runtime,
 )
@@ -37,6 +39,8 @@ __all__ = [
     "LaunchConfig",
     "NoMatchError",
     "Output",
+    "Peers",
+    "Px4Peer",
     "Px4Spec",
     # registry
     "Registry",

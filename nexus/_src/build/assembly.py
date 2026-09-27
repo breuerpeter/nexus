@@ -178,6 +178,7 @@ def build_orchestrator(
     viewer: bool = True,
     debug: bool = False,
     renderer_factory=None,
+    peers=(),
     preroll_timeout: float = 30.0,
     max_steps: int | None = None,
     settings: dict | None = None,
@@ -188,6 +189,7 @@ def build_orchestrator(
     ``renderer_factory(physics, vehicle_builder, cfg) -> (renderer, extra_sensors)`` is the one
     rendering seam: called after the physics build, since the render poses stage prims from the
     model's bodies; ``None`` renders nothing.
+    ``peers`` are the processes the build started for this run, which the loop stops when the run ends.
     ``preroll_timeout`` covers a host-boundary controller's boot, since an autopilot in a container
     needs a generous window.
     """
@@ -210,6 +212,7 @@ def build_orchestrator(
         controller=a.controller,
         logger=a.logger,
         renderer=renderer,
+        peers=peers,
         preroll_timeout=preroll_timeout,
         max_steps=max_steps,
     )

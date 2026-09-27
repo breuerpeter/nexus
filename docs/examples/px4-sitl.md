@@ -81,15 +81,17 @@ uv run -m nexus.examples px4_sitl
 uv run --group ci python scripts/ci/evaluate_examples.py --only px4_sitl
 ```
 
-Prerequisites, per `docs/running.md`: docker, a built PX4 checkout with the `none_astro_max` airframe,
-set by `PX4_DIR` with default `~/code/px4`, and a CUDA host.
+Prerequisites, per [Running a SITL flight](../guide/running.md): docker and a CUDA host. The first
+run fetches and builds the PX4 tree the controller pins, and `PX4_DIR` names a checkout of your own instead.
 
 ## Regression gate
 
 `scripts/ci/evaluate_examples.py` runs this example on a GPU box of its own, one box per example,
-in the `gpu-examples` workflow via the shared `gpu-runner.yml`. `scripts/ci/provision_px4.sh`
-provisions the PX4 checkout from the pin in `scripts/ci/px4.ref`. The script then gates the fresh run
-against `scripts/ci/examples_baselines.json`. It fails if the closed-loop takeoff stops working,
+in the `gpu-examples` workflow via the shared `gpu-runner.yml`. The box fetches and builds the PX4
+tree from the pin the controller ships, `nexus/_src/vehicle/controllers/px4/px4.ref`, the way a
+user's first run does, and caches the tree and the `px4-sitl` image under that pin. The script then
+gates the fresh run against `scripts/ci/examples_baselines.json`. It fails if the closed-loop
+takeoff stops working,
 checked by `takeoff_confirmed` and `climb_m`, or if PX4 warns about the sim, checked by
 `px4_warnings`. It also fails if the with-PX4 sim falls behind its recorded speed, checked by `rtf`.
 The same harness evaluates every example. See [Benchmarking](../reference/benchmarking.md).

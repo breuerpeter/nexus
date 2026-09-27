@@ -2,8 +2,8 @@
 the sim heartbeats to it.
 
 Each module fixture flies one recording run through ``na.Sim``, which builds and launches PX4 from
-``$PX4_DIR``, so the tests need docker and a PX4 checkout carrying the airframe the sim flies; they
-skip without one. The runs pace at real time, ``rtf=1.0``, so a heartbeat sent once a wall-clock
+the tree on this machine, so the tests need docker and a PX4 tree carrying the airframe the sim
+flies; they skip without one. The runs pace at real time, ``rtf=1.0``, so a heartbeat sent once a wall-clock
 second also arrives once a second of PX4's lockstep time, as it does when a person flies.
 """
 
@@ -27,12 +27,15 @@ os.environ.setdefault("MAVLINK_DIALECT", "common")
 from pymavlink import mavutil
 
 import nexus as na
-from nexus._src.vehicle.controllers.px4.sitl import px4_dir
+from nexus._src.vehicle.controllers.px4 import checkout
 
-_AIRFRAMES = px4_dir() / "ROMFS" / "px4fmu_common" / "init.d-posix" / "airframes"
-if not list(_AIRFRAMES.glob("*_none_astro_max")):
+# The tree the run would fly, with no fetch: $PX4_DIR, or the pinned tree once a run fetched it.
+_TREE = checkout.tree(fetch_missing=False)
+if _TREE is None or not list(
+    (_TREE / "ROMFS" / "px4fmu_common" / "init.d-posix" / "airframes").glob("*_none_astro_max")
+):
     pytest.skip(
-        f"needs docker and a PX4 checkout at $PX4_DIR ({px4_dir()}) carrying the none_astro_max airframe",
+        "needs docker and a PX4 tree on this machine, $PX4_DIR or the fetched pin, carrying the none_astro_max airframe",
         allow_module_level=True,
     )
 

@@ -43,8 +43,8 @@ def _repository(tmp_path) -> tuple[str, str]:
 def test_the_fetched_tree_is_the_pinned_commit_and_carries_the_interim_airframe_patch_once(tmp_path):
     """The fetched tree is the pinned commit and carries the interim airframe patch once.
 
-    Given a fetch into an empty folder against a stand-in repository, when the airframe file is read,
-    then the checkout is at the pin and ``param set-default EKF2_MAG_TYPE 6`` appears once, and once
+    Given a fetch into an empty folder against a stand-in repository, when reading the airframe file,
+    then the checkout is at the pin and ``param set-default EKF2_MAG_TYPE 6`` occurs once, and once
     again after a second fetch.
     """
     url, sha = _repository(tmp_path)
@@ -61,7 +61,7 @@ def test_the_fetched_tree_is_the_pinned_commit_and_carries_the_interim_airframe_
 def test_px4_dir_names_a_checkout_that_overrides_the_fetch(tmp_path, monkeypatch):
     """``PX4_DIR`` names a checkout that overrides the fetch.
 
-    Given ``PX4_DIR`` set to a folder, when the controller resolves its PX4 tree, then it is that
+    Given ``PX4_DIR`` set to a folder, when the controller resolves its PX4 tree, then it's that
     folder and no fetch runs.
     """
     folder = tmp_path / "px4"
@@ -79,7 +79,7 @@ def test_a_projects_pin_file_beside_its_catalog_overrides_the_controllers_pin(tm
     """A project's pin file beside its catalog overrides the controller's pin.
 
     Given a project catalog with a pin file beside it, when the controller resolves its PX4 tree, then
-    it is the project's commit, and with no file it is the controller's.
+    it's the project's commit, and with no file it's the controller's.
     """
     catalog = tmp_path / "nexus.registry.yaml"
     catalog.write_text("vehicles: []\n")

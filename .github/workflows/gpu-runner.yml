@@ -7,8 +7,8 @@ name: gpu-runner
 # on any pull request (a fresh disposable box per run). Runs in
 # Freefly's AWS account (multi-region — placement discovered per run, see #26); the box boots the
 # latest AWS Deep Learning Base GPU AMI
-# (NVIDIA drivers + Docker + nvidia-container-toolkit, resolved at runtime), and the container jobs
-# docker-pull their px4-sitl image per run; an RTX run builds the Kit image on the box. On push, schedule and dispatch
+# (NVIDIA drivers + Docker + nvidia-container-toolkit, resolved at runtime); a PX4 run builds the
+# px4-sitl image on the box the way a user's first run does, and an RTX run the Kit image. On push, schedule and dispatch
 # runs the EC2 instance role grants s3:PutObject to the CI artifacts bucket so a command's --upload
 # works via the instance profile; PR runs, same-repo or fork, launch with no instance profile and
 # no Cesium token, since nothing a PR run does needs them. The bucket's public/* prefix is SERVED
@@ -61,8 +61,12 @@ on:
         description: "Checkout fetch depth (0 = full history, for base-vs-head comparisons)"
         type: number
         default: 1
-      caches:
-        description: "Extra caches to restore/save on the box (space-separated: px4 acados)"
+      cache-path:
+        description: "One cache entry to restore and save on the box: its paths, one per line (empty: none)"
+        type: string
+        default: ""
+      cache-key:
+        description: "That entry's key, as the caller computes it with hashFiles; a miss restores the newest entry sharing the key's leading name"
         type: string
         default: ""
       cache-scope:
@@ -190,7 +194,7 @@ jobs:
     # box started and stopped with no work done while the callers' contexts reported success.
     if: ${{ !cancelled() && needs.start-runner.result == 'success' }}
     runs-on: ${{ needs.start-runner.outputs.label }} # the ephemeral GPU box
-    permissions: { contents: read, packages: read } # packages — the GHCR pull of the px4-sitl image
+    permissions: { contents: read }
     steps:
       # The box's runner service exports no $HOME; anything running `git config --global`
       # (e.g. the codecov wrapper) dies on it, and ~-paths resolve inconsistently.
@@ -214,12 +218,6 @@ jobs:
       # setup-uv would otherwise compute a literal "undefined/.cache/uv" cache dir.
       - uses: astral-sh/setup-uv@v6
         with: { enable-cache: true, cache-local-path: /tmp/setup-uv-cache }
-      - name: Log in to GHCR # the px4-sitl image is a repo package
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
       # The kernel cache is keyed on the versions that shape the kernels, read from uv.lock, and on
       # the caller's cache-scope. A key is written once and the first saver wins, so boxes saving
       # under one key would keep the first box's kernels only; a scope with no entry yet restores
@@ -236,20 +234,24 @@ jobs:
           path: ~/.cache/warp
           key: ${{ steps.warp-key.outputs.versions }}-${{ inputs.cache-scope }}
           restore-keys: ${{ steps.warp-key.outputs.versions }}-
-      - name: Restore PX4 SITL checkout+build cache
-        # The membership checks wrap inputs.caches in spaces so one name cannot prefix-match
-        # another.
-        if: contains(format(' {0} ', inputs.caches), ' px4 ')
+      # The caller's one cache entry: this runner knows no component, so the caller names the paths
+      # and computes the key with hashFiles over the files that shape them. A miss restores the newest
+      # entry whose key starts with the same leading name, `px4-` for `px4-<hash>`, so a bump builds
+      # incrementally over the last tree rather than cold. Actions cannot loop steps, so a caller
+      # with two things to cache lists both paths under one key.
+      - name: Compute the cache entry's fallback prefix
+        if: inputs.cache-path != ''
+        id: cache-prefix
+        env:
+          KEY: ${{ inputs.cache-key }}
+        run: echo "prefix=${KEY%%-*}-" >> "$GITHUB_OUTPUT"
+      - name: Restore the caller's cache entry
+        if: inputs.cache-path != ''
         uses: actions/cache@v4
-        # px4.ref (the per-repo pin, moved only by px4-bump PRs) and provision_px4.sh (its
-        # interim airframe patch is baked into the cached build) both key the cache — editing
-        # either must invalidate it, because the job's own PX4 build is incremental over
-        # whatever this cache restored.
-        with: { path: ~/code/px4, key: "px4-${{ hashFiles('scripts/ci/px4.ref', 'scripts/ci/provision_px4.sh') }}" }
-      - name: Restore acados cache
-        if: contains(format(' {0} ', inputs.caches), ' acados ')
-        uses: actions/cache@v4
-        with: { path: ~/.cache/nexus/acados, key: "acados-${{ hashFiles('scripts/setup_acados.sh') }}" }
+        with:
+          path: ${{ inputs.cache-path }}
+          key: ${{ inputs.cache-key }}
+          restore-keys: ${{ steps.cache-prefix.outputs.prefix }}
       - name: Fail early when a main-push run has no instance profile
         # Only push, schedule and dispatch attach one, and only they upload; a PR run passes an empty
         # name on purpose. A step's `if:` cannot read a secret, so the check reads it from env.

@@ -23,7 +23,6 @@ on:
 permissions:
   id-token: write # OIDC — gpu-runner assumes the AWS role to start/stop the box
   contents: read
-  packages: read # GHCR pull of the px4-sitl image
 
 concurrency:
   group: gpu-benchmark-matrix
@@ -61,11 +60,15 @@ jobs:
         cell: ${{ fromJSON(needs.plan.outputs.plan).cells }}
     uses: ./.github/workflows/gpu-runner.yml
     with:
-      caches: px4
+      cache-path: |
+        ~/.cache/nexus/px4
+        ~/.cache/nexus/ci/px4-sitl.tar
+      cache-key: "px4-${{ hashFiles('nexus/_src/vehicle/controllers/px4/px4.ref', 'nexus/_src/vehicle/controllers/px4/checkout.py', 'nexus/_src/vehicle/controllers/px4/px4-sitl/Dockerfile') }}"
       cache-scope: ${{ matrix.cell.tag }}
       command: >-
-        bash scripts/ci/provision_px4.sh &&
-        uv run python scripts/ci/benchmark_matrix.py --cell ${{ matrix.cell.tag }} --work .eval-artifacts/matrix
+        bash scripts/ci/px4_image_cache.sh load &&
+        uv run python scripts/ci/benchmark_matrix.py --cell ${{ matrix.cell.tag }} --work .eval-artifacts/matrix &&
+        bash scripts/ci/px4_image_cache.sh save
       artifact-name: benchmark-cell-${{ matrix.cell.tag }}
       artifact-path: .eval-artifacts
     secrets: inherit

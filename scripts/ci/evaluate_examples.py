@@ -73,9 +73,9 @@ EXAMPLES: dict[str, dict] = {
     "goto_policy_fresh": {"uv": ["--extra", "policy"], "launcher": "goto_policy", "requires": "policy"},
     "px4_sitl": {"uv": [], "requires": "px4"},
 }
-# The default set = everything the consolidated gpu-examples leg runs. The workflow provides the PX4
-# checkout via scripts/ci/provision_px4.sh and acados via scripts/setup_acados.sh; main() below warms
-# the PX4 *build*, from the one container definition in nexus._src.vehicle.controllers.px4.sitl.
+# The default set = everything the consolidated gpu-examples leg runs. The workflow provides acados
+# via scripts/setup_acados.sh; main() below fetches and builds PX4 the way a run's first use does,
+# from the one container definition in nexus._src.vehicle.controllers.px4.sitl.
 # goto_policy_fresh rides the gpu-rl workflow: --only goto_policy_fresh --policy <the fresh export>.
 # Local runs without the PX4/acados prerequisites: add --skip-missing.
 DEFAULT_SET = ["pid", "gain_tuning", "mass_recovery", "sampling_mpc", "acados_nmpc", "goto_policy", "px4_sitl"]
@@ -87,9 +87,8 @@ _UNITS = {"_m": "m", "_deg": "deg", "_s": "s", "rtf": "x realtime", "_per_sec": 
 
 def _available(requires: str | None, args: argparse.Namespace) -> tuple[bool, str]:
     # External tool locations come from the one definition of the env-overridable defaults the
-    # examples themselves resolve: acados' from nexus.examples._external, PX4's from the
-    # launcher that mounts them, nexus._src.vehicle.controllers.px4.sitl.
-    from nexus._src.vehicle.controllers.px4.sitl import px4_dir
+    # examples themselves resolve, acados' from nexus.examples._external. PX4 needs only docker: the
+    # run fetches its pinned tree itself, or flies $PX4_DIR.
     from nexus.examples._external import acados_dir
 
     if requires is None:
@@ -104,8 +103,6 @@ def _available(requires: str | None, args: argparse.Namespace) -> tuple[bool, st
         p = args.policy or ""
         return (bool(p) and os.path.isfile(p)), "--policy not given / not a file (an exported policy.pt)"
     if requires == "px4":
-        if not px4_dir().is_dir():
-            return False, f"PX4_DIR not found ({px4_dir()})"
         if shutil.which("docker") is None:
             return False, "docker not available"
         return True, ""
@@ -395,15 +392,15 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
     baselines = json.loads(pathlib.Path(args.baselines).read_text())
 
-    # Warm the PX4 build once, here rather than in _available(), which stays a pure predicate, and
+    # Fetch and build PX4 once, here rather than in _available(), which stays a pure predicate, and
     # outside --timeout, which budgets each example's subprocess: a px4 example's own launch re-runs
-    # `make px4_sitl <airframe>` and must reach the sim inside its 30 s preroll window, GH #39; an
-    # incremental no-op fits, a cold build never does. Same placement benchmark_matrix.py uses.
+    # the incremental build and must reach the sim inside its 30 s preroll window, GH #39; a no-op
+    # fits, a cold fetch and build never do. Same placement benchmark_matrix.py uses.
     if any(EXAMPLES[n].get("requires") == "px4" for n in names) and _available("px4", args)[0]:
-        from nexus._src.vehicle.controllers.px4.sitl import build_px4_sitl
+        from nexus._src.vehicle.controllers.px4.sitl import prepare
 
-        print("pre-building PX4 SITL (one-time, outside any example budget)...", flush=True)
-        build_px4_sitl()
+        print("fetching and building PX4 SITL (one-time, outside any example budget)...", flush=True)
+        prepare()
 
     failed_runs: list[str] = []
     scored: dict[str, dict] = {}

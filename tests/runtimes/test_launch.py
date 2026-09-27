@@ -15,14 +15,41 @@ from nexus._src.config import LaunchConfig, Registry
 
 
 @pytest.fixture(autouse=True)
-def _no_px4_build(monkeypatch):
-    """``build_from_launch`` prepares the PX4 peer, which builds PX4 Software In The Loop (SITL) in docker.
-    These tests exercise the resolution + routing seam, so stub the build out: the controller imported the
-    function by name, so its own module reference is the one to replace.
+def daemon(monkeypatch, tmp_path):
+    """``build_from_launch`` starts the PX4 Software In The Loop (SITL) peer, which builds and runs PX4
+    in docker. These tests exercise the resolution + routing seam, so the docker daemon is a stand-in
+    that records what the build asks of it, and ``$PX4_DIR`` a stand-in tree, so nothing fetches.
     """
-    from nexus._src.vehicle.controllers.px4 import controller
+    from docker.errors import NotFound
 
-    monkeypatch.setattr(controller, "build_px4_sitl", lambda: None)
+    import nexus._src.containers as containers
+
+    runs = []
+
+    class Images:
+        def get(self, tag):
+            return object()
+
+    class Containers:
+        def run(self, image, **kwargs):
+            runs.append({"image": image, **kwargs})
+            return b"" if not kwargs.get("detach", True) else object()
+
+        def get(self, name):
+            raise NotFound(name)
+
+    class Client:
+        images = Images()
+        containers = Containers()
+
+    c = Client()
+    monkeypatch.setattr(containers, "client", lambda: c)
+    monkeypatch.setattr(containers, "_pump_logs", lambda container, log_path: None)
+    px4 = tmp_path / "px4"
+    px4.mkdir()
+    (px4 / "Makefile").write_text("px4_sitl:\n")
+    monkeypatch.setenv("PX4_DIR", str(px4))
+    return runs
 
 
 def _registry(usd_ref: dict) -> Registry:
@@ -132,21 +159,20 @@ def test_scene_threads_uniformly_and_anchors_gps(tmp_path, monkeypatch):
     )
 
 
-def test_build_from_launch_prepares_the_px4_peer(tmp_path, monkeypatch):
+def test_build_from_launch_starts_the_px4_peer_before_the_assembly(tmp_path, monkeypatch, daemon):
     """This is the seam *both* runtimes share, so the PX4 lifecycle hangs off it: the registry's
-    airframe reaches the controller, and the peer gets *prepared*, its incremental build, before the
+    airframe reaches the peer, and the peer *starts*, its incremental build first, before the
     orchestrator exists: the build has to stay outside the sim's 30 s preroll window, see GH #39.
     """
     import nexus._src.build.launch as L
-    from nexus._src.vehicle.controllers.px4 import controller as C
 
     order = []
-    monkeypatch.setattr(C, "build_px4_sitl", lambda: order.append("build"))
     monkeypatch.setattr(L, "build_orchestrator", lambda label, cfg, **kw: order.append("orchestrator") or kw)
 
     reg = _registry(_usd_ref(tmp_path))
     lc = LaunchConfig().set_vehicle("astro").set_control("px4-sitl")
     kw = L.build_from_launch(lc, registry=reg, cache_dir=tmp_path / "cache")
 
-    assert order == ["build", "orchestrator"], "the PX4 build runs before the orchestrator is assembled"
-    assert kw["controller"]._sitl.airframe == "none_80001", "the registry airframe reaches the launcher"
+    started = [r["environment"].get("PX4_SIM_MODEL") for r in daemon if r.get("detach", True)]
+    assert order == ["orchestrator"] and started == ["none_80001"], "the peer starts before the assembly"
+    assert [p.airframe for p in kw["peers"]] == ["80001"], "the registry airframe reaches the peer"
