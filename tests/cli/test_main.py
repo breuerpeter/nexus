@@ -57,7 +57,7 @@ def test_rtx_prim_scan_reads_the_authored_camera(tmp_path):
 
 
 def test_script_is_no_subcommand(monkeypatch, tmp_path):
-    """`nexus script` is no subcommand: `nexus script scripts/assets/obj_to_usd.py` exits with a usage error.
+    """`script` is no subcommand: `nexus` run with `script scripts/assets/obj_to_usd.py` exits with a usage error.
 
     The Kit-only asset scripts start Kit themselves, so the tool carries no way to run a file in the
     Kit image. `DOCKER_HOST` points nowhere so that no container can start if the tool still tries.
@@ -70,7 +70,7 @@ def test_script_is_no_subcommand(monkeypatch, tmp_path):
 
 
 def test_help_names_no_script_subcommand(monkeypatch, capsys):
-    """`nexus script` is no subcommand: `nexus --help` names no `script`."""
+    """`script` is no subcommand: `nexus --help` names no `script`."""
     monkeypatch.setattr("sys.argv", ["nexus", "--help"])
     with pytest.raises(SystemExit):
         cli.main()

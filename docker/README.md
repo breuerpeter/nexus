@@ -60,8 +60,10 @@ renders read-only, at their host paths. It mounts `~/.cache/nexus/kit/` for Kit'
 the run creates as the user first, since docker would create it owned by root. Its console goes to
 `~/.cache/nexus/logs/console-*.log`.
 
-Kit-only asset scripts run in the same image with `uv run nexus script <path> [args…]`: it boots
-Kit, then runs the script, with the working folder and `$NEXUS_DATA` mounted at their host paths.
+The Kit-only asset scripts under `scripts/assets/` run in the same image. Each runs from the host
+with `uv run python scripts/assets/<script>.py …`, starts the container with its own file and
+arguments through `scripts/assets/kit_container.py`, and boots Kit there. The container mounts the
+working folder and `$NEXUS_DATA` at their host paths.
 
 ## `isaac-lab`: not a container, it runs host-side
 

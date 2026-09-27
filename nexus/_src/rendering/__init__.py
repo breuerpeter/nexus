@@ -17,9 +17,9 @@ from pathlib import Path
 from nexus._src.core import logger
 
 from .link import KitRenderer
-from .peer import KitPeer, KitPeerError, run_script
+from .peer import KitPeer, KitPeerError
 
-__all__ = ["KitPeer", "KitPeerError", "KitRenderer", "RtxConfig", "rtx_renderer", "run_script"]
+__all__ = ["KitPeer", "KitPeerError", "KitRenderer", "RtxConfig", "rtx_renderer"]
 
 
 class RtxConfig:
