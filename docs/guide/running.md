@@ -147,18 +147,18 @@ The Cesium ion and Google Maps Platform terms govern the streamed tiles: see
 ## Observability in Rerun
 
 Everything lands in **one** recording, app ID `nexus` and recording ID
-`nexus`, and every producer writes it **in-process**:
+`nexus`, and every producer writes it **from the sim's own process**:
 
-- **the sim scene**: logged in-process by nexus. The blueprint **hides** the ground plane,
+- **the sim scene**: logged by nexus itself. The blueprint **hides** the ground plane,
   `/model/shapes/shape_0`, **by default** because it occludes the vehicle.
 - **framework events**: the `newton` logger, under `logs/sim`.
 - **PX4's own view of the flight**: not in the recording. PX4 keeps it in its console log,
   `~/.cache/nexus/logs/px4-*.log`, and in its `ULog`, both artifacts of the run.
-- **test and driver stages**: an in-process driver logs each stage with `na.logger.info("…")`,
+- **test and driver stages**: a driver in the sim's process logs each stage with `na.logger.info("…")`,
   which writes to the console and, when recording, the `logs/sim` panel.
 
 **Serve or file, never both: one knob, `--viewer`.** A run can't produce both a live gRPC server
-and a *complete* `.rrd` in-process, because rerun's serve and file sinks are mutually exclusive, so:
+and a *complete* `.rrd` from one process, because rerun's serve and file sinks are mutually exclusive, so:
 
 - **`--viewer`**, the default: serve the recording live on `:9876` and connect a viewer with
   `uv run rerun --connect rerun+http://127.0.0.1:9876/proxy`. It writes no file, so

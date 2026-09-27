@@ -1,43 +1,50 @@
 ---
-description: "nexus's execution strategies, eager, CUDA-graph-captured, and differentiable rollout, plus its determinism model: where runs are bit-reproducible, where they're only tolerance-bounded, and why."
+description: "nexus's execution model, a ring of device and host stages that CUDA graphs replay where they can, and its determinism model: where runs are bit-reproducible, where they're only tolerance-bounded, and why."
 ---
 
 # Execution & determinism
 
-The same components and the same fixed-order [tick](architecture.md#the-simulation-loop) run under
-different execution strategies. **The strategy is automatic**, with no separate knob. The one
-user-facing control is `nexus run --device {auto,cpu,cuda}`. The default, `auto`, captures on
-the GPU when one is present and runs CPU-eager otherwise. The `Orchestrator` selects the strategy
-from the active device and the components' capability markers.
+The same components and the same fixed-order [tick](architecture.md#the-simulation-loop) run on a
+CPU or a CUDA device. **Nothing selects a strategy**, and there is no knob for one. The one
+user-facing control is `nexus run --device {auto,cpu,cuda}`. The default, `auto`, takes the GPU
+when one is present. The `Orchestrator` builds the tick from the stages each component states and
+captures graphs on CUDA.
 
-## Execution strategies
+## Stages and segments
 
-| Strategy | When | How it runs |
+A tick is an ordered ring of **stages**. Every component states its per-tick work as a list of
+stages, and each stage states its kind:
+
+| Stage kind | What | How it runs |
 |---|---|---|
-| **Eager** | CPU device, a device-region component that doesn't support capture, or the debug or parity path | Python steps the components one by one: the standard eager execution and the bit-exact determinism authority |
-| **Captured** | CUDA device whose device region, physics plus actuator plus in-graph sensors, supports capture | The orchestrator records the contiguous device region once into a CUDA graph and replays it. The controller joins the graph when it supports capture. Otherwise it exchanges at the host seam between replays |
-| **Differentiable rollout** | Design optimization | A Warp tape records the whole loop, including the in-process Proportional Integral Derivative (PID) controller. A loss back-propagates through it |
+| **Device stage** | A static launch over persistent device buffers: physics, the actuator, a sensor's sampling kernel, the record taps, the Proportional Integral Derivative (PID) law | On CUDA, replayed as part of a CUDA graph. On a CPU device, run stage by stage, the bit-exact determinism authority |
+| **Host stage** | Work that leaves the device or the process: PX4's `read` and `exchange`, a Model Predictive Control (MPC) solve, a torch policy's inference, an RTX sensor's frame exchange with the Kit peer | On the host, between graph replays |
+| **Differentiable rollout** | Design optimization | A Warp tape records the whole loop, including the PID law. A loss back-propagates through it |
 
-The rule is single: **capture everything that supports capture, and host-exchange only the
-components that need it.** A *controller* that doesn't support capture never forces the rest of the
-tick eager. Only a device-region component that doesn't support capture, whether physics, actuator,
-or an in-graph sensor, does.
+The loop lays the stages out in one canonical order: sensors, controller, then `clear`, actuator
+and `step` once per physics substep, then record. It cuts the ring at its host stages. It rotates
+the ring to start after the last cut, so the ring's tail folds into the first run. **Each maximal
+run of device stages becomes one CUDA graph.** The host stages run between the replays. With no
+host stage the whole ring is one graph. A component that states no stages fails the build with an
+error that names it, and so does a stage of a kind the loop doesn't know. Nothing falls back to a
+slower path in silence. A run logs its plan once at start, for example
+`stage plan: graph(clear -> forces -> step -> record -> imu -> mag -> baro -> gps) host(read -> exchange)`.
 
-**Captured execution benefits online Software In The Loop (SITL) runs, not just batch.** The
-captured region is *the whole device-side step minus the controller*. An external PX4 controller is
-a host boundary. There the orchestrator captures actuator → physics → sensors *around* the blocking
-MAVLink exchange. The only host↔device traffic per tick is then the small controls and measurements
-vectors the lockstep already moves. An in-process **host solver** rides the same seam. Examples are
-the per-tick optimization of a Model Predictive Control (MPC) controller and a torch policy. Its
-solve runs between replays while everything else stays captured. With the in-process PID or policy
-mixer, a device-native `exchange`, there is no host hop and the **whole** tick captures.
+**Captured execution benefits online Software In The Loop (SITL) runs, not just batch.** The PX4
+controller states two host stages. Its `read` stage is the sensor fan-in into the `Measurement`.
+Its `exchange` stage is the blocking MAVLink lockstep. The graph captures actuator, physics, record
+and sensors *around* them. The only host↔device traffic per tick is then the small controls and measurements
+vectors the lockstep already moves. A **host solver** states the same two stages. Examples are the
+per-tick optimization of an MPC controller and a torch policy. Its solve runs between replays while
+everything else stays captured. The PID law is a device stage, so there is no host stage and the
+**whole** tick is one graph.
 
 Illustrative real-time factors on a dev RTX 5080 follow. The tracked, CI-measured numbers live in
 [Benchmarking](../reference/benchmarking.md). The Astro Max, on the `newton.actuators` DC-motor
 rotor servos, flies its full takeoff and yaw-sweep profile at **~3.7× real-time with PX4 in the
-lockstep loop**. The earlier CPU-eager default reached ~1.0×. The fully in-process PID loop
-reaches **~19×**. The in-process host solvers ride the same captured region: acados reaches ~1.4×
-and the trained policy ~4.8×, versus full-eager fallbacks of 0.7× and 0.5×. Capture forces one
+lockstep loop**. The earlier CPU default reached ~1.0×. The PID loop, one graph, reaches **~19×**.
+The host solvers ride the same graph: acados reaches ~1.4× and the trained policy ~4.8×, versus
+CPU runs of 0.7× and 0.5×. Capture forces one
 subtlety: sensor noise must **dither per replay**, through a device step counter incremented inside
 the graph. Otherwise a frozen captured sensor stream reads to PX4's estimator as a stuck sensor and
 position fusion never starts.
@@ -56,10 +63,11 @@ set of Warp kernels serves both callers.
 
 Interfaces are the contract. Representation isn't mandated. **Inside a captured or differentiable
 region** all components share one device representation, Warp by default, and any
-CUDA-array-interface or DLPack framework can join zero-copy. **Across a host boundary** a component
-can be any language, process, or device, at the cost of a per-tick copy and no capture or automatic
-differentiation across that seam. For the current stack there are **two** such boundaries: the PX4
-controller, every tick, and the RTX sensors, at their render rate. The Kit render peer runs in a
+CUDA-array-interface or DLPack framework can join zero-copy. **At a host stage** a component can
+be any language, process, or device, at the cost of a per-tick copy and no capture or automatic
+differentiation across that stage. For the current stack there are **two** kinds: the PX4
+controller's `read` and `exchange`, every tick, and the RTX sensors' frame exchange, at their render
+rate. Each talks to a peer: a process the run starts, and speaks to over a link. The Kit render peer runs in a
 process of its own. At a frame's due tick the host copies the body poses and sends them, a few
 hundred bytes. It takes the frame on a later tick, so the loop waits only when the peer falls a full
 frame behind.
@@ -85,7 +93,7 @@ Measurement Unit (IMU). It also pins the Global Positioning System (GPS) sub-rat
 origin and computes the magnetic field from the scenario's GPS origin. An inconsistent field gives
 PX4 an invalid heading estimate, and it can't arm.
 
-**The in-process controller is the determinism authority.** The built-in PID, flown through the
+**The PID law is the determinism authority.** The built-in PID, flown through the
 unchanged orchestrator on the CPU backend, reproduces bit-for-bit run-to-run. Real PX4 SITL is
 instead *tolerance-gated*. The PX4 multi-threaded work-queue interleaves same-tick estimator and
 controller threads in an OS-dependent order. So armed flight isn't bit-reproducible, even though

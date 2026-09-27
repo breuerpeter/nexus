@@ -47,15 +47,15 @@ Predictive Control (NMPC) example **halved** when it switched to the same actuat
 
 The sim speed is the **real-time factor of the flight itself**: sim-time advanced divided by wall-time,
 with PX4 in the lockstep loop. The orchestrator reports it on exit. The loop runs on the
-**GPU** under the **captured execution strategy**, which `--device auto` selects automatically: a
-CUDA-graph replay of the device region, with the PX4 MAVLink seam at the host boundary. The per-tick
+**GPU**, which `--device auto` takes when one is present: one CUDA graph replays the device stages,
+and PX4's `read` and `exchange` host stages run between replays. The per-tick
 budget is roughly **53% GPU step**, **20% PX4 MAVLink exchange**, and **27% `.rrd` logging**. The GPU
 step is mujoco-warp at `batch=1`: a single drone is latency-bound, not throughput-bound, so this is the
 floor for one env on this solver. Logging decimates to 50 Hz. Logging the full scene at the 250 Hz sim
 rate was the dominant cost before and capped the loop at ~2.3×. For reference, the earlier CPU-eager
-default ran at ~1.03×. The pure in-process loop has no host seam. It captures the whole tick and runs
-far faster still, ~19× on `quad_x`. Pass `--profile` to log the per-tick breakdown. See architecture.md
-§5 for the strategy details.
+default ran at ~1.03×. The Proportional Integral Derivative (PID) loop has no host stage. It captures the whole tick and runs far
+faster still, ~19× on `quad_x`. Pass `--profile` to log the per-tick breakdown. See
+[Execution](../design/execution.md#stages-and-segments) for the stage model.
 
 **Throughput compared to flight pacing.** `--no-rerun` drops all recording and the raw loop hits
 **~6.3×**, then 71% GPU, 23% PX4, and 6% actuator write: pure compute. But the *closed-loop takeoff*
@@ -72,7 +72,7 @@ This is the decoupled workflow, headless and end-to-end. `docs/running.md` has t
 QGroundControl version:
 
 ```bash
-# closed-loop flight, one na.Sim run: nexus serves the HIL :4560 in-process + records the .rrd +
+# closed-loop flight, one na.Sim run: nexus serves the HIL :4560 itself + records the .rrd +
 # reports the with-PX4 RTF; PX4 SITL connects; the harness flies THE one PX4 flight profile
 # (a script against sim.operator over MAVLink :14540: arm + AUTO.TAKEOFF + yaw sweeps). Zero-arg.
 uv run -m nexus.examples px4_sitl
