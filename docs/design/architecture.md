@@ -15,17 +15,17 @@ Each tick runs the same fixed sequence, and the order is what makes runs reprodu
 
 ```
 t        = clock.now()
-env      = environment.sample(pos, t)                 # authoritative shared input
-meas     = [ sensor.sample(state, env, t) … ]         # IMU, GPS, baro, mag (+ camera in the RTX runtime)
+meas     = [ sensor.sample(state, t) … ]              # IMU, GPS, baro, mag (+ camera in the RTX runtime)
 controls = controller.exchange(meas, t)               # PX4 lockstep OR in-process PID/policy
-wrench   = actuator.forces(controls, state, env)      # per-actuator command → per-body forces
-state    = physics.step(state, wrench, env, dt)        # Newton advances the dynamics
+wrench   = actuator.forces(controls, state)           # per-actuator command → per-body forces
+state    = physics.step(state, wrench, dt)            # Newton advances the dynamics
 recorder.record(t, …);  clock.step(dt)
 ```
 
-The **environment is an authoritative shared input**. Physics consumes it for aero and relative
-airspeed, sensors for the magnetic field and pressure, and, in the RTX runtime, the renderer. A
-**camera is a sensor**: it produces an image measurement through the renderer, so vision
+The **site is resolved once at build**, not sampled per tick: the scene's geodetic origin gives the
+magnetic field, the air pressure and temperature, and gravity, and the sensors that read them take
+them as constructor arguments, the same way every other sensor parameter arrives. One gravity value
+reaches both the physics and the IMU. A **camera is a sensor**: it produces an image measurement through the renderer, so vision
 controllers simply read frames.
 
 nexus uses a fixed-order loop. It doesn't use a message bus in the style of ProjectAirSim or
@@ -46,7 +46,6 @@ persistent, in-place device buffers with static shapes, so the device region can
 | `newton.State` | pose, velocity, body rates, per-body forces: the live Newton state in `body_q`, `body_qd`, and `body_f` |
 | `Controls` | one normalized command per actuator, what the controller emits |
 | `Wrench` | a **per-body** spatial force over the whole articulation, the base body plus each actuator's body, realized as the shared `body_f` buffer, not a single body-level force and torque pair |
-| `EnvSample` | wind, air density, air pressure, air temperature, gravity, magnetic field, precipitation |
 | `Measurement` | per-sensor output such as Inertial Measurement Unit (IMU) and Global Positioning System (GPS) samples, plus a free-form ground-truth `observation` slot a policy reads |
 | `SimTime` | sim-time and step index |
 
@@ -58,10 +57,9 @@ fault-wrappable:
 | Interface | Responsibility |
 |---|---|
 | `Clock` | sim-time and step, with real-time scaling |
-| `Environment` | authoritative ambient fields, `sample(pos, t) → EnvSample` |
 | `Physics` | `reset` / `step` the Newton dynamics |
-| `Actuator` | `forces(controls, state, env) → Wrench` |
-| `Sensor` | `sample(state, env, t) → Measurement`, where a camera sensor uses a renderer |
+| `Actuator` | `forces(controls, state) → Wrench` |
+| `Sensor` | `sample(state, t) → Measurement`, where a camera sensor uses a renderer |
 | `Controller` | `exchange(measurements, t) → Controls`, one method, many implementations |
 | `Renderer` | the Kit render peer's lifecycle: RTX sensors render in a container fed poses over a socket |
 | `Recorder`, `Capturable` | cross-cutting observability and capture-capability markers |
