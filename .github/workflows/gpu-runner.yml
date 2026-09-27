@@ -255,15 +255,12 @@ jobs:
       # so an RTX cell boots warm on a fresh box. Keyed on the peer folder, the files the image
       # builds from, and on the caller's cache-scope as the kernel cache is, with a prefix fallback:
       # the shader cache is keyed by shader content, so an older entry still saves most compiles.
-      # Cesium's request cache stays out, so a cesium cell keeps streaming its tiles cold, which is
-      # what its RTF measures.
+      # Cesium's request cache is removed before the post step saves the entry, see below.
       - name: Restore Kit caches
         if: contains(format(' {0} ', inputs.caches), ' kit ')
         uses: actions/cache@v4
         with:
-          path: |
-            ~/.cache/nexus/kit
-            !~/.cache/nexus/kit/home/.cache/ov/cesium-request-cache.sqlite*
+          path: ~/.cache/nexus/kit
           key: kit-${{ hashFiles('nexus/_src/rendering/kit-peer/**') }}-${{ inputs.cache-scope }}
           restore-keys: |
             kit-${{ hashFiles('nexus/_src/rendering/kit-peer/**') }}-
@@ -312,6 +309,13 @@ jobs:
             fi ;;
           esac
           ${{ inputs.command }}
+      # Cesium's request cache holds the tiles a cesium cell streamed, and a restored one would feed
+      # the next cell from disk, so its RTF no longer measures a network stream. actions/cache
+      # archives the whole folder, an exclusion pattern removes nothing inside it, so the file goes
+      # before the post step saves the entry. always(): a red cell still saves the shaders it built.
+      - name: Drop Cesium's request cache before the Kit caches are saved
+        if: ${{ always() && contains(format(' {0} ', inputs.caches), ' kit ') }}
+        run: rm -f ~/.cache/nexus/kit/home/.cache/ov/cesium-request-cache.sqlite*
       - name: Upload coverage to Codecov
         if: ${{ inputs.coverage-flags != '' }}
         uses: codecov/codecov-action@v5
