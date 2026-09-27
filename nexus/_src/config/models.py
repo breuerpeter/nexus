@@ -88,12 +88,6 @@ class Runtime(_Base):
     solver: Literal["mujoco", "semi_implicit", "featherstone"] = "mujoco"
 
 
-class Environment(_Base):
-    """Ambient fields; derived from the scene's geodetic origin by default, overridable here."""
-
-    wind: dict[str, Any] | None = None
-
-
 class Output(_Base):
     """Artifacts produced for newton-suite. Rerun logging is two mutually exclusive flags, serve or
     file but not both: a live server and a complete ``.rrd`` can't both come out of one process. Omitting
@@ -138,11 +132,6 @@ class LaunchConfig(_Base):
     scene Universal Scene Description (USD) path (a converted mesh/splat, flown as the visual world).
 
     ``None`` falls back to the registry's default scene.
-    """
-    environment: Environment | None = None
-    """Ambient-field overrides (e.g. wind) layered on top of the scene's derived fields.
-
-    ``None`` means take the fields derived from the scene's geodetic origin with no override.
     """
     geodetic_origin: GeodeticOrigin | None = None
     """Override the scene's geodetic origin (the lat/lon the local frame anchors to).

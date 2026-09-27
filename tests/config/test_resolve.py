@@ -53,18 +53,11 @@ def test_receipt_round_trips_json():
     assert again == rl.tested_config
 
 
-def test_receipt_carries_sensors_and_environment():
+def test_receipt_carries_sensors():
     reg = _reg({"url": "https://x/astro.usdz", "sha256": "deadbeef"})
-    lc = LaunchConfig.from_dict(
-        {
-            "vehicle": "black",
-            "sensors": {"imu": {"rate": 250}},
-            "environment": {"wind": {"mean": [3, 0, 0]}},
-        }
-    )
+    lc = LaunchConfig.from_dict({"vehicle": "black", "sensors": {"imu": {"rate": 250}}})
     tc = resolve(lc, reg, fetch=False).tested_config
     assert tc.sensors == {"imu": {"rate": 250}}
-    assert tc.environment is not None and tc.environment.wind == {"mean": [3, 0, 0]}
 
 
 def _fpv_reg(vehicle_usd, scene_usd, **scene_extra):
