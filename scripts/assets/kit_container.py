@@ -106,8 +106,9 @@ def run_in_kit(script: str | os.PathLike, args: list[str]) -> int:
 def finish(app, main, argv: list[str]) -> None:
     """Run ``main(argv)`` under the booted Kit ``app`` and exit with its code.
 
-    A failure prints its traceback and flushes before Kit's teardown, which can end the process
-    outright and eat both the traceback and the exit status. ``main`` ends by returning an int, by
+    A failure prints its traceback and flushes, then ends the process with its code at once: Kit's
+    teardown ends the process with status 0 whatever the script's code was, so a failure never
+    reaches ``app.close()``. A success closes Kit cleanly. ``main`` ends by returning an int, by
     returning None for 0, or by raising ``SystemExit``.
     """
     code = 0
@@ -121,8 +122,9 @@ def finish(app, main, argv: list[str]) -> None:
 
         traceback.print_exc()
         code = 1
-    finally:
-        sys.stdout.flush()
-        sys.stderr.flush()
-        app.close()
-    sys.exit(code)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    if code:
+        os._exit(code)
+    app.close()
+    sys.exit(0)

@@ -44,3 +44,26 @@ def test_with_docker_unreachable_a_script_fails_with_a_message_that_names_docker
 
     last = r.stderr.strip().splitlines()[-1] if r.stderr.strip() else ""
     assert (r.returncode != 0, "Traceback" in r.stderr, "Docker" in last) == (True, False, True), r.stderr
+
+
+def test_a_failing_script_exits_non_zero_when_kit_teardown_would_end_the_process_with_zero(tmp_path):
+    """A failing script shows its traceback and its exit code reaches the shell.
+
+    Kit's teardown ends the process with status 0 whatever the script's code was, so `finish`
+    has to make the code reach the shell before it. The stand-in app's `close` ends the process
+    with 0 the way Kit's does.
+    """
+    code = f"""
+import importlib.util, os, sys
+spec = importlib.util.spec_from_file_location("kit_container", {str(ROOT / "scripts" / "assets" / "kit_container.py")!r})
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+
+class App:
+    def close(self):
+        os._exit(0)
+
+m.finish(App(), lambda argv: 1 / 0, [])
+"""
+    r = subprocess.run([sys.executable, "-c", code], cwd=tmp_path, capture_output=True, text=True, check=False)
+    assert (r.returncode, "ZeroDivisionError" in r.stderr) == (1, True), (r.returncode, r.stderr)
