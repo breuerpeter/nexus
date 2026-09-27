@@ -100,7 +100,7 @@ class RtxMountedSensor:
         self._next_due = max(base + period, now + 0.5 * period)  # never burst after a stall
         return True
 
-    def sample(self, state, env, t, out) -> None:
+    def sample(self, state, t, out) -> None:
         """Host-seam sample: the link sends the due sensors' frame and hands back the one before.
 
         Decimation is on sim time, since ``rate_hz`` is the sensor's physical rate: a 30 Hz camera

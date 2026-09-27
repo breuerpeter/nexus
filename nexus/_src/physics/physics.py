@@ -243,7 +243,7 @@ class NewtonPhysics:
     def clear_forces(self, state) -> None:
         state.clear_forces()
 
-    def step(self, state, env, dt):
+    def step(self, state, dt):
         contacts = self.model.collide(state) if self.contacts_on else None
         self.solver.step(state, self.state1, self.control, contacts, dt)
         state.assign(self.state1)

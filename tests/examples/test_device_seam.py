@@ -50,7 +50,7 @@ def test_inprocess_seam_is_device_native():
 
     # 1. obs sensor writes a Warp array into meas.observation, not numpy
     meas = Measurement()
-    WarpObservationSensor(goal_w=(0.0, 0.0, 1.5)).sample(state, None, SimTime(0.0, 0), meas)
+    WarpObservationSensor(goal_w=(0.0, 0.0, 1.5)).sample(state, SimTime(0.0, 0), meas)
     assert _is_warp_array(meas.observation)
     assert meas.observation.numpy().shape == (12,)
 
@@ -64,7 +64,7 @@ def test_inprocess_seam_is_device_native():
     act = RigidBodyRotors(mixer=mixer, dt=0.004, thrust_sign=-1.0, motor_tau=0.033)
     assert act.capturable  # no per-tick host op, the determinism path -> the in-process loop joins a graph
     state.clear_forces()
-    act.forces(controls, state, None)
+    act.forces(controls, state)
     wp.synchronize()
     bf = state.body_f.numpy()[act.base]
     assert np.isfinite(bf).all() and np.any(bf != 0.0)

@@ -4,8 +4,8 @@ A *logical* schema independent of any array library. For the eager slice the
 hot-loop state is the physics backend's live ``newton.State``, typed under ``TYPE_CHECKING``
 so core never imports it at runtime; the shared ``state.body_f`` device buffer
 realizes ``Wrench``, see the shared-buffer contract, so this module doesn't re-express it
-as a value type. ``Controls``/``Measurement``/``SimTime``/
-``EnvSample`` are the small marshalled values that cross component boundaries.
+as a value type. ``Controls``, ``Measurement`` and ``SimTime`` are the small marshalled values that
+cross component boundaries.
 """
 
 from __future__ import annotations
@@ -34,29 +34,6 @@ class SimTime:
     def time_usec(self) -> int:
         """Simulation time in integer microseconds, the ``HIL_*`` timestamp unit."""
         return int(self.sim_time * 1e6)
-
-
-@dataclass(slots=True)
-class EnvSample:
-    """Authoritative ambient fields at a point/time, as architecture.md §11 describes.
-
-    v1 is a constant provider lifting the bridge's hardcoded gravity + World Magnetic Model (WMM) field.
-    The world frame is Newton Forward Left Up (FLU) / Z-up.
-    """
-
-    gravity_world: tuple[float, float, float] = (0.0, 0.0, -9.81)  # Newton FLU/Z-up
-    """Gravitational acceleration vector in the WORLD frame, m/s^2.
-
-    World frame is Newton FLU / right-handed Z-up, so nominal gravity points along
-    ``-Z`` (the ``(0, 0, -9.81)`` default).
-    """
-    # Earth magnetic field components in North East Down (NED) [gauss], the WMM sample at the origin.
-    mag_ned: tuple[float, float, float] = (0.0, 0.0, 0.0)
-    """Earth magnetic field components in the NED frame, gauss (WMM sample at the origin)."""
-    air_pressure_msl: float = 1013.25  # [hPa]
-    """Air pressure at mean sea level, hPa."""
-    temperature: float = 25.0  # [degC]
-    """Ambient air temperature, degrees Celsius."""
 
 
 @dataclass(slots=True)

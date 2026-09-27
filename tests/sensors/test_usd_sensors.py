@@ -9,12 +9,13 @@ pytest.importorskip("pxr")
 pytest.importorskip("warp")
 
 from nexus._src.core.seedtree import SeedTree
+from nexus._src.scene import Site
 from nexus._src.vehicle.sensors import BaroSensor, GpsSensor, ImuSensor, MagSensor
 from nexus._src.vehicle.sensors.usd import SensorSpec, build_sensors, parse_sensor_prims
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")
 
-_GPS_INIT = {"lat": 47.7, "lon": -122.1, "alt": 5.0}
+_SITE = Site.at(47.7, -122.1, 5.0)
 
 
 def _author(path: str) -> None:
@@ -47,7 +48,7 @@ def test_parse_and_build_round_trip(tmp_path):
     assert imu_spec.mount == pytest.approx((0.01, -0.02, 0.03))
     assert imu_spec.params == {"acc_noise": pytest.approx(0.05)}
 
-    sensors = build_sensors(specs, seedtree=SeedTree(42), dt=0.004, gps_init=_GPS_INIT, ref_alt=5.0)
+    sensors = build_sensors(specs, seedtree=SeedTree(42), dt=0.004, site=_SITE)
     imu, gps, mag, baro = sensors
     assert isinstance(imu, ImuSensor) and isinstance(gps, GpsSensor)
     assert isinstance(mag, MagSensor) and isinstance(baro, BaroSensor)
@@ -80,7 +81,7 @@ def test_deactivated_sensor_prim_is_skipped(tmp_path):
 
 
 def _build(specs):
-    return build_sensors(specs, seedtree=SeedTree(42), dt=0.004, gps_init=_GPS_INIT, ref_alt=5.0)
+    return build_sensors(specs, seedtree=SeedTree(42), dt=0.004, site=_SITE)
 
 
 def test_config_bugs_fail_loudly():
