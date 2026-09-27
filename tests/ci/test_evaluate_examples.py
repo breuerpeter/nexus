@@ -219,3 +219,152 @@ def test_merged_local_merges_by_name_fresh_winning(tmp_path):
     # A missing or unreadable file degrades to the fresh entries alone.
     fresh_only = evaluate_examples._merged_local(tmp_path / "absent.json", fresh)
     assert sorted(e["name"] for e in fresh_only) == ["ape[pid]", "rtf[px4_sitl]"]
+
+
+# A flight inside every committed guard of its example, rtf included, for the examples a CPU box can fly.
+_HEALTHY = {
+    "pid": {"reached": 4, "final_dist_m": 0.1, "ape_trans_rmse_m": 0.8, "rtf": 6.7},
+    "gain_tuning": {"gradient_cosine": 0.995, "opt_hold_m": 0.1, "rtf": 6.3},
+    "mass_recovery": {"mass_rel_err": 0.01, "wall_s": 34.0},
+    "sampling_mpc": {
+        "reached": 3,
+        "final_dist_m": 0.1,
+        "min_clearance_m": 0.5,
+        "max_tilt_deg": 30.0,
+        "path_wiggle": 1.0,
+        "rtf": 0.29,
+    },
+    "goto_policy": {**_HEALTHY_FLIGHT, "rtf": 2.1},
+}
+
+
+def _fake_flights(monkeypatch, recordings: pathlib.Path, flights: dict[str, tuple[dict, int]]) -> None:
+    """Stand in for each example process at the process boundary, as `_fake_flight` does, for several
+    examples at once: each writes its dump and a recording, as an example does, then exits with its code.
+    """
+
+    def run(cmd, **kwargs):
+        if cmd[:2] == ["uv", "run"]:
+            example = cmd[cmd.index("nexus.examples") + 1]
+            stats, rc = flights[example]
+            rrd = recordings / f"{example}.rrd"
+            rrd.parent.mkdir(parents=True, exist_ok=True)
+            rrd.write_bytes(b"a recording")
+            out = pathlib.Path(kwargs["env"]["NEXUS_EVAL_OUT"])
+            dump = {"stats": stats, "results": {"rtf": stats.get("rtf", 2.0)}, "rrd": str(rrd)}
+            (out / f"{example}.json").write_text(json.dumps(dump))
+            return subprocess.CompletedProcess(cmd, rc, "", "")
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(subprocess, "run", run)
+
+
+def _scored(out: pathlib.Path) -> set[str]:
+    """The examples `benchmark.json` holds scores for, read from its `metric[example]` entry names."""
+    return {e["name"].split("[")[1].rstrip("]") for e in json.loads((out / "benchmark.json").read_text())}
+
+
+def test_on_a_pull_request_an_examples_rtf_never_fails_the_leg(tmp_path, monkeypatch, capsys):
+    """On a pull request an example's `rtf` never fails the leg, and the baselines file keeps its `rtf`
+    rows: given the committed `examples_baselines.json` and a `pid` flight at half its recorded `rtf`,
+    when the harness gates it as a pull-request run, then the table shows `rtf` as `(monitored)` and the
+    run exits 0.
+    """
+    _fake_flights(monkeypatch, tmp_path / "rec", {"pid": ({**_HEALTHY["pid"], "rtf": 3.37}, 0)})  # half of 6.749
+
+    rc = _harness(monkeypatch, "--only", "pid", "--shared", "--out", str(tmp_path / "out"))
+
+    assert (rc, "rtf" in _rows(capsys.readouterr().out, "(monitored)")) == (0, True)
+
+
+def test_on_a_pull_request_a_regressed_correctness_row_still_fails_the_leg(tmp_path, monkeypatch, capsys):
+    """On a pull request a regressed correctness row still fails the leg: given the committed baselines
+    and a `pid` flight that reaches fewer waypoints than recorded, when the harness gates it as a
+    pull-request run, then `reached` shows `REGRESSED` and the run exits 1.
+    """
+    _fake_flights(monkeypatch, tmp_path / "rec", {"pid": ({**_HEALTHY["pid"], "reached": 3}, 0)})  # of 4
+
+    rc = _harness(monkeypatch, "--only", "pid", "--shared", "--out", str(tmp_path / "out"))
+
+    assert (rc, "reached" in _rows(capsys.readouterr().out, "REGRESSED")) == (1, True)
+
+
+def test_on_a_pull_request_one_red_example_fails_the_leg_and_leaves_the_others_scores(tmp_path, monkeypatch, capsys):
+    """On a pull request one red example fails the leg and leaves the other six's scores: given the
+    pull-request shape with one example's flight faked to exit non-zero and six green, when it runs, then
+    it exits non-zero, lists that example under `FAILED examples`, and the joined output holds the six
+    others' scores. Here with the five examples a CPU box can fly, one red and four green.
+    """
+    flights = {name: (stats, 0) for name, stats in _HEALTHY.items()}
+    flights["mass_recovery"] = (_HEALTHY["mass_recovery"], 1)
+    _fake_flights(monkeypatch, tmp_path / "rec", flights)
+    out = tmp_path / "out"
+
+    rc = _harness(monkeypatch, "--only", ",".join(flights), "--shared", "--out", str(out))
+
+    failed = "FAILED examples: mass_recovery" in capsys.readouterr().out
+    assert (rc, failed, _scored(out)) == (1, True, {"pid", "gain_tuning", "sampling_mpc", "goto_policy"})
+
+
+def test_on_a_pull_request_a_green_examples_recording_stays_out_of_the_artifact(tmp_path, monkeypatch):
+    """On a pull request a green example's recording stays out of the artifact: given a green `pid`
+    flight that wrote an `.rrd`, when the harness runs it as a pull-request run, then the output holds its
+    scores and dump but no `pid.rrd`.
+    """
+    _fake_flights(monkeypatch, tmp_path / "rec", {"pid": (_HEALTHY["pid"], 0)})
+    out = tmp_path / "out"
+
+    _harness(monkeypatch, "--only", "pid", "--shared", "--out", str(out))
+
+    kept = {p.name for p in out.iterdir()}
+    assert ({"pid.json", "benchmark.json"} <= kept, "pid.rrd" in kept) == (True, False)
+
+
+def test_on_a_pull_request_an_example_that_fails_a_gate_carries_its_recording(tmp_path, monkeypatch):
+    """On a pull request an example that fails a gate carries its recording: given a `pid` flight that
+    wrote an `.rrd` and regressed a correctness row, when the harness runs it as a pull-request run, then
+    the output holds `pid.rrd`.
+    """
+    _fake_flights(monkeypatch, tmp_path / "rec", {"pid": ({**_HEALTHY["pid"], "reached": 3}, 0)})
+    out = tmp_path / "out"
+
+    _harness(monkeypatch, "--only", "pid", "--shared", "--out", str(out))
+
+    assert (out / "pid.rrd").is_file()
+
+
+def test_on_a_pull_request_an_example_whose_run_fails_carries_its_recording(tmp_path, monkeypatch):
+    """On a pull request an example whose run fails carries its recording when it wrote one: given a `pid`
+    flight that wrote an `.rrd` and exited non-zero, when the harness runs it as a pull-request run, then
+    the output holds `pid.rrd`.
+    """
+    _fake_flights(monkeypatch, tmp_path / "rec", {"pid": (_HEALTHY["pid"], 1)})
+    out = tmp_path / "out"
+
+    _harness(monkeypatch, "--only", "pid", "--shared", "--out", str(out))
+
+    assert (out / "pid.rrd").is_file()
+
+
+def test_on_main_an_rtf_under_its_ratchet_still_fails_the_leg(tmp_path, monkeypatch, capsys):
+    """On main an `rtf` under its ratchet still fails the leg: given the committed baselines and a `pid`
+    flight at half its recorded `rtf`, when the harness gates it as a main run, then `rtf` shows
+    `REGRESSED` and the run exits 1.
+    """
+    _fake_flights(monkeypatch, tmp_path / "rec", {"pid": ({**_HEALTHY["pid"], "rtf": 3.37}, 0)})  # half of 6.749
+
+    rc = _harness(monkeypatch, "--only", "pid", "--out", str(tmp_path / "out"))
+
+    assert (rc, "rtf" in _rows(capsys.readouterr().out, "REGRESSED")) == (1, True)
+
+
+def test_on_main_every_examples_recording_rides_the_artifact(tmp_path, monkeypatch):
+    """On main every example's recording rides the artifact, green or red: given a green `pid` flight that
+    wrote an `.rrd`, when the harness runs it as a main run, then the output holds `pid.rrd`.
+    """
+    _fake_flights(monkeypatch, tmp_path / "rec", {"pid": (_HEALTHY["pid"], 0)})
+    out = tmp_path / "out"
+
+    _harness(monkeypatch, "--only", "pid", "--out", str(out))
+
+    assert (out / "pid.rrd").is_file()
