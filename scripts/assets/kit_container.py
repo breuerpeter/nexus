@@ -5,7 +5,7 @@ The three Kit-only scripts beside this module, ``obj_to_usd.py``, ``site_scan_sp
 ``author_cesium_scene.py``, call Kit's extensions, which exist only in the Kit image. Each runs on
 the host with plain Python, ``uv run python scripts/assets/<script>.py …``, and on the host
 :func:`run_in_kit` starts the image with the same file and arguments, where the script boots Kit
-itself and does its work. :func:`in_kit` tells the two sides apart.
+itself and does its work. :func:`in_kit` says which side this process runs on.
 
 The container mounts the working folder read-write at its host path and works in it, and mounts
 ``$NEXUS_DATA``, default ``~/data``, where scans and converted scenes live, the same way: a path

@@ -1,7 +1,7 @@
 """The Kit container's spec: what it reads, and who owns what it writes.
 
 The script container is the one ``scripts/assets/kit_container.py`` starts for a Kit-only asset
-script; it is loaded from its file, since ``scripts/`` is no package.
+script. The tests load that module from its file, since ``scripts/`` is no package.
 """
 
 import importlib.util

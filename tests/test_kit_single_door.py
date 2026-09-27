@@ -4,8 +4,8 @@ three Kit-only asset scripts under ``scripts/assets/``.
 The render peer boots Kit to render a run's RTX sensors, and each Kit-only asset script boots it
 before its own work and runs from the host with plain Python. A script's traceback must print before
 Kit's teardown, which can end the process outright and eat both the traceback and the exit status,
-so the boot and that order live only where they are owned. The test checks the rule over the tracked
-tree.
+so the boot and that order live only in the files that own them. The test checks the rule over the
+tracked tree.
 
 The code spells the needle in pieces below, and names rather than quotes it in the prose here, so
 this file isn't itself a hit: the guard would fail on its own text, and so would the greps a reader
@@ -52,7 +52,7 @@ def _hits(needle: str) -> list[str]:
 
 
 def _offenders(hits: list[str]) -> list[str]:
-    """The hits outside the files that may boot Kit."""
+    """The hits outside the files that can boot Kit."""
     return [h for h in hits if not h.startswith(BOOT_ALLOWED)]
 
 
