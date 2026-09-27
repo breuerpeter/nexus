@@ -24,6 +24,10 @@ class _Clock:
 
 
 class _Physics:
+    """Steps a one-number state: the actuator adds one, the step multiplies by ten, so the value the
+    sensor reads on the next tick says which of the two ran, and in which order.
+    """
+
     def reset(self):
         return {"q": 0}
 
@@ -31,19 +35,20 @@ class _Physics:
         pass
 
     def step(self, state, dt):
+        state["q"] *= 10
         return state
 
 
 class _Actuator:
     def forces(self, controls, state):
-        pass
+        state["q"] += 1
 
 
 class _Sensor:
-    """Fills one field, so the measurement the controller receives shows the sensor ran."""
+    """Copies the state into the measurement, so what the controller receives shows the sensor ran."""
 
     def sample(self, state, t, out):
-        out.temperature = 21.0
+        out.temperature = state["q"]
 
 
 class _Controller:
@@ -74,9 +79,10 @@ def test_the_loop_runs_a_tick_on_seams_that_take_no_env():
         actuator=_Actuator(),
         sensors=[_Sensor()],
         controller=controller,
-        max_steps=1,
+        max_steps=2,
     )
 
     orch.run()
 
-    assert controller.meas.temperature == 21.0
+    # The second tick's measurement carries the first tick's state: sampled 0, actuated to 1, stepped to 10.
+    assert controller.meas.temperature == 10
