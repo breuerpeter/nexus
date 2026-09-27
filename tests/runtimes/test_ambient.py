@@ -152,11 +152,11 @@ def test_a_scene_with_no_origin_reports_the_default_origin_on_gps(empty_scene):
 
 def test_the_imu_reports_the_gravity_the_physics_applies(gravity_five_vehicle):
     """The IMU reports the gravity the physics applies, one value."""
-    orch, meas = gravity_five_vehicle
-    applied = float(np.linalg.norm(orch.physics.model.gravity.numpy()[0]))
+    _, meas = gravity_five_vehicle
     reported = math.hypot(meas.xacc, meas.yacc, meas.zacc)
 
-    assert reported == pytest.approx(applied, abs=0.1), f"the IMU reports {reported}, the physics applies {applied}"
+    # The site's one gravity, 9.81: the model-gravity row pins the physics at it, and the IMU reads it.
+    assert reported == pytest.approx(9.81, abs=0.1), f"the IMU reports {reported}"
 
 
 def test_the_barometer_reports_the_sites_pressure_and_temperature(gravity_five_vehicle):
