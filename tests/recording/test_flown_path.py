@@ -11,6 +11,8 @@ pytest.importorskip("rerun")
 pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
+from nexus._src.core.interfaces import Stage
+
 DT = 0.004  # 250 Hz control ticks
 STEPS = 30  # at the Logger's 50 Hz log rate that is 6 logged ticks, above the trail's two-point floor
 
@@ -32,23 +34,18 @@ def _author_min_usd(path: str) -> None:
 class _Actuator:
     """Writes no forces: the body flies the trail under gravity alone."""
 
-    capturable = False
-
-    def forces(self, controls, state, env) -> None:
-        pass
+    def stages(self):
+        return [Stage("forces", "device", lambda tick: None)]
 
 
 class _Controller:
-    """Answers the pre-roll at once, then hands back empty controls every tick."""
-
-    host_boundary = False
-    capturable = False
+    """One device stage that commands nothing, so the body flies under gravity alone."""
 
     def connect(self) -> None:
         pass
 
-    def exchange(self, meas, t, timeout=None) -> dict:
-        return {}
+    def stages(self):
+        return [Stage("act", "device", lambda tick: None)]
 
     def close(self) -> None:
         pass

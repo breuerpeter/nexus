@@ -30,6 +30,7 @@ from __future__ import annotations
 import numpy as np
 
 from nexus._src.core.schema import Controls, PositionGoal
+from nexus._src.core.stages import peer_stages
 from nexus.examples._lib.observation import ACTION_DIM, build_observation
 
 
@@ -98,6 +99,10 @@ class TrainedPolicyController:
 
     def close(self) -> None:
         self._policy = None
+
+    def stages(self):
+        """The ``read`` and ``exchange`` host stages: inference runs on the host between replays."""
+        return peer_stages(self)
 
     # -- inference ---------------------------------------------------------------
     def act(self, obs: np.ndarray) -> Controls:

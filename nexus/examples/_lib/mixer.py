@@ -194,7 +194,7 @@ def moment_to_cmd_batched(
 @wp.kernel
 def pack_vec4(a: wp.array(dtype=float), out: wp.array(dtype=wp.vec4)):
     """Pack a length-4 ``[collective, m_x, m_y, m_z]`` or ``[collective, ωx, ωy, ωz]`` float action into the
-    ``wp.vec4`` the mixer kernels read: a device-native op so the mixer stays capturable and tape-able.
+    ``wp.vec4`` the mixer kernels read: a device-native op so the mixer stays graph-safe and tape-able.
     """
     out[0] = wp.vec4(a[0], a[1], a[2], a[3])
 
@@ -351,7 +351,7 @@ class MomentMixer:
 
     def cmd_wp(self, moments_wp) -> wp.array:
         """Run the mixer over a device-native ``(4,)`` Warp moment action → the persistent ``(1, nr)``
-        per-rotor command Warp array, capturable, with no host hop.
+        per-rotor command Warp array, graph-safe, with no host hop.
         """
         wp.launch(pack_vec4, dim=1, inputs=(moments_wp,), outputs=(self._act4,))
         wp.launch(

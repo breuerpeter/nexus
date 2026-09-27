@@ -3,7 +3,7 @@ System (GPS), per architecture.md §2, all **Warp-native**.
 
 Each sensor's math is a ``@wp.kernel`` over the live ``newton.State``'s device arrays,
 ``body_q`` / ``body_qd``, the zero-copy Warp accessors, and its noise is the Warp Random Number
-Generator (RNG), ``wp.rand``, so the sensor region is capturable into a CUDA graph and uniform with
+Generator (RNG), ``wp.rand``, so the sensor stages join a CUDA graph and uniform with
 the rest of the device step: no host NumPy / ``math`` in the per-tick path. The kernels replicate the
 canonical frame math from :mod:`nexus._src.transform` **verbatim**, including the bridge's known
 North East Down (NED) axis inconsistency, preserved for PX4 parity; see that module's warning.
@@ -25,7 +25,15 @@ from __future__ import annotations
 
 import warp as wp
 
+from nexus._src.core.interfaces import Stage
 from nexus._src.recording.sensor import SensorRecorder
+
+
+class DeviceSensor(SensorRecorder):
+    """A sensor whose work is one device stage, named after the sensor, over ``sample_wp``."""
+
+    def stages(self) -> list[Stage]:
+        return [Stage(self.name, "device", lambda tick: self.sample_wp(tick.state, tick.env, tick.t))]
 
 
 @wp.func
@@ -152,14 +160,13 @@ def gps_kernel(
     out[6] = wp.float64(wp.sqrt(v[0] * v[0] + v[1] * v[1]))  # ground speed
 
 
-class ImuSensor(SensorRecorder):
+class ImuSensor(DeviceSensor):
     """Accelerometer, which reads specific force, + gyro, body FRD: Warp kernel + Warp RNG. Owns
     the earlier-tick velocities, persistent device arrays, for the finite-difference
     acceleration / angular acceleration, and supports a mount at ``mount_offset`` on a body whose COM
     is ``com``, the ``alpha x r + omega x (omega x r)`` lever-arm term; both default to the origin.
     """
 
-    capturable = True
     name = "imu"  # sim.sensors key, the flat instance name
     fields = ("xacc", "yacc", "zacc", "xgyro", "ygyro", "zgyro", "qw", "qx", "qy", "qz")  # _out layout
 
@@ -226,8 +233,7 @@ class ImuSensor(SensorRecorder):
         self.read(out)
 
 
-class MagSensor(SensorRecorder):
-    capturable = True
+class MagSensor(DeviceSensor):
     name = "mag"
     fields = ("xmag", "ymag", "zmag")
 
@@ -260,8 +266,7 @@ class MagSensor(SensorRecorder):
         self.read(out)
 
 
-class BaroSensor(SensorRecorder):
-    capturable = True
+class BaroSensor(DeviceSensor):
     name = "baro"
     fields = ("abs_pressure", "pressure_alt")
 
@@ -291,8 +296,7 @@ class BaroSensor(SensorRecorder):
         self.read(out)
 
 
-class GpsSensor(SensorRecorder):
-    capturable = True
+class GpsSensor(DeviceSensor):
     name = "gps"
     fields = ("lat", "lon", "alt", "vn", "ve", "vd", "ground_speed")  # _out is float64 for lat/lon precision
 
