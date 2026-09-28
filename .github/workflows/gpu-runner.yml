@@ -10,8 +10,10 @@ name: gpu-runner
 # (NVIDIA drivers + Docker + nvidia-container-toolkit, resolved at runtime), and the container jobs
 # docker-pull their px4-sitl image per run; an RTX run pulls NVIDIA's Isaac Sim image on the box and
 # restores Kit's caches when its caller asks. On push, schedule and dispatch
-# runs the EC2 instance role grants s3:PutObject to the CI artifacts bucket so a command's --upload
-# works via the instance profile. A same-repo PR run launches with the caller's read-only instance
+# runs the EC2 instance role lets a command's --upload write public/ci/* in the CI artifacts bucket
+# and read the bench feed at public/ci/bench/*, which it merges into, through the instance profile.
+# The read needs s3:ListBucket on that prefix too, else S3 answers a missing key with 403, not 404.
+# A same-repo PR run launches with the caller's read-only instance
 # profile when it names one, else with none; a fork's PR run always launches with none. No PR run
 # carries a Cesium token, since nothing a PR run does needs it. The bucket's public/* prefix is SERVED
 # THROUGH CLOUDFRONT (docs .rrd embeds + the bench feed), so treat everything uploaded there as
@@ -174,7 +176,7 @@ jobs:
           github-token: ${{ steps.app-token.outputs.token }}
           ec2-instance-type: ${{ inputs.instance-type }}
           availability-zones-config: ${{ steps.discover.outputs.availability-zones-config }}
-          # The instance profile (s3:PutObject for the docs .rrd uploads) rides push, schedule and
+          # The instance profile (uploads + the bench feed's read) rides push, schedule and
           # dispatch runs only: nothing a PR run does uploads, and an approved fork's code must not
           # be able to write to the CI artifacts bucket. A same-repo PR run gets the caller's
           # read-only profile instead, or none, and pull_request_target never gets one: the command
