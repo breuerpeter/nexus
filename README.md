@@ -4,7 +4,6 @@
 <br />
 [![PyPI](https://img.shields.io/pypi/v/nexus.svg)](https://pypi.org/project/nexus/)
 [![Docs](https://img.shields.io/badge/docs-breuerpeter.github.io-blue.svg)](https://breuerpeter.github.io/nexus/)
-
 [![lint](https://github.com/breuerpeter/nexus/actions/workflows/lint.yml/badge.svg?branch=main)](https://github.com/breuerpeter/nexus/actions/workflows/lint.yml)
 [![cpu-pytest](https://github.com/breuerpeter/nexus/actions/workflows/cpu-pytest.yml/badge.svg?branch=main)](https://github.com/breuerpeter/nexus/actions/workflows/cpu-pytest.yml)
 [![gpu-pytest](https://github.com/breuerpeter/nexus/actions/workflows/gpu-pytest.yml/badge.svg?branch=main)](https://github.com/breuerpeter/nexus/actions/workflows/gpu-pytest.yml)
