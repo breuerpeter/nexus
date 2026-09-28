@@ -201,7 +201,7 @@ Both modes carry the same content, PX4 included: there is no second recording an
 ## Gotchas
 
 !!! note "One PX4 per instance"
-    Each run's container carries the run's own name, `nexus-px4-<pid>`, and the run removes it on
+    Each run's container carries the run's own name, `nexus-px4-<pid>-<instance>`, and the run removes it on
     exit, so a second run stops nothing of the first. Two runs on one instance still share PX4's
     ports and the second fails at its HIL bind: give it `--px4-instance 1`.
 

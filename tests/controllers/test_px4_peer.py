@@ -285,6 +285,21 @@ def test_a_managed_peer_starts_when_the_run_starts_and_stops_when_the_run_closes
     assert (len(started), daemon.removed) == (1, started), f"started {started}, removed {daemon.removed}"
 
 
+def test_two_managed_runs_in_one_process_on_two_instances_keep_both_containers(daemon, run):
+    """Two runs in one process, instances 0 and 1: the second run's start removes nothing of the
+    first, and each run's close removes only its own container.
+    """
+    first = run({"realization": "managed", "instance": 0})
+    second = run({"realization": "managed", "instance": 1})
+    started = [r["name"] for r in daemon.runs if r.get("detach", True)]
+
+    first.close()
+    removed_by_first = list(daemon.removed)
+    second.close()
+
+    assert (len(set(started)), removed_by_first, daemon.removed) == (2, [started[0]], started)
+
+
 def test_an_external_peer_starts_no_process_and_the_run_waits_on_its_hil_port(daemon, run):
     """An external peer starts no process: the run listens on its HIL address and waits for the
     autopilot to dial in.

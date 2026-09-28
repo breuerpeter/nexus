@@ -177,7 +177,9 @@ def build_from_launch(
 
 def _start_px4(launch: LaunchConfig, resolved: ResolvedLaunch, instance: int):
     """Start the PX4 SITL peer for this run: the pinned tree, or ``$PX4_DIR``, the vehicle's airframe,
-    the run's instance, and a container name and console log of this run's own.
+    the run's instance, and a container name and console log of this run's own. The name carries the
+    process and the instance, so two runs in one process on two instances keep both containers; two
+    on one instance collide on PX4's ports anyway.
     """
     from nexus._src.vehicle.controllers.px4 import checkout
     from nexus._src.vehicle.controllers.px4.sitl import PX4_LOG_DIR, Px4Sitl
@@ -189,7 +191,7 @@ def _start_px4(launch: LaunchConfig, resolved: ResolvedLaunch, instance: int):
         tree=checkout.tree(pathlib.Path(catalog) if catalog else None),
         airframe=spec.airframe if spec is not None else "astro_max",
         instance=instance,
-        name=f"nexus-px4-{os.getpid()}",
+        name=f"nexus-px4-{os.getpid()}-{instance}",
         log_path=os.path.join(PX4_LOG_DIR, f"px4-{time.strftime('%Y%m%d-%H%M%S')}-{os.getpid()}.log"),
     )
     peer.start()
