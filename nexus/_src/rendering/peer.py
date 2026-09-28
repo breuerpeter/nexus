@@ -120,7 +120,7 @@ def _cesium_exts(cache_dir: Path) -> Path:
 
 def _cesium_mount(cache_dir: Path) -> tuple[dict, dict]:
     """The mount and the environment that give Kit the Cesium extensions and register their schemas."""
-    exts = _cesium_exts(cache_dir)
+    exts = _cesium_exts(Path(cache_dir).resolve())  # docker reads a relative source as a volume name
     return {str(exts): {"bind": _CESIUM_EXTS, "mode": "ro"}}, {"PXR_PLUGINPATH_NAME": _CESIUM_PLUGINS}
 
 
