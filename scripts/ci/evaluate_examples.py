@@ -218,7 +218,7 @@ def _score(name: str, out: pathlib.Path) -> tuple[dict, dict]:
 
 
 def _dumped_meta(name: str, out: pathlib.Path) -> dict:
-    """The meta JSON *name*'s example dumped, or empty when it dumped none: a failed run may have."""
+    """The meta JSON *name*'s example dumped, or empty when it dumped none: a failed run can leave one."""
     path = _dump_dir(name, EXAMPLES[name], out) / f"{EXAMPLES[name].get('launcher', name)}.json"
     try:
         return json.loads(path.read_text())
@@ -434,7 +434,7 @@ def main() -> int:
         build_px4_sitl()
 
     def fly(name: str) -> bool | None:
-        """Fly one example: whether its run succeeded, or None when it was skipped."""
+        """Fly one example: whether its run succeeded, or None for a skipped example."""
         ok, why = _available(EXAMPLES[name].get("requires"), args)
         if not ok:
             if args.skip_missing:
