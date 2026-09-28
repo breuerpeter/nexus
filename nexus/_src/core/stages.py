@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from .interfaces import Tick
 
 KINDS = ("device", "host")
+CHANNELS = 16  # MAVLink's HIL_ACTUATOR_CONTROLS carries 16 channels, the widest command any controller sends
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,9 +113,10 @@ def partition(ring: list[Bound]) -> list[Segment]:
 
 
 def seed_stages(ring: list[Bound]) -> list[Stage]:
-    """The stages of one pass over the settled state, before any capture: the sensors' and the
-    controller's warm device stages, and the controller's host stages. Physics, the actuator and the
-    record stage never run here, so the settled state is the state the first tick starts from.
+    """The stages of one pass over the settled state: the sensors' and the controller's warm device
+    stages, and the controller's host stages, in ring order. Physics, the actuator and the record
+    stage never run here, so the settled state is the state the first tick starts from, and a
+    sensor's host stage never does, so a camera's frame exchange starts with the first tick.
     """
     out = []
     for b in ring:
@@ -126,6 +128,13 @@ def seed_stages(ring: list[Bound]) -> list[Stage]:
         elif b.stage.warm:
             out.append(b.stage)
     return out
+
+
+def warm_stages(ring: list[Bound]) -> list[Stage]:
+    """The device stages of the seed pass: the warm pass that runs once before any capture, so every
+    device buffer exists and every kernel has loaded first, with no peer involved.
+    """
+    return [st for st in seed_stages(ring) if st.kind == "device"]
 
 
 def plan_line(segments: list[Segment], captured: bool) -> str:
@@ -147,28 +156,36 @@ def read_sensors(tick: Tick) -> None:
 
 
 def peer_stages(controller) -> list[Stage]:
-    """The stages of a controller that blocks on a peer or solves on the host: ``read`` fans the
-    sensors into the ``Measurement``, ``exchange`` runs the controller's ``exchange`` and copies its
-    commands into a persistent ``(1, n)`` device buffer, ``Tick.controls``. ``None`` from the exchange
-    reads as the peer not answering, which the stage reports by returning ``False``.
+    """The stages of a controller that blocks on a peer or solves on the host: ``bind``, a device
+    stage with no kernel, binds ``Tick.controls`` to a persistent ``(1, 16)`` device command buffer in
+    the warm pass, so the actuator's stage captures over it before the peer connects; ``read`` fans
+    the sensors into the ``Measurement``; ``exchange`` runs the controller's ``exchange`` and copies
+    its commands into the buffer. ``None`` from the exchange reads as the peer not answering, which
+    the stage reports by returning ``False``.
     """
-    buf = None
+    import warp as wp
+
+    buf = wp.zeros((1, CHANNELS), dtype=float)
+    cmd = np.zeros((1, CHANNELS), dtype=np.float32)
+
+    def bind(tick):
+        tick.controls = buf
 
     def exchange(tick):
-        nonlocal buf
-        import warp as wp
-
         controls = controller.exchange(tick.meas, tick.t, tick.timeout)
         if controls is None:
             return False
-        cmd = np.asarray(controls.command, dtype=np.float32).reshape(1, -1)
-        if buf is None or buf.shape != cmd.shape:
-            buf = wp.zeros(cmd.shape, dtype=float)
+        command = np.asarray(controls.command, dtype=np.float32).reshape(-1)
+        if command.shape[0] > CHANNELS:
+            raise ValueError(
+                f"{type(controller).__name__} sent {command.shape[0]} commands, over the {CHANNELS} channels"
+            )
+        cmd[0, : command.shape[0]] = command
         buf.assign(cmd)
         tick.controls = buf
         return True
 
-    return [Stage("read", "host", read_sensors), Stage("exchange", "host", exchange)]
+    return [Stage("bind", "device", bind), Stage("read", "host", read_sensors), Stage("exchange", "host", exchange)]
 
 
 __all__ = [
@@ -181,4 +198,5 @@ __all__ = [
     "plan_line",
     "read_sensors",
     "seed_stages",
+    "warm_stages",
 ]

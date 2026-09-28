@@ -123,8 +123,9 @@ class _HostSensor:
 
 class _PeerController:
     """A controller with a peer, the PX4 shape: a ``read`` and an ``exchange`` host stage, plus one
-    device stage that bumps its own buffer. ``answers`` says which exchanges the peer answers;
-    ``attached`` says when the peer dialed in. It keeps every exchange and device-stage call.
+    device stage that bumps its own buffer, which exists from construction because the loop captures
+    before a peer connects. ``answers`` says which exchanges the peer answers; ``attached`` says when
+    the peer dialed in. It keeps every exchange and device-stage call.
     """
 
     host_boundary = True
@@ -134,11 +135,11 @@ class _PeerController:
         self._answers = answers
         self.calls = 0
         self.device_calls = 0
-        self.act = None
+        self.act = wp.zeros(1, dtype=wp.int32)
         self.closed = False
 
     def connect(self):
-        self.act = wp.zeros(1, dtype=wp.int32)
+        pass
 
     def exchange(self, meas, t, timeout):
         self.calls += 1

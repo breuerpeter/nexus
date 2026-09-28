@@ -32,10 +32,14 @@ def _pid(*, cpu: bool, max_steps: int):
 def test_pid_on_cuda_flies_the_trajectory_main_recorded():
     """The PID example on CUDA flies its whole tick as one graph, and its trajectory matches today's
     captured path: 200 ticks of body poses equal, to the byte, the ones main recorded through ``run()``
-    before the change, on an RTX 5080.
+    before the change. A CUDA trajectory repeats to the byte on one GPU model and differs across
+    models, so the fixture names the GPU that flew it and the test runs only there.
     """
     if not wp.is_cuda_available():
         pytest.skip("no CUDA device")
+    flown_on = str(np.load(_REFERENCE)["device"])
+    if wp.get_device("cuda:0").name != flown_on:
+        pytest.skip(f"the reference was flown on {flown_on!r}, not {wp.get_device('cuda:0').name!r}")
     with wp.ScopedDevice("cuda:0"):
         orch = _pid(cpu=False, max_steps=200)
         q = []

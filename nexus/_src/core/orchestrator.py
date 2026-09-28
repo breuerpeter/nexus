@@ -24,7 +24,7 @@ from .interfaces import Stage, Tick
 from .logging import logger
 from .profiling import LoopProfiler
 from .schema import Measurement
-from .stages import build_ring, device_sensors, partition, plan_line, seed_stages
+from .stages import build_ring, device_sensors, partition, plan_line, seed_stages, warm_stages
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -352,9 +352,10 @@ class Orchestrator:
         ``run()``, which exhausts it, and ``Sim.step()``, which advances it one tick.
 
         Resets physics, which builds and settles the vehicle at the NED origin, builds the ring of
-        stages and partitions it, connects the controller, runs the seed pass over the settled state,
-        the preroll for a controller with a peer, records the seed row, captures each device segment
-        on CUDA, then loops. Every control kind advances one tick per ``next()``. Teardown, renderer,
+        stages and partitions it, runs the warm pass over the settled state, records the seed row,
+        captures each device segment on CUDA, runs the seed pass of the controller's host stages, the
+        preroll for a controller with a peer, then loops. Every control kind advances one tick per
+        ``next()``. Teardown, renderer,
         controller and logs, runs in the ``finally``, whether the generator runs out, on run to
         completion or peer disconnect, or closes early, via :meth:`close` on ``stop()`` mid-step.
         The live RTF lands in ``run_stats``.
@@ -388,10 +389,21 @@ class Orchestrator:
                 meas=Measurement(),
                 sensors=device_sensors(ring),
             )
-            self.controller.connect()  # bind the peer's port and start it, or reserve device buffers
-            self._seed(ring, tick)
+            # A controller without a peer connects first, which reserves its device buffers before the
+            # warm pass. One with a peer connects after the capture, so every kernel the loop launches has
+            # loaded before the peer is up: from the moment PX4 dials in, it logs a ``poll timeout``
+            # error for each second of wall time that brings no message. The peer's own signal,
+            # ``attached``, says which, until #37 moves it to the peer.
+            peer = hasattr(self.controller, "attached")
+            if not peer:
+                self.controller.connect()
+            for st in warm_stages(ring):
+                st.run(tick)
             self._record_tick()  # the settled pre-flight row, the datum every climb measures against
             graphs = self._capture(segments, tick) if captured else None
+            if peer:
+                self.controller.connect()  # bind the peer's port and start it
+            self._seed(ring, tick, peer)
             yield from self._loop(segments, graphs, tick)
         except ConnectionError as e:
             logger.info(
@@ -409,23 +421,20 @@ class Orchestrator:
             finally:
                 self._close_logs()
 
-    def _seed(self, ring, tick) -> None:
-        """One pass of the sensors' and the controller's warm stages over the settled state, the seed of
-        the first tick: it allocates every device buffer before any capture and, for a controller with
-        a host stage, its final exchange writes the controls the first tick applies. A controller with
-        a peer holds the sim clock until the peer attaches, so the peer's first stamp is near zero, and
-        the pass repeats, re-sampling the static settled state so noise dithers into a live feed, until
-        the first controls arrive or the preroll times out.
+    def _seed(self, ring, tick, peer: bool) -> None:
+        """The seed pass, for a controller with a host stage: one pass of the sensors' warm stages and
+        the controller's stages over the settled state, whose final exchange writes the controls the
+        first tick applies. A controller with a peer holds the sim clock until the peer attaches, so
+        the peer's first stamp is near zero, and the pass repeats, re-sampling the static settled
+        state so noise dithers into a live feed, until the first controls arrive or the preroll times
+        out. A controller whose stages are all device stages gets no pass: the warm pass seeded it.
 
         Raises:
             ConnectionError: No controls arrived within ``preroll_timeout``.
         """
         stages = seed_stages(ring)
-        if all(st.kind == "device" for st in stages):  # one warm pass: no preroll, no clock advance
-            for st in stages:
-                st.run(tick)
+        if all(st.kind == "device" for st in stages):
             return
-        peer = hasattr(self.controller, "attached")  # the peer's own signal until #37 moves it to the peer
         if peer:
             logger.info("Waiting for the controller to start lockstep...")
         tick.timeout = 0.05
@@ -444,12 +453,12 @@ class Orchestrator:
 
     def _capture(self, segments, tick) -> list:
         """Capture each device segment into its own CUDA graph, serially, before the first tick. Any
-        other stream operation during a capture kills it, so the seed pass and the seed row complete
+        other stream operation during a capture kills it, so the warm pass and the seed row complete
         first, and nothing else touches the device until the loop replays.
         """
         import warp as wp
 
-        wp.synchronize()  # complete the seed pass and the seed row before a capture opens
+        wp.synchronize()  # complete the warm pass and the seed row before a capture opens
         graphs = []
         for seg in segments:
             if seg.kind != "device":
