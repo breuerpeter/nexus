@@ -9,5 +9,6 @@ which claims the scene by the content of its USD, never by name.
 from __future__ import annotations
 
 from .ingest import add_scene
+from .site import GRAVITY, Site
 
-__all__ = ["add_scene"]
+__all__ = ["GRAVITY", "Site", "add_scene"]

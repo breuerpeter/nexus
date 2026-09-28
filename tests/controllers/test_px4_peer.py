@@ -136,11 +136,6 @@ class _Clock:
         pass
 
 
-class _Env:
-    def sample(self, pos, t):
-        return None
-
-
 class _Physics:
     base_body = "body_frd"
 
@@ -150,19 +145,18 @@ class _Physics:
     def clear_forces(self, state):
         pass
 
-    def step(self, state, env, dt):
+    def step(self, state, dt):
         return state
 
 
 class _Actuator:
-    def forces(self, controls, state, env):
+    def forces(self, controls, state):
         pass
 
 
 def _loop(controller, **kw):
     return Orchestrator(
         clock=_Clock(),
-        environment=_Env(),
         physics=_Physics(),
         actuator=_Actuator(),
         sensors=[],

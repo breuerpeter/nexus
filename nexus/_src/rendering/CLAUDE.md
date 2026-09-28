@@ -13,7 +13,10 @@ is the renderer the loop drives and the link the RTX sensors ride.
   a change to `IMAGE`.
 - Cesium for Omniverse is a content-addressed download, `CESIUM` in `peer.py`. The host fetches it
   into the asset cache only when a file the run renders declares a `CesiumTilesetPrim`, and mounts
-  it at `/cesium-exts`. `nexus script --cesium` does the same for the Cesium author script.
+  it at `/cesium-exts`, as `scripts/assets/kit_container.py` does for the Cesium author script.
+- `scripts/assets/kit_container.py` starts the same image for the Kit-only asset scripts and
+  imports `ensure_image`, `_run_options`, `_cesium_mount`, `LABEL` and `client` from `peer.py`:
+  renaming or moving one of them changes that file too.
 - Kit renders one update behind, so a frame reply carries the request before it: the first reply
   carries nothing, and the close renders the last request and returns its frame with `closed`.
 - The wire format lives once, in `kit-peer/link.py`: the peer imports it as a sibling module, and

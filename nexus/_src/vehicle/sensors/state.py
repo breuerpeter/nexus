@@ -19,13 +19,13 @@ class StateSensor:
     capturable = True  # a reference passthrough: no device work, no host readback
     _state = None
 
-    def sample(self, state, env, t, out) -> None:
+    def sample(self, state, t, out) -> None:
         out.state = state
 
     # Captured split seam, the host-exchange loop: still a pure reference passthrough. The graph
     # replays update the state object's buffers in place, so the reference stashed at capture
     # time *is* the live state at every read.
-    def sample_wp(self, state, env, t) -> None:
+    def sample_wp(self, state, t) -> None:
         self._state = state
 
     def read(self, out) -> None:

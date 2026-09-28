@@ -7,9 +7,10 @@ for example an Esri Site Scan "OBJ" export, but any single-OBJ dir works, into o
 caches exactly one file, so sibling texture dirs would go missing. This route isn't
 Site-Scan-specific: it just takes the first ``.obj`` it finds.
 
-Kit-only: it needs a booted Kit app, which ``nexus script`` provides::
+Kit-only: run from the host with plain Python, it starts the Kit image with this file and boots Kit
+there, see ``kit_container.py``::
 
-    uv run nexus script scripts/assets/obj_to_usd.py \
+    uv run python scripts/assets/obj_to_usd.py \
         "$NEXUS_DATA/scans/obj/Example Site" --out "$NEXUS_DATA/scans/example_site_obj.usdz"
 """
 
@@ -87,7 +88,7 @@ def convert_obj(obj_dir, out_usdz, *, recenter="spawn") -> str:
     # Stage-5 conventions: one root prim, the defaultPrim with no root xformOps, + the authored sky:
     # the scene Universal Scene Description (USD) file is the single authority on its own lighting and
     # start placement target.
-    from scripts.assets.scene_root import finalize_scene_layer
+    from scene_root import finalize_scene_layer
 
     finalize_scene_layer(conv_usd)
     os.makedirs(os.path.dirname(out_usdz) or ".", exist_ok=True)
@@ -157,21 +158,24 @@ def main(argv=None) -> None:
 
     args = build_parser().parse_args(argv)
     _t(f"src={args.src!r} out={args.out!r} recenter={args.recenter}")
-    try:
-        import omni.kit.app
+    import omni.kit.app
 
-        # asset_converter isn't in every experience's autoload set: enable it defensively.
-        omni.kit.app.get_app().get_extension_manager().set_extension_enabled_immediate("omni.kit.asset_converter", True)
-        _t("asset_converter enabled; converting…")
-        out = convert_obj(args.src, args.out, recenter=args.recenter)
-        _t(f"DONE -> {out}")
-        print(out, flush=True)
-    except Exception:
-        import traceback
-
-        _t("EXCEPTION:\n" + traceback.format_exc())
-        raise
+    # asset_converter isn't in every experience's autoload set: enable it defensively.
+    omni.kit.app.get_app().get_extension_manager().set_extension_enabled_immediate("omni.kit.asset_converter", True)
+    _t("asset_converter enabled; converting…")
+    out = convert_obj(args.src, args.out, recenter=args.recenter)
+    _t(f"DONE -> {out}")
+    print(out, flush=True)
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+
+    from kit_container import KIT_APP, KIT_EXPERIENCE, finish, in_kit, kit_argv, run_in_kit
+
+    if not in_kit():
+        sys.exit(run_in_kit(__file__, sys.argv[1:]))
+    argv = kit_argv()
+    from isaacsim import SimulationApp
+
+    finish(SimulationApp(KIT_APP, experience=KIT_EXPERIENCE), main, argv)

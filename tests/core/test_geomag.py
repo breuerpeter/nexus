@@ -6,7 +6,7 @@ default scenario, and the from_gps wiring.
 
 import math
 
-from nexus._src.core import ConstantEnvironment, geomag
+from nexus._src.core import geomag
 
 # Seattle GPS origin from the default scenario, sensors.gps.init.
 SEATTLE = (47.747944, -122.163917)
@@ -20,10 +20,10 @@ def test_field_at_seattle_matches_px4_table():
     assert 0.535 < strength < 0.543  # ~0.539 gauss, compared to the Zurich default's 0.48, which PX4 rejected
 
 
-def test_from_gps_total_field_equals_table_strength():
-    """from_gps's North East Down (NED) field norm equals the table strength, the quantity PX4's strength gate checks."""
+def test_ned_field_norm_equals_table_strength():
+    """The North East Down (NED) field's norm equals the table strength, the quantity PX4's strength gate checks."""
     _, _, strength = geomag.field_at(*SEATTLE)
-    n, e, d = ConstantEnvironment.from_gps(*SEATTLE).sample(None, None).mag_ned
+    n, e, d = geomag.ned_field(*SEATTLE)
     assert math.isclose(math.sqrt(n * n + e * e + d * d), strength, abs_tol=1e-4)
 
 

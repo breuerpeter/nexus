@@ -214,7 +214,7 @@ class ArticulatedRotors:
             outputs=(state.body_f,),
         )
 
-    def forces(self, controls, state, env=None) -> None:
+    def forces(self, controls, state) -> None:
         """Eager path, the ``Sensor``-protocol twin of the captured seam: one host write + the device region."""
         self.write_controls(controls)
         self.forces_wp(state)

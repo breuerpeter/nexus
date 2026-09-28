@@ -24,11 +24,6 @@ class _Clock:
         pass
 
 
-class _Env:
-    def sample(self, pos, t):
-        return None
-
-
 class _Physics:
     def reset(self):
         return {"q": 0}
@@ -36,12 +31,12 @@ class _Physics:
     def clear_forces(self, state):
         pass
 
-    def step(self, state, env, dt):
+    def step(self, state, dt):
         return state
 
 
 class _Actuator:
-    def forces(self, controls, state, env):
+    def forces(self, controls, state):
         pass
 
 
@@ -64,7 +59,6 @@ class _Controller:
 def _orch(sensors=(), **kw):
     return Orchestrator(
         clock=_Clock(),
-        environment=_Env(),
         physics=_Physics(),
         actuator=_Actuator(),
         sensors=list(sensors),
@@ -152,7 +146,7 @@ class _DyingSensor:
 
     host_rate = True
 
-    def sample(self, state, env, t, meas):
+    def sample(self, state, t, meas):
         raise KitPeerError("the Kit render peer died while this run waited for a frame")
 
 

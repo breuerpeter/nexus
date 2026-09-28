@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from .schema import Controls, EnvSample, Measurement, Setpoint, SimTime
+from .schema import Controls, Measurement, Setpoint, SimTime
 
 if TYPE_CHECKING:
     import newton
@@ -26,14 +26,10 @@ class Clock(Protocol):
     def throttle(self) -> None: ...
 
 
-class Environment(Protocol):
-    def sample(self, pos, t: SimTime) -> EnvSample: ...
-
-
 class Physics(Protocol):
     def reset(self) -> newton.State: ...
     def clear_forces(self, state: newton.State) -> None: ...
-    def step(self, state: newton.State, env: EnvSample, dt: float) -> newton.State: ...
+    def step(self, state: newton.State, dt: float) -> newton.State: ...
 
 
 @runtime_checkable
@@ -48,7 +44,7 @@ class Actuator(Protocol):
     requires_articulated: bool
     capturable: bool
 
-    def forces(self, controls: Controls, state: newton.State, env: EnvSample) -> None:
+    def forces(self, controls: Controls, state: newton.State) -> None:
         """Write the per-body Wrench into the shared ``state.body_f`` buffer."""
 
 
@@ -58,7 +54,7 @@ class Sensor(Protocol):
     #   host_rate = True:   an RTX renderable, camera or lidar: host-bound + low-rate; sampled at the
     #                         host seam of every loop, self-decimating to its own rate. Never vetoes the
     #                         captured strategy; excluded from the capture gate + the graph.
-    def sample(self, state: newton.State, env: EnvSample, t: SimTime, out: Measurement) -> None:
+    def sample(self, state: newton.State, t: SimTime, out: Measurement) -> None:
         """Fill this sensor's fields into the shared per-tick Measurement (FRD).
 
         Reads body state from the live ``newton.State``, the shared contract. The orchestrator
@@ -97,7 +93,7 @@ class Controller(Protocol):
 
 
 class Renderer(Protocol):
-    def render(self, state: newton.State, env: EnvSample, t: SimTime) -> None: ...
+    def render(self, state: newton.State, t: SimTime) -> None: ...
 
 
 class Recorder(Protocol):

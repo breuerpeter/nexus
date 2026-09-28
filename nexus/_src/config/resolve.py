@@ -132,7 +132,6 @@ def resolve(
         control=launch.control,
         runtime=launch.runtime,
         sensors=launch.sensors,
-        environment=launch.environment,
     )
     return ResolvedLaunch(
         tested_config=tested,

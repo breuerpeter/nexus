@@ -199,7 +199,7 @@ class WarpObservationSensor:
         )
         return out_obs
 
-    def sample(self, state, env, t, out) -> None:
+    def sample(self, state, t, out) -> None:
         """``Sensor`` protocol: write the 12-D obs, a **Warp array**, into ``out.observation``, so an
         in-process controller's ``exchange`` consumes it on-device and the loop stays capturable /
         tape-able. Reuses a persistent buffer with a static address for capture.

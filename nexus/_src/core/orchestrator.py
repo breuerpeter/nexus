@@ -48,7 +48,6 @@ if TYPE_CHECKING:
         Actuator,
         Clock,
         Controller,
-        Environment,
         Physics,
         Renderer,
         Sensor,
@@ -86,7 +85,6 @@ class Orchestrator:
         self,
         *,
         clock: Clock,
-        environment: Environment,
         physics: Physics,
         actuator: Actuator,
         sensors: Iterable[Sensor],
@@ -106,19 +104,16 @@ class Orchestrator:
             clock: Simulation clock. ``advance()`` advances and returns the sim
                 time ``t``; ``dt`` is the control timestep; ``throttle()`` paces the
                 loop to wall-time, a no-op unless real-time throttling is on.
-            environment: Environment model. ``sample(state, t)`` returns the per-tick
-                ``env`` context, for example wind/gravity/air density, passed to the
-                actuator, physics, and sensors.
             physics: Physics component. ``reset()`` builds and settles the vehicle at
                 the North East Down (NED) origin and returns the initial state; ``clear_forces(state)``
-                zeroes the shared ``body_f`` and ``step(state, env, dt)`` integrates:
+                zeroes the shared ``body_f`` and ``step(state, dt)`` integrates:
                 collide + solver step + double-buffer. Can expose ``capturable``.
-            actuator: The actuator. ``forces(controls, state, env)`` writes the
+            actuator: The actuator. ``forces(controls, state)`` writes the
                 shared body forces, eager; ``write_controls`` / ``forces_wp(state)``
                 are the host-boundary captured seam. Can expose ``capturable``.
             sensors: Iterable of sensors producing the Forward Right Down (FRD) ``Measurement``. Each
-                exposes ``sample(state, env, t, meas)``, eager, or
-                ``sample_wp(state, env, t)`` + ``read(meas)``, captured. Stored as a
+                exposes ``sample(state, t, meas)``, eager, or
+                ``sample_wp(state, t)`` + ``read(meas)``, captured. Stored as a
                 list; each can expose ``capturable``.
             controller: Control boundary. ``connect()`` binds and starts the peer, and the
                 preroll waits for it; ``exchange(meas, t, timeout)`` returns controls or ``None``;
@@ -151,7 +146,6 @@ class Orchestrator:
                 ``>1`` lets a policy control at a coarse rate over finer integration.
         """
         self.clock = clock
-        self.environment = environment
         self.physics = physics
         self.actuator = actuator
         self.sensors = list(sensors)
@@ -322,19 +316,19 @@ class Orchestrator:
     # -- pre-roll, init/handshake: settle is in physics.reset; here the loop samples the
     #    settled state and exchanges until PX4 returns its first actuators, so PX4
     #    establishes lockstep at the settled NED origin, architecture.md §3. --
-    def _sample(self, state, env, t) -> Measurement:
+    def _sample(self, state, t) -> Measurement:
         meas = Measurement()
         for s in self._graph_sensors:
-            s.sample(state, env, t, meas)  # sensors read the live newton.State directly
+            s.sample(state, t, meas)  # sensors read the live newton.State directly
         return meas
 
-    def _sample_host(self, state, env, t, meas) -> None:
+    def _sample_host(self, state, t, meas) -> None:
         """Host-rate sensors, RTX camera/lidar with ``host_rate = True``, sampled at every loop's host
         seam. Each self-decimates to its own rate, so calling per tick is cheap; their work, the
         exchange with the Kit peer, is host-bound and must never enter the captured graph.
         """
         for s in self._host_sensors:
-            s.sample(state, env, t, meas)
+            s.sample(state, t, meas)
 
     def _preroll(self, state) -> None:
         host = getattr(self.controller, "host_boundary", False)
@@ -345,8 +339,7 @@ class Orchestrator:
             # Hold the sim clock until the peer has dialed in: time spent waiting would start the peer's
             # clock late, and PX4 times its boot checks from its first stamp.
             t = self.clock.advance() if getattr(self.controller, "attached", True) else self.clock.now()
-            env = self.environment.sample(None, t)
-            meas = self._sample(state, env, t)
+            meas = self._sample(state, t)
             controls = self.controller.exchange(meas, t, timeout=0.05)
             if controls is not None:
                 if host:
@@ -376,8 +369,7 @@ class Orchestrator:
                     t_warm, steps_warm = time.monotonic(), steps
                 t = self.clock.advance()
                 self._begin_log(t)  # set the timeline before exchange; the MPC controller logs its horizon there
-                env = self.environment.sample(None, t)
-                meas = self._sample(state, env, t)  # IMU/GPS/baro/mag -> FRD Measurement
+                meas = self._sample(state, t)  # IMU/GPS/baro/mag -> FRD Measurement
                 prof.mark("sensors.sample")  # per-sensor kernels + D2H reads -> Measurement
 
                 controls = self.controller.exchange(meas, t, timeout=self.exchange_timeout)
@@ -389,12 +381,12 @@ class Orchestrator:
                 sub_dt = dt / self.physics_substeps
                 for _ in range(self.physics_substeps):
                     self.physics.clear_forces(state)  # physics owns the body_f clear
-                    self.actuator.forces(controls, state, env)  # writes shared body_f, + the actuator joints
-                    state = self.physics.step(state, env, sub_dt)  # collide + solver.step + double-buffer
+                    self.actuator.forces(controls, state)  # writes shared body_f, + the actuator joints
+                    state = self.physics.step(state, sub_dt)  # collide + solver.step + double-buffer
                 prof.mark("actuate+step")  # actuator kernels + solver step
 
                 self._record_tick()  # observation tap, post-step groundtruth; no-op if not observing
-                self._sample_host(state, env, t, meas)  # host-rate sensors, RTX cameras, self-decimated
+                self._sample_host(state, t, meas)  # host-rate sensors, RTX cameras, self-decimated
                 self._log_tick(t)  # host-seam log fan-out: scene+trail, horizon, …; no-op if logging off
                 if self.on_tick is not None:
                     self.on_tick(state, t, steps)  # post-step observer, for example waypoint advance
@@ -458,7 +450,6 @@ class Orchestrator:
         steps = self.max_steps if steps is None else steps
         dt = self.clock.dt
         t = self.clock.advance()
-        env = self.environment.sample(None, t)
         meas = Measurement()
         # Warm pass, outside the graph: every device buffer must exist before capture.
         # Memory allocated during CUDA stream capture is graph-owned; referencing it from outside
@@ -467,16 +458,16 @@ class Orchestrator:
         # graph's and the flight froze at the settle pose. Sampling + exchange only write their
         # persistent buffers, state-free, so the captured semantics stay the same.
         for s in self._graph_sensors:
-            s.sample(state, env, t, meas)
+            s.sample(state, t, meas)
         self.controller.exchange(meas, t, None)
         wp.synchronize()
         with wp.ScopedCapture() as cap:
             for s in self._graph_sensors:
-                s.sample(state, env, t, meas)  # device-native obs -> meas.observation, a Warp array
+                s.sample(state, t, meas)  # device-native obs -> meas.observation, a Warp array
             controls = self.controller.exchange(meas, t, None)  # in-process: Warp Controls, no host wait
             self.physics.clear_forces(state)
-            self.actuator.forces(controls, state, env)
-            self.physics.step(state, env, dt)
+            self.actuator.forces(controls, state)
+            self.physics.step(state, dt)
             self._record_tick()  # capturable observation tap; joins the graph, device-only; no-op if not observing
         graph = cap.graph
         count = 0
@@ -497,7 +488,7 @@ class Orchestrator:
                 prof.mark("replay.launch")
                 t = self.clock.advance()
                 self._begin_log(t)  # set the timeline for this tick's overlays
-                self._sample_host(state, env, t, meas)  # host-rate sensors, RTX cameras, self-decimated
+                self._sample_host(state, t, meas)  # host-rate sensors, RTX cameras, self-decimated
                 prof.mark("sensors.host")
                 self._log_tick(t)  # host-seam log fan-out, outside the graph; no-op if logging off
                 if self.on_tick is not None:
@@ -542,9 +533,8 @@ class Orchestrator:
         meas = Measurement()
         # Sense the settled state once, which seeds the IMU finite-diff so capture runs first=0.
         t = self.clock.advance()
-        env = self.environment.sample(None, t)
         for s in self._graph_sensors:
-            s.sample_wp(state, env, t)
+            s.sample_wp(state, t)
         # Seed one observation row: the settled pre-flight state, which is a datum in its own right,
         # the pose every climb measures against. The eager loop seeds one too, so both strategies
         # record the same pre-flight row. It also warms the record kernels' module load, so that
@@ -559,9 +549,9 @@ class Orchestrator:
         with wp.ScopedCapture() as cap:
             self.physics.clear_forces(state)
             self.actuator.forces_wp(state)
-            self.physics.step(state, env, dt)
+            self.physics.step(state, dt)
             for s in self._graph_sensors:
-                s.sample_wp(state, env, t)
+                s.sample_wp(state, t)
             self._record_tick()  # capturable observation tap, post-step groundtruth; no-op if not observing
         graph = cap.graph
 
@@ -578,7 +568,7 @@ class Orchestrator:
             # Hold the sim clock until the peer has dialed in, as the eager preroll does.
             t = self.clock.advance() if getattr(self.controller, "attached", True) else self.clock.now()
             for s in self._graph_sensors:
-                s.sample_wp(state, env, t)  # re-sample, state static, noise dithers -> live feed
+                s.sample_wp(state, t)  # re-sample, state static, noise dithers -> live feed
                 s.read(meas)
             controls = self.controller.exchange(meas, t, timeout=0.05)
             if controls is not None:
@@ -616,7 +606,7 @@ class Orchestrator:
                     raise ConnectionError("controller disconnected (no actuator controls received)")
                 self.actuator.write_controls(controls)  # H2D for the next replay, host seam
                 prof.mark("write")
-                self._sample_host(state, env, t, meas)  # host-rate sensors, RTX cameras, self-decimated
+                self._sample_host(state, t, meas)  # host-rate sensors, RTX cameras, self-decimated
                 prof.mark("sensors.host")
                 self._log_tick(t)  # host-seam log fan-out: scene+trail, …; no-op if logging off
                 if self.on_tick is not None:
