@@ -75,7 +75,7 @@ on:
         type: string
         default: ""
       cache-files:
-        description: "The files whose hash keys that entry: path patterns separated by commas and no spaces, since hashFiles trims nothing; a change to any starts a new entry"
+        description: "The tracked files whose content keys that entry: git pathspecs, one per line; a change to any starts a new entry"
         type: string
         default: ""
       cache-drop:
@@ -255,20 +255,32 @@ jobs:
           key: ${{ steps.warp-key.outputs.versions }}-${{ inputs.cache-scope }}
           restore-keys: ${{ steps.warp-key.outputs.versions }}-
       # The caller's one cache entry: this runner knows no component, so the caller names the paths,
-      # the entry's name and the files that shape it, and the key hashes those files here, since a
-      # reusable workflow's `with` cannot call hashFiles. The key ends in the caller's cache-scope as
-      # the kernel cache's does, since a key is written once and the first saver wins; a miss restores
-      # the newest entry under the same name and hash, then under the name alone, so a bump builds
-      # incrementally over the last tree and a new cell boots on another cell's shaders. Actions
-      # cannot loop steps, so a caller with two things to cache lists both paths under one entry.
+      # the entry's name and the tracked files that shape it, and the key hashes those files here: a
+      # reusable workflow's `with` cannot call hashFiles, and hashFiles takes one pattern per
+      # argument, never a list in one string. The key ends in the caller's cache-scope as the kernel
+      # cache's does, since a key is written once and the first saver wins; a miss restores the newest
+      # entry under the same name and hash, then under the name alone, so a bump builds incrementally
+      # over the last tree and a new cell boots on another cell's shaders. Actions cannot loop
+      # steps, so a caller with two things to cache lists both paths under one entry.
+      - name: Compute the cache entry's key
+        if: inputs.cache-path != ''
+        id: cache-key
+        env:
+          FILES: ${{ inputs.cache-files }}
+        # set -f: a pathspec's * is git's to expand, across folders, not the shell's.
+        run: |
+          set -f
+          # shellcheck disable=SC2086 # one pathspec per line, split on purpose
+          hash=$(git ls-files -z -- $FILES | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-16)
+          echo "hash=$hash" >> "$GITHUB_OUTPUT"
       - name: Restore the caller's cache entry
         if: inputs.cache-path != ''
         uses: actions/cache@v4
         with:
           path: ${{ inputs.cache-path }}
-          key: ${{ inputs.cache-name }}-${{ hashFiles(inputs.cache-files) }}-${{ inputs.cache-scope }}
+          key: ${{ inputs.cache-name }}-${{ steps.cache-key.outputs.hash }}-${{ inputs.cache-scope }}
           restore-keys: |
-            ${{ inputs.cache-name }}-${{ hashFiles(inputs.cache-files) }}-
+            ${{ inputs.cache-name }}-${{ steps.cache-key.outputs.hash }}-
             ${{ inputs.cache-name }}-
       - name: Fail early when a main-push run has no instance profile
         # Only push, schedule and dispatch attach one, and only they upload; a PR run passes an empty

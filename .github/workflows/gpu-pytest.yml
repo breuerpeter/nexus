@@ -43,7 +43,10 @@ jobs:
         ~/.cache/nexus/px4
         ~/.cache/nexus/ci/px4-sitl.tar
       cache-name: px4
-      cache-files: nexus/_src/vehicle/controllers/px4/px4.ref,nexus/_src/vehicle/controllers/px4/checkout.py,nexus/_src/vehicle/controllers/px4/px4-sitl/Dockerfile
+      cache-files: |
+        nexus/_src/vehicle/controllers/px4/px4.ref
+        nexus/_src/vehicle/controllers/px4/checkout.py
+        nexus/_src/vehicle/controllers/px4/px4-sitl/Dockerfile
       cache-scope: pytest
       command: >-
         bash scripts/ci/px4_image_cache.sh load &&

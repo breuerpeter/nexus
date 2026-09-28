@@ -72,7 +72,11 @@ jobs:
         ~/.cache/nexus/ci/px4-sitl.tar
         ${{ matrix.cell.renders && '~/.cache/nexus/kit' || '' }}
       cache-name: ${{ matrix.cell.renders && 'px4-kit' || 'px4' }}
-      cache-files: ${{ format('nexus/_src/vehicle/controllers/px4/px4.ref,nexus/_src/vehicle/controllers/px4/checkout.py,nexus/_src/vehicle/controllers/px4/px4-sitl/Dockerfile{0}', matrix.cell.renders && ',nexus/_src/rendering/kit-peer/**' || '') }}
+      cache-files: |
+        nexus/_src/vehicle/controllers/px4/px4.ref
+        nexus/_src/vehicle/controllers/px4/checkout.py
+        nexus/_src/vehicle/controllers/px4/px4-sitl/Dockerfile
+        ${{ matrix.cell.renders && 'nexus/_src/rendering/kit-peer/*' || '' }}
       cache-drop: ${{ matrix.cell.renders && '~/.cache/nexus/kit/home/.cache/ov/cesium-request-cache.sqlite*' || '' }}
       cache-scope: ${{ matrix.cell.tag }}
       command: >-
