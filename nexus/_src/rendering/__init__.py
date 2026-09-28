@@ -3,9 +3,9 @@
 A vehicle's Universal Scene Description (USD) file decides: a camera or lidar prim under its root is
 an RTX sensor, and a run with one starts the peer.
 
-``kit-peer/`` holds the program that container runs and the Dockerfile of its image: package data
-that no host module imports, so no host tier ever loads Kit. :mod:`.peer` builds the image and runs
-the container; :mod:`.link` is the renderer seam the loop drives and the link the RTX sensors ride.
+``kit-peer/`` holds the program that container runs in NVIDIA's image: package data that no host
+module imports, so no host tier ever loads Kit. :mod:`.peer` pulls the image and runs the
+container; :mod:`.link` is the renderer seam the loop drives and the link the RTX sensors ride.
 :func:`rtx_renderer` starts the peer for a run whose vehicle authors RTX sensor prims.
 """
 
@@ -148,7 +148,8 @@ def rtx_renderer(vehicle_builder, cfg: dict, *, cache_dir=None, stream: bool = F
         RTX sensor prims.
 
     Raises:
-        KitPeerError: The image build or the container start failed; the message names the cause.
+        KitPeerError: The Cesium fetch, the image pull or the container start failed; the message
+            names the cause.
         ValueError: ``stream`` on a vehicle that authors no camera.
     """
     from nexus._src.assets.resolver import default_cache

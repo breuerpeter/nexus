@@ -20,7 +20,7 @@ per-command `-v`.
 ## 1. Convert
 
 Both converters need a booted Kit app, which `nexus script` provides: it runs them in the Kit image
-with Kit booted. On a machine with no image it builds the image first, see
+with Kit booted. On a machine with no image it pulls the image first, see
 [RTX cameras and lidar](running.md#rtx-cameras-and-lidar). Run them from the checkout root. The
 container mounts it at the same path, and the converters import `scripts.assets.scene_root` from
 there. Progress traces on **stderr**. Kit swallows stdout.

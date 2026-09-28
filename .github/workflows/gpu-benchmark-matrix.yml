@@ -2,7 +2,7 @@ name: gpu-benchmark-matrix
 
 # The RTF benchmark matrix (scripts/ci/benchmark_matrix.py): ONE PX4 4-waypoint mission across
 # {vehicle × scene × device} on the pinned A10G runner — the physics table plus the RTX table, whose
-# camera renders in the Kit peer the cell starts; an RTX cell builds the Kit image on its box, as a
+# camera renders in the Kit peer the cell starts; an RTX cell pulls NVIDIA's Isaac Sim image on its box, as a
 # user's first RTX run does, and restores the peer's caches from the last run, so Kit boots warm.
 # Cesium cells need the CESIUM_ION_TOKEN secret and are skipped without it. One box per cell: a
 # measured flight cannot share a GPU, the RTF being the whole deliverable, nor PX4's fixed ports,
