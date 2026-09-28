@@ -39,11 +39,6 @@ class _Clock:
         pass
 
 
-class _Env:
-    def sample(self, pos, t):
-        return None
-
-
 class _Physics:
     """Device physics: ``step`` bumps a device counter, so a test reads how many physics steps ran."""
 
@@ -59,21 +54,21 @@ class _Physics:
     def clear_forces(self, state):
         pass
 
-    def step(self, state, env, dt):
+    def step(self, state, dt):
         wp.launch(_bump, dim=1, inputs=[self.steps])
         return state
 
     def stages(self):
         return [
             Stage("clear", "device", lambda tick: self.clear_forces(tick.state)),
-            Stage("step", "device", lambda tick: self.step(tick.state, tick.env, tick.dt)),
+            Stage("step", "device", lambda tick: self.step(tick.state, tick.dt)),
         ]
 
 
 class _Actuator:
     capturable = True
 
-    def forces(self, controls, state, env):
+    def forces(self, controls, state):
         pass
 
     def forces_wp(self, state):
@@ -83,7 +78,7 @@ class _Actuator:
         pass
 
     def stages(self):
-        return [Stage("forces", "device", lambda tick: self.forces(tick.controls, tick.state, tick.env))]
+        return [Stage("forces", "device", lambda tick: self.forces(tick.controls, tick.state))]
 
 
 class _GraphSensor:
@@ -91,10 +86,10 @@ class _GraphSensor:
 
     capturable = True
 
-    def sample(self, state, env, t, meas):
+    def sample(self, state, t, meas):
         pass
 
-    def sample_wp(self, state, env, t):
+    def sample_wp(self, state, t):
         pass
 
     def read(self, meas):
@@ -114,11 +109,11 @@ class _HostSensor:
     def __init__(self):
         self.captured = []
 
-    def sample(self, state, env, t, meas):
+    def sample(self, state, t, meas):
         self.captured.append(wp.get_device().is_capturing)
 
     def stages(self):
-        return [Stage("sample", "host", lambda tick: self.sample(tick.state, tick.env, tick.t, tick.meas))]
+        return [Stage("sample", "host", lambda tick: self.sample(tick.state, tick.t, tick.meas))]
 
 
 class _PeerController:
@@ -230,7 +225,6 @@ class _Logger:
 def _orch(controller, *, sensors=(), physics=None, **kw):
     return Orchestrator(
         clock=_Clock(),
-        environment=_Env(),
         physics=physics or _Physics(),
         actuator=_Actuator(),
         sensors=[_GraphSensor(), *sensors],

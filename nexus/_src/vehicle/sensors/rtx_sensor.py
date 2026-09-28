@@ -102,9 +102,9 @@ class RtxMountedSensor:
 
     def stages(self) -> list[Stage]:
         """One host stage, named after the sensor, over :meth:`sample`."""
-        return [Stage(self.name, "host", lambda tick: self.sample(tick.state, tick.env, tick.t, tick.meas))]
+        return [Stage(self.name, "host", lambda tick: self.sample(tick.state, tick.t, tick.meas))]
 
-    def sample(self, state, env, t, out) -> None:
+    def sample(self, state, t, out) -> None:
         """Host-seam sample: the link sends the due sensors' frame and hands back the one before.
 
         Decimation is on sim time, since ``rate_hz`` is the sensor's physical rate: a 30 Hz camera

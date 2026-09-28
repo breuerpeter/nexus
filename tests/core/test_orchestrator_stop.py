@@ -7,6 +7,8 @@ from nexus._src.core.orchestrator import Orchestrator
 from nexus._src.core.schema import Controls, SimTime
 from nexus._src.rendering.peer import KitPeerError
 
+pytestmark = pytest.mark.usefixtures("warp_cpu")  # Python stand-ins run stage by stage, never as a graph
+
 
 class _Clock:
     dt = 0.004
@@ -25,11 +27,6 @@ class _Clock:
         pass
 
 
-class _Env:
-    def sample(self, pos, t):
-        return None
-
-
 class _Physics:
     def reset(self):
         return {"q": 0}
@@ -37,22 +34,22 @@ class _Physics:
     def clear_forces(self, state):
         pass
 
-    def step(self, state, env, dt):
+    def step(self, state, dt):
         return state
 
     def stages(self):
         return [
             Stage("clear", "device", lambda tick: self.clear_forces(tick.state)),
-            Stage("step", "device", lambda tick: self.step(tick.state, tick.env, tick.dt)),
+            Stage("step", "device", lambda tick: self.step(tick.state, tick.dt)),
         ]
 
 
 class _Actuator:
-    def forces(self, controls, state, env):
+    def forces(self, controls, state):
         pass
 
     def stages(self):
-        return [Stage("forces", "device", lambda tick: self.forces(tick.controls, tick.state, tick.env))]
+        return [Stage("forces", "device", lambda tick: self.forces(tick.controls, tick.state))]
 
 
 class _Controller:
@@ -83,7 +80,6 @@ class _Controller:
 def _orch(sensors=(), **kw):
     return Orchestrator(
         clock=_Clock(),
-        environment=_Env(),
         physics=_Physics(),
         actuator=_Actuator(),
         sensors=list(sensors),
@@ -171,11 +167,11 @@ class _DyingSensor:
 
     host_rate = True
 
-    def sample(self, state, env, t, meas):
+    def sample(self, state, t, meas):
         raise KitPeerError("the Kit render peer died while this run waited for a frame")
 
     def stages(self):
-        return [Stage("sample", "host", lambda tick: self.sample(tick.state, tick.env, tick.t, tick.meas))]
+        return [Stage("sample", "host", lambda tick: self.sample(tick.state, tick.t, tick.meas))]
 
 
 def test_a_kit_peer_that_dies_mid_flight_ends_the_run_with_its_error():

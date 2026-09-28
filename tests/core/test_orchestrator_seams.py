@@ -1,4 +1,6 @@
-"""The sim clock during the preroll, while a controller's peer dials in."""
+"""The seams the loop drives take no ambient sample: physics, the actuator and each sensor read the
+state and the clock, and nothing else. Warp-free stubs, as in test_orchestrator_stop.py.
+"""
 
 import pytest
 
@@ -27,6 +29,10 @@ class _Clock:
 
 
 class _Physics:
+    """Steps a one-number state: the actuator adds one, the step multiplies by ten, so the value the
+    sensor reads on the next tick says which of the two ran, and in which order.
+    """
+
     def reset(self):
         return {"q": 0}
 
@@ -34,6 +40,7 @@ class _Physics:
         pass
 
     def step(self, state, dt):
+        state["q"] *= 10
         return state
 
     def stages(self):
@@ -45,37 +52,35 @@ class _Physics:
 
 class _Actuator:
     def forces(self, controls, state):
-        pass
+        state["q"] += 1
 
     def stages(self):
         return [Stage("forces", "device", lambda tick: self.forces(tick.controls, tick.state))]
 
 
-class _LatePeerController:
-    """A controller with a peer that dials in on the preroll's hundredth try and answers the first
-    message it gets. It keeps the stamp of every message that reached the peer. Its work is the PX4
-    shape, a ``read`` and an ``exchange`` host stage.
+class _Sensor:
+    """Copies the state into the measurement, so what the controller receives shows the sensor ran."""
+
+    def sample(self, state, t, out):
+        out.temperature = state["q"]
+
+    def stages(self):
+        return [Stage("sample", "device", lambda tick: self.sample(tick.state, tick.t, tick.meas))]
+
+
+class _Controller:
+    """Answers the seed pass at once and keeps the last measurement it received: the read and
+    exchange host stages over ``exchange``.
     """
 
-    host_boundary = True
-
     def __init__(self):
-        self._tries = 0
-        self.stamps = []
-
-    @property
-    def attached(self):
-        return self._tries >= 100
+        self.meas = None
 
     def connect(self):
         pass
 
     def exchange(self, meas, t, timeout):
-        reached = self.attached  # a message sent before the peer dials in reaches nobody
-        self._tries += 1
-        if not reached:
-            return None
-        self.stamps.append(t.sim_time)
+        self.meas = meas
         return Controls(command=[0.0, 0.0, 0.0, 0.0])
 
     def close(self):
@@ -89,17 +94,22 @@ class _LatePeerController:
         return [Stage("read", "host", lambda tick: None), Stage("exchange", "host", exchange)]
 
 
-def test_a_peer_that_dials_in_late_gets_its_first_stamp_near_zero():
-    """A controller with a host stage and a peer holds the sim clock until the peer attaches, and its
-    first stamp lands near zero: the first message the peer gets carries a stamp under 10 ms.
+def test_the_loop_runs_a_tick_on_seams_that_take_no_env():
+    """The loop runs a tick on seams that take no `env`: `Physics.step(state, dt)`,
+    `Actuator.forces(controls, state)` and `Sensor.sample(state, t, out)`. A tick's exchange follows
+    its step, so the second tick's measurement carries the state after two ticks.
     """
-    controller = _LatePeerController()
+    controller = _Controller()
     orch = Orchestrator(
         clock=_Clock(),
         physics=_Physics(),
         actuator=_Actuator(),
-        sensors=[],
+        sensors=[_Sensor()],
         controller=controller,
+        max_steps=2,
     )
-    orch.step()
-    assert controller.stamps[0] < 0.010
+
+    orch.run()
+
+    # Sampled 0 at the seed pass; tick one actuates to 1 and steps to 10; tick two to 11 and 110.
+    assert controller.meas.temperature == 110

@@ -14,7 +14,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
-from .schema import EnvSample, Measurement, Setpoint, SimTime
+from .schema import Measurement, Setpoint, SimTime
 
 if TYPE_CHECKING:
     import newton
@@ -31,7 +31,6 @@ class Tick:
     """
 
     state: Any
-    env: EnvSample
     t: SimTime
     dt: float
     meas: Measurement
@@ -65,14 +64,10 @@ class Clock(Protocol):
     def throttle(self) -> None: ...
 
 
-class Environment(Protocol):
-    def sample(self, pos, t: SimTime) -> EnvSample: ...
-
-
 class Physics(Protocol):
     def reset(self) -> newton.State: ...
     def clear_forces(self, state: newton.State) -> None: ...
-    def step(self, state: newton.State, env: EnvSample, dt: float) -> newton.State: ...
+    def step(self, state: newton.State, dt: float) -> newton.State: ...
     def stages(self) -> list[Stage]:
         """The ``clear`` and ``step`` stages; the loop runs ``clear``, the actuator, ``step`` once per
         physics substep.
@@ -139,7 +134,7 @@ class Controller(Protocol):
 
 
 class Renderer(Protocol):
-    def render(self, state: newton.State, env: EnvSample, t: SimTime) -> None: ...
+    def render(self, state: newton.State, t: SimTime) -> None: ...
 
 
 class Recorder(Protocol):

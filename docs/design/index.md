@@ -6,7 +6,7 @@ description: "What nexus is, the modular-component model behind it, and the foun
 
 nexus is a **modular simulation core** for the Freefly PX4-based drones, Astro and Alta X,
 built on NVIDIA Newton physics. Every functional concern, whether physics, sensors, actuators,
-controller, scene, environment, or renderer, is a component behind a typed interface. You can swap
+controller, scene, or renderer, is a component behind a typed interface. You can swap
 each one independently and select it through declarative configuration. It starts from a minimal
 working slice, Newton dynamics ↔ PX4 Software In The Loop (SITL) with Rerun observability, and
 grows by **adding components, never by rewriting**.

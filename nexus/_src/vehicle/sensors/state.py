@@ -20,20 +20,20 @@ class StateSensor:
 
     _state = None
 
-    def sample(self, state, env, t, out) -> None:
+    def sample(self, state, t, out) -> None:
         out.state = state
 
     # A device stage with no device work: a pure reference passthrough. The graph replays update the
     # state object's buffers in place, so the reference stashed at capture time *is* the live state
     # at every read.
-    def sample_wp(self, state, env, t) -> None:
+    def sample_wp(self, state, t) -> None:
         self._state = state
 
     def read(self, out) -> None:
         out.state = self._state
 
     def stages(self) -> list[Stage]:
-        return [Stage("state", "device", lambda tick: self.sample_wp(tick.state, tick.env, tick.t))]
+        return [Stage("state", "device", lambda tick: self.sample_wp(tick.state, tick.t))]
 
 
 __all__ = ["StateSensor"]

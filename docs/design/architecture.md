@@ -14,8 +14,7 @@ a replaceable component behind a typed interface. A central
 Each tick runs the same fixed sequence, and the order is what makes runs reproducible:
 
 ```
-t   = clock.advance()
-env = environment.sample(pos, t)          # authoritative shared input
+t = clock.advance()
 [sensor stages]                           # IMU, GPS, baro, mag into device buffers; a camera's host stage
 [controller stages]                       # PX4: read + exchange host stages; PID: one device stage
 [clear → actuator → step] × substeps      # command buffer → per-body forces → Newton advances the dynamics
@@ -25,9 +24,10 @@ env = environment.sample(pos, t)          # authoritative shared input
 Every component states its stages, and the loop cuts the ring at the host stages, so each run of
 device stages replays as one CUDA graph. See [Execution](execution.md#stages-and-segments).
 
-The **environment is an authoritative shared input**. Physics consumes it for aero and relative
-airspeed, sensors for the magnetic field and pressure, and, in the RTX runtime, the renderer. A
-**camera is a sensor**: it produces an image measurement through the renderer, so vision
+The **site is resolved once at build**, not sampled per tick: the scene's geodetic origin gives the
+magnetic field, the air pressure and temperature, and gravity, and the sensors that read them take
+them as constructor arguments, the same way every other sensor parameter arrives. One gravity value
+reaches both the physics and the IMU. A **camera is a sensor**: it produces an image measurement through the renderer, so vision
 controllers simply read frames.
 
 nexus uses a fixed-order loop. It doesn't use a message bus in the style of ProjectAirSim or
@@ -48,7 +48,6 @@ persistent, in-place device buffers with static shapes, so the device region can
 | `newton.State` | pose, velocity, body rates, per-body forces: the live Newton state in `body_q`, `body_qd`, and `body_f` |
 | `Controls` | one normalized command per actuator, what the controller emits |
 | `Wrench` | a **per-body** spatial force over the whole articulation, the base body plus each actuator's body, realized as the shared `body_f` buffer, not a single body-level force and torque pair |
-| `EnvSample` | wind, air density, air pressure, air temperature, gravity, magnetic field, precipitation |
 | `Measurement` | per-sensor output such as Inertial Measurement Unit (IMU) and Global Positioning System (GPS) samples, plus a free-form ground-truth `observation` slot a policy reads |
 | `SimTime` | sim-time and step index |
 
@@ -60,7 +59,6 @@ fault-wrappable:
 | Interface | Responsibility |
 |---|---|
 | `Clock` | sim-time and step, with real-time scaling |
-| `Environment` | authoritative ambient fields, `sample(pos, t) → EnvSample` |
 | `Physics` | `reset` / `step` the Newton dynamics |
 | `Actuator` | one device stage, `forces_wp(cmd, state) → Wrench` from the controller's command buffer |
 | `Sensor` | a device stage into its own buffer plus `read(meas) → Measurement`, or a host stage where a camera sensor uses a renderer |
@@ -163,8 +161,8 @@ exactly what it simulated. Vehicle assets are content-addressed. The
 The framework ships as a single **`nexus`** package in a `uv` workspace. All source lives under
 `nexus/_src/<area>/` and the public API is re-exported from `nexus`. Never import from
 `_src`. Extras isolate the heavy optional dependencies, such as `policy` for Torch and `acados` for
-the Nonlinear Model Predictive Control (NMPC) example, rather than separate packages. The Kit render peer is no extra: its program and
-Dockerfile ship in the wheel as package data, and each machine builds the Kit image on its first
-RTX run. The RL trainer is a **separate
+the Nonlinear Model Predictive Control (NMPC) example, rather than separate packages. The Kit render peer is no extra. Its program
+ships in the wheel as package data and mounts into NVIDIA's Isaac Sim image, which each machine
+pulls on its first RTX run. The RL trainer is a **separate
 `uv` project**, `nexus-rl`, depending on the framework via an editable
 path, so the prerelease Isaac Lab stack stays out of the core environment.

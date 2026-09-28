@@ -61,11 +61,11 @@ from nexus._src.recording.state import (
 from nexus._src.vehicle.actuators.layout import RPM_PER_RADS, find_rotor_joints
 
 from ..scene.ingest import add_scene  # ingestion only: the handlers are the renderer's side
+from ..scene.site import GRAVITY
 
 STABILIZE_VEL_THRESHOLD = 0.01  # m/s
 STABILIZE_MIN_STEPS = 10
 STABILIZE_MAX_STEPS = 10000
-GRAVITY = 9.81
 
 
 def make_solver(name: str, model, *, njmax: int = 224):
@@ -118,6 +118,9 @@ class NewtonPhysics:
             builder.add_ground_plane()
             add_scene(builder, cfg)  # scene USD -> builder, exactly as for the vehicle USD
             vehicle_builder.build(builder)
+            # The site's gravity, the one value the IMU reports too. add_usd resets the builder's gravity
+            # from any PhysicsScene the USD holds, authored or not, so it is set after the last add.
+            builder.gravity = -GRAVITY
             # The vehicle USD authors the motors as NewtonActuator prims on the actuator joints, and add_usd
             # parses them onto model.actuators; the pairing guard refuses a model with none. A collapsed
             # single body has no joints, so no motors.
@@ -241,7 +244,7 @@ class NewtonPhysics:
     def clear_forces(self, state) -> None:
         state.clear_forces()
 
-    def step(self, state, env, dt):
+    def step(self, state, dt):
         contacts = self.model.collide(state) if self.contacts_on else None
         self.solver.step(state, self.state1, self.control, contacts, dt)
         state.assign(self.state1)
@@ -251,7 +254,7 @@ class NewtonPhysics:
         """The ``clear`` and ``step`` device stages; the loop runs the actuator between them."""
         return [
             Stage("clear", "device", lambda tick: self.clear_forces(tick.state)),
-            Stage("step", "device", lambda tick: self.step(tick.state, tick.env, tick.dt)),
+            Stage("step", "device", lambda tick: self.step(tick.state, tick.dt)),
         ]
 
     def _spawn_single_body(self) -> None:

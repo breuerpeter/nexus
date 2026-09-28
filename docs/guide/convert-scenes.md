@@ -19,19 +19,19 @@ per-command `-v`.
 
 ## 1. Convert
 
-Both converters need a booted Kit app, which `nexus script` provides: it runs them in the Kit image
-with Kit booted. On a machine with no image it builds the image first, see
-[RTX cameras and lidar](running.md#rtx-cameras-and-lidar). Run them from the checkout root. The
-container mounts it at the same path, and the converters import `scripts.assets.scene_root` from
-there. Progress traces on **stderr**. Kit swallows stdout.
+Both converters need a booted Kit app. Run them from the host with plain Python: each starts the
+Kit image with its own file and arguments, boots Kit there, and does its work. On a machine with no
+image it pulls the image first, see [RTX cameras and lidar](running.md#rtx-cameras-and-lidar). Run
+them from any folder: the container mounts the working folder and `NEXUS_DATA` at their host
+paths. Progress traces on **stderr**. Kit swallows stdout.
 
 ```bash
 # photogrammetry OBJ (a dir with .obj + .mtl + textures) -> one .usdz
-uv run nexus script scripts/assets/obj_to_usd.py \
+uv run python scripts/assets/obj_to_usd.py \
     "$NEXUS_DATA/scans/obj/My Site" --out "$NEXUS_DATA/scans/my_site_obj.usdz"
 
 # 3D-Tiles Gaussian splat (dir with tileset.json) -> one .usdz
-uv run nexus script scripts/assets/site_scan_splat.py \
+uv run python scripts/assets/site_scan_splat.py \
     "$NEXUS_DATA/scans/gsp/My Site" --out "$NEXUS_DATA/scans/my_site_splat.usdz" \
     --max-geometric-error 2.5
 ```

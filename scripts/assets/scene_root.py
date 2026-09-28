@@ -56,7 +56,7 @@ def finalize_scene_layer(usd_path: str, *, root_name: str = "World", sky: bool =
     moves under a fresh ``/<root_name>`` Xform via a namespace edit. Sets ``defaultPrim`` to the
     root and authors the sky beneath it. Returns the root prim path.
     """
-    from pxr import Sdf, Usd, UsdGeom
+    from pxr import Usd, UsdGeom
 
     stage = Usd.Stage.Open(str(usd_path))
     if stage is None:
@@ -70,18 +70,19 @@ def finalize_scene_layer(usd_path: str, *, root_name: str = "World", sky: bool =
     if clean_single_root:
         root_path = str(roots[0].GetPath())
     else:
-        # Re-root: move every existing root under a fresh, transform-free Xform via a namespace edit
-        # on the layer. Covers a typed root such as a splat's ParticleField, more than one root, and
-        # a root that authors xformOps: the asset converter bakes its up-axis correction on /World,
-        # and those ops must compose beneath the runtime's session start-translate, not fight it.
+        # Re-root: move every existing root under a fresh, transform-free Xform via a stage namespace
+        # edit. Covers a typed root such as a splat's ParticleField, more than one root, and a root
+        # that authors xformOps: the asset converter bakes its up-axis correction on /World, and
+        # those ops must compose beneath the runtime's session start-translate, not fight it. The
+        # stage editor, unlike a layer edit, also moves the material bindings and shader connections
+        # that point into the moved prims.
         taken = {str(p.GetName()) for p in roots}
         root_path = "/" + next(n for n in (root_name, "Scene", "SceneRoot") if n not in taken)
-        stage.DefinePrim(root_path, "Xform")
-        edit = Sdf.BatchNamespaceEdit()
+        new_root = stage.DefinePrim(root_path, "Xform")
+        editor = Usd.NamespaceEditor(stage)
         for p in roots:
-            edit.Add(Sdf.NamespaceEdit.Reparent(p.GetPath(), Sdf.Path(root_path), -1))
-        if not layer.Apply(edit):
-            raise RuntimeError(f"namespace re-root failed for {usd_path}")
+            if not (editor.ReparentPrim(p, new_root) and editor.ApplyEdits()):
+                raise RuntimeError(f"namespace re-root failed for {usd_path}")
 
     stage.SetDefaultPrim(stage.GetPrimAtPath(root_path))
     if sky:

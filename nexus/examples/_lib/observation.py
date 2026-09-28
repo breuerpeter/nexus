@@ -199,7 +199,7 @@ class WarpObservationSensor:
         )
         return out_obs
 
-    def sample(self, state, env, t, out) -> None:
+    def sample(self, state, t, out) -> None:
         """Write the 12-D obs, a **Warp array**, into ``out.observation``, so a device-native
         controller's stage consumes it on-device and the loop stays one graph / tape-able. Reuses a
         persistent buffer with a static address for capture.
@@ -211,7 +211,7 @@ class WarpObservationSensor:
 
     def stages(self) -> list[Stage]:
         """One device stage over :meth:`sample`."""
-        return [Stage("observation", "device", lambda tick: self.sample(tick.state, tick.env, tick.t, tick.meas))]
+        return [Stage("observation", "device", lambda tick: self.sample(tick.state, tick.t, tick.meas))]
 
 
 __all__ = [

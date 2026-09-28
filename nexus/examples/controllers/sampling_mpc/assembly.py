@@ -11,7 +11,7 @@ host seam; everything else captures, the captured-host-exchange strategy.
 from __future__ import annotations
 
 from nexus._src.build.assembly import resolve_device
-from nexus._src.core import Clock, ConstantEnvironment, Orchestrator, logger
+from nexus._src.core import Clock, Orchestrator, logger
 from nexus._src.physics import NewtonPhysics
 
 
@@ -102,7 +102,6 @@ def build_sampling_mpc_orchestrator(
     renderer, extra_sensors = renderer_factory(physics, builder, cfg) if renderer_factory else (None, [])
     return Orchestrator(
         clock=Clock(dt),
-        environment=ConstantEnvironment(),
         physics=physics,
         actuator=actuator,
         sensors=[StateSensor(), *extra_sensors],

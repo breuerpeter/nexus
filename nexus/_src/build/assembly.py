@@ -2,10 +2,10 @@
 
 Controller-agnostic by construction: the assembly wires the plant, ``NewtonPhysics`` from nexus's
 own ModelBuilder + solvers, the shipped ``ArticulatedRotors`` actuator, the sensor suite authored in
-Universal Scene Description (USD), the environment, and the Rerun sink around a **caller-supplied
-controller**. Which controller flies is a decision one layer up: the launch glue maps the config's
-``control.kind``, and the example controllers self-assemble beside their flight scripts in
-``nexus/examples/controllers/*/assembly.py``, reusing the helpers here,
+Universal Scene Description (USD) with the site's ambient values, and the Rerun sink around a
+**caller-supplied controller**. Which controller flies is a decision one layer up: the launch glue
+maps the config's ``control.kind``, and the example controllers self-assemble beside their flight
+scripts in ``nexus/examples/controllers/*/assembly.py``, reusing the helpers here,
 ``build_scenario`` / ``resolve_device``.
 
 Rendering enters through one seam, injected per build::
@@ -26,8 +26,9 @@ from typing import Any
 
 import warp as wp
 
-from nexus._src.core import Clock, ConstantEnvironment, Orchestrator, SeedTree, logger
+from nexus._src.core import Clock, Orchestrator, SeedTree, logger
 from nexus._src.physics import NewtonPhysics
+from nexus._src.scene import Site
 from nexus._src.vehicle.actuators import check_actuator_model_pairing
 
 
@@ -36,7 +37,6 @@ class Assembly:
     """The shared component bundle: everything but the run loop."""
 
     clock: Any
-    environment: Any
     physics: Any
     actuator: Any
     sensors: list
@@ -66,13 +66,13 @@ def assemble(
 
     dt = cfg["physics"]["dt"]
     rtf = cfg["physics"].get("rtf", 0)
+    # The site: the scene's geodetic origin, which the launch glue threaded into the cfg, and the
+    # ambient values resolved from it once, here, for the sensors that read them.
     gps = cfg["sensors"]["gps"]["init"]
+    site = Site.at(gps["lat"], gps["lon"], gps["alt"])
     # Actuator aero/thrust map: read straight from the motor:*/propeller:* attrs of the vehicle USD, the
     # single, hash-pinned source. Not in cfg.
     act = vehicle_builder.actuator_params()
-    # A scene's geodetic_origin.alt, if any, already landed in the Global Positioning System (GPS) init.
-    ref_alt = gps["alt"]
-
     # The shipped actuator: motors as USD-authored ``newton.actuators``, NewtonActuator prims,
     # a ControllerPID velocity servo + the ClampingDCMotor envelope on each real actuator joint, and aero,
     # thrust/H-force from the solver-integrated Ω via the propeller:* attrs, as nexus's body_f kernel.
@@ -91,8 +91,8 @@ def assemble(
 
     seedtree = SeedTree(cfg.get("seed", 42))  # launch glue threads runtime.seed; string-name path keeps 42
     # The analytic sensor suite comes from the sensor:* prims of the vehicle USD, the single, hash-pinned
-    # source, the same as the preceding actuator params; only the geodetic origin stays config, since it
-    # is a world property, not a vehicle one. A controller flying Hardware In The Loop (HIL) is dead
+    # source, the same as the preceding actuator params; only the site stays config, since it is a
+    # world property, not a vehicle one. A controller flying Hardware In The Loop (HIL) is dead
     # without sensors, so an unauthored USD fails loudly here.
     specs = vehicle_builder.sensor_specs()
     if not specs:
@@ -101,13 +101,9 @@ def assemble(
             "analytic sensor suite, so author it as sensor:* prims under the base body"
         )
     sensors = [
-        *build_sensors(specs, seedtree=seedtree, dt=dt, gps_init=gps, ref_alt=ref_alt),
+        *build_sensors(specs, seedtree=seedtree, dt=dt, site=site),
         *(extra_sensors or []),  # the renderer's sensors, for example USD-discovered RTX cameras, host-rate
     ]
-    # World Magnetic Model (WMM) field at the GPS origin, the autopilot's own coarse table, so strict mag
-    # arming checks pass.
-    environment = ConstantEnvironment.from_gps(gps["lat"], gps["lon"])
-
     # The central Rerun recording, §10: built here because it needs the physics Model; the import is
     # lazy so rerun is only pulled in when logging is on. Resilient: a logging stack that fails to
     # build must never block the flight; warn and fly without the sink.
@@ -124,7 +120,6 @@ def assemble(
 
     return Assembly(
         clock=Clock(dt, rtf=rtf),
-        environment=environment,
         physics=physics,
         actuator=actuator,
         sensors=sensors,
@@ -203,7 +198,6 @@ def build_orchestrator(
     )  # fmt: skip
     return Orchestrator(
         clock=a.clock,
-        environment=a.environment,
         physics=a.physics,
         actuator=a.actuator,
         sensors=a.sensors,

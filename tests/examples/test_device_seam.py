@@ -50,7 +50,7 @@ def test_inprocess_seam_is_device_native():
 
     # 1. obs sensor writes a Warp array into meas.observation, not numpy
     meas = Measurement()
-    WarpObservationSensor(goal_w=(0.0, 0.0, 1.5)).sample(state, None, SimTime(0.0, 0), meas)
+    WarpObservationSensor(goal_w=(0.0, 0.0, 1.5)).sample(state, SimTime(0.0, 0), meas)
     assert _is_warp_array(meas.observation)
     assert meas.observation.numpy().shape == (12,)
 

@@ -29,17 +29,16 @@ def test_captured_sensor_noise_dithers_per_replay():
     """
     if not wp.is_cuda_available():
         pytest.skip("no CUDA device")
-    from nexus._src.core.schema import EnvSample, SimTime
+    from nexus._src.core.schema import SimTime
     from nexus._src.core.seedtree import SeedTree
     from nexus._src.vehicle.sensors import ImuSensor
 
     with wp.ScopedDevice("cuda:0"):
         view = _WarpView((0.0, 0.0, 1.0), (0.0, 0.0, 0.0, 1.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
-        env = EnvSample(gravity_world=(0.0, 0.0, -9.81), mag_ned=(0.21, 0.05, 0.43))
         s = ImuSensor(SeedTree(42), 0.004)  # noise on, the default
-        s.sample_wp(view, env, SimTime(0.0, 0))  # warmup: first=1, seeds prev
+        s.sample_wp(view, SimTime(0.0, 0))  # warmup: first=1, seeds prev
         with wp.ScopedCapture() as cap:
-            s.sample_wp(view, env, SimTime(0.0, 0))
+            s.sample_wp(view, SimTime(0.0, 0))
         wp.capture_launch(cap.graph)
         wp.synchronize()
         a = s._out.numpy().copy()
@@ -57,18 +56,17 @@ def test_captured_px4_sensors_match_eager():
     """
     if not wp.is_cuda_available():
         pytest.skip("no CUDA device")
-    from nexus._src.core.schema import EnvSample, Measurement, SimTime
+    from nexus._src.core.schema import Measurement, SimTime
     from nexus._src.core.seedtree import SeedTree
     from nexus._src.vehicle.sensors import BaroSensor, GpsSensor, ImuSensor, MagSensor
 
     with wp.ScopedDevice("cuda:0"):
         view = _WarpView((1.0, -2.0, 3.0), (0.0, 0.0, 0.0, 1.0), (0.5, -0.1, 0.2), (0.3, -0.4, 0.5))
-        env = EnvSample(gravity_world=(0.0, 0.0, -9.81), mag_ned=(0.21, 0.05, 0.43))
 
         def fresh():
             return [
                 ImuSensor(SeedTree(42), 0.004, acc_noise=0.0, gyro_noise=0.0),
-                MagSensor(SeedTree(42), noise=(0.0, 0.0, 0.0)),
+                MagSensor(SeedTree(42), (0.21, 0.05, 0.43), noise=(0.0, 0.0, 0.0)),
                 BaroSensor(SeedTree(42), noise=0.0),
                 GpsSensor(47.6, -122.3, 5.0),
             ]
@@ -76,15 +74,15 @@ def test_captured_px4_sensors_match_eager():
         eager = fresh()
         m_eager = Measurement()
         for s in eager:
-            s.sample(view, env, SimTime(0.0, 0), m_eager)
+            s.sample(view, SimTime(0.0, 0), m_eager)
 
         cap_sensors = fresh()
         # warmup: seeds the Inertial Measurement Unit (IMU) finite-diff prev so capture runs with first=0
         for s in cap_sensors:
-            s.sample_wp(view, env, SimTime(0.0, 0))
+            s.sample_wp(view, SimTime(0.0, 0))
         with wp.ScopedCapture() as cap:
             for s in cap_sensors:
-                s.sample_wp(view, env, SimTime(0.0, 0))
+                s.sample_wp(view, SimTime(0.0, 0))
         wp.capture_launch(cap.graph)
         wp.synchronize()
         m_cap = Measurement()

@@ -37,7 +37,6 @@ if TYPE_CHECKING:
         Actuator,
         Clock,
         Controller,
-        Environment,
         Physics,
         Renderer,
         Sensor,
@@ -85,7 +84,6 @@ class Orchestrator:
         self,
         *,
         clock: Clock,
-        environment: Environment,
         physics: Physics,
         actuator: Actuator,
         sensors: Iterable[Sensor],
@@ -104,9 +102,6 @@ class Orchestrator:
             clock: Simulation clock. ``advance()`` advances and returns the sim
                 time ``t``; ``dt`` is the control timestep; ``throttle()`` paces the
                 loop to wall-time, a no-op unless real-time throttling is on.
-            environment: Environment model. ``sample(state, t)`` returns the per-tick
-                ``env`` context, for example wind/gravity/air density, passed to the
-                actuator, physics, and sensors.
             physics: Physics component. ``reset()`` builds and settles the vehicle at
                 the North East Down (NED) origin and returns the initial state; its ``clear``
                 and ``step`` stages zero the shared ``body_f`` and integrate: collide + solver step
@@ -143,7 +138,6 @@ class Orchestrator:
                 ``>1`` lets a policy control at a coarse rate over finer integration.
         """
         self.clock = clock
-        self.environment = environment
         self.physics = physics
         self.actuator = actuator
         self.sensors = list(sensors)
@@ -383,7 +377,6 @@ class Orchestrator:
             logger.info(plan_line(segments, captured))
             tick = Tick(
                 state=state,
-                env=self.environment.sample(None, self.clock.now()),
                 t=self.clock.now(),
                 dt=self.clock.dt / self.physics_substeps,
                 meas=Measurement(),
@@ -444,7 +437,6 @@ class Orchestrator:
             # clock late, and PX4 times its boot checks from its first stamp.
             attached = self.controller.attached if peer else True
             tick.t = self.clock.advance() if attached else self.clock.now()
-            tick.env = self.environment.sample(None, tick.t)
             if all(st.run(tick) is not False for st in stages):
                 if peer:
                     logger.info("controller lockstep established")
@@ -494,7 +486,6 @@ class Orchestrator:
                 if count == warmup_steps:
                     t_warm, steps_warm = time.monotonic(), count
                 tick.t = self.clock.advance()
-                tick.env = self.environment.sample(None, tick.t)
                 self._begin_log(
                     tick.t
                 )  # the timeline before any host stage; the Model Predictive Control (MPC) example logs its horizon there

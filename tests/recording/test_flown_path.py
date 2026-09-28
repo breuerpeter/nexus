@@ -58,7 +58,6 @@ def flight_paths(tmp_path_factory, rrd_entities):
     import warp as wp
 
     from nexus._src.core.clock import Clock
-    from nexus._src.core.environment import ConstantEnvironment
     from nexus._src.core.orchestrator import Orchestrator
     from nexus._src.logging import Logger
     from nexus._src.physics.builders.usd import USDBuilder
@@ -76,7 +75,6 @@ def flight_paths(tmp_path_factory, rrd_entities):
         model = mb.finalize()
         orch = Orchestrator(
             clock=Clock(DT),
-            environment=ConstantEnvironment(),
             physics=NewtonPhysics(model=model, cfg=cfg),
             actuator=_Actuator(),
             sensors=[],

@@ -17,7 +17,6 @@ _LAZY_EXPORTS = {
     "LaunchConfig": "nexus._src.config",
     "Registry": "nexus._src.config",
     "Controls": "nexus._src.core",
-    "EnvSample": "nexus._src.core",
     "Measurement": "nexus._src.core",
     "Orchestrator": "nexus._src.core",
     "SimTime": "nexus._src.core",
@@ -31,7 +30,6 @@ _LAZY_EXPORTS = {
 __all__ = [
     "BodyState",
     "Controls",
-    "EnvSample",
     "JointState",
     "LaunchConfig",
     "Measurement",
@@ -60,7 +58,6 @@ if TYPE_CHECKING:
     from nexus._src.config import LaunchConfig, Registry
     from nexus._src.core import (
         Controls,
-        EnvSample,
         Measurement,
         Orchestrator,
         SimTime,

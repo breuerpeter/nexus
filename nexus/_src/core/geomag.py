@@ -117,3 +117,20 @@ def field_at(lat_deg: float, lon_deg: float) -> tuple[float, float, float]:
     incl = _lookup(lat_deg, lon_deg, _INCLINATION_TABLE)
     strength_gauss = 0.01 * _lookup(lat_deg, lon_deg, _STRENGTH_TABLE)  # centi-Gauss -> Gauss
     return decl, incl, strength_gauss
+
+
+def ned_field(lat_deg: float, lon_deg: float) -> tuple[float, float, float]:
+    """The field at a GPS origin as a North East Down (NED) vector in gauss.
+
+    Horizontal intensity H = F·cos(Inc); the components are N = H·cos(D), E = H·sin(D) and
+    down = F·sin(Inc). An earlier form dropped the cos(Inc) factor from E and carried a spurious
+    cos(D) on the down component: harmless at small declination, but at larger |D| it skewed the
+    inclination and the declination of the field, which PX4's strict WMM arming check rejects as
+    "magnetic interference"; the total strength stayed the same either way.
+    """
+    import math
+
+    decl, incl, strength = field_at(lat_deg, lon_deg)
+    decl, incl = math.radians(decl), math.radians(incl)
+    horizontal = strength * math.cos(incl)
+    return (horizontal * math.cos(decl), horizontal * math.sin(decl), strength * math.sin(incl))
