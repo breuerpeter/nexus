@@ -443,11 +443,13 @@ def main() -> int:
             print(f"\n===== {name}: requirement unmet: {why} =====", flush=True)
             return False
         extra = ["--policy", args.policy] if EXAMPLES[name].get("requires") == "policy" else []
-        return _run_example(name, EXAMPLES[name], _dump_dir(name, EXAMPLES[name], out), args.timeout, extra, args.shared)
+        return _run_example(
+            name, EXAMPLES[name], _dump_dir(name, EXAMPLES[name], out), args.timeout, extra, args.shared
+        )
 
     if args.shared:
         with ThreadPoolExecutor(max_workers=len(names)) as pool:
-            flown = dict(zip(names, pool.map(fly, names)))
+            flown = dict(zip(names, pool.map(fly, names), strict=True))
     else:
         flown = {name: fly(name) for name in names}
 
