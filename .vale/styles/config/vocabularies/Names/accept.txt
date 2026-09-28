@@ -23,6 +23,7 @@ QGroundControl
 MAVLink
 PyTorch
 CloudFront
+CloudFormation
 PhysX
 MJWarp
 Nsight
@@ -61,6 +62,8 @@ SIL
 NFR
 FPV
 NGC
+GPU
+SNS
 
 # Domain words the spelling dictionary lacks
 waypoints?
@@ -71,6 +74,8 @@ setpoints?
 viewport
 shaders?
 Perceptron
+# EC2's word for ending an instance and deleting its disk, which stop does not.
+terminate[sd]?
 
 # The status the examples harness prints for a gate row that holds.
 ok
