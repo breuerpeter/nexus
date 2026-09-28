@@ -75,7 +75,8 @@ jobs:
           - { example: goto_policy }
           - example: acados_nmpc
             cache-path: ~/.cache/nexus/acados
-            cache-key: "acados-${{ hashFiles('scripts/setup_acados.sh') }}"
+            cache-name: acados
+            cache-files: scripts/setup_acados.sh
             setup: >-
               (command -v cmake >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq cmake)) &&
               bash scripts/setup_acados.sh
@@ -83,14 +84,19 @@ jobs:
             cache-path: |
               ~/.cache/nexus/px4
               ~/.cache/nexus/ci/px4-sitl.tar
-            cache-key: "px4-${{ hashFiles('nexus/_src/vehicle/controllers/px4/px4.ref', 'nexus/_src/vehicle/controllers/px4/checkout.py', 'nexus/_src/vehicle/controllers/px4/px4-sitl/Dockerfile') }}"
+            cache-name: px4
+            cache-files: >-
+              nexus/_src/vehicle/controllers/px4/px4.ref,
+              nexus/_src/vehicle/controllers/px4/checkout.py,
+              nexus/_src/vehicle/controllers/px4/px4-sitl/Dockerfile
             setup: bash scripts/ci/px4_image_cache.sh load
             teardown: bash scripts/ci/px4_image_cache.sh save
     uses: ./.github/workflows/gpu-runner.yml
     with:
       cache-scope: ${{ matrix.example }}
       cache-path: ${{ matrix.cache-path || '' }}
-      cache-key: ${{ matrix.cache-key || '' }}
+      cache-name: ${{ matrix.cache-name || '' }}
+      cache-files: ${{ matrix.cache-files || '' }}
       command: >-
         ${{ matrix.setup || 'true' }} &&
         uv run --group ci --extra examples python scripts/ci/evaluate_examples.py

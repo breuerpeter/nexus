@@ -65,8 +65,12 @@ on:
         description: "One cache entry to restore and save on the box: its paths, one per line (empty: none)"
         type: string
         default: ""
-      cache-key:
-        description: "That entry's key, as the caller computes it with hashFiles; a miss restores the newest entry sharing the key's leading name"
+      cache-name:
+        description: "That entry's name, the leading part of its key and the fallback prefix a miss restores from"
+        type: string
+        default: ""
+      cache-files:
+        description: "The files whose hash keys that entry, comma-separated path patterns; a change to any starts a new entry"
         type: string
         default: ""
       cache-scope:
@@ -234,24 +238,18 @@ jobs:
           path: ~/.cache/warp
           key: ${{ steps.warp-key.outputs.versions }}-${{ inputs.cache-scope }}
           restore-keys: ${{ steps.warp-key.outputs.versions }}-
-      # The caller's one cache entry: this runner knows no component, so the caller names the paths
-      # and computes the key with hashFiles over the files that shape them. A miss restores the newest
-      # entry whose key starts with the same leading name, `px4-` for `px4-<hash>`, so a bump builds
-      # incrementally over the last tree rather than cold. Actions cannot loop steps, so a caller
-      # with two things to cache lists both paths under one key.
-      - name: Compute the cache entry's fallback prefix
-        if: inputs.cache-path != ''
-        id: cache-prefix
-        env:
-          KEY: ${{ inputs.cache-key }}
-        run: echo "prefix=${KEY%%-*}-" >> "$GITHUB_OUTPUT"
+      # The caller's one cache entry: this runner knows no component, so the caller names the paths,
+      # the entry's name and the files that shape it, and the key hashes those files here, since a
+      # reusable workflow's `with` cannot call hashFiles. A miss restores the newest entry under the
+      # same name, so a bump builds incrementally over the last tree rather than cold. Actions cannot
+      # loop steps, so a caller with two things to cache lists both paths under one entry.
       - name: Restore the caller's cache entry
         if: inputs.cache-path != ''
         uses: actions/cache@v4
         with:
           path: ${{ inputs.cache-path }}
-          key: ${{ inputs.cache-key }}
-          restore-keys: ${{ steps.cache-prefix.outputs.prefix }}
+          key: ${{ inputs.cache-name }}-${{ hashFiles(inputs.cache-files) }}
+          restore-keys: ${{ inputs.cache-name }}-
       - name: Fail early when a main-push run has no instance profile
         # Only push, schedule and dispatch attach one, and only they upload; a PR run passes an empty
         # name on purpose. A step's `if:` cannot read a secret, so the check reads it from env.
