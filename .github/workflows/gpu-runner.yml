@@ -75,7 +75,7 @@ on:
         type: string
         default: ""
       cache-files:
-        description: "The files whose hash keys that entry, comma-separated path patterns; a change to any starts a new entry"
+        description: "The files whose hash keys that entry: path patterns separated by commas and no spaces, since hashFiles trims nothing; a change to any starts a new entry"
         type: string
         default: ""
       cache-drop:
