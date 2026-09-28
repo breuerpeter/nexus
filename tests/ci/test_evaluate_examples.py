@@ -239,8 +239,8 @@ _HEALTHY = {
 
 
 def _fake_flights(monkeypatch, recordings: pathlib.Path, flights: dict[str, tuple[dict, int]]) -> None:
-    """Stand in for each example process at the process boundary, as `_fake_flight` does, for several
-    examples at once: each writes its dump and a recording, as an example does, then exits with its code.
+    """Stand in for each example process at the process boundary, as `_fake_flight` does, for each named
+    example at once: each writes its dump and a recording, as an example does, then exits with its code.
     """
 
     def run(cmd, **kwargs):
