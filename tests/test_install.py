@@ -2,19 +2,14 @@
 
 import re
 import subprocess
-import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _locked(name: str) -> str:
-    lock = tomllib.loads((ROOT / "uv.lock").read_text())
-    return next(p["version"] for p in lock["package"] if p["name"] == name)
-
-
-def test_an_installed_package_resolves_the_warp_the_lock_pins(tmp_path):
-    """A project that installs `nexus-sim` resolves the `warp-lang` version the checkout's `uv.lock` pins.
+def test_an_installed_package_resolves_a_warp_below_the_first_broken_one(tmp_path):
+    """A project that installs `nexus-sim` resolves a `warp-lang` below 1.16.0, the first version whose
+    physics build fails.
 
     The lock and `[tool.uv.sources]` never reach a consumer, so the test resolves a wheel built from
     this checkout the way a consumer does: from a folder outside the checkout, against PyPI alone, with
@@ -38,4 +33,4 @@ def test_an_installed_package_resolves_the_warp_the_lock_pins(tmp_path):
     )  # fmt: skip
 
     resolved = re.search(r"^warp-lang==(\S+)$", out.stdout, re.MULTILINE)
-    assert resolved and resolved.group(1) == _locked("warp-lang")
+    assert resolved and tuple(map(int, resolved.group(1).split(".")[:2])) < (1, 16)
