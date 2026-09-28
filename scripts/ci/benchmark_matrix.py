@@ -9,7 +9,7 @@ Two tables:
 Per cell: run ``scripts/ci/benchmark_cell.py`` on the host and collect its ``--stats-json``. The
 cell is a whole flight, since its own sim starts and stops PX4 and, for an RTX cell, the Kit
 peer, and flies the mission, so this runner only sequences cells, times them out and merges their
-numbers. The first RTX cell on a fresh runner builds the Kit image, as a user's first RTX run does.
+numbers. The first RTX cell on a fresh runner pulls NVIDIA's Isaac Sim image, as a user's first RTX run does.
 Writes ``docs/data/rtf_matrix.json`` (consumed by ``docs/hooks/benchmarks.py`` at docs build)
 plus github-action-benchmark-style entries next to the per-cell artifacts.
 
@@ -112,7 +112,7 @@ def _run_cell(cell: dict, work: pathlib.Path, budget_s: float, cell_timeout: flo
         _kill_kit()
     stats_json.unlink(missing_ok=True)  # a stale per-tag file must never pass for fresh data
     # One wall leash for the whole cell, because the cell is the whole flight: it builds PX4 and,
-    # for the first RTX cell, the Kit image, boots, reaches lockstep, flies, and dumps its stats.
+    # for the first RTX cell, pulls the Kit image, boots, reaches lockstep, flies, and dumps its stats.
     # A stale sim on :4560 needs no pre-check: it surfaces as the cell's own bind failure.
     try:
         subprocess.run(cmd, cwd=ROOT, env=env, timeout=cell_timeout, check=False)

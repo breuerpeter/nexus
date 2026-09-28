@@ -74,6 +74,7 @@ setpoints?
 viewport
 shaders?
 Perceptron
+tilesets?
 # EC2's word for ending an instance and deleting its disk, which stop does not.
 terminate[sd]?
 

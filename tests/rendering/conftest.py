@@ -4,7 +4,7 @@ import threading
 from pathlib import Path
 
 import pytest
-from docker.errors import NotFound
+from docker.errors import APIError, ImageNotFound, NotFound
 
 import nexus._src.containers as containers
 import nexus._src.rendering.peer as peer
@@ -30,22 +30,67 @@ class _Container:
         self._daemon.removed.append(self.name)
 
 
+def _ref(repository, tag=None):
+    return f"{repository}:{tag}" if tag else repository
+
+
 class Daemon:
-    """Every image exists; a started container records its spec, and ``serve`` runs in its place.
+    """Every image exists unless ``held`` names the ones that do; a started container records its
+    spec, and ``serve`` runs in its place.
 
     ``serve(port)`` stands in for the program the container runs: the peer's tests pass one that
-    speaks the render link on the port the host chose.
+    speaks the render link on the port the host chose. A pull records its image in ``pulls`` and a
+    build its tag in ``builds``, and each leaves the image held. With ``pull_error`` set, a pull
+    fails with that registry error instead.
     """
 
     def __init__(self):
         self.runs: list[dict] = []
         self.removed: list[str] = []
+        self.pulls: list[str] = []
+        self.builds: list[str] = []
+        self.held: set[str] | None = None
+        self.pull_error: str | None = None
         self.serve = None
         daemon = self
 
+        def pull(ref):
+            if daemon.pull_error:
+                raise APIError(f"pull of {ref} failed", explanation=daemon.pull_error)
+            daemon.pulls.append(ref)
+            if daemon.held is not None:
+                daemon.held.add(ref)
+
+        def stream_pull(ref):
+            yield {"status": f"Pulling from {ref}"}
+            if daemon.pull_error:
+                yield {"error": daemon.pull_error, "errorDetail": {"message": daemon.pull_error}}
+                return
+            pull(ref)
+            yield {"status": f"Downloaded newer image for {ref}"}
+
         class Images:
             def get(self, tag):
+                if daemon.held is not None and tag not in daemon.held:
+                    raise ImageNotFound(f"no image {tag}")
                 return object()
+
+            def pull(self, repository, tag=None, **kwargs):
+                pull(_ref(repository, tag))
+                return object()
+
+        class Api:
+            def pull(self, repository, tag=None, stream=False, **kwargs):
+                if stream:
+                    return stream_pull(_ref(repository, tag))
+                pull(_ref(repository, tag))
+                return ""
+
+            def build(self, tag=None, **kwargs):
+                daemon.builds.append(tag)
+                if daemon.held is not None:
+                    daemon.held.add(tag)
+                yield {"stream": "Step 1/1\n"}
 
         class Containers:
             def run(self, image, **kwargs):
@@ -62,6 +107,7 @@ class Daemon:
                 raise NotFound(f"no container {name}")
 
         self.images = Images()
+        self.api = Api()
         self.containers = Containers()
 
 

@@ -8,16 +8,21 @@ name: gpu-runner
 # Freefly's AWS account (multi-region — placement discovered per run, see #26); the box boots the
 # latest AWS Deep Learning Base GPU AMI
 # (NVIDIA drivers + Docker + nvidia-container-toolkit, resolved at runtime), and the container jobs
-# docker-pull their px4-sitl image per run; an RTX run builds the Kit image on the box. On push, schedule and dispatch
+# docker-pull their px4-sitl image per run; an RTX run pulls NVIDIA's Isaac Sim image on the box and
+# restores Kit's caches when its caller asks. On push, schedule and dispatch
 # runs the EC2 instance role grants s3:PutObject to the CI artifacts bucket so a command's --upload
-# works via the instance profile; PR runs, same-repo or fork, launch with no instance profile and
-# no Cesium token, since nothing a PR run does needs them. The bucket's public/* prefix is SERVED
+# works via the instance profile. A same-repo PR run launches with the caller's read-only instance
+# profile when it names one, else with none; a fork's PR run always launches with none. No PR run
+# carries a Cesium token, since nothing a PR run does needs it. The bucket's public/* prefix is SERVED
 # THROUGH CLOUDFRONT (docs .rrd embeds + the bench feed), so treat everything uploaded there as
 # public. A CI output that is not published rides a GitHub artifact.
 #
 # Provisioning (one-time): secrets AWS_GPU_INSTANCE_PROFILE, the instance profile a main-push run
 # attaches so its uploads need no keys, NEXUS_BUCKET, the artifacts bucket those uploads write to,
-# AWS_RUNNER_RESOURCE_TAG where tagged subnets opt in, and AWS_GPU_ROLE_ARN (OIDC). They name
+# AWS_RUNNER_RESOURCE_TAG where tagged subnets opt in, and AWS_GPU_ROLE_ARN (OIDC). Optional:
+# AWS_GPU_PR_INSTANCE_PROFILE, the instance profile a same-repo PR run attaches, for a caller whose
+# flights read a private S3 prefix. Its role must grant reads alone, and AWS_GPU_ROLE_ARN's role needs
+# iam:PassRole on it, an act of the AWS account's admin. They name
 # resources in an AWS account, so they are secrets and the runner masks them in the public logs.
 # The OIDC role grants ec2:CreateTags on RunInstances, since every box is tagged at launch. The
 # runner watchdog stack in scripts/ci/aws/ terminates a tagged box that outlives its run.
@@ -64,7 +69,7 @@ on:
         type: number
         default: 1
       caches:
-        description: "Extra caches to restore/save on the box (space-separated: px4 acados)"
+        description: "Extra caches to restore/save on the box (space-separated: px4 acados kit)"
         type: string
         default: ""
       cache-scope:
@@ -78,6 +83,7 @@ on:
     secrets:
       AWS_GPU_ROLE_ARN: { required: false }
       AWS_GPU_INSTANCE_PROFILE: { required: false }
+      AWS_GPU_PR_INSTANCE_PROFILE: { required: false }
       AWS_RUNNER_RESOURCE_TAG: { required: false }
       NEXUS_BUCKET: { required: false }
       CI_APP_PRIVATE_KEY: { required: false }
@@ -172,14 +178,20 @@ jobs:
           availability-zones-config: ${{ steps.discover.outputs.availability-zones-config }}
           # The instance profile (s3:PutObject for the docs .rrd uploads) rides push, schedule and
           # dispatch runs only: nothing a PR run does uploads, and an approved fork's code must not
-          # be able to write to the CI artifacts bucket. The condition is negated on purpose — in an Actions
-          # expression `cond && '' || 'x'` yields 'x' for both truth values.
-          iam-role-name: ${{ (github.event_name != 'pull_request' && github.event_name != 'pull_request_target') && secrets.AWS_GPU_INSTANCE_PROFILE || '' }}
+          # be able to write to the CI artifacts bucket. A same-repo PR run gets the caller's
+          # read-only profile instead, or none, and pull_request_target never gets one: the command
+          # there is a fork's code. The conditions are negated on purpose — in an Actions
+          # expression `cond && '' || 'x'` yields 'x' for both truth values, so an unset profile
+          # falls through to the next branch, which must then yield ''.
+          iam-role-name: ${{ (github.event_name != 'pull_request' && github.event_name != 'pull_request_target') && secrets.AWS_GPU_INSTANCE_PROFILE || (github.event_name == 'pull_request' && secrets.AWS_GPU_PR_INSTANCE_PROFILE || '') }}
           # The DL AMI's default root is 35 GB — the OS+CUDA stack alone nearly fills it, and the
-          # Kit image build on NVIDIA's base (benchmark matrix) then kills the runner with disk
+          # 21 GB Isaac Sim image pull (benchmark matrix) then kills the runner with disk
           # exhaustion (job dies, logs never upload). 100 GB gp3 costs cents per ephemeral run.
+          # At gp3's default 125 MiB/s the disk, not the network, bounds that pull: the download
+          # ends in about a minute and the writes sit at the cap for the rest. 1000 MiB/s and
+          # 16000 IOPS cut a warm RTX cell's Run step from 8.2 to 4.6 min, one run each, for cents.
           block-device-mappings: >-
-            [{"DeviceName": "${{ steps.discover.outputs.root-device }}", "Ebs": {"VolumeSize": 100, "VolumeType": "gp3", "DeleteOnTermination": true}}]
+            [{"DeviceName": "${{ steps.discover.outputs.root-device }}", "Ebs": {"VolumeSize": 100, "VolumeType": "gp3", "Throughput": 1000, "Iops": 16000, "DeleteOnTermination": true}}]
           pre-runner-script: |
             sudo usermod -aG docker ubuntu || true
             sudo systemctl enable docker || true
@@ -264,6 +276,20 @@ jobs:
         if: contains(format(' {0} ', inputs.caches), ' acados ')
         uses: actions/cache@v4
         with: { path: ~/.cache/nexus/acados, key: "acados-${{ hashFiles('scripts/setup_acados.sh') }}" }
+      # The Kit peer's own caches, its shader cache and the home Kit writes its user caches into,
+      # so an RTX cell boots warm on a fresh box. Keyed on the peer folder, the program the
+      # container runs, and on the caller's cache-scope as the kernel cache is, with a prefix fallback:
+      # the shader cache is keyed by shader content, so an older entry still saves most compiles.
+      # Cesium's request cache is removed before the post step saves the entry, see below.
+      - name: Restore Kit caches
+        if: contains(format(' {0} ', inputs.caches), ' kit ')
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/nexus/kit
+          key: kit-${{ hashFiles('nexus/_src/rendering/kit-peer/**') }}-${{ inputs.cache-scope }}
+          restore-keys: |
+            kit-${{ hashFiles('nexus/_src/rendering/kit-peer/**') }}-
+            kit-
       - name: Fail early when a main-push run has no instance profile
         # Only push, schedule and dispatch attach one, and only they upload; a PR run passes an empty
         # name on purpose. A step's `if:` cannot read a secret, so the check reads it from env.
@@ -294,20 +320,37 @@ jobs:
           CESIUM_ION_TOKEN: ${{ (github.event_name != 'pull_request' && github.event_name != 'pull_request_target') && secrets.CESIUM_ION_TOKEN || '' }}
           # The artifacts bucket an --upload run writes to: a name in the account, so a setting.
           NEXUS_BUCKET: ${{ secrets.NEXUS_BUCKET }}
-        # A PR run, same-repo or fork, must reach the command with no instance profile on the box
-        # and no Cesium token. The guard fails the run otherwise, so a change that brings either
-        # back is caught on its first PR run. IMDS answers 404 for iam/info when no profile is attached.
+          # The one profile a PR run may carry: the caller's read-only one, on pull_request alone.
+          PR_INSTANCE_PROFILE: ${{ github.event_name == 'pull_request' && secrets.AWS_GPU_PR_INSTANCE_PROFILE || '' }}
+        # A PR run, same-repo or fork, must reach the command with no Cesium token, and with no
+        # instance profile on the box but the caller's read-only one on a same-repo run. The guard
+        # fails the run otherwise, so a change that brings the push profile to a PR run, or any
+        # profile to a fork's, is caught on its first PR run. IMDS answers 404 for iam/info when no
+        # profile is attached, and 200 with the profile's InstanceProfileArn when one is.
         run: |
           case "$GITHUB_EVENT_NAME" in pull_request|pull_request_target)
             imds=$(curl -sX PUT http://169.254.169.254/latest/api/token -H "X-aws-ec2-metadata-token-ttl-seconds: 60" || true)
-            iam=$(curl -s -o /dev/null -w '%{http_code}' -H "X-aws-ec2-metadata-token: $imds" http://169.254.169.254/latest/meta-data/iam/info || true)
-            echo "PR run: iam/info returned $iam, CESIUM_ION_TOKEN length ${#CESIUM_ION_TOKEN}"
-            if [ "$iam" != 404 ] || [ -n "$CESIUM_ION_TOKEN" ]; then
-              echo "::error::a PR run must carry no instance profile and no Cesium token"
+            iam=$(curl -s -o "$RUNNER_TEMP/iam-info" -w '%{http_code}' -H "X-aws-ec2-metadata-token: $imds" http://169.254.169.254/latest/meta-data/iam/info || true)
+            profile=$(sed -n 's/.*"InstanceProfileArn" *: *"[^"]*\/\([^"/]*\)".*/\1/p' "$RUNNER_TEMP/iam-info" 2>/dev/null || true)
+            echo "PR run: iam/info returned $iam, profile '$profile', CESIUM_ION_TOKEN length ${#CESIUM_ION_TOKEN}"
+            if [ -n "$PR_INSTANCE_PROFILE" ]; then
+              [ "$iam" = 200 ] && [ "$profile" = "$PR_INSTANCE_PROFILE" ] && ok=1 || ok=
+            else
+              [ "$iam" = 404 ] && ok=1 || ok=
+            fi
+            if [ -z "$ok" ] || [ -n "$CESIUM_ION_TOKEN" ]; then
+              echo "::error::a PR run must carry no Cesium token, and no instance profile but the caller's read-only one on a same-repo run"
               exit 1
             fi ;;
           esac
           ${{ inputs.command }}
+      # Cesium's request cache holds the tiles a cesium cell streamed, and a restored one would feed
+      # the next cell from disk, so its RTF no longer measures a network stream. actions/cache
+      # archives the whole folder, an exclusion pattern removes nothing inside it, so the file goes
+      # before the post step saves the entry. always(): a red cell still saves the shaders it built.
+      - name: Drop Cesium's request cache before the Kit caches are saved
+        if: ${{ always() && contains(format(' {0} ', inputs.caches), ' kit ') }}
+        run: rm -f ~/.cache/nexus/kit/home/.cache/ov/cesium-request-cache.sqlite*
       - name: Upload coverage to Codecov
         if: ${{ inputs.coverage-flags != '' }}
         uses: codecov/codecov-action@v5

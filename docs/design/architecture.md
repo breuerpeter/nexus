@@ -158,8 +158,8 @@ exactly what it simulated. Vehicle assets are content-addressed. The
 The framework ships as a single **`nexus`** package in a `uv` workspace. All source lives under
 `nexus/_src/<area>/` and the public API is re-exported from `nexus`. Never import from
 `_src`. Extras isolate the heavy optional dependencies, such as `policy` for Torch and `acados` for
-the Nonlinear Model Predictive Control (NMPC) example, rather than separate packages. The Kit render peer is no extra: its program and
-Dockerfile ship in the wheel as package data, and each machine builds the Kit image on its first
-RTX run. The RL trainer is a **separate
+the Nonlinear Model Predictive Control (NMPC) example, rather than separate packages. The Kit render peer is no extra. Its program
+ships in the wheel as package data and mounts into NVIDIA's Isaac Sim image, which each machine
+pulls on its first RTX run. The RL trainer is a **separate
 `uv` project**, `nexus-rl`, depending on the framework via an editable
 path, so the prerelease Isaac Lab stack stays out of the core environment.
