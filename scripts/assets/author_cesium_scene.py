@@ -6,10 +6,10 @@ origin, the ``CesiumData``, the Google Photorealistic 3D Tiles ``Tileset``, and 
 prim WITHOUT a token. The runtime then just loads this scene and injects the two runtime-only bits:
 the ``CESIUM_ION_TOKEN``, a secret never baked into a public asset, and the georef lat/lon.
 
-Kit-only: the Cesium USD schema needs registering at Kit boot through PXR_PLUGINPATH_NAME, which the
-Kit image sets, so run it through the command-line tool on a Kit-capable host:
+Kit-only: the Cesium USD schema needs registering at Kit boot through PXR_PLUGINPATH_NAME, which
+``nexus script --cesium`` sets, so run it through the command-line tool on a Kit-capable host:
 
-  uv run nexus script scripts/assets/author_cesium_scene.py --out assets/local/cesium.usd
+  uv run nexus script --cesium scripts/assets/author_cesium_scene.py --out assets/local/cesium.usd
 
 Writes ``cesium.usd`` + a self-contained ``cesium.usdz`` sibling, then round-trips the package to
 confirm the ``cesium:*`` schema resolves rather than giving "Empty typeName" and prints the .usdz sha256.

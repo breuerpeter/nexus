@@ -66,7 +66,10 @@ class CesiumGlobe:
         token = self._token
         ext_dir = os.environ.get("NEXUS_CESIUM_EXTS", "/cesium-exts")
         checks = (
-            (os.path.isdir(ext_dir), f"extensions not at {ext_dir!r} (rebuild the Kit image or set NEXUS_CESIUM_EXTS)"),
+            (
+                os.path.isdir(ext_dir),
+                f"extensions not at {ext_dir!r} (the host mounts them for a scene with a Cesium tileset, or set NEXUS_CESIUM_EXTS)",
+            ),
             (token, "no CESIUM_ION_TOKEN set"),
             (georef, "no geodetic origin (scene geodetic_origin / gps.init)"),
         )

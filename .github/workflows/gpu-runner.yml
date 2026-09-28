@@ -175,7 +175,7 @@ jobs:
           # expression `cond && '' || 'x'` yields 'x' for both truth values.
           iam-role-name: ${{ (github.event_name != 'pull_request' && github.event_name != 'pull_request_target') && secrets.AWS_GPU_INSTANCE_PROFILE || '' }}
           # The DL AMI's default root is 35 GB — the OS+CUDA stack alone nearly fills it, and the
-          # Kit image build on NVIDIA's base (benchmark matrix) then kills the runner with disk
+          # 21 GB Isaac Sim image pull (benchmark matrix) then kills the runner with disk
           # exhaustion (job dies, logs never upload). 100 GB gp3 costs cents per ephemeral run.
           block-device-mappings: >-
             [{"DeviceName": "${{ steps.discover.outputs.root-device }}", "Ebs": {"VolumeSize": 100, "VolumeType": "gp3", "DeleteOnTermination": true}}]
@@ -252,8 +252,8 @@ jobs:
         uses: actions/cache@v4
         with: { path: ~/.cache/nexus/acados, key: "acados-${{ hashFiles('scripts/setup_acados.sh') }}" }
       # The Kit peer's own caches, its shader cache and the home Kit writes its user caches into,
-      # so an RTX cell boots warm on a fresh box. Keyed on the peer folder, the files the image
-      # builds from, and on the caller's cache-scope as the kernel cache is, with a prefix fallback:
+      # so an RTX cell boots warm on a fresh box. Keyed on the peer folder, the program the
+      # container runs, and on the caller's cache-scope as the kernel cache is, with a prefix fallback:
       # the shader cache is keyed by shader content, so an older entry still saves most compiles.
       # Cesium's request cache is removed before the post step saves the entry, see below.
       - name: Restore Kit caches

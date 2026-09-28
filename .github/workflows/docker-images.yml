@@ -5,8 +5,8 @@ name: docker-images
 # ghcr.io/<this repository>/<name>, the prefix nexus/_src/containers.py names.
 #
 # Notes:
-# - The Kit image is NOT built here: it holds NVIDIA's layers, so it can't be a public package,
-#   and each machine builds it from nexus/_src/rendering/kit-peer/ on its first RTX run.
+# - No Kit image is built here: the Kit render peer runs NVIDIA's Isaac Sim image as pulled, with
+#   the peer program from nexus/_src/rendering/kit-peer/ mounted into it.
 # - After the first push, set the GHCR package to **Public** (package settings) so the ephemeral CI
 #   runner can `docker pull` without auth. (GHCR packages are private by default; visibility is
 #   independent of repo visibility.)
