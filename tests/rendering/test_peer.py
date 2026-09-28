@@ -1,12 +1,25 @@
-"""The Kit container's spec: the image it runs, what it reads, and who owns what it writes."""
+"""The Kit container's spec: the image it runs, what it reads, and who owns what it writes.
 
+The script container is the one ``scripts/assets/kit_container.py`` starts for a Kit-only asset
+script. The tests load that module from its file, since ``scripts/`` is no package.
+"""
+
+import importlib.util
 import io
 import os
 import urllib.request
+from pathlib import Path
 
 import pytest
 
-from nexus._src.rendering.peer import KitPeer, KitPeerError, run_script
+from nexus._src.rendering.peer import KitPeer, KitPeerError
+
+_spec = importlib.util.spec_from_file_location(
+    "kit_container", Path(__file__).resolve().parents[2] / "scripts" / "assets" / "kit_container.py"
+)
+kit_container = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(kit_container)
+run_in_kit = kit_container.run_in_kit
 
 ISAAC_SIM = "nvcr.io/nvidia/isaac-sim:6.0.1"
 CESIUM_SCENE = '#usda 1.0\n\ndef CesiumTilesetPrim "Cesium_World_Terrain"\n{\n}\n'
@@ -69,8 +82,52 @@ def test_a_kit_script_container_environment_holds_no_ion_token(daemon, tmp_path,
     monkeypatch.chdir(tmp_path)
     script = tmp_path / "convert.py"
     script.write_text("")
-    run_script([str(script)])
+    run_in_kit(str(script), [])
     assert "ion-secret" not in daemon.runs[0]["environment"].values()
+
+
+def test_the_script_container_runs_as_the_user(daemon, tmp_path, monkeypatch):
+    """The script container runs as the user, so every file it writes belongs to the user."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "convert.py").write_text("")
+    run_in_kit(str(tmp_path / "convert.py"), [])
+    assert daemon.runs[0]["user"] == f"{os.getuid()}:{os.getgid()}"
+
+
+def test_the_script_container_mounts_the_working_folder_at_its_host_path(daemon, tmp_path, monkeypatch):
+    """The script container mounts the working folder read-write at its host path, and works in it."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "convert.py").write_text("")
+    run_in_kit(str(tmp_path / "convert.py"), [])
+    run = daemon.runs[0]
+    assert (run["volumes"][str(tmp_path)], run["working_dir"]) == ({"bind": str(tmp_path), "mode": "rw"}, str(tmp_path))
+
+
+def test_the_script_container_mounts_nexus_data_at_its_host_path(daemon, tmp_path, monkeypatch):
+    """The script container mounts `$NEXUS_DATA` read-write at its host path, so a path typed on the host
+    means the same file inside.
+    """
+    data = tmp_path / "data"
+    data.mkdir()
+    work = tmp_path / "work"
+    work.mkdir()
+    monkeypatch.setenv("NEXUS_DATA", str(data))
+    monkeypatch.chdir(work)
+    (work / "convert.py").write_text("")
+    run_in_kit(str(work / "convert.py"), [])
+    assert daemon.runs[0]["volumes"][str(data)] == {"bind": str(data), "mode": "rw"}
+
+
+def test_every_folder_the_script_container_writes_exists_as_the_user_before_it_starts(daemon, tmp_path, monkeypatch):
+    """The script container creates its cache folders as the user: docker would create a missing bind
+    source owned by root, which a later host run can't write.
+    """
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "convert.py").write_text("")
+    run_in_kit(str(tmp_path / "convert.py"), [])
+    run = daemon.runs[0]
+    writable = [src for src, spec in run["volumes"].items() if spec["mode"] == "rw"]
+    assert writable and {run["seen"][src] for src in writable} == {(True, os.getuid())}
 
 
 def test_the_kit_container_runs_nvidias_image_as_pulled(daemon, tmp_path):

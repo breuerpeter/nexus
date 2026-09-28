@@ -22,7 +22,7 @@ import time
 import zipfile
 from pathlib import Path
 
-from nexus._src.assets.resolver import default_cache, fetch
+from nexus._src.assets.resolver import fetch
 from nexus._src.containers import client, run_container, stop_container
 from nexus._src.core import logger
 
@@ -268,61 +268,3 @@ def _kit_caches() -> dict:
         str(kit_home): {"bind": _KIT_HOME, "mode": "rw"},  # Kit's user caches: compute, textures, Warp
         str(kit_cache): {"bind": "/isaac-sim/kit/cache", "mode": "rw"},  # the shader cache
     }
-
-
-def run_script(argv: list[str], *, cesium: bool = False) -> int:
-    """``nexus script [--cesium] <path> [args…]``: run one Kit-only script in the Kit image, and return its exit code.
-
-    The scripts in ``scripts/assets/`` that call Kit's extensions run here: the peer program's
-    launcher boots Kit, then runs the script as ``__main__`` with its own arguments. The container
-    mounts the working folder read-write at its host path and works in it, and mounts
-    ``$NEXUS_DATA``, default ``~/data``, where scans and converted scenes live, the same way: a path
-    typed on the host means the same file inside. The console streams to this terminal.
-
-    Args:
-        argv: The script's path, then its own arguments.
-        cesium: Give Kit the Cesium for Omniverse extensions, fetched into the asset cache first,
-            for a script that authors a Cesium scene.
-
-    Raises:
-        KitPeerError: The script is no file, or the Cesium fetch, the pull or the container start failed.
-    """
-    from docker.errors import DockerException
-
-    target = Path(argv[0]).resolve()
-    if not target.is_file():
-        raise KitPeerError(f"nexus script runs a Kit-only script by its path, and {argv[0]} is no file")
-    volumes, env = _cesium_mount(default_cache()) if cesium else ({}, {})
-    try:
-        image = ensure_image()
-    except KitPeerError:
-        raise
-    except RuntimeError as exc:
-        raise KitPeerError(f"the script runs in a Kit container, but {exc}") from exc
-    cwd = Path.cwd()
-    volumes[str(cwd)] = {"bind": str(cwd), "mode": "rw"}
-    if not target.is_relative_to(cwd):
-        volumes[str(target.parent)] = {"bind": str(target.parent), "mode": "ro"}
-    data = Path(os.environ.get("NEXUS_DATA") or Path.home() / "data").resolve()
-    if data.is_dir() and not data.is_relative_to(cwd):
-        volumes[str(data)] = {"bind": str(data), "mode": "rw"}
-    if os.environ.get("NEXUS_DATA"):
-        env["NEXUS_DATA"] = os.environ["NEXUS_DATA"]
-    try:
-        container = client().containers.run(
-            image,
-            command=[f"{_PEER_DIR}/script.py", str(target), *argv[1:]],
-            working_dir=str(cwd),
-            labels={LABEL: "script"},
-            detach=True,
-            **_run_options(volumes, env),
-        )
-    except DockerException as exc:
-        raise KitPeerError(f"starting the Kit container failed: {getattr(exc, 'explanation', None) or exc}") from exc
-    try:
-        for chunk in container.logs(stream=True, follow=True):
-            sys.stdout.buffer.write(chunk)
-            sys.stdout.buffer.flush()
-        return int(container.wait().get("StatusCode", 1))
-    finally:
-        container.remove(force=True)  # Ctrl-C included: the container dies with this command
