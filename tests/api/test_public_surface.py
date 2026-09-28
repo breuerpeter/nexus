@@ -63,3 +63,22 @@ def test_importing_core_loads_neither_newton_nor_warp():
     code = "import sys, nexus._src.core; print('newton' in sys.modules, 'warp' in sys.modules)"
     out = subprocess.run([sys.executable, "-c", code], check=True, capture_output=True, text=True)
     assert out.stdout.split() == ["False", "False"]
+
+
+def test_envsample_and_environment_are_no_longer_public_exports():
+    """`EnvSample` and `Environment` leave the public surface and the API reference."""
+    import nexus as na
+
+    assert "EnvSample" not in na.__all__ and "Environment" not in na.__all__
+    with pytest.raises(ImportError):
+        from nexus import EnvSample  # noqa: F401
+
+
+def test_api_reference_documents_no_envsample():
+    """`EnvSample` and `Environment` leave the public surface and the API reference."""
+    names = []
+    for page in sorted(_API_REFERENCE.glob("*.md")):
+        names += _DIRECTIVE.findall(page.read_text())
+    for line in _IMPORT_LINE.findall((_API_REFERENCE / "core.md").read_text()):
+        names += [name.strip() for name in line.split(",")]
+    assert "EnvSample" not in names and "Environment" not in names

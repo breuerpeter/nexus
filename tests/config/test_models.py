@@ -70,3 +70,9 @@ def test_non_px4_control_kinds_rejected():
     for kind in ("policy", "builtin", "sampling-mpc", "acados", "external"):
         with pytest.raises(ValidationError):
             LaunchConfig.from_dict({"control": {"kind": kind}})
+
+
+def test_the_environment_launch_key_is_rejected():
+    """The `environment` launch key and the receipt's `environment` field go, since nothing reads them."""
+    with pytest.raises(ValidationError):
+        LaunchConfig.from_dict({"environment": {"wind": {}}})

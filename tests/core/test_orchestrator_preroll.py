@@ -21,11 +21,6 @@ class _Clock:
         pass
 
 
-class _Env:
-    def sample(self, pos, t):
-        return None
-
-
 class _Physics:
     def reset(self):
         return {"q": 0}
@@ -33,12 +28,12 @@ class _Physics:
     def clear_forces(self, state):
         pass
 
-    def step(self, state, env, dt):
+    def step(self, state, dt):
         return state
 
 
 class _Actuator:
-    def forces(self, controls, state, env):
+    def forces(self, controls, state):
         pass
 
 
@@ -80,7 +75,6 @@ def test_a_peer_that_dials_in_late_gets_its_first_stamp_near_zero():
     controller = _LatePeerController()
     orch = Orchestrator(
         clock=_Clock(),
-        environment=_Env(),
         physics=_Physics(),
         actuator=_Actuator(),
         sensors=[],

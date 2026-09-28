@@ -171,9 +171,13 @@ class ImuSensor(SensorRecorder):
         com=(0.0, 0.0, 0.0),
         acc_noise: float = 0.02,
         gyro_noise: float = 0.02,
+        gravity: float = 9.81,
     ):
         self.seed = seedtree.seed_for("imu")
         self.dt = float(dt)
+        # The site's gravity, along world -Z, the same value the physics applies; the accelerometer
+        # reports specific force, so at rest it reads minus this.
+        self.gravity_world = wp.vec3(0.0, 0.0, -float(gravity))
         self.r_com_to_mount = wp.vec3(
             float(mount_offset[0] - com[0]), float(mount_offset[1] - com[1]), float(mount_offset[2] - com[2])
         )
@@ -185,7 +189,7 @@ class ImuSensor(SensorRecorder):
         self._step = wp.zeros(1, dtype=int)  # per-tick counter, incremented in-graph so the noise varies
         self._first = True
 
-    def sample_wp(self, state, env, t) -> None:
+    def sample_wp(self, state, t) -> None:
         """Launch the IMU kernel into the device buffer ``self._out``, with NO host readback, so it joins
         a captured region. Increments the device step counter first so the noise field varies per
         replay. For a captured region, call once eagerly first to seed the finite-diff ``prev``
@@ -198,7 +202,7 @@ class ImuSensor(SensorRecorder):
             inputs=(
                 state.body_q,
                 state.body_qd,
-                wp.vec3(*env.gravity_world),
+                self.gravity_world,
                 self.r_com_to_mount,
                 self.dt,
                 1 if self._first else 0,
@@ -221,8 +225,8 @@ class ImuSensor(SensorRecorder):
         out.quat_wxyz = (float(r[6]), float(r[7]), float(r[8]), float(r[9]))
         out.rollspeed, out.pitchspeed, out.yawspeed = out.xgyro, out.ygyro, out.zgyro
 
-    def sample(self, state, env, t, out) -> None:
-        self.sample_wp(state, env, t)
+    def sample(self, state, t, out) -> None:
+        self.sample_wp(state, t)
         self.read(out)
 
 
@@ -231,23 +235,25 @@ class MagSensor(SensorRecorder):
     name = "mag"
     fields = ("xmag", "ymag", "zmag")
 
-    def __init__(self, seedtree, mag_offset=(0.0, 0.0, 0.0), noise=(0.02, 0.02, 0.03)):
+    def __init__(self, seedtree, mag_ned, mag_offset=(0.0, 0.0, 0.0), noise=(0.02, 0.02, 0.03)):
+        # ``mag_ned`` is the site's field as a North East Down (NED) vector in gauss, resolved at build.
         # ``noise`` is the per-axis Gaussian sigma in Gauss. The default, 0.02/0.02/0.03, is the
         # bridge value; note it's ~10x a real magnetometer and, against PX4's strict per-sample World
         # Magnetic Model (WMM) strength check, intermittently trips the "magnetic interference" check,
         # so the PX4 Hardware In The Loop (HIL) path passes a lower sigma.
         self.seed = seedtree.seed_for("mag")
+        self.mag_ned = wp.vec3(*[float(x) for x in mag_ned])
         self.offset = wp.vec3(*[float(x) for x in mag_offset])
         self.sigma = wp.vec3(*[float(x) for x in noise])
         self._out = wp.zeros(3, dtype=float)
         self._step = wp.zeros(1, dtype=int)
 
-    def sample_wp(self, state, env, t) -> None:
+    def sample_wp(self, state, t) -> None:
         wp.launch(increment_step, dim=1, inputs=(self._step,))
         wp.launch(
             mag_kernel,
             dim=1,
-            inputs=(state.body_q, wp.vec3(*env.mag_ned), self.offset, self.seed, self._step, self.sigma),
+            inputs=(state.body_q, self.mag_ned, self.offset, self.seed, self._step, self.sigma),
             outputs=(self._out,),
         )
 
@@ -255,8 +261,8 @@ class MagSensor(SensorRecorder):
         r = self._out.numpy()
         out.xmag, out.ymag, out.zmag = float(r[0]), float(r[1]), float(r[2])
 
-    def sample(self, state, env, t, out) -> None:
-        self.sample_wp(state, env, t)
+    def sample(self, state, t, out) -> None:
+        self.sample_wp(state, t)
         self.read(out)
 
 
@@ -265,29 +271,31 @@ class BaroSensor(SensorRecorder):
     name = "baro"
     fields = ("abs_pressure", "pressure_alt")
 
-    def __init__(self, seedtree, noise: float = 0.02):
+    def __init__(self, seedtree, pressure_msl: float = 1013.25, temperature: float = 25.0, noise: float = 0.02):
+        # The site's air pressure at mean sea level, hPa, and its temperature, degrees Celsius.
         self.seed = seedtree.seed_for("baro")
+        self.pressure_msl = float(pressure_msl)
+        self.temperature = float(temperature)
         self.noise = float(noise)
         self._out = wp.zeros(2, dtype=float)
         self._step = wp.zeros(1, dtype=int)
 
-    def sample_wp(self, state, env, t) -> None:
+    def sample_wp(self, state, t) -> None:
         wp.launch(increment_step, dim=1, inputs=(self._step,))
         wp.launch(
             baro_kernel,
             dim=1,
-            inputs=(state.body_q, float(env.air_pressure_msl), self.seed, self._step, self.noise),
+            inputs=(state.body_q, self.pressure_msl, self.seed, self._step, self.noise),
             outputs=(self._out,),
         )
-        self._temperature = env.temperature
 
     def read(self, out) -> None:
         r = self._out.numpy()
         out.abs_pressure, out.pressure_alt = float(r[0]), float(r[1])
-        out.temperature = getattr(self, "_temperature", 25.0)
+        out.temperature = self.temperature
 
-    def sample(self, state, env, t, out) -> None:
-        self.sample_wp(state, env, t)
+    def sample(self, state, t, out) -> None:
+        self.sample_wp(state, t)
         self.read(out)
 
 
@@ -306,7 +314,7 @@ class GpsSensor(SensorRecorder):
         self.fix_type = int(fix_type)
         self._out = wp.zeros(7, dtype=wp.float64)
 
-    def sample_wp(self, state, env, t) -> None:
+    def sample_wp(self, state, t) -> None:
         wp.launch(
             gps_kernel,
             dim=1,
@@ -322,6 +330,6 @@ class GpsSensor(SensorRecorder):
         out.ground_speed = float(r[6])
         out.fix_type = self.fix_type
 
-    def sample(self, state, env, t, out) -> None:
-        self.sample_wp(state, env, t)
+    def sample(self, state, t, out) -> None:
+        self.sample_wp(state, t)
         self.read(out)

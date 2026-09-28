@@ -16,7 +16,7 @@ this builder from here, because examples ship in the wheel.
 from __future__ import annotations
 
 from nexus._src.build.assembly import resolve_device
-from nexus._src.core import Clock, ConstantEnvironment, Orchestrator, logger
+from nexus._src.core import Clock, Orchestrator, logger
 from nexus._src.physics import NewtonPhysics
 
 
@@ -130,7 +130,6 @@ def build_pid_orchestrator(
         )  # fmt: skip
     return Orchestrator(
         clock=Clock(dt, rtf=rtf),
-        environment=ConstantEnvironment(),
         physics=physics,
         actuator=actuator,
         sensors=sensors,

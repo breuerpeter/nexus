@@ -114,7 +114,7 @@ class Rotors:
             outputs=(state.body_f,),
         )
 
-    def forces(self, controls, state, env=None) -> None:
+    def forces(self, controls, state) -> None:
         m = controls.command
         if isinstance(m, np.ndarray):  # eager host path: copy the per-rotor command H2D
             a = np.asarray(m, dtype=np.float32).reshape(-1)
