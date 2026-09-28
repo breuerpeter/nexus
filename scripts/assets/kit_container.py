@@ -12,8 +12,9 @@ The container mounts the working folder read-write at its host path and works in
 typed on the host means the same file inside. The console streams to this terminal, and the
 script's exit code is the command's.
 
-The image is the render peer's, so this module takes its build, its caches and its docker client
-from ``nexus._src.rendering.peer``, private names that a peer change can move.
+The image is the render peer's, NVIDIA's Isaac Sim as pulled, so this module takes its pull, its
+run options, its Cesium mount and its docker client from ``nexus._src.rendering.peer``, private
+names that a peer change can move.
 """
 
 from __future__ import annotations
@@ -43,47 +44,40 @@ def kit_argv() -> list[str]:
     return argv
 
 
-def run_in_kit(script: str | os.PathLike, args: list[str]) -> int:
-    """Run ``script`` with ``args`` in the Kit image, and return its exit code.
+def run_in_kit(script: str | os.PathLike, args: list[str], *, cesium: bool = False) -> int:
+    """Run ``script`` with ``args`` in NVIDIA's Isaac Sim image, and return its exit code.
 
-    A failure to reach Docker, build the image or start the container prints one line that names
-    the cause and returns 1: no traceback, since nothing of the script ran.
+    A machine pulls the image once. With ``cesium``, the host fetches the Cesium for Omniverse
+    extensions into the asset cache first and mounts them, for the script that authors the Cesium scene.
+    A failure to reach Docker, pull the image, fetch Cesium or start the container prints one line
+    that names the cause and returns 1: no traceback, since nothing of the script ran.
     """
     from docker.errors import DockerException
-    from docker.types import DeviceRequest
 
     import nexus._src.rendering.peer as peer
+    from nexus._src.assets.resolver import default_cache
 
     target = Path(script).resolve()
     cwd = Path.cwd()
     try:
-        tag = peer.ensure_image()
-        volumes = {str(cwd): {"bind": str(cwd), "mode": "rw"}, **peer._kit_caches()}
+        volumes, env = peer._cesium_mount(default_cache()) if cesium else ({}, {})
+        image = peer.ensure_image()
+        volumes[str(cwd)] = {"bind": str(cwd), "mode": "rw"}
         if not target.is_relative_to(cwd):
             volumes[str(target.parent)] = {"bind": str(target.parent), "mode": "ro"}
         data = Path(os.environ.get("NEXUS_DATA") or Path.home() / "data").resolve()
         if data.is_dir() and not data.is_relative_to(cwd):
             volumes[str(data)] = {"bind": str(data), "mode": "rw"}
-        env = {
-            "HOME": peer._KIT_HOME,
-            "ACCEPT_EULA": "Y",
-            "PRIVACY_CONSENT": "Y",
-            "OMNI_KIT_ACCEPT_EULA": "YES",
-            IN_KIT: "1",
-        }
+        env[IN_KIT] = "1"
         if os.environ.get("NEXUS_DATA"):
             env["NEXUS_DATA"] = os.environ["NEXUS_DATA"]
         container = peer.client().containers.run(
-            tag,
-            command=[str(target), *args],  # the image's entrypoint is Kit's python
+            image,
+            command=[str(target), *args],  # the run options make Kit's python the entrypoint
             working_dir=str(cwd),
-            user=f"{os.getuid()}:{os.getgid()}",
-            group_add=[peer.ISAAC_SIM_GID],
-            environment=env,
-            volumes=volumes,
-            device_requests=[DeviceRequest(count=-1, capabilities=[["gpu"]])],
             labels={peer.LABEL: "script"},
             detach=True,
+            **peer._run_options(volumes, env),
         )
     except DockerException as exc:
         print(
@@ -91,7 +85,7 @@ def run_in_kit(script: str | os.PathLike, args: list[str]) -> int:
             file=sys.stderr,
         )
         return 1
-    except RuntimeError as exc:  # KitPeerError included: the image build, or the daemon is unreachable
+    except RuntimeError as exc:  # KitPeerError included: the pull, the Cesium fetch, or the daemon is unreachable
         print(f"{target.name}: the script runs in a Kit container, but {exc}", file=sys.stderr)
         return 1
     try:

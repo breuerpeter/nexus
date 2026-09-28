@@ -1,10 +1,10 @@
 """The Kit render peer's container: its image, what it mounts, and its start, stop and alive.
 
-The Kit image can't be a public package, since it holds NVIDIA's layers, so each machine builds it
-on its first RTX run from ``kit-peer/``, package data beside this module. The tag is a hash of that
-folder, the only files the build reads, so a host code change never rebuilds the image and a change
-to the peer program always does. The container runs through the docker SDK, as PX4 Software In The
-Loop (SITL) does.
+The container runs NVIDIA's Isaac Sim image as pulled, with no image of nexus's own: the peer
+program in ``kit-peer/``, package data beside this module, mounts read-only, and everything else
+the peer needs is a run option. So an RTX run on a fresh machine costs one pull, an edit to the peer
+program takes effect on the next run, and an Isaac upgrade is a one-line pin change. The
+container runs through the docker SDK, as PX4 Software In The Loop (SITL) does.
 
 The container runs as the host user and mounts only what the run renders and the caches it writes:
 the asset cache and the folder of each local Universal Scene Description (USD) file read-only at their host paths, and Kit's own
@@ -14,75 +14,147 @@ bind source owned by root, and a root-owned asset cache failed every later host 
 
 from __future__ import annotations
 
-import hashlib
 import os
 import socket
 import sys
+import tempfile
 import time
+import zipfile
 from pathlib import Path
 
+from nexus._src.assets.resolver import fetch
 from nexus._src.containers import client, run_container, stop_container
 from nexus._src.core import logger
 
 KIT_DIR = Path(__file__).with_name("kit-peer")
-IMAGE = "nexus-kit"
+IMAGE = "nvcr.io/nvidia/isaac-sim:6.0.1"  # pulls with no NGC login
 LABEL = "nexus.peer"  # a Kit peer carries nexus.peer=kit, so a runner can find a leftover one
 ISAAC_SIM_GID = "1234"  # the base image's isaac-sim group: /isaac-sim is readable by that group only
 _KIT_HOME = "/kit-home"
+_PEER_DIR = "/nexus-kit"
+# Cesium for Omniverse, the live-streamed geolocated globe. v0.29.0 is the first release built for
+# Kit 110 / Isaac Sim 6.0.1. Its two Kit extensions, cesium.omniverse and cesium.usd.plugins, mount
+# at /cesium-exts, and the peer adds that folder to the extension search path for a Cesium scene.
+CESIUM = {
+    "url": "https://github.com/CesiumGS/cesium-omniverse/releases/download/v0.29.0/"
+    "CesiumGS-cesium-omniverse-linux-x86_64-v0.29.0.zip",
+    "sha256": "fe38d6195974620e87d7cdad32bb4b38d5933389523d56e75bbae23bcf4da55f",
+}
+_CESIUM_EXTS = "/cesium-exts"
+# The Cesium USD schemas must register at USD start-up: Kit builds the schema registry once at
+# boot, so enabling the extension later registers them too late for prim definitions.
+_CESIUM_PLUGINS = f"{_CESIUM_EXTS}/cesium.usd.plugins/plugins/CesiumUsdSchemas/resources"
 
 
 class KitPeerError(RuntimeError):
     """The Kit render peer couldn't start, or died mid-flight; the message names the cause."""
 
 
-def _build_files(root: Path) -> list[Path]:
-    """The files the image build reads: the folder, minus what ``.dockerignore`` leaves out."""
-    return sorted(
-        p
-        for p in root.rglob("*")
-        if p.is_file() and "__pycache__" not in p.relative_to(root).parts and p.suffix != ".pyc"
-    )
-
-
-def image_tag(root: Path = KIT_DIR) -> str:
-    """The Kit image's tag: ``nexus-kit:`` and a hash of the files the build reads under ``root``."""
-    h = hashlib.sha256()
-    for path in _build_files(root):
-        data = path.read_bytes()
-        h.update(f"{path.relative_to(root).as_posix()}\0{len(data)}\0".encode())
-        h.update(data)
-    return f"{IMAGE}:{h.hexdigest()[:12]}"
-
-
 def ensure_image() -> str:
-    """Build the Kit image when this machine lacks its tag, and return the tag.
+    """Pull NVIDIA's Isaac Sim image when this machine lacks it, and return its name.
 
-    The build pulls NVIDIA's base, about 21 GB, with no login, adds Cesium and the peer program,
-    and prints its own output as it goes.
+    The pull is about 21 GB and needs no login. It prints a line per finished layer as it goes.
 
     Raises:
-        KitPeerError: The build failed; the message carries the build's own error.
+        KitPeerError: The pull failed; the message names the image and the registry's error.
         RuntimeError: The docker daemon is unreachable; see :func:`nexus._src.containers.client`.
     """
-    from docker.errors import ImageNotFound
+    from docker.errors import DockerException, ImageNotFound
 
-    tag = image_tag()
     c = client()
     try:
-        c.images.get(tag)
-        return tag
+        c.images.get(IMAGE)
+        return IMAGE
     except ImageNotFound:
         pass
-    logger.info(f"building the Kit image {tag} from {KIT_DIR}: once per machine and per peer change")
-    for chunk in c.api.build(path=str(KIT_DIR), tag=tag, rm=True, decode=True):
-        if "error" in chunk:
-            raise KitPeerError(f"building the Kit image {tag} failed: {chunk['error'].strip()}")
-        line = chunk.get("stream")
-        if line:
-            sys.stderr.write(line)
+    logger.info(f"pulling the Kit image {IMAGE}, about 21 GB: once per machine")
+    repository, tag = IMAGE.rsplit(":", 1)
+    try:
+        for chunk in c.api.pull(repository, tag=tag, stream=True, decode=True):
+            if "error" in chunk:
+                raise KitPeerError(f"pulling the Kit image {IMAGE} failed: {chunk['error'].strip()}")
+            status = chunk.get("status", "")
+            if "id" not in chunk:
+                sys.stderr.write(f"{status}\n")
+            elif status == "Pull complete":  # one line per layer, not its progress
+                sys.stderr.write(f"{chunk['id']}: {status}\n")
             sys.stderr.flush()
-    logger.info(f"built the Kit image {tag}")
-    return tag
+    except DockerException as exc:
+        raise KitPeerError(f"pulling the Kit image {IMAGE} failed: {getattr(exc, 'explanation', None) or exc}") from exc
+    logger.info(f"pulled the Kit image {IMAGE}")
+    return IMAGE
+
+
+def _declares_cesium_tileset(path: Path) -> bool:
+    """Whether the USD at ``path`` holds a Cesium tileset, the prim the peer claims a Cesium scene by."""
+    from pxr import Usd
+
+    stage = Usd.Stage.Open(str(path))
+    return any(p.GetTypeName() == "CesiumTilesetPrim" for p in stage.Traverse())
+
+
+def _cesium_exts(cache_dir: Path) -> Path:
+    """Fetch Cesium for Omniverse into the asset cache, unpack it once beside the zip, and return the
+    folder that holds its extensions.
+
+    Raises:
+        KitPeerError: The fetch or the unpack failed, a hash mismatch included.
+    """
+    try:
+        zip_path = fetch(CESIUM["url"], CESIUM["sha256"], cache_dir=cache_dir)
+        exts = zip_path.parent / "exts"
+        if not exts.is_dir():
+            # Unpack beside it and rename, so no run mounts a half-unpacked folder.
+            tmp = Path(tempfile.mkdtemp(dir=zip_path.parent))
+            with zipfile.ZipFile(zip_path) as z:
+                z.extractall(tmp)
+            try:
+                tmp.rename(exts)
+            except OSError:
+                if not exts.is_dir():  # another run didn't unpack it first
+                    raise
+    except (OSError, ValueError, zipfile.BadZipFile) as exc:
+        raise KitPeerError(f"fetching Cesium for Omniverse failed: {exc}") from exc
+    return exts
+
+
+def _cesium_mount(cache_dir: Path) -> tuple[dict, dict]:
+    """The mount and the environment that give Kit the Cesium extensions and register their schemas."""
+    exts = _cesium_exts(Path(cache_dir).resolve())  # docker reads a relative source as a volume name
+    return {str(exts): {"bind": _CESIUM_EXTS, "mode": "ro"}}, {"PXR_PLUGINPATH_NAME": _CESIUM_PLUGINS}
+
+
+def _run_options(volumes: dict, env: dict) -> dict:
+    """The run options every Kit container takes, around its own ``volumes`` and ``env``.
+
+    NVIDIA's image runs as its own user with its own command, so the run sets both: the host user
+    with the image's isaac-sim group added, and Kit's Python as the entrypoint. Kit writes its
+    settings and logs under /isaac-sim/kit, which only isaac-sim owns, so those two are tmpfs
+    mounts that stay in the container. The base's health check greps Kit's log under the image
+    user's home, which the peer, with a home folder of its own, never writes, so every healthy peer read as
+    unhealthy: the run turns it off, and the render link says whether the peer lives.
+
+    No secret goes in ``env``: Kit prints its whole environment into the console at every boot, and
+    the console is a log file.
+    """
+    from docker.types import DeviceRequest
+
+    return {
+        "entrypoint": ["/isaac-sim/python.sh"],
+        "user": f"{os.getuid()}:{os.getgid()}",
+        "group_add": [ISAAC_SIM_GID],
+        "environment": {
+            "HOME": _KIT_HOME,
+            "ACCEPT_EULA": "Y",
+            "PRIVACY_CONSENT": "Y",
+            "OMNI_KIT_ACCEPT_EULA": "YES",
+            **env,
+        },
+        "volumes": {str(KIT_DIR): {"bind": _PEER_DIR, "mode": "ro"}, **_kit_caches(), **volumes},
+        "tmpfs": {"/isaac-sim/kit/data": "", "/isaac-sim/kit/logs": ""},
+        "healthcheck": {"test": ["NONE"]},
+        "device_requests": [DeviceRequest(count=-1, capabilities=[["gpu"]])],
+    }
 
 
 def _free_port() -> int:
@@ -116,47 +188,42 @@ class KitPeer:
         return {str(m): {"bind": str(m), "mode": "ro"} for m in mounts}
 
     def start(self) -> None:
-        """Build the image if this machine lacks it, then start the container; Kit boots in the background.
+        """Pull the image if this machine lacks it, then start the container; Kit boots in the background.
+
+        A file that declares a Cesium tileset first fetches Cesium for Omniverse into the asset cache.
 
         Raises:
-            KitPeerError: The image build or the container start failed, or the docker daemon is
-                unreachable; the message names the cause.
+            KitPeerError: The Cesium fetch, the pull or the container start failed, or the docker
+                daemon is unreachable; the message names the cause.
         """
         from docker.errors import DockerException
-        from docker.types import DeviceRequest
 
+        volumes, env = {}, {}
+        if any(_declares_cesium_tileset(f) for f in self._files):
+            volumes, env = _cesium_mount(self._cache_dir)
         try:
-            tag = ensure_image()
+            image = ensure_image()
         except KitPeerError:
             raise
         except RuntimeError as exc:
             raise KitPeerError(f"the RTX sensors render in a Kit container, but {exc}") from exc
         logs = Path.home() / ".cache" / "nexus" / "logs"
         logs.mkdir(parents=True, exist_ok=True)
-        volumes = {
-            **self._read_mounts(),
-            **_kit_caches(),
-            str(logs): {"bind": str(logs), "mode": "rw"},  # the --benchmark JSON beside the run's .rrd
-        }
-        # No secret goes in the environment: Kit prints its whole environment into the console at
-        # every boot, and the console is a log file. The ion token rides the setup message instead.
-        env = {"HOME": _KIT_HOME, "ACCEPT_EULA": "Y", "PRIVACY_CONSENT": "Y", "OMNI_KIT_ACCEPT_EULA": "YES"}
+        volumes.update(self._read_mounts())
+        volumes[str(logs)] = {"bind": str(logs), "mode": "rw"}  # the --benchmark JSON beside the run's .rrd
+        # The ion token rides the setup message, never the environment.
         self.port = _free_port()
         self.log_path = logs / f"console-{time.strftime('%Y%m%d-%H%M%S')}.log"
         try:
             self._container = run_container(
-                image=tag,
-                command=["/nexus-kit/serve.py", "--port", str(self.port)],
+                image=image,
+                command=[f"{_PEER_DIR}/serve.py", "--port", str(self.port)],
                 name=self.name,
                 log_path=str(self.log_path),
-                user=f"{os.getuid()}:{os.getgid()}",
-                group_add=[ISAAC_SIM_GID],
-                environment=env,
-                volumes=volumes,
                 ports={f"{self.port}/tcp": ("127.0.0.1", self.port)},
-                device_requests=[DeviceRequest(count=-1, capabilities=[["gpu"]])],
                 labels={LABEL: "kit"},
                 auto_remove=True,
+                **_run_options(volumes, env),
             )
         except DockerException as exc:
             raise KitPeerError(

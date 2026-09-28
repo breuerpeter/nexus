@@ -6,9 +6,9 @@ origin, the ``CesiumData``, the Google Photorealistic 3D Tiles ``Tileset``, and 
 prim WITHOUT a token. The runtime then just loads this scene and injects the two runtime-only bits:
 the ``CESIUM_ION_TOKEN``, a secret never baked into a public asset, and the georef lat/lon.
 
-Kit-only: the Cesium USD schema needs registering at Kit boot through PXR_PLUGINPATH_NAME, which the
-Kit image sets. Run from the host with plain Python, it starts the Kit image with this file and boots
-Kit there, see ``kit_container.py``:
+Kit-only: the Cesium USD schema needs registering at Kit boot through PXR_PLUGINPATH_NAME, which
+the Cesium mount sets. Run from the host with plain Python, it fetches Cesium for Omniverse into the
+asset cache, starts the Kit image with this file and boots Kit there, see ``kit_container.py``:
 
   uv run python scripts/assets/author_cesium_scene.py --out assets/local/cesium.usd
 
@@ -172,7 +172,7 @@ if __name__ == "__main__":
     from kit_container import KIT_APP, KIT_EXPERIENCE, finish, in_kit, kit_argv, run_in_kit
 
     if not in_kit():
-        sys.exit(run_in_kit(__file__, sys.argv[1:]))
+        sys.exit(run_in_kit(__file__, sys.argv[1:], cesium=True))  # the schema plugin rides the mount
     argv = kit_argv()
     from isaacsim import SimulationApp
 

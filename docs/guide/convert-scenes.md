@@ -21,7 +21,7 @@ per-command `-v`.
 
 Both converters need a booted Kit app. Run them from the host with plain Python: each starts the
 Kit image with its own file and arguments, boots Kit there, and does its work. On a machine with no
-image it builds the image first, see [RTX cameras and lidar](running.md#rtx-cameras-and-lidar). Run
+image it pulls the image first, see [RTX cameras and lidar](running.md#rtx-cameras-and-lidar). Run
 them from any folder: the container mounts the working folder and `NEXUS_DATA` at their host
 paths. Progress traces on **stderr**. Kit swallows stdout.
 

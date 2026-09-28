@@ -1077,9 +1077,9 @@ requires-dist = [
     { name = "torch", marker = "extra == 'policy'" },
     { name = "trimesh", specifier = ">=4.6.8" },
     { name = "usd-core", specifier = ">=25.5,<26.5" },
-    { name = "warp-lang", specifier = ">=1.14.0", index = "https://pypi.nvidia.com/" },
+    { name = "warp-lang", specifier = ">=1.14.0,<1.16", index = "https://pypi.nvidia.com/" },
 ]
-provides-extras = ["policy", "isaacsim", "examples", "acados", "all"]
+provides-extras = ["policy", "examples", "acados", "all"]
 
 [package.metadata.requires-dev]
 ci = [{ name = "evo", specifier = ">=1.36" }]
