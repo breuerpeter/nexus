@@ -1,0 +1,22 @@
+#usda 1.0
+(
+    defaultPrim = "Vehicle"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "Vehicle"
+{
+    def Xform "body"
+    {
+        def Xform "Imu" (
+            prepend apiSchemas = ["NexusImuAPI"]
+        )
+        {
+            float nexus:accNoise = 0.05
+            double3 xformOp:translate = (0.01, -0.02, 0.03)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+    }
+}
+

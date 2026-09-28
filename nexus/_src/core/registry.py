@@ -22,3 +22,19 @@ class Registry:
         except KeyError as e:
             available = list(self._providers.get(interface, {}))
             raise KeyError(f"No provider '{name}' for interface '{interface}'. Available: {available}") from e
+
+
+class ComponentRegistry:
+    """A value that maps each applied schema to the class that builds it, by class or import path."""
+
+    def __init__(self, entries: dict[str, type | str] | None = None): ...
+
+
+def default_registry() -> ComponentRegistry:
+    """The default registry, filled from the entry-point group on first use."""
+    ...
+
+
+def register_component(schema: str, target: type | str) -> None:
+    """Add an entry to the default registry."""
+    ...
