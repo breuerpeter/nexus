@@ -374,7 +374,7 @@ class Orchestrator:
 
                 controls = self.controller.exchange(meas, t, timeout=self.exchange_timeout)
                 if controls is None:  # blocking-lockstep liveness: a lost peer ends the run
-                    raise ConnectionError("controller disconnected (no actuator controls received)")
+                    raise ConnectionError(f"{self._controller_name()} disconnected (no actuator controls received)")
                 prof.mark("exchange")  # the host seam, for example the PX4 MAVLink round-trip
 
                 # Zero-order-hold the controls over physics_substeps finer physics steps.
@@ -603,7 +603,7 @@ class Orchestrator:
                 prof.mark("exchange")  # the host seam: the PX4 MAVLink round-trip / the MPC solve
                 if controls is None:  # controller disconnected -> end the run
                     count -= 1  # the disconnect tick didn't advance the sim
-                    raise ConnectionError("controller disconnected (no actuator controls received)")
+                    raise ConnectionError(f"{self._controller_name()} disconnected (no actuator controls received)")
                 self.actuator.write_controls(controls)  # H2D for the next replay, host seam
                 prof.mark("write")
                 self._sample_host(state, t, meas)  # host-rate sensors, RTX cameras, self-decimated
@@ -732,6 +732,10 @@ class Orchestrator:
                     self._stop_peers()
                 finally:
                     self._close_logs()
+
+    def _controller_name(self) -> str:
+        """The controller's class, so a run's end names the peer that left it: ``Px4MavlinkController``."""
+        return type(self.controller).__name__
 
     def _stop_peers(self) -> None:
         """Stop each peer the build started. A peer whose stop fails, a docker daemon that went

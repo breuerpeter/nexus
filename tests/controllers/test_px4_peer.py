@@ -341,7 +341,9 @@ def test_a_peer_that_dies_ends_the_run_as_the_controllers_disconnect(daemon, cap
             break
     autopilot.join(timeout=5.0)
 
-    assert (ended, autopilot.answered, "disconnected" in caplog.text) == (True, 5, True), caplog.text
+    assert (ended, autopilot.answered, "Px4MavlinkController disconnected" in caplog.text) == (True, 5, True), (
+        caplog.text
+    )
 
 
 def test_the_peers_ports_come_from_the_run(daemon, run):
