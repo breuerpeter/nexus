@@ -52,3 +52,7 @@ uvx --from import-linter lint-imports
 ```bash
 uv run --extra policy --with pytest pytest tests -q
 ```
+
+## What CI flies
+
+A pull request with the `gpu` label flies every example at once on one GPU box and gates each on its correctness rows in `scripts/ci/examples_baselines.json`, so it pays for one box and proves the change. Main flies each example on a box of its own, gates the same rows plus each `rtf` row, and uploads the recordings the docs embed. The weekly schedule flies the benchmark matrix, one cell per box. The RTF gates run on main because a real-time factor is only comparable when the flight has the box to itself: flights that share a box share its CPUs, and each one's RTF drops. So a speed regression shows on the merge commit, not on the pull request.
