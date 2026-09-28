@@ -6,11 +6,13 @@ artifacts run on the GPU runner. The GPU runner also covers evo-dependent scorin
 
 import importlib.util
 import json
+import os
 import pathlib
 import subprocess
 import sys
 
 import numpy as np
+import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 BASELINES = json.loads((ROOT / "scripts" / "ci" / "examples_baselines.json").read_text())
@@ -203,6 +205,34 @@ def test_the_gpu_name_reads_unknown_without_nvidia_smi(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", str(tmp_path))  # an empty directory: no nvidia-smi anywhere on it
 
     assert evaluate_examples._gpu_name() == "unknown"
+
+
+def test_a_bench_feed_read_s3_denies_fails_the_upload_naming_the_key(tmp_path, monkeypatch):
+    """A bench-feed read that S3 denies still reds the job, naming the key: given
+    `evaluate_examples.py --upload` with an `aws` on `PATH` that answers `get-object` with
+    `AccessDenied`, when it publishes the bench feed, then it exits non-zero and its error names the
+    key and the denial.
+    """
+    aws = tmp_path / "bin" / "aws"
+    aws.parent.mkdir()
+    aws.write_text(
+        "#!/bin/sh\n"
+        'case "$*" in *get-object*)\n'
+        "  echo 'An error occurred (AccessDenied) when calling the GetObject operation' >&2; exit 254;;\n"
+        "esac\n"
+    )
+    aws.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{aws.parent}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("NEXUS_BUCKET", "ci-bucket")
+    monkeypatch.setenv("GITHUB_SHA", "0123456789abcdef0123456789abcdef01234567")
+    real_run = subprocess.run
+    _fake_flight(monkeypatch, _HEALTHY_FLIGHT)
+    flight = subprocess.run
+    # The flight stays faked; the harness's `aws` calls reach the fake `aws` on PATH.
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: (real_run if cmd[0] == "aws" else flight)(cmd, **kw))
+
+    with pytest.raises(RuntimeError, match=r"get-object public/ci/bench/0123456789ab\.json: .*AccessDenied"):
+        _harness(monkeypatch, "--only", "goto_policy", "--out", str(tmp_path / "out"), "--upload")
 
 
 def test_merged_local_merges_by_name_fresh_winning(tmp_path):
