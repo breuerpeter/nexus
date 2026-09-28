@@ -8,16 +8,21 @@ name: gpu-runner
 # Freefly's AWS account (multi-region — placement discovered per run, see #26); the box boots the
 # latest AWS Deep Learning Base GPU AMI
 # (NVIDIA drivers + Docker + nvidia-container-toolkit, resolved at runtime); a PX4 run builds the
-# px4-sitl image on the box the way a user's first run does, and an RTX run the Kit image. On push, schedule and dispatch
+# px4-sitl image on the box the way a user's first run does, an RTX run pulls NVIDIA's Isaac Sim
+# image, and the box restores the one cache entry its caller names. On push, schedule and dispatch
 # runs the EC2 instance role grants s3:PutObject to the CI artifacts bucket so a command's --upload
-# works via the instance profile; PR runs, same-repo or fork, launch with no instance profile and
-# no Cesium token, since nothing a PR run does needs them. The bucket's public/* prefix is SERVED
+# works via the instance profile. A same-repo PR run launches with the caller's read-only instance
+# profile when it names one, else with none; a fork's PR run always launches with none. No PR run
+# carries a Cesium token, since nothing a PR run does needs it. The bucket's public/* prefix is SERVED
 # THROUGH CLOUDFRONT (docs .rrd embeds + the bench feed), so treat everything uploaded there as
 # public. A CI output that is not published rides a GitHub artifact.
 #
 # Provisioning (one-time): secrets AWS_GPU_INSTANCE_PROFILE, the instance profile a main-push run
 # attaches so its uploads need no keys, NEXUS_BUCKET, the artifacts bucket those uploads write to,
-# AWS_RUNNER_RESOURCE_TAG where tagged subnets opt in, and AWS_GPU_ROLE_ARN (OIDC). They name
+# AWS_RUNNER_RESOURCE_TAG where tagged subnets opt in, and AWS_GPU_ROLE_ARN (OIDC). Optional:
+# AWS_GPU_PR_INSTANCE_PROFILE, the instance profile a same-repo PR run attaches, for a caller whose
+# flights read a private S3 prefix. Its role must grant reads alone, and AWS_GPU_ROLE_ARN's role needs
+# iam:PassRole on it, an act of the AWS account's admin. They name
 # resources in an AWS account, so they are secrets and the runner masks them in the public logs.
 # Var CI_APP_CLIENT_ID and secret CI_APP_PRIVATE_KEY, the GitHub App (repo permissions
 # Administration, Contents and Pull requests, each read and write) whose per-job tokens register
@@ -66,11 +71,15 @@ on:
         type: string
         default: ""
       cache-name:
-        description: "That entry's name, the leading part of its key and the fallback prefix a miss restores from"
+        description: "That entry's name: the leading part of its key, and the prefix a miss restores the newest entry from"
         type: string
         default: ""
       cache-files:
         description: "The files whose hash keys that entry, comma-separated path patterns; a change to any starts a new entry"
+        type: string
+        default: ""
+      cache-drop:
+        description: "Paths inside the entry to remove before it is saved, for what a run writes there that the next run must not read"
         type: string
         default: ""
       cache-scope:
@@ -84,6 +93,7 @@ on:
     secrets:
       AWS_GPU_ROLE_ARN: { required: false }
       AWS_GPU_INSTANCE_PROFILE: { required: false }
+      AWS_GPU_PR_INSTANCE_PROFILE: { required: false }
       AWS_RUNNER_RESOURCE_TAG: { required: false }
       NEXUS_BUCKET: { required: false }
       CI_APP_PRIVATE_KEY: { required: false }
@@ -178,14 +188,20 @@ jobs:
           availability-zones-config: ${{ steps.discover.outputs.availability-zones-config }}
           # The instance profile (s3:PutObject for the docs .rrd uploads) rides push, schedule and
           # dispatch runs only: nothing a PR run does uploads, and an approved fork's code must not
-          # be able to write to the CI artifacts bucket. The condition is negated on purpose — in an Actions
-          # expression `cond && '' || 'x'` yields 'x' for both truth values.
-          iam-role-name: ${{ (github.event_name != 'pull_request' && github.event_name != 'pull_request_target') && secrets.AWS_GPU_INSTANCE_PROFILE || '' }}
+          # be able to write to the CI artifacts bucket. A same-repo PR run gets the caller's
+          # read-only profile instead, or none, and pull_request_target never gets one: the command
+          # there is a fork's code. The conditions are negated on purpose — in an Actions
+          # expression `cond && '' || 'x'` yields 'x' for both truth values, so an unset profile
+          # falls through to the next branch, which must then yield ''.
+          iam-role-name: ${{ (github.event_name != 'pull_request' && github.event_name != 'pull_request_target') && secrets.AWS_GPU_INSTANCE_PROFILE || (github.event_name == 'pull_request' && secrets.AWS_GPU_PR_INSTANCE_PROFILE || '') }}
           # The DL AMI's default root is 35 GB — the OS+CUDA stack alone nearly fills it, and the
-          # Kit image build on NVIDIA's base (benchmark matrix) then kills the runner with disk
+          # 21 GB Isaac Sim image pull (benchmark matrix) then kills the runner with disk
           # exhaustion (job dies, logs never upload). 100 GB gp3 costs cents per ephemeral run.
+          # At gp3's default 125 MiB/s the disk, not the network, bounds that pull: the download
+          # ends in about a minute and the writes sit at the cap for the rest. 1000 MiB/s and
+          # 16000 IOPS cut a warm RTX cell's Run step from 8.2 to 4.6 min, one run each, for cents.
           block-device-mappings: >-
-            [{"DeviceName": "${{ steps.discover.outputs.root-device }}", "Ebs": {"VolumeSize": 100, "VolumeType": "gp3", "DeleteOnTermination": true}}]
+            [{"DeviceName": "${{ steps.discover.outputs.root-device }}", "Ebs": {"VolumeSize": 100, "VolumeType": "gp3", "Throughput": 1000, "Iops": 16000, "DeleteOnTermination": true}}]
           pre-runner-script: |
             sudo usermod -aG docker ubuntu || true
             sudo systemctl enable docker || true
@@ -240,16 +256,20 @@ jobs:
           restore-keys: ${{ steps.warp-key.outputs.versions }}-
       # The caller's one cache entry: this runner knows no component, so the caller names the paths,
       # the entry's name and the files that shape it, and the key hashes those files here, since a
-      # reusable workflow's `with` cannot call hashFiles. A miss restores the newest entry under the
-      # same name, so a bump builds incrementally over the last tree rather than cold. Actions cannot
-      # loop steps, so a caller with two things to cache lists both paths under one entry.
+      # reusable workflow's `with` cannot call hashFiles. The key ends in the caller's cache-scope as
+      # the kernel cache's does, since a key is written once and the first saver wins; a miss restores
+      # the newest entry under the same name and hash, then under the name alone, so a bump builds
+      # incrementally over the last tree and a new cell boots on another cell's shaders. Actions
+      # cannot loop steps, so a caller with two things to cache lists both paths under one entry.
       - name: Restore the caller's cache entry
         if: inputs.cache-path != ''
         uses: actions/cache@v4
         with:
           path: ${{ inputs.cache-path }}
-          key: ${{ inputs.cache-name }}-${{ hashFiles(inputs.cache-files) }}
-          restore-keys: ${{ inputs.cache-name }}-
+          key: ${{ inputs.cache-name }}-${{ hashFiles(inputs.cache-files) }}-${{ inputs.cache-scope }}
+          restore-keys: |
+            ${{ inputs.cache-name }}-${{ hashFiles(inputs.cache-files) }}-
+            ${{ inputs.cache-name }}-
       - name: Fail early when a main-push run has no instance profile
         # Only push, schedule and dispatch attach one, and only they upload; a PR run passes an empty
         # name on purpose. A step's `if:` cannot read a secret, so the check reads it from env.
@@ -280,20 +300,40 @@ jobs:
           CESIUM_ION_TOKEN: ${{ (github.event_name != 'pull_request' && github.event_name != 'pull_request_target') && secrets.CESIUM_ION_TOKEN || '' }}
           # The artifacts bucket an --upload run writes to: a name in the account, so a setting.
           NEXUS_BUCKET: ${{ secrets.NEXUS_BUCKET }}
-        # A PR run, same-repo or fork, must reach the command with no instance profile on the box
-        # and no Cesium token. The guard fails the run otherwise, so a change that brings either
-        # back is caught on its first PR run. IMDS answers 404 for iam/info when no profile is attached.
+          # The one profile a PR run may carry: the caller's read-only one, on pull_request alone.
+          PR_INSTANCE_PROFILE: ${{ github.event_name == 'pull_request' && secrets.AWS_GPU_PR_INSTANCE_PROFILE || '' }}
+        # A PR run, same-repo or fork, must reach the command with no Cesium token, and with no
+        # instance profile on the box but the caller's read-only one on a same-repo run. The guard
+        # fails the run otherwise, so a change that brings the push profile to a PR run, or any
+        # profile to a fork's, is caught on its first PR run. IMDS answers 404 for iam/info when no
+        # profile is attached, and 200 with the profile's InstanceProfileArn when one is.
         run: |
           case "$GITHUB_EVENT_NAME" in pull_request|pull_request_target)
             imds=$(curl -sX PUT http://169.254.169.254/latest/api/token -H "X-aws-ec2-metadata-token-ttl-seconds: 60" || true)
-            iam=$(curl -s -o /dev/null -w '%{http_code}' -H "X-aws-ec2-metadata-token: $imds" http://169.254.169.254/latest/meta-data/iam/info || true)
-            echo "PR run: iam/info returned $iam, CESIUM_ION_TOKEN length ${#CESIUM_ION_TOKEN}"
-            if [ "$iam" != 404 ] || [ -n "$CESIUM_ION_TOKEN" ]; then
-              echo "::error::a PR run must carry no instance profile and no Cesium token"
+            iam=$(curl -s -o "$RUNNER_TEMP/iam-info" -w '%{http_code}' -H "X-aws-ec2-metadata-token: $imds" http://169.254.169.254/latest/meta-data/iam/info || true)
+            profile=$(sed -n 's/.*"InstanceProfileArn" *: *"[^"]*\/\([^"/]*\)".*/\1/p' "$RUNNER_TEMP/iam-info" 2>/dev/null || true)
+            echo "PR run: iam/info returned $iam, profile '$profile', CESIUM_ION_TOKEN length ${#CESIUM_ION_TOKEN}"
+            if [ -n "$PR_INSTANCE_PROFILE" ]; then
+              [ "$iam" = 200 ] && [ "$profile" = "$PR_INSTANCE_PROFILE" ] && ok=1 || ok=
+            else
+              [ "$iam" = 404 ] && ok=1 || ok=
+            fi
+            if [ -z "$ok" ] || [ -n "$CESIUM_ION_TOKEN" ]; then
+              echo "::error::a PR run must carry no Cesium token, and no instance profile but the caller's read-only one on a same-repo run"
               exit 1
             fi ;;
           esac
           ${{ inputs.command }}
+      # What the caller's entry must not carry: actions/cache archives the whole folder, an exclusion
+      # pattern removes nothing inside it, so the caller's cache-drop paths go before the post step
+      # saves the entry. always(): a red run still saves what it built.
+      - name: Drop what the cache entry must not carry
+        if: ${{ always() && inputs.cache-drop != '' }}
+        env:
+          DROP: ${{ inputs.cache-drop }}
+        run: |
+          # shellcheck disable=SC2086 # a path is a glob, so it expands unquoted
+          while IFS= read -r p; do [ -n "$p" ] && rm -rf $p; done <<< "$DROP"
       - name: Upload coverage to Codecov
         if: ${{ inputs.coverage-flags != '' }}
         uses: codecov/codecov-action@v5

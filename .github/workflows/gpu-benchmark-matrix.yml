@@ -2,13 +2,14 @@ name: gpu-benchmark-matrix
 
 # The RTF benchmark matrix (scripts/ci/benchmark_matrix.py): ONE PX4 4-waypoint mission across
 # {vehicle × scene × device} on the pinned A10G runner — the physics table plus the RTX table, whose
-# camera renders in the Kit peer the cell starts; an RTX cell builds the Kit image on its box, as a
-# user's first RTX run does. Cesium cells need the CESIUM_ION_TOKEN secret and are skipped without
-# it. One box per cell: a measured flight cannot share a GPU, the RTF being the whole deliverable,
-# nor PX4's fixed ports, so `plan` lists the cells, `cell` flies each on a box of its own through
-# gpu-runner.yml, and `merge` joins their results over the committed matrix. Scheduled + dispatch
-# only, NOT per-push: the RTX cells cost minutes each. Ends with a data-refresh PR updating
-# docs/data/rtf_matrix.json — the docs Benchmarking page changes only through that reviewed diff.
+# camera renders in the Kit peer the cell starts; an RTX cell pulls NVIDIA's Isaac Sim image on its box, as a
+# user's first RTX run does, and restores the peer's caches from the last run, so Kit boots warm.
+# Cesium cells need the CESIUM_ION_TOKEN secret and are skipped without it. One box per cell: a
+# measured flight cannot share a GPU, the RTF being the whole deliverable, nor PX4's fixed ports,
+# so `plan` lists the cells, `cell` flies each on a box of its own through gpu-runner.yml, and
+# `merge` joins their results over the committed matrix. Scheduled + dispatch only, NOT per-push:
+# the RTX cells cost minutes each. Ends with a data-refresh PR updating docs/data/rtf_matrix.json —
+# the docs Benchmarking page changes only through that reviewed diff.
 
 on:
   schedule:
@@ -60,14 +61,20 @@ jobs:
         cell: ${{ fromJSON(needs.plan.outputs.plan).cells }}
     uses: ./.github/workflows/gpu-runner.yml
     with:
+      # The cell's one cache entry: the PX4 tree and image, and for an RTX cell the Kit peer's caches
+      # too, its shader cache and the home Kit writes its user caches into, so Kit boots warm on its
+      # fresh box; the shader cache is keyed by shader content, so another cell's entry still saves
+      # most compiles. Cesium's request cache holds the tiles a cesium cell streamed, and a restored
+      # one would feed the next cell from disk, so its RTF no longer measures a network stream: it
+      # goes before the entry is saved.
       cache-path: |
         ~/.cache/nexus/px4
         ~/.cache/nexus/ci/px4-sitl.tar
-      cache-name: px4
+        ${{ matrix.cell.renders && '~/.cache/nexus/kit' || '' }}
+      cache-name: ${{ matrix.cell.renders && 'px4-kit' || 'px4' }}
       cache-files: >-
-        nexus/_src/vehicle/controllers/px4/px4.ref,
-        nexus/_src/vehicle/controllers/px4/checkout.py,
-        nexus/_src/vehicle/controllers/px4/px4-sitl/Dockerfile
+        ${{ format('nexus/_src/vehicle/controllers/px4/px4.ref, nexus/_src/vehicle/controllers/px4/checkout.py, nexus/_src/vehicle/controllers/px4/px4-sitl/Dockerfile{0}', matrix.cell.renders && ', nexus/_src/rendering/kit-peer/**' || '') }}
+      cache-drop: ${{ matrix.cell.renders && '~/.cache/nexus/kit/home/.cache/ov/cesium-request-cache.sqlite*' || '' }}
       cache-scope: ${{ matrix.cell.tag }}
       command: >-
         bash scripts/ci/px4_image_cache.sh load &&

@@ -1,5 +1,5 @@
-The Kit render peer: `peer.py` builds the Kit image and runs its container, and `link.py` is the
-renderer the loop drives and the link the RTX sensors ride.
+The Kit render peer: `peer.py` pulls NVIDIA's Isaac Sim image and runs its container, and `link.py`
+is the renderer the loop drives and the link the RTX sensors ride.
 
 - `kit-peer/` is the program the container runs under Kit's Python, shipped as package data. No
   module imports it, and it imports no nexus module, so the `no-kit` contract in `.importlinter`
@@ -7,9 +7,13 @@ renderer the loop drives and the link the RTX sensors ride.
 - A module in `kit-peer/` runs as a top-level module in the image, so its name must not shadow a
   Kit package: the Cesium handler is `cesium_globe.py` because Cesium's extension is the `cesium`
   package.
-- Any change under `kit-peer/` changes `image_tag()`, a hash of that folder minus what
-  `.dockerignore` leaves out, so the next RTX run rebuilds the image. A change anywhere else never
-  does.
+- The container runs `nvcr.io/nvidia/isaac-sim` as pulled, `IMAGE` in `peer.py`. `kit-peer/` mounts
+  read-only at `/nexus-kit`, so an edit there takes effect on the next RTX run. Anything the peer
+  needs goes in as a run option or a mount, never as a derived image, so an Isaac upgrade stays
+  a change to `IMAGE`.
+- Cesium for Omniverse is a content-addressed download, `CESIUM` in `peer.py`. The host fetches it
+  into the asset cache only when a file the run renders declares a `CesiumTilesetPrim`, and mounts
+  it at `/cesium-exts`. `nexus script --cesium` does the same for the Cesium author script.
 - Kit renders one update behind, so a frame reply carries the request before it: the first reply
   carries nothing, and the close renders the last request and returns its frame with `closed`.
 - The wire format lives once, in `kit-peer/link.py`: the peer imports it as a sibling module, and

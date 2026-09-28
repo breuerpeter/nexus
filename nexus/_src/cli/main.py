@@ -24,20 +24,23 @@ def _run(args) -> None:
 
 
 def _run_script(argv: list[str]) -> None:
-    """``nexus script <path> [args…]``: run one Kit-only script in the Kit image.
+    """``nexus script [--cesium] <path> [args…]``: run one Kit-only script in the Kit image.
 
-    For the asset scripts that call Kit's extensions: the image's launcher boots Kit and runs the
-    script with its own arguments, with the working folder and ``$NEXUS_DATA`` mounted at their
-    host paths::
+    For the asset scripts that call Kit's extensions: the peer program's launcher boots Kit and runs
+    the script with its own arguments, with the working folder and ``$NEXUS_DATA`` mounted at their
+    host paths. ``--cesium`` gives Kit the Cesium for Omniverse extensions, for the script that
+    authors the Cesium scene::
 
         nexus script scripts/assets/obj_to_usd.py "$NEXUS_DATA/scans/obj/Example Site" --out out.usdz
     """
+    cesium = argv[:1] == ["--cesium"]
+    argv = argv[1:] if cesium else argv
     if not argv:
-        raise SystemExit("usage: nexus script <path> [args…]")
+        raise SystemExit("usage: nexus script [--cesium] <path> [args…]")
     from nexus._src.rendering import KitPeerError, run_script
 
     try:
-        code = run_script(argv)
+        code = run_script(argv, cesium=cesium)
     except KitPeerError as exc:
         raise SystemExit(f"nexus: {exc}") from None
     raise SystemExit(code)
@@ -56,7 +59,7 @@ def main() -> None:
         nargs="?",
         default="run",
         choices=["run"],
-        help="subcommand (also: `nexus script <path> [args…]`, run a Kit-only asset script in the Kit image)",
+        help="subcommand (also: `nexus script [--cesium] <path> [args…]`, run a Kit-only asset script in the Kit image)",
     )
     parser.add_argument(
         "--stream",

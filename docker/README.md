@@ -1,11 +1,11 @@
 # `docker/`
 
-The ground services of a decoupled PX4 flight, as compose services. Neither image the sim runs is
-here: the `px4-sitl` image and the Kit image both ship as package data and build on each machine,
-see [`px4-sitl`](#px4-sitl) and [the Kit render peer](#the-kit-render-peer). `mediamtx/` isn't an
-image: it holds the config for the compose `mediamtx` service, which pulls `bluenviron/mediamtx`.
-**RL training**, `nexus-rl`, is *not* a container. It runs host-side as a separate `uv` project. See
-the note at the bottom.
+The ground services of a decoupled PX4 flight, as compose services. No image the sim runs is here.
+The `px4-sitl` image ships as package data and builds on each machine, see [`px4-sitl`](#px4-sitl).
+The Kit render peer runs NVIDIA's image as pulled, see [the Kit render peer](#the-kit-render-peer).
+`mediamtx/` isn't an image: it holds the config for the compose `mediamtx` service, which pulls
+`bluenviron/mediamtx`. **RL training**, `nexus-rl`, is *not* a container. It runs host-side as a
+separate `uv` project. See the note at the bottom.
 
 ## `px4-sitl`
 
@@ -39,23 +39,27 @@ tree, and `--user` keeps those build artifacts host-owned.
 A vehicle whose Universal Scene Description (USD) file authors a `Camera` or `OmniLidar` prim
 renders it in the **Kit render peer**. The sim starts that container beside PX4 and stops it at the
 end of the run. The loop stays on the host, and the peer takes poses over a socket and returns each
-frame. Its definition, the Dockerfile and the program Kit runs, lives in
+frame. The program Kit runs lives in
 [`nexus/_src/rendering/kit-peer/`](../nexus/_src/rendering/kit-peer/) and ships in the package, and
-[`nexus/_src/rendering/peer.py`](../nexus/_src/rendering/peer.py) builds and runs it through the
-docker SDK. No compose service starts it.
+[`nexus/_src/rendering/peer.py`](../nexus/_src/rendering/peer.py) runs it through the docker SDK.
+No compose service starts it.
 
-The image holds NVIDIA's layers, so it can't be a public package. The first RTX run on a machine
-builds it: `FROM nvcr.io/nvidia/isaac-sim:6.0.1`, which pulls with no NGC login, plus Cesium for
-Omniverse and the peer program, and no nexus code. The tag is `nexus-kit:` and a hash of that
-folder, so a later run reuses it and an update rebuilds it only when it changes the peer.
+This repository builds no Kit image. The container runs NVIDIA's
+`nvcr.io/nvidia/isaac-sim:6.0.1` as pulled. The first RTX run on a machine pulls it, with no NGC
+login, and later runs reuse it. The peer program mounts read-only at `/nexus-kit`. A scene that
+declares a Cesium tileset fetches Cesium for Omniverse into the asset cache, and the container mounts
+it at `/cesium-exts`.
 
 The container runs as the host user. It mounts the asset cache and the folder of each local USD it
 renders read-only, at their host paths. It mounts `~/.cache/nexus/kit/` for Kit's own caches, which
-the run creates as the user first, since docker would create it owned by root. Its console goes to
+the run creates as the user first, since docker would create it owned by root. Kit's settings and
+logs under `/isaac-sim/kit` stay in the container. Its console goes to
 `~/.cache/nexus/logs/console-*.log`.
 
 Kit-only asset scripts run in the same image with `uv run nexus script <path> [args…]`: it boots
 Kit, then runs the script, with the working folder and `$NEXUS_DATA` mounted at their host paths.
+`nexus script --cesium <path> [args…]` also mounts Cesium for Omniverse, for the Cesium author
+script.
 
 ## `isaac-lab`: not a container, it runs host-side
 

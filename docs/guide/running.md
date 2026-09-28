@@ -60,11 +60,12 @@ render peer**. That container renders the sensors while the loop flies on the ho
 the poses at each frame and takes the frames back a tick later. A vehicle with no such prim starts
 no container.
 
-- The first RTX run on a machine builds the Kit image from `nexus/_src/rendering/kit-peer/`, which
-  ships in the package. The build pulls NVIDIA's `nvcr.io/nvidia/isaac-sim:6.0.1`, about 21 GB,
-  with no NGC login, and adds Cesium for Omniverse and the peer program. Later
-  runs reuse the image. The tag is a hash of that folder, so an update rebuilds the image only when
-  it changes the peer.
+- The first RTX run on a machine pulls NVIDIA's `nvcr.io/nvidia/isaac-sim:6.0.1`, about 21 GB,
+  with no NGC login. Later runs reuse it, and nexus builds nothing. The container runs the image
+  as pulled. The peer program ships in the package, in `nexus/_src/rendering/kit-peer/`. It mounts
+  read-only, so an update to the peer takes effect on the next run.
+- A scene that declares a Cesium tileset, such as `--scene cesium`, fetches Cesium for Omniverse
+  into the asset cache on its first run. No other scene fetches it.
 - Kit boots in the background while PX4 builds and the physics compiles. Its shader cache lives in
   `~/.cache/nexus/kit/`, so the first boot is the slow one. The container's console goes to
   `~/.cache/nexus/logs/console-*.log`, next to the run's recording.
