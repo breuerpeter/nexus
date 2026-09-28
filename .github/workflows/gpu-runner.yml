@@ -176,7 +176,7 @@ jobs:
           github-token: ${{ steps.app-token.outputs.token }}
           ec2-instance-type: ${{ inputs.instance-type }}
           availability-zones-config: ${{ steps.discover.outputs.availability-zones-config }}
-          # The instance profile (uploads + the bench feed's read) rides push, schedule and
+          # The instance profile (write public/ci/*, read public/ci/bench/*) rides push, schedule and
           # dispatch runs only: nothing a PR run does uploads, and an approved fork's code must not
           # be able to write to the CI artifacts bucket. A same-repo PR run gets the caller's
           # read-only profile instead, or none, and pull_request_target never gets one: the command
