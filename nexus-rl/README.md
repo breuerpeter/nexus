@@ -113,7 +113,7 @@ The vehicle config, `config/astro_max.py`, supplies the Astro-Max-specific bits:
 Forward Right Down (FRD) frame with `base_body="body_frd"` and `thrust_sign=-1`, and a custom spawner
 `func`. That `func` disables the world→base `PhysicsFixedJoint` the registry USD bakes in, which would
 otherwise pin the base, so thrust moves nothing. The thrust map, `ct`, `cd`, and `rpm_max`, comes from
-the `freefly:actuator:*` attributes of the USD, the same source the core uses, no duplication. A
+the `motor:*` and `propeller:*` attributes on the rotor joints of the USD, the same source the core uses. A
 different vehicle is just another `config/<vehicle>.py`.
 
 ## Deploy, the FR-7 round trip
