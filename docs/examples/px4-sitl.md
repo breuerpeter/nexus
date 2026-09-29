@@ -26,12 +26,15 @@ Hardware In The Loop (HIL) link on `:4560`.
 | **Sim speed with PX4** | **~3.7×** real-time on the GPU with the captured strategy, RTX 5080, for the full takeoff+yaw profile with recording on |
 
 **Clean log gate.** The flight asserts **zero PX4 warnings**, the `px4_warnings` metric gated to 0.
-A healthy closed-loop SITL run must not log a single `WARN` or `ERROR` line about the sim. Two
-known-benign lines are content-allowlisted. One is the boot-time `Parameter <name> not found.` line
-for a parameter the airframe sets and this PX4 build lacks, and every other `param` failure still
-gates. The other is the pre-arm "no heading reference" transient while PX4's EKF2 estimator
-converges. The takeoff
-script's failure-free wait rides that transient out. This caught a real fidelity bug. The environment
+A healthy closed-loop SITL run must not log a single `WARN` or `ERROR` line about the sim. Three
+known-benign lines are content-allowlisted. The first is the boot-time `Parameter <name> not found.`
+line for a parameter the airframe sets and this PX4 build lacks, and every other `param` failure
+still gates. The second is the pre-arm "no heading reference" transient while PX4's EKF2 estimator
+converges, and the takeoff script's failure-free wait rides it out. The third is the logger's
+`Too many subscriptions, failed to add: <topic>` line. PX4's default logging in SITL asks for more
+topics than the logger's 255-entry cap. The logger then refuses the topics it adds last, and which
+ones changes from boot to boot. A refused topic is a logging limit, not a sim problem, so the gate
+forgives the line whatever topic it names. The gate caught a real fidelity bug. The environment
 fed the magnetometer a *Zurich* World Magnetic Model (WMM) field while the
 Global Positioning System (GPS) origin is *Seattle*, so PX4's strict mag check, `EKF2_MAG_CHK_STR`,
 intermittently failed with `Strong magnetic interference`. The fix computes the field at the GPS
