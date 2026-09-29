@@ -67,7 +67,6 @@ def _registry(usd_ref: dict) -> Registry:
         {
             "vehicles": [{"name": "astro", "usd": usd_ref}],
             "scenes": {"empty": {}},
-            "defaults": {"vehicle": "astro", "scene": "empty"},
         }
     )
 
@@ -84,7 +83,7 @@ def test_resolve_to_vehicle_builder_uses_resolved_usd(tmp_path):
     ref = _usd_ref(tmp_path)
     reg = _registry(ref)
     builder, resolved = resolve_to_vehicle_builder(
-        LaunchConfig().set_vehicle("astro"), reg, cache_dir=tmp_path / "cache"
+        LaunchConfig().set_vehicle("astro").set_scene("empty"), reg, cache_dir=tmp_path / "cache"
     )
     # the builder points at the verified, content-addressed local copy of the USD
     assert Path(builder.cfg["usd_path"]).read_bytes() == PX4_VEHICLE
@@ -132,7 +131,6 @@ def test_scene_threads_uniformly_and_anchors_gps(tmp_path, monkeypatch):
                     "start": [10.0, -94.0, -8.5],
                 },
             },
-            "defaults": {"vehicle": "astro", "scene": "empty"},
         }
     )
     captured = {}
@@ -168,7 +166,7 @@ def test_build_from_launch_starts_the_px4_peer_before_the_assembly(tmp_path, mon
     monkeypatch.setattr(L, "build_orchestrator", lambda label, cfg, **kw: order.append("orchestrator") or kw)
 
     reg = _registry(_usd_ref(tmp_path))
-    lc = LaunchConfig().set_vehicle("astro")
+    lc = LaunchConfig().set_vehicle("astro").set_scene("empty")
     kw = L.build_from_launch(lc, registry=reg, cache_dir=tmp_path / "cache")
 
     started = [r["environment"].get("PX4_SIM_MODEL") for r in daemon if r.get("detach", True)]
@@ -201,7 +199,6 @@ def _catalog(tmp_path) -> Registry:
         {
             "vehicles": [{"name": "astro", "usd": _usd_ref(tmp_path)}],
             "scenes": {"empty": {}},
-            "defaults": {"vehicle": "astro", "scene": "empty"},
         }
     )
 
@@ -210,7 +207,7 @@ def _build(tmp_path, prims: str, **kw):
     """Build a run of a local vehicle defined by `prims`."""
     import nexus._src.build.launch as L
 
-    lc = LaunchConfig().set_vehicle(_local_vehicle(tmp_path, prims))
+    lc = LaunchConfig().set_vehicle(_local_vehicle(tmp_path, prims)).set_scene("empty")
     return L.build_from_launch(lc, registry=_catalog(tmp_path), cache_dir=tmp_path / "cache", **kw)
 
 
@@ -222,7 +219,7 @@ def test_the_receipt_records_the_airframe_the_vehicle_usd_declares(tmp_path):
     """
     from nexus._src.build.launch import resolve_to_vehicle_builder
 
-    lc = LaunchConfig().set_vehicle(_local_vehicle(tmp_path, PX4_ROOT))
+    lc = LaunchConfig().set_vehicle(_local_vehicle(tmp_path, PX4_ROOT)).set_scene("empty")
     _, resolved = resolve_to_vehicle_builder(lc, _catalog(tmp_path), cache_dir=tmp_path / "cache")
 
     assert resolved.tested_config.model_dump(mode="json")["px4"] == {"airframe": "foo"}

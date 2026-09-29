@@ -101,7 +101,7 @@ class AstroMaxWaypointRollout:
         from nexus._src.build.launch import resolve_to_vehicle_builder
         from nexus._src.config import LaunchConfig
 
-        vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle("astro_max_base"))
+        vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
         # Single rigid body collapsed from the astro-max USD, the same seam the sampling
         # Model Predictive Control (MPC) example uses: correct lumped mass/inertia + the real rotor layout,
         # FRD with thrust along −body-z, spawned rotors-up.
@@ -391,7 +391,7 @@ def main():
         from nexus._src.rendering import rtx_renderer
         from nexus.examples.controllers.pid.assembly import build_pid_orchestrator
 
-        launch = LaunchConfig().set_vehicle("astro_max_base")
+        launch = LaunchConfig().set_vehicle("astro_max_base").set_scene("empty")
         launch.runtime.device = "cuda"  # prefer CUDA; falls back to CPU without one
         launch.runtime.solver = "semi_implicit"  # the collapsed diffsim plant: deploy ≡ tuning plant
         vb2, _resolved, cfg = resolve_scenario(launch)

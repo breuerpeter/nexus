@@ -2,8 +2,8 @@
 #
 # S3 holds only content-addressed blobs; this file is the semantic <-> content binding. Every
 # vehicle variant is a `name` handle plus its USD, which declares its controller. A launch names the variant it flies,
-# `--vehicle astro_max_fpv`, and a launch that names none flies `defaults.vehicle`. The name is what
-# the run's receipt records.
+# `--vehicle astro_max_fpv`, and the scene it flies in, `--scene empty`. The name is what the run's
+# receipt records.
 #
 # Assets are referenced by `{name, sha256}`, completed against `assets.base` below into a
 # self-contained `.usdz` at <base>/assets/usd/{vehicles,scenes}/<name>-<sha256>.usdz; see
@@ -36,7 +36,7 @@ vehicles:
 # runtime places `start` with a single session-layer translate; cesium is exempt (georef-anchored,
 # absolute /Cesium* paths). See scripts/assets/scene_root.py.
 scenes:
-  empty:                              # flat ground (default); sky-only usdz, no static geometry
+  empty:                              # flat ground; sky-only usdz, no static geometry
     usd: { name: empty, sha256: ab15e88be59c0ee93e63160c34b08485e3136d1f88313f24dcd67e482ecbed05 }
     geodetic_origin: null
 
@@ -55,7 +55,3 @@ scenes:
     # reconversion. Renders only for a camera vehicle; needs CESIUM_ION_TOKEN. Fly any location with
     # `--scene cesium --geo <lat>,<lon>[,<alt>]` (e.g. San Francisco: `--geo 37.7942,-122.3954,-32`).
     geodetic_origin: { lat: 47.747944, lon: -122.163917, alt: -6.2 }
-
-defaults:
-  vehicle: astro_max_base  # what `nexus run` flies when the command line names no vehicle
-  scene: empty

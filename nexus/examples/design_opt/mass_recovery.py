@@ -69,7 +69,7 @@ def recover_mass(
     # Single rigid body collapsed from the vehicle Universal Scene Description (USD): the open-loop world-+z
     # thrust is frame-agnostic, so the Forward Right Down (FRD) body works unchanged here; only the body
     # mass matters for the system-ID.
-    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle(vehicle))
+    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle(vehicle).set_scene("empty"))
     sb = collapse_to_single_body(vb, requires_grad=True)
     model, nominal_mass = sb.model, sb.mass
     solver = newton.solvers.SolverSemiImplicit(model)

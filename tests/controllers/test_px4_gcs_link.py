@@ -151,7 +151,7 @@ def run_with_no_gcs():
     without sticks, and waits until PX4 reports it could arm and has been up past the datalink timeout. Then
     it makes a GCS required, ``NAV_DLL_ACT`` 2, asks PX4 to arm, and puts the parameter back.
     """
-    with na.Sim(log=True, rtf=1.0) as sim:
+    with na.Sim("astro_max_base", scene="empty", log=True, rtf=1.0) as sim:
         sim.start(timeout=120.0)
         link = _Peer(_OPERATOR_LINK, heartbeat=False)
         try:
@@ -183,7 +183,7 @@ def run_where_the_gcs_leaves():
     request that names no mode, which PX4 answers with a status message. Then it goes quiet for longer than
     the datalink timeout, the way a GCS device does when it drops off the network.
     """
-    with na.Sim(log=True, rtf=1.0) as sim:
+    with na.Sim("astro_max_base", scene="empty", log=True, rtf=1.0) as sim:
         sim.start(timeout=120.0)
         gcs = _Peer(_GCS_LINK, heartbeat=True)
         try:

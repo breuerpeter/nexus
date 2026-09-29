@@ -209,9 +209,7 @@ def _vehicle(tmp_path) -> dict:
 
 @pytest.fixture
 def catalog(tmp_path) -> Registry:
-    return Registry.from_dict(
-        {"vehicles": [_vehicle(tmp_path)], "scenes": {"empty": {}}, "defaults": {"vehicle": "astro", "scene": "empty"}}
-    )
+    return Registry.from_dict({"vehicles": [_vehicle(tmp_path)], "scenes": {"empty": {}}})
 
 
 @pytest.fixture
@@ -219,7 +217,7 @@ def run(daemon, assembly, catalog, tmp_path):
     """Build a PX4 run whose ``peers.px4`` entry is the one given, and return its loop."""
 
     def _run(px4: dict) -> Orchestrator:
-        launch = LaunchConfig.from_dict({"vehicle": "astro", "peers": {"px4": px4}})
+        launch = LaunchConfig.from_dict({"vehicle": "astro", "scene": "empty", "peers": {"px4": px4}})
         return launch_mod.build_from_launch(launch, registry=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0)
 
     return _run
@@ -391,7 +389,7 @@ def test_the_peers_console_log_stays_in_the_runs_artifacts(daemon, assembly, cat
     project = tmp_path / "nexus.registry.yaml"
     project.write_text(yaml.safe_dump({"vehicles": [_vehicle(tmp_path)]}))
 
-    with Sim("astro", registry=str(project), device="cpu", observe=False) as sim:
+    with Sim("astro", scene="empty", registry=str(project), device="cpu", observe=False) as sim:
         pass
 
     log = Path(sim.artifacts()["px4_log"]).name
@@ -452,7 +450,7 @@ def test_a_shipped_vehicle_flies_px4_sitl_on_its_own_airframe_with_no_control_fl
     monkeypatch.chdir(tmp_path)  # no project catalog: only the bundled one
     monkeypatch.setattr(op_mod, "Px4Offboard", _Offboard)
 
-    with Sim("astro_max_base", device="cpu", observe=False) as sim:
+    with Sim("astro_max_base", scene="empty", device="cpu", observe=False) as sim:
         operator = sim.operator
 
     assert (_started_models(daemon), type(operator)) == (["none_astro_max"], _Offboard)
@@ -470,7 +468,9 @@ def test_a_local_vehicle_usd_flies_the_airframe_its_px4_schema_declares(daemon, 
         'def Xform "vehicle" (\n    prepend apiSchemas = ["NexusPx4API"]\n)\n'
         '{\n    string nexus:airframe = "foo"\n}\n'
     )
-    launch = LaunchConfig.from_dict({"vehicle": str(usd), "peers": {"px4": {"realization": "managed"}}})
+    launch = LaunchConfig.from_dict(
+        {"vehicle": str(usd), "scene": "empty", "peers": {"px4": {"realization": "managed"}}}
+    )
 
     launch_mod.build_from_launch(launch, registry=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0).close()
 

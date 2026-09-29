@@ -146,14 +146,14 @@ class LaunchConfig(_Base):
     """The sim's *fixed* standup properties: what the sim **is**, not what happens to it.
 
     Dynamics, such as faults and moving actors, are control-API verbs, not config.
-    Small in the common case because everything defaults from the registry.
+    Small in the common case: the vehicle and the scene, and the registry fills in the rest.
     """
 
     vehicle: str | None = None
     """The vehicle to fly: a registry ``name`` handle (``--vehicle astro_max_fpv``), or a path to a
     local vehicle Universal Scene Description (USD) file.
 
-    ``None`` takes the registry's ``defaults.vehicle``.
+    ``None`` until set; a launch that still names none fails to resolve.
     """
     registry: str | None = None
     """Path to the catalog that extends the bundled one for this run, the ``--registry`` value.
@@ -165,7 +165,7 @@ class LaunchConfig(_Base):
     """Name of the static scene to stand up, keyed into the registry's ``scenes``, or a local
     scene Universal Scene Description (USD) path (a converted mesh/splat, flown as the visual world).
 
-    ``None`` falls back to the registry's default scene.
+    ``None`` until set; a launch that still names none fails to resolve.
     """
     geodetic_origin: GeodeticOrigin | None = None
     """Override the scene's geodetic origin (the lat/lon the local frame anchors to).
@@ -228,16 +228,16 @@ class LaunchConfig(_Base):
         """
         return cls.from_dict(yaml.safe_load(pathlib.Path(path).read_text()))
 
-    def set_vehicle(self, vehicle: str | None) -> LaunchConfig:
-        """Set the vehicle to fly in place: a registry ``name`` handle, a local ``.usd`` path, or ``None``.
+    def set_vehicle(self, vehicle: str) -> LaunchConfig:
+        """Set the vehicle to fly in place: a registry ``name`` handle or a local ``.usd`` path.
 
-        ``resolve()`` reads a value with a path separator or a ``.usd`` suffix as a file, every other
-        value as a registry name, and ``None`` as the registry's default vehicle, so this setter takes
+        ``resolve()`` reads a value with a path separator or a ``.usd`` suffix as a file and every other
+        value as a registry name, so this setter takes
         a ``--vehicle`` command-line value unchanged. ``Sim`` and the command-line tool both select
         through it, so the two behave identically.
 
         Args:
-            vehicle: The registry name, the local ``.usd`` path, or ``None`` for the registry default.
+            vehicle: The registry name or the local ``.usd`` path.
 
         Returns:
             ``self``, so calls chain.

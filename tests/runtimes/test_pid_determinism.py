@@ -27,7 +27,7 @@ pytestmark = pytest.mark.usefixtures("warp_cpu")  # the build's force_cpu sets t
 def _run(steps: int):
     cfg = build_scenario()
     cfg["physics"]["force_cpu"] = True
-    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle("astro_max_base"))
+    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
     orch = build_pid_orchestrator(
         cfg,
         goal_w=(0.0, 0.0, 1.5),

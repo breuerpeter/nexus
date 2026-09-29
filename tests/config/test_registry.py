@@ -37,21 +37,10 @@ def test_duplicate_name_errors_at_load():
         _reg([FPV, dict(FPV, usd={"url": "file:///dup", "sha256": "0"})])  # two variants named 'fpv'
 
 
-def test_dangling_default_scene_errors_at_load():
-    with pytest.raises(RegistryError):
-        Registry.from_dict({"vehicles": [BASE], "scenes": {"empty": {}}, "defaults": {"scene": "nope"}})
-
-
-def test_dangling_default_vehicle_errors_at_load():
-    with pytest.raises(RegistryError):
-        _reg([BASE], defaults={"vehicle": "nope"})
-
-
 SIBLING = """\
 vehicles:
   - name: sibling_vehicle
     usd: { url: "file:///sibling.usdz", sha256: "0" }
-defaults: { vehicle: sibling_vehicle }
 """
 
 
@@ -84,7 +73,6 @@ def test_an_entry_addresses_its_own_blob():
                 {"name": "direct", "usd": {"url": "s3://example-bucket/elsewhere/x.usdz", "sha256": "def"}},
             ],
             "scenes": {"empty": {}},
-            "defaults": {"vehicle": "derived", "scene": "empty"},
         }
     )
     assert (reg.by_name("derived").usd.url, reg.by_name("direct").usd.url) == (
@@ -136,7 +124,6 @@ assets:
 vehicles:
   - name: project_vehicle
     usd: { name: project_vehicle, sha256: abc }
-defaults: { vehicle: project_vehicle }
 """
 
 REPIN = f"""\
@@ -222,3 +209,38 @@ def test_a_catalog_entry_that_still_carries_px4_fails_to_load(tmp_path):
     )
     with pytest.raises(ValueError, match=r"vehicles\.0\.px4"):
         nexus.Registry.from_yaml(catalog)
+
+
+MY_QUAD = """\
+vehicles:
+  - name: my_quad
+    usd: { url: "file:///my_quad.usda", sha256: abc }
+"""
+
+
+def test_a_catalog_with_a_defaults_block_fails_to_load_and_says_to_name_the_vehicle_and_scene(tmp_path):
+    """A project catalog with a `defaults` block fails to load, and the error names the removal and
+    says to name the vehicle and scene on the run.
+
+    Given a catalog with `defaults: { vehicle: my_quad }`, when `nexus.Registry.from_yaml(path)` reads
+    it, then it raises an error that names `defaults` as removed and points at `--vehicle` and `--scene`.
+    """
+    catalog = tmp_path / "catalog.yaml"
+    catalog.write_text(MY_QUAD + "defaults: { vehicle: my_quad }\n")
+
+    with pytest.raises((RegistryError, ValueError)) as e:
+        nexus.Registry.from_yaml(catalog)
+
+    assert [w in str(e.value) for w in ("defaults", "remov", "--vehicle", "--scene")] == [True] * 4
+
+
+def test_a_project_catalog_that_lists_only_what_it_adds_loads_on_its_own(tmp_path):
+    """A project catalog that lists only what it adds loads on its own.
+
+    Given a file with one vehicle, `scenes: {}` and no `defaults`, when `nexus.Registry.from_yaml(path)`
+    reads it, then it returns a catalog with that one vehicle and no error.
+    """
+    catalog = tmp_path / "catalog.yaml"
+    catalog.write_text(MY_QUAD + "scenes: {}\n")
+
+    assert [v.name for v in nexus.Registry.from_yaml(catalog).vehicles] == ["my_quad"]

@@ -48,13 +48,12 @@ class Sim:
     Z-up Forward-Left-Up (FLU), off the components' observation channels.
 
     Args:
-        vehicle: Registry vehicle *name*, for example ``"astro_max_fpv"``, or a local .usd path;
-            ``None`` takes the registry's default vehicle.
+        vehicle: Registry vehicle *name*, for example ``"astro_max_fpv"``, or a local .usd path.
         registry: Path to a catalog that extends the bundled one. ``None`` takes the nearest
             ``nexus.registry.yaml`` in the working directory or a directory over it, and only the
             catalog bundled in the wheel when no directory holds one.
-        scene: Optional registry scene to load, for example the ``"slalom"`` obstacle pillars;
-            ``None`` = the default empty scene.
+        scene: Registry scene *name* to fly in, for example ``"empty"`` for flat ground or the
+            ``"slalom"`` obstacle pillars, or a local scene .usd path.
         device: Compute device for the runtime: ``"auto"``, the default, which picks CUDA when
             present, or an explicit ``"cpu"``, for bit-exact determinism, or ``"cuda"``.
         observe: Attach a ``Recorder`` so :attr:`physics` and :attr:`sensors` read ground truth.
@@ -77,17 +76,17 @@ class Sim:
         final_hold_s: Keep running this long, in sim-time, after the final goal before stopping.
 
     Example:
-        >>> with Sim("astro_max_base") as sim:
+        >>> with Sim("astro_max_base", scene="empty") as sim:
         ...     sim.start()
         ...     sim.wait_until(lambda: sim.physics[sim.base_body].latest().altitude_m > 1.0, sim_timeout=30.0)
     """
 
     def __init__(
         self,
-        vehicle: str | None = None,
+        vehicle: str,
         *,
+        scene: str,
         registry: str | None = None,
-        scene: str | None = None,
         geo: str | None = None,
         device: str = "auto",
         observe: bool = True,
@@ -106,13 +105,11 @@ class Sim:
     ):
         self._launch = LaunchConfig()
         self._launch.peers.px4 = Px4Peer(realization=px4, instance=px4_instance)
-        # --vehicle is a registry *name*, a local .usd path, or None for the registry's default.
-        self._launch.set_vehicle(vehicle)
+        self._launch.set_vehicle(vehicle)  # a registry *name* or a local .usd path
         self._launch.registry = registry  # None: the run finds its own catalog, see load_registry
         if solver is not None:  # physics integrator override: mujoco | semi_implicit | featherstone
             self._launch.runtime.solver = solver
-        if scene is not None:
-            self._launch.set_scene(scene)  # registry scene, for example the 'slalom' obstacle pillars for sampling-mpc
+        self._launch.set_scene(scene)  # registry scene, for example the 'slalom' obstacle pillars for sampling-mpc
         if geo is not None:  # override the scene's geodetic origin, for example to fly cesium over any lat/lon
             parts = [float(x) for x in geo.split(",")]
             self._launch.set_geodetic_origin(*parts)  # lat,lon[,alt]; alt is the WGS84 ellipsoidal surface height
@@ -213,10 +210,10 @@ class Sim:
 
         diagnostics.configure(args)  # the shared --profile/--trace/--benchmark flags, process-wide
         kw = {
-            "vehicle": getattr(args, "vehicle", None),
+            "vehicle": args.vehicle,
             "registry": getattr(args, "registry", None),
             "device": getattr(args, "device", "auto"),
-            "scene": getattr(args, "scene", None),
+            "scene": args.scene,
             "geo": getattr(args, "geo", None),
             "solver": getattr(args, "solver", None),
             "log": getattr(args, "log", False),

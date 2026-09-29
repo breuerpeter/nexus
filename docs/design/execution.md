@@ -6,7 +6,8 @@ description: "nexus's execution model, a ring of device and host stages that CUD
 
 The same components and the same fixed-order [tick](architecture.md#the-simulation-loop) run on a
 CPU or a CUDA device. **Nothing selects a strategy**, and there is no knob for one. The one
-user-facing control is `nexus run --device {auto,cpu,cuda}`. The default, `auto`, takes the GPU
+user-facing control is `--device {auto,cpu,cuda}`, as in
+`nexus run --vehicle astro_max_base --scene empty --device cpu`. The default, `auto`, takes the GPU
 when one is present. The `Orchestrator` builds the tick from the stages each component states and
 captures graphs on CUDA.
 

@@ -60,6 +60,7 @@ from nexus.examples.controllers.acados_nmpc.assembly import build_acados_orchest
 
 # Everything this demo is, in one place: zero args by design, the configuration IS the example.
 VEHICLE = "astro_max_base"
+SCENE = "empty"  # flat ground
 MAX_STEPS = 4500  # safety cap; the operator ends the run after the reference duration, ~12.6 s, + hold
 
 # A curving course, not straight segments: the waypoints trace a climbing left-hand arc that hooks back
@@ -80,7 +81,7 @@ WAYPOINTS = [
 
 
 def main() -> None:
-    launch = LaunchConfig().set_vehicle(VEHICLE)
+    launch = LaunchConfig().set_vehicle(VEHICLE).set_scene(SCENE)
     launch.runtime.device = "cuda"  # prefer CUDA; resolve_device falls back to CPU when there is none
     builder, _resolved, cfg = resolve_scenario(launch)
     orch = build_acados_orchestrator(
