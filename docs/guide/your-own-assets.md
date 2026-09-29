@@ -14,7 +14,8 @@ registry beside it, with no fork of this one and no patch on top of it.
 A run always loads the catalog bundled in the package. It then looks for a catalog of your own, in
 order, first hit wins:
 
-1. the path a run names: `nexus run --registry <path>`, or `Sim(registry=<path>)` in a script
+1. the path a run names: `nexus run --vehicle <name> --scene <name> --registry <path>`, or
+   `Sim("<name>", scene="<name>", registry=<path>)` in a script
 2. the nearest **`nexus.registry.yaml`** in the working directory or a directory over it, the same
    walk up that `uv`, `ruff` and `pytest` do for their own files
 
