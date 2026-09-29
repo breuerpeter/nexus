@@ -32,7 +32,7 @@ _MAIN_TRAJECTORY = {
 def _pid(*, cpu: bool, max_steps: int):
     cfg = build_scenario()
     cfg["physics"]["force_cpu"] = cpu
-    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle("astro_max_base"))
+    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
     return build_pid_orchestrator(cfg, goal_w=(0.0, 0.0, 1.5), max_steps=max_steps, vehicle_builder=vb)
 
 

@@ -10,7 +10,7 @@ Station (GCS) later. Operators are **internal**: reach the one driving a run thr
 [`sim.operator`](simulation.md), not a top-level import.
 
 ```python
-with na.Sim("astro_max_base") as sim:  # the vehicle declares PX4, so the operator is Px4Offboard
+with na.Sim("astro_max_base", scene="empty") as sim:  # the vehicle declares PX4, so the operator is Px4Offboard
     sim.start()
     sim.operator.takeoff(2.0)
 ```

@@ -37,21 +37,10 @@ def test_duplicate_name_errors_at_load():
         _reg([FPV, dict(FPV, usd={"url": "file:///dup", "sha256": "0"})])  # two variants named 'fpv'
 
 
-def test_dangling_default_scene_errors_at_load():
-    with pytest.raises(RegistryError):
-        Registry.from_dict({"vehicles": [BASE], "scenes": {"empty": {}}, "defaults": {"scene": "nope"}})
-
-
-def test_dangling_default_vehicle_errors_at_load():
-    with pytest.raises(RegistryError):
-        _reg([BASE], defaults={"vehicle": "nope"})
-
-
 SIBLING = """\
 vehicles:
   - name: sibling_vehicle
     usd: { url: "file:///sibling.usdz", sha256: "0" }
-defaults: { vehicle: sibling_vehicle }
 """
 
 
@@ -84,7 +73,6 @@ def test_an_entry_addresses_its_own_blob():
                 {"name": "direct", "usd": {"url": "s3://example-bucket/elsewhere/x.usdz", "sha256": "def"}},
             ],
             "scenes": {"empty": {}},
-            "defaults": {"vehicle": "derived", "scene": "empty"},
         }
     )
     assert (reg.by_name("derived").usd.url, reg.by_name("direct").usd.url) == (
@@ -136,7 +124,6 @@ assets:
 vehicles:
   - name: project_vehicle
     usd: { name: project_vehicle, sha256: abc }
-defaults: { vehicle: project_vehicle }
 """
 
 REPIN = f"""\

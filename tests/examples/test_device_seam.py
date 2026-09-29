@@ -35,7 +35,7 @@ def _is_warp_array(x) -> bool:
 def _rotored_model():
     """A real rotored vehicle, astro-max, + its settled rest pose: the geometry the allocation needs."""
     b = newton.ModelBuilder()
-    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle("astro_max_base"))
+    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
     vb.build(b)
     model = b.finalize()
     state = model.state()

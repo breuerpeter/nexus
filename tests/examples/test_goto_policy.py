@@ -85,7 +85,7 @@ def _fly_tour(policy: str, steps: int) -> tuple[np.ndarray, np.ndarray]:
     """
     cfg = build_scenario()
     cfg["physics"]["force_cpu"] = True
-    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle("astro_max_base"))
+    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
     orch = build_policy_orchestrator(cfg, policy_path=policy, vehicle_builder=vb, max_steps=steps)
     with na.Sim.from_orchestrator(orch) as sim:
         sim.operator.set_mission(flight.WAYPOINTS)

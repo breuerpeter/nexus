@@ -30,6 +30,7 @@ from nexus.examples.controllers.pid.assembly import build_pid_orchestrator
 
 # Everything this demo is, in one place: zero args by design, the configuration IS the example.
 VEHICLE = "astro_max_base"
+SCENE = "empty"  # flat ground
 MAX_STEPS = 8000  # safety cap; the operator ends the run on mission completion
 # The proven single-body PID configuration: the collapsed semi_implicit plant + the gains
 # design_opt/gain_tuning.py's optimizer converges to; its deploy gate verifies they reach a far
@@ -43,7 +44,7 @@ WAYPOINTS = [(3.0, 0.0, 2.0), (3.0, 3.0, 2.5), (0.0, 3.0, 2.0), (0.0, 0.0, 2.0)]
 
 
 def main() -> None:
-    launch = LaunchConfig().set_vehicle(VEHICLE)
+    launch = LaunchConfig().set_vehicle(VEHICLE).set_scene(SCENE)
     launch.runtime.device = "cuda"  # prefer CUDA; resolve_device falls back to CPU when there is none
     launch.runtime.solver = "semi_implicit"  # the collapsed single-body plant this PID's tuning targets
     builder, _resolved, cfg = resolve_scenario(launch)

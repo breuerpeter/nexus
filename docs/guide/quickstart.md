@@ -31,10 +31,10 @@ uv sync                 # install the framework
 
 ## Run the simulator
 
-Run the command-line tool with the default vehicle and controller, `astro-max` + `px4-sitl`:
+Run the command-line tool with a vehicle and a scene. `astro_max_base` declares PX4 as its controller, and `empty` is flat ground:
 
 ```bash
-uv run nexus run
+uv run nexus run --vehicle astro_max_base --scene empty
 ```
 
 This starts PX4 Software In The Loop (SITL) in a container and the physics simulation with the

@@ -33,11 +33,11 @@ PX4 sends a heartbeat.
 **2. nexus sim:**
 
 ```bash
-uv run nexus run
+uv run nexus run --vehicle astro_max_base --scene empty
 ```
 
 Builds PX4 SITL, starts the PX4 container, then the physics sim and the Rerun server on
-gRPC :9876, and stops the container again on exit. Defaults to the `astro_max_base` vehicle, whose
+gRPC :9876, and stops the container again on exit. The `astro_max_base` vehicle's
 Universal Scene Description (USD) file declares PX4 and its airframe. The PX4 console is a file, next to the run's recording:
 `~/.cache/nexus/logs/px4-*.log`.
 
@@ -76,7 +76,8 @@ no container.
   Docker daemon. A Kit container that dies mid-flight ends the run the way a lost autopilot does.
 
 - `--vehicle` accepts a registry vehicle name, such as `astro_max_fpv`, **or a local `.usd`/`.usdz`
-  path**. Omit it for the registry's default vehicle.
+  path**. `--scene` accepts a registry scene name, such as `empty`, or a local scene USD path.
+  A run names both.
   Every Astro Max vehicle carries the analytic PX4 suite, an Inertial Measurement Unit (IMU),
   mag, barometer, and Global Positioning System (GPS) as `sensor:*` prims. The vehicle USD is the
   single authority for all sensors, and a PX4 vehicle USD authoring none fails the build loudly.

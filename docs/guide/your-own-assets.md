@@ -21,9 +21,10 @@ order, first hit wins:
 Your catalog extends the bundled one, so it lists only what you add, and a run can still fly every
 bundled vehicle and scene. A name that both catalogs define takes your entry, and the load logs a
 warning with the name and both hashes. That's how you pin a bundled asset to another version on
-purpose, and how a stale copy of a bundled entry shows up. Your `defaults` win key by key, so a
-catalog that sets only `defaults.vehicle` still flies the bundled default scene. Every run names
-the catalog it loaded in its first log line and records the path in its tested-config receipt, so a
+purpose, and how a stale copy of a bundled entry shows up. A catalog holds no defaults: every run
+names its vehicle and its scene, `nexus run --vehicle my_quad --scene empty` or
+`Sim("my_quad", scene="empty")`, and a catalog that still carries a `defaults` block fails to load.
+Every run names the catalog it loaded in its first log line and records the path in its tested-config receipt, so a
 recording says which catalog produced it.
 
 ## What a registry looks like
@@ -39,8 +40,6 @@ vehicles:
     usd: { url: "https://cdn.example/x-3f1c…d92.usdz", sha256: 3f1c…d92 }   # hosted elsewhere
   - name: in_progress
     usd: { url: "file:///home/me/assets/draft.usdz", sha256: 9ab2…40f }     # still being authored
-
-defaults: { vehicle: my_quad }   # the scene stays the bundled default
 ```
 
 A vehicle entry names no controller: the vehicle's Universal Scene Description (USD) file declares

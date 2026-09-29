@@ -27,9 +27,8 @@ def sim_argparser(description: str | None = None) -> argparse.ArgumentParser:
     """
     p = argparse.ArgumentParser(description=description, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     p.add_argument(
-        "--vehicle", default=None,
-        help="registry vehicle NAME (e.g. astro_max_fpv) or a local .usd path; omit to take the\n"
-        "registry default",
+        "--vehicle", required=True,
+        help="registry vehicle NAME (e.g. astro_max_fpv) or a local .usd path",
     )  # fmt: skip
     p.add_argument(
         "--registry", default=None,
@@ -40,8 +39,8 @@ def sim_argparser(description: str | None = None) -> argparse.ArgumentParser:
         "--device", default="auto", choices=["cpu", "cuda", "auto"], help="compute device (cpu=deterministic)"
     )
     p.add_argument(
-        "--scene", default=None,
-        help="registry scene NAME (e.g. 'slalom') or a local scene .usdz path (a converted\n"
+        "--scene", required=True,
+        help="registry scene NAME (e.g. 'empty' or 'slalom') or a local scene .usdz path (a converted\n"
         "mesh/splat, flown as the visual world)",
     )  # fmt: skip
     p.add_argument(

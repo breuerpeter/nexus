@@ -24,7 +24,7 @@ def test_the_pid_example_flies_the_shipped_vehicle_to_its_first_waypoint():
     Given the shipped `astro_max_base`, when the example flies its tuned gains on CPU toward the first
     waypoint of its tour, then the operator reports that waypoint reached.
     """
-    launch = LaunchConfig().set_vehicle(flight.VEHICLE)
+    launch = LaunchConfig().set_vehicle(flight.VEHICLE).set_scene(flight.SCENE)
     launch.runtime.device = "cpu"
     launch.runtime.solver = "semi_implicit"
     builder, _, cfg = resolve_scenario(launch)

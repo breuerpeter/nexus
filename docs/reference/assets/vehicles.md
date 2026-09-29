@@ -4,8 +4,7 @@ description: "The quadrotor vehicles nexus supports, resolved by name from the r
 
 # Vehicles
 
-The registry resolves vehicles by name, with `nexus run --vehicle <name>` and default
-`astro-max`, to a USD. The framework only ever builds a model from a USD and never synthesizes
+The registry resolves vehicles by name, with `nexus run --vehicle <name>`, to a USD. The framework only ever builds a model from a USD and never synthesizes
 one in code. See [Conventions](../../design/conventions.md).
 
 !!! warning

@@ -1,7 +1,7 @@
 """The checked-in catalog + name resolution.
 
 Each vehicle variant carries a ``name`` handle, its Universal Scene Description (USD) and its PX4
-spec; a launch names the variant it flies, and a launch that names none takes ``defaults.vehicle``.
+spec; a launch names the variant it flies and the scene it flies in.
 No per-key override/transform machinery: that "clever" path is on hold.
 """
 
@@ -76,13 +76,6 @@ class Scene(_Base):
     """
 
 
-class Defaults(_Base):
-    """What a launch that names neither a vehicle nor a scene flies."""
-
-    vehicle: str | None = None
-    scene: str = "empty"
-
-
 class Assets(_Base):
     """Where a catalog's blobs live: the base a compact ``{name, sha256}`` entry completes against."""
 
@@ -94,11 +87,11 @@ class Assets(_Base):
 
 
 class Registry(_Base):
-    """The checked-in vehicle/scene catalog, where its blobs live, and the defaults a bare launch flies.
+    """The checked-in vehicle/scene catalog and where its blobs live.
 
-    Resolution is by name: a launch names a :class:`VehicleVariant` and one that names none takes
-    ``defaults.vehicle``. Built by :func:`load_registry` from the bundled ``registry.yaml``,
-    extended by the catalog a project beside the framework keeps.
+    Resolution is by name: a launch names a :class:`VehicleVariant` and a scene. Built by
+    :func:`load_registry` from the bundled ``registry.yaml``, extended by the catalog a project
+    beside the framework keeps.
     """
 
     assets: Assets = Field(default_factory=Assets)
@@ -113,11 +106,6 @@ class Registry(_Base):
 
     Empty by default.
     """
-    defaults: Defaults = Field(default_factory=Defaults)
-    """What a launch that names neither a vehicle nor a scene flies.
-
-    Defaults to a :class:`Defaults` with no vehicle and the ``"empty"`` scene.
-    """
 
     @model_validator(mode="before")
     @classmethod
@@ -128,6 +116,11 @@ class Registry(_Base):
         """
         if not isinstance(data, dict):
             return data
+        if "defaults" in data:
+            raise ValueError(
+                "the catalog's `defaults` block was removed: a run names its vehicle and scene, "
+                "with `--vehicle` and `--scene` or `Sim(vehicle, scene=...)`"
+            )
         base = (data.get("assets") or {}).get("base") if isinstance(data.get("assets"), dict) else None
         out = dict(data)
         if isinstance(out.get("vehicles"), list):
@@ -178,17 +171,11 @@ class Registry(_Base):
         """Load-time validation, so a checked-in registry can't ship broken:
 
         * two variants with the same `name`: resolution would be non-deterministic; reject.
-        * the **default scene must exist**, and a **default vehicle** must name one of the
-          catalog's variants, else a dangling reference.
         """
         names = [v.name for v in self.vehicles]
         dupes = sorted({n for n in names if names.count(n) > 1})
         if dupes:
             raise RegistryError(f"duplicate vehicle name(s): {dupes}")
-        if self.defaults.scene not in self.scenes:
-            raise RegistryError(f"defaults.scene {self.defaults.scene!r} is not a defined scene {list(self.scenes)}")
-        if self.defaults.vehicle is not None and self.defaults.vehicle not in names:
-            raise RegistryError(f"defaults.vehicle {self.defaults.vehicle!r} is not a defined vehicle {names}")
 
     def by_name(self, name: str) -> VehicleVariant:
         """Look up a variant by its `name` handle: the `--vehicle <name>` path."""
@@ -240,8 +227,7 @@ def _extend(bundled: Registry, project: Registry) -> Registry:
     each replacement warns with both hashes, so a stale copy of a bundled entry never flies silently.
 
     Both catalogs have completed their compact refs against their own ``assets.base`` already, so
-    each entry keeps its own catalog's URL. The project's ``defaults`` win key by key, and its
-    ``assets`` stays the catalog's, since that base is where the project's new blobs go.
+    each entry keeps its own catalog's URL. The project's ``assets`` stays the catalog's, since that base is where the project's new blobs go.
     """
     shipped = {v.name: v for v in bundled.vehicles}
     for v in project.vehicles:
@@ -261,9 +247,6 @@ def _extend(bundled: Registry, project: Registry) -> Registry:
         assets=project.assets,
         vehicles=[v for v in bundled.vehicles if v.name not in own] + project.vehicles,
         scenes={**bundled.scenes, **project.scenes},
-        defaults=bundled.defaults.model_copy(
-            update=project.defaults.model_dump(include=project.defaults.model_fields_set)
-        ),
     )
 
 
@@ -271,7 +254,7 @@ def load_registry(path: str | pathlib.Path | None = None) -> Registry:
     """Load + validate the bundled catalog, extended by the one :func:`registry_path` picks for *path*.
 
     A project catalog lists only what it adds; see :func:`_extend` for how a name in both resolves.
-    Validation runs on the merged catalog, so a project's defaults can name a bundled scene.
+    Validation runs on the merged catalog.
     """
     bundled = Registry.from_yaml(_DEFAULT_REGISTRY)
     source = registry_path(path)

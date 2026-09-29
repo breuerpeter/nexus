@@ -32,7 +32,9 @@ def test_stream_on_a_vehicle_without_a_camera_fails_before_the_run(monkeypatch, 
         "scenes:\n  empty: {}\n"
     )
     monkeypatch.setenv("NEXUS_ASSET_CACHE", str(tmp_path / "cache"))
-    monkeypatch.setattr("sys.argv", ["nexus", "run", "--stream", "--vehicle", "plain", "--registry", str(registry)])
+    monkeypatch.setattr(
+        "sys.argv", ["nexus", "run", "--stream", "--vehicle", "plain", "--scene", "empty", "--registry", str(registry)]
+    )
     with pytest.raises(ValueError, match="camera"):
         cli.main()
 
@@ -90,7 +92,9 @@ def test_control_is_no_flag_of_the_command_line_tool(monkeypatch, tmp_path, caps
     """
     monkeypatch.setenv("DOCKER_HOST", f"unix://{tmp_path / 'no-daemon.sock'}")
     missing = tmp_path / "missing.usda"
-    monkeypatch.setattr("sys.argv", ["nexus", "run", "--control", "px4-sitl", "--vehicle", str(missing)])
+    monkeypatch.setattr(
+        "sys.argv", ["nexus", "run", "--control", "px4-sitl", "--vehicle", str(missing), "--scene", "empty"]
+    )
     with pytest.raises(SystemExit) as e:
         cli.main()
     assert (e.value.code, "unrecognized arguments: --control" in capsys.readouterr().err) == (2, True)
