@@ -18,6 +18,8 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
   vehicle's Universal Scene Description (USD) file authors a `Camera` or `OmniLidar` prim. The loop
   never runs inside Kit, and no module imports Kit, an import-linter contract. Read
   `nexus/_src/rendering/CLAUDE.md` before changing the peer, its image, or the render link.
+- **Component schemas live in a USD schema plugin** in `nexus/_src/usd/`, which `import nexus`
+  registers. Read `nexus/_src/usd/CLAUDE.md` before adding or changing a schema.
 - **`evo` is GPLv3** → it lives only in the `ci` dependency-group and never ships as a dependency.
   Examples dump plain `.npz` and JSON files, and only `scripts/ci/evaluate_examples.py` imports
   `evo` to score them.

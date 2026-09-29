@@ -1,0 +1,8 @@
+The nexus component schemas: a Universal Scene Description (USD) plugin with no compiled code, `plugInfo.json` and `generatedSchema.usda` in this folder, and the reader, `reader.py`, that turns a prim's applied schemas into keyword arguments.
+
+- `import nexus` registers this plugin, and the plugin at the root of each package with an entry in the `nexus.components` entry-point group. OpenUSD reads plugins once, when its schema registry first builds, so import `nexus` before any code opens a stage.
+- A schema names its attributes in the `nexus:` namespace, such as `nexus:accNoise`. The reader passes each as the keyword of the same name in snake case, `acc_noise`, and fails on an authored `nexus:` attribute that no applied schema defines.
+- A new schema takes three edits: a type in `plugInfo.json`, a class in `generatedSchema.usda`, and an entry in the `nexus.components` group of `pyproject.toml` that names its class by import path.
+- A type's name in `plugInfo.json` differs from its schema identifier, `NexusSchemaImuAPI` for `NexusImuAPI`: registration raises when the two match.
+- Each attribute's doc ends with a `Range:` line and a `Units:` line, which `docs/hooks/schemas.py` renders into the schema reference page.
+- `tests/usd/conformance.usda` applies every schema the plugin defines, and a test fails when it misses one: extend `tests/usd/author_conformance.py` and run it to rewrite the fixture.
