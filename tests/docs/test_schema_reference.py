@@ -14,6 +14,12 @@ def _hook():
     return module
 
 
+def test_the_hook_replaces_its_marker_with_the_reference():
+    """The hook replaces the `<!-- schema-reference -->` marker with the rendered reference."""
+    page = _hook().on_page_markdown("Intro.\n\n<!-- schema-reference -->\n", page=None, config=None, files=None)
+    assert "<!-- schema-reference -->" not in page and "## NexusImuAPI" in page
+
+
 def test_the_reference_page_is_generated_from_the_plugin():
     """The docs reference page comes from the plugin: every schema, what it applies to, its
     attributes, their units, limits and defaults.

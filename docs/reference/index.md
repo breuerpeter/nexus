@@ -10,6 +10,7 @@ Look things up: the public API of `nexus`, the vehicle and scene assets, and the
 
 -   **[API reference](api/index.md)**: the complete public API of `nexus`, generated from the source with typed signatures.
 -   **[Assets](assets/index.md)**: the vehicles nexus flies and the scenes it flies them in.
+-   **[Schemas](schemas.md)**: the component schemas the nexus plugin defines, with each attribute's type, default, units, and range.
 -   **[Benchmarking](benchmarking.md)**: the measured Real Time Factor (RTF) matrix and per-example performance, CI-measured on pinned hardware.
 -   **[Changelog](changelog/index.md)**: release history.
 
