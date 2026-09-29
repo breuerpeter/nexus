@@ -19,7 +19,7 @@ throttle-centre holds altitude and throttle-up climbs, and it arms with the stic
 than an arm command.
 
 A ZERO-arg script (the flight configuration lives here); only the host-specific paths ride env,
-``PX4_DIR`` / ``PX4_IMAGE`` as in flight.py, plus the optional ``--timeout``, ``--throttle`` and
+``PX4_DIR`` as in flight.py, plus the optional ``--timeout``, ``--throttle`` and
 ``--climb-target`` flags. Needs docker + a PX4 checkout + a CUDA host; as in flight.py the checkout
 does not have to be built already, because the sim builds it before the run starts.
 """

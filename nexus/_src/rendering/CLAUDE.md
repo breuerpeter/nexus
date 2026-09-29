@@ -19,9 +19,10 @@ is the renderer the loop drives and the link the RTX sensors ride.
   renaming or moving one of them changes that file too.
 - Kit renders one update behind, so a frame reply carries the request before it: the first reply
   carries nothing, and the close renders the last request and returns its frame with `closed`.
-- The wire format lives twice, in `link.py` and `kit-peer/link.py`: change both.
+- The wire format lives once, in `kit-peer/link.py`: the peer imports it as a sibling module, and
+  the host's `link.py` runs the same file by path and takes `send` and `recv` from it.
   `tests/rendering/test_link.py` drives the host end against a stand-in peer that frames through
-  `kit-peer/link.py`.
+  it too.
 - The container runs as the host user with the image's `isaac-sim` group, gid `1234`, added, since
   only that group can read `/isaac-sim`. Kit's `HOME` is `~/.cache/nexus/kit/home` and its shader
   cache `~/.cache/nexus/kit/cache`.

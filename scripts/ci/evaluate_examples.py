@@ -14,7 +14,7 @@ evo is under the General Public License (GPL) and heavy, so it lives only here, 
 dependency-group, never a shipped dependency; the examples dump plain numpy/JSON.
 
     uv run --group ci --extra examples python scripts/ci/evaluate_examples.py [--only n1,n2]
-        [--skip-missing] [--upload] [--update-baselines] [--out <dir>]
+        [--skip-missing] [--upload] [--update-baselines] [--out <dir>] [--shared]
 
 Baseline rules per metric: a bare value means exact match, for bools, ints and config; a dict combines an
 optional recorded ``value`` with guards: absolute ``min``/``max``, always applied, and relative
@@ -33,6 +33,7 @@ import shutil
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
@@ -73,9 +74,9 @@ EXAMPLES: dict[str, dict] = {
     "goto_policy_fresh": {"uv": ["--extra", "policy"], "launcher": "goto_policy", "requires": "policy"},
     "px4_sitl": {"uv": [], "requires": "px4"},
 }
-# The default set = everything the consolidated gpu-examples leg runs. The workflow provides the PX4
-# checkout via scripts/ci/provision_px4.sh and acados via scripts/setup_acados.sh; main() below warms
-# the PX4 *build*, from the one container definition in nexus._src.vehicle.controllers.px4.sitl.
+# The default set = everything the consolidated gpu-examples leg runs. The workflow provides acados
+# via scripts/setup_acados.sh; main() below fetches and builds PX4 the way a run's first use does,
+# from the one container definition in nexus._src.vehicle.controllers.px4.sitl.
 # goto_policy_fresh rides the gpu-rl workflow: --only goto_policy_fresh --policy <the fresh export>.
 # Local runs without the PX4/acados prerequisites: add --skip-missing.
 DEFAULT_SET = ["pid", "gain_tuning", "mass_recovery", "sampling_mpc", "acados_nmpc", "goto_policy", "px4_sitl"]
@@ -87,9 +88,8 @@ _UNITS = {"_m": "m", "_deg": "deg", "_s": "s", "rtf": "x realtime", "_per_sec": 
 
 def _available(requires: str | None, args: argparse.Namespace) -> tuple[bool, str]:
     # External tool locations come from the one definition of the env-overridable defaults the
-    # examples themselves resolve: acados' from nexus.examples._external, PX4's from the
-    # launcher that mounts them, nexus._src.vehicle.controllers.px4.sitl.
-    from nexus._src.vehicle.controllers.px4.sitl import px4_dir
+    # examples themselves resolve, acados' from nexus.examples._external. PX4 needs only docker: the
+    # run fetches its pinned tree itself, or flies $PX4_DIR.
     from nexus.examples._external import acados_dir
 
     if requires is None:
@@ -104,8 +104,6 @@ def _available(requires: str | None, args: argparse.Namespace) -> tuple[bool, st
         p = args.policy or ""
         return (bool(p) and os.path.isfile(p)), "--policy not given / not a file (an exported policy.pt)"
     if requires == "px4":
-        if not px4_dir().is_dir():
-            return False, f"PX4_DIR not found ({px4_dir()})"
         if shutil.which("docker") is None:
             return False, "docker not available"
         return True, ""
@@ -119,15 +117,27 @@ def _dump_dir(name: str, spec: dict, out: pathlib.Path) -> pathlib.Path:
     return out / name if spec.get("launcher", name) != name else out
 
 
-def _run_example(name: str, spec: dict, dump: pathlib.Path, timeout: float, extra_args: list[str]) -> bool:
+def _run_example(
+    name: str, spec: dict, dump: pathlib.Path, timeout: float, extra_args: list[str], shared: bool = False
+) -> bool:
     # Examples run with zero REQUIRED args: their configuration lives in the script, and recording is
     # always on. Per-example inputs such as a fresh policy checkpoint ride optional flags.
-    cmd = ["uv", "run", *spec.get("uv", []), "-m", "nexus.examples", spec.get("launcher", name), *extra_args]
+    # A shared flight skips uv's sync, which the box ran once for every extra, since concurrent syncs
+    # contend for one environment. It gets one CPU thread, since the box's vCPUs are what the flights
+    # share, and its own log, since the flights' output would interleave on one stream.
+    run = ["uv", "run", "--no-sync"] if shared else ["uv", "run"]
+    cmd = [*run, *spec.get("uv", []), "-m", "nexus.examples", spec.get("launcher", name), *extra_args]
     print(f"\n===== {name}: {' '.join(cmd)} =====", flush=True)
     dump.mkdir(parents=True, exist_ok=True)
-    env = {**os.environ, "NEXUS_EVAL_OUT": str(dump)}
+    env = {**os.environ, "NEXUS_EVAL_OUT": str(dump), **({"OMP_NUM_THREADS": "1"} if shared else {})}
     try:
-        rc = subprocess.run(cmd, cwd=ROOT, env=env, timeout=timeout, check=False).returncode
+        if shared:
+            with open(dump / f"{name}.log", "w") as log:
+                rc = subprocess.run(
+                    cmd, cwd=ROOT, env=env, timeout=timeout, check=False, stdout=log, stderr=subprocess.STDOUT
+                ).returncode
+        else:
+            rc = subprocess.run(cmd, cwd=ROOT, env=env, timeout=timeout, check=False).returncode
     except subprocess.TimeoutExpired:
         print(f"[eval] {name}: TIMEOUT after {timeout:.0f}s", flush=True)
         return False
@@ -204,6 +214,15 @@ def _score(name: str, out: pathlib.Path) -> tuple[dict, dict]:
     return metrics, meta
 
 
+def _dumped_meta(name: str, out: pathlib.Path) -> dict:
+    """The meta JSON *name*'s example dumped, or empty when it dumped none: a failed run can leave one."""
+    path = _dump_dir(name, EXAMPLES[name], out) / f"{EXAMPLES[name].get('launcher', name)}.json"
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
 def _check(rule, got) -> tuple[bool, str]:
     """One baseline rule against a fresh metric. A bare value = exact match; a dict combines
     absolute guards, min/max, always applied, with relative ones, min_frac/max_frac compared to the
@@ -233,8 +252,9 @@ def _check(rule, got) -> tuple[bool, str]:
     return bool(ok), " & ".join(parts) or "(no guard)"
 
 
-def _gate(name: str, metrics: dict, baselines: dict) -> list[str]:
-    rules = baselines.get(name, {})
+def _gate(name: str, metrics: dict, baselines: dict, ungated: frozenset[str] = frozenset()) -> list[str]:
+    """Gate *name*'s metrics against its baselines; a metric in *ungated* shows as monitored."""
+    rules = {k: v for k, v in baselines.get(name, {}).items() if k not in ungated}
     failed = []
     print(f"\n--- {name} ---")
     print(f"{'metric':<26}{'fresh':>14}{'guard':>26}  status")
@@ -385,6 +405,11 @@ def main() -> int:
     ap.add_argument("--timeout", type=float, default=1800.0, help="per-example subprocess budget [s]")
     ap.add_argument("--policy", default=None, help="exported policy.pt that goto_policy_fresh flies")
     ap.add_argument("--baselines", default=str(BASELINES))
+    ap.add_argument(
+        "--shared",
+        action="store_true",
+        help="fly the examples at once on one box, as a pull request does: no rtf gate, a red flight's .rrd only",
+    )
     args = ap.parse_args()
 
     names = [n.strip() for n in args.only.split(",")] if args.only else list(DEFAULT_SET)
@@ -395,43 +420,58 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
     baselines = json.loads(pathlib.Path(args.baselines).read_text())
 
-    # Warm the PX4 build once, here rather than in _available(), which stays a pure predicate, and
+    # Fetch and build PX4 once, here rather than in _available(), which stays a pure predicate, and
     # outside --timeout, which budgets each example's subprocess: a px4 example's own launch re-runs
-    # `make px4_sitl <airframe>` and must reach the sim inside its 30 s preroll window, GH #39; an
-    # incremental no-op fits, a cold build never does. Same placement benchmark_matrix.py uses.
+    # the incremental build and must reach the sim inside its 30 s preroll window, GH #39; a no-op
+    # fits, a cold fetch and build never do. Same placement benchmark_matrix.py uses.
     if any(EXAMPLES[n].get("requires") == "px4" for n in names) and _available("px4", args)[0]:
-        from nexus._src.vehicle.controllers.px4.sitl import build_px4_sitl
+        from nexus._src.vehicle.controllers.px4.sitl import prepare
 
-        print("pre-building PX4 SITL (one-time, outside any example budget)...", flush=True)
-        build_px4_sitl()
+        print("fetching and building PX4 SITL (one-time, outside any example budget)...", flush=True)
+        prepare()
 
-    failed_runs: list[str] = []
-    scored: dict[str, dict] = {}
-    metas: dict[str, dict] = {}
-    for name in names:
+    def fly(name: str) -> bool | None:
+        """Fly one example: whether its run succeeded, or None for a skipped example."""
         ok, why = _available(EXAMPLES[name].get("requires"), args)
         if not ok:
             if args.skip_missing:
                 print(f"\n===== {name} (skipped: {why}) =====", flush=True)
-                continue
+                return None
             print(f"\n===== {name}: requirement unmet: {why} =====", flush=True)
-            failed_runs.append(name)
-            continue
+            return False
         extra = ["--policy", args.policy] if EXAMPLES[name].get("requires") == "policy" else []
-        dump = _dump_dir(name, EXAMPLES[name], out)
-        if not _run_example(name, EXAMPLES[name], dump, args.timeout, extra):
-            failed_runs.append(name)
-            continue
-        scored[name], metas[name] = _score(EXAMPLES[name].get("launcher", name), dump)
-        # Recordings otherwise live only in the cache under the home directory and die with the ephemeral runner
-        # unless --upload runs; a copy here rides the GitHub artifact too.
-        rrd = metas[name].get("rrd")
+        return _run_example(
+            name, EXAMPLES[name], _dump_dir(name, EXAMPLES[name], out), args.timeout, extra, args.shared
+        )
+
+    if args.shared:
+        with ThreadPoolExecutor(max_workers=len(names)) as pool:
+            flown = dict(zip(names, pool.map(fly, names), strict=True))
+    else:
+        flown = {name: fly(name) for name in names}
+
+    failed_runs = [name for name, ok in flown.items() if ok is False]
+    scored: dict[str, dict] = {}
+    metas: dict[str, dict] = {}
+    for name in (name for name, ok in flown.items() if ok):
+        scored[name], metas[name] = _score(EXAMPLES[name].get("launcher", name), _dump_dir(name, EXAMPLES[name], out))
+
+    # A shared flight's RTF measures its neighbours as much as itself, so only a box of its own gates it.
+    ungated = frozenset({"rtf"}) if args.shared else frozenset()
+    gate_failures: list[str] = []
+    red = set(failed_runs)
+    for name, metrics in scored.items():
+        failed = _gate(name, metrics, baselines, ungated)
+        gate_failures += failed
+        red |= {name} if failed else set()
+
+    # Recordings otherwise live only in the cache under the home directory and die with the ephemeral runner
+    # unless --upload runs; a copy here rides the GitHub artifact too. A shared run keeps a red flight's
+    # alone: nothing reads a green one, and the seven would dominate the artifact.
+    for name in red if args.shared else flown:
+        rrd = (metas.get(name) or _dumped_meta(name, out)).get("rrd")
         if rrd and pathlib.Path(rrd).is_file():
             shutil.copy2(rrd, out / f"{name}.rrd")
-
-    gate_failures: list[str] = []
-    for name, metrics in scored.items():
-        gate_failures += _gate(name, metrics, baselines)
 
     entries = _bench_entries(scored)
     (out / "benchmark.json").write_text(json.dumps(_merged_local(out / "benchmark.json", entries), indent=2))

@@ -182,3 +182,54 @@ def test_a_kit_peer_that_dies_mid_flight_ends_the_run_with_its_error():
         orch.run()
 
     assert orch.renderer.closed and orch.controller.closed
+
+
+class _Peer:
+    """A peer the build started, on the peer contract: the loop only ever stops it."""
+
+    def __init__(self):
+        self.stopped = 0
+
+    def start(self):
+        raise AssertionError("the loop starts no peer; the build does")
+
+    def stop(self):
+        self.stopped += 1
+
+    def alive(self):
+        return self.stopped == 0
+
+
+def test_a_run_that_ends_stops_the_peers_the_build_started():
+    peer = _Peer()
+    orch = _orch(max_steps=2, peers=[peer])
+
+    orch.run()
+
+    assert peer.stopped == 1
+
+
+def test_closing_a_run_that_never_stepped_stops_its_peers():
+    """A `Sim` entered and exited without a step still stops the PX4 container that started at build."""
+    peer = _Peer()
+    orch = _orch(peers=[peer])
+
+    orch.close()
+
+    assert peer.stopped == 1
+
+
+def test_a_peer_whose_stop_fails_does_not_cost_the_recording():
+    """A docker daemon that went away must not skip `_close_logs`, which flushes the recording."""
+    closed_logs = []
+
+    class Boom(_Peer):
+        def stop(self):
+            raise RuntimeError("docker daemon went away")
+
+    orch = _orch(max_steps=1, peers=[Boom()])
+    orch._close_logs = lambda: closed_logs.append(True)
+
+    orch.run()
+
+    assert closed_logs == [True]

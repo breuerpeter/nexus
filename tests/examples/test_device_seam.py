@@ -25,7 +25,7 @@ from nexus.examples.controllers.pid import PidController
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")
 
-_ACT_CFG = {"ct": 0.000003463, "cd": 0.05, "rpm_max": 3800.0}  # astro-max thrust map, from freefly:actuator:*
+_ACT_CFG = {"ct": 0.000003463, "cd": 0.05, "rpm_max": 3800.0}  # astro-max thrust map, from motor:* and propeller:*
 
 
 def _is_warp_array(x) -> bool:

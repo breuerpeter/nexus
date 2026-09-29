@@ -20,17 +20,16 @@ _ANSI = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 #   fresh boot; heading aligns from the first mag samples, and the operator's failure-free settle
 #   wait rides it out. Allowlisted by content so every other pre-arm warning, mag interference
 #   included, still gates.
-# - "Too many subscriptions, failed to add: <topic>": the pinned PX4 tree's default logged-topic
-#   set exceeds the logger's 255-subscription cap on SITL, so it skips these four topics. It's a
-#   logging-capacity artifact, not a sim problem, and none of the four feeds the gates here. Each
-#   entry names its topic, so a different topic overflowing still gates.
+# - "Too many subscriptions, failed to add: <topic> <instance>": PX4's default logging profiles in
+#   SITL ask for more topics than the logger's 255-entry cap, so the logger refuses the topics it
+#   adds last. Which topics changes from boot to boot, with the optional topics that exist when the
+#   logger starts. A refused topic is a logging limit, not a sim problem, so the gate forgives the
+#   line whatever topic it names. The entry pins the level and the module, so only the logger's own
+#   warning matches. GH #139 tracks the room PX4 needs upstream.
 WARN_ALLOWLIST: tuple[str, ...] = (
     r"Parameter \w+ not found\.",
     "Preflight Fail: no heading reference",
-    "Too many subscriptions, failed to add: collision_constraints",
-    "Too many subscriptions, failed to add: obstacle_distance",
-    "Too many subscriptions, failed to add: obstacle_distance_fused",
-    "Too many subscriptions, failed to add: vehicle_mocap_odometry",
+    r"\bWARN\s+\[logger\] Too many subscriptions, failed to add: \w+ \d+\s*$",
 )
 
 

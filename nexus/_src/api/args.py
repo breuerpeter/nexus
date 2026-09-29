@@ -20,8 +20,8 @@ def sim_argparser(description: str | None = None) -> argparse.ArgumentParser:
     """The shared argument parser for ``Sim``-driven scripts and the ``nexus`` command-line tool.
 
     Carries the common flags :meth:`Sim.from_args` reads, ``--vehicle`` / ``--control`` / ``--device``
-    / ``--scene`` / ``--max-steps`` / ``--log`` / ``--view``, so the command-line tool and any Sim-driven
-    script share one arg surface. The bundled examples are zero-arg by design, and their configuration
+    / ``--scene`` / ``--px4`` / ``--px4-instance`` / ``--max-steps`` / ``--log`` / ``--view``, so the
+    command-line tool and any Sim-driven script share one arg surface. The bundled examples are zero-arg by design, and their configuration
     lives in the script; this parser serves the ``nexus`` command-line tool.
     """
     p = argparse.ArgumentParser(description=description, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -56,6 +56,16 @@ def sim_argparser(description: str | None = None) -> argparse.ArgumentParser:
     p.add_argument(
         "--rtf", type=float, default=0.0,
         help="real-time-factor throttle: 0 = unthrottled (default); 1.0 = pace to wall-clock for interactive flying",
+    )  # fmt: skip
+    p.add_argument(
+        "--px4", default="managed", choices=["managed", "external"],
+        help="the run's PX4 peer: managed starts the PX4 SITL container and stops it with the run;\n"
+        "external starts nothing and waits on the HIL port for an autopilot started elsewhere",
+    )  # fmt: skip
+    p.add_argument(
+        "--px4-instance", type=int, default=0, metavar="N",
+        help="PX4's SITL instance: it numbers PX4's ports, HIL 4560+N and offboard 14540+N, so two runs\n"
+        "on one machine take two instances",
     )  # fmt: skip
     p.add_argument("--log", action="store_true", help="write the Rerun .rrd to disk")
     p.add_argument("--view", action="store_true", help="serve the live Rerun viewer on :9876")

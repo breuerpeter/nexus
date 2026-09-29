@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 
 from nexus._src.api.args import save_run_artifacts, sim_argparser  # noqa: F401  # re-export; defs are import-light
 from nexus._src.build.launch import build_from_launch
-from nexus._src.config import LaunchConfig
+from nexus._src.config import LaunchConfig, Px4Peer
 from nexus._src.core import logger
 from nexus._src.operator import InProcessOperator
 from nexus._src.recording import ChannelMap, Recorder
@@ -29,11 +29,11 @@ if TYPE_CHECKING:
     from nexus._src.operator import Px4Offboard
 
 # Control kinds whose controller is a host boundary, the PX4 Hardware In The Loop (HIL) lockstep.
-# This selects the *operator*, Px4Offboard over MAVLink :14540 compared to the in-process
+# This selects the *operator*, Px4Offboard over PX4's offboard MAVLink link compared to the in-process
 # InProcessOperator, never the driving path: every kind is step-driven on the caller's thread.
 _HOST_BOUNDARY_KINDS = ("px4-sitl",)
 
-# Wall-clock budget for PX4 to answer on the operator link, :14540, once the sim starts stepping
+# Wall-clock budget for PX4 to answer on the operator link once the sim starts stepping
 # for it: the same 30 s Px4Offboard's own blocking connect allows.
 _PX4_LINK_TIMEOUT_S = 30.0
 
@@ -76,6 +76,11 @@ class Sim:
         rtf: Real-time-factor throttle. ``0``, the default, runs unthrottled, as fast as the
             controller keeps up. ``1.0`` paces the loop to wall-clock for human-in-the-loop
             flying: 1:1 stick feel, and sim-time protocol timeouts align with wall-clock peers.
+        px4: How the run realizes its PX4 peer: ``"managed"``, the default, starts the PX4
+            Software In The Loop (SITL) container and stops it with the run; ``"external"`` starts
+            nothing and waits on the HIL port for an autopilot started elsewhere.
+        px4_instance: PX4's SITL instance, ``0`` by default. PX4 numbers every link from it, HIL on
+            ``4560 + N`` and offboard on ``14540 + N``, so two runs on one machine take two instances.
         reached_m: Mission-waypoint arrival threshold [m] for the in-process operator.
         final_hold_s: Keep running this long, in sim-time, after the final goal before stopping.
 
@@ -103,10 +108,13 @@ class Sim:
         solver: str | None = None,
         max_steps: int | None = None,
         rtf: float = 0.0,
+        px4: str = "managed",
+        px4_instance: int = 0,
         reached_m: float = 0.3,
         final_hold_s: float = 2.0,
     ):
         self._launch = LaunchConfig().set_control(control)
+        self._launch.peers.px4 = Px4Peer(realization=px4, instance=px4_instance)
         # --vehicle is a registry *name*, a local .usd path, or None for the registry's default.
         self._launch.set_vehicle(vehicle)
         self._launch.registry = registry  # None: the run finds its own catalog, see load_registry
@@ -227,6 +235,8 @@ class Sim:
             "debug": getattr(args, "debug", False),
             "max_steps": getattr(args, "max_steps", None),
             "rtf": getattr(args, "rtf", 0.0),
+            "px4": getattr(args, "px4", "managed"),
+            "px4_instance": getattr(args, "px4_instance", 0),
         }
         kw.update(overrides)
         return cls(**kw)
@@ -290,8 +300,8 @@ class Sim:
     def operator(self) -> InProcessOperator | Px4Offboard:
         """The Operator commanding this sim, Plane 5. In-process control, policy, pid, mpc or acados, →
         an :class:`InProcessOperator` over the controller's ``accept_setpoint``. PX4 → a
-        :class:`Px4Offboard` over MAVLink :14540, PX4's offboard and onboard link, separate from the
-        controller's HIL :4560, constructed plus connected lazily on first access, so access it
+        :class:`Px4Offboard` over PX4's offboard and onboard MAVLink link, separate from the
+        controller's HIL link, constructed plus connected lazily on first access, so access it
         *after* PX4 is up, for example after ``sim.start()``; cached, and closed on ``sim.stop()``.
 
         Connecting the PX4 link **steps the sim**, because PX4's clock is the sim's under lockstep:
@@ -305,7 +315,7 @@ class Sim:
         Raises:
             RuntimeError: Accessed before entering the ``Sim`` context, in the in-process case, or the
                 run ended while the PX4 link was connecting.
-            TimeoutError: PX4 didn't answer on :14540 within ``_PX4_LINK_TIMEOUT_S``.
+            TimeoutError: PX4 didn't answer on the operator link within ``_PX4_LINK_TIMEOUT_S``.
         """
         if self._in_process:
             if self._operator is None:
@@ -314,16 +324,20 @@ class Sim:
         if self._operator is None:
             from nexus._src.operator import Px4Offboard
 
-            op = Px4Offboard()
+            # The link's port and PX4's system id follow the run's PX4 instance; a self-assembled
+            # orchestrator carries no launch and takes PX4's defaults.
+            px4 = self._launch.peers.px4 if self._launch is not None else Px4Peer()
+            op = Px4Offboard(f"udpin:0.0.0.0:{px4.offboard_port}", system_id=px4.system_id)
             op.open()  # bind the MAVLink link + start the pump; returns at once
             self._operator = op  # cache BEFORE the wait, so a failed connect is still closed by stop()
             deadline = time.monotonic() + _PX4_LINK_TIMEOUT_S
             while not op.connected:
                 if not self.step():  # keep PX4's clock moving, or its heartbeat never comes
-                    raise RuntimeError("the run ended before PX4 answered on the operator link (:14540)")
+                    raise RuntimeError(f"the run ended before PX4 answered on the operator link (:{px4.offboard_port})")
                 if time.monotonic() > deadline:
                     raise TimeoutError(
-                        f"no PX4 heartbeat on the operator link (:14540) within {_PX4_LINK_TIMEOUT_S:.0f}s"
+                        f"no PX4 heartbeat on the operator link (:{px4.offboard_port}) within "
+                        f"{_PX4_LINK_TIMEOUT_S:.0f}s"
                     )
         return self._operator
 
@@ -343,8 +357,8 @@ class Sim:
 
         One step: the orchestrator's first ``step()`` runs physics reset, the wait for the Kit
         render peer to boot and warm its stage when the vehicle renders, the seed row and the graph
-        capture, ``controller.connect()``, which binds ``:4560`` and launches the PX4 container, and
-        the preroll wait for the peer, then flies one tick.
+        capture, ``controller.connect()``, which binds the HIL port PX4 dials, and the preroll wait
+        for the peer, then flies one tick.
         So for a PX4 sim this is the "lockstep is up" verb, and it returns with one observation
         row already recorded and the captured graph replayed once.
 
@@ -358,7 +372,7 @@ class Sim:
 
         Raises:
             RuntimeError: Called outside the ``Sim`` context manager, or the run ended during
-                setup, for example when PX4 never connected on ``:4560``.
+                setup, for example when PX4 never connected on the HIL port.
             KitPeerError: The vehicle renders and its Kit render peer failed to start.
         """
         if self._orch is None:
@@ -368,7 +382,7 @@ class Sim:
         if timeout is not None:
             self._orch.preroll_timeout = float(timeout)
         if not self.step():
-            raise RuntimeError("the sim ended during setup (did PX4 connect on :4560?)")
+            raise RuntimeError("the sim ended during setup (did PX4 connect on the HIL port?)")
 
     def run(self) -> None:
         """Run the sim **synchronously** to completion on the calling thread: exhaust the tick
@@ -530,31 +544,32 @@ class Sim:
     def artifacts(self) -> dict:
         """Return the artifacts produced by this run.
 
-        The Rerun ``.rrd`` this run wrote, merged with whatever the active controller
-        contributes. Stays generic: it doesn't name controller-specific artifacts
-        such as the PX4 ``.ulg``; each controller declares its own via an optional
-        ``artifacts()`` method.
+        The Rerun ``.rrd`` this run wrote, merged with whatever the active controller and the
+        run's peers contribute. Stays generic: it doesn't name controller-specific artifacts
+        such as the PX4 ``.ulg`` or the PX4 console log; each controller and peer declares its
+        own via an optional ``artifacts()`` method.
 
         Returns:
             dict: At least ``{"rrd": <path or None>}``, the ``.rrd`` path, or ``None``
-                if no recorder ran, updated with any controller-contributed entries.
+                if no recorder ran, updated with any controller- and peer-contributed entries.
         """
         orch = self._orch
         logger = getattr(orch, "logger", None) if orch is not None else None
         out = {"rrd": logger.rrd_path if logger is not None else None}
         controller = getattr(orch, "controller", None) if orch is not None else None
-        contribute = getattr(controller, "artifacts", None) if controller is not None else None
-        if callable(contribute):
-            out.update(contribute())
+        for source in (controller, *getattr(orch, "peers", ())):
+            contribute = getattr(source, "artifacts", None) if source is not None else None
+            if callable(contribute):
+                out.update(contribute())
         return out
 
     def stop(self) -> None:
         """Tear the run down cooperatively: one path for both control kinds.
 
         Signals the orchestrator to stop, then closes the tick generator so its teardown runs:
-        the Real-Time Factor (RTF) stamp, ``controller.close()``, which for PX4 kills the
-        container, and the logging flush. Idempotent: repeat calls are no-ops. ``__exit__`` calls
-        it automatically.
+        the Real-Time Factor (RTF) stamp, ``controller.close()``, the stop of every peer the build
+        started, the PX4 container, and the logging flush. Idempotent: repeat calls are no-ops.
+        ``__exit__`` calls it automatically.
         """
         if self._stopped:
             return
@@ -568,7 +583,7 @@ class Sim:
             return
         self._orch.stop()
         # Step/run-driven, this closes the tick generator so its teardown, the RTF stamp plus renderer,
-        # controller and logs close, runs; a no-op if run() drove to completion. Entered but never
-        # driven, it stops the renderer's peer, started at build, and closes the Logger built at
-        # construction, so the .rrd flushes or the :9876 server releases.
+        # controller, peers and logs close, runs; a no-op if run() drove to completion. Entered but
+        # never driven, it stops the peers started at build, the renderer's and PX4, and closes the
+        # Logger built at construction, so the .rrd flushes or the :9876 server releases.
         self._orch.close()

@@ -125,6 +125,7 @@ class Px4Offboard(BaseOperator):
         self,
         conn: str = "udpin:0.0.0.0:14540",
         *,
+        system_id: int = 1,
         arrive_m: float = 2.0,
         yaw_tol_rad: float = math.radians(5.0),
         alt_tol_m: float = 1.0,
@@ -134,7 +135,10 @@ class Px4Offboard(BaseOperator):
 
         Args:
             conn: pymavlink connection string for the PX4 operator link. The default
-                listens on UDP port 14540, the PX4 offboard and GCS API port.
+                listens on UDP port 14540, the PX4 offboard and GCS API port of instance 0; the run
+                passes ``14540 + instance``.
+            system_id: PX4's MAVLink system id, ``instance + 1``: the heartbeat this operator waits
+                for and the system every verb addresses.
             arrive_m: 3D arrival radius for :meth:`at_target` after a :meth:`goto`, in meters.
             yaw_tol_rad: Heading tolerance for :meth:`at_target` when the caller commanded a yaw, in radians.
             alt_tol_m: Altitude tolerance for :meth:`at_target` after a :meth:`takeoff`, in meters.
@@ -143,6 +147,7 @@ class Px4Offboard(BaseOperator):
         """
         super().__init__()  # BaseOperator, for _as_position_goal; nothing uses the mission and logging members
         self._conn_str = conn
+        self._system_id = system_id
         self._arrive_m = arrive_m
         self._yaw_tol_rad = yaw_tol_rad
         self._alt_tol_m = alt_tol_m
@@ -332,7 +337,7 @@ class Px4Offboard(BaseOperator):
 
     def _on_msg(self, msg) -> None:
         t = msg.get_type()
-        if t == "HEARTBEAT" and msg.get_srcSystem() == 1:
+        if t == "HEARTBEAT" and msg.get_srcSystem() == self._system_id:
             if self._sysid is None:
                 self._sysid, self._compid = self._mav.target_system, self._mav.target_component
             self._armed = bool(msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)

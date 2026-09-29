@@ -7,11 +7,13 @@ name: gpu-runner
 # on any pull request (a fresh disposable box per run). Runs in
 # Freefly's AWS account (multi-region — placement discovered per run, see #26); the box boots the
 # latest AWS Deep Learning Base GPU AMI
-# (NVIDIA drivers + Docker + nvidia-container-toolkit, resolved at runtime), and the container jobs
-# docker-pull their px4-sitl image per run; an RTX run pulls NVIDIA's Isaac Sim image on the box and
-# restores Kit's caches when its caller asks. On push, schedule and dispatch
-# runs the EC2 instance role grants s3:PutObject to the CI artifacts bucket so a command's --upload
-# works via the instance profile. A same-repo PR run launches with the caller's read-only instance
+# (NVIDIA drivers + Docker + nvidia-container-toolkit, resolved at runtime); a PX4 run builds the
+# px4-sitl image on the box the way a user's first run does, an RTX run pulls NVIDIA's Isaac Sim
+# image, and the box restores the one cache entry its caller names. On push, schedule and dispatch
+# runs the EC2 instance role lets a command's --upload write public/ci/* in the CI artifacts bucket
+# and read the bench feed at public/ci/bench/*, which it merges into, through the instance profile.
+# The read needs s3:ListBucket on that prefix too, else S3 answers a missing key with 403, not 404.
+# A same-repo PR run launches with the caller's read-only instance
 # profile when it names one, else with none; a fork's PR run always launches with none. No PR run
 # carries a Cesium token, since nothing a PR run does needs it. The bucket's public/* prefix is SERVED
 # THROUGH CLOUDFRONT (docs .rrd embeds + the bench feed), so treat everything uploaded there as
@@ -66,8 +68,20 @@ on:
         description: "Checkout fetch depth (0 = full history, for base-vs-head comparisons)"
         type: number
         default: 1
-      caches:
-        description: "Extra caches to restore/save on the box (space-separated: px4 acados kit)"
+      cache-path:
+        description: "One cache entry to restore and save on the box: its paths, one per line (empty: none)"
+        type: string
+        default: ""
+      cache-name:
+        description: "That entry's name: the leading part of its key, and the prefix a miss restores the newest entry from"
+        type: string
+        default: ""
+      cache-files:
+        description: "The tracked files whose content keys that entry: git pathspecs, one per line; a change to any starts a new entry"
+        type: string
+        default: ""
+      cache-drop:
+        description: "Paths inside the entry to remove before it is saved, for what a run writes there that the next run must not read"
         type: string
         default: ""
       cache-scope:
@@ -174,7 +188,7 @@ jobs:
           github-token: ${{ steps.app-token.outputs.token }}
           ec2-instance-type: ${{ inputs.instance-type }}
           availability-zones-config: ${{ steps.discover.outputs.availability-zones-config }}
-          # The instance profile (s3:PutObject for the docs .rrd uploads) rides push, schedule and
+          # The instance profile (write public/ci/*, read public/ci/bench/*) rides push, schedule and
           # dispatch runs only: nothing a PR run does uploads, and an approved fork's code must not
           # be able to write to the CI artifacts bucket. A same-repo PR run gets the caller's
           # read-only profile instead, or none, and pull_request_target never gets one: the command
@@ -202,7 +216,7 @@ jobs:
     # box started and stopped with no work done while the callers' contexts reported success.
     if: ${{ !cancelled() && needs.start-runner.result == 'success' }}
     runs-on: ${{ needs.start-runner.outputs.label }} # the ephemeral GPU box
-    permissions: { contents: read, packages: read } # packages — the GHCR pull of the px4-sitl image
+    permissions: { contents: read }
     steps:
       # The box's runner service exports no $HOME; anything running `git config --global`
       # (e.g. the codecov wrapper) dies on it, and ~-paths resolve inconsistently.
@@ -226,12 +240,6 @@ jobs:
       # setup-uv would otherwise compute a literal "undefined/.cache/uv" cache dir.
       - uses: astral-sh/setup-uv@v6
         with: { enable-cache: true, cache-local-path: /tmp/setup-uv-cache }
-      - name: Log in to GHCR # the px4-sitl image is a repo package
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
       # The kernel cache is keyed on the versions that shape the kernels, read from uv.lock, and on
       # the caller's cache-scope. A key is written once and the first saver wins, so boxes saving
       # under one key would keep the first box's kernels only; a scope with no entry yet restores
@@ -248,34 +256,40 @@ jobs:
           path: ~/.cache/warp
           key: ${{ steps.warp-key.outputs.versions }}-${{ inputs.cache-scope }}
           restore-keys: ${{ steps.warp-key.outputs.versions }}-
-      - name: Restore PX4 SITL checkout+build cache
-        # The membership checks wrap inputs.caches in spaces so one name cannot prefix-match
-        # another.
-        if: contains(format(' {0} ', inputs.caches), ' px4 ')
-        uses: actions/cache@v4
-        # px4.ref (the per-repo pin, moved only by px4-bump PRs) and provision_px4.sh (its
-        # interim airframe patch is baked into the cached build) both key the cache — editing
-        # either must invalidate it, because the job's own PX4 build is incremental over
-        # whatever this cache restored.
-        with: { path: ~/code/px4, key: "px4-${{ hashFiles('scripts/ci/px4.ref', 'scripts/ci/provision_px4.sh') }}" }
-      - name: Restore acados cache
-        if: contains(format(' {0} ', inputs.caches), ' acados ')
-        uses: actions/cache@v4
-        with: { path: ~/.cache/nexus/acados, key: "acados-${{ hashFiles('scripts/setup_acados.sh') }}" }
-      # The Kit peer's own caches, its shader cache and the home Kit writes its user caches into,
-      # so an RTX cell boots warm on a fresh box. Keyed on the peer folder, the program the
-      # container runs, and on the caller's cache-scope as the kernel cache is, with a prefix fallback:
-      # the shader cache is keyed by shader content, so an older entry still saves most compiles.
-      # Cesium's request cache is removed before the post step saves the entry, see below.
-      - name: Restore Kit caches
-        if: contains(format(' {0} ', inputs.caches), ' kit ')
+      # The caller's one cache entry: this runner knows no component, so the caller names the paths,
+      # the entry's name and the tracked files that shape it, and the key hashes those files here: a
+      # reusable workflow's `with` cannot call hashFiles, and hashFiles takes one pattern per
+      # argument, never a list in one string. The key is the name and that hash alone, so calls that
+      # cache the same paths under the same name share one entry and the first saver wins: a PX4 tree
+      # of about 2 GB is saved once per pin, not once per box, against the repo's 10 GB budget. A miss
+      # restores the newest entry under the name, so a bump builds incrementally over the last tree and
+      # a render cell boots on another cell's shaders. Actions cannot loop steps, so a caller with two
+      # things to cache lists both paths under one entry.
+      - name: Compute the cache entry's key
+        if: inputs.cache-path != ''
+        id: cache-key
+        env:
+          FILES: ${{ inputs.cache-files }}
+        # set -f: a pathspec's * is git's to expand, across folders, not the shell's. A pathspec that
+        # matches no tracked file fails the step: the key would silently stop following that file.
+        run: |
+          set -f
+          for spec in $FILES; do
+            if [ -z "$(git ls-files -- "$spec")" ]; then
+              echo "::error::cache-files: $spec matches no tracked file"
+              exit 1
+            fi
+          done
+          # shellcheck disable=SC2086 # one pathspec per line, split on purpose
+          hash=$(git ls-files -z -- $FILES | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-16)
+          echo "hash=$hash" >> "$GITHUB_OUTPUT"
+      - name: Restore the caller's cache entry
+        if: inputs.cache-path != ''
         uses: actions/cache@v4
         with:
-          path: ~/.cache/nexus/kit
-          key: kit-${{ hashFiles('nexus/_src/rendering/kit-peer/**') }}-${{ inputs.cache-scope }}
-          restore-keys: |
-            kit-${{ hashFiles('nexus/_src/rendering/kit-peer/**') }}-
-            kit-
+          path: ${{ inputs.cache-path }}
+          key: ${{ inputs.cache-name }}-${{ steps.cache-key.outputs.hash }}
+          restore-keys: ${{ inputs.cache-name }}-
       - name: Fail early when a main-push run has no instance profile
         # Only push, schedule and dispatch attach one, and only they upload; a PR run passes an empty
         # name on purpose. A step's `if:` cannot read a secret, so the check reads it from env.
@@ -330,13 +344,21 @@ jobs:
             fi ;;
           esac
           ${{ inputs.command }}
-      # Cesium's request cache holds the tiles a cesium cell streamed, and a restored one would feed
-      # the next cell from disk, so its RTF no longer measures a network stream. actions/cache
-      # archives the whole folder, an exclusion pattern removes nothing inside it, so the file goes
-      # before the post step saves the entry. always(): a red cell still saves the shaders it built.
-      - name: Drop Cesium's request cache before the Kit caches are saved
-        if: ${{ always() && contains(format(' {0} ', inputs.caches), ' kit ') }}
-        run: rm -f ~/.cache/nexus/kit/home/.cache/ov/cesium-request-cache.sqlite*
+      # What the caller's entry must not carry: actions/cache archives the whole folder, an exclusion
+      # pattern removes nothing inside it, so the caller's cache-drop paths go before the post step
+      # saves the entry. always(): a red run still saves what it built. Bash expands no `~` that a
+      # variable holds, so a leading one becomes $HOME here before the glob expands.
+      - name: Drop what the cache entry must not carry
+        if: ${{ always() && inputs.cache-drop != '' }}
+        env:
+          DROP: ${{ inputs.cache-drop }}
+        run: |
+          while IFS= read -r p; do
+            [ -n "$p" ] || continue
+            p="${p/#\~/$HOME}"
+            # shellcheck disable=SC2086 # a path is a glob, so it expands unquoted
+            rm -rf $p
+          done <<< "$DROP"
       - name: Upload coverage to Codecov
         if: ${{ inputs.coverage-flags != '' }}
         uses: codecov/codecov-action@v5
