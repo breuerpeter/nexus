@@ -259,19 +259,27 @@ jobs:
       # The caller's one cache entry: this runner knows no component, so the caller names the paths,
       # the entry's name and the tracked files that shape it, and the key hashes those files here: a
       # reusable workflow's `with` cannot call hashFiles, and hashFiles takes one pattern per
-      # argument, never a list in one string. The key ends in the caller's cache-scope as the kernel
-      # cache's does, since a key is written once and the first saver wins; a miss restores the newest
-      # entry under the same name and hash, then under the name alone, so a bump builds incrementally
-      # over the last tree and a new cell boots on another cell's shaders. Actions cannot loop
-      # steps, so a caller with two things to cache lists both paths under one entry.
+      # argument, never a list in one string. The key is the name and that hash alone, so calls that
+      # cache the same paths under the same name share one entry and the first saver wins: a PX4 tree
+      # of about 2 GB is saved once per pin, not once per box, against the repo's 10 GB budget. A miss
+      # restores the newest entry under the name, so a bump builds incrementally over the last tree and
+      # a render cell boots on another cell's shaders. Actions cannot loop steps, so a caller with two
+      # things to cache lists both paths under one entry.
       - name: Compute the cache entry's key
         if: inputs.cache-path != ''
         id: cache-key
         env:
           FILES: ${{ inputs.cache-files }}
-        # set -f: a pathspec's * is git's to expand, across folders, not the shell's.
+        # set -f: a pathspec's * is git's to expand, across folders, not the shell's. A pathspec that
+        # matches no tracked file fails the step: the key would silently stop following that file.
         run: |
           set -f
+          for spec in $FILES; do
+            if [ -z "$(git ls-files -- "$spec")" ]; then
+              echo "::error::cache-files: $spec matches no tracked file"
+              exit 1
+            fi
+          done
           # shellcheck disable=SC2086 # one pathspec per line, split on purpose
           hash=$(git ls-files -z -- $FILES | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-16)
           echo "hash=$hash" >> "$GITHUB_OUTPUT"
@@ -280,10 +288,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ inputs.cache-path }}
-          key: ${{ inputs.cache-name }}-${{ steps.cache-key.outputs.hash }}-${{ inputs.cache-scope }}
-          restore-keys: |
-            ${{ inputs.cache-name }}-${{ steps.cache-key.outputs.hash }}-
-            ${{ inputs.cache-name }}-
+          key: ${{ inputs.cache-name }}-${{ steps.cache-key.outputs.hash }}
+          restore-keys: ${{ inputs.cache-name }}-
       - name: Fail early when a main-push run has no instance profile
         # Only push, schedule and dispatch attach one, and only they upload; a PR run passes an empty
         # name on purpose. A step's `if:` cannot read a secret, so the check reads it from env.
