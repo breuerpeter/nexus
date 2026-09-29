@@ -35,7 +35,8 @@ def read_declarations(usd_path: str | Path) -> list[tuple[str, str, dict]]:
     Each attribute the schema defines becomes the keyword of the same name in snake case.
 
     Raises:
-        ValueError: An authored asset path resolves to no file; the message names the prim.
+        ValueError: A prim authors a `nexus:` attribute that none of its applied schemas defines, or an
+            asset path that resolves to no file; the message names the prim.
     """
     from pxr import Usd
 
@@ -44,12 +45,17 @@ def read_declarations(usd_path: str | Path) -> list[tuple[str, str, dict]]:
     declarations = []
     # The default predicate skips inactive prims; instance proxies reach into instanced references.
     for prim in stage.Traverse(Usd.TraverseInstanceProxies()):
+        defined = set()
         for schema in prim.GetAppliedSchemas():
             definition = registry.FindAppliedAPIPrimDefinition(schema)
             if definition is None:  # one instance of a schema applied more than once, `CollectionAPI:colliders`
                 continue
             names = [name for name in definition.GetPropertyNames() if name.startswith(_NAMESPACE)]
             if names:
+                defined.update(names)
                 kwargs = {_keyword(name): _value(prim, name) for name in names}
                 declarations.append((str(prim.GetPath()), schema, kwargs))
+        authored = [prop.GetName() for prop in prim.GetAuthoredPropertiesInNamespace(_NAMESPACE.rstrip(":"))]
+        if undefined := [name for name in authored if name not in defined]:
+            raise ValueError(f"{prim.GetPath()}: no applied schema defines {', '.join(undefined)}")
     return declarations

@@ -49,6 +49,20 @@ def test_the_reader_fails_on_an_asset_path_that_resolves_to_no_file_and_names_th
         read_declarations(vehicle)
 
 
+def test_the_reader_fails_on_a_nexus_attribute_on_a_prim_with_no_nexus_schema_and_names_the_prim(tmp_path):
+    """The reader fails on an authored `nexus:` attribute on a prim that applies no nexus schema."""
+    from nexus._src.usd.reader import read_declarations
+
+    vehicle = tmp_path / "vehicle.usda"
+    stage = Usd.Stage.CreateNew(str(vehicle))
+    prim = UsdGeom.Xform.Define(stage, "/Vehicle/body/Imu").GetPrim()
+    prim.CreateAttribute("nexus:accNoise", Sdf.ValueTypeNames.Float).Set(0.05)
+    stage.GetRootLayer().Save()
+
+    with pytest.raises(ValueError, match="/Vehicle/body/Imu"):
+        read_declarations(vehicle)
+
+
 def test_each_attribute_the_schema_defines_reaches_the_class_as_the_snake_case_keyword():
     """Each `nexus:` attribute the schema defines reaches the class as the snake-case keyword argument of the same name.
 
