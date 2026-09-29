@@ -21,8 +21,8 @@ layers =
     nexus._src.config
     nexus._src.assets
     nexus._src.transform
-    nexus._src.usd
     nexus._src.core
+    nexus._src.usd
 
 [importlinter:contract:src-never-examples]
 name = the core never imports the examples (examples depend on core, one-way)

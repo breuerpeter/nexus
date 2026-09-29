@@ -7,6 +7,10 @@ so the binding indirection exists without the packaging machinery yet.
 from __future__ import annotations
 
 from collections.abc import Callable
+from functools import cache
+from importlib.metadata import EntryPoint, entry_points
+
+from nexus._src.usd import ENTRY_POINT_GROUP
 
 
 class Registry:
@@ -27,17 +31,24 @@ class Registry:
 class ComponentRegistry:
     """A value that maps each applied schema to the class that builds it, by class or import path."""
 
-    def __init__(self, entries: dict[str, type | str] | None = None):
+    def __init__(self, entries: dict[str, type | str | EntryPoint] | None = None):
         self._entries = dict(entries or {})
 
     def resolve(self, schema: str) -> type | None:
-        """The class `schema` maps to, or `None` when no entry claims it."""
-        return self._entries.get(schema)
+        """The class `schema` maps to, or `None` when no entry claims it.
+
+        An entry given as an import path, `module:Class`, imports its module here, not before.
+        """
+        target = self._entries.get(schema)
+        if isinstance(target, str):
+            target = EntryPoint(name=schema, value=target, group=ENTRY_POINT_GROUP)
+        return target.load() if isinstance(target, EntryPoint) else target
 
 
+@cache
 def default_registry() -> ComponentRegistry:
-    """The default registry, filled from the entry-point group on first use."""
-    ...
+    """The default registry: every entry in the `nexus.components` entry-point group, read on first use."""
+    return ComponentRegistry({entry.name: entry for entry in entry_points(group=ENTRY_POINT_GROUP)})
 
 
 def register_component(schema: str, target: type | str) -> None:
