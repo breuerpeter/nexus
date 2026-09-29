@@ -1,0 +1,23 @@
+#usda 1.0
+(
+    doc = """The nexus component schemas, written by hand. Each attribute's doc ends with its Range and
+    Units lines, which the schema reference page renders."""
+)
+
+class "NexusImuAPI" (
+    doc = "An inertial measurement unit on its mount prim: an accelerometer and a gyroscope, each with white noise."
+)
+{
+    float nexus:accNoise = 0.02 (
+        doc = """Standard deviation of the white noise on each accelerometer axis, per sample.
+
+        Range: [0, inf)
+        Units: meters per second squared"""
+    )
+    float nexus:gyroNoise = 0.02 (
+        doc = """Standard deviation of the white noise on each gyroscope axis, per sample.
+
+        Range: [0, inf)
+        Units: radians per second"""
+    )
+}

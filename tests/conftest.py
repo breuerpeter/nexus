@@ -4,8 +4,15 @@ import re
 import subprocess
 import sys
 
+import newton_usd_schemas  # noqa: F401
 import pytest
 import warp as wp
+
+# The schema plugins the tests apply, registered here, before any test module opens a stage: OpenUSD
+# builds its schema registry once, on first use, and a plugin registered after that never shows in it.
+# Newton's plugin backs the test that applies a Newton schema, and the stand-in project's backs the tests
+# that apply `StandInAPI`.
+import tests.usd.stand_in.nexus_stand_in  # noqa: F401
 
 # Warp's default device when the session starts. A test that leaves it changed makes a later test's
 # kernels run on another device than its arrays, so test order would matter; the guards below fail it.

@@ -80,6 +80,8 @@ hooks:
   - docs/hooks/vehicle_previews.py
   # Renders benchmark tables from the committed docs/data/*.json (benchmark-* / example-stats markers).
   - docs/hooks/benchmarks.py
+  # Renders the schema reference from the nexus schema plugin (schema-reference marker).
+  - docs/hooks/schemas.py
 
 # The hook lives under docs/ (mkdocs convention) but is build tooling, not site content.
 exclude_docs: |
@@ -170,6 +172,7 @@ nav:
       - reference/assets/index.md
       - Vehicles: reference/assets/vehicles.md
       - Scenes: reference/assets/scenes.md
+    - Schemas: reference/schemas.md
     - Benchmarking: reference/benchmarking.md
     - Changelog:
       - reference/changelog/index.md
