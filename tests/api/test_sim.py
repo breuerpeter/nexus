@@ -329,9 +329,9 @@ def test_sim_takes_no_control_argument():
 
 
 def test_a_sim_that_names_no_vehicle_fails_at_construction():
-    """A `Sim` that names no vehicle fails at construction, and the error names what is missing.
+    """A `Sim` that names no vehicle fails at construction, and the error names the missing argument.
 
-    Given the bundled catalog, when `Sim(scene="empty")` is built, then it raises an error that names
+    Given the bundled catalog, when a caller builds `Sim(scene="empty")`, then it raises an error that names
     the missing `vehicle`.
     """
     with pytest.raises((TypeError, ValueError), match="vehicle"):
@@ -339,9 +339,9 @@ def test_a_sim_that_names_no_vehicle_fails_at_construction():
 
 
 def test_a_sim_that_names_no_scene_fails_at_construction():
-    """A `Sim` that names no scene fails at construction, and the error names what is missing.
+    """A `Sim` that names no scene fails at construction, and the error names the missing argument.
 
-    Given the bundled catalog, when `Sim(vehicle="astro_max_base")` is built, then it raises an error
+    Given the bundled catalog, when a caller builds `Sim(vehicle="astro_max_base")`, then it raises an error
     that names the missing `scene`.
     """
     with pytest.raises((TypeError, ValueError), match="scene"):
