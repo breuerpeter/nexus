@@ -32,7 +32,7 @@ from pymavlink import mavutil
 
 import nexus
 import nexus._src.build.launch as launch_mod
-import nexus._src.containers as containers
+import nexus._src.peers.containers as containers
 from nexus._src.api.sim import Sim
 from nexus._src.config import LaunchConfig, Registry
 from nexus._src.core.interfaces import Stage

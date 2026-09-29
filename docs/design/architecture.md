@@ -163,7 +163,7 @@ The framework ships as a single **`nexus`** package in a `uv` workspace. All sou
 `_src`. Extras isolate the heavy optional dependencies, such as `policy` for Torch and `acados` for
 the Nonlinear Model Predictive Control (NMPC) example, rather than separate packages. Neither peer is an extra. The Kit render peer's program
 ships in the wheel as package data and mounts into NVIDIA's Isaac Sim image, which each machine
-pulls on its first RTX run. The PX4 controller's pin and `px4-sitl` Dockerfile ship the same way,
+pulls on its first RTX run. The PX4 peer's pin and `px4-sitl` Dockerfile ship the same way,
 and each machine builds the `px4-sitl` image and the pinned PX4 tree on its first PX4 run. The RL
 trainer is a **separate
 `uv` project**, `nexus-rl`, depending on the framework via an editable

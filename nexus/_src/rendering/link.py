@@ -1,8 +1,9 @@
 """The host's end of the render link, and the renderer seam the loop drives.
 
 The framing, a 4-byte big-endian header length, the header as UTF-8 JSON, then the binary blobs
-the header lists by size under ``blobs``, lives once, in ``kit-peer/link.py``: the peer program
-imports it as a sibling file, and this module loads the same file, so the two ends can't drift.
+the header lists by size under ``blobs``, and the message set live once, in the Kit peer's
+``peer-src/link.py``: the peer program imports it as a sibling file, and this module loads the same
+file, so the two ends can't drift.
 
 The link pipelines the rendering. At a frame's due tick it sends the sim time and a world matrix per
 prim path, and the loop flies on; the frame comes back on a later due tick, and the loop waits only
@@ -23,19 +24,19 @@ import time
 import numpy as np
 
 from nexus._src.core import logger
-
-from .peer import KIT_DIR, KitPeer, KitPeerError
+from nexus._src.peers.kit.runner import KIT_DIR, KitPeer, KitPeerError
 
 STARTUP_TIMEOUT_S = 1800.0  # a cold boot compiles shaders; a Cesium scene streams its tiles first
 FRAME_TIMEOUT_S = 60.0  # no frame for this long means a hung peer
 
 
-# The one framing module, ``kit-peer/link.py``: package data in a folder with a hyphen in its name,
-# so it runs by path rather than importing by a dotted name, and writes no bytecode beside the
-# program, which the image tag hashes around.
+# The render link's one definition, ``peer-src/link.py``: package data in a folder with a hyphen in
+# its name, so it runs by path rather than importing by a dotted name, and writes no bytecode
+# beside the program the container mounts.
 _wire = runpy.run_path(str(KIT_DIR / "link.py"))
 send = _wire["send"]
 recv = _wire["recv"]
+HELLO, SETUP, READY, FRAME, CLOSE, ERROR = (_wire[op] for op in ("HELLO", "SETUP", "READY", "FRAME", "CLOSE", "ERROR"))
 
 
 def pose_matrices(body_q) -> np.ndarray:
@@ -108,7 +109,7 @@ class KitRenderer:
             try:
                 sock = socket.create_connection(("127.0.0.1", self._peer.port), timeout=5.0)
                 header, _ = recv(sock)  # the peer greets the moment it accepts
-                if header.get("op") == "hello":
+                if header.get("op") == HELLO:
                     sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                     self._sock = sock
                     return
@@ -138,7 +139,7 @@ class KitRenderer:
             header, blobs = recv(self._sock)
         except (OSError, ConnectionError) as exc:
             raise KitPeerError(self._died(f"closed the link while this run waited for {what} ({exc})")) from exc
-        if header.get("op") == "error":
+        if header.get("op") == ERROR:
             raise KitPeerError(self._died(f"failed: {header.get('message')}"))
         return header, blobs
 
@@ -154,9 +155,9 @@ class KitRenderer:
         sensors = [{"path": s.path, "output": s.output, "width": s.width, "height": s.height} for s in self.sensors]
         # The Cesium ion token crosses here and nowhere else: never in the container's environment.
         token = os.environ.get("CESIUM_ION_TOKEN") or None
-        send(self._sock, {"op": "setup", **self.setup, "cesium_ion_token": token, "sensors": sensors})
+        send(self._sock, {"op": SETUP, **self.setup, "cesium_ion_token": token, "sensors": sensors})
         header, _ = self._receive(STARTUP_TIMEOUT_S, "the ready")
-        if header.get("op") != "ready":
+        if header.get("op") != READY:
             raise KitPeerError(self._died(f"answered the setup with {header.get('op')!r}"))
         logger.info(f"Kit render peer ready in {time.monotonic() - t0:.0f}s: {len(self.sensors)} RTX sensor(s)")
 
@@ -198,7 +199,7 @@ class KitRenderer:
             mats = [worlds[b] for b, _ in self._bodies] + [s.mount @ worlds[s.body] for s in self.sensors]
             paths = [p for _, p in self._bodies] + [s.path for s in self.sensors]
             try:
-                send(self._sock, {"op": "frame", "t": now, "paths": paths, "due": due}, [np.stack(mats)])
+                send(self._sock, {"op": FRAME, "t": now, "paths": paths, "due": due}, [np.stack(mats)])
             except OSError as exc:
                 raise KitPeerError(self._died(f"closed the link ({exc})")) from exc
         self._pending = True
@@ -208,7 +209,7 @@ class KitRenderer:
         try:
             if self._sock is not None:
                 self._take()
-                send(self._sock, {"op": "close"})
+                send(self._sock, {"op": CLOSE})
                 header, blobs = self._receive(30.0, "the close")
                 self._emit(header, blobs)  # the last request's frame, which the close rendered
         except Exception as exc:

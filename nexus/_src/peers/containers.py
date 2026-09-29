@@ -3,15 +3,15 @@
 The governing rule for the two ways this repo talks to docker: **the SDK where this repo owns the
 container definition, compose where compose owns it.** A peer the flight starts and stops as part of
 its own lifecycle runs from here, so the ordering a runbook used to write as a warning becomes code:
-PX4 Software In The Loop (SITL) from :mod:`nexus._src.vehicle.controllers.px4.sitl`, and the Kit
-render peer from :mod:`nexus._src.rendering.peer`. Compose keeps only the ground services a runbook
+PX4 Software In The Loop (SITL) from :mod:`nexus._src.peers.px4_sitl.runner`, and the Kit
+render peer from :mod:`nexus._src.peers.kit.runner`. Compose keeps only the ground services a runbook
 brings up by hand, in ``docker/docker-compose.yml``.
 
 The px4-sitl image, PX4's build toolchain, builds on the machine that runs it, from a folder that
 ships in the wheel as package data. Its tag hashes that folder, so a change to the image always
 rebuilds it and a host code change never does. No registry and no login sit between a pip install
 and a first PX4 run. The Kit render peer runs NVIDIA's image as pulled instead, see
-:mod:`nexus._src.rendering.peer`.
+:mod:`nexus._src.peers.kit.runner`.
 """
 
 from __future__ import annotations

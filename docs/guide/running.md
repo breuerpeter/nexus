@@ -62,7 +62,7 @@ no container.
 
 - The first RTX run on a machine pulls NVIDIA's `nvcr.io/nvidia/isaac-sim:6.0.1`, about 21 GB,
   with no NGC login. Later runs reuse it, and nexus builds nothing. The container runs the image
-  as pulled. The peer program ships in the package, in `nexus/_src/rendering/kit-peer/`. It mounts
+  as pulled. The peer program ships in the package, in `nexus/_src/peers/kit/peer-src/`. It mounts
   read-only, so an update to the peer takes effect on the next run.
 - A scene that declares a Cesium tileset, such as `--scene cesium`, fetches Cesium for Omniverse
   into the asset cache on its first run. No other scene fetches it.
@@ -147,7 +147,7 @@ stops. The run chooses how, with `--px4`:
   a PX4 SITL of your own or a real autopilot on a bench.
 
 **The PX4 tree.** The PX4 controller pins the PX4-Autopilot commit it flies, in
-`nexus/_src/vehicle/controllers/px4/px4.ref`, which ships in the package. The first managed run on
+`nexus/_src/peers/px4_sitl/px4.ref`, which ships in the package. The first managed run on
 a machine fetches that commit into `~/.cache/nexus/px4/<commit>/` and builds it there, minutes
 once. Later runs rebuild only what changed. Two overrides:
 

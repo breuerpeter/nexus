@@ -20,7 +20,7 @@ _RECORDERS = ("hardware", "runtime", "app_frametime", "gpu_frametime", "memory",
 
 
 def _log(msg: str) -> None:
-    print(f"[kit-peer] benchmark: {msg}", flush=True)
+    print(f"[kit] benchmark: {msg}", flush=True)
 
 
 class KitBenchmark:

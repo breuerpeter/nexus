@@ -91,7 +91,7 @@ run fetches and builds the PX4 tree the controller pins, and `PX4_DIR` names a c
 
 `scripts/ci/evaluate_examples.py` runs this example on a GPU box of its own, one box per example,
 in the `gpu-examples` workflow via the shared `gpu-runner.yml`. The box fetches and builds the PX4
-tree from the pin the controller ships, `nexus/_src/vehicle/controllers/px4/px4.ref`, the way a
+tree from the pin the controller ships, `nexus/_src/peers/px4_sitl/px4.ref`, the way a
 user's first run does, and caches the tree and the `px4-sitl` image under that pin. The script then
 gates the fresh run against `scripts/ci/examples_baselines.json`. It fails if the closed-loop
 takeoff stops working,

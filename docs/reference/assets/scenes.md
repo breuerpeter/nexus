@@ -18,7 +18,7 @@ exactly each prim that authors a `UsdPhysics` schema, such as the slalom pillars
 the single authority on what it contributes, with no scene kinds, flags, or names in code. A scene
 type whose world can't live in a stage prim gets live machinery in the Kit peer's program, which
 claims the scene by its USD content. The cesium globe's token injection and tile streaming live
-there, in `nexus/_src/rendering/kit-peer/cesium_globe.py`.
+there, in `nexus/_src/peers/kit/peer-src/cesium_globe.py`.
 
 Any scene flies with any vehicle. Whether it shows depends on the vehicle: a vehicle whose USD
 authors RTX sensors renders them in the Kit peer, and there the scene is visible. A vehicle with none

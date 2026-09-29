@@ -35,7 +35,7 @@ def main() -> None:
     if args.log and args.view:  # serve or file, never both: a live server and a complete .rrd can't coexist in-process
         parser.error("--log (write .rrd) and --view (serve viewer) are mutually exclusive, pick one")
 
-    from nexus._src.rendering import KitPeerError
+    from nexus._src.peers.kit.runner import KitPeerError
 
     try:
         _run(args)

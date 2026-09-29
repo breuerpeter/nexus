@@ -41,7 +41,7 @@ dependencies = [
     "scipy>=1.11.0",
     "rerun-sdk>=0.34.1,<0.35",
     # The docker daemon client: the framework starts the PX4 SITL container it flies against and
-    # the Kit render peer (nexus/_src/containers.py). Pure Python over requests/urllib3, which
+    # the Kit render peer (nexus/_src/peers/containers.py). Pure Python over requests/urllib3, which
     # are already in the tree.
     "docker>=7.1.0",
 ]

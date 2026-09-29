@@ -24,6 +24,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from nexus._src.core.schema import Setpoint
+from nexus._src.peers.px4_sitl import OFFBOARD_PORT
 
 from .operator import BaseOperator
 from .qgc_plan import NAV_WAYPOINT, MissionItem, Plan, read_plan
@@ -123,7 +124,7 @@ class _GotoTarget:
 class Px4Offboard(BaseOperator):
     def __init__(
         self,
-        conn: str = "udpin:0.0.0.0:14540",
+        conn: str = f"udpin:0.0.0.0:{OFFBOARD_PORT}",
         *,
         system_id: int = 1,
         arrive_m: float = 2.0,
@@ -135,8 +136,8 @@ class Px4Offboard(BaseOperator):
 
         Args:
             conn: pymavlink connection string for the PX4 operator link. The default
-                listens on UDP port 14540, the PX4 offboard and GCS API port of instance 0; the run
-                passes ``14540 + instance``.
+                listens on ``OFFBOARD_PORT``, the PX4 offboard and GCS API port of instance 0; the
+                run passes ``OFFBOARD_PORT + instance``.
             system_id: PX4's MAVLink system id, ``instance + 1``: the heartbeat this operator waits
                 for and the system every verb addresses.
             arrive_m: 3D arrival radius for :meth:`at_target` after a :meth:`goto`, in meters.

@@ -1,8 +1,9 @@
-"""The peer's end of the render link: length-framed JSON headers with binary blobs behind them.
+"""The render link's one definition: its framing and its message set.
 
 A message is a 4-byte big-endian header length, the header as UTF-8 JSON, then the blobs the
-header lists by size under ``blobs``. The host's end, ``nexus/_src/rendering/link.py``, frames the
-same way; the two stay twins because the peer imports no nexus module.
+header lists by size under ``blobs``. The header names its message under ``op``, one of the seven
+below. The peer program imports this file as a sibling module, and the host's end,
+``nexus/_src/rendering/link.py``, runs it by path, since the peer imports no nexus module.
 """
 
 from __future__ import annotations
@@ -12,6 +13,14 @@ import socket
 import struct
 
 _LEN = struct.Struct("!I")
+
+HELLO = "hello"  # peer to host, on accept: the peer is up
+SETUP = "setup"  # host to peer: the scene, the vehicle, its start pose and the sensors
+READY = "ready"  # peer to host: the peer has composed the stage and warmed the renderer
+FRAME = "frame"  # host to peer: the sim time and the poses; peer to host: the outputs of the frame before
+CLOSE = "close"  # host to peer: render the last request, answer with its frame, and end
+CLOSED = "closed"  # peer to host, the answer to a close: the outputs of the last request
+ERROR = "error"  # peer to host: the setup or a render failed; ``message`` names why
 
 
 def send(sock: socket.socket, header: dict, blobs: list = ()) -> None:

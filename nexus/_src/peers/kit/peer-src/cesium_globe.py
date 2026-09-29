@@ -28,7 +28,7 @@ _STINSON_HDR = (
 
 
 def _log(msg: str) -> None:
-    print(f"[kit-peer] CesiumGlobe: {msg}", flush=True)
+    print(f"[kit] CesiumGlobe: {msg}", flush=True)
 
 
 class CesiumGlobe:

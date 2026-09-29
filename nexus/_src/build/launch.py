@@ -181,8 +181,8 @@ def _start_px4(launch: LaunchConfig, resolved: ResolvedLaunch, instance: int):
     process and the instance, so two runs in one process on two instances keep both containers; two
     on one instance collide on PX4's ports anyway.
     """
-    from nexus._src.vehicle.controllers.px4 import checkout
-    from nexus._src.vehicle.controllers.px4.sitl import PX4_LOG_DIR, Px4Sitl
+    from nexus._src.peers.px4_sitl import checkout
+    from nexus._src.peers.px4_sitl.runner import PX4_LOG_DIR, Px4Sitl
 
     catalog = resolved.tested_config.registry
     spec = resolved.tested_config.px4

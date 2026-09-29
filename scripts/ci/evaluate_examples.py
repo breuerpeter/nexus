@@ -76,7 +76,7 @@ EXAMPLES: dict[str, dict] = {
 }
 # The default set = everything the consolidated gpu-examples leg runs. The workflow provides acados
 # via scripts/setup_acados.sh; main() below fetches and builds PX4 the way a run's first use does,
-# from the one container definition in nexus._src.vehicle.controllers.px4.sitl.
+# from the one container definition in nexus._src.peers.px4_sitl.runner.
 # goto_policy_fresh rides the gpu-rl workflow: --only goto_policy_fresh --policy <the fresh export>.
 # Local runs without the PX4/acados prerequisites: add --skip-missing.
 DEFAULT_SET = ["pid", "gain_tuning", "mass_recovery", "sampling_mpc", "acados_nmpc", "goto_policy", "px4_sitl"]
@@ -425,7 +425,7 @@ def main() -> int:
     # the incremental build and must reach the sim inside its 30 s preroll window, GH #39; a no-op
     # fits, a cold fetch and build never do. Same placement benchmark_matrix.py uses.
     if any(EXAMPLES[n].get("requires") == "px4" for n in names) and _available("px4", args)[0]:
-        from nexus._src.vehicle.controllers.px4.sitl import prepare
+        from nexus._src.peers.px4_sitl.runner import prepare
 
         print("fetching and building PX4 SITL (one-time, outside any example budget)...", flush=True)
         prepare()

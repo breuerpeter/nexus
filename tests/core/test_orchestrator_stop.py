@@ -5,7 +5,7 @@ import pytest
 from nexus._src.core.interfaces import Stage
 from nexus._src.core.orchestrator import Orchestrator
 from nexus._src.core.schema import Controls, SimTime
-from nexus._src.rendering.peer import KitPeerError
+from nexus._src.peers.kit.runner import KitPeerError
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")  # Python stand-ins run stage by stage, never as a graph
 

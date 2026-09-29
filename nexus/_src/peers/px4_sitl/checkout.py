@@ -1,6 +1,6 @@
-"""How the PX4 controller reaches its PX4 tree.
+"""How the PX4 peer reaches its PX4 tree.
 
-The controller ships the pin, ``px4.ref`` beside this module: line one is ``repo@sha``, the
+The peer ships the pin, ``px4.ref`` beside this module: line one is ``repo@sha``, the
 PX4-Autopilot tree it flies, and line two the branch ``px4-bump.yml`` tracks. A project overrides it
 with a ``nexus.px4.ref`` of the same form beside its catalog, so every vehicle of the project flies
 one tree and a bump is one edit. On first use the controller fetches the pinned commit into a folder

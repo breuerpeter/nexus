@@ -12,6 +12,8 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from nexus._src.peers.px4_sitl import HIL_PORT, OFFBOARD_PORT
+
 
 class _Base(BaseModel):
     # extra="forbid" turns a typo in a YAML key, say ``vehicel:``, into a load error instead of a
@@ -64,7 +66,7 @@ class Px4Peer(_Base):
     """How the run realizes its PX4 peer, and which addresses it hands PX4.
 
     PX4 Software In The Loop (SITL) numbers every link by its instance N: the sim's Hardware In The
-    Loop (HIL) server it dials on 4560 + N, the offboard link it streams to on 14540 + N, and its
+    Loop (HIL) server it dials on ``HIL_PORT + N``, the offboard link it streams to on ``OFFBOARD_PORT + N``, and its
     MAVLink system id, N + 1. No environment variable names a port, so the run hands PX4 one
     instance and derives from it every address of its own: the HIL port it listens on, the operator
     port it answers PX4 on, and the system id it addresses. Two runs on one machine take two
@@ -82,12 +84,12 @@ class Px4Peer(_Base):
     @property
     def hil_port(self) -> int:
         """The TCP port the run's HIL server listens on, which PX4 dials."""
-        return 4560 + self.instance
+        return HIL_PORT + self.instance
 
     @property
     def offboard_port(self) -> int:
         """The User Datagram Protocol (UDP) port PX4 streams its offboard link to, where the operator listens."""
-        return 14540 + self.instance
+        return OFFBOARD_PORT + self.instance
 
     @property
     def system_id(self) -> int:

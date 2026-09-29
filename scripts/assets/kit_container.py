@@ -13,7 +13,7 @@ typed on the host means the same file inside. The console streams to this termin
 script's exit code is the command's.
 
 The image is the render peer's, NVIDIA's Isaac Sim as pulled, so this module takes its pull, its
-run options, its Cesium mount and its docker client from ``nexus._src.rendering.peer``, private
+run options, its Cesium mount and its docker client from ``nexus._src.peers.kit.runner``, private
 names that a peer change can move.
 """
 
@@ -54,7 +54,7 @@ def run_in_kit(script: str | os.PathLike, args: list[str], *, cesium: bool = Fal
     """
     from docker.errors import DockerException
 
-    import nexus._src.rendering.peer as peer
+    import nexus._src.peers.kit.runner as peer
     from nexus._src.assets.resolver import default_cache
 
     target = Path(script).resolve()

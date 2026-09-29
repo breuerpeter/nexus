@@ -7,7 +7,7 @@ drifts. Import-light by design, stdlib only: the CI harness calls it pre-flight,
 runtime imports.
 
 PX4 needs no such variable: the PX4 controller fetches the tree it pins on first use, and
-``PX4_DIR`` names a checkout of your own instead, see :mod:`nexus._src.vehicle.controllers.px4.checkout`.
+``PX4_DIR`` names a checkout of your own instead, see :mod:`nexus._src.peers.px4_sitl.checkout`.
 """
 
 from __future__ import annotations

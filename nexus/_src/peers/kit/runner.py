@@ -1,7 +1,7 @@
 """The Kit render peer's container: its image, what it mounts, and its start, stop and alive.
 
 The container runs NVIDIA's Isaac Sim image as pulled, with no image of nexus's own: the peer
-program in ``kit-peer/``, package data beside this module, mounts read-only, and everything else
+program in ``peer-src/``, package data beside this module, mounts read-only, and everything else
 the peer needs is a run option. So an RTX run on a fresh machine costs one pull, an edit to the peer
 program takes effect on the next run, and an Isaac upgrade is a one-line pin change. The
 container runs through the docker SDK, as PX4 Software In The Loop (SITL) does.
@@ -23,11 +23,11 @@ import zipfile
 from pathlib import Path
 
 from nexus._src.assets.resolver import fetch
-from nexus._src.containers import client, run_container, stop_container
 from nexus._src.core import logger
 from nexus._src.peers import LABEL  # a Kit peer carries nexus.peer=kit, so a runner can find a leftover one
+from nexus._src.peers.containers import client, run_container, stop_container
 
-KIT_DIR = Path(__file__).with_name("kit-peer")
+KIT_DIR = Path(__file__).with_name("peer-src")
 IMAGE = "nvcr.io/nvidia/isaac-sim:6.0.1"  # pulls with no NGC login
 ISAAC_SIM_GID = "1234"  # the base image's isaac-sim group: /isaac-sim is readable by that group only
 _KIT_HOME = "/kit-home"
@@ -57,7 +57,7 @@ def ensure_image() -> str:
 
     Raises:
         KitPeerError: The pull failed; the message names the image and the registry's error.
-        RuntimeError: The docker daemon is unreachable; see :func:`nexus._src.containers.client`.
+        RuntimeError: The docker daemon is unreachable; see :func:`nexus._src.peers.containers.client`.
     """
     from docker.errors import DockerException, ImageNotFound
 
