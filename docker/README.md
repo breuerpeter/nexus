@@ -20,13 +20,13 @@ uv run nexus run --vehicle astro_max_base
 ```
 
 On the machine's first PX4 run that builds the image from
-[`nexus/_src/vehicle/controllers/px4/px4-sitl/`](../nexus/_src/vehicle/controllers/px4/px4-sitl/),
+[`nexus/_src/peers/px4_sitl/image/`](../nexus/_src/peers/px4_sitl/image/),
 which ships in the package, tagged with a hash of that folder. It fetches and builds the PX4 tree
 the controller pins, or `$PX4_DIR`. Then it starts this container, serves the
 Hardware In The Loop (HIL) link PX4 dials, and removes the container on the way out.
-[`nexus/_src/vehicle/controllers/px4/sitl.py`](../nexus/_src/vehicle/controllers/px4/sitl.py) defines the
+[`nexus/_src/peers/px4_sitl/runner.py`](../nexus/_src/peers/px4_sitl/runner.py) defines the
 container **once** and is also what runs it, through the docker daemon's Python SDK in
-[`nexus/_src/containers.py`](../nexus/_src/containers.py). PX4's console goes to
+[`nexus/_src/peers/containers.py`](../nexus/_src/peers/containers.py). PX4's console goes to
 `~/.cache/nexus/logs/px4-*.log`, next to the run's recording.
 
 PX4 uses host networking, so it reaches the sim's HIL port and exposes its ground-station MAVLink
@@ -40,8 +40,8 @@ A vehicle whose Universal Scene Description (USD) file authors a `Camera` or `Om
 renders it in the **Kit render peer**. The sim starts that container beside PX4 and stops it at the
 end of the run. The loop stays on the host, and the peer takes poses over a socket and returns each
 frame. The program Kit runs lives in
-[`nexus/_src/rendering/kit-peer/`](../nexus/_src/rendering/kit-peer/) and ships in the package, and
-[`nexus/_src/rendering/peer.py`](../nexus/_src/rendering/peer.py) runs it through the docker SDK.
+[`nexus/_src/peers/kit/peer-src/`](../nexus/_src/peers/kit/peer-src/) and ships in the package, and
+[`nexus/_src/peers/kit/runner.py`](../nexus/_src/peers/kit/runner.py) runs it through the docker SDK.
 No compose service starts it.
 
 This repository builds no Kit image. The container runs NVIDIA's

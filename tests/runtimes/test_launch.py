@@ -22,7 +22,7 @@ def daemon(monkeypatch, tmp_path):
     """
     from docker.errors import NotFound
 
-    import nexus._src.containers as containers
+    import nexus._src.peers.containers as containers
 
     runs = []
 

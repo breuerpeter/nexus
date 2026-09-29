@@ -1,6 +1,6 @@
 """The render link: pipelined frames between the loop and the Kit peer.
 
-A stand-in peer speaks the wire through the Kit program's own framing, ``kit-peer/link.py``, on a
+A stand-in peer speaks the wire through the render link's one definition, ``peer-src/link.py``, on a
 real socket, so these tests also hold the two ends of the wire to one format.
 """
 
@@ -12,8 +12,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from nexus._src.peers.kit.runner import KIT_DIR, KitPeer, KitPeerError
 from nexus._src.rendering.link import KitRenderer
-from nexus._src.rendering.peer import KIT_DIR, KitPeer, KitPeerError
 
 wire = runpy.run_path(str(KIT_DIR / "link.py"))
 
@@ -36,11 +36,11 @@ def _peer_serving(delay_s=0.0, die_after_setup=False, setups=None):
         with socket.create_server(("127.0.0.1", port)) as listener:
             conn, _ = listener.accept()
             with conn:
-                wire["send"](conn, {"op": "hello"})
+                wire["send"](conn, {"op": wire["HELLO"]})
                 setup, _ = wire["recv"](conn)
                 if setups is not None:
                     setups.append(setup)
-                wire["send"](conn, {"op": "ready"})
+                wire["send"](conn, {"op": wire["READY"]})
                 if die_after_setup:
                     return
                 shown = None  # (t, due) of the last request: what the next render shows
@@ -49,14 +49,14 @@ def _peer_serving(delay_s=0.0, die_after_setup=False, setups=None):
                         header, _ = wire["recv"](conn)
                     except ConnectionError:
                         return
-                    if header["op"] == "close":
+                    if header["op"] == wire["CLOSE"]:
                         reply, blobs = outputs(*shown) if shown else ({"arrays": []}, [])
-                        wire["send"](conn, {"op": "closed", **reply}, blobs)
+                        wire["send"](conn, {"op": wire["CLOSED"], **reply}, blobs)
                         return
                     time.sleep(delay_s)
                     reply, blobs = outputs(shown[0], header["due"]) if shown else ({"t": header["t"], "arrays": []}, [])
                     shown = (header["t"], header["due"])
-                    wire["send"](conn, {"op": "frame", **reply}, blobs)
+                    wire["send"](conn, {"op": wire["FRAME"], **reply}, blobs)
 
     return serve
 

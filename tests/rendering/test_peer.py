@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from nexus._src.rendering.peer import KitPeer, KitPeerError
+from nexus._src.peers.kit.runner import KitPeer, KitPeerError
 
 _spec = importlib.util.spec_from_file_location(
     "kit_container", Path(__file__).resolve().parents[2] / "scripts" / "assets" / "kit_container.py"

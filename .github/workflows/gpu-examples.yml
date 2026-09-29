@@ -89,9 +89,9 @@ jobs:
               ~/.cache/nexus/ci/px4-sitl.tar
             cache-name: px4
             cache-files: |
-              nexus/_src/vehicle/controllers/px4/px4.ref
-              nexus/_src/vehicle/controllers/px4/checkout.py
-              nexus/_src/vehicle/controllers/px4/px4-sitl/Dockerfile
+              nexus/_src/peers/px4_sitl/px4.ref
+              nexus/_src/peers/px4_sitl/checkout.py
+              nexus/_src/peers/px4_sitl/image/Dockerfile
             setup: bash scripts/ci/px4_image_cache.sh load
             teardown: bash scripts/ci/px4_image_cache.sh save
     uses: ./.github/workflows/gpu-runner.yml
@@ -125,9 +125,9 @@ jobs:
         ~/.cache/nexus/acados
       cache-name: px4-acados
       cache-files: |
-        nexus/_src/vehicle/controllers/px4/px4.ref
-        nexus/_src/vehicle/controllers/px4/checkout.py
-        nexus/_src/vehicle/controllers/px4/px4-sitl/Dockerfile
+        nexus/_src/peers/px4_sitl/px4.ref
+        nexus/_src/peers/px4_sitl/checkout.py
+        nexus/_src/peers/px4_sitl/image/Dockerfile
         scripts/setup_acados.sh
       command: >-
         (command -v cmake >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq cmake)) &&

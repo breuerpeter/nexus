@@ -1,18 +1,17 @@
-"""The PX4 Software In The Loop (SITL) peer: one PX4 autopilot in a container, on the peer contract of
-:mod:`nexus._src.peers`. It lives beside the controller because PX4 is the one first-class
-controller, so core must be able to start the autopilot its controller talks to.
+"""The PX4 Software In The Loop (SITL) peer's container, on the peer contract of
+:mod:`nexus._src.peers`.
 
-The run hands the peer its instance, and PX4 numbers every link from it: it dials the sim's
-Hardware In The Loop (HIL) server on ``4560 + i``, streams its offboard link to ``14540 + i`` and its
-ground-station link from ``18570 + i``, and takes ``i + 1`` as its MAVLink system id. The container
-runs on host networking, so those are the host's ports, and two runs on one machine take two
-instances. Each run's container carries its own name, so one run's stop never touches another's.
+The run hands the peer its instance, ``px4 -i``, and PX4 numbers every link from it with its own
+compiled base ports, which :mod:`nexus._src.peers.px4_sitl` mirrors. This module passes PX4 no
+port. The container runs on host networking, so those are the host's ports, and two runs on one
+machine take two instances. Each run's container carries its own name, so one run's stop never
+touches another's.
 
-The image is the px4-sitl build toolchain, built on this machine from ``px4-sitl/`` beside this
-module, package data, and tagged with a hash of that folder, the same way as the Kit image. The PX4
-tree comes from :mod:`.checkout`: the pinned commit fetched into a folder the controller owns, or
-``$PX4_DIR``. ``start`` builds the tree incrementally before it launches, since a launch must reach
-the sim inside its 30 s preroll window and a cold build never does.
+The image is the px4-sitl build toolchain, built on this machine from ``image/`` beside this module,
+package data, and tagged with a hash of that folder. The PX4 tree comes from :mod:`.checkout`: the
+pinned commit fetched into a cache folder, or ``$PX4_DIR``. ``start`` builds the tree incrementally
+before it launches, since a launch must reach the sim inside its 30 s preroll window and a cold
+build never does.
 
 This module is the one definition of the PX4 SITL container. It used to be one of three: a compose
 service and a CI shell script held their own copies, which drifted, see GH #86. So a change to the
@@ -27,17 +26,16 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from nexus._src import containers
-from nexus._src.containers import ensure_image, run_container, stop_container
 from nexus._src.core import logger
-from nexus._src.peers import LABEL
+from nexus._src.peers import LABEL, containers
+from nexus._src.peers.containers import ensure_image, run_container, stop_container
 
 from . import checkout
 
 IMAGE = "nexus-px4-sitl"
 _INSTANCE = "nexus.px4.instance"  # the label that carries the container's PX4 instance
 _OWNER = "nexus.owner"  # the label that carries the process that started the container
-IMAGE_DIR = Path(__file__).with_name("px4-sitl")
+IMAGE_DIR = Path(__file__).with_name("image")
 PX4_LOG_DIR = os.path.expanduser("~/.cache/nexus/logs")  # beside the run's .rrd and the Kit console tee
 
 

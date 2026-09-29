@@ -8,7 +8,7 @@ timeout. newton-sensors already derives the Measurement in
 the Forward-Right-Down (FRD) body frame; this layer only encodes wire units and moves bytes.
 
 The autopilot itself is a peer of the run, not of this controller: the build starts the PX4
-Software In The Loop (SITL) container, :class:`~nexus._src.vehicle.controllers.px4.sitl.Px4Sitl`,
+Software In The Loop (SITL) container, :class:`~nexus._src.peers.px4_sitl.runner.Px4Sitl`,
 for a managed PX4 peer, and starts nothing for an external one, an autopilot started elsewhere
 that dials in. The build makes this controller the same way for both: it takes the run's
 Hardware In The Loop (HIL) port and PX4's system id, listens, and speaks to whatever dials in.
@@ -30,6 +30,7 @@ from pymavlink import mavutil
 from nexus._src.core import logger
 from nexus._src.core.schema import Controls
 from nexus._src.core.stages import peer_stages
+from nexus._src.peers.px4_sitl import HIL_PORT
 
 # Where this controller looks for PX4's ULog, mirroring the recorder's
 # ~/.cache/nexus/logs convention for the .rrd. PX4 writes the .ulg itself, since it
@@ -46,7 +47,7 @@ class Px4MavlinkController:
         *,
         airframe: str = "",
         ip: str = "0.0.0.0",
-        port: int = 4560,
+        port: int = HIL_PORT,
         sysid: int = 1,
         compid: int = 200,
         gps_rate_hz: float = 10.0,

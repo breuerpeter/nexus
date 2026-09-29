@@ -11,6 +11,7 @@ import argparse
 from typing import TYPE_CHECKING
 
 from nexus._src.diagnostics import add_diagnostics_args  # stdlib-only, as is this module
+from nexus._src.peers.px4_sitl import HIL_PORT, OFFBOARD_PORT  # constants only
 
 if TYPE_CHECKING:
     from .sim import Sim
@@ -63,7 +64,7 @@ def sim_argparser(description: str | None = None) -> argparse.ArgumentParser:
     )  # fmt: skip
     p.add_argument(
         "--px4-instance", type=int, default=0, metavar="N",
-        help="PX4's SITL instance: it numbers PX4's ports, HIL 4560+N and offboard 14540+N, so two runs\n"
+        help=f"PX4's SITL instance: it numbers PX4's ports, HIL {HIL_PORT}+N and offboard {OFFBOARD_PORT}+N, so two runs\n"
         "on one machine take two instances",
     )  # fmt: skip
     p.add_argument("--log", action="store_true", help="write the Rerun .rrd to disk")

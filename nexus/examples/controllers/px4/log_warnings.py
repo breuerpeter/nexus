@@ -1,7 +1,7 @@
 """The PX4 log warnings gate for the ``px4_sitl`` example: scan a Software in the Loop (SITL) log
 for lines that point to a *simulation* problem. It's CI policy rather than a launcher capability,
 because which lines are benign depends on the airframe and this PX4 build, so it lives with the
-example, not with :mod:`nexus._src.vehicle.controllers.px4.sitl`.
+example, not with :mod:`nexus._src.peers.px4_sitl.runner`.
 """
 
 from __future__ import annotations

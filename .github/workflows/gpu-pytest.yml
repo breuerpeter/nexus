@@ -44,13 +44,13 @@ jobs:
         ~/.cache/nexus/ci/px4-sitl.tar
       cache-name: px4
       cache-files: |
-        nexus/_src/vehicle/controllers/px4/px4.ref
-        nexus/_src/vehicle/controllers/px4/checkout.py
-        nexus/_src/vehicle/controllers/px4/px4-sitl/Dockerfile
+        nexus/_src/peers/px4_sitl/px4.ref
+        nexus/_src/peers/px4_sitl/checkout.py
+        nexus/_src/peers/px4_sitl/image/Dockerfile
       cache-scope: pytest
       command: >-
         bash scripts/ci/px4_image_cache.sh load &&
-        uv run python -c "from nexus._src.vehicle.controllers.px4.sitl import prepare; prepare()" &&
+        uv run python -c "from nexus._src.peers.px4_sitl.runner import prepare; prepare()" &&
         uv run --extra policy --with pytest --with pytest-cov pytest tests --cov=nexus --cov-report=xml -q --durations=25 &&
         bash scripts/ci/px4_image_cache.sh save
       coverage-flags: gpu

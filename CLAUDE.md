@@ -17,7 +17,10 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
 - **RTX sensors render in the Kit render peer**, a container the run starts on the host when the
   vehicle's Universal Scene Description (USD) file authors a `Camera` or `OmniLidar` prim. The loop
   never runs inside Kit, and no module imports Kit, an import-linter contract. Read
-  `nexus/_src/rendering/CLAUDE.md` before changing the peer, its image, or the render link.
+  `nexus/_src/peers/kit/CLAUDE.md` before changing the peer, its program, or the render link.
+- **Each peer lives in one folder**, `nexus/_src/peers/<name>/`, with its runner, its pin, its
+  image or program and its link's definition. The docstring of `nexus/_src/peers/__init__.py`
+  states the layout. Read it before adding a peer or a file to one.
 - **Component schemas live in a USD schema plugin** in `nexus/_src/usd/`, which `import nexus`
   registers. Read `nexus/_src/usd/CLAUDE.md` before adding or changing a schema.
 - **`evo` is GPLv3** → it lives only in the `ci` dependency-group and never ships as a dependency.

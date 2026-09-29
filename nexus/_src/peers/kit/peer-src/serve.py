@@ -11,7 +11,7 @@ at once, boots Kit while the host builds its side of the run, and serves one con
 4. ``close``, or the host's socket closing, ends the program.
 
 No nexus module is importable here: this folder ships in the wheel as package data and runs under
-Kit's own Python, so the host and this program share only the wire format in ``link.py``.
+Kit's own Python, so the host and this program share only the render link's definition in ``link.py``.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ def _accept(listener: socket.socket, box: dict, done: threading.Event) -> None:
     try:
         conn, _ = listener.accept()
         conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        link.send(conn, {"op": "hello"})
+        link.send(conn, {"op": link.HELLO})
         box["conn"] = conn
     except OSError as exc:
         box["error"] = exc
@@ -76,15 +76,15 @@ def main() -> int:
             log(f"no host connected ({box.get('error')!r}): exiting")
             return 1
         header, _ = link.recv(conn)
-        if header.get("op") != "setup":
+        if header.get("op") != link.SETUP:
             raise RuntimeError(f"expected setup, got {header.get('op')!r}")
         try:
             renderer = Renderer(header)
             renderer.warm()
         except Exception as exc:
-            link.send(conn, {"op": "error", "message": f"setup failed: {exc!r}"})
+            link.send(conn, {"op": link.ERROR, "message": f"setup failed: {exc!r}"})
             raise
-        link.send(conn, {"op": "ready"})
+        link.send(conn, {"op": link.READY})
         log("ready")
         # Where each frame's wall time goes, summed and printed every REPORT_EVERY frames: waiting
         # for the host's request, rendering and reading back, and sending the reply.
@@ -97,27 +97,27 @@ def main() -> int:
             except ConnectionError:
                 log("the host closed the link")
                 break
-            if header["op"] == "close":
+            if header["op"] == link.CLOSE:
                 shown, outputs = renderer.close()  # the last request's frame rides the closed reply
                 arrays = [
                     {"sensor": i, "name": name, "dtype": str(arr.dtype), "shape": list(arr.shape)}
                     for i, name, arr in outputs
                 ]
-                link.send(conn, {"op": "closed", "t": shown, "arrays": arrays}, [arr for _, _, arr in outputs])
+                link.send(conn, {"op": link.CLOSED, "t": shown, "arrays": arrays}, [arr for _, _, arr in outputs])
                 break
             t1 = time.perf_counter()
             mats = np.frombuffer(blobs[0], dtype=np.float64).reshape(-1, 4, 4)
             try:
                 shown, outputs = renderer.frame(float(header["t"]), header["paths"], mats, header["due"])
             except Exception as exc:
-                link.send(conn, {"op": "error", "message": f"render failed at t={header['t']}: {exc!r}"})
+                link.send(conn, {"op": link.ERROR, "message": f"render failed at t={header['t']}: {exc!r}"})
                 raise
             t2 = time.perf_counter()
             arrays = [
                 {"sensor": i, "name": name, "dtype": str(arr.dtype), "shape": list(arr.shape)}
                 for i, name, arr in outputs
             ]
-            link.send(conn, {"op": "frame", "t": shown, "arrays": arrays}, [arr for _, _, arr in outputs])
+            link.send(conn, {"op": link.FRAME, "t": shown, "arrays": arrays}, [arr for _, _, arr in outputs])
             spent["wait"] += t1 - t0
             spent["render"] += t2 - t1
             spent["send"] += time.perf_counter() - t2
