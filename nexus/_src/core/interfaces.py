@@ -114,6 +114,10 @@ class Controller(Protocol):
         host, a Model Predictive Control (MPC) solver, states a ``read`` host stage for the sensor fan-in and an ``exchange`` host
         stage, :func:`nexus._src.core.stages.peer_stages`; a device-native law, the Proportional Integral Derivative (PID) example, states device
         stages. Its stage sets ``Tick.controls`` to the controller's persistent command buffer.
+
+        A controller with a peer, one that exposes ``attached``, connects after the loop's warm pass
+        and graph capture, so a peer that dials in early waits on no kernel load. Its device stages
+        run and capture before ``connect()``, over buffers that exist from construction.
         """
 
     def accept_setpoint(self, sp: Setpoint) -> None:

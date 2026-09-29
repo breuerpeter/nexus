@@ -194,6 +194,19 @@ class _Stageless:
         pass
 
 
+class _EmptyStages:
+    """A controller whose stage list is empty."""
+
+    def connect(self):
+        pass
+
+    def close(self):
+        pass
+
+    def stages(self):
+        return []
+
+
 class _UnknownKind:
     """A controller whose one stage misspells its kind."""
 
@@ -266,7 +279,9 @@ def test_a_controllers_device_stages_replay_in_the_graph_and_its_host_stages_run
     assert delta == (2, 2, 0)
 
 
-@pytest.mark.parametrize("controller", [_Stageless(), _UnknownKind()], ids=["no stages", "unknown kind"])
+@pytest.mark.parametrize(
+    "controller", [_Stageless(), _EmptyStages(), _UnknownKind()], ids=["no stages", "empty stages", "unknown kind"]
+)
 def test_a_component_with_no_stages_fails_the_build_naming_it(controller):
     """A component with no stages, or a stage of a kind the loop doesn't know, fails the build with an
     error naming the component; nothing falls back to eager in silence. On CPU the same.

@@ -46,13 +46,15 @@ def stages_of(component, role: str) -> list[Bound]:
     """The stages a component states, each checked for a kind the loop knows.
 
     Raises:
-        ValueError: The component states no stages, or a stage of an unknown kind.
+        ValueError: The component states no stages, an empty list included, or a stage of an unknown
+            kind.
     """
     name = type(component).__name__
-    if not hasattr(component, "stages"):
+    stages = component.stages() if hasattr(component, "stages") else []
+    if not stages:
         raise ValueError(f"{name} states no stages: every {role} lists its per-tick work as Stage objects")
     bound = []
-    for st in component.stages():
+    for st in stages:
         if st.kind not in KINDS:
             raise ValueError(f"{name} stage {st.name!r} has kind {st.kind!r}, not one of {KINDS}")
         bound.append(Bound(st, component, role))
