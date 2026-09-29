@@ -21,6 +21,7 @@ layers =
     nexus._src.config
     nexus._src.assets
     nexus._src.transform
+    nexus._src.usd
     nexus._src.core
 
 [importlinter:contract:src-never-examples]

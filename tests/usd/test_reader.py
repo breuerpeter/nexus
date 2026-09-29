@@ -26,6 +26,14 @@ def _fixture_copy(tmp_path) -> Path:
     return copy
 
 
+def test_the_reader_names_each_schema_attribute_in_snake_case_without_its_namespace():
+    """The reader names each `nexus:` attribute of a prim's schema in snake case, without the namespace."""
+    from nexus._src.usd.reader import read_declarations
+
+    ((_, _, kwargs),) = read_declarations(FIXTURE)
+    assert sorted(kwargs) == ["acc_noise", "gyro_noise"]
+
+
 def test_each_attribute_the_schema_defines_reaches_the_class_as_the_snake_case_keyword():
     """Each `nexus:` attribute the schema defines reaches the class as the snake-case keyword argument of the same name.
 

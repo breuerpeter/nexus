@@ -27,7 +27,12 @@ class Registry:
 class ComponentRegistry:
     """A value that maps each applied schema to the class that builds it, by class or import path."""
 
-    def __init__(self, entries: dict[str, type | str] | None = None): ...
+    def __init__(self, entries: dict[str, type | str] | None = None):
+        self._entries = dict(entries or {})
+
+    def resolve(self, schema: str) -> type | None:
+        """The class `schema` maps to, or `None` when no entry claims it."""
+        return self._entries.get(schema)
 
 
 def default_registry() -> ComponentRegistry:

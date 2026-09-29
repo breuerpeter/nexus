@@ -43,6 +43,16 @@ def _python(code: str, *, cwd: Path, pythonpath: Path) -> list[str]:
     return [word for line in r.stdout.splitlines() if line.startswith("> ") for word in line[2:].split()]
 
 
+def test_a_registry_resolves_a_schema_to_the_class_it_maps():
+    """A registry resolves a schema to the class it maps."""
+    from nexus._src.core.registry import ComponentRegistry
+
+    class StandIn:
+        """A stand-in component class."""
+
+    assert ComponentRegistry({"StandInAPI": StandIn}).resolve("StandInAPI") is StandIn
+
+
 def test_an_installed_package_with_an_entry_in_the_group_builds_its_class_with_no_call(tmp_path):
     """An installed package with an entry in the entry-point group builds its class with no registration call.
 
