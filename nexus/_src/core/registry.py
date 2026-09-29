@@ -1,31 +1,16 @@
-"""Minimal plugin registry: the Scenario binds each interface to a provider, as
-architecture.md §7 describes. Full entry-point discovery across installed packages is the
-forward design; the slice registers providers explicitly, newton-cli wires them,
-so the binding indirection exists without the packaging machinery yet.
+"""The component registry: the class each applied schema resolves to.
+
+A registry is a value the builder takes. The default one reads the `nexus.components` entry-point group on
+first use, and `register_component` adds to it. A test builds a registry of its own instead, so no test
+changes module state.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from functools import cache
 from importlib.metadata import EntryPoint, entry_points
 
 from nexus._src.usd import ENTRY_POINT_GROUP
-
-
-class Registry:
-    def __init__(self):
-        self._providers: dict[str, dict[str, Callable]] = {}
-
-    def register(self, interface: str, name: str, factory: Callable) -> None:
-        self._providers.setdefault(interface, {})[name] = factory
-
-    def resolve(self, interface: str, name: str) -> Callable:
-        try:
-            return self._providers[interface][name]
-        except KeyError as e:
-            available = list(self._providers.get(interface, {}))
-            raise KeyError(f"No provider '{name}' for interface '{interface}'. Available: {available}") from e
 
 
 class ComponentRegistry:
