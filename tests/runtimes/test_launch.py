@@ -179,3 +179,129 @@ def test_build_from_launch_starts_the_px4_peer_before_the_assembly(tmp_path, mon
     started = [r["environment"].get("PX4_SIM_MODEL") for r in daemon if r.get("detach", True)]
     assert order == ["orchestrator"] and started == ["none_80001"], "the peer starts before the assembly"
     assert [p.airframe for p in kw["peers"]] == ["80001"], "the registry airframe reaches the peer"
+
+
+# --- the controller a vehicle Universal Scene Description (USD) file declares ------------------------
+
+PX4_ROOT = """\
+def Xform "vehicle" (
+    prepend apiSchemas = ["NexusPx4API"]
+)
+{
+    string nexus:airframe = "foo"
+}
+"""
+
+
+def _local_vehicle(tmp_path, prims: str) -> str:
+    """A local vehicle file with root prim `/vehicle`, defined by `prims`."""
+    path = tmp_path / "local_vehicle.usda"
+    path.write_text(f'#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n\n{prims}')
+    return str(path)
+
+
+def _catalog(tmp_path) -> Registry:
+    """A catalog with one vehicle and no PX4 entry: the airframe lives in the vehicle's USD."""
+    return Registry.from_dict(
+        {
+            "vehicles": [{"name": "astro", "usd": _usd_ref(tmp_path)}],
+            "scenes": {"empty": {}},
+            "defaults": {"vehicle": "astro", "scene": "empty"},
+        }
+    )
+
+
+def _build(tmp_path, prims: str, **kw):
+    """Build a run of a local vehicle defined by `prims`."""
+    import nexus._src.build.launch as L
+
+    lc = LaunchConfig().set_vehicle(_local_vehicle(tmp_path, prims))
+    return L.build_from_launch(lc, registry=_catalog(tmp_path), cache_dir=tmp_path / "cache", **kw)
+
+
+def test_the_receipt_records_the_airframe_the_vehicle_usd_declares(tmp_path):
+    """The run's receipt records the airframe the vehicle USD declares.
+
+    Given the local vehicle USD with airframe `foo`, when the run builds, then the receipt's PX4
+    airframe is `foo`.
+    """
+    from nexus._src.build.launch import resolve_to_vehicle_builder
+
+    lc = LaunchConfig().set_vehicle(_local_vehicle(tmp_path, PX4_ROOT))
+    _, resolved = resolve_to_vehicle_builder(lc, _catalog(tmp_path), cache_dir=tmp_path / "cache")
+
+    assert resolved.tested_config.model_dump(mode="json")["px4"] == {"airframe": "foo"}
+
+
+def test_a_vehicle_that_declares_no_controller_fails_the_build(tmp_path, daemon):
+    """A vehicle that declares no controller fails the build.
+
+    Given a vehicle USD with no controller schema, when a run builds, then it raises before any peer
+    starts, and the error names the vehicle's root prim.
+    """
+    with pytest.raises(ValueError) as err:
+        _build(tmp_path, 'def Xform "vehicle"\n{\n}\n')
+
+    assert ("/vehicle" in str(err.value), daemon) == (True, [])
+
+
+class _StandInController:
+    """A second controller: the loop's controller seam and nothing more."""
+
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+
+    def connect(self):
+        pass
+
+    def close(self):
+        pass
+
+    def stages(self):
+        return []
+
+
+def test_a_vehicle_that_declares_two_controllers_fails_the_build(tmp_path, daemon):
+    """A vehicle that declares two controllers fails the build.
+
+    Given a vehicle USD whose root prim applies two controller schemas, when a run builds, then it
+    raises before any peer starts, and the error names the prim and both schemas.
+    """
+    from nexus._src.core.registry import ComponentRegistry, default_registry
+
+    components = ComponentRegistry(
+        {"NexusPx4API": default_registry().resolve("NexusPx4API"), "StandInAPI": _StandInController}
+    )
+    two = PX4_ROOT.replace('["NexusPx4API"]', '["NexusPx4API", "StandInAPI"]')
+
+    with pytest.raises(ValueError) as err:
+        _build(tmp_path, two, components=components)
+
+    named = [s in str(err.value) for s in ("/vehicle", "NexusPx4API", "StandInAPI")]
+    assert (named, daemon) == ([True, True, True], [])
+
+
+def test_a_controller_schema_off_the_root_prim_fails_the_build(tmp_path, daemon):
+    """A controller schema off the root prim fails the build.
+
+    Given a vehicle USD whose PX4 schema sits on a child prim, when a run builds, then it raises and
+    names that prim.
+    """
+    child = 'def Xform "vehicle"\n{\n' + PX4_ROOT.replace('"vehicle"', '"fc"') + "}\n"
+
+    with pytest.raises(ValueError, match="/vehicle/fc"):
+        _build(tmp_path, child)
+
+
+def test_a_px4_schema_with_no_airframe_authored_fails_the_build(tmp_path, daemon):
+    """A PX4 schema with no airframe authored fails the build.
+
+    Given a vehicle USD whose PX4 schema authors no airframe, when a run builds, then it raises before
+    PX4 starts and names the prim, with no fallback to `astro_max`.
+    """
+    bare = PX4_ROOT.replace('    string nexus:airframe = "foo"\n', "")
+
+    with pytest.raises(ValueError) as err:
+        _build(tmp_path, bare)
+
+    assert ("/vehicle" in str(err.value), daemon) == (True, [])

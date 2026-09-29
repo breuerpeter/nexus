@@ -75,3 +75,18 @@ def test_help_names_no_script_subcommand(monkeypatch, capsys):
     with pytest.raises(SystemExit):
         cli.main()
     assert "script" not in capsys.readouterr().out
+
+
+def test_control_is_no_flag_of_the_command_line_tool(monkeypatch, tmp_path, capsys):
+    """The command-line tool takes no `--control` flag.
+
+    Given `nexus run --control px4-sitl`, when it parses, then it exits non-zero with argparse's
+    unrecognized-argument error. The vehicle names a file that doesn't exist and `DOCKER_HOST` points
+    nowhere, so no run can start if the tool still takes the flag.
+    """
+    monkeypatch.setenv("DOCKER_HOST", f"unix://{tmp_path / 'no-daemon.sock'}")
+    missing = tmp_path / "missing.usda"
+    monkeypatch.setattr("sys.argv", ["nexus", "run", "--control", "px4-sitl", "--vehicle", str(missing)])
+    with pytest.raises(SystemExit) as e:
+        cli.main()
+    assert (e.value.code, "unrecognized arguments: --control" in capsys.readouterr().err) == (2, True)

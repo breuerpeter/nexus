@@ -204,3 +204,21 @@ def test_a_catalog_named_by_path_also_extends_the_bundled_one(tmp_path, monkeypa
     monkeypatch.chdir(tmp_path)
 
     assert load_registry(named).by_name("astro_max_base").usd.url == BUNDLED_ASTRO
+
+
+def test_a_catalog_entry_that_still_carries_px4_fails_to_load(tmp_path):
+    """A catalog entry that still carries `px4:` fails to load: the airframe lives in the vehicle's Universal Scene Description (USD) file.
+
+    Given a project catalog whose vehicle entry has `px4: { airframe: astro_max }`, when
+    `nexus.Registry.from_yaml(path)` loads it, then it raises and names the `px4` field.
+    """
+    catalog = tmp_path / "catalog.yaml"
+    catalog.write_text(
+        "vehicles:\n"
+        "  - name: project_vehicle\n"
+        '    usd: { url: "file:///project_vehicle.usda", sha256: abc }\n'
+        "    px4: { airframe: astro_max }\n"
+        "scenes:\n  empty: {}\n"
+    )
+    with pytest.raises(ValueError, match=r"vehicles\.0\.px4"):
+        nexus.Registry.from_yaml(catalog)

@@ -410,3 +410,65 @@ def test_the_px4_sitl_image_builds_once_from_the_packages_dockerfile(daemon, run
     assert [
         (tag, (path / "Dockerfile").is_file() and path.resolve().is_relative_to(package)) for tag, path in built
     ] == [(first, True)], (built, first)
+
+
+# --- the airframe the vehicle declares -------------------------------------------------------------
+
+
+def _started_models(daemon) -> list[str]:
+    """The `PX4_SIM_MODEL` of each PX4 container the run started, its foreground build aside."""
+    return [r["environment"].get("PX4_SIM_MODEL") for r in daemon.runs if r.get("detach", True)]
+
+
+class _Offboard:
+    """The operator link's far end stands in for PX4: it answers at once, so the run needs no MAVLink peer."""
+
+    connected = True
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def open(self):
+        return self
+
+    def close(self):
+        pass
+
+
+def test_a_shipped_vehicle_flies_px4_sitl_on_its_own_airframe_with_no_control_flag(
+    daemon, assembly, monkeypatch, tmp_path
+):
+    """A shipped vehicle flies PX4 SITL on its own airframe with no control flag.
+
+    Given `astro_max_base` and a stand-in docker daemon, when the run builds, then PX4 SITL starts with
+    `PX4_SIM_MODEL=none_astro_max` and the operator is `Px4Offboard`, here its stand-in.
+    """
+    import nexus._src.operator as op_mod
+
+    monkeypatch.delenv("NEXUS_ASSET_CACHE")  # the shipped vehicle comes from the checkout's own cache
+    monkeypatch.chdir(tmp_path)  # no project catalog: only the bundled one
+    monkeypatch.setattr(op_mod, "Px4Offboard", _Offboard)
+
+    with Sim("astro_max_base", device="cpu", observe=False) as sim:
+        operator = sim.operator
+
+    assert (_started_models(daemon), type(operator)) == (["none_astro_max"], _Offboard)
+
+
+def test_a_local_vehicle_usd_flies_the_airframe_its_px4_schema_declares(daemon, assembly, catalog, tmp_path):
+    """A local vehicle USD flies the airframe its PX4 schema declares.
+
+    Given a local vehicle USD whose PX4 schema declares airframe `foo` and a catalog whose default
+    vehicle is another, when a managed run builds, then PX4 SITL starts with `PX4_SIM_MODEL=none_foo`.
+    """
+    usd = tmp_path / "local_vehicle.usda"
+    usd.write_text(
+        '#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n\n'
+        'def Xform "vehicle" (\n    prepend apiSchemas = ["NexusPx4API"]\n)\n'
+        '{\n    string nexus:airframe = "foo"\n}\n'
+    )
+    launch = LaunchConfig.from_dict({"vehicle": str(usd), "peers": {"px4": {"realization": "managed"}}})
+
+    launch_mod.build_from_launch(launch, registry=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0).close()
+
+    assert _started_models(daemon) == ["none_foo"]

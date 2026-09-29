@@ -317,3 +317,12 @@ def test_sim_operator_raises_if_the_run_ends_before_px4_answers(monkeypatch):
         sim.start(timeout=30.0)
         with pytest.raises(RuntimeError, match="operator link"):
             _ = sim.operator
+
+
+def test_sim_takes_no_control_argument():
+    """`Sim` takes no control argument: the vehicle's Universal Scene Description (USD) file declares its controller.
+
+    Given `Sim("astro_max_base", control="px4-sitl")`, when constructed, then it raises `TypeError`.
+    """
+    with pytest.raises(TypeError, match="control"):
+        sim_mod.Sim("astro_max_base", control="px4-sitl")
