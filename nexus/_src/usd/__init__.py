@@ -5,6 +5,7 @@ The plugin is codeless: `plugInfo.json` and `generatedSchema.usda` beside this f
 
 from __future__ import annotations
 
+import json
 from importlib.metadata import entry_points
 from importlib.util import find_spec
 from pathlib import Path
@@ -37,5 +38,6 @@ def register_plugins() -> None:
 
 
 def schema_names() -> tuple[str, ...]:
-    """The identifiers of every applied API schema the nexus plugin defines."""
-    ...
+    """The identifiers of every applied API schema the nexus plugin defines, from its `plugInfo.json`."""
+    (plugin,) = json.loads((_PLUGIN / "plugInfo.json").read_text())["Plugins"]
+    return tuple(info["schemaIdentifier"] for info in plugin["Info"]["Types"].values())
