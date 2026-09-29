@@ -7,10 +7,11 @@ PX4 Software In The Loop (SITL) from :mod:`nexus._src.vehicle.controllers.px4.si
 render peer from :mod:`nexus._src.rendering.peer`. Compose keeps only the ground services a runbook
 brings up by hand, in ``docker/docker-compose.yml``.
 
-Every image this repo runs builds on the machine that runs it, from a folder that ships in the
-wheel as package data, and carries a tag that hashes that folder: so a change to the image always
-rebuilds it, a host code change never does, and no registry, login or pull sits between a pip
-install and a first run.
+The px4-sitl image, PX4's build toolchain, builds on the machine that runs it, from a folder that
+ships in the wheel as package data. Its tag hashes that folder, so a change to the image always
+rebuilds it and a host code change never does. No registry and no login sit between a pip install
+and a first PX4 run. The Kit render peer runs NVIDIA's image as pulled instead, see
+:mod:`nexus._src.rendering.peer`.
 """
 
 from __future__ import annotations
