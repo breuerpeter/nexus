@@ -25,10 +25,10 @@ from pathlib import Path
 from nexus._src.assets.resolver import fetch
 from nexus._src.containers import client, run_container, stop_container
 from nexus._src.core import logger
+from nexus._src.peers import LABEL  # a Kit peer carries nexus.peer=kit, so a runner can find a leftover one
 
 KIT_DIR = Path(__file__).with_name("kit-peer")
 IMAGE = "nvcr.io/nvidia/isaac-sim:6.0.1"  # pulls with no NGC login
-LABEL = "nexus.peer"  # a Kit peer carries nexus.peer=kit, so a runner can find a leftover one
 ISAAC_SIM_GID = "1234"  # the base image's isaac-sim group: /isaac-sim is readable by that group only
 _KIT_HOME = "/kit-home"
 _PEER_DIR = "/nexus-kit"

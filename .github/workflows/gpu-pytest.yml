@@ -2,9 +2,9 @@ name: gpu-pytest
 
 # The full pytest suite on the GPU runner — same suite as cpu-pytest, but on warp-cuda + MuJoCo-GPU,
 # so it exercises the CUDA paths and runs tests/runtimes/test_capture.py (which auto-skips on CPU).
-# The command provisions the PX4 checkout at the scripts/ci/px4.ref pin first (provision_px4.sh, cached
-# per pin as in gpu-examples), so tests/controllers/test_px4_gcs_link.py flies a real PX4 SITL here;
-# that module skips wherever no PX4 checkout is provisioned, cpu-pytest included. The 25 slowest
+# The command fetches and builds the PX4 tree the controller pins first, the way a user's first run
+# does, cached per pin with the px4-sitl image as in gpu-examples, so tests/controllers/test_px4_gcs_link.py
+# flies a real PX4 SITL here; that module skips wherever no PX4 tree is on the box, cpu-pytest included. The 25 slowest
 # tests print at the end: whether the leg's minutes are a few GPU flights or many small tests
 # decides whether it can fan out like gpu-examples.
 # Advisory (not a required check). Offered on EVERY PR; runs only once the `gpu` label is applied —
@@ -27,7 +27,6 @@ on:
 permissions:
   id-token: write # OIDC — gpu-runner assumes the AWS role to start/stop the box
   contents: read
-  packages: read # GHCR pull of the px4-sitl toolchain image the PX4 SITL tests build and fly with
 
 concurrency:
   # One group per PR per event: the two events of one PR must not cancel each other, and on
@@ -40,11 +39,20 @@ jobs:
   gpu:
     uses: ./.github/workflows/gpu-runner.yml
     with:
-      caches: px4
+      cache-path: |
+        ~/.cache/nexus/px4
+        ~/.cache/nexus/ci/px4-sitl.tar
+      cache-name: px4
+      cache-files: |
+        nexus/_src/vehicle/controllers/px4/px4.ref
+        nexus/_src/vehicle/controllers/px4/checkout.py
+        nexus/_src/vehicle/controllers/px4/px4-sitl/Dockerfile
       cache-scope: pytest
       command: >-
-        bash scripts/ci/provision_px4.sh &&
-        uv run --extra policy --with pytest --with pytest-cov pytest tests --cov=nexus --cov-report=xml -q --durations=25
+        bash scripts/ci/px4_image_cache.sh load &&
+        uv run python -c "from nexus._src.vehicle.controllers.px4.sitl import prepare; prepare()" &&
+        uv run --extra policy --with pytest --with pytest-cov pytest tests --cov=nexus --cov-report=xml -q --durations=25 &&
+        bash scripts/ci/px4_image_cache.sh save
       coverage-flags: gpu
     secrets: inherit
 

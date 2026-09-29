@@ -6,8 +6,8 @@ convention for its install. Every Python consumer, the acados example and
 drifts. Import-light by design, stdlib only: the CI harness calls it pre-flight, before any
 runtime imports.
 
-The PX4 checkout and image, ``PX4_DIR`` and ``PX4_IMAGE``, follow the same rule but live with the
-launcher that mounts them, :mod:`nexus._src.vehicle.controllers.px4.sitl`.
+PX4 needs no such variable: the PX4 controller fetches the tree it pins on first use, and
+``PX4_DIR`` names a checkout of your own instead, see :mod:`nexus._src.vehicle.controllers.px4.checkout`.
 """
 
 from __future__ import annotations

@@ -24,7 +24,6 @@ on:
 permissions:
   id-token: write # OIDC — gpu-runner assumes the AWS role to start/stop the box
   contents: read
-  packages: read # GHCR pull of the px4-sitl image
 
 concurrency:
   group: gpu-benchmark-matrix
@@ -62,12 +61,28 @@ jobs:
         cell: ${{ fromJSON(needs.plan.outputs.plan).cells }}
     uses: ./.github/workflows/gpu-runner.yml
     with:
-      # An RTX cell restores the Kit peer's caches too, so Kit boots warm on its fresh box.
-      caches: ${{ matrix.cell.renders && 'px4 kit' || 'px4' }}
+      # The cell's one cache entry: the PX4 tree and image, and for an RTX cell the Kit peer's caches
+      # too, its shader cache and the home Kit writes its user caches into, so Kit boots warm on its
+      # fresh box; the shader cache is keyed by shader content, so another cell's entry still saves
+      # most compiles. Cesium's request cache holds the tiles a cesium cell streamed, and a restored
+      # one would feed the next cell from disk, so its RTF no longer measures a network stream: it
+      # goes before the entry is saved.
+      cache-path: |
+        ~/.cache/nexus/px4
+        ~/.cache/nexus/ci/px4-sitl.tar
+        ${{ matrix.cell.renders && '~/.cache/nexus/kit' || '' }}
+      cache-name: ${{ matrix.cell.renders && 'px4-kit' || 'px4' }}
+      cache-files: |
+        nexus/_src/vehicle/controllers/px4/px4.ref
+        nexus/_src/vehicle/controllers/px4/checkout.py
+        nexus/_src/vehicle/controllers/px4/px4-sitl/Dockerfile
+        ${{ matrix.cell.renders && 'nexus/_src/rendering/kit-peer/*' || '' }}
+      cache-drop: ${{ matrix.cell.renders && '~/.cache/nexus/kit/home/.cache/ov/cesium-request-cache.sqlite*' || '' }}
       cache-scope: ${{ matrix.cell.tag }}
       command: >-
-        bash scripts/ci/provision_px4.sh &&
-        uv run python scripts/ci/benchmark_matrix.py --cell ${{ matrix.cell.tag }} --work .eval-artifacts/matrix
+        bash scripts/ci/px4_image_cache.sh load &&
+        uv run python scripts/ci/benchmark_matrix.py --cell ${{ matrix.cell.tag }} --work .eval-artifacts/matrix &&
+        bash scripts/ci/px4_image_cache.sh save
       artifact-name: benchmark-cell-${{ matrix.cell.tag }}
       artifact-path: .eval-artifacts
     secrets: inherit

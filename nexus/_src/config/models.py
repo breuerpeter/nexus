@@ -60,6 +60,47 @@ class Px4Spec(_Base):
     airframe: str
 
 
+class Px4Peer(_Base):
+    """How the run realizes its PX4 peer, and which addresses it hands PX4.
+
+    PX4 Software In The Loop (SITL) numbers every link by its instance N: the sim's Hardware In The
+    Loop (HIL) server it dials on 4560 + N, the offboard link it streams to on 14540 + N, and its
+    MAVLink system id, N + 1. No environment variable names a port, so the run hands PX4 one
+    instance and derives from it every address of its own: the HIL port it listens on, the operator
+    port it answers PX4 on, and the system id it addresses. Two runs on one machine take two
+    instances.
+    """
+
+    realization: Literal["managed", "external"] = "managed"
+    """``managed``: the build starts the PX4 SITL container and the run stops it. ``external``: the
+    run starts nothing and waits on its HIL port for an autopilot started elsewhere, a bench PX4 or
+    a SITL of your own.
+    """
+    instance: int = Field(default=0, ge=0)
+    """PX4's SITL instance number, ``px4 -i``."""
+
+    @property
+    def hil_port(self) -> int:
+        """The TCP port the run's HIL server listens on, which PX4 dials."""
+        return 4560 + self.instance
+
+    @property
+    def offboard_port(self) -> int:
+        """The User Datagram Protocol (UDP) port PX4 streams its offboard link to, where the operator listens."""
+        return 14540 + self.instance
+
+    @property
+    def system_id(self) -> int:
+        """PX4's MAVLink system id, ``MAV_SYS_ID``."""
+        return self.instance + 1
+
+
+class Peers(_Base):
+    """The peers of a run, by the component that speaks to each, and how the run realizes them."""
+
+    px4: Px4Peer = Field(default_factory=Px4Peer)
+
+
 class Control(_Base):
     """Who flies the vehicle: the host boundary. PX4 is the one first-class controller;
     every other controller is an example under ``nexus/examples/`` that self-assembles its
@@ -144,6 +185,11 @@ class LaunchConfig(_Base):
     """Who flies the vehicle: the host boundary.
 
     Defaults to a :class:`Control` with ``kind="px4-sitl"``.
+    """
+    peers: Peers = Field(default_factory=Peers)
+    """The run's peers and how it realizes each: for PX4, managed or external, and its instance.
+
+    Defaults to a managed PX4 at instance 0, the ports PX4 SITL uses out of the box.
     """
     runtime: Runtime = Field(default_factory=Runtime)
     """Solver, device, timestep, and determinism settings for the run.

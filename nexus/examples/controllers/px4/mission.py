@@ -16,8 +16,8 @@ and that mission flies instead, which is the whole point of the file format.
 The mission is a 100 m box at 40 m: takeoff, four waypoints, return to launch. Both axes are
 exercised on purpose, because a world-to-geodetic reflection shows up as a runaway east leg (#61).
 
-A ZERO-arg script (the configuration lives here); only the host-specific paths ride env, ``PX4_DIR``
-(default ~/code/px4) and ``PX4_IMAGE`` (the px4-sitl image), plus an optional ``--timeout`` flag.
+A ZERO-arg script (the configuration lives here), plus an optional ``--timeout`` flag. The sim
+fetches the PX4 tree its controller pins on first use; ``PX4_DIR`` names a checkout of your own instead.
 Needs docker + a PX4 checkout + a CUDA host; the checkout does not have to be built already, because
 the sim builds it before the run starts.
 """

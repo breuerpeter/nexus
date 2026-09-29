@@ -124,7 +124,7 @@ class AstroMaxWaypointRollout:
         # the quad-X rotor geometry, the same builder the deploy paths use. The moment mixer, B^-1 with no
         # rate loop, and the forward B, the RigidBodyRotors motor model, carry the real arm + kappa yaw
         # authority.
-        m = vb.actuator_params()  # aero/thrust map from the vehicle USD, the freefly:actuator:* attributes
+        m = vb.actuator_params()  # aero/thrust map from the rotor joints of the vehicle USD, motor:* and propeller:*
         mixer = build_rotor_mixer_from_layout(
             rotor_offsets, turning_dirs, {"ct": m["ct"], "cd": m["cd"], "rpm_max": m["rpm_max"]}
         )
