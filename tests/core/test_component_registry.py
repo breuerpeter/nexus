@@ -62,6 +62,18 @@ def test_a_registry_resolves_an_import_path_to_the_class_it_names():
     assert ComponentRegistry({"JsonAPI": "json:JSONDecoder"}).resolve("JsonAPI") is json.JSONDecoder
 
 
+def test_a_registry_resolves_an_entry_added_after_its_creation():
+    """A registry resolves an entry that `add` gives it after its creation."""
+    from nexus._src.core.registry import ComponentRegistry
+
+    class StandIn:
+        """A stand-in component class."""
+
+    registry = ComponentRegistry()
+    registry.add("StandInAPI", StandIn)
+    assert registry.resolve("StandInAPI") is StandIn
+
+
 def test_an_installed_package_with_an_entry_in_the_group_builds_its_class_with_no_call(tmp_path):
     """An installed package with an entry in the entry-point group builds its class with no registration call.
 

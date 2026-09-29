@@ -34,6 +34,10 @@ class ComponentRegistry:
     def __init__(self, entries: dict[str, type | str | EntryPoint] | None = None):
         self._entries = dict(entries or {})
 
+    def add(self, schema: str, target: type | str) -> None:
+        """Map `schema` to `target`, a class or an import path, `module:Class`, replacing any entry it had."""
+        self._entries[schema] = target
+
     def resolve(self, schema: str) -> type | None:
         """The class `schema` maps to, or `None` when no entry claims it.
 
@@ -52,5 +56,9 @@ def default_registry() -> ComponentRegistry:
 
 
 def register_component(schema: str, target: type | str) -> None:
-    """Add an entry to the default registry."""
-    ...
+    """Map `schema` to `target`, a class or an import path, `module:Class`, in the default registry.
+
+    A registry handed to the builder doesn't see it: a test builds its own registry and changes nothing
+    here.
+    """
+    default_registry().add(schema, target)
