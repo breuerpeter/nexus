@@ -475,3 +475,157 @@ def test_a_local_vehicle_usd_flies_the_airframe_its_px4_schema_declares(daemon, 
     launch_mod.build_from_launch(launch, registry=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0).close()
 
     assert _started_models(daemon) == ["none_foo"]
+
+
+# --- the fake PX4, the realization that stands in for the process ---------------------------------
+
+
+class _Commands:
+    """An actuator that keeps the command it's handed each tick, the controls the controller received."""
+
+    def __init__(self):
+        self.seen: list[tuple[float, ...]] = []
+
+    def forces(self, controls, state):
+        pass
+
+    def stages(self):
+        return [Stage("forces", "host", lambda tick: self.seen.append(tuple(tick.controls.numpy()[0].tolist())))]
+
+
+def test_a_run_that_picks_the_fake_px4_starts_no_process_and_needs_no_px4_tree(daemon, run, monkeypatch, tmp_path):
+    """A run that picks the fake PX4 starts no process and needs no PX4 tree.
+
+    Given a stand-in docker daemon, no PX4 checkout and no `PX4_DIR`, when a run of the default
+    vehicle with its PX4 peer fake steps 500 ticks, then the daemon records no container, no fetch or
+    build runs, and every tick completes.
+    """
+    monkeypatch.delenv("PX4_DIR")
+    loop = run({"realization": "fake"})
+
+    stepped = [loop.step() for _ in range(500)]
+    loop.close()
+
+    fetched = (tmp_path / "home" / ".cache" / "nexus" / "px4").exists()
+    assert (daemon.runs, daemon.builds, fetched, stepped.count(True)) == ([], [], False, 500)
+
+
+def test_the_fake_px4_receives_each_tick_and_the_gps_at_its_sub_rate(daemon, monkeypatch, warp_cpu):
+    """The fake PX4 answers each `HIL_SENSOR` over the same lockstep.
+
+    Given a run of `astro_max_base` with the fake PX4, when it steps 500 ticks, then the fake receives
+    a `HIL_SENSOR` each tick, and `HIL_GPS` and `HIL_STATE_QUATERNION` at the 10 Hz sub-rate of the Global
+    Positioning System (GPS): 2 s of sim time at 0.004 s a tick, so 20 of each, or 19 where the float
+    clock lands a GPS tick one late.
+    """
+    monkeypatch.delenv("NEXUS_ASSET_CACHE")  # the shipped vehicle comes from the checkout's own cache
+    launch = LaunchConfig.from_dict(
+        {"vehicle": "astro_max_base", "runtime": {"device": "cpu"}, "peers": {"px4": {"realization": "fake"}}}
+    )
+    loop = launch_mod.build_from_launch(launch, preroll_timeout=10.0)
+
+    for _ in range(500):
+        loop.step()
+    received = dict(loop.peers[0].received)
+    loop.close()
+
+    # The seed pass before the first tick exchanges once more, so 501 reach the fake.
+    gps, state = received.get("HIL_GPS", 0), received.get("HIL_STATE_QUATERNION", 0)
+    assert (received.get("HIL_SENSOR"), gps in (19, 20), state == gps) == (501, True, True), received
+
+
+def test_the_controller_gets_the_fake_px4s_hover_command_every_tick(daemon, catalog, monkeypatch, tmp_path):
+    """The fake PX4 answers each `HIL_SENSOR` with the fixed hover command.
+
+    Given a run with the fake PX4, when it steps 500 ticks, then the controller hands the loop a
+    command each tick, and every one is the same command, with thrust on it.
+    """
+    commands = _Commands()
+
+    def assemble(label, cfg, **kw):
+        return Orchestrator(
+            clock=_Clock(),
+            physics=_Physics(),
+            actuator=commands,
+            sensors=[],
+            controller=kw["controller"],
+            exchange_timeout=0.5,
+            preroll_timeout=kw.get("preroll_timeout", 2.0),
+            peers=kw["peers"],
+        )
+
+    monkeypatch.setattr(launch_mod, "build_orchestrator", assemble)
+    launch = LaunchConfig.from_dict({"vehicle": "astro", "peers": {"px4": {"realization": "fake"}}})
+    loop = launch_mod.build_from_launch(launch, registry=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0)
+
+    for _ in range(500):
+        loop.step()
+    loop.close()
+
+    ticks = commands.seen[-500:]
+    assert (len(ticks), len(set(ticks)), any(v > 0 for v in ticks[0])) == (500, 1, True), set(ticks)
+
+
+def test_the_px4_controller_is_built_the_same_way_whichever_realization_answers(daemon, run, caplog):
+    """The build makes the PX4 controller the same way whichever realization answers.
+
+    Given the default vehicle, when a run builds it with the PX4 peer fake and again with it external,
+    then both loops hold the same stages in the same order, as each run's stage plan line says.
+    """
+    caplog.set_level(logging.INFO, logger="nexus")
+
+    def plan(px4: dict) -> list[str]:
+        caplog.clear()
+        loop = run(px4)
+        loop.step()  # the plan logs before the preroll: the external run then times out waiting for PX4
+        loop.close()
+        return [r.getMessage() for r in caplog.records if r.getMessage().startswith("stage plan:")]
+
+    fake = plan({"realization": "fake"})
+    external = plan({"realization": "external", "instance": _free_instance()})
+
+    assert (len(fake), fake) == (1, external)
+
+
+def test_a_fake_px4_whose_link_dies_ends_the_run_as_a_real_peers_death_does(daemon, run, caplog):
+    """A fake PX4 whose link dies ends the run as a real peer's death does.
+
+    Given a run whose fake PX4 stops after 100 ticks, when the run steps on, then it stops with
+    `ConnectionError` naming PX4 and `step()` returns `False` after it.
+    """
+    caplog.set_level(logging.INFO, logger="nexus")
+    loop = run({"realization": "fake"})
+    for _ in range(100):
+        loop.step()
+
+    loop.peers[0].stop()
+    ended = False
+    deadline = time.monotonic() + 30.0
+    while time.monotonic() < deadline:
+        if not loop.step():
+            ended = True
+            break
+    after = loop.step()
+
+    assert (ended, after, "Px4MavlinkController disconnected" in caplog.text) == (True, False, True), caplog.text
+
+
+def test_the_operator_on_a_fake_px4_run_fails_at_once_with_a_clear_error(daemon, assembly, catalog, tmp_path):
+    """The operator on a fake PX4 run fails at once with a clear error.
+
+    Given a run with the fake PX4, when a caller takes `sim.operator`, then it raises an error that names the
+    fake PX4, and nothing waits on the offboard port.
+    """
+    project = tmp_path / "nexus.registry.yaml"
+    project.write_text(yaml.safe_dump({"vehicles": [_vehicle(tmp_path)]}))
+
+    with Sim("astro", registry=str(project), device="cpu", observe=False, px4="fake") as sim:
+        sim.start(timeout=5.0)
+        t0 = time.monotonic()
+        try:
+            message = f"no error: {sim.operator!r}"
+        except RuntimeError as exc:
+            message = str(exc)
+        waited = time.monotonic() - t0
+
+    assert ("fake" in message, waited < 5.0) == (True, True), (message, waited)
