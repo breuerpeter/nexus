@@ -12,7 +12,7 @@ render peer, which the example starts on its own.
 
 <div class="grid cards" markdown>
 
--   **[PID waypoint tour](pid.md)**: the minimal in-process controller, a deterministic, differentiable Proportional Integral Derivative (PID) controller flying a waypoint square, fully CUDA-graph captured.
+-   **[PID waypoint tour](pid.md)**: the minimal device-native controller, a deterministic, differentiable Proportional Integral Derivative (PID) controller flying a waypoint square, fully CUDA-graph captured.
 -   **[Differentiable design optimization](design-optimization.md)**: back-propagate through a closed-loop flight to tune a PID and recover a mass.
 -   **[`acados` NMPC](mpc-acados.md)**: a real-time Nonlinear Model Predictive Control (NMPC) controller flying a curving waypoint course nose-first along a min-snap reference.
 -   **[Sampling MPC slalom](mpc-sampling.md)**: a sampling-plus-gradient differentiable-simulation MPC flying an obstacle slalom.

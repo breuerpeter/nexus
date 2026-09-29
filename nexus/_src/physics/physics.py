@@ -36,10 +36,9 @@ Faithful detail preserved: ``eval_fk`` is intentionally not re-run after the act
 joint update, so ``update_body_f`` reads the earlier step's joint pose, a
 one-step lag in thrust direction: exactly the bridge's behavior.
 
-Marked Capturable: the collide + solver.step + double-buffer ping-pong is a static
-launch over persistent buffers; with the actuator it forms the contiguous
-captured region, with the controller excluded as the host boundary. The eager
-slice defers capture.
+Two device stages, ``clear`` and ``step``: the collide + solver.step + double-buffer ping-pong
+is a static launch over persistent buffers, so it joins a CUDA graph with the actuator's stage
+between them.
 """
 
 from __future__ import annotations
@@ -49,6 +48,7 @@ import numpy as np
 import warp as wp
 
 from nexus._src.core import logger
+from nexus._src.core.interfaces import Stage
 from nexus._src.recording.recorder import leaf_keys
 from nexus._src.recording.state import (
     BODY_FIELDS,
@@ -86,8 +86,6 @@ def make_solver(name: str, model, *, njmax: int = 224):
 
 
 class NewtonPhysics:
-    capturable = True
-
     def __init__(self, *, vehicle_builder=None, model=None, cfg: dict, njmax: int = 224):
         self.cfg = cfg
         # Component-owned groundtruth logging, since physics owns the true state: log() draws the generic
@@ -228,7 +226,7 @@ class NewtonPhysics:
                 self._joint_taps.append((ch, int(qs[j]), nq, int(qds[j]), nqd))
 
     def record_wp(self) -> None:
-        """Capturable observation tap, the read-side twin of :meth:`log`: snapshot every body + joint of
+        """Device-only observation tap, the read-side twin of :meth:`log`: snapshot every body + joint of
         the live ``state0``, the persistent buffers the graph advances, into their Recorder channels with
         NO host readback, so it joins the captured graph. Launched each tick by the orchestrator inside the
         device region. A no-op when not observing.
@@ -251,6 +249,13 @@ class NewtonPhysics:
         self.solver.step(state, self.state1, self.control, contacts, dt)
         state.assign(self.state1)
         return state
+
+    def stages(self) -> list[Stage]:
+        """The ``clear`` and ``step`` device stages; the loop runs the actuator between them."""
+        return [
+            Stage("clear", "device", lambda tick: self.clear_forces(tick.state)),
+            Stage("step", "device", lambda tick: self.step(tick.state, tick.dt)),
+        ]
 
     def _spawn_single_body(self) -> None:
         """Place a single rigid body, in maximal coords, in free flight at ``spawn['pos']``, zero velocity.

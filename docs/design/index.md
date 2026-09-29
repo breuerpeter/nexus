@@ -40,7 +40,7 @@ The same component interfaces serve three execution regimes:
 | Regime | What runs | Used for |
 |---|---|---|
 | **Online PX4 SITL** | Real PX4 firmware flies the vehicle over a MAVLink lockstep link | Automated SITL testing, operator training, customer preview |
-| **In-process differentiable** | A built-in Proportional Integral Derivative (PID) controller computes controls in-process. The whole rollout records a gradient | [Design optimization](../examples/design-optimization.md) |
+| **Differentiable law** | A built-in Proportional Integral Derivative (PID) controller computes controls on the device. The whole rollout records a gradient | [Design optimization](../examples/design-optimization.md) |
 | **Trained policy** | The framework loads a network trained on Isaac Lab as a Controller | [Reinforcement learning](../examples/isaac-lab-rl.md) deployment |
 
 RL *training* itself runs in the separate `nexus-rl` app on Isaac Lab

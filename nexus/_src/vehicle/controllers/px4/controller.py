@@ -1,7 +1,7 @@
-"""Px4MavlinkController: the single host and marshalling boundary, architecture.md §2 and §6.
+"""Px4MavlinkController: the loop face of the PX4 peer, architecture.md §2 and §6.
 
-Implements ``Controller.exchange(measurement, t) -> Controls`` as the blocking lockstep that paces
-the loop: opens a tcpin TCP server on :4560, which PX4 dials into as client with no HEARTBEAT,
+Its work is two host stages, ``read`` and ``exchange``: ``exchange(measurement, t)`` is the blocking
+lockstep that paces the loop: opens a tcpin TCP server on :4560, which PX4 dials into as client with no HEARTBEAT,
 serializes the typed Measurement into HIL_SENSOR, HIL_GPS and HIL_STATE_QUATERNION with the
 encoders lifted verbatim from the bridge, then blocks on HIL_ACTUATOR_CONTROLS with a run-ending
 timeout. newton-sensors already derives the Measurement in
@@ -29,6 +29,7 @@ from pymavlink import mavutil
 
 from nexus._src.core import logger
 from nexus._src.core.schema import Controls
+from nexus._src.core.stages import peer_stages
 
 # Where this controller looks for PX4's ULog, mirroring the recorder's
 # ~/.cache/nexus/logs convention for the .rrd. PX4 writes the .ulg itself, since it
@@ -40,11 +41,6 @@ PX4_ULOG_DIR = os.path.expanduser("~/.cache/nexus/px4-ulog")
 
 
 class Px4MavlinkController:
-    # The host boundary, architecture.md §5: ``exchange`` is a blocking MAVLink lockstep round-trip,
-    # so it can't join a CUDA graph. The captured strategy records only the device region and runs
-    # this seam, read -> exchange -> write_controls, between replays; see Orchestrator._loop_captured_host_exchange.
-    host_boundary = True
-
     def __init__(
         self,
         *,
@@ -124,6 +120,12 @@ class Px4MavlinkController:
         # mavlink_connection("tcpin:") binds and *listens* in the constructor, and the accept is lazy,
         # on the first recv. The peer started at build, so PX4 might already be dialing: it retries that
         # connect forever, so the only real constraint is that it comes up inside the sim's preroll window.
+
+    def stages(self):
+        """The ``read`` and ``exchange`` host stages: the MAVLink lockstep round-trip blocks on the
+        peer, so it runs between graph replays.
+        """
+        return peer_stages(self)
 
     def exchange(self, meas, t, timeout):
         time_usec = t.time_usec

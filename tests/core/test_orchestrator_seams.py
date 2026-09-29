@@ -2,8 +2,13 @@
 state and the clock, and nothing else. Warp-free stubs, as in test_orchestrator_stop.py.
 """
 
+import pytest
+
+from nexus._src.core.interfaces import Stage
 from nexus._src.core.orchestrator import Orchestrator
 from nexus._src.core.schema import Controls, SimTime
+
+pytestmark = pytest.mark.usefixtures("warp_cpu")  # Python stand-ins run stage by stage, never as a graph
 
 
 class _Clock:
@@ -38,10 +43,19 @@ class _Physics:
         state["q"] *= 10
         return state
 
+    def stages(self):
+        return [
+            Stage("clear", "device", lambda tick: self.clear_forces(tick.state)),
+            Stage("step", "device", lambda tick: self.step(tick.state, tick.dt)),
+        ]
+
 
 class _Actuator:
     def forces(self, controls, state):
         state["q"] += 1
+
+    def stages(self):
+        return [Stage("forces", "device", lambda tick: self.forces(tick.controls, tick.state))]
 
 
 class _Sensor:
@@ -50,9 +64,14 @@ class _Sensor:
     def sample(self, state, t, out):
         out.temperature = state["q"]
 
+    def stages(self):
+        return [Stage("sample", "device", lambda tick: self.sample(tick.state, tick.t, tick.meas))]
+
 
 class _Controller:
-    """Answers the preroll at once and keeps the last measurement it was handed."""
+    """Answers the seed pass at once and keeps the last measurement it received: the read and
+    exchange host stages over ``exchange``.
+    """
 
     def __init__(self):
         self.meas = None
@@ -67,10 +86,18 @@ class _Controller:
     def close(self):
         pass
 
+    def stages(self):
+        def exchange(tick):
+            tick.controls = self.exchange(tick.meas, tick.t, None)
+            return tick.controls is not None
+
+        return [Stage("read", "host", lambda tick: None), Stage("exchange", "host", exchange)]
+
 
 def test_the_loop_runs_a_tick_on_seams_that_take_no_env():
     """The loop runs a tick on seams that take no `env`: `Physics.step(state, dt)`,
-    `Actuator.forces(controls, state)` and `Sensor.sample(state, t, out)`.
+    `Actuator.forces(controls, state)` and `Sensor.sample(state, t, out)`. A tick's exchange follows
+    its step, so the second tick's measurement carries the state after two ticks.
     """
     controller = _Controller()
     orch = Orchestrator(
@@ -84,5 +111,5 @@ def test_the_loop_runs_a_tick_on_seams_that_take_no_env():
 
     orch.run()
 
-    # The second tick's measurement carries the first tick's state: sampled 0, actuated to 1, stepped to 10.
-    assert controller.meas.temperature == 10
+    # Sampled 0 at the seed pass; tick one actuates to 1 and steps to 10; tick two to 11 and 110.
+    assert controller.meas.temperature == 110

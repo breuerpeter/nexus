@@ -14,13 +14,15 @@ a replaceable component behind a typed interface. A central
 Each tick runs the same fixed sequence, and the order is what makes runs reproducible:
 
 ```
-t        = clock.now()
-meas     = [ sensor.sample(state, t) … ]              # IMU, GPS, baro, mag (+ camera in the RTX runtime)
-controls = controller.exchange(meas, t)               # PX4 lockstep OR in-process PID/policy
-wrench   = actuator.forces(controls, state)           # per-actuator command → per-body forces
-state    = physics.step(state, wrench, dt)            # Newton advances the dynamics
-recorder.record(t, …);  clock.step(dt)
+t = clock.advance()
+[sensor stages]                           # IMU, GPS, baro, mag into device buffers; a camera's host stage
+[controller stages]                       # PX4: read + exchange host stages; PID: one device stage
+[clear → actuator → step] × substeps      # command buffer → per-body forces → Newton advances the dynamics
+[record]                                  # the recorder's device taps
 ```
+
+Every component states its stages, and the loop cuts the ring at the host stages, so each run of
+device stages replays as one CUDA graph. See [Execution](execution.md#stages-and-segments).
 
 The **site is resolved once at build**, not sampled per tick: the scene's geodetic origin gives the
 magnetic field, the air pressure and temperature, and gravity, and the sensors that read them take
@@ -58,11 +60,12 @@ fault-wrappable:
 |---|---|
 | `Clock` | sim-time and step, with real-time scaling |
 | `Physics` | `reset` / `step` the Newton dynamics |
-| `Actuator` | `forces(controls, state) → Wrench` |
-| `Sensor` | `sample(state, t) → Measurement`, where a camera sensor uses a renderer |
-| `Controller` | `exchange(measurements, t) → Controls`, one method, many implementations |
+| `Actuator` | one device stage, `forces_wp(cmd, state) → Wrench` from the controller's command buffer |
+| `Sensor` | a device stage into its own buffer plus `read(meas) → Measurement`, or a host stage where a camera sensor uses a renderer |
+| `Controller` | its stages, one contract, many implementations: a peer's `read` and `exchange` host stages, or a device-native law |
 | `Renderer` | the Kit render peer's lifecycle: RTX sensors render in a container fed poses over a socket |
-| `Recorder`, `Capturable` | cross-cutting observability and capture-capability markers |
+| `Stage`, `Tick` | the stage contract: one unit of per-tick work, and the context every stage runs over |
+| `Recorder` | cross-cutting observability |
 
 The **scene and the vehicle aren't code interfaces**: they come from
 Universal Scene Description (USD). A single `USDBuilder` reads the vehicle model through
@@ -84,13 +87,15 @@ the contract forbids `omni`, `usdrt`, `isaacsim` and `carb` in every tier.
 
 ## Controllers and the operator plane
 
-`Controller.exchange()` unifies external and in-process autopilots behind one method:
+Every controller states its stages, and a peer's autopilot and a device-native law fly through the
+same loop:
 
 - **`Px4MavlinkController`**: runs the MAVLink lockstep handshake against a real PX4 Software In
-  The Loop (SITL) instance. It encodes `HIL_SENSOR`, `HIL_GPS`, and `HIL_STATE_QUATERNION`, then
-  **blocks** for the returned actuator commands. It's a **host boundary**, outside graph capture and
-  not differentiable, and a lost connection ends the run.
-- **`PidController`**: the in-process, differentiable built-in, a
+  The Loop (SITL) instance, its peer. It encodes `HIL_SENSOR`, `HIL_GPS`, and
+  `HIL_STATE_QUATERNION`, then **blocks** for the returned actuator commands. Its work is two
+  **host stages**, `read` and `exchange`, outside graph capture and not differentiable, and a lost
+  connection ends the run.
+- **`PidController`**: the device-native, differentiable built-in, a
   Proportional Integral Derivative (PID) controller whose gains are Warp arrays with gradients, so
   it doubles as the [design-optimization](../examples/design-optimization.md) parameter set and the
   [determinism authority](execution.md#determinism).

@@ -19,6 +19,7 @@ import warp as wp
 from nexus._src.config import LaunchConfig, resolve
 from nexus._src.config.registry import load_registry
 from nexus._src.core.schema import Controls
+from nexus._src.core.stages import peer_stages
 
 ZURICH = (47.3769, 8.5417, 408.0)
 WOODINVILLE = (47.747944, -122.163917)
@@ -31,16 +32,18 @@ FIELD_TOL = 0.015  # five sigma of the vehicle's authored magnetometer noise, 0.
 
 
 class _Controller:
-    """Answers the preroll at once and keeps the last measurement it was handed."""
-
-    host_boundary = False
-    capturable = False
+    """Answers the preroll at once and keeps the last measurement it received: the read and exchange
+    host stages over ``exchange``.
+    """
 
     def __init__(self):
         self.meas = None
 
     def connect(self):
         pass
+
+    def stages(self):
+        return peer_stages(self)
 
     def exchange(self, meas, t, timeout=None):
         self.meas = meas
@@ -61,8 +64,10 @@ def _catalog(tmp_path):
     return load_registry(path)
 
 
-def _one_tick(launch, registry):
-    """Build the run *launch* names, settle it on the ground and fly one tick; the run and its measurement.
+def _settled(launch, registry):
+    """Build the run *launch* names, settle it on the ground and run its seed pass; the run and the
+    measurement of the settled state. A tick's exchange follows its step, so the settled state's
+    measurement is the seed pass's, and the run flies no tick.
 
     The build's ``force_cpu`` sets the Warp device, and the scope puts it back; a module fixture runs
     before the function-scoped ``warp_cpu`` fixture would.
@@ -74,7 +79,7 @@ def _one_tick(launch, registry):
         builder, resolved, cfg = resolve_scenario(launch, registry=registry)
         cfg["physics"]["force_cpu"] = True
         controller = _Controller()
-        orch = build_orchestrator(resolved.tested_config.vehicle, cfg, builder, controller=controller, max_steps=1)
+        orch = build_orchestrator(resolved.tested_config.vehicle, cfg, builder, controller=controller, max_steps=0)
         orch.run()
     return orch, controller.meas
 
@@ -86,20 +91,20 @@ def _field(meas):
 @pytest.fixture(scope="module")
 def zurich_scene(tmp_path_factory):
     tmp = tmp_path_factory.mktemp("zurich")
-    return _one_tick(LaunchConfig().set_vehicle("astro_max_base").set_scene("zurich"), _catalog(tmp))
+    return _settled(LaunchConfig().set_vehicle("astro_max_base").set_scene("zurich"), _catalog(tmp))
 
 
 @pytest.fixture(scope="module")
 def geo_override(tmp_path_factory):
     tmp = tmp_path_factory.mktemp("geo")
     launch = LaunchConfig().set_vehicle("astro_max_base").set_scene("woodinville").set_geodetic_origin(*ZURICH)
-    return _one_tick(launch, _catalog(tmp))
+    return _settled(launch, _catalog(tmp))
 
 
 @pytest.fixture(scope="module")
 def empty_scene(tmp_path_factory):
     tmp = tmp_path_factory.mktemp("empty")
-    return _one_tick(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"), _catalog(tmp))
+    return _settled(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"), _catalog(tmp))
 
 
 @pytest.fixture(scope="module")
@@ -119,7 +124,7 @@ def gravity_five_vehicle(tmp_path_factory):
     assert prim, f"the hosted vehicle did not compose under the layer: {hosted!r} {reopened.GetUsedLayers()}"
     composed = UsdPhysics.Scene(prim).GetGravityMagnitudeAttr().Get()
     assert composed == 5.0, f"the layer's gravity did not compose over the hosted vehicle: {composed}"
-    return _one_tick(LaunchConfig().set_vehicle(str(path)).set_scene("empty"), _catalog(tmp))
+    return _settled(LaunchConfig().set_vehicle(str(path)).set_scene("empty"), _catalog(tmp))
 
 
 def test_the_magnetometer_reports_the_field_at_the_catalog_scenes_origin(zurich_scene):

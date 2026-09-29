@@ -1,6 +1,6 @@
 """The sensor-measurement observation channels: each sensor's device buffer → ``SensorSample``.
 
-A sensor already fills a capturable device buffer, ``_out``, each tick. :class:`SensorRecorder` is a
+A sensor already fills a persistent device buffer, ``_out``, each tick. :class:`SensorRecorder` is a
 mixin that gives it the recordable seam: ``set_recorder`` registers a ``sensors/<name>`` channel and
 ``record_wp`` copies ``_out`` into it inside the captured graph, device-only, no D2H. The host reads it
 via ``sim.sensors["imu"]`` → a :class:`SensorSample` whose ``fields`` map the sensor's documented

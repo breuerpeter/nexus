@@ -1,7 +1,7 @@
 """The device-native control seam, the capture/autodiff prerequisite: with a Warp ``observation`` slot
 the in-process Proportional Integral Derivative (PID) loop has no per-tick host hop. WarpObservationSensor
--> PidController.exchange, the law + moment mixer, -> RigidBodyRotors.forces all stay on-device, and the
-actuator is ``capturable``. A NumPy observation still takes the host path.
+-> PidController.exchange, the law + moment mixer, -> RigidBodyRotors.forces_wp all stay on-device, so
+the whole tick is one graph. A NumPy observation still takes the host path.
 
 The single-body motor model + the moment mixer need rotor geometry for the allocation, so the seam fixture
 builds a real rotored vehicle, the astro-max Universal Scene Description (USD).
@@ -60,11 +60,10 @@ def test_inprocess_seam_is_device_native():
     assert _is_warp_array(controls.command)
     assert controls.command.numpy().reshape(-1).shape == (mixer.nr,)
 
-    # 3. the actuator applies the Warp Controls directly, no H2D, and writes a real wrench; it's capturable
+    # 3. the actuator's device stage applies the Warp command buffer directly, no H2D, and writes a real wrench
     act = RigidBodyRotors(mixer=mixer, dt=0.004, thrust_sign=-1.0, motor_tau=0.033)
-    assert act.capturable  # no per-tick host op, the determinism path -> the in-process loop joins a graph
     state.clear_forces()
-    act.forces(controls, state)
+    act.forces_wp(controls.command, state)
     wp.synchronize()
     bf = state.body_f.numpy()[act.base]
     assert np.isfinite(bf).all() and np.any(bf != 0.0)

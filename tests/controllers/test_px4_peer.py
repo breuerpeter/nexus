@@ -35,6 +35,7 @@ import nexus._src.build.launch as launch_mod
 import nexus._src.containers as containers
 from nexus._src.api.sim import Sim
 from nexus._src.config import LaunchConfig, Registry
+from nexus._src.core.interfaces import Stage
 from nexus._src.core.orchestrator import Orchestrator
 from nexus._src.core.schema import SimTime
 from nexus._src.vehicle.controllers.px4 import controller as ctrl
@@ -153,10 +154,19 @@ class _Physics:
     def step(self, state, dt):
         return state
 
+    def stages(self):
+        return [
+            Stage("clear", "device", lambda tick: self.clear_forces(tick.state)),
+            Stage("step", "device", lambda tick: self.step(tick.state, tick.dt)),
+        ]
+
 
 class _Actuator:
     def forces(self, controls, state):
         pass
+
+    def stages(self):
+        return [Stage("forces", "device", lambda tick: self.forces(tick.controls, tick.state))]
 
 
 def _loop(controller, **kw):

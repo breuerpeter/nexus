@@ -35,6 +35,8 @@ import os
 
 import numpy as np
 
+from nexus._src.core.stages import peer_stages
+
 GRAVITY = 9.81
 DEFAULT_CODEGEN_DIR = os.path.expanduser("~/.cache/nexus/acados_codegen/quad_nmpc")  # generated C, out of the repo
 
@@ -225,6 +227,10 @@ class AcadosNMPCController:
 
     def connect(self) -> None:
         pass
+
+    def stages(self):
+        """The ``read`` and ``exchange`` host stages: the per-tick solve runs on the host between replays."""
+        return peer_stages(self)
 
     def set_logger(self, logger) -> None:
         """The orchestrator hands over the Logger, ``None`` when off: the gate for the horizon viz."""

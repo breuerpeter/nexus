@@ -24,6 +24,7 @@ from __future__ import annotations
 import numpy as np
 import warp as wp
 
+from nexus._src.core.interfaces import Stage
 from nexus.examples._lib.coupling import rigid_body_wrench_world
 from nexus.examples._lib.mixer import RotorMixer
 from nexus.examples._lib.motor import motor_alpha
@@ -61,35 +62,15 @@ class Rotors:
         self._B = wp.array(np.asarray(mixer.B, dtype=np.float32), dtype=float)  # (4, nr) forward allocation
         self._offsets = wp.array(np.asarray(mixer.rotor_offsets, dtype=np.float32), dtype=wp.vec3)  # (nr,) base-frame
         self._omega_state = wp.zeros((1, self.nr), dtype=float)  # (1, nr) per-rotor motor-speed state, updated in place
-        self._cmd = wp.zeros((1, self.nr), dtype=float)  # (1, nr) per-rotor command buffer, host → device
-        # No per-tick host op anywhere, so every deploy path stays device-native ⇒ the tick's device
-        # region captures into a Compute Unified Device Architecture (CUDA) graph.
-        self.capturable = True
 
-    def write_controls(self, controls) -> None:
-        """Host seam of the captured host-boundary strategy, one H2D copy: the peer's per-rotor commands →
-        the persistent ``(1, nr)`` device buffer the captured graph reads. The capture recorded
-        ``forces_wp`` over ``self._cmd``, so each replay picks up the fresh commands. Same slice as the
-        eager path: PX4 streams 16-channel HIL_ACTUATOR_CONTROLS, the first ``nr`` are the rotor motors.
+    def forces_wp(self, cmd, state) -> None:
+        """The device stage: the controller's ``(1, n)`` command buffer → motor lag → propeller →
+        forward ``B`` → base-body wrench, no host hop. The first ``nr`` commands are the rotor motors:
+        PX4 streams 16-channel HIL_ACTUATOR_CONTROLS, the per-rotor mixers emit exactly ``nr``; the
+        kernel clamps each to [0, 1].
         """
-        a = np.asarray(controls.command, dtype=np.float32).reshape(-1)
-        if a.shape[0] < self.nr:
-            raise ValueError(f"Rotors expects at least {self.nr} per-rotor commands, got {a.shape[0]}")
-        self._cmd.assign(a[: self.nr].reshape(1, self.nr))
-
-    def forces_wp(self, state) -> None:
-        """The captured host-boundary device region: the persistent command buffer, which
-        :meth:`write_controls` fills per tick, → motor lag → propeller → forward ``B`` → base-body wrench,
-        no host ops.
-        """
-        self._launch_wrench(self._cmd, state)
-
-    def _launch_wrench(self, cmd, state) -> None:
-        """The capturable device region: per-rotor cmd → motor lag → propeller → forward ``B`` → base-body
-        wrench, no host hop. ``cmd`` is the persistent ``(1, nr)`` buffer on the eager/host-boundary paths,
-        or the controller's device-native ``(1, nr)`` Warp Controls when captured in-process, read straight
-        in, so the loop joins a CUDA graph.
-        """
+        if cmd.shape[1] < self.nr:
+            raise ValueError(f"Rotors expects at least {self.nr} per-rotor commands, got {cmd.shape[1]}")
         wp.launch(
             rigid_body_wrench_world,
             dim=1,
@@ -114,20 +95,9 @@ class Rotors:
             outputs=(state.body_f,),
         )
 
-    def forces(self, controls, state) -> None:
-        m = controls.command
-        if isinstance(m, np.ndarray):  # eager host path: copy the per-rotor command H2D
-            a = np.asarray(m, dtype=np.float32).reshape(-1)
-            if a.shape[0] < self.nr:
-                raise ValueError(f"Rotors expects at least {self.nr} per-rotor commands, got {a.shape[0]}")
-            # PX4 streams 16-channel HIL_ACTUATOR_CONTROLS; the per-rotor mixers emit exactly nr. Take the
-            # first nr either way, the rotor motors, matching the old ArticulatedRotors slice; the kernel
-            # clamps each to [0, 1].
-            self._cmd.assign(a[: self.nr].reshape(1, self.nr))
-            cmd = self._cmd
-        else:  # captured device-native path: a (1, nr) Warp array, the PID/policy controller's mixer output
-            cmd = m
-        self._launch_wrench(cmd, state)
+    def stages(self) -> list[Stage]:
+        """One device stage over :meth:`forces_wp`, reading the controller's command buffer."""
+        return [Stage("forces", "device", lambda tick: self.forces_wp(tick.controls, tick.state))]
 
 
 # Back-compat alias: the unified actuator is the former single-body rigid-body actuator, now used

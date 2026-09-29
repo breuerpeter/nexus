@@ -3,7 +3,7 @@
 Physics registers one channel per body, ``physics/body/<label>``, and one per joint,
 ``physics/joint/<label>``, from the finalized model's labels, so the full Newton model state is
 addressable by name: ``sim.physics["body_frd"]`` is the base body, ``sim.physics["rotor_1_joint"]``
-an actuator joint. Each tick a capturable kernel
+an actuator joint. Each tick a device-only kernel
 snapshots that entity into its channel's device ring buffer, with no D2H, and the decode reconstructs the
 typed state at read time.
 

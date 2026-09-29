@@ -12,6 +12,7 @@ from __future__ import annotations
 import numpy as np
 
 from nexus._src.core import logger
+from nexus._src.core.interfaces import Stage
 
 
 def _prim_sensor_attr(prim, name: str, fallback, kind: str):
@@ -31,11 +32,11 @@ def _prim_sensor_attr(prim, name: str, fallback, kind: str):
 
 
 class RtxMountedSensor:
-    """Shared base for RTX sensors mounted on a vehicle body: a host-rate ``Sensor`` over a prim
-    authored in the vehicle USD as a body child.
+    """Shared base for RTX sensors mounted on a vehicle body: a ``Sensor`` whose work is one host
+    stage, over a prim authored in the vehicle USD as a body child.
 
-    Sampled at the host seam of every loop, self-decimating to ``rate_hz``, never vetoing the
-    captured strategy, per ``host_rate``. The mount is rigid: the link poses the sensor prim with
+    Its frames come from the Kit peer over a socket, so its stage runs once per tick at the host
+    seam, outside any captured graph, self-decimating to ``rate_hz``. The mount is rigid: the link poses the sensor prim with
     W = L_authored * W_body, in row-vector form, from the same state the body poses come from, since a
     Fabric world matrix has no hierarchy.
 
@@ -47,7 +48,6 @@ class RtxMountedSensor:
         rate_hz: The sensor's physical rate.
     """
 
-    host_rate = True  # host-bound + low-rate: sampled at the host seam, excluded from the capture gate
     KIND = "rtx"
     output = ""  # what the peer returns for it: "color", "radiance_depth" or "points"
 
@@ -99,6 +99,10 @@ class RtxMountedSensor:
         base = self._next_due if self._next_due is not None else now
         self._next_due = max(base + period, now + 0.5 * period)  # never burst after a stall
         return True
+
+    def stages(self) -> list[Stage]:
+        """One host stage, named after the sensor, over :meth:`sample`."""
+        return [Stage(self.name, "host", lambda tick: self.sample(tick.state, tick.t, tick.meas))]
 
     def sample(self, state, t, out) -> None:
         """Host-seam sample: the link sends the due sensors' frame and hands back the one before.

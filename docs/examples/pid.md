@@ -1,10 +1,10 @@
 ---
-description: "The minimal in-process controller example: a deterministic, differentiable Proportional Integral Derivative (PID) controller flying a waypoint square, fully CUDA-graph captured."
+description: "The minimal device-native controller example: a deterministic, differentiable Proportional Integral Derivative (PID) controller flying a waypoint square, fully CUDA-graph captured."
 ---
 
 # PID waypoint tour
 
-The smallest end-to-end example of the in-process controller shape: a deterministic,
+The smallest end-to-end example of the device-native controller shape: a deterministic,
 differentiable PID flies the collapsed single-body Astro Max around a square of waypoints.
 One CUDA graph captures the whole tick: controller, actuator, physics, and sensors.
 It deploys the gains the [design-optimization example](design-optimization.md) converges to.

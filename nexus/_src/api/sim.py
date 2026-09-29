@@ -199,7 +199,7 @@ class Sim:
         sim._reached_m = float(reached_m)
         sim._final_hold_s = float(final_hold_s)
         sim._observe = observe
-        sim._in_process = not getattr(orch.controller, "host_boundary", False)
+        sim._in_process = hasattr(orch.controller, "accept_setpoint")  # a setpoint surface: an operator in this process
         sim._orch = None
         sim._prebuilt_orch = orch
         sim._ext_operator = operator
@@ -249,7 +249,7 @@ class Sim:
             # A vehicle that authors RTX sensors starts the Kit render peer here, from the host.
             self._orch = build_from_launch(self._launch, cache_dir=self._cache_dir, stream=self._stream)
         if self._observe:
-            # Attach the observation sink: each recordable component registers its capturable channels;
+            # Attach the observation sink: each recordable component registers its device-only channels;
             # physics → one per body plus per joint. dt → the per-row snapshot time, counter × dt.
             # The ring must cover the *whole* run, since post-run evaluation reads the full trajectory, so
             # size it from max_steps when the launch sets one, plus margin for the pre-flight seed rows.
