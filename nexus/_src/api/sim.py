@@ -1,7 +1,7 @@
 """Sim: the in-process control-surface handle, the program-driving API.
 
 Owns the sim: builds it from a ``LaunchConfig`` via ``build_from_launch`` and drives the
-``Orchestrator`` loop on the *caller's* thread, one driving model for both control kinds. A
+``Orchestrator`` loop on the *caller's* thread, one driving model for every controller. A
 script steps the sim, with ``step``, ``run``, ``wait_until`` or ``sleep``, whether the autopilot
 is in-process or a host boundary such as PX4: the orchestrator's tick generator yields once per
 control tick either way, so a PX4 run is something you drive, not something you watch. Tears down
@@ -401,7 +401,7 @@ class Sim:
         """Advance the sim one control tick on the calling thread. Deterministic: the predicate or state
         you read between steps lands at exact tick boundaries, with no wall-clock.
 
-        The one driving verb for both control kinds: an in-process autopilot and a host-boundary one,
+        The one driving verb for every controller: an in-process autopilot and a host-boundary one,
         PX4, alike advance one tick per call. Set the mission via ``sim.operator`` first; then step and
         read ``sim.physics[...]`` between steps. Returns ``False`` when the run has ended: mission
         complete, ``max_steps``, stopped, or the peer disconnected.
@@ -557,7 +557,7 @@ class Sim:
         return out
 
     def stop(self) -> None:
-        """Tear the run down cooperatively: one path for both control kinds.
+        """Tear the run down cooperatively: one path for every controller.
 
         Signals the orchestrator to stop, then closes the tick generator so its teardown runs:
         the Real-Time Factor (RTF) stamp, ``controller.close()``, the stop of every peer the build

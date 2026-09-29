@@ -4,7 +4,7 @@ Controller-agnostic by construction: the assembly wires the plant, ``NewtonPhysi
 own ModelBuilder + solvers, the shipped ``ArticulatedRotors`` actuator, the sensor suite authored in
 Universal Scene Description (USD) with the site's ambient values, and the Rerun sink around a
 **caller-supplied controller**. Which controller flies is a decision one layer up: the launch glue
-maps the config's ``control.kind``, and the example controllers self-assemble beside their flight
+builds the controller the vehicle USD declares, and the example controllers self-assemble beside their flight
 scripts in ``nexus/examples/controllers/*/assembly.py``, reusing the helpers here,
 ``build_scenario`` / ``resolve_device``.
 
