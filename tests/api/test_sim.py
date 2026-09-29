@@ -101,7 +101,7 @@ def test_sim_start_drives_setup_observes_and_stops(monkeypatch):
     fake = _FakeOrch()
     monkeypatch.setattr(sim_mod, "build_from_launch", lambda launch, **kw: fake)
 
-    with sim_mod.Sim("astro_max_base", control="px4-sitl", device="cpu") as sim:
+    with sim_mod.Sim("astro_max_base", device="cpu") as sim:
         sim.start(timeout=30.0)
         assert fake.preroll_timeout == 30.0  # start(timeout=) caps the wait for the peer
         assert fake.steps == 1  # start() returns after one full control tick
@@ -138,7 +138,7 @@ def test_sim_px4_spawns_no_sim_thread(monkeypatch):
     """
     monkeypatch.setattr(sim_mod, "build_from_launch", lambda launch, **kw: _FakeOrch())
     assert not any(t.name == "newton-sim" for t in threading.enumerate())
-    with sim_mod.Sim("astro_max_base", control="px4-sitl", device="cpu") as sim:
+    with sim_mod.Sim("astro_max_base", device="cpu") as sim:
         sim.start(timeout=30.0)
         assert not any(t.name == "newton-sim" for t in threading.enumerate())
     assert not any(t.name == "newton-sim" for t in threading.enumerate())
@@ -235,7 +235,7 @@ def test_sim_step_drives_inprocess_tick_by_tick():
 def test_sim_step_drives_px4_on_the_calling_thread(monkeypatch):
     fake = _FakeOrch()
     monkeypatch.setattr(sim_mod, "build_from_launch", lambda launch, **kw: fake)
-    with sim_mod.Sim("astro_max_base", control="px4-sitl", device="cpu") as sim:
+    with sim_mod.Sim("astro_max_base", device="cpu") as sim:
         assert sim.step() is True  # a host-boundary sim steps the same as any other
         assert sim.step() is True
         assert fake.threads == [threading.main_thread(), threading.main_thread()]
@@ -273,7 +273,7 @@ def test_sim_px4_controller_is_none_and_operator_is_px4offboard(monkeypatch):
 
     # The stub needs no live PX4 on :14540, see _FakeOffboard.
     monkeypatch.setattr(op_mod, "Px4Offboard", lambda *a, **k: _FakeOffboard(fake), raising=False)
-    with sim_mod.Sim("astro_max_base", control="px4-sitl") as sim:
+    with sim_mod.Sim("astro_max_base") as sim:
         sim.start(timeout=30.0)
         assert sim.controller is None  # PX4 owns its mission externally, so the thin surface is None
         op = sim.operator  # PX4: lazily constructs + connects a Px4Offboard on :14540
@@ -294,7 +294,7 @@ def test_sim_operator_steps_the_sim_while_the_px4_link_connects(monkeypatch):
     import nexus._src.operator as op_mod
 
     monkeypatch.setattr(op_mod, "Px4Offboard", lambda *a, **k: _FakeOffboard(fake), raising=False)
-    with sim_mod.Sim("astro_max_base", control="px4-sitl", device="cpu") as sim:
+    with sim_mod.Sim("astro_max_base", device="cpu") as sim:
         sim.start(timeout=30.0)
         assert fake.steps == 1  # start() flew exactly one tick; the link isn't up yet
         op = sim.operator
@@ -313,7 +313,16 @@ def test_sim_operator_raises_if_the_run_ends_before_px4_answers(monkeypatch):
     import nexus._src.operator as op_mod
 
     monkeypatch.setattr(op_mod, "Px4Offboard", lambda *a, **k: _NeverConnects(fake), raising=False)
-    with sim_mod.Sim("astro_max_base", control="px4-sitl", device="cpu") as sim:
+    with sim_mod.Sim("astro_max_base", device="cpu") as sim:
         sim.start(timeout=30.0)
         with pytest.raises(RuntimeError, match="operator link"):
             _ = sim.operator
+
+
+def test_sim_takes_no_control_argument():
+    """`Sim` takes no control argument: the vehicle's Universal Scene Description (USD) file declares its controller.
+
+    Given `Sim("astro_max_base", control="px4-sitl")`, when constructed, then it raises `TypeError`.
+    """
+    with pytest.raises(TypeError, match="control"):
+        sim_mod.Sim("astro_max_base", control="px4-sitl")

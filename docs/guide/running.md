@@ -37,8 +37,8 @@ uv run nexus run
 ```
 
 Builds PX4 SITL, starts the PX4 container, then the physics sim and the Rerun server on
-gRPC :9876, and stops the container again on exit. Defaults to the `astro_max_base` vehicle +
-`--control px4-sitl`. The PX4 console is a file, next to the run's recording:
+gRPC :9876, and stops the container again on exit. Defaults to the `astro_max_base` vehicle, whose
+Universal Scene Description (USD) file declares PX4 and its airframe. The PX4 console is a file, next to the run's recording:
 `~/.cache/nexus/logs/px4-*.log`.
 
 **3. Rerun viewer, optional:**

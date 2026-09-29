@@ -7,7 +7,7 @@ Two roles, one control law, ``law.pid_action_np`` and ``law.pid_law``:
    Newton CPU physics is what closes the bit-reproducibility gap left open with real PX4,
    whose multi-threaded work-queue interleaving isn't the same bit for bit. Flown through the unchanged
    :class:`~nexus._src.core.orchestrator.Orchestrator` it gives a CI determinism gate that does
-   not wait on PX4. It occupies the schema's ``control.kind == "builtin"`` slot.
+   not wait on PX4.
 
 2. **The design-optimization controller.** Its gains are the differentiable design parameters the
    design-optimization example tunes: the *same* law, in Warp.

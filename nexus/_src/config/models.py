@@ -49,12 +49,12 @@ class GeodeticOrigin(_Base):
 
 
 class Px4Spec(_Base):
-    """PX4 airframe selection: the Software In The Loop (SITL) airframe **make target** this vehicle
-    flies as.
+    """The receipt's record of the PX4 airframe: the Software In The Loop (SITL) airframe **make
+    target** the vehicle flies as.
 
     The value is the target without PX4's ``none_`` prefix: ``astro_max`` becomes ``make px4_sitl
-    none_astro_max``, and the launcher prepends it. This is where the sim picks the autopilot it
-    starts, so this is the authority, not a receipt.
+    none_astro_max``, and the launcher prepends it. The vehicle Universal Scene Description (USD)
+    file declares it, as ``nexus:airframe`` on its ``NexusPx4API`` schema, and is the authority.
     """
 
     airframe: str
@@ -99,15 +99,6 @@ class Peers(_Base):
     """The peers of a run, by the component that speaks to each, and how the run realizes them."""
 
     px4: Px4Peer = Field(default_factory=Px4Peer)
-
-
-class Control(_Base):
-    """Who flies the vehicle: the host boundary. PX4 is the one first-class controller;
-    every other controller is an example under ``nexus/examples/`` that self-assembles its
-    orchestrator and enters via ``Sim.from_orchestrator``, with no control kind.
-    """
-
-    kind: Literal["px4-sitl"] = "px4-sitl"
 
 
 class Runtime(_Base):
@@ -180,11 +171,6 @@ class LaunchConfig(_Base):
     ``None`` uses the registry scene's ``geodetic_origin`` (its default). A launch value wins: it
     re-anchors the GPS/magnetic/gravity reference and, for the streamed cesium globe, selects the
     place it streams. So `cesium` at any location is `--scene cesium --geo <lat>,<lon>`.
-    """
-    control: Control = Field(default_factory=Control)
-    """Who flies the vehicle: the host boundary.
-
-    Defaults to a :class:`Control` with ``kind="px4-sitl"``.
     """
     peers: Peers = Field(default_factory=Peers)
     """The run's peers and how it realizes each: for PX4, managed or external, and its instance.
@@ -272,26 +258,4 @@ class LaunchConfig(_Base):
     def set_geodetic_origin(self, lat: float, lon: float, alt: float | None = None) -> LaunchConfig:
         """Override the scene's geodetic origin, lat and lon, in place. Returns ``self``, chainable."""
         self.geodetic_origin = GeodeticOrigin(lat=lat, lon=lon, alt=alt)
-        return self
-
-    def set_control(self, kind: str, **kw: Any) -> LaunchConfig:
-        """Set the control configuration in place.
-
-        Args:
-            kind: A control kind declared by :class:`Control`: PX4 is the one first-class
-                controller, and every other controller is an example that self-assembles its
-                orchestrator and enters via ``Sim.from_orchestrator`` instead. See
-                :class:`Control` for the current set; this docstring deliberately doesn't
-                repeat it.
-            **kw: Extra :class:`Control` fields. ``Control`` declares none besides ``kind`` and
-                sets ``extra="forbid"``, so any keyword passed today raises.
-
-        Returns:
-            ``self``, so calls chain.
-
-        Raises:
-            pydantic.ValidationError: If ``kind`` isn't a declared control kind, or a keyword
-                field that ``Control`` doesn't declare is present.
-        """
-        self.control = Control(kind=kind, **kw)
         return self

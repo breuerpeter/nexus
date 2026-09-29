@@ -61,6 +61,7 @@ nexus = "nexus._src.cli.main:main"
 # beside nexus declares its own classes in the same group.
 [project.entry-points."nexus.components"]
 NexusImuAPI = "nexus._src.vehicle.sensors:ImuSensor"
+NexusPx4API = "nexus._src.vehicle.controllers.px4:Px4MavlinkController"
 
 [project.urls]
 Homepage = "https://github.com/breuerpeter/nexus"

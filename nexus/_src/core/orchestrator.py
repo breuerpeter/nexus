@@ -355,7 +355,7 @@ class Orchestrator:
         Resets physics, which builds and settles the vehicle at the NED origin, builds the ring of
         stages and partitions it, runs the warm pass over the settled state, records the seed row,
         captures each device segment on CUDA, runs the seed pass of the controller's host stages, the
-        preroll for a controller with a peer, then loops. Every control kind advances one tick per
+        preroll for a controller with a peer, then loops. Every controller advances one tick per
         ``next()``. Teardown, renderer,
         controller and logs, runs in the ``finally``, whether the generator runs out, on run to
         completion or peer disconnect, or closes early, via :meth:`close` on ``stop()`` mid-step.
@@ -559,7 +559,7 @@ class Orchestrator:
         """Advance the run one control tick, returning ``True`` if a tick ran or ``False`` when the run has
         ended: mission complete / ``max_steps`` / ``stop()`` / peer disconnect. Setup, reset, connect and
         graph capture, runs on the first call; teardown runs automatically when the run ends. The
-        control surface, ``Sim.step``, drives this for every control kind, PX4 included. Deterministic:
+        control surface, ``Sim.step``, drives this for every controller, PX4 included. Deterministic:
         no wall-clock.
         """
         if self._ticks_iter is None:

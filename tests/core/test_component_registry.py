@@ -132,8 +132,13 @@ def test_a_registry_handed_to_the_builder_replaces_the_default_and_leaves_it_unt
     class StandIn:
         """A stand-in component class."""
 
-    (stand_in,) = resolve_components(FIXTURE, ComponentRegistry({"NexusImuAPI": StandIn}))
-    (imu,) = resolve_components(FIXTURE)
+    imu_prim = "/Vehicle/body/Imu"
+    (stand_in,) = [
+        spec
+        for spec in resolve_components(FIXTURE, ComponentRegistry({"NexusImuAPI": StandIn, "NexusPx4API": StandIn}))
+        if spec.prim == imu_prim
+    ]
+    (imu,) = [spec for spec in resolve_components(FIXTURE) if spec.prim == imu_prim]
     assert (stand_in.cls, imu.cls) == (StandIn, ImuSensor)
 
 

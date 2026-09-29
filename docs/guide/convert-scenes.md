@@ -56,7 +56,7 @@ omit `alt`.
 ## 3. Preview-fly it unregistered
 
 ```bash
-uv run nexus run --vehicle astro_max_fpv --control px4-sitl \
+uv run nexus run --vehicle astro_max_fpv \
     --scene "$NEXUS_DATA/scans/my_site_splat.usdz" --log
 ```
 

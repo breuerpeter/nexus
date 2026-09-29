@@ -76,7 +76,7 @@ def main() -> int:
         # 1. The sim, in-process: it builds PX4, serves the HIL link on :4560, starts the PX4
         #    container against it, and records the run.
         na.logger.info("[sitl] Newton starting in-process (actuator from USD); serving :4560 …")
-        with na.Sim(control="px4-sitl", device="cuda", log=True) as sim:
+        with na.Sim(device="cuda", log=True) as sim:
             sim.start(timeout=timeout)  # drive setup as far as PX4 lockstep
             na.logger.info("[sitl] PX4 lockstep established: flying the profile over :14540")
 

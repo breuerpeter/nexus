@@ -1,7 +1,7 @@
 """Sim: the in-process control-surface handle, the program-driving API.
 
 Owns the sim: builds it from a ``LaunchConfig`` via ``build_from_launch`` and drives the
-``Orchestrator`` loop on the *caller's* thread, one driving model for both control kinds. A
+``Orchestrator`` loop on the *caller's* thread, one driving model for every controller. A
 script steps the sim, with ``step``, ``run``, ``wait_until`` or ``sleep``, whether the autopilot
 is in-process or a host boundary such as PX4: the orchestrator's tick generator yields once per
 control tick either way, so a PX4 run is something you drive, not something you watch. Tears down
@@ -28,11 +28,6 @@ if TYPE_CHECKING:
     from nexus._src.core.interfaces import Controller
     from nexus._src.operator import Px4Offboard
 
-# Control kinds whose controller is a host boundary, the PX4 Hardware In The Loop (HIL) lockstep.
-# This selects the *operator*, Px4Offboard over PX4's offboard MAVLink link compared to the in-process
-# InProcessOperator, never the driving path: every kind is step-driven on the caller's thread.
-_HOST_BOUNDARY_KINDS = ("px4-sitl",)
-
 # Wall-clock budget for PX4 to answer on the operator link once the sim starts stepping
 # for it: the same 30 s Px4Offboard's own blocking connect allows.
 _PX4_LINK_TIMEOUT_S = 30.0
@@ -58,9 +53,6 @@ class Sim:
         registry: Path to a catalog that extends the bundled one. ``None`` takes the nearest
             ``nexus.registry.yaml`` in the working directory or a directory over it, and only the
             catalog bundled in the wheel when no directory holds one.
-        control: Control kind: ``"px4-sitl"``. PX4 is the one first-class controller; an
-            example controller self-assembles its orchestrator and enters via
-            :meth:`from_orchestrator` instead.
         scene: Optional registry scene to load, for example the ``"slalom"`` obstacle pillars;
             ``None`` = the default empty scene.
         device: Compute device for the runtime: ``"auto"``, the default, which picks CUDA when
@@ -85,7 +77,7 @@ class Sim:
         final_hold_s: Keep running this long, in sim-time, after the final goal before stopping.
 
     Example:
-        >>> with Sim("astro_max_base", control="px4-sitl") as sim:
+        >>> with Sim("astro_max_base") as sim:
         ...     sim.start()
         ...     sim.wait_until(lambda: sim.physics[sim.base_body].latest().altitude_m > 1.0, sim_timeout=30.0)
     """
@@ -95,7 +87,6 @@ class Sim:
         vehicle: str | None = None,
         *,
         registry: str | None = None,
-        control: str = "px4-sitl",
         scene: str | None = None,
         geo: str | None = None,
         device: str = "auto",
@@ -113,7 +104,7 @@ class Sim:
         reached_m: float = 0.3,
         final_hold_s: float = 2.0,
     ):
-        self._launch = LaunchConfig().set_control(control)
+        self._launch = LaunchConfig()
         self._launch.peers.px4 = Px4Peer(realization=px4, instance=px4_instance)
         # --vehicle is a registry *name*, a local .usd path, or None for the registry's default.
         self._launch.set_vehicle(vehicle)
@@ -150,7 +141,7 @@ class Sim:
         self._stream = stream
         self._cache_dir = cache_dir
         self._observe = observe
-        self._in_process = self._launch.control.kind not in _HOST_BOUNDARY_KINDS
+        self._in_process = False  # set at build, from the controller the vehicle declares
         self._orch = None
         self._operator = None
         self._recorder: Recorder | None = None
@@ -224,7 +215,6 @@ class Sim:
         kw = {
             "vehicle": getattr(args, "vehicle", None),
             "registry": getattr(args, "registry", None),
-            "control": getattr(args, "control", "px4-sitl"),
             "device": getattr(args, "device", "auto"),
             "scene": getattr(args, "scene", None),
             "geo": getattr(args, "geo", None),
@@ -248,6 +238,9 @@ class Sim:
         else:
             # A vehicle that authors RTX sensors starts the Kit render peer here, from the host.
             self._orch = build_from_launch(self._launch, cache_dir=self._cache_dir, stream=self._stream)
+            # The controller picks the operator: one with a setpoint surface takes an operator in this
+            # process, and PX4, which has none, takes Px4Offboard over its offboard link.
+            self._in_process = hasattr(getattr(self._orch, "controller", None), "accept_setpoint")
         if self._observe:
             # Attach the observation sink: each recordable component registers its device-only channels;
             # physics → one per body plus per joint. dt → the per-row snapshot time, counter × dt.
@@ -408,7 +401,7 @@ class Sim:
         """Advance the sim one control tick on the calling thread. Deterministic: the predicate or state
         you read between steps lands at exact tick boundaries, with no wall-clock.
 
-        The one driving verb for both control kinds: an in-process autopilot and a host-boundary one,
+        The one driving verb for every controller: an in-process autopilot and a host-boundary one,
         PX4, alike advance one tick per call. Set the mission via ``sim.operator`` first; then step and
         read ``sim.physics[...]`` between steps. Returns ``False`` when the run has ended: mission
         complete, ``max_steps``, stopped, or the peer disconnected.
@@ -564,7 +557,7 @@ class Sim:
         return out
 
     def stop(self) -> None:
-        """Tear the run down cooperatively: one path for both control kinds.
+        """Tear the run down cooperatively: one path for every controller.
 
         Signals the orchestrator to stop, then closes the tick generator so its teardown runs:
         the Real-Time Factor (RTF) stamp, ``controller.close()``, the stop of every peer the build

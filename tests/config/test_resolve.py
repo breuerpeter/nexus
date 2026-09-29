@@ -14,7 +14,7 @@ from nexus._src.config import LaunchConfig, NoMatchError, Registry, TestedConfig
 def _reg(vehicle_usd):
     return Registry.from_dict(
         {
-            "vehicles": [{"name": "black", "usd": vehicle_usd, "px4": {"airframe": "80001"}}],
+            "vehicles": [{"name": "black", "usd": vehicle_usd}],
             "scenes": {"empty": {}},
             "defaults": {"vehicle": "black", "scene": "empty"},
         }
@@ -27,7 +27,6 @@ def test_resolve_no_fetch_builds_fully_specified_receipt():
     tc = rl.tested_config
     # the named variant, fully specified
     assert tc.vehicle == "black"
-    assert tc.px4.airframe == "80001"
     assert tc.vehicle_usd.sha256 == "deadbeef"
     assert tc.scene == "empty" and tc.scene_usd is None
     assert rl.vehicle_usd_path is None  # fetch off
@@ -66,7 +65,7 @@ def _fpv_reg(vehicle_usd, scene_usd, **scene_extra):
     """
     return Registry.from_dict(
         {
-            "vehicles": [{"name": "black", "usd": vehicle_usd, "px4": {"airframe": "80001"}}],
+            "vehicles": [{"name": "black", "usd": vehicle_usd}],
             "scenes": {
                 "empty": {},
                 "fpv": {
@@ -153,14 +152,14 @@ def test_a_named_vehicle_beats_the_default():
     reg = Registry.from_dict(
         {
             "vehicles": [
-                {"name": "black", "usd": {"url": "file:///b", "sha256": "0"}, "px4": {"airframe": "80001"}},
-                {"name": "blue", "usd": {"url": "file:///u", "sha256": "0"}, "px4": {"airframe": "80002"}},
+                {"name": "black", "usd": {"url": "file:///b", "sha256": "0"}},
+                {"name": "blue", "usd": {"url": "file:///u", "sha256": "0"}},
             ],
             "scenes": {"empty": {}},
             "defaults": {"vehicle": "black", "scene": "empty"},
         }
     )
-    assert resolve(LaunchConfig.from_dict({"vehicle": "blue"}), reg, fetch=False).tested_config.px4.airframe == "80002"
+    assert resolve(LaunchConfig.from_dict({"vehicle": "blue"}), reg, fetch=False).tested_config.vehicle == "blue"
 
 
 def test_a_vehicle_still_resolves_by_name():

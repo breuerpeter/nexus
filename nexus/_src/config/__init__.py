@@ -7,7 +7,6 @@ actually simulated. Dynamics such as faults and actors are control-API verbs, no
 
 from .models import (
     AssetRef,
-    Control,
     GeodeticOrigin,
     LaunchConfig,
     Output,
@@ -30,7 +29,6 @@ from .resolve import resolve
 
 __all__ = [
     "AssetRef",
-    "Control",
     "Defaults",
     "GeodeticOrigin",
     # launch schema

@@ -16,7 +16,7 @@ simulator-specific dependencies. It builds + runs a PX4 tree against that simula
 Nothing starts it by hand. The sim does:
 
 ```bash
-uv run nexus run --vehicle astro_max_base --control px4-sitl
+uv run nexus run --vehicle astro_max_base
 ```
 
 On the machine's first PX4 run that builds the image from

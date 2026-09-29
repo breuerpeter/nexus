@@ -66,7 +66,7 @@ def first_sensor_stamp_of_a_late_dial_in():
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(mavutil.mavtcpin, "recv", recv_once_px4_dialed_in)
         mp.setattr(mavutil.mavtcpin, "write", write_and_read_stamps)
-        with na.Sim(control="px4-sitl") as sim:
+        with na.Sim() as sim:
             sim.start(timeout=120.0)
     return stamps[0]
 

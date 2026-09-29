@@ -13,14 +13,14 @@ from typing import Any
 
 from pydantic import Field
 
-from .models import AssetRef, Control, GeodeticOrigin, Px4Spec, Runtime, _Base
+from .models import AssetRef, GeodeticOrigin, Px4Spec, Runtime, _Base
 
 
 class TestedConfig(_Base):
     """The fully specified, sha-pinned config the run simulated.
 
     Must contain **every input that affects the simulation** so re-running it reproduces the run.
-    Hence it carries the sensor overrides too, not just the vehicle/scene/control/runtime.
+    Hence it carries the sensor overrides too, not just the vehicle/scene/runtime.
     """
 
     __test__ = False  # not a pytest test class despite the name
@@ -33,7 +33,6 @@ class TestedConfig(_Base):
     scene_usd: AssetRef | None = None
     scene_start: tuple[float, float, float] | None = None  # scene-frame point placed at the world origin
     geodetic_origin: GeodeticOrigin | None = None
-    control: Control
     runtime: Runtime
     sensors: dict[str, Any] = Field(default_factory=dict)
 
