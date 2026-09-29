@@ -23,10 +23,18 @@ def resolve_components(usd_path: str | pathlib.Path, registry: ComponentRegistry
     """One record per applied nexus schema in the vehicle file at `usd_path`: its prim, class and keyword arguments.
 
     Creates no component. With no `registry`, the default one resolves each schema.
+
+    Raises:
+        ValueError: A prim applies a schema no class claims; the message names the prim and the schema.
     """
     if registry is None:
         registry = default_registry()
-    return [
-        ComponentSpec(prim, schema, registry.resolve(schema), kwargs)
-        for prim, schema, kwargs in read_declarations(usd_path)
-    ]
+    specs = []
+    for prim, schema, kwargs in read_declarations(usd_path):
+        cls = registry.resolve(schema)
+        if cls is None:
+            raise ValueError(
+                f"{prim}: no class claims {schema}; map it with register_component or a nexus.components entry point"
+            )
+        specs.append(ComponentSpec(prim, schema, cls, kwargs))
+    return specs
