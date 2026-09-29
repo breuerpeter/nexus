@@ -46,17 +46,26 @@ def test_missing_file_is_not_a_warning(tmp_path):
     assert px4_warnings(tmp_path / "never-written.log") == []
 
 
-def test_logger_capacity_overflow_is_forgiven_per_topic(tmp_path):
-    """The pinned PX4 tree's logger overflows its subscription cap on four known topics; a
-    different topic overflowing still gates.
+def test_logger_cap_line_is_forgiven_for_any_topic(tmp_path):
+    """The gate forgives PX4's logger cap line whatever topic it names: the topics PX4's logger
+    refuses at its cap change from boot to boot, and a refused topic is a logging limit, not a sim
+    problem.
     """
     log = (
-        "WARN  [logger] Too many subscriptions, failed to add: obstacle_distance 0\n"
-        "WARN  [logger] Too many subscriptions, failed to add: vehicle_mocap_odometry 0\n"
+        "WARN  [logger] Too many subscriptions, failed to add: distance_sensor 9\n"
+        "WARN  [logger] Too many subscriptions, failed to add: distance_sensor 9\n"
         "WARN  [logger] Too many subscriptions, failed to add: vehicle_attitude 0\n"
     )
+    assert px4_warnings(_write(tmp_path, log)) == []
+
+
+def test_every_other_logger_line_still_gates(tmp_path):
+    """Every other logger warning or error still fails the gate: when a PX4 log carries a logger
+    line other than the cap line, a watchdog trigger for one, the gate counts that line.
+    """
+    log = "ERROR [logger] Watchdog triggers - cycle trigger: 1, ready trigger: 0\n"
     assert px4_warnings(_write(tmp_path, log)) == [
-        "WARN  [logger] Too many subscriptions, failed to add: vehicle_attitude 0",
+        "ERROR [logger] Watchdog triggers - cycle trigger: 1, ready trigger: 0",
     ]
 
 
