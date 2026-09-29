@@ -69,6 +69,20 @@ def test_every_other_logger_line_still_gates(tmp_path):
     ]
 
 
+def test_a_near_match_of_the_logger_cap_line_still_gates(tmp_path):
+    """Every other logger warning or error still fails the gate, a near-match of the cap line
+    included: the cap text at error level, or from another module, still counts.
+    """
+    log = (
+        "ERROR [logger] Too many subscriptions, failed to add: distance_sensor 9\n"
+        "WARN  [commander] Too many subscriptions, failed to add: distance_sensor 9\n"
+    )
+    assert px4_warnings(_write(tmp_path, log)) == [
+        "ERROR [logger] Too many subscriptions, failed to add: distance_sensor 9",
+        "WARN  [commander] Too many subscriptions, failed to add: distance_sensor 9",
+    ]
+
+
 def test_allowlist_names_messages_never_modules():
     """The allowlist names messages, never modules: each ``WARN_ALLOWLIST`` entry is the text of
     one specific message, and none is a bare module tag such as ``[param]``.

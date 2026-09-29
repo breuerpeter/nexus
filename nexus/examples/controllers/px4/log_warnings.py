@@ -24,11 +24,12 @@ _ANSI = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 #   SITL ask for more topics than the logger's 255-entry cap, so the logger refuses the topics it
 #   adds last. Which topics changes from boot to boot, with the optional topics that exist when the
 #   logger starts. A refused topic is a logging limit, not a sim problem, so the gate forgives the
-#   line whatever topic it names. GH #139 tracks the room PX4 needs upstream.
+#   line whatever topic it names. The entry pins the level and the module, so only the logger's own
+#   warning matches. GH #139 tracks the room PX4 needs upstream.
 WARN_ALLOWLIST: tuple[str, ...] = (
     r"Parameter \w+ not found\.",
     "Preflight Fail: no heading reference",
-    "Too many subscriptions, failed to add:",
+    r"\bWARN\s+\[logger\] Too many subscriptions, failed to add: \w+ \d+\s*$",
 )
 
 
