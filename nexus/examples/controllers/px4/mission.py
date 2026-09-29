@@ -74,7 +74,7 @@ def main() -> int:
         # offsets the origin.
         # Every altitude in the plan is relative to home, so no absolute altitude is ever needed.
         na.logger.info(f"[mission] {PLAN.name}: {len(plan.items)} items, home {lat:.6f},{lon:.6f}")
-        with na.Sim(control="px4-sitl", scene=SCENE, geo=f"{lat},{lon}", device="cuda", log=True) as sim:
+        with na.Sim(scene=SCENE, geo=f"{lat},{lon}", device="cuda", log=True) as sim:
             sim.start(timeout=args.timeout)  # drive setup as far as PX4 lockstep
             na.logger.info("[mission] PX4 lockstep established: uploading the plan over :14540")
 

@@ -55,10 +55,17 @@ def daemon(monkeypatch, tmp_path):
     return runs
 
 
+# A vehicle that declares PX4 on its root prim, and nothing else.
+PX4_VEHICLE = (
+    b'#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n\n'
+    b'def Xform "vehicle" (\n    prepend apiSchemas = ["NexusPx4API"]\n)\n{\n    string nexus:airframe = "80001"\n}\n'
+)
+
+
 def _registry(usd_ref: dict) -> Registry:
     return Registry.from_dict(
         {
-            "vehicles": [{"name": "astro", "usd": usd_ref, "px4": {"airframe": "80001"}}],
+            "vehicles": [{"name": "astro", "usd": usd_ref}],
             "scenes": {"empty": {}},
             "defaults": {"vehicle": "astro", "scene": "empty"},
         }
@@ -67,7 +74,7 @@ def _registry(usd_ref: dict) -> Registry:
 
 def _usd_ref(tmp_path) -> dict:
     blob = tmp_path / "vehicle.usda"
-    blob.write_bytes(b"#usda 1.0\n")
+    blob.write_bytes(PX4_VEHICLE)
     return {"url": blob.as_uri(), "sha256": hashlib.sha256(blob.read_bytes()).hexdigest(), "filename": "vehicle.usda"}
 
 
@@ -80,21 +87,9 @@ def test_resolve_to_vehicle_builder_uses_resolved_usd(tmp_path):
         LaunchConfig().set_vehicle("astro"), reg, cache_dir=tmp_path / "cache"
     )
     # the builder points at the verified, content-addressed local copy of the USD
-    assert Path(builder.cfg["usd_path"]).read_bytes() == b"#usda 1.0\n"
+    assert Path(builder.cfg["usd_path"]).read_bytes() == PX4_VEHICLE
     assert ref["sha256"] in str(builder.cfg["usd_path"])  # content-addressed cache path
     assert resolved.tested_config.px4.airframe == "80001"
-
-
-def test_non_px4_control_kinds_are_rejected():
-    """PX4 is the one first-class control kind: everything else is an example that self-assembles
-    via Sim.from_orchestrator; the Control schema rejects the old kinds at validation time.
-    """
-    from pydantic import ValidationError
-
-    with pytest.raises(ValidationError):
-        LaunchConfig().set_control("builtin")
-    with pytest.raises(ValidationError):
-        LaunchConfig().set_control("policy")
 
 
 def test_scenario_from_launch_honors_dt_seed_device(tmp_path):
@@ -128,7 +123,7 @@ def test_scene_threads_uniformly_and_anchors_gps(tmp_path, monkeypatch):
 
     reg = Registry.from_dict(
         {
-            "vehicles": [{"name": "astro", "usd": _usd_ref(tmp_path), "px4": {"airframe": "80001"}}],
+            "vehicles": [{"name": "astro", "usd": _usd_ref(tmp_path)}],
             "scenes": {
                 "empty": {},
                 "geo-scene": {
@@ -148,7 +143,7 @@ def test_scene_threads_uniformly_and_anchors_gps(tmp_path, monkeypatch):
         return "ORCH"
 
     monkeypatch.setattr(L, "build_orchestrator", fake_build)
-    lc = LaunchConfig().set_vehicle("astro").set_control("px4-sitl").set_scene("geo-scene")
+    lc = LaunchConfig().set_vehicle("astro").set_scene("geo-scene")
     assert L.build_from_launch(lc, registry=reg, cache_dir=tmp_path / "cache") == "ORCH"
 
     assert captured["cfg"]["scene_usd_path"] is not None, "the model build + render stage get the scene USD"
@@ -173,7 +168,7 @@ def test_build_from_launch_starts_the_px4_peer_before_the_assembly(tmp_path, mon
     monkeypatch.setattr(L, "build_orchestrator", lambda label, cfg, **kw: order.append("orchestrator") or kw)
 
     reg = _registry(_usd_ref(tmp_path))
-    lc = LaunchConfig().set_vehicle("astro").set_control("px4-sitl")
+    lc = LaunchConfig().set_vehicle("astro")
     kw = L.build_from_launch(lc, registry=reg, cache_dir=tmp_path / "cache")
 
     started = [r["environment"].get("PX4_SIM_MODEL") for r in daemon if r.get("detach", True)]

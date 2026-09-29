@@ -35,7 +35,6 @@ assets:
 vehicles:
   - name: my_quad
     usd: { name: my_quad, sha256: 3f1c…d92 }             # completed against the base
-    px4: { airframe: my_quad }
   - name: borrowed
     usd: { url: "https://cdn.example/x-3f1c…d92.usdz", sha256: 3f1c…d92 }   # hosted elsewhere
   - name: in_progress
@@ -43,6 +42,10 @@ vehicles:
 
 defaults: { vehicle: my_quad }   # the scene stays the bundled default
 ```
+
+A vehicle entry names no controller: the vehicle's Universal Scene Description (USD) file declares
+it. PX4 flies a vehicle whose root prim applies `NexusPx4API` and names its airframe for Software
+In The Loop (SITL) in `nexus:airframe`, the make target without PX4's `none_` prefix. The [schema reference](../reference/schemas.md) lists the attribute.
 
 An entry either carries a full `url` or a compact `{name, sha256}` that its own catalog's
 `assets.base` completes into `<base>/assets/usd/{vehicles,scenes}/<name>-<sha256>.usdz`. The hosted

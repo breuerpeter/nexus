@@ -57,7 +57,7 @@ def main() -> int:
 
     try:
         na.logger.info("[manual] Newton starting in-process (actuator from USD); serving :4560 …")
-        with na.Sim(control="px4-sitl", device="cuda", log=True) as sim:
+        with na.Sim(device="cuda", log=True) as sim:
             sim.start(timeout=args.timeout)  # drive setup as far as PX4 lockstep
             na.logger.info("[manual] PX4 lockstep established: flying via MANUAL_CONTROL (:14540)")
 

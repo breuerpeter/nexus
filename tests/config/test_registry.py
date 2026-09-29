@@ -8,13 +8,13 @@ import nexus
 from nexus._src.config import NoMatchError, Registry, RegistryError, load_registry
 
 
-def _veh(name, airframe):
-    return {"name": name, "usd": {"url": f"file:///{name}", "sha256": "0"}, "px4": {"airframe": airframe}}
+def _veh(name):
+    return {"name": name, "usd": {"url": f"file:///{name}", "sha256": "0"}}
 
 
-BASE = _veh("base", "80001")
-FPV = _veh("fpv", "80002")
-FPV_LR1 = _veh("fpv_lr1", "80003")
+BASE = _veh("base")
+FPV = _veh("fpv")
+FPV_LR1 = _veh("fpv_lr1")
 
 
 def _reg(vehicles, **kw):
@@ -23,7 +23,7 @@ def _reg(vehicles, **kw):
 
 def test_by_name():
     reg = _reg([BASE, FPV_LR1])
-    assert reg.by_name("fpv_lr1").px4.airframe == "80003"
+    assert reg.by_name("fpv_lr1").usd.url == "file:///fpv_lr1"
 
 
 def test_unknown_name_raises():
@@ -121,12 +121,12 @@ def test_the_two_astro_max_vehicles_keep_the_usds_they_fly_today():
     """
     reg = nexus.Registry.from_yaml()
     assert [reg.by_name(name).usd.url for name in ("astro_max_base", "astro_max_fpv")] == [
-        f"{HOSTED}/astro_max_base-d2f538aaeeef4c2a951cac3f9e062003e7c4cc6e5e78b2960076b69a393f92e8.usdz",
-        f"{HOSTED}/astro_max_fpv-9dc55c51a6912faacf2614a7b3e244bf10233f440a8dd920490857df03daf5ad.usdz",
+        f"{HOSTED}/astro_max_base-11dd2b7ce7576b7c01600f6450bc3dbd8f2b2ca81eb657806532f173eb36093b.usdz",
+        f"{HOSTED}/astro_max_fpv-239f1f6b936b93c9ff32e2e2a6d210c3ccff1c79f040f197b2032f71f70f6bf4.usdz",
     ]
 
 
-BUNDLED_ASTRO = f"{HOSTED}/astro_max_base-d2f538aaeeef4c2a951cac3f9e062003e7c4cc6e5e78b2960076b69a393f92e8.usdz"
+BUNDLED_ASTRO = f"{HOSTED}/astro_max_base-11dd2b7ce7576b7c01600f6450bc3dbd8f2b2ca81eb657806532f173eb36093b.usdz"
 BUNDLED_EMPTY_SHA = "ab15e88be59c0ee93e63160c34b08485e3136d1f88313f24dcd67e482ecbed05"
 REPIN_SHA = "1111111111111111111111111111111111111111111111111111111111111111"
 

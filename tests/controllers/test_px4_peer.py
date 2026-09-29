@@ -199,7 +199,10 @@ def assembly(monkeypatch):
 
 def _vehicle(tmp_path) -> dict:
     blob = tmp_path / "vehicle.usda"
-    blob.write_bytes(b"#usda 1.0\n")
+    blob.write_text(
+        '#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n\n'
+        'def Xform "vehicle" (\n    prepend apiSchemas = ["NexusPx4API"]\n)\n{\n    string nexus:airframe = "astro_max"\n}\n'
+    )
     sha = hashlib.sha256(blob.read_bytes()).hexdigest()
     return {"name": "astro", "usd": {"url": blob.as_uri(), "sha256": sha, "filename": "vehicle.usda"}}
 

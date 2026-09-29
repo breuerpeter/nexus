@@ -7,7 +7,11 @@ import pytest
 
 cli = importlib.import_module("nexus._src.cli.main")
 
-PLAIN_USD = '#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\ndef Xform "vehicle" {}\n'
+# A vehicle that declares PX4 and authors no camera.
+PLAIN_USD = (
+    '#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n'
+    'def Xform "vehicle" (\n    prepend apiSchemas = ["NexusPx4API"]\n)\n{\n    string nexus:airframe = "astro_max"\n}\n'
+)
 
 
 def test_log_and_view_are_exclusive(monkeypatch):

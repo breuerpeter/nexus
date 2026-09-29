@@ -5,8 +5,12 @@
     upAxis = "Z"
 )
 
-def Xform "Vehicle"
+def Xform "Vehicle" (
+    prepend apiSchemas = ["NexusPx4API"]
+)
 {
+    string nexus:airframe = "astro_max"
+
     def Xform "body"
     {
         def Xform "Imu" (

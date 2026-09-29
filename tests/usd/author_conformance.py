@@ -13,12 +13,14 @@ import nexus  # noqa: F401  # registers the nexus schema plugin
 
 
 def author(out: Path) -> None:
-    """Write the fixture to `out`: one body under the default prim, with an Inertial Measurement Unit (IMU) on a lever arm."""
+    """Write the fixture to `out`: PX4 on the default prim, and one body under it with an Inertial Measurement Unit (IMU) on a lever arm."""
     stage = Usd.Stage.CreateNew(str(out))
     UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
     UsdGeom.SetStageMetersPerUnit(stage, 1.0)
     vehicle = UsdGeom.Xform.Define(stage, "/Vehicle")
     stage.SetDefaultPrim(vehicle.GetPrim())
+    vehicle.GetPrim().ApplyAPI("NexusPx4API")
+    vehicle.GetPrim().GetAttribute("nexus:airframe").Set("astro_max")
     UsdGeom.Xform.Define(stage, "/Vehicle/body")
     imu = UsdGeom.Xform.Define(stage, "/Vehicle/body/Imu")
     imu.AddTranslateOp().Set(Gf.Vec3d(0.01, -0.02, 0.03))

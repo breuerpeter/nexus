@@ -44,6 +44,7 @@ class Px4MavlinkController:
     def __init__(
         self,
         *,
+        airframe: str = "",
         ip: str = "0.0.0.0",
         port: int = 4560,
         sysid: int = 1,
@@ -55,6 +56,8 @@ class Px4MavlinkController:
         """Configure the HIL link; nothing listens until ``connect``.
 
         Args:
+            airframe: The SITL airframe the vehicle declares, `nexus:airframe` of its `NexusPx4API`
+                schema, without PX4's ``none_`` prefix: the peer the run starts flies it.
             ip: The address the HIL server binds.
             port: The TCP port the HIL server listens on, the run's ``peers.px4.hil_port``: PX4 dials it.
             sysid: This end's MAVLink system id.
@@ -63,6 +66,7 @@ class Px4MavlinkController:
             ulog_dir: Where PX4's ULog lands, ``PX4_ULOG_DIR`` by default.
             target_system: PX4's MAVLink system id, the run's ``peers.px4.system_id``: instance + 1.
         """
+        self.airframe = airframe
         self.ip = ip
         self.port = port
         self.sysid = sysid

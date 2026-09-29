@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 def sim_argparser(description: str | None = None) -> argparse.ArgumentParser:
     """The shared argument parser for ``Sim``-driven scripts and the ``nexus`` command-line tool.
 
-    Carries the common flags :meth:`Sim.from_args` reads, ``--vehicle`` / ``--control`` / ``--device``
+    Carries the common flags :meth:`Sim.from_args` reads, ``--vehicle`` / ``--device``
     / ``--scene`` / ``--px4`` / ``--px4-instance`` / ``--max-steps`` / ``--log`` / ``--view``, so the
     command-line tool and any Sim-driven script share one arg surface. The bundled examples are zero-arg by design, and their configuration
     lives in the script; this parser serves the ``nexus`` command-line tool.
@@ -35,7 +35,6 @@ def sim_argparser(description: str | None = None) -> argparse.ArgumentParser:
         help="path to a catalog that extends the bundled one; omit to take the nearest\n"
         "nexus.registry.yaml at or above the working directory, else only the bundled one",
     )  # fmt: skip
-    p.add_argument("--control", default="px4-sitl", help="control kind (px4-sitl)")
     p.add_argument(
         "--device", default="auto", choices=["cpu", "cuda", "auto"], help="compute device (cpu=deterministic)"
     )

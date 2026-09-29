@@ -15,7 +15,7 @@ from pydantic import Field, model_validator
 from nexus._src.assets.resolver import hosted_url
 from nexus._src.core import logger
 
-from .models import AssetRef, GeodeticOrigin, Px4Spec, _Base
+from .models import AssetRef, GeodeticOrigin, _Base
 
 
 def _expand_usd(data, kind: str, base: str | None):
@@ -49,11 +49,12 @@ class NoMatchError(RegistryError):
 
 
 class VehicleVariant(_Base):
-    """One catalog entry: a `name` handle + its Universal Scene Description (USD) + PX4."""
+    """One catalog entry: a `name` handle and its Universal Scene Description (USD) file, which
+    declares its controller.
+    """
 
     name: str
     usd: AssetRef
-    px4: Px4Spec | None = None
 
 
 class Scene(_Base):

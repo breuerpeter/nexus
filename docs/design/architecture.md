@@ -151,8 +151,8 @@ artifacts.
 
 A typed [`LaunchConfig`](../reference/api/configuration.md), resolved against a `Registry`,
 describes a run. A launch names the vehicle variant it flies, and a launch that names none flies the
-registry's default. Resolution maps the variant to its Universal Scene Description (USD) and its PX4
-airframe, and emits a fully specified, sha-pinned **tested-configuration receipt**, so a test records
+registry's default. Resolution maps the variant to its Universal Scene Description (USD), which
+declares its controller: PX4, through the `NexusPx4API` schema and its airframe. It emits a fully specified, sha-pinned **tested-configuration receipt**, so a test records
 exactly what it simulated. Vehicle assets are content-addressed. The
 [publish pipeline](conventions.md) converts a USD to a preview `.glb` and uploads both.
 

@@ -21,3 +21,15 @@ class "NexusImuAPI" (
         Units: radians per second"""
     )
 }
+
+class "NexusPx4API" (
+    doc = "PX4 flies the vehicle over its Software In The Loop (SITL) link, on the vehicle's root prim."
+)
+{
+    string nexus:airframe = "" (
+        doc = """The SITL airframe make target without PX4's `none_` prefix: `astro_max` runs `make px4_sitl none_astro_max`. The build fails when it is empty.
+
+        Range: a PX4 SITL airframe name
+        Units: none"""
+    )
+}

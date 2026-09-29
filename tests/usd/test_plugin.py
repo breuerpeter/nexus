@@ -69,7 +69,7 @@ def test_the_conformance_fixture_applies_every_schema_the_plugin_defines():
 
     stage = Usd.Stage.Open(str(FIXTURE))
     applied = {name for prim in stage.Traverse() for name in prim.GetAppliedSchemas()}
-    assert applied == set(schema_names()) == {"NexusImuAPI"}
+    assert applied == set(schema_names()) == {"NexusImuAPI", "NexusPx4API"}
 
 
 def test_the_script_beside_the_fixture_reproduces_it(tmp_path):
