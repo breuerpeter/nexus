@@ -1,7 +1,7 @@
 {
   "_meta": {
-    "sha": "f414a10ef37b",
-    "recorded": "2026-08-16",
+    "sha": "8d6d4940aac3",
+    "recorded": "2026-09-29",
     "gpu": "NVIDIA A10G",
     "mission": "20,0,5; 20,-20,8; 0,-20,5; 0,0,5",
     "alt_m": 5.0,
@@ -14,13 +14,13 @@
       "vehicle": "astro_max_base",
       "scene": "empty",
       "mission_ok": true,
-      "rtf": 0.435,
-      "full_rtf": 0.43,
-      "control_steps": 9902,
+      "rtf": 0.456,
+      "full_rtf": 0.455,
+      "control_steps": 9643,
       "rtf_win": {
-        "min": 0.433,
-        "max": 0.438,
-        "avg": 0.435,
+        "min": 0.452,
+        "max": 0.46,
+        "avg": 0.456,
         "std": 0.002,
         "n": 8
       }
@@ -31,14 +31,14 @@
       "vehicle": "astro_max_base",
       "scene": "empty",
       "mission_ok": true,
-      "rtf": 1.967,
-      "full_rtf": 1.966,
-      "control_steps": 11091,
+      "rtf": 2.238,
+      "full_rtf": 2.229,
+      "control_steps": 11806,
       "rtf_win": {
-        "min": 1.938,
-        "max": 2.068,
-        "avg": 1.985,
-        "std": 0.052,
+        "min": 2.165,
+        "max": 2.363,
+        "avg": 2.256,
+        "std": 0.07,
         "n": 10
       }
     },
