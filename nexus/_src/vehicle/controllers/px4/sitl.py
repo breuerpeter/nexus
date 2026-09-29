@@ -27,12 +27,16 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from nexus._src import containers
 from nexus._src.containers import ensure_image, run_container, stop_container
 from nexus._src.core import logger
+from nexus._src.peers import LABEL
 
 from . import checkout
 
 IMAGE = "nexus-px4-sitl"
+_INSTANCE = "nexus.px4.instance"  # the label that carries the container's PX4 instance
+_OWNER = "nexus.owner"  # the label that carries the process that started the container
 IMAGE_DIR = Path(__file__).with_name("px4-sitl")
 PX4_LOG_DIR = os.path.expanduser("~/.cache/nexus/logs")  # beside the run's .rrd and the Kit console tee
 
@@ -112,9 +116,11 @@ class Px4Sitl:
         background and dials the sim's HIL server.
 
         Raises:
-            RuntimeError: No PX4 tree, or the image build failed, or the docker daemon is unreachable.
+            RuntimeError: A live process holds this instance, or there is no PX4 tree, or the image
+                build failed, or the docker daemon is unreachable.
             docker.errors.ContainerError: The PX4 build failed.
         """
+        self._clear_leftovers()
         build(self.tree)
         kwargs = _container_kwargs(self.tree)
         # PX4's own `make px4_sitl none_<airframe>` runs the binary with the airframe in its
@@ -131,8 +137,37 @@ class Px4Sitl:
             log_path=self.log_path,
             network_mode="host",
             auto_remove=True,
+            labels={LABEL: "px4", _INSTANCE: str(self.instance), _OWNER: str(os.getpid())},
             **kwargs,
         )
+
+    def _clear_leftovers(self) -> None:
+        """Remove a PX4 container of this instance whose process has exited, and fail while a live one
+        holds the instance.
+
+        PX4 SITL outlives a run killed without its teardown, a closed terminal or a harness's
+        timeout, and keeps dialing the sim's port. Each run's container has a name of its own, so no
+        later start would clear it by name. Two live PX4s on one instance would share every port, so
+        a live holder fails this start instead of losing its autopilot.
+        """
+        from docker.errors import NotFound
+
+        # Through the module, not a name imported here, so a stand-in daemon a test patches in reaches it.
+        held = containers.client().containers.list(
+            all=True, filters={"label": [f"{LABEL}=px4", f"{_INSTANCE}={self.instance}"]}
+        )
+        for other in held:
+            owner = int(other.labels.get(_OWNER) or 0)
+            if owner and _alive(owner):
+                raise RuntimeError(
+                    f"PX4 instance {self.instance} is in use by process {owner}, container {other.name}: "
+                    "give this run another instance, --px4-instance or Sim(px4_instance=)"
+                )
+            logger.info(f"removing the leftover PX4 container {other.name}: process {owner} has exited")
+            try:
+                other.remove(force=True)
+            except NotFound:
+                pass
 
     def alive(self) -> bool:
         """Whether the container still runs; it removes itself when it exits."""
@@ -156,6 +191,17 @@ class Px4Sitl:
     def artifacts(self) -> dict:
         """The PX4 console log of this run, the ``px4_log`` artifact the PX4 warnings gate reads."""
         return {"px4_log": self.log_path}
+
+
+def _alive(pid: int) -> bool:
+    """Whether process ``pid`` runs on this machine; one of another user's counts."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
 __all__ = ["IMAGE", "IMAGE_DIR", "PX4_LOG_DIR", "Px4Sitl", "build", "prepare"]

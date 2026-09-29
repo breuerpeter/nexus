@@ -1,11 +1,13 @@
 """The PX4 Software In The Loop (SITL) peer: the container it starts, field by field, that the
-runner clears a same-name leftover first, that a missing tree names its fix, that the container runs
-as the tree's owner, that the peer's stop removes only what it started, and that this module stays
-the only definition of the container, see GH #86.
+runner clears a same-name leftover first, that a start removes a leftover of its instance whose
+process has exited and fails while a live one holds it, that a missing tree names its fix, that the
+container runs as the tree's owner, that the peer's stop removes only what it started, and that this
+module stays the only definition of the container, see GH #86.
 """
 
 import os
 import pathlib
+import subprocess
 
 import pytest
 import yaml
@@ -17,12 +19,39 @@ from nexus._src.vehicle.controllers.px4.sitl import IMAGE, Px4Sitl, build
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
+class _Calls(list):
+    """What the peer asked of the stand-in daemon, in order; ``held`` seeds the containers it runs already."""
+
+    def __init__(self):
+        super().__init__()
+        self.held: list[_Held] = []
+
+
+class _Held:
+    """A container the daemon runs before the test starts: a leftover, or another run's."""
+
+    def __init__(self, calls, name, *, instance, owner):
+        self._calls = calls
+        self.name = name
+        self.labels = {"nexus.peer": "px4", "nexus.px4.instance": str(instance), "nexus.owner": str(owner)}
+
+    def remove(self, force=False):
+        self._calls.append(("remove", self.name))
+
+
+def _dead_pid() -> int:
+    """The pid of a process that has exited."""
+    process = subprocess.Popen(["true"])
+    process.wait()
+    return process.pid
+
+
 @pytest.fixture
 def daemon(monkeypatch):
     """A stand-in docker daemon that already holds the px4-sitl image: it records what the peer asks
     of it, and touches nothing real.
     """
-    calls = []
+    calls = _Calls()
 
     class Images:
         def get(self, tag):
@@ -37,7 +66,11 @@ def daemon(monkeypatch):
 
         def get(self, name):
             calls.append(("get", name))
-            raise NotFound(name)  # no leftover in a test
+            raise NotFound(name)  # no leftover of the same name in a test
+
+        def list(self, **kwargs):
+            wanted = dict(f.split("=", 1) for f in (kwargs.get("filters") or {}).get("label", []))
+            return [c for c in calls.held if wanted.items() <= c.labels.items()]
 
     class Client:
         images = Images()
@@ -89,6 +122,7 @@ def test_start_runs_px4_with_the_runs_instance_and_airframe(daemon, tree, tmp_pa
         "volumes": {str(tree): {"bind": str(tree), "mode": "rw"}},
         "auto_remove": True,
         "network_mode": "host",
+        "labels": {"nexus.peer": "px4", "nexus.px4.instance": "2", "nexus.owner": str(os.getpid())},
     } and launch["image"].startswith(f"{IMAGE}:")
 
 
@@ -108,6 +142,40 @@ def test_start_clears_a_stale_container_of_its_name(daemon, tree, tmp_path):
 
     kinds = [kind for kind, _ in daemon]
     assert kinds.index("get") < len(kinds) - 1 and kinds[-1] == "run"
+
+
+def test_start_removes_a_leftover_of_its_instance_whose_process_has_exited(daemon, tree, tmp_path):
+    """PX4 SITL outlives a run killed without its teardown and keeps dialing the sim's port, and no
+    later run shares its container's name, so the next start on that instance removes it first.
+    """
+    daemon.held.append(_Held(daemon, "nexus-px4-1-0", instance=0, owner=_dead_pid()))
+
+    _peer(tree, tmp_path).start()
+
+    kinds = [kind for kind, _ in daemon]
+    assert (kinds[0], kinds[-1]) == ("remove", "run")
+
+
+def test_start_fails_naming_the_live_process_that_holds_its_instance(daemon, tree, tmp_path):
+    """Two live PX4s on one instance would share every port, so the start fails and names the holder,
+    and neither removes the live run's autopilot nor starts a second one.
+    """
+    holder = os.getppid()
+    daemon.held.append(_Held(daemon, "nexus-px4-7-0", instance=0, owner=holder))
+
+    with pytest.raises(RuntimeError, match=f"instance 0 is in use by process {holder}"):
+        _peer(tree, tmp_path).start()
+
+    assert list(daemon) == []
+
+
+def test_start_leaves_a_container_of_another_instance_alone(daemon, tree, tmp_path):
+    """Runs on two instances fly at once, so a start touches only its own instance's containers."""
+    daemon.held.append(_Held(daemon, "nexus-px4-7-1", instance=1, owner=os.getppid()))
+
+    _peer(tree, tmp_path).start()
+
+    assert [kind for kind, _ in daemon if kind in ("remove", "run")] == ["run", "run"]
 
 
 def test_build_names_the_fix_when_the_tree_is_missing(monkeypatch, tmp_path):

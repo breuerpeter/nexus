@@ -19,6 +19,10 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
+LABEL = "nexus.peer"
+"""The container label that marks a peer by its kind, ``px4`` or ``kit``, so a start or a runner can
+find a leftover one."""
+
 
 @runtime_checkable
 class Peer(Protocol):
@@ -36,4 +40,4 @@ class Peer(Protocol):
     def alive(self) -> bool: ...
 
 
-__all__ = ["Peer"]
+__all__ = ["LABEL", "Peer"]

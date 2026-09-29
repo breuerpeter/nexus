@@ -38,6 +38,9 @@ def daemon(monkeypatch, tmp_path):
         def get(self, name):
             raise NotFound(name)
 
+        def list(self, **kwargs):
+            return []
+
     class Client:
         images = Images()
         containers = Containers()

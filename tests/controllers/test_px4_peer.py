@@ -43,9 +43,10 @@ from nexus._src.vehicle.controllers.px4 import controller as ctrl
 
 
 class _Container:
-    def __init__(self, daemon, name):
+    def __init__(self, daemon, name, labels=None):
         self._daemon = daemon
         self.name = name
+        self.labels = dict(labels or {})
 
     def logs(self, **kwargs):
         yield from ()
@@ -85,7 +86,7 @@ class _Daemon:
                 daemon.runs.append({"image": image, **kwargs})
                 if not kwargs.get("detach", True):
                     return b""
-                container = _Container(daemon, kwargs.get("name"))
+                container = _Container(daemon, kwargs.get("name"), kwargs.get("labels"))
                 if container.name is not None:
                     daemon.live[container.name] = container
                 return container
@@ -94,6 +95,10 @@ class _Daemon:
                 if name in daemon.live:
                     return daemon.live[name]
                 raise NotFound(f"no container {name}")
+
+            def list(self, **kwargs):
+                wanted = dict(f.split("=", 1) for f in (kwargs.get("filters") or {}).get("label", []))
+                return [c for c in daemon.live.values() if wanted.items() <= c.labels.items()]
 
         self.images = Images()
         self.api = Api()

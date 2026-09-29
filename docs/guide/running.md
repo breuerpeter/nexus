@@ -202,8 +202,10 @@ Both modes carry the same content, PX4 included: there is no second recording an
 
 !!! note "One PX4 per instance"
     Each run's container carries the run's own name, `nexus-px4-<pid>-<instance>`, and the run removes it on
-    exit, so a second run stops nothing of the first. Two runs on one instance still share PX4's
-    ports and the second fails at its HIL bind: give it `--px4-instance 1`.
+    exit, so a second run stops nothing of the first. Two live runs on one instance would share
+    PX4's ports, so the second fails at its start and names the process that holds the instance:
+    give it `--px4-instance 1`. A run killed without its teardown, a closed terminal or a harness's
+    timeout, leaves its PX4 running, and the next run on that instance removes it.
 
 !!! note "Use `uv run rerun --connect …`, never a bare `rerun`"
     Two reasons. **First,** nexus hosts the Rerun gRPC server on 9876, and the viewer is
