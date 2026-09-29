@@ -340,14 +340,19 @@ jobs:
           ${{ inputs.command }}
       # What the caller's entry must not carry: actions/cache archives the whole folder, an exclusion
       # pattern removes nothing inside it, so the caller's cache-drop paths go before the post step
-      # saves the entry. always(): a red run still saves what it built.
+      # saves the entry. always(): a red run still saves what it built. Bash expands no `~` that a
+      # variable holds, so a leading one becomes $HOME here before the glob expands.
       - name: Drop what the cache entry must not carry
         if: ${{ always() && inputs.cache-drop != '' }}
         env:
           DROP: ${{ inputs.cache-drop }}
         run: |
-          # shellcheck disable=SC2086 # a path is a glob, so it expands unquoted
-          while IFS= read -r p; do [ -n "$p" ] && rm -rf $p; done <<< "$DROP"
+          while IFS= read -r p; do
+            [ -n "$p" ] || continue
+            p="${p/#\~/$HOME}"
+            # shellcheck disable=SC2086 # a path is a glob, so it expands unquoted
+            rm -rf $p
+          done <<< "$DROP"
       - name: Upload coverage to Codecov
         if: ${{ inputs.coverage-flags != '' }}
         uses: codecov/codecov-action@v5
