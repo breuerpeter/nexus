@@ -467,6 +467,15 @@ class Orchestrator:
                 return
         raise ConnectionError(f"controller did not respond within {self.preroll_timeout}s")
 
+    def _open_tick(self, tick) -> bool:
+        """Advance the clock and open the tick's log, before any host stage, so the Model Predictive
+        Control (MPC) example can log its horizon inside ``exchange``. On a graph the loop calls this
+        once it has launched the tick's first replay, so the host work overlaps the device work.
+        """
+        tick.t = self.clock.advance()
+        self._begin_log(tick.t)
+        return True
+
     def _capture(self, segments, tick) -> list:
         """Capture each device segment into its own CUDA graph, serially, before the first tick. Any
         other stream operation during a capture kills it, so the warm pass and the seed row complete
@@ -509,12 +518,11 @@ class Orchestrator:
                 prof.tick_begin()
                 if count == warmup_steps:
                     t_warm, steps_warm = time.monotonic(), count
-                tick.t = self.clock.advance()
-                self._begin_log(
-                    tick.t
-                )  # the timeline before any host stage; the Model Predictive Control (MPC) example logs its horizon there
+                opened = False
                 for i, seg in enumerate(segments):
                     if seg.kind == "host":
+                        if not opened:
+                            opened = self._open_tick(tick)
                         st = seg.stages[0]
                         if st.run(tick) is False:  # the peer stopped answering: a run's normal end
                             count -= 1  # the disconnect tick didn't advance the sim
@@ -526,8 +534,12 @@ class Orchestrator:
                         prof.gpu_begin()
                         replay(graphs[i])
                         prof.gpu_end()
+                        if not opened:  # the clock advances while the first graph runs on the device
+                            opened = self._open_tick(tick)
                         prof.mark("graph")
                     else:
+                        if not opened:
+                            opened = self._open_tick(tick)
                         for st in seg.stages:
                             st.run(tick)
                         prof.mark("stages")
