@@ -57,6 +57,11 @@ all      = ["nexus-sim[policy,examples]"]
 [project.scripts]
 nexus = "nexus._src.cli.main:main"
 
+# The class each nexus schema resolves to, loaded only when a vehicle applies the schema. A project
+# beside nexus declares its own classes in the same group.
+[project.entry-points."nexus.components"]
+NexusImuAPI = "nexus._src.vehicle.sensors:ImuSensor"
+
 [project.urls]
 Homepage = "https://github.com/breuerpeter/nexus"
 Documentation = "https://breuerpeter.github.io/nexus/"
