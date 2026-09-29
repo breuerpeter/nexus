@@ -33,7 +33,6 @@ on:
 permissions:
   id-token: write # OIDC — gpu-runner assumes the AWS role to start/stop the box
   contents: read
-  packages: read # gpu-runner's GHCR login step (harmless here; required by the shared run job)
 
 concurrency:
   # One group per PR per event: the two events of one PR must not cancel each other, and on

@@ -42,6 +42,7 @@ if TYPE_CHECKING:
     import newton
 
     from nexus._src.logging import Logger
+    from nexus._src.peers import Peer
 
     from .interfaces import (
         Actuator,
@@ -89,6 +90,7 @@ class Orchestrator:
         sensors: Iterable[Sensor],
         controller: Controller,
         renderer: Renderer | None = None,
+        peers: Iterable[Peer] = (),
         logger: Logger | None = None,
         on_tick: Callable[[newton.State, float, int], None] | None = None,
         preroll_timeout: float = 2.0,
@@ -121,6 +123,10 @@ class Orchestrator:
                 :class:`~nexus._src.rendering.KitRenderer`: the loop calls only
                 ``on_physics_ready()``/``close()``; the host-rate RTX camera *sensors* drive
                 rendering itself at the host seam.
+            peers: The peers the build started for this run, for example the PX4 Software In The
+                Loop (SITL) container. The loop stops each when the run ends, whether it ran out,
+                stopped early or never stepped; it starts none, since a peer boots while the build
+                goes on.
             logger: Optional :class:`~nexus._src.logging.Logger`: the recording
                 sink + shared log calls. ``None`` ⇒ no recording and no per-tick log
                 fan-out, for max speed. When present, each loggable component's
@@ -154,6 +160,7 @@ class Orchestrator:
         self._host_sensors = [s for s in self.sensors if getattr(s, "host_rate", False)]
         self.controller = controller
         self.renderer = renderer
+        self.peers = list(peers)
         # The single logging switch: a `Logger`, the recording sink + the shared log_state/log_image
         # calls, or None. None ⇒ no recording and no per-tick log fan-out → max benchmark/CI speed.
         self.logger = logger
@@ -367,7 +374,7 @@ class Orchestrator:
 
                 controls = self.controller.exchange(meas, t, timeout=self.exchange_timeout)
                 if controls is None:  # blocking-lockstep liveness: a lost peer ends the run
-                    raise ConnectionError("controller disconnected (no actuator controls received)")
+                    raise ConnectionError(f"{self._controller_name()} disconnected (no actuator controls received)")
                 prof.mark("exchange")  # the host seam, for example the PX4 MAVLink round-trip
 
                 # Zero-order-hold the controls over physics_substeps finer physics steps.
@@ -596,7 +603,7 @@ class Orchestrator:
                 prof.mark("exchange")  # the host seam: the PX4 MAVLink round-trip / the MPC solve
                 if controls is None:  # controller disconnected -> end the run
                     count -= 1  # the disconnect tick didn't advance the sim
-                    raise ConnectionError("controller disconnected (no actuator controls received)")
+                    raise ConnectionError(f"{self._controller_name()} disconnected (no actuator controls received)")
                 self.actuator.write_controls(controls)  # H2D for the next replay, host seam
                 prof.mark("write")
                 self._sample_host(state, t, meas)  # host-rate sensors, RTX cameras, self-decimated
@@ -721,7 +728,24 @@ class Orchestrator:
             try:
                 self.controller.close()
             finally:
-                self._close_logs()
+                try:
+                    self._stop_peers()
+                finally:
+                    self._close_logs()
+
+    def _controller_name(self) -> str:
+        """The controller's class, so a run's end names the peer that left it: ``Px4MavlinkController``."""
+        return type(self.controller).__name__
+
+    def _stop_peers(self) -> None:
+        """Stop each peer the build started. A peer whose stop fails, a docker daemon that went
+        away, must not cost the rest of the teardown: the recording still has to flush.
+        """
+        for peer in self.peers:
+            try:
+                peer.stop()
+            except Exception as exc:
+                logger.warning(f"stopping a peer failed ({exc})")
 
     def step(self) -> bool:
         """Advance the run one control tick, returning ``True`` if a tick ran or ``False`` when the run has
@@ -752,8 +776,8 @@ class Orchestrator:
 
     def close(self) -> None:
         """Tear down the run, ``Sim.stop()``. A partially stepped run closes its tick generator, running
-        its ``finally``, RTF stamp + renderer/controller/logs teardown. A run that never stepped closes
-        the renderer, whose peer started at build, and the logs. Idempotent: a no-op once the run has
+        its ``finally``, RTF stamp + renderer/controller/peers/logs teardown. A run that never stepped
+        closes the renderer and stops the peers, which started at build, and closes the logs. Idempotent: a no-op once the run has
         finished, ``run()`` completed / ``step()`` returned ``False``, or closed.
         """
         if self._ticks_iter is not None:
@@ -765,4 +789,7 @@ class Orchestrator:
                 if self.renderer is not None and hasattr(self.renderer, "close"):
                     self.renderer.close()
             finally:
-                self._close_logs()
+                try:
+                    self._stop_peers()
+                finally:
+                    self._close_logs()

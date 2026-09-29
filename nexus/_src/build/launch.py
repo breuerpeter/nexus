@@ -10,12 +10,18 @@ orchestrator via :func:`resolve_scenario` plus ``Sim.from_orchestrator``, and re
 :func:`~nexus._src.rendering.rtx_renderer` the same way.
 
 A vehicle whose USD authors RTX sensor prims renders them in the Kit peer, a container this build
-starts right after the fetch, so Kit boots while PX4 builds and the physics compiles.
+starts right after the fetch, so Kit boots while PX4 builds and the physics compiles. The PX4
+autopilot is a peer too: with the run's PX4 peer managed, the build starts the
+Software In The Loop (SITL) container on the peer contract before the assembly, and hands it to the
+orchestrator, which stops it when the run ends; external, the build starts nothing and the
+controller waits for the autopilot to dial in.
 """
 
 from __future__ import annotations
 
+import os
 import pathlib
+import time
 
 from nexus._src.config import LaunchConfig, Registry, ResolvedLaunch, resolve
 from nexus._src.core import Orchestrator
@@ -130,16 +136,18 @@ def build_from_launch(
     # By now the run has fetched every asset it renders, so the Kit peer starts first and boots while
     # PX4 builds and the physics compiles; None for a vehicle with no RTX sensor prims.
     renderer_factory = rtx_renderer(builder, cfg, cache_dir=cache_dir, stream=stream)
+    peers: list = []
     try:
         # *This* is where the declared control kind becomes a controller instance; the assembly that
         # follows is controller-agnostic. Lazy import: only the PX4 path pulls in pymavlink.
         from nexus._src.vehicle.controllers.px4 import Px4MavlinkController
 
-        spec = resolved.tested_config.px4
-        controller = Px4MavlinkController(**({"airframe": spec.airframe} if spec is not None else {}))
-        # Blocking: the PX4 prerequisites plus its incremental build, before any preroll clock
-        # starts, so `Sim`, `nexus run` and the benchmark cell all get the PX4 lifecycle from here.
-        controller.prepare()
+        px4 = launch.peers.px4
+        controller = Px4MavlinkController(port=px4.hil_port, target_system=px4.system_id)
+        if px4.realization == "managed":
+            # The peer starts here, before the assembly: its start builds PX4 incrementally, which must
+            # stay outside the sim's preroll window, GH #39, and PX4 boots while the physics compiles.
+            peers.append(_start_px4(launch, resolved, px4.instance))
 
         # output.log/view → the Logger, which writes the .rrd or serves :9876; neither → no recording.
         return build_orchestrator(
@@ -147,6 +155,7 @@ def build_from_launch(
             cfg,
             vehicle_builder=builder,
             controller=controller,
+            peers=peers,
             rerun=launch.output.log or launch.output.view,
             viewer=launch.output.view,
             debug=launch.output.debug,
@@ -158,6 +167,32 @@ def build_from_launch(
             settings=resolved.tested_config.model_dump(mode="json"),
         )
     except BaseException:
+        # The loop never took the peers over, so their containers stop here.
+        for peer in peers:
+            peer.stop()
         if renderer_factory is not None:
-            renderer_factory.close()  # the loop never took the peer over, so its container stops here
+            renderer_factory.close()
         raise
+
+
+def _start_px4(launch: LaunchConfig, resolved: ResolvedLaunch, instance: int):
+    """Start the PX4 SITL peer for this run: the pinned tree, or ``$PX4_DIR``, the vehicle's airframe,
+    the run's instance, and a container name and console log of this run's own. The name carries the
+    process and the instance, so two runs in one process on two instances keep both containers; two
+    on one instance collide on PX4's ports anyway.
+    """
+    from nexus._src.vehicle.controllers.px4 import checkout
+    from nexus._src.vehicle.controllers.px4.sitl import PX4_LOG_DIR, Px4Sitl
+
+    catalog = resolved.tested_config.registry
+    spec = resolved.tested_config.px4
+    os.makedirs(PX4_LOG_DIR, exist_ok=True)
+    peer = Px4Sitl(
+        tree=checkout.tree(pathlib.Path(catalog) if catalog else None),
+        airframe=spec.airframe if spec is not None else "astro_max",
+        instance=instance,
+        name=f"nexus-px4-{os.getpid()}-{instance}",
+        log_path=os.path.join(PX4_LOG_DIR, f"px4-{time.strftime('%Y%m%d-%H%M%S')}-{os.getpid()}.log"),
+    )
+    peer.start()
+    return peer

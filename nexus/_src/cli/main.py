@@ -18,11 +18,11 @@ def _run(args) -> None:
     from nexus._src.api.sim import Sim
 
     with Sim.from_args(args) as sim:
-        sim.run()  # drives setup, which binds :4560 and starts PX4, and then every tick, on this thread
+        sim.run()  # drives setup, which binds the lockstep port PX4 dials, and then every tick, on this thread
 
 
 def main() -> None:
-    parser = sim_argparser(description="Fly a vehicle against PX4 SITL over the HIL link, TCP:4560.")
+    parser = sim_argparser(description="Fly a vehicle against PX4 SITL over the HIL link.")
     parser.add_argument("command", nargs="?", default="run", choices=["run"], help="subcommand")
     parser.add_argument(
         "--stream",

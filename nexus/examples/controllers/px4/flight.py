@@ -18,11 +18,10 @@ not translate at all, and the CI benchmark mission's east legs are 20 m.
 The actuator model comes from the vehicle USD (authored on the rotor joints); there is no actuator
 knob; whatever the vehicle authors is what flies.
 
-A ZERO-arg script (the flight configuration lives here); only the host-specific paths ride env:
-``PX4_DIR`` (default ~/code/px4) and ``PX4_IMAGE`` (the px4-sitl image), single defaults in
-``nexus._src.vehicle.controllers.px4.sitl``, plus an optional ``--timeout`` flag (wall-clock
-arm+climb budget). Needs docker + a PX4 checkout + a CUDA host; the checkout does not have to be
-built already, because the sim builds it before the run starts.
+A ZERO-arg script (the flight configuration lives here), plus an optional ``--timeout`` flag
+(wall-clock arm+climb budget). Needs docker + a CUDA host: the sim fetches the PX4 tree its
+controller pins on first use and builds it before the run starts, and ``PX4_DIR`` names a checkout
+of your own instead.
 """
 
 from __future__ import annotations
