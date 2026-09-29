@@ -17,10 +17,25 @@ def _keyword(name: str) -> str:
     return re.sub(r"(?<!^)(?=[A-Z])", "_", name.removeprefix(_NAMESPACE)).lower()
 
 
+def _value(prim, name: str):
+    """The attribute's value; an asset path becomes the file it resolves to, against the layer that authored it."""
+    from pxr import Sdf
+
+    value = prim.GetAttribute(name).Get()
+    if isinstance(value, Sdf.AssetPath):
+        if value.path and not value.resolvedPath:
+            raise ValueError(f"{prim.GetPath()}: {name} names {value.path!r}, which resolves to no file")
+        return value.resolvedPath or None
+    return value
+
+
 def read_declarations(usd_path: str | Path) -> list[tuple[str, str, dict]]:
     """One `(prim path, schema, keyword arguments)` per applied nexus schema on the stage's active prims.
 
     Each attribute the schema defines becomes the keyword of the same name in snake case.
+
+    Raises:
+        ValueError: An authored asset path resolves to no file; the message names the prim.
     """
     from pxr import Usd
 
@@ -35,6 +50,6 @@ def read_declarations(usd_path: str | Path) -> list[tuple[str, str, dict]]:
                 continue
             names = [name for name in definition.GetPropertyNames() if name.startswith(_NAMESPACE)]
             if names:
-                kwargs = {_keyword(name): prim.GetAttribute(name).Get() for name in names}
+                kwargs = {_keyword(name): _value(prim, name) for name in names}
                 declarations.append((str(prim.GetPath()), schema, kwargs))
     return declarations

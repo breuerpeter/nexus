@@ -34,6 +34,21 @@ def test_the_reader_names_each_schema_attribute_in_snake_case_without_its_namesp
     assert sorted(kwargs) == ["acc_noise", "gyro_noise"]
 
 
+def test_the_reader_fails_on_an_asset_path_that_resolves_to_no_file_and_names_the_prim(tmp_path):
+    """The reader fails on an authored asset path that resolves to no file, and names the prim."""
+    from nexus._src.usd.reader import read_declarations
+
+    vehicle = tmp_path / "vehicle.usda"
+    stage = Usd.Stage.CreateNew(str(vehicle))
+    prim = UsdGeom.Xform.Define(stage, "/Vehicle/body/Ai").GetPrim()
+    prim.ApplyAPI("StandInAPI")
+    prim.GetAttribute("nexus:weights").Set(Sdf.AssetPath("missing.pt"))
+    stage.GetRootLayer().Save()
+
+    with pytest.raises(ValueError, match="/Vehicle/body/Ai"):
+        read_declarations(vehicle)
+
+
 def test_each_attribute_the_schema_defines_reaches_the_class_as_the_snake_case_keyword():
     """Each `nexus:` attribute the schema defines reaches the class as the snake-case keyword argument of the same name.
 
