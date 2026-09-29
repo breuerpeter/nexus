@@ -1,10 +1,11 @@
 """The PX4 Software In The Loop (SITL) peer's container, on the peer contract of
 :mod:`nexus._src.peers`.
 
-The run hands the peer its instance, and PX4 numbers every link from it, per the base ports in
-:mod:`nexus._src.peers.px4_sitl`. The container runs on host networking, so those are the host's
-ports, and two runs on one machine take two instances. Each run's container carries its own name, so
-one run's stop never touches another's.
+The run hands the peer its instance, ``px4 -i``, and PX4 numbers every link from it with its own
+compiled base ports, which :mod:`nexus._src.peers.px4_sitl` mirrors. This module passes PX4 no
+port. The container runs on host networking, so those are the host's ports, and two runs on one
+machine take two instances. Each run's container carries its own name, so one run's stop never
+touches another's.
 
 The image is the px4-sitl build toolchain, built on this machine from ``image/`` beside this module,
 package data, and tagged with a hash of that folder. The PX4 tree comes from :mod:`.checkout`: the

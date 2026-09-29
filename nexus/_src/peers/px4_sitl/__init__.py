@@ -5,8 +5,12 @@
 
 PX4 numbers every link from its instance ``i``: it dials the sim's Hardware In The Loop (HIL)
 server on ``HIL_PORT + i``, streams its offboard link to ``OFFBOARD_PORT + i`` and its
-ground-station link from ``GCS_PORT + i``, and takes ``i + 1`` as its MAVLink system id. The run
-config, the controller, the offboard operator and the runner read the base ports here.
+ground-station link from ``GCS_PORT + i``, and takes ``i + 1`` as its MAVLink system id.
+
+The base ports below mirror PX4's own numbering at the pinned commit and aren't settings. PX4
+reads none of them: the runner hands it only ``-i``, and no environment variable names a port. So
+changing one moves only the host's end of a link, and they change only with the pin. The run
+config, the controller and the offboard operator read them here, so the host's ends follow PX4.
 """
 
 HIL_PORT = 4560
