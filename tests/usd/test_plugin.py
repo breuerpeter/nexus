@@ -46,6 +46,16 @@ def test_the_plugin_ships_in_the_wheel_and_import_nexus_registers_it(tmp_path):
     assert r.stdout.strip() == "['nexus:accNoise', 'nexus:gyroNoise'] [0.02, 0.02]"
 
 
+def test_the_imu_schema_defines_its_two_noise_attributes():
+    """The Inertial Measurement Unit (IMU) schema defines `nexus:accNoise` and `nexus:gyroNoise`."""
+    from pxr import Usd
+
+    import nexus  # noqa: F401  # registers the plugin
+
+    definition = Usd.SchemaRegistry().FindAppliedAPIPrimDefinition("NexusImuAPI")
+    assert sorted(definition.GetPropertyNames()) == ["nexus:accNoise", "nexus:gyroNoise"]
+
+
 def test_the_conformance_fixture_applies_every_schema_the_plugin_defines():
     """The conformance fixture applies every schema the plugin defines.
 
