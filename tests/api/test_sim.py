@@ -326,3 +326,23 @@ def test_sim_takes_no_control_argument():
     """
     with pytest.raises(TypeError, match="control"):
         sim_mod.Sim("astro_max_base", control="px4-sitl")
+
+
+def test_a_sim_that_names_no_vehicle_fails_at_construction():
+    """A `Sim` that names no vehicle fails at construction, and the error names what is missing.
+
+    Given the bundled catalog, when `Sim(scene="empty")` is built, then it raises an error that names
+    the missing `vehicle`.
+    """
+    with pytest.raises((TypeError, ValueError), match="vehicle"):
+        sim_mod.Sim(scene="empty")
+
+
+def test_a_sim_that_names_no_scene_fails_at_construction():
+    """A `Sim` that names no scene fails at construction, and the error names what is missing.
+
+    Given the bundled catalog, when `Sim(vehicle="astro_max_base")` is built, then it raises an error
+    that names the missing `scene`.
+    """
+    with pytest.raises((TypeError, ValueError), match="scene"):
+        sim_mod.Sim(vehicle="astro_max_base")
