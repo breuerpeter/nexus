@@ -76,7 +76,7 @@ It prints `allowed`, then `implicitDeny`.
 
 ## Check the alarms
 
-Turn off the schedule for one alarm period, 30 minutes. `nexus-gpu-runner-overdue` goes to `ALARM` and the topic delivers. Turn the schedule on again, and the alarm returns to `OK` after the next period.
+Turn off the schedule. `nexus-gpu-runner-overdue` goes to `ALARM` and the topic delivers. Turn the schedule on again, and the alarm returns to `OK`. Expect more than one 30-minute alarm period: on the first check, `ALARM` came 86 minutes after the schedule went off.
 
 ```bash
 aws events disable-rule --region us-west-2 --name nexus-gpu-runner-watchdog
