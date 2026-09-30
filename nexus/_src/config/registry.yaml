@@ -47,6 +47,15 @@ scenes:
     usd: { name: slalom, sha256: 2f9984c07ece550ad30a002b73552d2e0fa37bc2b493690fb1f8f99e5676c92b }
     geodetic_origin: null
 
+  powerline:                          # an overhead power line on wooden poles beside a road at sunset,
+                                      # up a 3 m drop, among firs and boulders: Poly Haven CC0 assets,
+                                      # authored by scripts/assets/author_powerline_scene.py. The start
+                                      # is on the road beside the line's end pole, where the inspection
+                                      # flight of the benchmark matrix takes off.
+    usd: { name: powerline, sha256: 42f06e173c6ca9e4091882af1531b6306daa61e42a7e269b0cd20aad1de3efbd }
+    geodetic_origin: null
+    start: [14.5, 24.0, 0.06]
+
   cesium:                             # live-streamed globe visual world (Google Photorealistic 3D
                                       # Tiles via Cesium for Omniverse). The USD ships the tileset.
     usd: { name: cesium, sha256: d9c245d450dfb30089d7e2c6a011d90cd552482f931ba48313e361bb3266315a }

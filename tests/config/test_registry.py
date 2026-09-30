@@ -100,6 +100,14 @@ def test_the_shipped_catalog_names_two_vehicles():
     assert [v.name for v in nexus.Registry.from_yaml().vehicles] == ["astro_max_base", "astro_max_fpv"]
 
 
+def test_the_shipped_catalog_lists_a_hosted_scene_with_static_geometry():
+    """The shipped catalog lists a photoreal scene with static geometry, hosted under the content delivery network's
+    `public/` prefix: `powerline`, served from the scenes folder under its own name.
+    """
+    url = nexus.Registry.from_yaml().scenes["powerline"].usd.url
+    assert url.startswith("https://d2837jz4fvtxko.cloudfront.net/public/assets/usd/scenes/powerline-")
+
+
 HOSTED = "https://d2837jz4fvtxko.cloudfront.net/public/assets/usd/vehicles"
 
 

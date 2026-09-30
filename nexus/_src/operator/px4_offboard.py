@@ -76,6 +76,7 @@ class _RequestState:
     last_mode: float = 0.0
     last_arm: float = 0.0
     last_count: float = 0.0  # when MISSION_COUNT last went out, the mission upload handshake
+    last_restart: float = 0.0  # when MISSION_SET_CURRENT last went out, starting a mission
     gesture_since: float = 0.0  # when the current stick phase started; 0.0 = nothing held yet
     gesture_held: bool = False  # True = streaming the gesture, False = streaming neutral
 
@@ -191,6 +192,9 @@ class Px4Offboard(BaseOperator):
         self._mission_ack: int | None = None  # MISSION_ACK type; 0 = accepted, None = not settled
         self._reached = -1  # highest MISSION_ITEM_REACHED seq; -1 = none reached yet
         self._mission_current = 0  # most recent MISSION_CURRENT seq
+        # Outstanding start from the first item: keep sending MISSION_SET_CURRENT 0 until PX4 reports
+        # item 0 current, and hold the arm until then.
+        self._want_restart = False
 
     # ---- lifecycle ----
     def open(self) -> Px4Offboard:
@@ -287,6 +291,10 @@ class Px4Offboard(BaseOperator):
                     self._sysid, self._compid, len(self._mission_items), mavutil.mavlink.MAV_MISSION_TYPE_MISSION
                 )
             state.last_count = now
+        if self._want_restart and now - state.last_restart > 1.0:
+            with self._lock:
+                self._mav.mav.mission_set_current_send(self._sysid, self._compid, 0)
+            state.last_restart = now
         if self._want_mode is not None:
             if self._mode == self._want_mode:
                 self._want_mode = None  # confirmed: stop commanding it
@@ -316,7 +324,12 @@ class Px4Offboard(BaseOperator):
         # doesn't hammer it. The request counts as "just failed" so the *first* try waits out a full
         # settle period.
         clear_for = now - max(self._last_fail, self._arm_since)
-        armable = self._want_mode is None and self._rel_alt is not None and clear_for >= self._wait_clear_s
+        armable = (
+            self._want_mode is None
+            and not self._want_restart
+            and self._rel_alt is not None
+            and clear_for >= self._wait_clear_s
+        )
         if not armable:
             if self._arm_gesture and state.gesture_held:
                 self.set_rc(**_NEUTRAL_RC)  # a gesture PX4 can't act on burns the one edge it gets
@@ -364,11 +377,15 @@ class Px4Offboard(BaseOperator):
             # Settles the upload either way: on an error ack, stop resending MISSION_COUNT rather
             # than loop forever on a mission PX4 has already refused.
             self._mission_ack = msg.type
+            if msg.type != mavutil.mavlink.MAV_MISSION_ACCEPTED:
+                self._want_restart = False  # a refused mission has no first item to start at
             self._want_upload = False
         elif t == "MISSION_ITEM_REACHED":
             self._reached = max(self._reached, msg.seq)
         elif t == "MISSION_CURRENT":
             self._mission_current = msg.seq
+            if msg.seq == 0:
+                self._want_restart = False  # PX4 is at the first item: the mission can arm
 
     def _send_mission_item(self, seq: int) -> None:
         """Answer PX4's request for one mission item; a no-op if it asks outside the mission."""
@@ -382,7 +399,10 @@ class Px4Offboard(BaseOperator):
                 it.seq,
                 it.frame,
                 it.command,
-                0,  # current: 0 for every item; PX4 runs the mission from the start
+                # current: the first item only. With no item marked, PX4 keeps the last
+                # mission's current item, which survives a restart, so a new mission would start
+                # where the last one ended.
+                int(it.seq == 0),
                 int(it.autocontinue),
                 it.params[0],
                 it.params[1],
@@ -595,6 +615,7 @@ class Px4Offboard(BaseOperator):
             alt_m: Target takeoff altitude in meters, written to ``MIS_TAKEOFF_ALT``.
         """
         self.param_set("MIS_TAKEOFF_ALT", alt_m)
+        self._want_restart = False  # a takeoff replaces any mission start still waiting on PX4
         self._target = _ClimbTarget(rel_alt=alt_m)
         self.set_mode("Takeoff")
         self.arm()
@@ -602,6 +623,7 @@ class Px4Offboard(BaseOperator):
     def land(self) -> None:
         """Request Land mode to land the vehicle in place. Returns at once."""
         self._target = None  # nothing to arrive at; at_target goes False
+        self._want_restart = False  # a landing replaces any mission start still waiting on PX4
         self.set_mode("Land")
 
     # ---- the mission: a QGroundControl .plan, uploaded and flown in Mission mode ----
@@ -628,6 +650,7 @@ class Px4Offboard(BaseOperator):
         self._reached = -1
         self._mission_current = 0
         self._want_upload = True
+        self._want_restart = False  # a new mission replaces any start still waiting on PX4
 
     def mission_uploaded(self) -> bool:
         """Report whether PX4 has accepted the uploaded mission.
@@ -689,15 +712,19 @@ class Px4Offboard(BaseOperator):
         return bool(last_wp) and self._reached >= last_wp[-1]
 
     def start_mission(self) -> None:
-        """Request Mission mode, then request arming. Returns at once.
+        """Request the mission's first item, Mission mode, then arming. Returns at once.
 
         The ordering is load-bearing and this method owns it, exactly as :meth:`takeoff` does:
         telemetry confirms the ``DO_SET_MODE`` for Mission mode **before** the arm command, which is the proven
-        headless recipe. PX4 flies the mission on arming, starting from its ``NAV_TAKEOFF`` item.
+        headless recipe. PX4 flies the mission on arming, from the item it holds as current, so the
+        arm also waits until PX4 reports item 0 current after ``MISSION_SET_CURRENT``: PX4 skips an
+        upload that matches the mission it already holds, which after a finished flight sits at its
+        last item, and would end the new flight on the ground.
 
         Upload the mission first and wait for :meth:`mission_uploaded`: PX4 refuses Mission mode
         while it has no valid mission, so engaging early just burns retries.
         """
+        self._want_restart = True
         self.set_mode("Mission")
         self.arm()
 
