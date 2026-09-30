@@ -37,8 +37,8 @@ from nexus._src.api.sim import Sim
 from nexus._src.config import LaunchConfig, Registry
 from nexus._src.core.interfaces import Stage
 from nexus._src.core.orchestrator import Orchestrator
-from nexus._src.core.registry import ComponentRegistry
 from nexus._src.core.schema import SimTime
+from nexus._src.peers.px4_sitl.fake import Px4Fake
 from nexus._src.vehicle.controllers.px4 import controller as ctrl
 
 # --- the stand-in docker daemon -------------------------------------------------------------------
@@ -478,15 +478,9 @@ def test_a_local_vehicle_usd_flies_the_airframe_its_px4_schema_declares(daemon, 
     assert _started_models(daemon) == ["none_foo"]
 
 
-# --- the fake PX4: the class a registry maps the PX4 SITL peer to ---------------------------------
+# --- the fake PX4: the class a peer mapping sends the PX4 SITL peer to -----------------------------
 
-# A registry that builds the vehicle's PX4 controller and maps the PX4 SITL peer, by its name, to the fake.
-_FAKE_PX4 = ComponentRegistry(
-    {
-        "NexusPx4API": "nexus._src.vehicle.controllers.px4.controller:Px4MavlinkController",
-        "px4_sitl": "nexus._src.peers.px4_sitl.fake:Px4Fake",
-    }
-)
+_FAKE_PX4 = {"px4_sitl": Px4Fake}
 
 
 class _Commands:
@@ -511,20 +505,20 @@ def _step(loop, ticks: int) -> list[bool]:
 
 
 def _faked(catalog, tmp_path) -> Orchestrator:
-    """Build the catalog's vehicle with the PX4 SITL peer mapped to its fake."""
+    """Build the catalog's vehicle with the PX4 SITL peer sent to its fake."""
     launch = LaunchConfig.from_dict({"vehicle": "astro"})
     return launch_mod.build_from_launch(
-        launch, registry=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0, components=_FAKE_PX4
+        launch, registry=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0, peers=_FAKE_PX4
     )
 
 
-def test_a_run_whose_registry_maps_the_px4_sitl_peer_to_its_fake_starts_no_process_and_needs_no_px4_tree(
+def test_a_run_whose_peer_mapping_sends_the_px4_sitl_peer_to_its_fake_starts_no_process_and_needs_no_px4_tree(
     daemon, assembly, catalog, monkeypatch, tmp_path
 ):
-    """A run whose registry maps the PX4 SITL peer to its fake starts no process and needs no PX4 tree.
+    """A run whose peer mapping sends the PX4 SITL peer to its fake starts no process and needs no PX4 tree.
 
     Given a stand-in docker daemon, no PX4 checkout and no `PX4_DIR`, when a run of the default
-    vehicle, built with a registry that maps the PX4 SITL peer to its fake, steps 500 ticks, then the
+    vehicle, built with a peer mapping that sends the PX4 SITL peer to its fake, steps 500 ticks, then the
     daemon records no container, no fetch or build runs, and every tick completes.
     """
     monkeypatch.delenv("PX4_DIR")
@@ -550,7 +544,7 @@ def test_the_fake_px4_receives_each_tick_and_the_gps_at_its_sub_rate(daemon, mon
     """
     monkeypatch.delenv("NEXUS_ASSET_CACHE")  # the shipped vehicle comes from the checkout's own cache
     launch = LaunchConfig.from_dict({"vehicle": "astro_max_base", "runtime": {"device": "cpu"}})
-    loop = launch_mod.build_from_launch(launch, preroll_timeout=10.0, components=_FAKE_PX4)
+    loop = launch_mod.build_from_launch(launch, preroll_timeout=10.0, peers=_FAKE_PX4)
 
     _step(loop, 500)
     received = dict(loop.peers[0].received)
@@ -596,7 +590,7 @@ def test_the_px4_controller_is_built_the_same_way_whichever_process_answers(
 ):
     """The build makes the PX4 controller the same way whichever process answers.
 
-    Given the default vehicle, when a run builds it with the PX4 SITL peer mapped to its fake and again
+    Given the default vehicle, when a run builds it with the PX4 SITL peer sent to its fake and again
     with the peer external, then both loops hold the same stages in the same order, as each run's stage
     plan line says, and the fake answered the first tick.
     """
