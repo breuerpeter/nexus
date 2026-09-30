@@ -102,11 +102,10 @@ def test_the_shipped_catalog_names_two_vehicles():
 
 def test_the_shipped_catalog_lists_a_hosted_scene_with_static_geometry():
     """The shipped catalog lists a photoreal scene with static geometry, hosted under the content delivery network's
-    `public/` prefix: a scene beside `empty`, `slalom` and `cesium`, served from the scenes folder.
+    `public/` prefix: `powerline`, served from the scenes folder under its own name.
     """
-    scenes = nexus.Registry.from_yaml().scenes
-    new = [s.usd.url for name, s in scenes.items() if name not in ("empty", "slalom", "cesium") and s.usd]
-    assert any(u.startswith("https://d2837jz4fvtxko.cloudfront.net/public/assets/usd/scenes/") for u in new)
+    url = nexus.Registry.from_yaml().scenes["powerline"].usd.url
+    assert url.startswith("https://d2837jz4fvtxko.cloudfront.net/public/assets/usd/scenes/powerline-")
 
 
 HOSTED = "https://d2837jz4fvtxko.cloudfront.net/public/assets/usd/vehicles"

@@ -8,8 +8,6 @@ import pathlib
 import subprocess
 import sys
 
-import nexus
-
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
@@ -27,9 +25,7 @@ def _rtx_scenes() -> list[str]:
 
 
 def test_the_rtx_row_flies_a_static_geometry_scene_as_its_middle_column():
-    """The isaacsim matrix's RTX row flies the scene as its middle column: `empty`, then a catalog
-    scene with static geometry other than `slalom`, then `cesium`.
+    """The isaacsim matrix's RTX row flies the scene as its middle column: `empty`, then
+    `powerline`, then `cesium`.
     """
-    new = set(nexus.Registry.from_yaml().scenes) - {"empty", "slalom", "cesium"}
-    scenes = _rtx_scenes()
-    assert len(scenes) == 3 and scenes[0] == "empty" and scenes[1] in new and scenes[2] == "cesium"
+    assert _rtx_scenes() == ["empty", "powerline", "cesium"]
