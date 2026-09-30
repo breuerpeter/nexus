@@ -4,9 +4,10 @@
 
 Every box `gpu-runner.yml` launches carries the tag `created-by=nexus-gpu-ci`, set on the launch call itself. Every 15 minutes a scheduled Lambda function finds the running boxes with that tag in each monitored region. It terminates each box older than `TerminateAfterMinutes`, 90 by default. The run job's `timeout-minutes` is 45, so a working box never reaches that age. The Lambda role can terminate only an instance with the tag.
 
-Two alarms send their state changes to an SNS topic you already have:
+Three alarms send their state changes to an SNS topic you already have:
 
-- `nexus-gpu-runner-overdue` fires when a tagged box is 120 minutes old, or when the watchdog stops reporting.
+- `nexus-gpu-runner-overdue` fires when a tagged box is 120 minutes old.
+- `nexus-gpu-runner-watchdog-silent` fires when the watchdog hasn't run for two 15-minute periods.
 - `nexus-gpu-runner-watchdog-errors` fires when a watchdog run fails to scan or terminate.
 
 CI doesn't deploy the stack. A maintainer deploys it by hand, from this file.
@@ -76,11 +77,40 @@ It prints `allowed`, then `implicitDeny`.
 
 ## Check the alarms
 
-Turn off the schedule. `nexus-gpu-runner-overdue` goes to `ALARM` and the topic delivers. Turn the schedule on again, and the alarm returns to `OK`. Expect more than one 30-minute alarm period: on the first check, `ALARM` came 86 minutes after the schedule went off.
+Turn off the schedule. Within 45 minutes `nexus-gpu-runner-watchdog-silent` goes to `ALARM` and the topic delivers. Turn the schedule on again, and the alarm returns to `OK` within 30 minutes.
 
 ```bash
 aws events disable-rule --region us-west-2 --name nexus-gpu-runner-watchdog
 aws events enable-rule --region us-west-2 --name nexus-gpu-runner-watchdog
+```
+
+## Check a live termination
+
+A cheap tagged box shows the watchdog terminates for real. Scope the watchdog to a test repository with a 1-minute limit, so it touches no CI box. Until you restore the limit, it doesn't reclaim a leaked CI box either.
+
+```bash
+aws cloudformation deploy --region us-west-2 --stack-name nexus-gpu-runner-watchdog \
+  --template-file scripts/ci/aws/runner-watchdog.yaml --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides TerminateAfterMinutes=1 RequiredRepository=breuerpeter/nexus-watchdog-test
+id=$(aws ec2 run-instances --region us-west-2 --instance-type t3.micro \
+  --image-id resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64 \
+  --tag-specifications 'ResourceType=instance,Tags=[{Key=created-by,Value=nexus-gpu-ci},{Key=GitHub-Repository,Value=breuerpeter/nexus-watchdog-test}]' \
+  --query 'Instances[0].InstanceId' --output text)
+```
+
+Within 20 minutes the box is `terminated`, and the log shows a `terminated` decision for it:
+
+```bash
+aws ec2 describe-instances --region us-west-2 --instance-ids "$id" --query 'Reservations[0].Instances[0].State.Name' --output text
+aws logs tail /aws/lambda/nexus-gpu-runner-watchdog --region us-west-2 --since 30m --filter-pattern "$id"
+```
+
+Then restore the limit and the scope:
+
+```bash
+aws cloudformation deploy --region us-west-2 --stack-name nexus-gpu-runner-watchdog \
+  --template-file scripts/ci/aws/runner-watchdog.yaml --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides TerminateAfterMinutes=90 RequiredRepository=""
 ```
 
 ## Roll back
