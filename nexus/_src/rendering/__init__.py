@@ -10,6 +10,7 @@ starts the peer for a run whose vehicle authors RTX sensor prims.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 from nexus._src.core import logger
@@ -129,7 +130,9 @@ class RtxRendererFactory:
         self._peer.stop()
 
 
-def rtx_renderer(vehicle_builder, cfg: dict, *, cache_dir=None, stream: bool = False) -> RtxRendererFactory | None:
+def rtx_renderer(
+    vehicle_builder, cfg: dict, *, cache_dir=None, stream: bool = False, peer: Callable = KitPeer
+) -> RtxRendererFactory | None:
     """Start the Kit render peer when the vehicle authors RTX sensor prims, and return its renderer factory.
 
     Call it once the run has fetched its assets and before the slow parts of the build, so Kit boots
@@ -140,6 +143,8 @@ def rtx_renderer(vehicle_builder, cfg: dict, *, cache_dir=None, stream: bool = F
         cfg: The scenario config, carrying the resolved scene.
         cache_dir: The asset cache the run fetched into; ``None`` for the default.
         stream: Publish each RTX camera's feed over Real Time Streaming Protocol (RTSP).
+        peer: The class that starts the Kit peer, or a callable that builds one: :class:`KitPeer`, or
+            its fake in a test.
 
     Returns:
         The factory the assembly calls after the physics build, or ``None`` for a vehicle with no
@@ -160,9 +165,9 @@ def rtx_renderer(vehicle_builder, cfg: dict, *, cache_dir=None, stream: bool = F
     if not prims:
         return None
     logger.info(f"the vehicle authors RTX sensors {prims}: they render in the Kit container")
-    peer = KitPeer([usd, cfg.get("scene_usd_path")], cache_dir=cache_dir or default_cache())
-    peer.start()
-    return RtxRendererFactory(peer, stream=stream)
+    started = peer([usd, cfg.get("scene_usd_path")], cache_dir=cache_dir or default_cache())
+    started.start()
+    return RtxRendererFactory(started, stream=stream)
 
 
 def _cameras(usd, prims: list[str]) -> list[str]:

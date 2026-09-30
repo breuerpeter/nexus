@@ -83,17 +83,18 @@ def daemon(monkeypatch):
 
 
 @pytest.fixture
-def tree(tmp_path):
-    """A stand-in PX4 tree: a folder with a Makefile."""
+def tree(tmp_path, monkeypatch):
+    """A stand-in PX4 tree, a folder with a Makefile, that `$PX4_DIR` names so the peer's start finds it."""
     px4 = tmp_path / "px4"
     px4.mkdir()
     (px4 / "Makefile").write_text("px4_sitl:\n")
+    monkeypatch.setenv("PX4_DIR", str(px4))
     return px4
 
 
 def _peer(tree, tmp_path, **kw):
     args = {
-        "tree": tree,
+        "catalog": None,
         "airframe": "astro_max",
         "instance": 0,
         "name": "px4-under-test",

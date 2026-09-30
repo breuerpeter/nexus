@@ -303,8 +303,9 @@ class Sim:
             The :class:`InProcessOperator`, in-process, or :class:`Px4Offboard`, PX4, driving this run.
 
         Raises:
-            RuntimeError: Accessed before entering the ``Sim`` context, in the in-process case, or the
-                run ended while the PX4 link was connecting.
+            RuntimeError: Accessed before entering the ``Sim`` context, in the in-process case, the
+                run flies the fake PX4, which answers no operator link, or the run ended while the
+                PX4 link was connecting.
             TimeoutError: PX4 didn't answer on the operator link within ``_PX4_LINK_TIMEOUT_S``.
         """
         if self._in_process:
@@ -313,6 +314,12 @@ class Sim:
             return self._operator
         if self._operator is None:
             from nexus._src.operator import Px4Offboard
+            from nexus._src.peers.px4_sitl.fake import Px4Fake
+
+            if any(isinstance(peer, Px4Fake) for peer in getattr(self._orch, "peers", ())):
+                raise RuntimeError(
+                    "this run flies the fake PX4, which answers only the HIL link: it has no operator link"
+                )
 
             # The link's port and PX4's system id follow the run's PX4 instance; a self-assembled
             # orchestrator carries no launch and takes PX4's defaults.
