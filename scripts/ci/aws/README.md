@@ -1,6 +1,6 @@
 # GPU runner watchdog
 
-`runner-watchdog.yaml` is a CloudFormation stack that ends GPU CI runners that outlive their run. It closes the leak where a cancel lands while `gpu / start-runner` still executes. That job then publishes no instance id, so `stop-runner` has nothing to stop.
+`runner-watchdog.yaml` is a CloudFormation stack that ends GPU CI runners that outlive their run. The stack catches a box that `stop-runner` doesn't reclaim: a cancel that lands before `gpu / start-runner` publishes the instance id, or a `stop-runner` that fails or never runs.
 
 Every box `gpu-runner.yml` launches carries the tag `created-by=nexus-gpu-ci`, set on the launch call itself. Every 15 minutes a scheduled Lambda function finds the running boxes with that tag in each monitored region. It terminates each box older than `TerminateAfterMinutes`, 90 by default. The run job's `timeout-minutes` is 45, so a working box never reaches that age. The Lambda role can terminate only an instance with the tag.
 

@@ -401,8 +401,9 @@ jobs:
     # Tear the box down whenever start-runner ran: failed or cancelled, it may have launched one.
     # Only a spend-gate skip starts nothing. Each step needs the instance id, since the stop fails
     # without it with "The 'ec2-instance-id' input is required for the 'stop' mode", burying the
-    # real reason. A cancel that lands inside start-runner publishes no id; the runner watchdog in
-    # scripts/ci/aws/ reclaims that box by its tags.
+    # real reason. The action publishes the id right after RunInstances, so a cancel while the box
+    # boots still leaves the id here. The runner watchdog in scripts/ci/aws/ reclaims a box by its
+    # tags when no id was published or this job did not stop it.
     if: ${{ always() && needs.start-runner.result != 'skipped' }}
     permissions: { id-token: write, contents: read }
     steps:
