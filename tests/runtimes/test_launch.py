@@ -326,11 +326,6 @@ def _layered(tmp_path, vehicle: str, layer: Path | str) -> LaunchConfig:
     return LaunchConfig.from_dict({"vehicle": vehicle, "scene": "empty", "layer": str(layer)})
 
 
-def _started_models(daemon) -> list[str]:
-    """The `PX4_SIM_MODEL` of each PX4 container the run started, its foreground build aside."""
-    return [r["environment"].get("PX4_SIM_MODEL") for r in daemon if r.get("detach", True)]
-
-
 class _Handed(Px4Fake):
     """The fake PX4 in the peer mapping, which keeps the airframe the build hands it."""
 
@@ -448,26 +443,44 @@ def test_the_receipt_records_the_layers_hash_beside_the_vehicle_assets(tmp_path)
     assert (before in first_json, after in second_json, before in second_json) == (True, True, False)
 
 
-def test_a_run_with_no_layer_builds_and_records_as_today(tmp_path, monkeypatch, daemon):
+def test_a_run_with_no_layer_builds_and_records_as_today(tmp_path, monkeypatch, warp_cpu):
     """A run with no layer builds and records as today.
 
-    Given the catalog vehicle `astro_max_base` and no layer, when the run builds, then PX4 SITL
-    starts on the vehicle's own airframe, `none_astro_max`, the receipt names the vehicle, and it
-    names no layer.
+    Given the catalog vehicle `astro_max_base` and no layer, when the run builds with the PX4 SITL peer
+    sent to its fake, then it builds the PX4 controller on airframe `astro_max`, its IMU, magnetometer,
+    barometer and Global Positioning System (GPS) sensors, and one PX4 peer; and its receipt names the
+    vehicle, the airframe and the scene, and no layer, sensor override or geodetic origin.
     """
     import nexus._src.build.launch as L
 
     monkeypatch.delenv("NEXUS_ASSET_CACHE", raising=False)  # the shipped vehicle comes from the checkout's own cache
     monkeypatch.chdir(tmp_path)  # no project catalog: only the bundled one
-    monkeypatch.setattr(L, "build_orchestrator", lambda label, cfg, **kw: kw)
-    launch = LaunchConfig.from_dict({"vehicle": "astro_max_base", "scene": "empty"})
+    launch = LaunchConfig.from_dict({"vehicle": "astro_max_base", "scene": "empty", "runtime": {"device": "cpu"}})
 
-    receipt = L.build_from_launch(launch)["settings"]
+    loop = L.build_from_launch(launch, preroll_timeout=10.0, peers={"px4_sitl": Px4Fake})
+    built = (
+        type(loop.controller).__name__,
+        loop.controller.airframe,
+        [type(s).__name__ for s in loop.sensors],
+        [type(p).__name__ for p in loop.peers],
+    )
+    loop.close()
+    receipt = L.resolve_to_vehicle_builder(launch)[1].tested_config.model_dump(mode="json")
+    recorded = {
+        k: receipt[k] for k in ("vehicle", "layer", "px4", "scene", "scene_start", "geodetic_origin", "sensors")
+    }
 
-    assert (_started_models(daemon), receipt["vehicle"], receipt.get("layer")) == (
-        ["none_astro_max"],
-        "astro_max_base",
-        None,
+    assert (built, recorded) == (
+        ("Px4MavlinkController", "astro_max", ["ImuSensor", "MagSensor", "BaroSensor", "GpsSensor"], ["Px4Fake"]),
+        {
+            "vehicle": "astro_max_base",
+            "layer": None,
+            "px4": {"airframe": "astro_max"},
+            "scene": "empty",
+            "scene_start": None,
+            "geodetic_origin": None,
+            "sensors": {},
+        },
     )
 
 
