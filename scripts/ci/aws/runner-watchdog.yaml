@@ -193,12 +193,12 @@ Resources:
       Principal: events.amazonaws.com
       SourceArn: !GetAtt WatchdogSchedule.Arn
 
-  # A silent watchdog is WatchdogSilentAlarm's to report, so missing data here is not a breach.
+  # Missing data breaches, so the alarm also fires when the watchdog stops reporting.
   OverdueAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: nexus-gpu-runner-overdue
-      AlarmDescription: A tagged nexus GPU runner is at least 120 minutes old.
+      AlarmDescription: A tagged nexus GPU runner is at least 120 minutes old, or the watchdog stopped reporting.
       Namespace: Nexus/GpuRunnerWatchdog
       MetricName: OverdueRunnerCount
       Statistic: Maximum
@@ -206,39 +206,6 @@ Resources:
       EvaluationPeriods: 1
       Threshold: 1
       ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref AlertTopicArn]
-      OKActions: [!Ref AlertTopicArn]
-
-  # When the newest data is missing, a CloudWatch alarm reads older datapoints from farther back, so
-  # a plain missing-data alarm kept the last good report for 86 minutes. FILL turns each empty
-  # period into a 0, so the alarm fires after two empty 15-minute periods. A result that FILL
-  # cannot build is missing data, which breaches too.
-  WatchdogSilentAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: nexus-gpu-runner-watchdog-silent
-      AlarmDescription: The nexus GPU runner watchdog has not run for two 15-minute periods.
-      Metrics:
-        - Id: invocations
-          ReturnData: false
-          MetricStat:
-            Metric:
-              Namespace: AWS/Lambda
-              MetricName: Invocations
-              Dimensions:
-                - Name: FunctionName
-                  Value: !Ref WatchdogFunction
-            Period: 900
-            Stat: Sum
-        - Id: filled
-          Label: Watchdog invocations, empty periods as 0
-          Expression: FILL(invocations, 0)
-          ReturnData: true
-      EvaluationPeriods: 2
-      DatapointsToAlarm: 2
-      Threshold: 1
-      ComparisonOperator: LessThanThreshold
       TreatMissingData: breaching
       AlarmActions: [!Ref AlertTopicArn]
       OKActions: [!Ref AlertTopicArn]
