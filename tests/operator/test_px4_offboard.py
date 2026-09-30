@@ -43,6 +43,9 @@ class _FakeMav:
     def mission_item_int_send(self, *a):
         self.calls.append(("mission_item_int", a))
 
+    def mission_set_current_send(self, *a):
+        self.calls.append(("mission_set_current", a))
+
 
 class _FakeConn:
     def __init__(self):
@@ -623,6 +626,39 @@ def test_an_uploaded_mission_starts_at_its_first_item():
     assert args[5] == 1
 
 
+def test_a_started_mission_arms_only_once_px4_is_at_its_first_item():
+    """A started mission arms only once PX4 is at its first item: PX4 skips an upload that matches
+    the mission it holds, whose current item can be the end of a finished flight.
+    """
+    from pymavlink import mavutil
+
+    arm_cmd = mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM
+    p = _pilot()
+    p._rel_alt = 0.0
+    p.upload_mission(_box())
+    p._on_msg(_FakeMsg("MISSION_ACK", type=0))
+    p._on_msg(_FakeMsg("MISSION_CURRENT", seq=5))  # a finished flight of the same mission
+    p.start_mission()
+    p._mode = "Mission"
+    t0 = p._arm_since
+    st = _service(p, now=t0 + 10.0)
+    assert not _sent(p, arm_cmd)  # PX4 is still at the end of the last flight
+    p._on_msg(_FakeMsg("MISSION_CURRENT", seq=0))
+    _service(p, now=t0 + 20.0, state=st)
+    assert len(_sent(p, arm_cmd)) == 1
+
+
+def test_starting_a_mission_asks_px4_for_its_first_item():
+    """Starting a mission asks PX4 for its first item, with MISSION_SET_CURRENT seq 0."""
+    p = _pilot()
+    p.upload_mission(_box())
+    p._on_msg(_FakeMsg("MISSION_ACK", type=0))
+    p.start_mission()
+    _service(p, now=100.0)
+    (args,) = [a for c, a in p._mav.mav.calls if c == "mission_set_current"]
+    assert args[2] == 0  # (sysid, compid, seq)
+
+
 def test_plain_mission_request_is_answered_too():
     p = _pilot()
     p.upload_mission(_box())
@@ -746,5 +782,6 @@ def test_start_mission_sets_the_mode_before_arming():
     st = _service(p, now=t0 + 10.0, state=None)
     assert not _sent(p, arm_cmd)  # settled, but the mode is still unconfirmed
     p._mode = "Mission"
+    p._on_msg(_FakeMsg("MISSION_CURRENT", seq=0))  # PX4 is at the first item, which the arm also needs
     _service(p, now=t0 + 20.0, state=st)
     assert len(_sent(p, arm_cmd)) == 1
