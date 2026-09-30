@@ -651,3 +651,24 @@ def test_the_operator_on_a_fake_px4_run_fails_at_once_with_a_clear_error(daemon,
         waited = time.monotonic() - t0
 
     assert ("fake" in message, waited < 5.0) == (True, True), (message, waited)
+
+
+def test_a_peer_mapping_with_an_unknown_key_fails_the_build_before_any_peer_starts(daemon, assembly, catalog, tmp_path):
+    """A peer mapping that names a peer the build doesn't know fails the build, before any peer starts.
+
+    Given a stand-in docker daemon and a peer mapping keyed `px4-sitl`, a typo of `px4_sitl`, when the
+    run builds, then it raises `ValueError` naming the unknown key and the known ones, and the daemon
+    records no container.
+    """
+    launch = LaunchConfig.from_dict({"vehicle": "astro", "scene": "empty"})
+
+    try:
+        launch_mod.build_from_launch(
+            launch, registry=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0, peers={"px4-sitl": Px4Fake}
+        ).close()
+        message = "no error"
+    except ValueError as exc:
+        message = str(exc)
+
+    named = all(name in message for name in ("px4-sitl", "px4_sitl", "kit"))
+    assert (named, daemon.runs) == (True, []), message

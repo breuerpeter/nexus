@@ -153,7 +153,8 @@ def build_from_launch(
 
     Raises:
         ValueError: The vehicle declares no controller, two, one off its root prim, one other than
-            PX4, or a PX4 schema with no airframe; raised before any peer starts.
+            PX4, or a PX4 schema with no airframe, or ``peers`` names a peer the build doesn't
+            know; raised before any peer starts.
         KitPeerError: The vehicle authors RTX sensors and the Kit peer couldn't start.
     """
     builder, resolved = resolve_to_vehicle_builder(launch, registry, cache_dir=cache_dir)
@@ -161,7 +162,11 @@ def build_from_launch(
         cfg = _scenario_from_launch(launch)
     _thread_scene(cfg, resolved)
     label = resolved.tested_config.vehicle or "vehicle"
-    peer_classes = {**shipped_peers(), **(peers or {})}
+    shipped = shipped_peers()
+    unknown = sorted(set(peers or {}) - set(shipped))
+    if unknown:
+        raise ValueError(f"the peer mapping names {unknown}, which no peer answers to; the peers are {sorted(shipped)}")
+    peer_classes = {**shipped, **(peers or {})}
     spec = declared_controller(resolved.vehicle_usd_path, components)
     if spec.schema != PX4_SCHEMA:
         raise ValueError(
