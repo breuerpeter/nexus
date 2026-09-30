@@ -36,6 +36,8 @@ import nexus as na
 from nexus.examples._lib import dump_run
 from nexus.examples.controllers.px4.log_warnings import px4_warnings
 
+VEHICLE = "astro_max_base"  # the registry vehicle flown, which declares PX4
+SCENE = "empty"  # flat ground
 DEFAULT_TIMEOUT_S = 200.0  # --timeout default: wall-clock budget for arm + climb
 
 
@@ -57,7 +59,7 @@ def main() -> int:
 
     try:
         na.logger.info("[manual] Newton starting in-process (actuator from USD); serving :4560 …")
-        with na.Sim(device="cuda", log=True) as sim:
+        with na.Sim(VEHICLE, scene=SCENE, device="cuda", log=True) as sim:
             sim.start(timeout=args.timeout)  # drive setup as far as PX4 lockstep
             na.logger.info("[manual] PX4 lockstep established: flying via MANUAL_CONTROL (:14540)")
 

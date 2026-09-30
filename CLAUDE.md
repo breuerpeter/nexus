@@ -27,8 +27,9 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
   Examples dump plain `.npz` and JSON files, and only `scripts/ci/evaluate_examples.py` imports
   `evo` to score them.
 - **Use `uv` for all Python.** `uv sync` installs the framework, and
-  `uv run nexus run` runs the command-line tool, PX4 only. It flies the registry default vehicle
-  `astro_max_base` by default, and the vehicle's USD declares its controller.
+  `uv run nexus run --vehicle astro_max_base --scene empty` runs the command-line tool, PX4 only.
+  Every run names its vehicle and scene, since a catalog holds no defaults, and the vehicle's USD
+  declares its controller.
 - **Docs** live in the `docs` dependency-group, not installed by default:
   `uv run --group docs mkdocs serve|build`. The site source is `docs/`, and
   `mkdocs.yml` is at the repo root. Read `docs/CLAUDE.md` before editing anything under `docs/`.

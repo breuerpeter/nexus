@@ -17,7 +17,6 @@ from .models import (
 )
 from .receipt import ResolvedLaunch, TestedConfig
 from .registry import (
-    Defaults,
     NoMatchError,
     Registry,
     RegistryError,
@@ -29,7 +28,6 @@ from .resolve import resolve
 
 __all__ = [
     "AssetRef",
-    "Defaults",
     "GeodeticOrigin",
     # launch schema
     "LaunchConfig",

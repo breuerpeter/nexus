@@ -94,12 +94,21 @@ def test_an_rtx_run_without_docker_names_docker_and_no_missing_file(tmp_path):
     consumer.mkdir()
     vehicle = consumer / "cam.usda"
     vehicle.write_text(CAMERA_USD)
-    # A catalog with an empty default scene, so the run fetches nothing over the network.
+    # A catalog with an empty scene, which the run names, so it fetches nothing over the network.
     (consumer / "nexus.registry.yaml").write_text("scenes:\n  empty: {}\n")
     env = {**_env(tmp_path), "PYTHONPATH": str(site)}
 
     out = subprocess.run(
-        [sys.executable, "-c", "from nexus._src.cli.main import main; main()", "run", "--vehicle", str(vehicle)],
+        [
+            sys.executable,
+            "-c",
+            "from nexus._src.cli.main import main; main()",
+            "run",
+            "--vehicle",
+            str(vehicle),
+            "--scene",
+            "empty",
+        ],
         cwd=consumer,
         env=env,
         check=False,

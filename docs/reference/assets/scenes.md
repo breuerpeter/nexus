@@ -5,7 +5,7 @@ description: "The static worlds nexus flies in: flat ground, the slalom pillars,
 # Scenes
 
 A scene is the **static world** the vehicle flies in. Pick one by name with
-`nexus run --scene <name>`, default `empty`. The registry,
+`nexus run --scene <name>`: every run names one, and `empty` is flat ground. The registry,
 `nexus/_src/config/registry.yaml`, resolves scenes. A local `.usdz` path such as
 `--scene /path/to/scene.usdz` flies that file directly, which is the scene-development workflow.
 See [Converting scenes](../../guide/convert-scenes.md).
