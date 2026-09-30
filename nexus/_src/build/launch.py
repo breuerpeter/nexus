@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import os
 import pathlib
-import socket
 import time
 from collections.abc import Callable, Mapping
 from typing import IO
@@ -154,8 +153,9 @@ def build_from_launch(
     self-assembles from ``resolve_scenario`` plus its own components plus ``Sim.from_orchestrator``.
     ``stream`` publishes each RTX camera's feed over Real Time Streaming Protocol (RTSP).
     ``components`` resolves the vehicle's schemas to classes; ``None`` takes the default registry.
-    ``peers`` maps a peer's name, ``px4_sitl`` or ``kit``, to the class the build starts for it, or a
-    callable that builds one, over :func:`shipped_peers`: a test sends a peer to its fake here.
+    ``peers`` maps a peer's name, ``px4_sitl`` or ``kit``, to the class the build starts for it, or for
+    ``kit`` a callable that builds one, over :func:`shipped_peers`: a test sends a peer to its fake
+    here. A ``px4_sitl`` class claims the run's PX4 instance through its ``claim_instance``.
 
     Raises:
         ValueError: The vehicle declares no controller, two, one off its root prim, one other than
@@ -197,7 +197,7 @@ def build_from_launch(
     try:
         # *This* is where the declared controller becomes an instance; the assembly that follows is
         # controller-agnostic. The schema gives its keywords, and the run gives the PX4 peer's addresses.
-        instance, claim = _claim_px4_instance(peer_classes["px4_sitl"]) if px4_sitl else (0, None)
+        instance, claim = peer_classes["px4_sitl"].claim_instance() if px4_sitl else (0, None)
         controller = spec.cls(**spec.kwargs, port=HIL_PORT + instance, target_system=instance + 1)
         if px4_sitl:
             # The peer starts here, before the assembly: its start builds PX4 incrementally, which must
@@ -228,36 +228,6 @@ def build_from_launch(
         if renderer_factory is not None:
             renderer_factory.close()
         raise
-
-
-def _claim_px4_instance(cls: Callable) -> tuple[int, IO]:
-    """The lowest PX4 instance free on this machine, and the open lock file that holds it for this run.
-
-    A free instance has no live run's container, no lock another run holds, and no listener on its HIL
-    port. The run owns every address its peer uses, so it picks the instance itself, and the lock,
-    which the peer releases at its stop, keeps two runs that start at once off one instance.
-    """
-    import fcntl
-
-    held = getattr(cls, "held_instances", set)()  # a fake, or a callable that builds one, holds none
-    locks = pathlib.Path("~/.cache/nexus/px4-instances").expanduser()
-    locks.mkdir(parents=True, exist_ok=True)
-    for instance in range(256):
-        if instance in held:
-            continue
-        claim = open(locks / f"{instance}.lock", "w")  # the peer closes it at its stop
-        try:
-            fcntl.flock(claim, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            with socket.socket() as s:
-                s.setsockopt(
-                    socket.SOL_SOCKET, socket.SO_REUSEADDR, 1
-                )  # as the HIL server binds: only a listener blocks it
-                s.bind(("0.0.0.0", HIL_PORT + instance))
-        except OSError:
-            claim.close()
-            continue
-        return instance, claim
-    raise RuntimeError("no free PX4 instance on this machine: 256 are in use")
 
 
 def _start_px4(cls: Callable, resolved: ResolvedLaunch, instance: int, airframe: str, claim: IO):

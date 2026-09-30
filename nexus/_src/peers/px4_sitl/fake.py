@@ -26,6 +26,7 @@ os.environ.setdefault("MAVLINK_DIALECT", "common")
 from pymavlink import mavutil
 
 from . import HIL_PORT
+from .instance import claim as _claim
 
 HOVER = 0.5
 """The command on every channel: a fixed throttle, not tuned to the vehicle's weight."""
@@ -50,6 +51,13 @@ class Px4Fake:
         """How many of each MAVLink message the fake received, by type."""
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+
+    @staticmethod
+    def claim_instance() -> tuple[int, IO]:
+        """The lowest PX4 instance free on this machine and the lock file that holds it, as the real
+        peer claims one: two runs against fakes take two HIL ports too.
+        """
+        return _claim()
 
     def start(self) -> None:
         """Start dialing the HIL port in the background; the fake answers once the run listens."""

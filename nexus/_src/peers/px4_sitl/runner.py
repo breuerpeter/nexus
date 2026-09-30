@@ -32,6 +32,7 @@ from nexus._src.peers import LABEL, containers
 from nexus._src.peers.containers import ensure_image, run_container, stop_container
 
 from . import checkout
+from .instance import claim as _claim
 
 IMAGE = "nexus-px4-sitl"
 _INSTANCE = "nexus.px4.instance"  # the label that carries the container's PX4 instance
@@ -149,10 +150,13 @@ class Px4Sitl:
         )
 
     @staticmethod
-    def held_instances() -> set[int]:
-        """The PX4 instances that a live process's container holds on this machine; a run takes another."""
+    def claim_instance() -> tuple[int, IO]:
+        """The lowest PX4 instance free on this machine and the lock file that holds it, through
+        :func:`~nexus._src.peers.px4_sitl.instance.claim`, passing over each instance a live process's container holds.
+        """
         held = containers.client().containers.list(all=True, filters={"label": [f"{LABEL}=px4"]})
-        return {int(c.labels[_INSTANCE]) for c in held if (owner := int(c.labels.get(_OWNER) or 0)) and _alive(owner)}
+        live = {int(c.labels[_INSTANCE]) for c in held if (owner := int(c.labels.get(_OWNER) or 0)) and _alive(owner)}
+        return _claim(skip=live)
 
     def _clear_leftovers(self) -> None:
         """Remove a PX4 container of this instance whose process has exited, and fail while a live one
