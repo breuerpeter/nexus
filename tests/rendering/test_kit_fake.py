@@ -2,16 +2,16 @@
 each ``frame`` request with a synthetic frame.
 
 The docker daemon is the system boundary, and the stand-in daemon records any container a run would
-start. A test reads a run's frames back from the ``.rrd`` it writes, through Rerun's command-line tool.
+start. A test reads a run's frames back from the ``.rrd`` it writes, through Rerun's reader.
 """
 
-import re
-import subprocess
-import sys
+import io
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from PIL import Image
+from rerun.experimental import RrdReader
 
 import nexus._src.build.launch as launch_mod
 from nexus._src.config import LaunchConfig
@@ -21,12 +21,18 @@ from nexus._src.peers.px4_sitl.fake import Px4Fake
 from nexus._src.rendering.link import KitRenderer
 
 
-def _frames(rrd: str) -> list[tuple[int, int]]:
-    """The width and height of every image the recording holds, one entry per frame."""
-    out = subprocess.run(
-        [sys.executable, "-m", "rerun", "rrd", "print", "-vvv", rrd], capture_output=True, text=True, check=True
-    ).stdout
-    return [(int(w), int(h)) for w, h in re.findall(r"\{width: (\d+), height: (\d+), pixel_format", out)]
+def _frames(rrd: str, camera: str) -> list[tuple[int, int]]:
+    """The width and height of every frame the recording holds for ``camera``, one entry per frame.
+
+    The logger stores a camera frame as an encoded image, so this decodes each one for its size.
+    """
+    sizes = []
+    for chunk in RrdReader(rrd).stream():
+        batch = chunk.to_record_batch()
+        if chunk.entity_path.endswith(f"/cameras/{camera}") and "EncodedImage:blob" in batch.schema.names:
+            for cell in batch.column("EncodedImage:blob").to_pylist():
+                sizes.append(Image.open(io.BytesIO(bytes(cell[0]))).size)
+    return sizes
 
 
 def test_a_run_whose_peer_mapping_sends_the_kit_peer_to_its_fake_starts_no_container_and_gets_frames_at_the_declared_rate(
@@ -50,7 +56,7 @@ def test_a_run_whose_peer_mapping_sends_the_kit_peer_to_its_fake_starts_no_conta
     while ticks < 250 and loop.step():  # stepping an ended run starts a new one
         ticks += 1
     loop.close()
-    frames = _frames(loop.logger.rrd_path)
+    frames = _frames(loop.logger.rrd_path, "fpvcam")
 
     assert (daemon.runs, 23 <= len(frames) <= 25, set(frames)) == ([], True, {(1280, 720)}), len(frames)
 

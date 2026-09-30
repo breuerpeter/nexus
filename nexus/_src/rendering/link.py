@@ -98,7 +98,8 @@ class KitRenderer:
 
     def _died(self, what: str) -> str:
         tail = self._peer.console_tail()
-        return f"the Kit render peer {what}; its console is {self._peer.log_path}" + (f":\n{tail}" if tail else "")
+        console = f"; its console is {self._peer.log_path}" if self._peer.log_path else ""
+        return f"the Kit render peer {what}{console}" + (f":\n{tail}" if tail else "")
 
     def _connect(self) -> None:
         deadline = time.monotonic() + STARTUP_TIMEOUT_S

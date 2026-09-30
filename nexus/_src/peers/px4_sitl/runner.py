@@ -94,15 +94,17 @@ class Px4Sitl:
     """One PX4 SITL container for one run, on the peer contract.
 
     Args:
-        tree: The PX4 tree to build and run, from :func:`checkout.tree`.
+        catalog: The project catalog the run resolved against, whose pin file wins over the shipped
+            one; the start resolves the PX4 tree from it through :func:`checkout.tree`.
         airframe: The airframe's make target without PX4's ``none_`` prefix, ``astro_max``.
         instance: PX4's SITL instance, which numbers its ports and its system id.
         name: The container's name, one per run.
         log_path: Where the container's console streams to, the ``px4_log`` artifact.
     """
 
-    def __init__(self, *, tree: Path, airframe: str, instance: int, name: str, log_path: str) -> None:
-        self.tree = Path(tree)
+    def __init__(self, *, catalog: Path | None, airframe: str, instance: int, name: str, log_path: str) -> None:
+        self.catalog = catalog
+        self.tree: Path | None = None  # resolved at start, which can fetch it
         self.airframe = airframe
         self.instance = instance
         self.name = name
@@ -110,8 +112,8 @@ class Px4Sitl:
         self._container = None
 
     def start(self) -> None:
-        """Build the image and the tree if this machine lacks them, then start PX4; it boots in the
-        background and dials the sim's HIL server.
+        """Fetch the PX4 tree, then build the image and the tree if this machine lacks them, then start
+        PX4; it boots in the background and dials the sim's Hardware In The Loop (HIL) server.
 
         Raises:
             RuntimeError: A live process holds this instance, or there is no PX4 tree, or the image
@@ -119,6 +121,7 @@ class Px4Sitl:
             docker.errors.ContainerError: The PX4 build failed.
         """
         self._clear_leftovers()
+        self.tree = checkout.tree(self.catalog)
         build(self.tree)
         kwargs = _container_kwargs(self.tree)
         # PX4's own `make px4_sitl none_<airframe>` runs the binary with the airframe in its
