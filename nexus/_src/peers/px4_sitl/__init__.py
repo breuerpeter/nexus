@@ -1,7 +1,8 @@
 """The PX4 Software In The Loop (SITL) peer: one PX4 autopilot in a container.
 
 :mod:`.runner` starts and stops the container, :mod:`.checkout` fetches the PX4 tree from the pin,
-``px4.ref``, and ``image/`` is the build context of the toolchain image.
+``px4.ref``, :mod:`.instance` claims the instance a run holds, :mod:`.fake` stands in for PX4 in a
+test, and ``image/`` is the build context of the toolchain image.
 
 PX4 numbers every link from its instance ``i``: it dials the sim's Hardware In The Loop (HIL)
 server on ``HIL_PORT + i``, streams its offboard link to ``OFFBOARD_PORT + i`` and its
