@@ -28,6 +28,7 @@ class TestedConfig(_Base):
     vehicle: str  # the variant's `name` handle, or the local ``.usd`` path a run flew
     registry: str | None = None  # the catalog the run resolved against, when it loaded one itself
     vehicle_usd: AssetRef
+    layer: AssetRef | None = None  # the override layer the run composed over the vehicle
     px4: Px4Spec | None = None
     scene: str
     scene_usd: AssetRef | None = None

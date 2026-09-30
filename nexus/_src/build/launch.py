@@ -11,10 +11,11 @@ renders through :func:`~nexus._src.rendering.rtx_renderer` the same way.
 
 A vehicle whose USD authors RTX sensor prims renders them in the Kit peer, a container this build
 starts right after the fetch, so Kit boots while PX4 builds and the physics compiles. The PX4
-autopilot is a peer too: with the run's PX4 peer managed, the build starts the
-Software In The Loop (SITL) container on the peer contract before the assembly, and hands it to the
-orchestrator, which stops it when the run ends; external, the build starts nothing and the
-controller waits for the autopilot to dial in.
+autopilot is a peer too: when the vehicle declares the PX4 Software In The Loop (SITL) peer,
+``NexusPx4SitlAPI``, the build starts its container on the peer contract before the assembly, on a
+PX4 instance free on this machine, and hands it to the orchestrator, which stops it when the run
+ends. A run whose override layer drops that declaration starts nothing, and the controller waits on
+instance 0's Hardware In The Loop (HIL) port for an autopilot started elsewhere.
 
 The build starts each peer from the class its peer mapping names: by default the real process, and
 in a test the peer's fake, which speaks the same link and starts no process.
@@ -26,19 +27,23 @@ import os
 import pathlib
 import time
 from collections.abc import Callable, Mapping
+from typing import IO
 
 from nexus._src.config import LaunchConfig, Px4Spec, Registry, ResolvedLaunch, resolve
 from nexus._src.core import Orchestrator
 from nexus._src.core.registry import ComponentRegistry
+from nexus._src.peers.px4_sitl import HIL_PORT
 from nexus._src.physics import USDBuilder
 from nexus._src.rendering import rtx_renderer
 from nexus._src.usd.reader import read_declarations
 
 from .assembly import build_orchestrator, build_scenario
-from .components import declared_controller
+from .components import declared_controller, root_schemas
 
 # The schema a vehicle declares PX4 with; its `airframe` goes into the receipt.
 PX4_SCHEMA = "NexusPx4API"
+# The schema a vehicle declares the PX4 SITL peer with, beside PX4_SCHEMA on its root prim.
+PX4_SITL_SCHEMA = "NexusPx4SitlAPI"
 
 
 def shipped_peers() -> dict[str, type]:
@@ -148,13 +153,15 @@ def build_from_launch(
     self-assembles from ``resolve_scenario`` plus its own components plus ``Sim.from_orchestrator``.
     ``stream`` publishes each RTX camera's feed over Real Time Streaming Protocol (RTSP).
     ``components`` resolves the vehicle's schemas to classes; ``None`` takes the default registry.
-    ``peers`` maps a peer's name, ``px4_sitl`` or ``kit``, to the class the build starts for it, or a
-    callable that builds one, over :func:`shipped_peers`: a test sends a peer to its fake here.
+    ``peers`` maps a peer's name, ``px4_sitl`` or ``kit``, to the class the build starts for it, or for
+    ``kit`` a callable that builds one, over :func:`shipped_peers`: a test sends a peer to its fake
+    here. A ``px4_sitl`` class claims the run's PX4 instance through its ``claim_instance``.
 
     Raises:
         ValueError: The vehicle declares no controller, two, one off its root prim, one other than
-            PX4, or a PX4 schema with no airframe, or ``peers`` names a peer the build doesn't
-            know; raised before any peer starts.
+            PX4, a PX4 schema with no airframe, or the PX4 SITL peer with no PX4 schema, or ``peers``
+            names a peer the build doesn't know; raised before any peer starts.
+        FileNotFoundError: The launch names an override layer with no file behind it.
         KitPeerError: The vehicle authors RTX sensors and the Kit peer couldn't start.
     """
     builder, resolved = resolve_to_vehicle_builder(launch, registry, cache_dir=cache_dir)
@@ -167,6 +174,12 @@ def build_from_launch(
     if unknown:
         raise ValueError(f"the peer mapping names {unknown}, which no peer answers to; the peers are {sorted(shipped)}")
     peer_classes = {**shipped, **(peers or {})}
+    root, schemas = root_schemas(resolved.vehicle_usd_path)
+    px4_sitl = PX4_SITL_SCHEMA in schemas
+    if px4_sitl and PX4_SCHEMA not in schemas:
+        raise ValueError(
+            f"{root}: {PX4_SITL_SCHEMA} declares the PX4 SITL peer, but the prim declares no {PX4_SCHEMA} to fly it"
+        )
     spec = declared_controller(resolved.vehicle_usd_path, components)
     if spec.schema != PX4_SCHEMA:
         raise ValueError(
@@ -184,12 +197,12 @@ def build_from_launch(
     try:
         # *This* is where the declared controller becomes an instance; the assembly that follows is
         # controller-agnostic. The schema gives its keywords, and the run gives the PX4 peer's addresses.
-        px4 = launch.peers.px4
-        controller = spec.cls(**spec.kwargs, port=px4.hil_port, target_system=px4.system_id)
-        if px4.realization == "managed":
+        instance, claim = peer_classes["px4_sitl"].claim_instance() if px4_sitl else (0, None)
+        controller = spec.cls(**spec.kwargs, port=HIL_PORT + instance, target_system=instance + 1)
+        if px4_sitl:
             # The peer starts here, before the assembly: its start builds PX4 incrementally, which must
             # stay outside the sim's preroll window, GH #39, and PX4 boots while the physics compiles.
-            started.append(_start_px4(peer_classes["px4_sitl"], resolved, px4.instance, controller.airframe))
+            started.append(_start_px4(peer_classes["px4_sitl"], resolved, instance, controller.airframe, claim))
 
         # output.log/view → the Logger, which writes the .rrd or serves :9876; neither → no recording.
         return build_orchestrator(
@@ -217,11 +230,11 @@ def build_from_launch(
         raise
 
 
-def _start_px4(cls: Callable, resolved: ResolvedLaunch, instance: int, airframe: str):
+def _start_px4(cls: Callable, resolved: ResolvedLaunch, instance: int, airframe: str, claim: IO):
     """Start the PX4 SITL peer for this run from ``cls``: the catalog whose pin names the PX4 tree,
-    the vehicle's airframe, the run's instance, and a container name and console log of this run's
-    own. The name carries the process and the instance, so two runs in one process on two instances
-    keep both containers; two on one instance collide on PX4's ports anyway.
+    the vehicle's airframe, the run's instance and the lock that holds it, which the peer releases at
+    its stop, and a container name and console log of this run's own. The name carries the process
+    and the instance, so two runs in one process on two instances keep both containers.
     """
     from nexus._src.peers.px4_sitl.runner import PX4_LOG_DIR
 
@@ -232,6 +245,7 @@ def _start_px4(cls: Callable, resolved: ResolvedLaunch, instance: int, airframe:
         airframe=airframe,
         instance=instance,
         name=f"nexus-px4-{os.getpid()}-{instance}",
+        claim=claim,
         log_path=os.path.join(PX4_LOG_DIR, f"px4-{time.strftime('%Y%m%d-%H%M%S')}-{os.getpid()}.log"),
     )
     peer.start()

@@ -9,13 +9,14 @@ the Forward-Right-Down (FRD) body frame; this layer only encodes wire units and 
 
 The autopilot itself is a peer of the run, not of this controller: the build starts the PX4
 Software In The Loop (SITL) container, :class:`~nexus._src.peers.px4_sitl.runner.Px4Sitl`,
-for a managed PX4 peer, and starts nothing for an external one, an autopilot started elsewhere
-that dials in. The build makes this controller the same way for both: it takes the run's
+when the vehicle declares that peer, and starts nothing when a layer drops the declaration, for an
+autopilot started elsewhere that dials in. The build makes this controller the same way for both: it takes the run's
 Hardware In The Loop (HIL) port and PX4's system id, listens, and speaks to whatever dials in.
 """
 
 from __future__ import annotations
 
+import errno
 import glob
 import os
 
@@ -41,6 +42,28 @@ from nexus._src.peers.px4_sitl import HIL_PORT
 PX4_ULOG_DIR = os.path.expanduser("~/.cache/nexus/px4-ulog")
 
 
+def _listener(port: int) -> int | None:
+    """The process that listens on TCP `port` on this machine, from Linux's `/proc`; `None` when it finds none."""
+    inodes = set()
+    for table in ("/proc/net/tcp", "/proc/net/tcp6"):
+        try:
+            with open(table) as rows:
+                next(rows)
+                for row in rows:
+                    fields = row.split()
+                    if fields[3] == "0A" and int(fields[1].rsplit(":", 1)[1], 16) == port:  # 0A: LISTEN
+                        inodes.add(f"socket:[{fields[9]}]")
+        except OSError:
+            continue
+    for fd in glob.glob("/proc/[0-9]*/fd/*"):
+        try:
+            if os.readlink(fd) in inodes:
+                return int(fd.split("/")[2])
+        except OSError:
+            continue
+    return None
+
+
 class Px4MavlinkController:
     def __init__(
         self,
@@ -60,12 +83,12 @@ class Px4MavlinkController:
             airframe: The SITL airframe the vehicle declares, `nexus:airframe` of its `NexusPx4API`
                 schema, without PX4's ``none_`` prefix: the peer the run starts flies it.
             ip: The address the HIL server binds.
-            port: The TCP port the HIL server listens on, the run's ``peers.px4.hil_port``: PX4 dials it.
+            port: The TCP port the HIL server listens on, ``HIL_PORT`` plus the run's PX4 instance: PX4 dials it.
             sysid: This end's MAVLink system id.
             compid: This end's MAVLink component id.
             gps_rate_hz: How often ``HIL_GPS`` and the ground-truth state go out.
             ulog_dir: Where PX4's ULog lands, ``PX4_ULOG_DIR`` by default.
-            target_system: PX4's MAVLink system id, the run's ``peers.px4.system_id``: instance + 1.
+            target_system: PX4's MAVLink system id: the run's PX4 instance plus 1.
         """
         self.airframe = airframe
         self.ip = ip
@@ -113,7 +136,16 @@ class Px4MavlinkController:
     def connect(self) -> None:
         conn_string = f"tcpin:{self.ip}:{self.port}"
         logger.info(f"Waiting for PX4 connection on {conn_string}...")
-        self.mav = mavutil.mavlink_connection(conn_string, source_system=self.sysid, source_component=self.compid)
+        try:
+            self.mav = mavutil.mavlink_connection(conn_string, source_system=self.sysid, source_component=self.compid)
+        except OSError as exc:
+            if exc.errno != errno.EADDRINUSE:
+                raise
+            holder = _listener(self.port)
+            raise ConnectionError(
+                f"the HIL port {self.port} is in use by {f'process {holder}' if holder else 'another process'}: "
+                "a second run on this machine that flies an autopilot started elsewhere needs the first to end"
+            ) from exc
         self.proto = self.mav.mav
         self.proto.srcSystem = self.sysid
         self.proto.srcComponent = self.compid

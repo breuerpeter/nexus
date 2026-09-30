@@ -17,6 +17,7 @@ import os
 import select
 import socket
 import threading
+from typing import IO
 
 # Set the MAVLink dialect before importing mavutil, as the controller does.
 os.environ.setdefault("MAVLINK20", "1")
@@ -25,6 +26,7 @@ os.environ.setdefault("MAVLINK_DIALECT", "common")
 from pymavlink import mavutil
 
 from . import HIL_PORT
+from .instance import claim as _claim
 
 HOVER = 0.5
 """The command on every channel: a fixed throttle, not tuned to the vehicle's weight."""
@@ -36,16 +38,26 @@ class Px4Fake:
     Args:
         instance: PX4's SITL instance: the fake dials the HIL port ``HIL_PORT + instance`` and speaks
             as system ``instance + 1``, as PX4 does.
+        claim: The open lock file that holds ``instance`` for this run, which the stop releases, as
+            the real peer's does; ``None`` for a fake whose instance no lock holds.
         **run: The other run facts the build hands a PX4 peer, the catalog, the airframe, the
             container's name and its console log, which the fake needs none of.
     """
 
-    def __init__(self, *, instance: int, **run) -> None:
+    def __init__(self, *, instance: int, claim: IO | None = None, **run) -> None:
         self.instance = instance
+        self._claim = claim
         self.received: collections.Counter[str] = collections.Counter()
         """How many of each MAVLink message the fake received, by type."""
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+
+    @staticmethod
+    def claim_instance() -> tuple[int, IO]:
+        """The lowest PX4 instance free on this machine and the lock file that holds it, as the real
+        peer claims one: two runs against fakes take two HIL ports too.
+        """
+        return _claim()
 
     def start(self) -> None:
         """Start dialing the HIL port in the background; the fake answers once the run listens."""
@@ -58,8 +70,11 @@ class Px4Fake:
         return self._thread is not None and self._thread.is_alive()
 
     def stop(self) -> None:
-        """Hang up the link and end the fake. Idempotent."""
+        """Hang up the link, end the fake and release its instance. Idempotent."""
         self._stop.set()
+        if self._claim is not None:
+            self._claim.close()
+            self._claim = None
         if self._thread is not None:
             self._thread.join(timeout=5.0)
             self._thread = None

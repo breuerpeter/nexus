@@ -12,8 +12,6 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from nexus._src.peers.px4_sitl import HIL_PORT, OFFBOARD_PORT
-
 
 class _Base(BaseModel):
     # extra="forbid" turns a typo in a YAML key, say ``vehicel:``, into a load error instead of a
@@ -60,47 +58,6 @@ class Px4Spec(_Base):
     """
 
     airframe: str
-
-
-class Px4Peer(_Base):
-    """How the run realizes its PX4 peer, and which addresses it hands PX4.
-
-    PX4 Software In The Loop (SITL) numbers every link by its instance N: the sim's Hardware In The
-    Loop (HIL) server it dials on ``HIL_PORT + N``, the offboard link it streams to on ``OFFBOARD_PORT + N``, and its
-    MAVLink system id, N + 1. No environment variable names a port, so the run hands PX4 one
-    instance and derives from it every address of its own: the HIL port it listens on, the operator
-    port it answers PX4 on, and the system id it addresses. Two runs on one machine take two
-    instances.
-    """
-
-    realization: Literal["managed", "external"] = "managed"
-    """``managed``: the build starts the PX4 SITL container and the run stops it. ``external``: the
-    run starts nothing and waits on its HIL port for an autopilot started elsewhere, a bench PX4 or
-    a SITL of your own.
-    """
-    instance: int = Field(default=0, ge=0)
-    """PX4's SITL instance number, ``px4 -i``."""
-
-    @property
-    def hil_port(self) -> int:
-        """The TCP port the run's HIL server listens on, which PX4 dials."""
-        return HIL_PORT + self.instance
-
-    @property
-    def offboard_port(self) -> int:
-        """The User Datagram Protocol (UDP) port PX4 streams its offboard link to, where the operator listens."""
-        return OFFBOARD_PORT + self.instance
-
-    @property
-    def system_id(self) -> int:
-        """PX4's MAVLink system id, ``MAV_SYS_ID``."""
-        return self.instance + 1
-
-
-class Peers(_Base):
-    """The peers of a run, by the component that speaks to each, and how the run realizes them."""
-
-    px4: Px4Peer = Field(default_factory=Px4Peer)
 
 
 class Runtime(_Base):
@@ -174,10 +131,14 @@ class LaunchConfig(_Base):
     re-anchors the GPS/magnetic/gravity reference and, for the streamed cesium globe, selects the
     place it streams. So `cesium` at any location is `--scene cesium --geo <lat>,<lon>`.
     """
-    peers: Peers = Field(default_factory=Peers)
-    """The run's peers and how it realizes each: for PX4, managed or external, and its instance.
+    layer: str | None = None
+    """Path to an override layer, a local Universal Scene Description (USD) file the run composes over
+    the vehicle, the ``--layer`` value.
 
-    Defaults to a managed PX4 at instance 0, the ports PX4 SITL uses out of the box.
+    Its opinions win over the vehicle's: it changes a declared value, selects a variant, or drops a
+    declaration, such as the PX4 Software In The Loop (SITL) peer's to fly an autopilot started
+    elsewhere. The receipt records its sha256 beside the vehicle's. ``None`` flies the vehicle as
+    its file declares it.
     """
     runtime: Runtime = Field(default_factory=Runtime)
     """Solver, device, timestep, and determinism settings for the run.

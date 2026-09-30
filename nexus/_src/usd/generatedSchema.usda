@@ -33,3 +33,9 @@ class "NexusPx4API" (
         Units: none"""
     )
 }
+
+class "NexusPx4SitlAPI" (
+    doc = """The PX4 Software In The Loop (SITL) peer, on the vehicle's root prim beside `NexusPx4API`: the run starts PX4 SITL and stops it with the run. A layer that drops it flies an autopilot started elsewhere, which dials instance 0's Hardware In The Loop (HIL) port, 4560."""
+)
+{
+}

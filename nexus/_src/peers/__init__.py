@@ -2,9 +2,10 @@
 
 A peer is a process outside the loop's process: a container, a virtual machine or a bare process.
 A component, a class in the loop's process, speaks to it over a link, so a run can hold the
-component with no peer: an autopilot started elsewhere, or a real one on a bench. The run chooses the peer's
-realization, managed, a process the build starts through this contract and the run stops, or
-external, an address the run attaches to, and the build makes the component the same way for both.
+component with no peer: an autopilot started elsewhere, or a real one on a bench. The vehicle's
+Universal Scene Description (USD) file declares its peers, and the build starts each one it
+declares through this contract, and the run stops it. A run's override layer drops a declaration to
+attach to a process started elsewhere, and the build makes the component the same way for both.
 
 The contract is narrow on purpose: start, stop, and whether it's alive. No watchdog, no restart
 policy and no ordering beyond what a peer's own start does. A peer's death reaches the loop through

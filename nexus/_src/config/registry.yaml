@@ -15,7 +15,9 @@
 #
 # Each vehicle USD declares PX4 with `NexusPx4API` on its root prim, and its `nexus:airframe` is the
 # SITL airframe make target minus PX4's `none_` prefix: `astro_max` runs `make px4_sitl
-# none_astro_max`. Both vehicles fly `astro_max` until payload mass is modeled.
+# none_astro_max`. Both vehicles fly `astro_max` until payload mass is modeled. Beside it, `NexusPx4SitlAPI`
+# declares the PX4 SITL peer, which the run starts; a run's override layer drops it to fly an
+# autopilot started elsewhere.
 
 # Where this catalog's blobs live. A project with its own catalog names its own base here.
 assets:
@@ -23,10 +25,10 @@ assets:
 
 vehicles:
   - name: astro_max_base
-    usd: { name: astro_max_base, sha256: 11dd2b7ce7576b7c01600f6450bc3dbd8f2b2ca81eb657806532f173eb36093b }
+    usd: { name: astro_max_base, sha256: 38700d1d05b739bba445b1b1d4fb35c7aec8ec4ef05d49d4dcb8b8941ef84ca9 }
 
   - name: astro_max_fpv
-    usd: { name: astro_max_fpv, sha256: 239f1f6b936b93c9ff32e2e2a6d210c3ccff1c79f040f197b2032f71f70f6bf4 }
+    usd: { name: astro_max_fpv, sha256: 51cec8c50db9b50d9a8baa86730b780e574d1d8846c5483ffe92d168cf2cbbe8 }
 
 # The scene USD is the single authority on what it is: authored UsdPhysics collision schemas ->
 # simulation geometry (ModelBuilder); no physics schemas -> visual-only; and since the stage-5

@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from nexus._src.config import LaunchConfig, Registry
+from nexus._src.peers.px4_sitl.fake import Px4Fake
 
 
 @pytest.fixture(autouse=True)
@@ -55,10 +56,11 @@ def daemon(monkeypatch, tmp_path):
     return runs
 
 
-# A vehicle that declares PX4 on its root prim, and nothing else.
+# A vehicle that declares PX4 and the PX4 SITL peer on its root prim, and nothing else.
 PX4_VEHICLE = (
     b'#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n\n'
-    b'def Xform "vehicle" (\n    prepend apiSchemas = ["NexusPx4API"]\n)\n{\n    string nexus:airframe = "80001"\n}\n'
+    b'def Xform "vehicle" (\n    prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n)\n'
+    b'{\n    string nexus:airframe = "80001"\n}\n'
 )
 
 
@@ -297,3 +299,218 @@ def test_a_px4_schema_with_no_airframe_authored_fails_the_build(tmp_path, daemon
         _build(tmp_path, bare)
 
     assert ("/vehicle" in str(err.value), daemon) == (True, [])
+
+
+# --- the override layer a run composes over its vehicle --------------------------------------------
+
+# A vehicle that declares PX4 and the PX4 SITL peer on its root prim, and nothing else.
+PX4_SITL_ROOT = """\
+def Xform "vehicle" (
+    prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]
+)
+{
+    string nexus:airframe = "foo"
+}
+"""
+
+
+def _layer(tmp_path, body: str, name: str = "override.usda") -> Path:
+    """A local override layer whose prims are `body`."""
+    path = tmp_path / name
+    path.write_text(f"#usda 1.0\n\n{body}")
+    return path
+
+
+def _layered(tmp_path, vehicle: str, layer: Path | str) -> LaunchConfig:
+    """A launch of `vehicle`, a catalog name or a local path, in the empty scene, with the override layer `layer`."""
+    return LaunchConfig.from_dict({"vehicle": vehicle, "scene": "empty", "layer": str(layer)})
+
+
+class _Handed(Px4Fake):
+    """The fake PX4 in the peer mapping, which keeps the airframe the build hands it."""
+
+    def __init__(self, *, airframe: str, **run):
+        super().__init__(**run)
+        self.airframe = airframe
+
+
+def _shipped_referenced(tmp_path, metadata: str = "", contents: str = "") -> str:
+    """A local fixture vehicle whose root prim `/vehicle` references the shipped `astro_max_base`, which
+    flies airframe `astro_max`, with `metadata` and `contents` of the root prim's own.
+    """
+    from nexus._src.config import resolve
+
+    shipped = resolve(LaunchConfig.from_dict({"vehicle": "astro_max_base", "scene": "empty"})).vehicle_usd_path
+    path = tmp_path / "fixture_vehicle.usda"
+    path.write_text(
+        f'#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n\n'
+        f'def Xform "vehicle" (\n    references = @{shipped}@\n{metadata})\n{{\n{contents}}}\n'
+    )
+    return str(path)
+
+
+def _handed_airframe(tmp_path, vehicle: str, layer: Path) -> list[str]:
+    """Build `vehicle` over `layer` for real, the PX4 SITL peer sent to a fake that keeps its airframe,
+    and return the airframe the build handed each PX4 peer of the run.
+    """
+    import nexus._src.build.launch as L
+
+    launch = LaunchConfig.from_dict(
+        {"vehicle": vehicle, "scene": "empty", "layer": str(layer), "runtime": {"device": "cpu"}}
+    )
+    loop = L.build_from_launch(launch, preroll_timeout=10.0, peers={"px4_sitl": _Handed})
+    handed = [peer.airframe for peer in loop.peers]
+    loop.close()
+    return handed
+
+
+def test_a_layer_that_changes_a_declared_value_changes_what_the_run_builds(tmp_path, monkeypatch, warp_cpu):
+    """A layer that changes a declared value changes what the run builds.
+
+    Given a fixture vehicle that references `astro_max_base`, whose PX4 schema declares airframe
+    `astro_max`, and a layer that sets `nexus:airframe` to `bar` on its root prim, when the run builds
+    with the PX4 SITL peer sent to a fake, then the build hands the fake airframe `bar`.
+    """
+    monkeypatch.delenv("NEXUS_ASSET_CACHE", raising=False)  # the shipped vehicle comes from the checkout's own cache
+    layer = _layer(tmp_path, 'over "vehicle"\n{\n    string nexus:airframe = "bar"\n}\n')
+
+    assert _handed_airframe(tmp_path, _shipped_referenced(tmp_path), layer) == ["bar"]
+
+
+def test_a_layer_that_selects_a_variant_builds_that_variant(tmp_path, monkeypatch, warp_cpu):
+    """A layer that selects a variant builds that variant.
+
+    Given a fixture vehicle that references `astro_max_base` and adds an `airframe` variant set whose
+    selection is `a`, and a layer that selects its second variant, `b`, when the run builds with the
+    PX4 SITL peer sent to a fake, then the build hands the fake variant `b`'s airframe, `b`.
+    """
+    monkeypatch.delenv("NEXUS_ASSET_CACHE", raising=False)  # the shipped vehicle comes from the checkout's own cache
+    metadata = '    variants = {\n        string airframe = "a"\n    }\n    prepend variantSets = "airframe"\n'
+    contents = (
+        '    variantSet "airframe" = {\n        "a" {\n            string nexus:airframe = "a"\n        }\n'
+        '        "b" {\n            string nexus:airframe = "b"\n        }\n    }\n'
+    )
+    layer = _layer(tmp_path, 'over "vehicle" (\n    variants = {\n        string airframe = "b"\n    }\n)\n{\n}\n')
+
+    assert _handed_airframe(tmp_path, _shipped_referenced(tmp_path, metadata, contents), layer) == ["b"]
+
+
+def test_a_layer_that_deactivates_a_declaration_builds_nothing_for_it(tmp_path, monkeypatch, warp_cpu):
+    """A layer that deactivates a declaration builds nothing for it.
+
+    Given `astro_max_base`, which declares an Inertial Measurement Unit (IMU), a magnetometer, a barometer and a Global
+    Positioning System (GPS) receiver, and a layer that deactivates the magnetometer's prim, when the
+    run builds with the PX4 SITL peer sent to its fake, then it builds the IMU, the barometer and the
+    GPS receiver, and no magnetometer.
+    """
+    import nexus._src.build.launch as L
+
+    monkeypatch.delenv("NEXUS_ASSET_CACHE", raising=False)  # the shipped vehicle comes from the checkout's own cache
+    layer = _layer(
+        tmp_path,
+        'over "astro_max"\n{\n    over "Geometry"\n    {\n        over "body_frd"\n        {\n'
+        '            over "Mag" (\n                active = false\n            )\n            {\n            }\n'
+        "        }\n    }\n}\n",
+    )
+    launch = LaunchConfig.from_dict(
+        {"vehicle": "astro_max_base", "scene": "empty", "layer": str(layer), "runtime": {"device": "cpu"}}
+    )
+
+    loop = L.build_from_launch(launch, preroll_timeout=10.0, peers={"px4_sitl": Px4Fake})
+    built = [type(s).__name__ for s in loop.sensors]
+    loop.close()
+
+    assert built == ["ImuSensor", "BaroSensor", "GpsSensor"]
+
+
+def test_the_receipt_records_the_layers_hash_beside_the_vehicle_assets(tmp_path):
+    """The receipt records the layer's hash beside the vehicle asset's.
+
+    Given a run with a layer, when it resolves, then its receipt holds the layer's sha256; and after a
+    one-byte change to the layer, the receipt holds the new sha256 instead.
+    """
+    from nexus._src.config import resolve
+
+    vehicle = _local_vehicle(tmp_path, PX4_SITL_ROOT)
+    layer = _layer(tmp_path, 'over "vehicle"\n{\n    string nexus:airframe = "bar"\n}\n')
+    before = hashlib.sha256(layer.read_bytes()).hexdigest()
+    first = resolve(_layered(tmp_path, vehicle, layer), _catalog(tmp_path), cache_dir=tmp_path / "cache")
+    layer.write_text(layer.read_text().replace('"bar"', '"baz"'))
+    after = hashlib.sha256(layer.read_bytes()).hexdigest()
+    second = resolve(_layered(tmp_path, vehicle, layer), _catalog(tmp_path), cache_dir=tmp_path / "cache")
+
+    first_json, second_json = first.tested_config.to_json(), second.tested_config.to_json()
+    assert (before in first_json, after in second_json, before in second_json) == (True, True, False)
+
+
+def test_a_run_with_no_layer_builds_and_records_as_today(tmp_path, monkeypatch, warp_cpu):
+    """A run with no layer builds and records as today.
+
+    Given the catalog vehicle `astro_max_base` and no layer, when the run builds with the PX4 SITL peer
+    sent to its fake, then it builds the PX4 controller on airframe `astro_max`, its IMU, magnetometer,
+    barometer and Global Positioning System (GPS) sensors, and one PX4 peer; and its receipt names the
+    vehicle, the airframe and the scene, and no layer, sensor override or geodetic origin.
+    """
+    import nexus._src.build.launch as L
+
+    monkeypatch.delenv("NEXUS_ASSET_CACHE", raising=False)  # the shipped vehicle comes from the checkout's own cache
+    monkeypatch.chdir(tmp_path)  # no project catalog: only the bundled one
+    launch = LaunchConfig.from_dict({"vehicle": "astro_max_base", "scene": "empty", "runtime": {"device": "cpu"}})
+
+    loop = L.build_from_launch(launch, preroll_timeout=10.0, peers={"px4_sitl": Px4Fake})
+    built = (
+        type(loop.controller).__name__,
+        loop.controller.airframe,
+        [type(s).__name__ for s in loop.sensors],
+        [type(p).__name__ for p in loop.peers],
+    )
+    loop.close()
+    receipt = L.resolve_to_vehicle_builder(launch)[1].tested_config.model_dump(mode="json")
+    recorded = {
+        k: receipt[k] for k in ("vehicle", "layer", "px4", "scene", "scene_start", "geodetic_origin", "sensors")
+    }
+
+    assert (built, recorded) == (
+        ("Px4MavlinkController", "astro_max", ["ImuSensor", "MagSensor", "BaroSensor", "GpsSensor"], ["Px4Fake"]),
+        {
+            "vehicle": "astro_max_base",
+            "layer": None,
+            "px4": {"airframe": "astro_max"},
+            "scene": "empty",
+            "scene_start": None,
+            "geodetic_origin": None,
+            "sensors": {},
+        },
+    )
+
+
+def test_a_layer_path_that_does_not_exist_fails_before_any_peer_starts(tmp_path, daemon):
+    """A layer path that doesn't exist fails before any peer starts.
+
+    Given a layer path with no file behind it, when the run builds, then it raises
+    `FileNotFoundError` naming the path, and no peer has started.
+    """
+    import nexus._src.build.launch as L
+
+    missing = tmp_path / "no_such_layer.usda"
+    launch = _layered(tmp_path, _local_vehicle(tmp_path, PX4_SITL_ROOT), missing)
+
+    with pytest.raises(FileNotFoundError) as err:
+        L.build_from_launch(launch, registry=_catalog(tmp_path), cache_dir=tmp_path / "cache")
+
+    assert (str(missing) in str(err.value), daemon) == (True, [])
+
+
+def test_a_px4_sitl_peer_declared_without_the_px4_controller_fails_the_build(tmp_path, daemon):
+    """A PX4 SITL peer declared without the PX4 controller fails the build.
+
+    Given a fixture vehicle whose root prim declares the PX4 SITL peer and no `NexusPx4API`, when the
+    run builds, then it raises naming the prim and the peer's schema, and no peer has started.
+    """
+    peer_only = 'def Xform "vehicle" (\n    prepend apiSchemas = ["NexusPx4SitlAPI"]\n)\n{\n}\n'
+
+    with pytest.raises(ValueError) as err:
+        _build(tmp_path, peer_only)
+
+    named = [s in str(err.value) for s in ("/vehicle", "NexusPx4SitlAPI")]
+    assert (named, daemon) == ([True, True], [])

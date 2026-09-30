@@ -25,12 +25,14 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import IO
 
 from nexus._src.core import logger
 from nexus._src.peers import LABEL, containers
 from nexus._src.peers.containers import ensure_image, run_container, stop_container
 
 from . import checkout
+from .instance import claim as _claim
 
 IMAGE = "nexus-px4-sitl"
 _INSTANCE = "nexus.px4.instance"  # the label that carries the container's PX4 instance
@@ -100,15 +102,20 @@ class Px4Sitl:
         instance: PX4's SITL instance, which numbers its ports and its system id.
         name: The container's name, one per run.
         log_path: Where the container's console streams to, the ``px4_log`` artifact.
+        claim: The open lock file that holds ``instance`` for this run, which the stop releases; ``None``
+            for a peer whose instance no lock holds.
     """
 
-    def __init__(self, *, catalog: Path | None, airframe: str, instance: int, name: str, log_path: str) -> None:
+    def __init__(
+        self, *, catalog: Path | None, airframe: str, instance: int, name: str, log_path: str, claim: IO | None = None
+    ) -> None:
         self.catalog = catalog
         self.tree: Path | None = None  # resolved at start, which can fetch it
         self.airframe = airframe
         self.instance = instance
         self.name = name
         self.log_path = log_path
+        self._claim = claim
         self._container = None
 
     def start(self) -> None:
@@ -142,6 +149,15 @@ class Px4Sitl:
             **kwargs,
         )
 
+    @staticmethod
+    def claim_instance() -> tuple[int, IO]:
+        """The lowest PX4 instance free on this machine and the lock file that holds it, through
+        :func:`~nexus._src.peers.px4_sitl.instance.claim`, passing over each instance a live process's container holds.
+        """
+        held = containers.client().containers.list(all=True, filters={"label": [f"{LABEL}=px4"]})
+        live = {int(c.labels[_INSTANCE]) for c in held if (owner := int(c.labels.get(_OWNER) or 0)) and _alive(owner)}
+        return _claim(skip=live)
+
     def _clear_leftovers(self) -> None:
         """Remove a PX4 container of this instance whose process has exited, and fail while a live one
         holds the instance.
@@ -162,7 +178,7 @@ class Px4Sitl:
             if owner and _alive(owner):
                 raise RuntimeError(
                     f"PX4 instance {self.instance} is in use by process {owner}, container {other.name}: "
-                    "give this run another instance, --px4-instance or Sim(px4_instance=)"
+                    "another run took it as this one started; start this run again"
                 )
             logger.info(f"removing the leftover PX4 container {other.name}: process {owner} has exited")
             try:
@@ -183,7 +199,10 @@ class Px4Sitl:
         return self._container.status in ("created", "running")
 
     def stop(self) -> None:
-        """Remove the container this peer started. Idempotent, and a no-op for a peer that never started."""
+        """Remove the container this peer started and release its instance. Idempotent."""
+        if self._claim is not None:
+            self._claim.close()  # closing the file releases its lock, and the instance is free again
+            self._claim = None
         if self._container is None:
             return
         stop_container(self.name)
