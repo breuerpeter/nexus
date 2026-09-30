@@ -779,3 +779,24 @@ def test_a_managed_run_takes_a_free_px4_instance_itself(daemon, assembly, tmp_pa
 
     instances = [c[c.index("-i") + 1] for c in commands if c and "-i" in c]
     assert (instances, dialed is not None) == (["1"], True)
+
+
+def test_a_run_skips_an_instance_another_runs_claim_holds(daemon, assembly, tmp_path):
+    """A managed run takes a free PX4 instance itself, and two runs that start at once take two.
+
+    Given another run's claim on instance 0, a lock held on its file under the home folder's
+    `.cache/nexus/px4-instances/` and no container yet, when a run of a vehicle that declares the PX4
+    SITL peer enters, then its PX4 container runs instance 1, `-i 1`.
+    """
+    import fcntl
+
+    locks = tmp_path / "home" / ".cache" / "nexus" / "px4-instances"
+    locks.mkdir(parents=True)
+    with open(locks / "0.lock", "w") as other:
+        fcntl.flock(other, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        loop = _declared_run(tmp_path)
+        commands = [r.get("command") for r in daemon.runs if r.get("detach", True)]
+        loop.close()
+
+    instances = [c[c.index("-i") + 1] for c in commands if c and "-i" in c]
+    assert instances == ["1"]

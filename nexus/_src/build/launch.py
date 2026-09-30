@@ -28,6 +28,7 @@ import pathlib
 import socket
 import time
 from collections.abc import Callable, Mapping
+from typing import IO
 
 from nexus._src.config import LaunchConfig, Px4Spec, Registry, ResolvedLaunch, resolve
 from nexus._src.core import Orchestrator
@@ -196,12 +197,12 @@ def build_from_launch(
     try:
         # *This* is where the declared controller becomes an instance; the assembly that follows is
         # controller-agnostic. The schema gives its keywords, and the run gives the PX4 peer's addresses.
-        instance = _px4_instance(peer_classes["px4_sitl"]) if px4_sitl else 0
+        instance, claim = _claim_px4_instance(peer_classes["px4_sitl"]) if px4_sitl else (0, None)
         controller = spec.cls(**spec.kwargs, port=HIL_PORT + instance, target_system=instance + 1)
         if px4_sitl:
             # The peer starts here, before the assembly: its start builds PX4 incrementally, which must
             # stay outside the sim's preroll window, GH #39, and PX4 boots while the physics compiles.
-            started.append(_start_px4(peer_classes["px4_sitl"], resolved, instance, controller.airframe))
+            started.append(_start_px4(peer_classes["px4_sitl"], resolved, instance, controller.airframe, claim))
 
         # output.log/view → the Logger, which writes the .rrd or serves :9876; neither → no recording.
         return build_orchestrator(
@@ -229,31 +230,41 @@ def build_from_launch(
         raise
 
 
-def _px4_instance(cls: Callable) -> int:
-    """The lowest PX4 instance free on this machine: no live run's container holds it, and nothing
-    listens on its HIL port. The run owns every address its peer uses, so it picks the instance itself.
+def _claim_px4_instance(cls: Callable) -> tuple[int, IO]:
+    """The lowest PX4 instance free on this machine, and the open lock file that holds it for this run.
+
+    A free instance has no live run's container, no lock another run holds, and no listener on its HIL
+    port. The run owns every address its peer uses, so it picks the instance itself, and the lock,
+    which the peer releases at its stop, keeps two runs that start at once off one instance.
     """
+    import fcntl
+
     held = getattr(cls, "held_instances", set)()  # a fake, or a callable that builds one, holds none
+    locks = pathlib.Path("~/.cache/nexus/px4-instances").expanduser()
+    locks.mkdir(parents=True, exist_ok=True)
     for instance in range(256):
         if instance in held:
             continue
-        with socket.socket() as s:
-            s.setsockopt(
-                socket.SOL_SOCKET, socket.SO_REUSEADDR, 1
-            )  # as the HIL server binds: only a listener blocks it
-            try:
+        claim = open(locks / f"{instance}.lock", "w")  # the peer closes it at its stop
+        try:
+            fcntl.flock(claim, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with socket.socket() as s:
+                s.setsockopt(
+                    socket.SOL_SOCKET, socket.SO_REUSEADDR, 1
+                )  # as the HIL server binds: only a listener blocks it
                 s.bind(("0.0.0.0", HIL_PORT + instance))
-            except OSError:
-                continue
-        return instance
+        except OSError:
+            claim.close()
+            continue
+        return instance, claim
     raise RuntimeError("no free PX4 instance on this machine: 256 are in use")
 
 
-def _start_px4(cls: Callable, resolved: ResolvedLaunch, instance: int, airframe: str):
+def _start_px4(cls: Callable, resolved: ResolvedLaunch, instance: int, airframe: str, claim: IO):
     """Start the PX4 SITL peer for this run from ``cls``: the catalog whose pin names the PX4 tree,
-    the vehicle's airframe, the run's instance, and a container name and console log of this run's
-    own. The name carries the process and the instance, so two runs in one process on two instances
-    keep both containers; two on one instance collide on PX4's ports anyway.
+    the vehicle's airframe, the run's instance and the lock that holds it, which the peer releases at
+    its stop, and a container name and console log of this run's own. The name carries the process
+    and the instance, so two runs in one process on two instances keep both containers.
     """
     from nexus._src.peers.px4_sitl.runner import PX4_LOG_DIR
 
@@ -264,6 +275,7 @@ def _start_px4(cls: Callable, resolved: ResolvedLaunch, instance: int, airframe:
         airframe=airframe,
         instance=instance,
         name=f"nexus-px4-{os.getpid()}-{instance}",
+        claim=claim,
         log_path=os.path.join(PX4_LOG_DIR, f"px4-{time.strftime('%Y%m%d-%H%M%S')}-{os.getpid()}.log"),
     )
     peer.start()

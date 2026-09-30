@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import IO
 
 from nexus._src.core import logger
 from nexus._src.peers import LABEL, containers
@@ -100,15 +101,20 @@ class Px4Sitl:
         instance: PX4's SITL instance, which numbers its ports and its system id.
         name: The container's name, one per run.
         log_path: Where the container's console streams to, the ``px4_log`` artifact.
+        claim: The open lock file that holds ``instance`` for this run, which the stop releases; ``None``
+            for a peer whose instance no lock holds.
     """
 
-    def __init__(self, *, catalog: Path | None, airframe: str, instance: int, name: str, log_path: str) -> None:
+    def __init__(
+        self, *, catalog: Path | None, airframe: str, instance: int, name: str, log_path: str, claim: IO | None = None
+    ) -> None:
         self.catalog = catalog
         self.tree: Path | None = None  # resolved at start, which can fetch it
         self.airframe = airframe
         self.instance = instance
         self.name = name
         self.log_path = log_path
+        self._claim = claim
         self._container = None
 
     def start(self) -> None:
@@ -189,7 +195,10 @@ class Px4Sitl:
         return self._container.status in ("created", "running")
 
     def stop(self) -> None:
-        """Remove the container this peer started. Idempotent, and a no-op for a peer that never started."""
+        """Remove the container this peer started and release its instance. Idempotent."""
+        if self._claim is not None:
+            self._claim.close()  # closing the file releases its lock, and the instance is free again
+            self._claim = None
         if self._container is None:
             return
         stop_container(self.name)
