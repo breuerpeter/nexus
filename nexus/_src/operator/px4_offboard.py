@@ -382,7 +382,10 @@ class Px4Offboard(BaseOperator):
                 it.seq,
                 it.frame,
                 it.command,
-                0,  # current: 0 for every item; PX4 runs the mission from the start
+                # current: the first item only. With no item marked, PX4 keeps the last
+                # mission's current item, which survives a restart, so a new mission would start
+                # where the last one ended.
+                int(it.seq == 0),
                 int(it.autocontinue),
                 it.params[0],
                 it.params[1],

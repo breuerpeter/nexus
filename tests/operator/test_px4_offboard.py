@@ -604,10 +604,23 @@ def test_mission_request_int_returns_that_item():
     assert args[2] == 2
     assert args[3] == 3  # frame: GLOBAL_RELATIVE_ALT
     assert args[4] == 16  # NAV_WAYPOINT
-    assert args[5] == 0  # current: 0 for every item
+    assert args[5] == 0  # current: only the first item
     assert args[11] == 475575009  # x = lat * 1e7, the integer field
     assert args[12] == -1221629651  # y = lon * 1e7
     assert args[13] == 40.0
+
+
+def test_an_uploaded_mission_starts_at_its_first_item():
+    """An uploaded mission starts at its first item: PX4 keeps the last mission's current item
+    when no uploaded item claims the role, so a mission uploaded after a finished one would start
+    at its end.
+    """
+    p = _pilot()
+    p.upload_mission(_box())
+    p._on_msg(_FakeMsg("MISSION_REQUEST_INT", seq=0))
+    (args,) = _items_sent(p)
+    # (sysid, compid, seq, frame, command, current, autocontinue, ...)
+    assert args[5] == 1
 
 
 def test_plain_mission_request_is_answered_too():
