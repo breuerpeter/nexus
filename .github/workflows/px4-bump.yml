@@ -1,7 +1,8 @@
 name: px4-bump
 
-# Keeps the PX4 pin fresh with attribution instead of floating: reads scripts/ci/px4.ref
-# (line 1 = `repo@sha`, line 2 = `track=<branch>`), checks the tracked branch's tip, and when
+# Keeps the PX4 pin fresh with attribution instead of floating: reads the pin the PX4 controller
+# ships, nexus/_src/peers/px4_sitl/px4.ref (line 1 = `repo@sha`, line 2 =
+# `track=<branch>`), checks the tracked branch's tip, and when
 # it moved opens a bump PR on `ci/px4-bump`. The `gpu` label is added by hand (never by the
 # workflow — GPU spend is a manual call): label the PR to make the flight gate fly the new
 # PX4 before the bump merges; merging is what records the tested pin. The pin
@@ -37,7 +38,7 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
-          REF_FILE=scripts/ci/px4.ref
+          REF_FILE=nexus/_src/peers/px4_sitl/px4.ref
           IFS=@ read -r REPO CUR_SHA < "$REF_FILE"
           TRACK=$(grep -oP '^track=\K.+' "$REF_FILE")
           URL="https://github.com/$REPO.git"
@@ -59,10 +60,10 @@ jobs:
           git config user.email "ci@users.noreply.github.com"
           git checkout -B "$branch"
           git add "$REF_FILE"
-          git commit -m "chore(ci): bump the PX4 pin to $TRACK @ ${TIP:0:12}"
+          git commit -m "fix(px4): bump the PX4 pin to $TRACK @ ${TIP:0:12}"
           git push -f origin "$branch"
           if PR_URL=$(gh pr create --head "$branch" \
-            --title "chore(ci): bump the PX4 pin to $TRACK @ ${TIP:0:12}" \
+            --title "fix(px4): bump the PX4 pin to $TRACK @ ${TIP:0:12}" \
             --body "Automated PX4 pin bump: \`$REPO\` branch \`$TRACK\` moved \`${CUR_SHA:0:12}\` → \`${TIP:0:12}\`.
 
           Add the \`gpu\` label to make the flight gate fly this PX4 before merge."); then

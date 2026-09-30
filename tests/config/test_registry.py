@@ -8,13 +8,13 @@ import nexus
 from nexus._src.config import NoMatchError, Registry, RegistryError, load_registry
 
 
-def _veh(name, airframe):
-    return {"name": name, "usd": {"url": f"file:///{name}", "sha256": "0"}, "px4": {"airframe": airframe}}
+def _veh(name):
+    return {"name": name, "usd": {"url": f"file:///{name}", "sha256": "0"}}
 
 
-BASE = _veh("base", "80001")
-FPV = _veh("fpv", "80002")
-FPV_LR1 = _veh("fpv_lr1", "80003")
+BASE = _veh("base")
+FPV = _veh("fpv")
+FPV_LR1 = _veh("fpv_lr1")
 
 
 def _reg(vehicles, **kw):
@@ -23,7 +23,7 @@ def _reg(vehicles, **kw):
 
 def test_by_name():
     reg = _reg([BASE, FPV_LR1])
-    assert reg.by_name("fpv_lr1").px4.airframe == "80003"
+    assert reg.by_name("fpv_lr1").usd.url == "file:///fpv_lr1"
 
 
 def test_unknown_name_raises():
@@ -37,21 +37,10 @@ def test_duplicate_name_errors_at_load():
         _reg([FPV, dict(FPV, usd={"url": "file:///dup", "sha256": "0"})])  # two variants named 'fpv'
 
 
-def test_dangling_default_scene_errors_at_load():
-    with pytest.raises(RegistryError):
-        Registry.from_dict({"vehicles": [BASE], "scenes": {"empty": {}}, "defaults": {"scene": "nope"}})
-
-
-def test_dangling_default_vehicle_errors_at_load():
-    with pytest.raises(RegistryError):
-        _reg([BASE], defaults={"vehicle": "nope"})
-
-
 SIBLING = """\
 vehicles:
   - name: sibling_vehicle
     usd: { url: "file:///sibling.usdz", sha256: "0" }
-defaults: { vehicle: sibling_vehicle }
 """
 
 
@@ -84,7 +73,6 @@ def test_an_entry_addresses_its_own_blob():
                 {"name": "direct", "usd": {"url": "s3://example-bucket/elsewhere/x.usdz", "sha256": "def"}},
             ],
             "scenes": {"empty": {}},
-            "defaults": {"vehicle": "derived", "scene": "empty"},
         }
     )
     assert (reg.by_name("derived").usd.url, reg.by_name("direct").usd.url) == (
@@ -121,12 +109,12 @@ def test_the_two_astro_max_vehicles_keep_the_usds_they_fly_today():
     """
     reg = nexus.Registry.from_yaml()
     assert [reg.by_name(name).usd.url for name in ("astro_max_base", "astro_max_fpv")] == [
-        f"{HOSTED}/astro_max_base-d2f538aaeeef4c2a951cac3f9e062003e7c4cc6e5e78b2960076b69a393f92e8.usdz",
-        f"{HOSTED}/astro_max_fpv-9dc55c51a6912faacf2614a7b3e244bf10233f440a8dd920490857df03daf5ad.usdz",
+        f"{HOSTED}/astro_max_base-11dd2b7ce7576b7c01600f6450bc3dbd8f2b2ca81eb657806532f173eb36093b.usdz",
+        f"{HOSTED}/astro_max_fpv-239f1f6b936b93c9ff32e2e2a6d210c3ccff1c79f040f197b2032f71f70f6bf4.usdz",
     ]
 
 
-BUNDLED_ASTRO = f"{HOSTED}/astro_max_base-d2f538aaeeef4c2a951cac3f9e062003e7c4cc6e5e78b2960076b69a393f92e8.usdz"
+BUNDLED_ASTRO = f"{HOSTED}/astro_max_base-11dd2b7ce7576b7c01600f6450bc3dbd8f2b2ca81eb657806532f173eb36093b.usdz"
 BUNDLED_EMPTY_SHA = "ab15e88be59c0ee93e63160c34b08485e3136d1f88313f24dcd67e482ecbed05"
 REPIN_SHA = "1111111111111111111111111111111111111111111111111111111111111111"
 
@@ -136,7 +124,6 @@ assets:
 vehicles:
   - name: project_vehicle
     usd: { name: project_vehicle, sha256: abc }
-defaults: { vehicle: project_vehicle }
 """
 
 REPIN = f"""\
@@ -204,3 +191,56 @@ def test_a_catalog_named_by_path_also_extends_the_bundled_one(tmp_path, monkeypa
     monkeypatch.chdir(tmp_path)
 
     assert load_registry(named).by_name("astro_max_base").usd.url == BUNDLED_ASTRO
+
+
+def test_a_catalog_entry_that_still_carries_px4_fails_to_load(tmp_path):
+    """A catalog entry that still carries `px4:` fails to load: the airframe lives in the vehicle's Universal Scene Description (USD) file.
+
+    Given a project catalog whose vehicle entry has `px4: { airframe: astro_max }`, when
+    `nexus.Registry.from_yaml(path)` loads it, then it raises and names the `px4` field.
+    """
+    catalog = tmp_path / "catalog.yaml"
+    catalog.write_text(
+        "vehicles:\n"
+        "  - name: project_vehicle\n"
+        '    usd: { url: "file:///project_vehicle.usda", sha256: abc }\n'
+        "    px4: { airframe: astro_max }\n"
+        "scenes:\n  empty: {}\n"
+    )
+    with pytest.raises(ValueError, match=r"vehicles\.0\.px4"):
+        nexus.Registry.from_yaml(catalog)
+
+
+MY_QUAD = """\
+vehicles:
+  - name: my_quad
+    usd: { url: "file:///my_quad.usda", sha256: abc }
+"""
+
+
+def test_a_catalog_with_a_defaults_block_fails_to_load_and_says_to_name_the_vehicle_and_scene(tmp_path):
+    """A project catalog with a `defaults` block fails to load, and the error names the removal and
+    says to name the vehicle and scene on the run.
+
+    Given a catalog with `defaults: { vehicle: my_quad }`, when `nexus.Registry.from_yaml(path)` reads
+    it, then it raises an error that names `defaults` as removed and points at `--vehicle` and `--scene`.
+    """
+    catalog = tmp_path / "catalog.yaml"
+    catalog.write_text(MY_QUAD + "defaults: { vehicle: my_quad }\n")
+
+    with pytest.raises((RegistryError, ValueError)) as e:
+        nexus.Registry.from_yaml(catalog)
+
+    assert [w in str(e.value) for w in ("defaults", "remov", "--vehicle", "--scene")] == [True] * 4
+
+
+def test_a_project_catalog_that_lists_only_what_it_adds_loads_on_its_own(tmp_path):
+    """A project catalog that lists only what it adds loads on its own.
+
+    Given a file with one vehicle, `scenes: {}` and no `defaults`, when `nexus.Registry.from_yaml(path)`
+    reads it, then it returns a catalog with that one vehicle and no error.
+    """
+    catalog = tmp_path / "catalog.yaml"
+    catalog.write_text(MY_QUAD + "scenes: {}\n")
+
+    assert [v.name for v in nexus.Registry.from_yaml(catalog).vehicles] == ["my_quad"]

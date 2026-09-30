@@ -6,7 +6,7 @@ description: "What nexus is, the modular-component model behind it, and the foun
 
 nexus is a **modular simulation core** for the Freefly PX4-based drones, Astro and Alta X,
 built on NVIDIA Newton physics. Every functional concern, whether physics, sensors, actuators,
-controller, scene, environment, or renderer, is a component behind a typed interface. You can swap
+controller, scene, or renderer, is a component behind a typed interface. You can swap
 each one independently and select it through declarative configuration. It starts from a minimal
 working slice, Newton dynamics ↔ PX4 Software In The Loop (SITL) with Rerun observability, and
 grows by **adding components, never by rewriting**.
@@ -40,7 +40,7 @@ The same component interfaces serve three execution regimes:
 | Regime | What runs | Used for |
 |---|---|---|
 | **Online PX4 SITL** | Real PX4 firmware flies the vehicle over a MAVLink lockstep link | Automated SITL testing, operator training, customer preview |
-| **In-process differentiable** | A built-in Proportional Integral Derivative (PID) controller computes controls in-process. The whole rollout records a gradient | [Design optimization](../examples/design-optimization.md) |
+| **Differentiable law** | A built-in Proportional Integral Derivative (PID) controller computes controls on the device. The whole rollout records a gradient | [Design optimization](../examples/design-optimization.md) |
 | **Trained policy** | The framework loads a network trained on Isaac Lab as a Controller | [Reinforcement learning](../examples/isaac-lab-rl.md) deployment |
 
 RL *training* itself runs in the separate `nexus-rl` app on Isaac Lab

@@ -9,6 +9,12 @@ line here, so no checkout carries an account's name.
   can read names them by full `s3://` URL, and the `aws` command-line tool fetches those with
   Amazon Web Services (AWS) credentials. CI artifacts, the docs `.rrd` embeds and the bench feed,
   live on the same bucket under `public/ci/{logs,bench}/`.
+- The Kit-only scripts, `obj_to_usd.py`, `site_scan_splat.py` and `author_cesium_scene.py`, run
+  from the host with `uv run python scripts/assets/<script>.py …`. Each starts the Kit image with
+  its own file through `kit_container.py` and boots Kit there. The boot call sits in the script
+  itself, and `tests/test_kit_single_door.py` allows it in these three files and the peer program
+  only. A sibling module imports as `from scene_root import …`: the script's folder is on the path
+  on both sides, and the working folder isn't.
 - Uploads are **manual**. Prepare an asset with
   `uv run python scripts/assets/prepare_asset_upload.py {--vehicle|--scene} <usd> [--rotate-x 180]`.
   It sha256s the USD, prints where to upload it and the `nexus/_src/config/registry.yaml`

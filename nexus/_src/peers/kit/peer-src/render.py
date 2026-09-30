@@ -30,7 +30,7 @@ FIRST_FRAME_TIMEOUT_S = 1500.0
 
 
 def log(msg: str) -> None:
-    print(f"[kit-peer] {msg}", flush=True)
+    print(f"[kit] {msg}", flush=True)
 
 
 def _set_render_dt(stage, timeline, settings, dt: float) -> None:

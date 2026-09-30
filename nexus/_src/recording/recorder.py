@@ -1,7 +1,7 @@
 """Recorder + RecordChannel: the generic mechanics of the observation seam.
 
 A :class:`RecordChannel` is one component's per-tick buffer: a device ring buffer of ``width``-float
-rows the component's capturable kernel writes into, plus the locked read-time D2H + decode the host
+rows the component's device-only kernel writes into, plus the locked read-time D2H + decode the host
 calls. The ring-buffer mechanics, a device counter advancing per graph replay, the wrap, and time =
 counter × dt, are the same across components; only the row width + the row→object decode differ, so
 each component supplies those when it registers its channel. :class:`Recorder` is the registry of
@@ -33,7 +33,7 @@ def leaf_keys(labels: list[str]) -> list[str]:
 class RecordChannel:
     """One component's per-tick observation buffer.
 
-    The component's capturable kernel writes a ``width``-element row each tick into :attr:`buf` at the
+    The component's device-only kernel writes a ``width``-element row each tick into :attr:`buf` at the
     device :attr:`counter`, which advances per graph replay, so the row index is correct under capture;
     the host reads via :meth:`latest` / :meth:`history` with one locked D2H and the channel's ``decode``.
     The host reconstructs per-row time from the counter × :attr:`dt`, because a kernel arg freezes at

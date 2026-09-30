@@ -28,6 +28,8 @@ from __future__ import annotations
 import numpy as np
 import warp as wp
 
+from nexus._src.core.interfaces import Stage
+
 OBS_DIM = 12  # kinematic observation; the PID determinism gate / WarpObservationSensor use this dim
 ACTION_DIM = 4
 # The trained-policy observation is the kinematic obs plus the **last action**, a Collective Thrust and
@@ -175,15 +177,13 @@ class WarpObservationSensor:
         body_index: articulation body the observation tracks; 0 is the base.
     """
 
-    capturable = True
-
     def __init__(self, goal_w=(0.0, 0.0, 1.0), body_index: int = 0):
         # Persistent length-1 device goal buffer with a static address: the kernel reads goal[0], so a
         # controller's accept_setpoint can .assign() a new goal in place and the next captured replay
         # picks it up, with zero re-capture: the capture contract.
         self.goal = wp.array(np.asarray([goal_w], dtype=np.float32), dtype=wp.vec3)
         self.body_index = int(body_index)
-        self._obs = wp.zeros(OBS_DIM, dtype=float)  # persistent buffer for the eager/capturable path
+        self._obs = wp.zeros(OBS_DIM, dtype=float)  # persistent buffer, the same address every replay
 
     def set_goal(self, pos) -> None:
         """Update the goal in place via ``.assign``: static address, capture-safe."""
@@ -199,12 +199,19 @@ class WarpObservationSensor:
         )
         return out_obs
 
-    def sample(self, state, env, t, out) -> None:
-        """``Sensor`` protocol: write the 12-D obs, a **Warp array**, into ``out.observation``, so an
-        in-process controller's ``exchange`` consumes it on-device and the loop stays capturable /
-        tape-able. Reuses a persistent buffer with a static address for capture.
+    def sample(self, state, t, out) -> None:
+        """Write the 12-D obs, a **Warp array**, into ``out.observation``, so a device-native
+        controller's stage consumes it on-device and the loop stays one graph / tape-able. Reuses a
+        persistent buffer with a static address for capture.
         """
         out.observation = self.sample_wp(state, self._obs)
+
+    def read(self, out) -> None:
+        """Nothing to read back: the observation stays on the device for the controller's stage."""
+
+    def stages(self) -> list[Stage]:
+        """One device stage over :meth:`sample`."""
+        return [Stage("observation", "device", lambda tick: self.sample(tick.state, tick.t, tick.meas))]
 
 
 __all__ = [

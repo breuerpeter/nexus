@@ -1,8 +1,9 @@
 """Where PX4 Software In The Loop (SITL) starts its clock when it dials in late to the sim's
 Hardware In The Loop (HIL) server, as it can on a slow CI runner.
 
-The module fixture flies one run through ``na.Sim``, which builds and launches PX4 from ``$PX4_DIR``, so
-the test needs docker and a PX4 checkout carrying the airframe the sim flies; it skips without one.
+The module fixture flies one run through ``na.Sim``, which builds and launches PX4 from the tree
+on this machine, so the test needs docker and a PX4 tree carrying the airframe the sim flies; it
+skips without one.
 """
 
 import os
@@ -21,12 +22,15 @@ os.environ.setdefault("MAVLINK_DIALECT", "common")
 from pymavlink import mavutil
 
 import nexus as na
-from nexus._src.vehicle.controllers.px4.sitl import px4_dir
+from nexus._src.peers.px4_sitl import checkout
 
-_AIRFRAMES = px4_dir() / "ROMFS" / "px4fmu_common" / "init.d-posix" / "airframes"
-if not list(_AIRFRAMES.glob("*_none_astro_max")):
+# The tree the run would fly, with no fetch: $PX4_DIR, or the pinned tree once a run fetched it.
+_TREE = checkout.tree(fetch_missing=False)
+if _TREE is None or not list(
+    (_TREE / "ROMFS" / "px4fmu_common" / "init.d-posix" / "airframes").glob("*_none_astro_max")
+):
     pytest.skip(
-        f"needs docker and a PX4 checkout at $PX4_DIR ({px4_dir()}) carrying the none_astro_max airframe",
+        "needs docker and a PX4 tree on this machine, $PX4_DIR or the fetched pin, carrying the none_astro_max airframe",
         allow_module_level=True,
     )
 
@@ -62,7 +66,7 @@ def first_sensor_stamp_of_a_late_dial_in():
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(mavutil.mavtcpin, "recv", recv_once_px4_dialed_in)
         mp.setattr(mavutil.mavtcpin, "write", write_and_read_stamps)
-        with na.Sim(control="px4-sitl") as sim:
+        with na.Sim("astro_max_base", scene="empty") as sim:
             sim.start(timeout=120.0)
     return stamps[0]
 

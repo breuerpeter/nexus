@@ -1,12 +1,10 @@
-"""The Kit render peer: the RTX sensors render in a container of their own, fed poses over a socket.
+"""The render link's host end: the RTX sensors render in the Kit peer, fed poses over a socket.
 
 A vehicle's Universal Scene Description (USD) file decides: a camera or lidar prim under its root is
-an RTX sensor, and a run with one starts the peer.
+an RTX sensor, and a run with one starts the peer, :mod:`nexus._src.peers.kit`.
 
-``kit-peer/`` holds the program that container runs in NVIDIA's image: package data that no host
-module imports, so no host tier ever loads Kit. :mod:`.peer` pulls the image and runs the
-container; :mod:`.link` is the renderer seam the loop drives and the link the RTX sensors ride.
-:func:`rtx_renderer` starts the peer for a run whose vehicle authors RTX sensor prims.
+:mod:`.link` is the renderer the loop drives and the link the RTX sensors ride. :func:`rtx_renderer`
+starts the peer for a run whose vehicle authors RTX sensor prims.
 """
 
 from __future__ import annotations
@@ -15,11 +13,11 @@ import time
 from pathlib import Path
 
 from nexus._src.core import logger
+from nexus._src.peers.kit.runner import KitPeer
 
 from .link import KitRenderer
-from .peer import KitPeer, KitPeerError, run_script
 
-__all__ = ["KitPeer", "KitPeerError", "KitRenderer", "RtxConfig", "rtx_renderer", "run_script"]
+__all__ = ["KitRenderer", "RtxConfig", "rtx_renderer"]
 
 
 class RtxConfig:

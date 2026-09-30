@@ -1,6 +1,7 @@
 """End-to-end resolution: name -> variant -> tested-config receipt, plus fetch."""
 
 import hashlib
+import json
 import logging
 from pathlib import Path
 
@@ -13,20 +14,18 @@ from nexus._src.config import LaunchConfig, NoMatchError, Registry, TestedConfig
 def _reg(vehicle_usd):
     return Registry.from_dict(
         {
-            "vehicles": [{"name": "black", "usd": vehicle_usd, "px4": {"airframe": "80001"}}],
+            "vehicles": [{"name": "black", "usd": vehicle_usd}],
             "scenes": {"empty": {}},
-            "defaults": {"vehicle": "black", "scene": "empty"},
         }
     )
 
 
 def test_resolve_no_fetch_builds_fully_specified_receipt():
     reg = _reg({"url": "https://x/astro.usdz", "sha256": "deadbeef"})
-    rl = resolve(LaunchConfig().set_vehicle("black"), reg, fetch=False)
+    rl = resolve(LaunchConfig().set_vehicle("black").set_scene("empty"), reg, fetch=False)
     tc = rl.tested_config
     # the named variant, fully specified
     assert tc.vehicle == "black"
-    assert tc.px4.airframe == "80001"
     assert tc.vehicle_usd.sha256 == "deadbeef"
     assert tc.scene == "empty" and tc.scene_usd is None
     assert rl.vehicle_usd_path is None  # fetch off
@@ -39,7 +38,7 @@ def test_resolve_fetches_and_verifies_file_asset(tmp_path):
     sha = hashlib.sha256(blob.read_bytes()).hexdigest()
     reg = _reg({"url": blob.as_uri(), "sha256": sha, "filename": "astro.usdz"})
 
-    rl = resolve(LaunchConfig().set_vehicle("black"), reg, fetch=True, cache_dir=tmp_path / "cache")
+    rl = resolve(LaunchConfig().set_vehicle("black").set_scene("empty"), reg, fetch=True, cache_dir=tmp_path / "cache")
 
     assert rl.vehicle_usd_path is not None
     assert Path(rl.vehicle_usd_path).read_bytes() == b"USD-PLACEHOLDER-BYTES"
@@ -47,23 +46,16 @@ def test_resolve_fetches_and_verifies_file_asset(tmp_path):
 
 def test_receipt_round_trips_json():
     reg = _reg({"url": "https://x/astro.usdz", "sha256": "deadbeef"})
-    rl = resolve(LaunchConfig().set_vehicle("black"), reg, fetch=False)
+    rl = resolve(LaunchConfig().set_vehicle("black").set_scene("empty"), reg, fetch=False)
     again = TestedConfig.model_validate_json(rl.tested_config.to_json())
     assert again == rl.tested_config
 
 
-def test_receipt_carries_sensors_and_environment():
+def test_receipt_carries_sensors():
     reg = _reg({"url": "https://x/astro.usdz", "sha256": "deadbeef"})
-    lc = LaunchConfig.from_dict(
-        {
-            "vehicle": "black",
-            "sensors": {"imu": {"rate": 250}},
-            "environment": {"wind": {"mean": [3, 0, 0]}},
-        }
-    )
+    lc = LaunchConfig.from_dict({"vehicle": "black", "scene": "empty", "sensors": {"imu": {"rate": 250}}})
     tc = resolve(lc, reg, fetch=False).tested_config
     assert tc.sensors == {"imu": {"rate": 250}}
-    assert tc.environment is not None and tc.environment.wind == {"mean": [3, 0, 0]}
 
 
 def _fpv_reg(vehicle_usd, scene_usd, **scene_extra):
@@ -72,7 +64,7 @@ def _fpv_reg(vehicle_usd, scene_usd, **scene_extra):
     """
     return Registry.from_dict(
         {
-            "vehicles": [{"name": "black", "usd": vehicle_usd, "px4": {"airframe": "80001"}}],
+            "vehicles": [{"name": "black", "usd": vehicle_usd}],
             "scenes": {
                 "empty": {},
                 "fpv": {
@@ -81,7 +73,6 @@ def _fpv_reg(vehicle_usd, scene_usd, **scene_extra):
                     **scene_extra,
                 },
             },
-            "defaults": {"vehicle": "black", "scene": "empty"},
         }
     )
 
@@ -147,41 +138,21 @@ def test_local_scene_usd_path(tmp_path):
     assert Path(rl.scene_usd_path).read_bytes() == b"USD-LOCAL-SCENE"
 
 
-def test_default_scene_resolves_without_usd():
-    """The default `empty` scene has no USD: nothing to route; flat ground."""
+def test_the_empty_scene_resolves_without_usd():
+    """The `empty` scene has no USD: nothing to route; flat ground."""
     reg = _reg({"url": "https://x/astro.usdz", "sha256": "deadbeef"})
-    rl = resolve(LaunchConfig().set_vehicle("black"), reg, fetch=False)
+    rl = resolve(LaunchConfig().set_vehicle("black").set_scene("empty"), reg, fetch=False)
     assert rl.tested_config.scene == "empty"
     assert rl.scene_usd_path is None
 
 
-def test_a_named_vehicle_beats_the_default():
-    reg = Registry.from_dict(
-        {
-            "vehicles": [
-                {"name": "black", "usd": {"url": "file:///b", "sha256": "0"}, "px4": {"airframe": "80001"}},
-                {"name": "blue", "usd": {"url": "file:///u", "sha256": "0"}, "px4": {"airframe": "80002"}},
-            ],
-            "scenes": {"empty": {}},
-            "defaults": {"vehicle": "black", "scene": "empty"},
-        }
-    )
-    assert resolve(LaunchConfig.from_dict({"vehicle": "blue"}), reg, fetch=False).tested_config.px4.airframe == "80002"
-
-
 def test_a_vehicle_still_resolves_by_name():
-    """A vehicle still resolves by name: a run that names a vehicle resolves it, and a run that names
-    none takes the registry default.
+    """A vehicle still resolves by name: a run that names a vehicle of the shipped catalog resolves it.
 
-    Against the shipped catalog, not a synthetic one, because the default is registry data. The test
-    reads each run by its USD filename: the filename names the variant and survives an asset update.
+    The test reads the run by its USD filename: the filename names the variant and survives an asset update.
     """
-    named = resolve(LaunchConfig().set_vehicle("astro_max_base"), fetch=False)
-    unnamed = resolve(LaunchConfig().set_vehicle(None), fetch=False)
-    assert (named.tested_config.vehicle_usd.filename, unnamed.tested_config.vehicle_usd.filename) == (
-        "astro_max_base.usdz",
-        "astro_max_base.usdz",
-    )
+    named = resolve(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"), fetch=False)
+    assert named.tested_config.vehicle_usd.filename == "astro_max_base.usdz"
 
 
 def _catalog(vehicle: str) -> str:
@@ -190,7 +161,6 @@ def _catalog(vehicle: str) -> str:
         "vehicles:\n"
         f"  - name: {vehicle}\n"
         '    usd: { url: "file:///' + '{v}.usdz", sha256: "0" }\n'.replace("{v}", vehicle) + "scenes:\n  empty: {}\n"
-        f"defaults: {{ vehicle: {vehicle}, scene: empty }}\n"
     )
 
 
@@ -203,7 +173,7 @@ def test_an_explicit_registry_beats_discovery(tmp_path, monkeypatch):
     explicit.write_text(_catalog("explicit"))
     monkeypatch.chdir(tmp_path)
 
-    rl = resolve(LaunchConfig(registry=str(explicit)), fetch=False)
+    rl = resolve(LaunchConfig(registry=str(explicit), vehicle="explicit", scene="empty"), fetch=False)
 
     assert rl.tested_config.vehicle == "explicit"
 
@@ -217,7 +187,7 @@ def test_a_run_says_which_catalog_it_flew(tmp_path, monkeypatch, caplog):
     monkeypatch.chdir(tmp_path)
 
     with caplog.at_level(logging.INFO):
-        rl = resolve(LaunchConfig(), fetch=False)
+        rl = resolve(LaunchConfig(vehicle="discovered", scene="empty"), fetch=False)
 
     assert (rl.tested_config.registry, str(registry) in caplog.text) == (str(registry), True)
 
@@ -228,5 +198,13 @@ def test_a_launch_that_names_a_dropped_variant_fails_before_it_flies(tmp_path, m
     """
     monkeypatch.chdir(tmp_path)  # no nexus.registry.yaml beside the run
     with pytest.raises(NoMatchError, match="no vehicle named 'astro_max_fpv_lr1'"):
-        with nexus.Sim(vehicle="astro_max_fpv_lr1"):
+        with nexus.Sim(vehicle="astro_max_fpv_lr1", scene="empty"):
             pass
+
+
+def test_the_receipt_carries_no_environment_field():
+    """The `environment` launch key and the receipt's `environment` field go, since nothing reads them."""
+    reg = _reg({"url": "https://x/astro.usdz", "sha256": "deadbeef"})
+    rl = resolve(LaunchConfig().set_vehicle("black").set_scene("empty"), reg, fetch=False)
+
+    assert "environment" not in json.loads(rl.tested_config.to_json())

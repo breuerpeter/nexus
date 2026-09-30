@@ -11,7 +11,8 @@ Everything runs on `127.0.0.1`. **nexus** runs the physics, hosts the Rerun
 recording, and starts **PX4 SITL** as a container that connects back over **TCP
 4560** for lockstep Hardware In The Loop (HIL). PX4 talks MAVLink over the User Datagram
 Protocol (UDP) to **QGroundControl** on **UDP 14550**. An optional **Rerun viewer** watches
-the live recording over **gRPC 9876**.
+the live recording over **gRPC 9876**. PX4 is a peer of the run: the run starts it, stops it,
+and hands it its ports, see [PX4 as a peer](#px4-as-a-peer).
 
 ## Prerequisites
 
@@ -19,11 +20,10 @@ the live recording over **gRPC 9876**.
   with `rerun-sdk`, so you need no separate Rerun install.
 - QGroundControl installed, with **Virtual Joystick** enabled under
   `Application Settings` → `General` → `Virtual Joystick`.
-- Docker. The `px4-sitl` image pulls from the GitHub Container Registry (GHCR) on first run.
+- Docker. The first PX4 run on a machine builds the small `px4-sitl` image from the Dockerfile
+  the package ships, and fetches and builds the PX4 tree, see [PX4 as a peer](#px4-as-a-peer).
 - For a vehicle with a camera or lidar: an NVIDIA GPU and the NVIDIA Container Toolkit, since its
   sensors render in the Kit container. See [RTX cameras and lidar](#rtx-cameras-and-lidar).
-- A PX4-Autopilot checkout at `$PX4_DIR`, default `~/code/px4`, on the `p/newton`
-  branch. The sim builds and runs it but doesn't supply it.
 
 ## Terminals, in order
 
@@ -33,13 +33,13 @@ PX4 sends a heartbeat.
 **2. nexus sim:**
 
 ```bash
-uv run nexus run
+uv run nexus run --vehicle astro_max_base --scene empty
 ```
 
-Builds PX4 SITL, starts the physics sim and the Rerun server on gRPC :9876, then
-launches the PX4 container against it and kills it again on exit. Defaults to the
-`astro_max_base` vehicle + `--control px4-sitl`. The PX4 console is a file, next to the
-run's recording: `~/.cache/nexus/logs/px4-*.log`.
+Builds PX4 SITL, starts the PX4 container, then the physics sim and the Rerun server on
+gRPC :9876, and stops the container again on exit. The `astro_max_base` vehicle's
+Universal Scene Description (USD) file declares PX4 and its airframe. The PX4 console is a file, next to the run's recording:
+`~/.cache/nexus/logs/px4-*.log`.
 
 **3. Rerun viewer, optional:**
 
@@ -62,7 +62,7 @@ no container.
 
 - The first RTX run on a machine pulls NVIDIA's `nvcr.io/nvidia/isaac-sim:6.0.1`, about 21 GB,
   with no NGC login. Later runs reuse it, and nexus builds nothing. The container runs the image
-  as pulled. The peer program ships in the package, in `nexus/_src/rendering/kit-peer/`. It mounts
+  as pulled. The peer program ships in the package, in `nexus/_src/peers/kit/peer-src/`. It mounts
   read-only, so an update to the peer takes effect on the next run.
 - A scene that declares a Cesium tileset, such as `--scene cesium`, fetches Cesium for Omniverse
   into the asset cache on its first run. No other scene fetches it.
@@ -76,7 +76,8 @@ no container.
   Docker daemon. A Kit container that dies mid-flight ends the run the way a lost autopilot does.
 
 - `--vehicle` accepts a registry vehicle name, such as `astro_max_fpv`, **or a local `.usd`/`.usdz`
-  path**. Omit it for the registry's default vehicle.
+  path**. `--scene` accepts a registry scene name, such as `empty`, or a local scene USD path.
+  A run names both.
   Every Astro Max vehicle carries the analytic PX4 suite, an Inertial Measurement Unit (IMU),
   mag, barometer, and Global Positioning System (GPS) as `sensor:*` prims. The vehicle USD is the
   single authority for all sensors, and a PX4 vehicle USD authoring none fails the build loudly.
@@ -137,29 +138,57 @@ on this scene. Without a token the run warns and falls back to a plain sky, and 
 The Cesium ion and Google Maps Platform terms govern the streamed tiles: see
 [the license page](../license.md#hosted-assets).
 
-## Ports
+## PX4 as a peer
 
-| Port  | Protocol | Link |
-|-------|----------|------|
-| 4560  | TCP      | PX4 ↔ nexus, lockstep HIL: sensors in, actuators back |
-| 14550 | UDP      | MAVLink telemetry and commands from PX4 to QGroundControl |
-| 9876  | gRPC     | Rerun recording, which nexus **serves** and the viewer **connects** to |
+The PX4 autopilot is a **peer** of the run: a process the run starts, speaks to over MAVLink, and
+stops. The run chooses how, with `--px4`:
+
+- `managed`, the default: the run starts the PX4 SITL container and stops it on exit.
+- `external`: the run starts nothing and waits on its HIL port for an autopilot started elsewhere,
+  a PX4 SITL of your own or a real autopilot on a bench.
+
+**The PX4 tree.** The PX4 controller pins the PX4-Autopilot commit it flies, in
+`nexus/_src/peers/px4_sitl/px4.ref`, which ships in the package. The first managed run on
+a machine fetches that commit into `~/.cache/nexus/px4/<commit>/` and builds it there, minutes
+once. Later runs rebuild only what changed. Two overrides:
+
+- `PX4_DIR` names a checkout of your own, for work on PX4 itself. The run builds and flies it and
+  fetches nothing.
+- A project that keeps its own catalog, `nexus.registry.yaml`, keeps its own pin beside it in
+  `nexus.px4.ref`, of the same form, `owner/repo@<commit>`. Every vehicle of the project then
+  flies that tree, and a bump is one edit.
+
+**The image.** The first run builds the `px4-sitl` image, the PX4 build toolchain, from the
+Dockerfile the package ships, and tags it with a hash of that folder. An update rebuilds it only
+when the Dockerfile changes.
+
+**Ports.** PX4 SITL numbers every link from its **instance**, `--px4-instance N`, `0` by default.
+It dials the sim's HIL server on 4560 + N, streams its offboard link to 14540 + N, and takes N + 1
+as its MAVLink system id. The run derives its own addresses from the same number. So two runs on
+one machine take two instances and never collide.
+
+| Port      | Protocol | Link |
+|-----------|----------|------|
+| 4560 + N  | TCP      | PX4 → nexus, lockstep HIL: sensors in, actuators back |
+| 14540 + N | UDP      | PX4 → the run's operator, the offboard link `sim.operator` commands over |
+| 14550     | UDP      | MAVLink telemetry and commands from PX4 to QGroundControl, every instance |
+| 9876      | gRPC     | Rerun recording, which nexus **serves** and the viewer **connects** to |
 
 ## Observability in Rerun
 
 Everything lands in **one** recording, app ID `nexus` and recording ID
-`nexus`, and every producer writes it **in-process**:
+`nexus`, and every producer writes it **from the sim's own process**:
 
-- **the sim scene**: logged in-process by nexus. The blueprint **hides** the ground plane,
+- **the sim scene**: logged by nexus itself. The blueprint **hides** the ground plane,
   `/model/shapes/shape_0`, **by default** because it occludes the vehicle.
 - **framework events**: the `newton` logger, under `logs/sim`.
 - **PX4's own view of the flight**: not in the recording. PX4 keeps it in its console log,
   `~/.cache/nexus/logs/px4-*.log`, and in its `ULog`, both artifacts of the run.
-- **test and driver stages**: an in-process driver logs each stage with `na.logger.info("…")`,
+- **test and driver stages**: a driver in the sim's process logs each stage with `na.logger.info("…")`,
   which writes to the console and, when recording, the `logs/sim` panel.
 
 **Serve or file, never both: one knob, `--viewer`.** A run can't produce both a live gRPC server
-and a *complete* `.rrd` in-process, because rerun's serve and file sinks are mutually exclusive, so:
+and a *complete* `.rrd` from one process, because rerun's serve and file sinks are mutually exclusive, so:
 
 - **`--viewer`**, the default: serve the recording live on `:9876` and connect a viewer with
   `uv run rerun --connect rerun+http://127.0.0.1:9876/proxy`. It writes no file, so
@@ -172,10 +201,12 @@ Both modes carry the same content, PX4 included: there is no second recording an
 
 ## Gotchas
 
-!!! note "One PX4 at a time"
-    A leftover `nexus-px4-sitl` container would keep the MAVLink ports, 18570 → 14550, bound
-    and starve the next run of its heartbeat. So each launch force-removes any container of that
-    name before starting its own. Nothing to clear by hand.
+!!! note "One PX4 per instance"
+    Each run's container carries the run's own name, `nexus-px4-<pid>-<instance>`, and the run removes it on
+    exit, so a second run stops nothing of the first. Two live runs on one instance would share
+    PX4's ports, so the second fails at its start and names the process that holds the instance:
+    give it `--px4-instance 1`. A run killed without its teardown, a closed terminal or a harness's
+    timeout, leaves its PX4 running, and the next run on that instance removes it.
 
 !!! note "Use `uv run rerun --connect …`, never a bare `rerun`"
     Two reasons. **First,** nexus hosts the Rerun gRPC server on 9876, and the viewer is

@@ -1,44 +1,38 @@
 # `docker/`
 
-Container images for the Newton project. CI builds `px4-sitl` + publishes it to the
-**GitHub Container Registry (GHCR)**, see
-[`.github/workflows/docker-images.yml`](../.github/workflows/docker-images.yml), and consumers
-**pull it by URL**, no local build needed. The Kit render peer has no image here: it runs NVIDIA's
-image as pulled, see [the Kit render peer](#the-kit-render-peer). `mediamtx/` isn't an image: it holds the config for the
-compose `mediamtx` service, which pulls `bluenviron/mediamtx`. **RL training**, `nexus-rl`, is *not*
-a container. It runs host-side as a separate `uv` project. See the note at the bottom.
+The ground services of a decoupled PX4 flight, as compose services. No image the sim runs is here.
+The `px4-sitl` image ships as package data and builds on each machine, see [`px4-sitl`](#px4-sitl).
+The Kit render peer runs NVIDIA's image as pulled, see [the Kit render peer](#the-kit-render-peer).
+`mediamtx/` isn't an image: it holds the config for the compose `mediamtx` service, which pulls
+`bluenviron/mediamtx`. **RL training**, `nexus-rl`, is *not* a container. It runs host-side as a
+separate `uv` project. See the note at the bottom.
 
 ## `px4-sitl`
 
 Lean PX4 **Software In The Loop (SITL)** build toolchain. It has only the dependencies to build
 Portable Operating System Interface (POSIX) targets for an **external, decoupled simulator**, and no
-simulator-specific dependencies. It builds + runs a PX4 checkout against that simulator. The airframe
-make-target is the command, and the vehicle is the positional arg.
+simulator-specific dependencies. It builds + runs a PX4 tree against that simulator.
 
 Nothing starts it by hand. The sim does:
 
 ```bash
-uv run nexus run --vehicle astro_max_base --control px4-sitl
+uv run nexus run --vehicle astro_max_base
 ```
 
-That builds PX4, serves the Hardware In The Loop (HIL) link on :4560, starts this container against
-it, and force-removes it on the way out.
-[`nexus/_src/vehicle/controllers/px4/sitl.py`](../nexus/_src/vehicle/controllers/px4/sitl.py) defines the
+On the machine's first PX4 run that builds the image from
+[`nexus/_src/peers/px4_sitl/image/`](../nexus/_src/peers/px4_sitl/image/),
+which ships in the package, tagged with a hash of that folder. It fetches and builds the PX4 tree
+the controller pins, or `$PX4_DIR`. Then it starts this container, serves the
+Hardware In The Loop (HIL) link PX4 dials, and removes the container on the way out.
+[`nexus/_src/peers/px4_sitl/runner.py`](../nexus/_src/peers/px4_sitl/runner.py) defines the
 container **once** and is also what runs it, through the docker daemon's Python SDK in
-[`nexus/_src/containers.py`](../nexus/_src/containers.py). PX4's console goes to
+[`nexus/_src/peers/containers.py`](../nexus/_src/peers/containers.py). PX4's console goes to
 `~/.cache/nexus/logs/px4-*.log`, next to the run's recording.
 
-PX4 uses host networking, so it reaches port `:4560` of the sim and exposes the Ground Control
-Station (GCS) MAVLink on **`:18570`**. Point QGroundControl, or any GCS, there to arm + fly. The
-checkout is bind-mounted at its host path, so container and host share one `build/` tree, and
-`--user` keeps those build artifacts host-owned. Set `PX4_DIR` if the checkout isn't `~/code/px4`.
-
-You pull the image by URL, no local build needed. `$PX4_IMAGE` names another image outright. To
-build or iterate it locally:
-
-```bash
-docker build -t ghcr.io/breuerpeter/nexus/px4-sitl:latest docker/px4-sitl
-```
+PX4 uses host networking, so it reaches the sim's HIL port and exposes its ground-station MAVLink
+on **`:18570`**, plus the run's instance. Point QGroundControl, or any ground station, there to
+arm + fly. The tree is bind-mounted at its host path, so container and host share one `build/`
+tree, and `--user` keeps those build artifacts host-owned.
 
 ## The Kit render peer
 
@@ -46,8 +40,8 @@ A vehicle whose Universal Scene Description (USD) file authors a `Camera` or `Om
 renders it in the **Kit render peer**. The sim starts that container beside PX4 and stops it at the
 end of the run. The loop stays on the host, and the peer takes poses over a socket and returns each
 frame. The program Kit runs lives in
-[`nexus/_src/rendering/kit-peer/`](../nexus/_src/rendering/kit-peer/) and ships in the package, and
-[`nexus/_src/rendering/peer.py`](../nexus/_src/rendering/peer.py) runs it through the docker SDK.
+[`nexus/_src/peers/kit/peer-src/`](../nexus/_src/peers/kit/peer-src/) and ships in the package, and
+[`nexus/_src/peers/kit/runner.py`](../nexus/_src/peers/kit/runner.py) runs it through the docker SDK.
 No compose service starts it.
 
 This repository builds no Kit image. The container runs NVIDIA's
@@ -62,10 +56,10 @@ the run creates as the user first, since docker would create it owned by root. K
 logs under `/isaac-sim/kit` stay in the container. Its console goes to
 `~/.cache/nexus/logs/console-*.log`.
 
-Kit-only asset scripts run in the same image with `uv run nexus script <path> [args…]`: it boots
-Kit, then runs the script, with the working folder and `$NEXUS_DATA` mounted at their host paths.
-`nexus script --cesium <path> [args…]` also mounts Cesium for Omniverse, for the Cesium author
-script.
+The Kit-only asset scripts under `scripts/assets/` run in the same image. Each runs from the host
+with `uv run python scripts/assets/<script>.py …`, starts the container with its own file and
+arguments through `scripts/assets/kit_container.py`, and boots Kit there. The container mounts the
+working folder and `$NEXUS_DATA` at their host paths.
 
 ## `isaac-lab`: not a container, it runs host-side
 

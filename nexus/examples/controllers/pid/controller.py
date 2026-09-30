@@ -7,7 +7,7 @@ Two roles, one control law, ``law.pid_action_np`` and ``law.pid_law``:
    Newton CPU physics is what closes the bit-reproducibility gap left open with real PX4,
    whose multi-threaded work-queue interleaving isn't the same bit for bit. Flown through the unchanged
    :class:`~nexus._src.core.orchestrator.Orchestrator` it gives a CI determinism gate that does
-   not wait on PX4. It occupies the schema's ``control.kind == "builtin"`` slot.
+   not wait on PX4.
 
 2. **The design-optimization controller.** Its gains are the differentiable design parameters the
    design-optimization example tunes: the *same* law, in Warp.
@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from nexus._src.core.interfaces import Stage
 from nexus._src.core.schema import Controls, PositionGoal
 
 from .law import DEFAULT_GAINS, hover_action, pid_action_np
@@ -51,8 +52,6 @@ class PidController:
         moment_scale: N·m per unit moment action; must match the design-opt and deploy convention.
         body_index: articulation body whose state drives the observation; 0 = base.
     """
-
-    capturable = True
 
     def __init__(
         self,
@@ -82,7 +81,7 @@ class PidController:
         self._moment_mixer = None
         # Device-native state, lazily allocated on first Warp use; keeps the host/eager-numpy path
         # warp-free to import. ``gains_wp`` is the differentiable leaf the optimizer descends,
-        # and can replace; ``_action_wp`` is a persistent moment buffer, static address -> capturable.
+        # and can replace; ``_action_wp`` is a persistent moment buffer, static address -> graph-safe.
         self.gains_wp = None
         self._action_wp = None
 
@@ -136,7 +135,7 @@ class PidController:
         round-trip, so the controller records on a ``wp.Tape`` or joins a CUDA graph. Uses
         ``self.gains_wp``, the differentiable leaf; the optimizer reads its ``.grad`` and can
         swap the array. ``out_action_wp`` is caller-provided, so the eager loop passes a persistent
-        buffer, capturable, and the differentiable rollout passes a per-step buffer, the tape history.
+        buffer, graph-safe, and the differentiable rollout passes a per-step buffer, the tape history.
         """
         import warp as wp  # lazy: keep the host path, eager and determinism, import-light
 
@@ -174,7 +173,7 @@ class PidController:
 
         **Device-native when the observation is a Warp array**, from ``WarpObservationSensor``: runs
         ``act_wp`` into the persistent action buffer and returns Warp ``Controls``, with no per-tick host
-        hop, so the in-process loop is fully capturable and tape-able. A NumPy observation, from the torch
+        hop, so the whole tick stays one graph and tape-able. A NumPy observation, from the torch
         ``PolicyObservationSensor`` or the provider fallback, takes the host ``act`` path.
         """
         obs = getattr(meas, "observation", None)
@@ -195,8 +194,22 @@ class PidController:
         self.act_wp(obs, self._action_wp)  # law → moments, device-native
         if self._moment_mixer is None:
             return Controls(command=self._action_wp)  # law-only; no airframe mixer configured
-        # Mix moments → per-rotor commands on-device, so the in-process loop stays fully capturable.
+        # Mix moments → per-rotor commands on-device, so the whole tick stays one graph.
         return Controls(command=self._moment_mixer.cmd_wp(self._action_wp))
+
+    def stages(self) -> list[Stage]:
+        """One device stage, ``act``: the law over the observation sensor's device buffer, then the
+        moment mixer into the persistent ``(1, nr)`` command buffer the actuator reads. The whole tick
+        stays one graph.
+        """
+        return [Stage("act", "device", self._act_stage)]
+
+    def _act_stage(self, tick) -> None:
+        if self._rotor_mixer is None:
+            raise RuntimeError("PidController flies through the loop only with an airframe mixer")
+        self._ensure_wp()
+        self.act_wp(tick.meas.observation, self._action_wp)  # law → moments, device-native
+        tick.controls = self._moment_mixer.cmd_wp(self._action_wp)  # moments → per-rotor commands, on-device
 
     def bind_state_provider(self, fn) -> None:
         """Bind a callable returning ``(pos_w, quat_xyzw, lin_vel_w, ang_vel_w)`` for :meth:`exchange`."""

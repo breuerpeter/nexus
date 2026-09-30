@@ -12,6 +12,8 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from nexus._src.peers.px4_sitl import HIL_PORT, OFFBOARD_PORT
+
 
 class _Base(BaseModel):
     # extra="forbid" turns a typo in a YAML key, say ``vehicel:``, into a load error instead of a
@@ -49,24 +51,56 @@ class GeodeticOrigin(_Base):
 
 
 class Px4Spec(_Base):
-    """PX4 airframe selection: the Software In The Loop (SITL) airframe **make target** this vehicle
-    flies as.
+    """The receipt's record of the PX4 airframe: the Software In The Loop (SITL) airframe **make
+    target** the vehicle flies as.
 
     The value is the target without PX4's ``none_`` prefix: ``astro_max`` becomes ``make px4_sitl
-    none_astro_max``, and the launcher prepends it. This is where the sim picks the autopilot it
-    starts, so this is the authority, not a receipt.
+    none_astro_max``, and the launcher prepends it. The vehicle Universal Scene Description (USD)
+    file declares it, as ``nexus:airframe`` on its ``NexusPx4API`` schema, and is the authority.
     """
 
     airframe: str
 
 
-class Control(_Base):
-    """Who flies the vehicle: the host boundary. PX4 is the one first-class controller;
-    every other controller is an example under ``nexus/examples/`` that self-assembles its
-    orchestrator and enters via ``Sim.from_orchestrator``, with no control kind.
+class Px4Peer(_Base):
+    """How the run realizes its PX4 peer, and which addresses it hands PX4.
+
+    PX4 Software In The Loop (SITL) numbers every link by its instance N: the sim's Hardware In The
+    Loop (HIL) server it dials on ``HIL_PORT + N``, the offboard link it streams to on ``OFFBOARD_PORT + N``, and its
+    MAVLink system id, N + 1. No environment variable names a port, so the run hands PX4 one
+    instance and derives from it every address of its own: the HIL port it listens on, the operator
+    port it answers PX4 on, and the system id it addresses. Two runs on one machine take two
+    instances.
     """
 
-    kind: Literal["px4-sitl"] = "px4-sitl"
+    realization: Literal["managed", "external"] = "managed"
+    """``managed``: the build starts the PX4 SITL container and the run stops it. ``external``: the
+    run starts nothing and waits on its HIL port for an autopilot started elsewhere, a bench PX4 or
+    a SITL of your own.
+    """
+    instance: int = Field(default=0, ge=0)
+    """PX4's SITL instance number, ``px4 -i``."""
+
+    @property
+    def hil_port(self) -> int:
+        """The TCP port the run's HIL server listens on, which PX4 dials."""
+        return HIL_PORT + self.instance
+
+    @property
+    def offboard_port(self) -> int:
+        """The User Datagram Protocol (UDP) port PX4 streams its offboard link to, where the operator listens."""
+        return OFFBOARD_PORT + self.instance
+
+    @property
+    def system_id(self) -> int:
+        """PX4's MAVLink system id, ``MAV_SYS_ID``."""
+        return self.instance + 1
+
+
+class Peers(_Base):
+    """The peers of a run, by the component that speaks to each, and how the run realizes them."""
+
+    px4: Px4Peer = Field(default_factory=Px4Peer)
 
 
 class Runtime(_Base):
@@ -86,12 +120,6 @@ class Runtime(_Base):
     # Physics integrator: mujoco, with contact fidelity, is the SITL default; the
     # gradient-capable semi_implicit / featherstone serve the design-optimization path.
     solver: Literal["mujoco", "semi_implicit", "featherstone"] = "mujoco"
-
-
-class Environment(_Base):
-    """Ambient fields; derived from the scene's geodetic origin by default, overridable here."""
-
-    wind: dict[str, Any] | None = None
 
 
 class Output(_Base):
@@ -118,14 +146,14 @@ class LaunchConfig(_Base):
     """The sim's *fixed* standup properties: what the sim **is**, not what happens to it.
 
     Dynamics, such as faults and moving actors, are control-API verbs, not config.
-    Small in the common case because everything defaults from the registry.
+    Small in the common case: the vehicle and the scene, and the registry fills in the rest.
     """
 
     vehicle: str | None = None
     """The vehicle to fly: a registry ``name`` handle (``--vehicle astro_max_fpv``), or a path to a
     local vehicle Universal Scene Description (USD) file.
 
-    ``None`` takes the registry's ``defaults.vehicle``.
+    ``None`` until set; a launch that still names none fails to resolve.
     """
     registry: str | None = None
     """Path to the catalog that extends the bundled one for this run, the ``--registry`` value.
@@ -137,12 +165,7 @@ class LaunchConfig(_Base):
     """Name of the static scene to stand up, keyed into the registry's ``scenes``, or a local
     scene Universal Scene Description (USD) path (a converted mesh/splat, flown as the visual world).
 
-    ``None`` falls back to the registry's default scene.
-    """
-    environment: Environment | None = None
-    """Ambient-field overrides (e.g. wind) layered on top of the scene's derived fields.
-
-    ``None`` means take the fields derived from the scene's geodetic origin with no override.
+    ``None`` until set; a launch that still names none fails to resolve.
     """
     geodetic_origin: GeodeticOrigin | None = None
     """Override the scene's geodetic origin (the lat/lon the local frame anchors to).
@@ -151,10 +174,10 @@ class LaunchConfig(_Base):
     re-anchors the GPS/magnetic/gravity reference and, for the streamed cesium globe, selects the
     place it streams. So `cesium` at any location is `--scene cesium --geo <lat>,<lon>`.
     """
-    control: Control = Field(default_factory=Control)
-    """Who flies the vehicle: the host boundary.
+    peers: Peers = Field(default_factory=Peers)
+    """The run's peers and how it realizes each: for PX4, managed or external, and its instance.
 
-    Defaults to a :class:`Control` with ``kind="px4-sitl"``.
+    Defaults to a managed PX4 at instance 0, the ports PX4 SITL uses out of the box.
     """
     runtime: Runtime = Field(default_factory=Runtime)
     """Solver, device, timestep, and determinism settings for the run.
@@ -205,16 +228,16 @@ class LaunchConfig(_Base):
         """
         return cls.from_dict(yaml.safe_load(pathlib.Path(path).read_text()))
 
-    def set_vehicle(self, vehicle: str | None) -> LaunchConfig:
-        """Set the vehicle to fly in place: a registry ``name`` handle, a local ``.usd`` path, or ``None``.
+    def set_vehicle(self, vehicle: str) -> LaunchConfig:
+        """Set the vehicle to fly in place: a registry ``name`` handle or a local ``.usd`` path.
 
-        ``resolve()`` reads a value with a path separator or a ``.usd`` suffix as a file, every other
-        value as a registry name, and ``None`` as the registry's default vehicle, so this setter takes
+        ``resolve()`` reads a value with a path separator or a ``.usd`` suffix as a file and every other
+        value as a registry name, so this setter takes
         a ``--vehicle`` command-line value unchanged. ``Sim`` and the command-line tool both select
         through it, so the two behave identically.
 
         Args:
-            vehicle: The registry name, the local ``.usd`` path, or ``None`` for the registry default.
+            vehicle: The registry name or the local ``.usd`` path.
 
         Returns:
             ``self``, so calls chain.
@@ -237,26 +260,4 @@ class LaunchConfig(_Base):
     def set_geodetic_origin(self, lat: float, lon: float, alt: float | None = None) -> LaunchConfig:
         """Override the scene's geodetic origin, lat and lon, in place. Returns ``self``, chainable."""
         self.geodetic_origin = GeodeticOrigin(lat=lat, lon=lon, alt=alt)
-        return self
-
-    def set_control(self, kind: str, **kw: Any) -> LaunchConfig:
-        """Set the control configuration in place.
-
-        Args:
-            kind: A control kind declared by :class:`Control`: PX4 is the one first-class
-                controller, and every other controller is an example that self-assembles its
-                orchestrator and enters via ``Sim.from_orchestrator`` instead. See
-                :class:`Control` for the current set; this docstring deliberately doesn't
-                repeat it.
-            **kw: Extra :class:`Control` fields. ``Control`` declares none besides ``kind`` and
-                sets ``extra="forbid"``, so any keyword passed today raises.
-
-        Returns:
-            ``self``, so calls chain.
-
-        Raises:
-            pydantic.ValidationError: If ``kind`` isn't a declared control kind, or a keyword
-                field that ``Control`` doesn't declare is present.
-        """
-        self.control = Control(kind=kind, **kw)
         return self

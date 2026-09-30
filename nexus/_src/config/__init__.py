@@ -7,17 +7,16 @@ actually simulated. Dynamics such as faults and actors are control-API verbs, no
 
 from .models import (
     AssetRef,
-    Control,
-    Environment,
     GeodeticOrigin,
     LaunchConfig,
     Output,
+    Peers,
+    Px4Peer,
     Px4Spec,
     Runtime,
 )
 from .receipt import ResolvedLaunch, TestedConfig
 from .registry import (
-    Defaults,
     NoMatchError,
     Registry,
     RegistryError,
@@ -29,14 +28,13 @@ from .resolve import resolve
 
 __all__ = [
     "AssetRef",
-    "Control",
-    "Defaults",
-    "Environment",
     "GeodeticOrigin",
     # launch schema
     "LaunchConfig",
     "NoMatchError",
     "Output",
+    "Peers",
+    "Px4Peer",
     "Px4Spec",
     # registry
     "Registry",

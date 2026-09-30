@@ -2,6 +2,12 @@
 
 from typing import TYPE_CHECKING
 
+from nexus._src.usd import register_plugins as _register_plugins
+
+# The one eager step: OpenUSD builds its schema registry once, on first use, and a plugin registered
+# after that never shows in it, so the schema plugins register here, before a caller can open a stage.
+_register_plugins()
+
 # Lazy re-exports, per Python Enhancement Proposal (PEP) 562. `import nexus` stays import-light:
 # the physics stack imports `newton` and `warp` at module load, which takes seconds, and the
 # command-line tool parses its arguments before the run needs either. Each public name resolves on
@@ -17,7 +23,6 @@ _LAZY_EXPORTS = {
     "LaunchConfig": "nexus._src.config",
     "Registry": "nexus._src.config",
     "Controls": "nexus._src.core",
-    "EnvSample": "nexus._src.core",
     "Measurement": "nexus._src.core",
     "Orchestrator": "nexus._src.core",
     "SimTime": "nexus._src.core",
@@ -31,7 +36,6 @@ _LAZY_EXPORTS = {
 __all__ = [
     "BodyState",
     "Controls",
-    "EnvSample",
     "JointState",
     "LaunchConfig",
     "Measurement",
@@ -60,7 +64,6 @@ if TYPE_CHECKING:
     from nexus._src.config import LaunchConfig, Registry
     from nexus._src.core import (
         Controls,
-        EnvSample,
         Measurement,
         Orchestrator,
         SimTime,

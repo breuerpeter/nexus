@@ -28,6 +28,7 @@ import warp.optim
 from newton.geometry import sdf_capsule  # warp-callable Signed Distance Field (SDF) for the collision-cost kernel
 
 from nexus._src.core.schema import PositionGoal
+from nexus._src.core.stages import peer_stages
 from nexus.examples._lib import build_rotor_mixer_from_layout, rigid_body_wrench_world
 
 GRAVITY = 9.81
@@ -308,6 +309,10 @@ class SamplingMPCController:
     def connect(self) -> None:
         pass
 
+    def stages(self):
+        """The ``read`` and ``exchange`` host stages: the per-tick solve runs on the host between replays."""
+        return peer_stages(self)
+
     def set_logger(self, logger) -> None:
         """The orchestrator hands over the Logger, ``None`` when off: the gate for the horizon viz."""
         self._logger = logger
@@ -325,7 +330,7 @@ class SamplingMPCController:
 
     def _rollout(self) -> None:
         self.costs.zero_()
-        self.omega[0].fill_(self.omega_hover)  # each plan starts from the hover rotor speed, a capturable reset
+        self.omega[0].fill_(self.omega_hover)  # each plan starts from the hover rotor speed, a graph-safe reset
         for h in range(self.horizon):
             self.S[h].clear_forces()
             wp.launch(

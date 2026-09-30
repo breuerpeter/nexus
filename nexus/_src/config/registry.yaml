@@ -1,9 +1,9 @@
 # registry.yaml — the checked-in vehicle/scene catalog.
 #
 # S3 holds only content-addressed blobs; this file is the semantic <-> content binding. Every
-# vehicle variant is a `name` handle plus its USD and PX4 spec. A launch names the variant it flies,
-# `--vehicle astro_max_fpv`, and a launch that names none flies `defaults.vehicle`. The name is what
-# the run's receipt records.
+# vehicle variant is a `name` handle plus its USD, which declares its controller. A launch names the variant it flies,
+# `--vehicle astro_max_fpv`, and the scene it flies in, `--scene empty`. The name is what the run's
+# receipt records.
 #
 # Assets are referenced by `{name, sha256}`, completed against `assets.base` below into a
 # self-contained `.usdz` at <base>/assets/usd/{vehicles,scenes}/<name>-<sha256>.usdz; see
@@ -13,11 +13,9 @@
 # the actuator map as motor:* and propeller:* attrs on the actuator joint prims AND — for the FPV mods —
 # an authored FpvCam the Kit render peer renders; both non-physical (nexus model unchanged).
 #
-# NOTE: `px4.airframe` is the SITL airframe MAKE TARGET, minus PX4's `none_` prefix — `none` is
-# PX4's "no simulator" (external/HIL) prefix, and the launcher prepends it, so `astro_max` here runs
-# `make px4_sitl none_astro_max`. The same target resolves on both PX4 trees CI flies (one
-# numbers it 1002113_…, the other 80000_…). All variants
-# currently share it — TODO: give each its own airframe once payload mass is modeled.
+# Each vehicle USD declares PX4 with `NexusPx4API` on its root prim, and its `nexus:airframe` is the
+# SITL airframe make target minus PX4's `none_` prefix: `astro_max` runs `make px4_sitl
+# none_astro_max`. Both vehicles fly `astro_max` until payload mass is modeled.
 
 # Where this catalog's blobs live. A project with its own catalog names its own base here.
 assets:
@@ -25,12 +23,10 @@ assets:
 
 vehicles:
   - name: astro_max_base
-    usd: { name: astro_max_base, sha256: d2f538aaeeef4c2a951cac3f9e062003e7c4cc6e5e78b2960076b69a393f92e8 }
-    px4: { airframe: astro_max }        # `make px4_sitl none_astro_max`
+    usd: { name: astro_max_base, sha256: 11dd2b7ce7576b7c01600f6450bc3dbd8f2b2ca81eb657806532f173eb36093b }
 
   - name: astro_max_fpv
-    usd: { name: astro_max_fpv, sha256: 9dc55c51a6912faacf2614a7b3e244bf10233f440a8dd920490857df03daf5ad }
-    px4: { airframe: astro_max }        # TODO: dedicated airframe (shares base's for now)
+    usd: { name: astro_max_fpv, sha256: 239f1f6b936b93c9ff32e2e2a6d210c3ccff1c79f040f197b2032f71f70f6bf4 }
 
 # The scene USD is the single authority on what it is: authored UsdPhysics collision schemas ->
 # simulation geometry (ModelBuilder); no physics schemas -> visual-only; and since the stage-5
@@ -40,7 +36,7 @@ vehicles:
 # runtime places `start` with a single session-layer translate; cesium is exempt (georef-anchored,
 # absolute /Cesium* paths). See scripts/assets/scene_root.py.
 scenes:
-  empty:                              # flat ground (default); sky-only usdz, no static geometry
+  empty:                              # flat ground; sky-only usdz, no static geometry
     usd: { name: empty, sha256: ab15e88be59c0ee93e63160c34b08485e3136d1f88313f24dcd67e482ecbed05 }
     geodetic_origin: null
 
@@ -59,7 +55,3 @@ scenes:
     # reconversion. Renders only for a camera vehicle; needs CESIUM_ION_TOKEN. Fly any location with
     # `--scene cesium --geo <lat>,<lon>[,<alt>]` (e.g. San Francisco: `--geo 37.7942,-122.3954,-32`).
     geodetic_origin: { lat: 47.747944, lon: -122.163917, alt: -6.2 }
-
-defaults:
-  vehicle: astro_max_base  # what `nexus run` flies when the command line names no vehicle
-  scene: empty

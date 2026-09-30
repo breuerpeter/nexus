@@ -18,11 +18,10 @@ not translate at all, and the CI benchmark mission's east legs are 20 m.
 The actuator model comes from the vehicle USD (authored on the rotor joints); there is no actuator
 knob; whatever the vehicle authors is what flies.
 
-A ZERO-arg script (the flight configuration lives here); only the host-specific paths ride env:
-``PX4_DIR`` (default ~/code/px4) and ``PX4_IMAGE`` (the px4-sitl image), single defaults in
-``nexus._src.vehicle.controllers.px4.sitl``, plus an optional ``--timeout`` flag (wall-clock
-arm+climb budget). Needs docker + a PX4 checkout + a CUDA host; the checkout does not have to be
-built already, because the sim builds it before the run starts.
+A ZERO-arg script (the flight configuration lives here), plus an optional ``--timeout`` flag
+(wall-clock arm+climb budget). Needs docker + a CUDA host: the sim fetches the PX4 tree its
+controller pins on first use and builds it before the run starts, and ``PX4_DIR`` names a checkout
+of your own instead.
 """
 
 from __future__ import annotations
@@ -39,6 +38,8 @@ import nexus as na
 from nexus.examples._lib import dump_run
 from nexus.examples.controllers.px4.log_warnings import px4_warnings
 
+VEHICLE = "astro_max_base"  # the registry vehicle flown, which declares PX4
+SCENE = "empty"  # flat ground
 TAKEOFF_ALT = 5.0  # takeoff altitude [m]; sets MIS_TAKEOFF_ALT, authoritative for Takeoff mode
 YAW_SWEEP = (90.0, 180.0, 270.0, 0.0)  # yaw headings [deg] flown at the hold position, compass/NED
 YAW_DWELL_S = 4.0  # settle per heading [sim s]; keeps the CI flight short while still exercising yaw
@@ -77,7 +78,7 @@ def main() -> int:
         # 1. The sim, in-process: it builds PX4, serves the HIL link on :4560, starts the PX4
         #    container against it, and records the run.
         na.logger.info("[sitl] Newton starting in-process (actuator from USD); serving :4560 …")
-        with na.Sim(control="px4-sitl", device="cuda", log=True) as sim:
+        with na.Sim(VEHICLE, scene=SCENE, device="cuda", log=True) as sim:
             sim.start(timeout=timeout)  # drive setup as far as PX4 lockstep
             na.logger.info("[sitl] PX4 lockstep established: flying the profile over :14540")
 

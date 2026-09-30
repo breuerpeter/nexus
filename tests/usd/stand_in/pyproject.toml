@@ -1,0 +1,20 @@
+# A project beside nexus that ships its own schema plugin and component class. The tests install it to
+# prove the entry-point group, and import it in-process to apply its schema to a prim. It declares no
+# other entry point, so nexus finds the project's schema plugin from this group alone.
+[build-system]
+requires = ["uv_build>=0.11.0,<1"]
+build-backend = "uv_build"
+
+[project]
+name = "nexus-stand-in"
+version = "0.0.0"
+description = "A stand-in component project for the nexus tests"
+requires-python = "==3.12.*"
+
+# The class each schema builds, by import path, loaded at build.
+[project.entry-points."nexus.components"]
+StandInAPI = "nexus_stand_in.heavy:StandIn"
+
+[tool.uv.build-backend]
+module-name = "nexus_stand_in"
+module-root = ""

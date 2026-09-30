@@ -16,8 +16,8 @@ and that mission flies instead, which is the whole point of the file format.
 The mission is a 100 m box at 40 m: takeoff, four waypoints, return to launch. Both axes are
 exercised on purpose, because a world-to-geodetic reflection shows up as a runaway east leg (#61).
 
-A ZERO-arg script (the configuration lives here); only the host-specific paths ride env, ``PX4_DIR``
-(default ~/code/px4) and ``PX4_IMAGE`` (the px4-sitl image), plus an optional ``--timeout`` flag.
+A ZERO-arg script (the configuration lives here), plus an optional ``--timeout`` flag. The sim
+fetches the PX4 tree its controller pins on first use; ``PX4_DIR`` names a checkout of your own instead.
 Needs docker + a PX4 checkout + a CUDA host; the checkout does not have to be built already, because
 the sim builds it before the run starts.
 """
@@ -36,6 +36,7 @@ from nexus.examples._lib import dump_run
 from nexus.examples.controllers.px4.log_warnings import px4_warnings
 
 PLAN = pathlib.Path(__file__).with_name("box.plan")  # the mission flown; swap the file, fly another
+VEHICLE = "astro_max_base"  # the registry vehicle flown, which declares PX4
 SCENE = "empty"  # flat ground: this example proves the mission path, not a place
 DEFAULT_TIMEOUT_S = 200.0  # --timeout default: budget for PX4 to boot, wall-clock, and to reach lockstep
 UPLOAD_TIMEOUT_S = 60.0  # budget [sim s] for the MISSION_COUNT, MISSION_ITEM, MISSION_ACK handshake to settle
@@ -74,7 +75,7 @@ def main() -> int:
         # offsets the origin.
         # Every altitude in the plan is relative to home, so no absolute altitude is ever needed.
         na.logger.info(f"[mission] {PLAN.name}: {len(plan.items)} items, home {lat:.6f},{lon:.6f}")
-        with na.Sim(control="px4-sitl", scene=SCENE, geo=f"{lat},{lon}", device="cuda", log=True) as sim:
+        with na.Sim(VEHICLE, scene=SCENE, geo=f"{lat},{lon}", device="cuda", log=True) as sim:
             sim.start(timeout=args.timeout)  # drive setup as far as PX4 lockstep
             na.logger.info("[mission] PX4 lockstep established: uploading the plan over :14540")
 

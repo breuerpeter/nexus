@@ -1,7 +1,6 @@
 """Resolve a ``LaunchConfig`` against the registry into a ``ResolvedLaunch``.
 
-Flow: look the named vehicle variant up, or take the registry's default → resolve the
-scene → fetch and sha-verify every ``{url, sha256}`` asset, for the vehicle and scene
+Flow: look the named vehicle variant up → resolve the named scene → fetch and sha-verify every ``{url, sha256}`` asset, for the vehicle and scene
 Universal Scene Description (USD) files and the policy → emit the tested-config receipt plus local
 paths.
 """
@@ -52,9 +51,8 @@ def resolve(
     """Resolve *launch* against *registry*, which defaults to the bundled one.
 
     With ``fetch=True``, the default, the resolver downloads and sha-verifies every ``{url, sha256}``
-    asset into the local cache and returns its path: the vehicle USD, the scene USD, and the policy
-    weights when ``control.kind == 'policy'``. ``fetch=False`` resolves the receipt only, with no
-    network, which is useful for tests and dry runs. ``cache_dir=None`` uses the default
+    asset into the local cache and returns its path: the vehicle USD and the scene USD.
+    ``fetch=False`` resolves the receipt only, with no network, which is useful for tests and dry runs. ``cache_dir=None`` uses the default
     newton-assets cache.
     """
     # A caller that hands over a Registry owns it; otherwise the run finds its own catalog and says
@@ -65,34 +63,25 @@ def resolve(
         registry = load_registry(source)
         logger.info(f"registry: {source}")
 
+    if launch.vehicle is None:
+        raise NoMatchError(f"the launch names no vehicle; name one of {[v.name for v in registry.vehicles]}")
+    if launch.scene is None:
+        raise RegistryError(f"the launch names no scene; name one of {list(registry.scenes)}")
     local = _local_usd(launch.vehicle, "vehicle")
     if local is None:
-        name = launch.vehicle if launch.vehicle is not None else registry.defaults.vehicle
-        if name is None:
-            raise NoMatchError(
-                f"the launch names no vehicle and the registry has no default; "
-                f"registry names: {[v.name for v in registry.vehicles]}"
-            )
-        variant = registry.by_name(name)  # `--vehicle <name>`, or the registry's default
+        variant = registry.by_name(launch.vehicle)  # `--vehicle <name>`
     else:
-        # Local vehicle USD, the variant-development workflow: the file *is* the authority. Actuator
-        # params, cameras, and lidars are all authored on it, so it needs no registry row. The receipt
-        # stays honest: the file gets a sha256 the same way as a registry asset; the PX4 spec falls
-        # back to the registry-default variant's, receipt-only, since whoever runs PX4 picks the
-        # Software In The Loop (SITL) airframe.
+        # Local vehicle USD, the variant-development workflow: the file *is* the authority. Its
+        # controller, actuator params, cameras, and lidars are all authored on it, so it needs no
+        # registry row. The receipt stays honest: the file gets a sha256 the same way as a registry asset.
         import hashlib
 
         from .models import AssetRef
 
         sha = hashlib.sha256(local.read_bytes()).hexdigest()
-        default = registry.by_name(registry.defaults.vehicle) if registry.defaults.vehicle else None
-        variant = VehicleVariant(
-            name=str(local),
-            usd=AssetRef(url=local.as_uri(), sha256=sha, filename=local.name),
-            px4=default.px4 if default is not None else None,
-        )
+        variant = VehicleVariant(name=str(local), usd=AssetRef(url=local.as_uri(), sha256=sha, filename=local.name))
 
-    scene_id = launch.scene or registry.defaults.scene
+    scene_id = launch.scene
     local_scene = _local_usd(scene_id, "scene")
     if local_scene is not None:
         # Local scene USD, the scene-development workflow: a freshly converted mesh or splat, not yet
@@ -124,15 +113,12 @@ def resolve(
         vehicle=variant.name,
         registry=str(source) if source is not None else None,
         vehicle_usd=variant.usd,
-        px4=variant.px4,
         scene=scene_id,
         scene_usd=scene.usd,
         scene_start=scene.start,
         geodetic_origin=geodetic_origin,
-        control=launch.control,
         runtime=launch.runtime,
         sensors=launch.sensors,
-        environment=launch.environment,
     )
     return ResolvedLaunch(
         tested_config=tested,

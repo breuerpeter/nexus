@@ -53,15 +53,15 @@ Development uses [`uv`](https://docs.astral.sh/uv/):
 git clone https://github.com/breuerpeter/nexus.git
 cd nexus
 uv sync                 # install the framework
-uv run nexus run   # fly the default vehicle against PX4 SITL
+uv run nexus run --vehicle astro_max_base --scene empty   # fly a vehicle against PX4 SITL
 ```
 
 ## Quickstart
 
-Run the command-line tool with the registry default vehicle, `astro_max_base`, and controller, `px4-sitl`:
+Run the command-line tool with a vehicle and a scene. `astro_max_base` declares PX4 as its controller, and `empty` is flat ground:
 
 ```bash
-uv run nexus run
+uv run nexus run --vehicle astro_max_base --scene empty
 ```
 
 Run a self-contained example. Every example records a Rerun `.rrd`, and `--list` names them:

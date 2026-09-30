@@ -5,7 +5,7 @@ import typing
 from nexus._src.core import interfaces
 from nexus._src.vehicle.actuators import ArticulatedRotors, base
 
-MARKERS = ("forces", "requires_articulated", "capturable")
+MARKERS = ("forces_wp", "requires_articulated", "stages")
 
 
 def _declares(protocol: type, name: str) -> bool:
@@ -15,9 +15,9 @@ def _declares(protocol: type, name: str) -> bool:
 
 def test_one_actuator_contract_in_core_carrying_the_markers():
     """One actuator contract, `Actuator` in `core/interfaces.py`, carrying `requires_articulated` and
-    `capturable`; the pairing guard alone stays in `vehicle/actuators/base.py`: given the tree, when
-    a caller imports `Actuator` from `nexus._src.core.interfaces`, then it declares `forces`,
-    `requires_articulated` and `capturable`, the shipped `ArticulatedRotors` satisfies it, no
+    `stages`; the pairing guard alone stays in `vehicle/actuators/base.py`: given the tree, when
+    a caller imports `Actuator` from `nexus._src.core.interfaces`, then it declares `forces_wp`,
+    `requires_articulated` and `stages`, the shipped `ArticulatedRotors` satisfies it, no
     `ActuatorModel` exists, and `vehicle/actuators/base.py` declares no Protocol and keeps
     `check_actuator_model_pairing`.
     """

@@ -1,28 +1,16 @@
 """The fixed-order, deterministic orchestrator of architecture.md §3, §4, §5.
 
-Reproduces the bridge's exact per-tick sequence, the behavioral reference, but
-behind typed component boundaries. ``run()`` selects the **execution strategy**
-automatically, in ``_execution_strategy``: there is no separate knob, and the rule
-is single: **capture everything capturable; host-exchange only the components
-that need it.** On a CUDA device with the whole device region, physics + actuator
-+ in-graph sensors, ``capturable``, the loop records the per-tick device region into a
-CUDA graph once and replays it: the captured strategy, the Real Time Factor (RTF) lever
-of architecture.md §5. The controller then just picks its seam: a ``capturable``
-in-process controller, Proportional Integral Derivative (PID) or policy, with a device-native
-``exchange``, joins the graph so the *whole* tick captures, in ``_loop_captured_inprocess``; any other
-controller, a ``host_boundary`` peer such as PX4, whose blocking MAVLink ``exchange`` is
-uncapturable, or an in-process host solver such as a Model Predictive Control (MPC) controller's
-per-tick optimization, exchanges at the host seam, read -> exchange -> write_controls, between
-replays, in ``_loop_captured_host_exchange``. A non-capturable controller never forces the
-rest of the tick eager.
-
-The strategy is controller-agnostic: it routes on the generic ``host_boundary`` /
-``capturable`` markers, not on any specific controller type. The **eager** strategy,
-``_loop``, where Python steps components one-by-one, is the fallback: a CPU device,
-because capture needs CUDA, or a non-capturable device-region component, and the
-bit-exact CPU determinism gate. It stays the debugging/parity path. GPU physics
-is tolerance-gated, not bit-exact, so capture is an RTF optimization layered over
-the same component semantics.
+A tick is an ordered ring of stages, per docs/design/execution.md. Every component states its
+per-tick work as a list of ``Stage``: a device stage joins a CUDA graph, a host stage runs between
+graph replays. The loop lays the stages out in the canonical order, sensors -> controller ->
+[clear -> actuator -> step] per physics substep -> record, cuts the ring at its host stages and
+rotates it to start after the last cut, so each maximal run of device stages becomes one CUDA
+graph, the Real Time Factor (RTF) lever of architecture.md §5, and the host stages run between
+replays. One partition and one loop serve every arrangement: PX4, whose ``read`` and ``exchange``
+host stages block on its peer, a Model Predictive Control (MPC) solver that runs on the host, and a
+device-native Proportional Integral Derivative (PID) law whose whole ring is one graph. On a CPU device the same segments run stage by stage, the bit-exact
+determinism gate. GPU physics is tolerance-gated, not bit-exact, so capture is an RTF optimization
+layered over the same component semantics.
 """
 
 from __future__ import annotations
@@ -32,9 +20,11 @@ from typing import TYPE_CHECKING
 
 from nexus._src.diagnostics import diagnostics
 
+from .interfaces import Stage, Tick
 from .logging import logger
 from .profiling import LoopProfiler
 from .schema import Measurement
+from .stages import build_ring, device_sensors, partition, plan_line, seed_stages, warm_stages
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -42,35 +32,45 @@ if TYPE_CHECKING:
     import newton
 
     from nexus._src.logging import Logger
+    from nexus._src.peers import Peer
 
     from .interfaces import (
         Actuator,
         Clock,
         Controller,
-        Environment,
         Physics,
         Renderer,
         Sensor,
     )
 
 
+def _on_cuda() -> bool:
+    """Whether the active Warp device captures graphs: a CUDA device. Warp stays a lazy import, so a
+    warp-free build of stand-in components runs the loop eagerly.
+    """
+    try:
+        import warp as wp
+
+        return bool(wp.get_device().is_cuda)
+    except Exception:
+        return False
+
+
+def _replay():
+    """The graph replay, bound once outside the loop."""
+    import warp as wp
+
+    return wp.capture_launch
+
+
 class Orchestrator:
     """Fixed-order, deterministic per-tick driver over typed component boundaries.
 
-    Reproduces the bridge's exact per-tick sequence, sense -> control exchange ->
-    actuate -> step, behind typed components, and picks the execution strategy
-    automatically from the active device, per architecture.md §3, §4, §5: capture
-    everything capturable, host-exchange only the components that need it. On a
-    CUDA device with the whole device region, physics + actuator + in-graph
-    sensors, ``capturable``, the loop records the per-tick device region into a CUDA
-    graph once and replays it, the captured strategy, the RTF lever; otherwise it
-    steps components one-by-one in Python, the eager fallback / parity path. The
-    controller picks its seam: an in-process ``capturable`` controller joins the
-    graph, so the whole tick captures, while any other controller, a
-    ``host_boundary`` peer such as PX4 MAVLink lockstep, or an in-process host solver
-    such as an MPC, exchanges at the host seam between replays. Strategy selection
-    is controller-agnostic: it routes on the generic ``host_boundary`` /
-    ``capturable`` markers, not on any specific type.
+    Runs the ring of stages every component states, sensors -> controller -> actuate and step ->
+    record, per docs/design/execution.md. On a CUDA device each maximal run of device stages
+    replays as one CUDA graph and the host stages run between replays; on a CPU device the same
+    segments run stage by stage. The partition is component-agnostic: it reads each stage's stated
+    kind, never a component's type.
 
     Attributes:
         sensors: The configured sensors as a ``list``, because the constructor copies the
@@ -85,12 +85,12 @@ class Orchestrator:
         self,
         *,
         clock: Clock,
-        environment: Environment,
         physics: Physics,
         actuator: Actuator,
         sensors: Iterable[Sensor],
         controller: Controller,
         renderer: Renderer | None = None,
+        peers: Iterable[Peer] = (),
         logger: Logger | None = None,
         on_tick: Callable[[newton.State, float, int], None] | None = None,
         preroll_timeout: float = 2.0,
@@ -104,28 +104,27 @@ class Orchestrator:
             clock: Simulation clock. ``advance()`` advances and returns the sim
                 time ``t``; ``dt`` is the control timestep; ``throttle()`` paces the
                 loop to wall-time, a no-op unless real-time throttling is on.
-            environment: Environment model. ``sample(state, t)`` returns the per-tick
-                ``env`` context, for example wind/gravity/air density, passed to the
-                actuator, physics, and sensors.
             physics: Physics component. ``reset()`` builds and settles the vehicle at
-                the North East Down (NED) origin and returns the initial state; ``clear_forces(state)``
-                zeroes the shared ``body_f`` and ``step(state, env, dt)`` integrates:
-                collide + solver step + double-buffer. Can expose ``capturable``.
-            actuator: The actuator. ``forces(controls, state, env)`` writes the
-                shared body forces, eager; ``write_controls`` / ``forces_wp(state)``
-                are the host-boundary captured seam. Can expose ``capturable``.
-            sensors: Iterable of sensors producing the Forward Right Down (FRD) ``Measurement``. Each
-                exposes ``sample(state, env, t, meas)``, eager, or
-                ``sample_wp(state, env, t)`` + ``read(meas)``, captured. Stored as a
-                list; each can expose ``capturable``.
+                the North East Down (NED) origin and returns the initial state; its ``clear``
+                and ``step`` stages zero the shared ``body_f`` and integrate: collide + solver step
+                + double-buffer.
+            actuator: The actuator: one device stage that writes the shared body forces from the
+                controller's command buffer.
+            sensors: Iterable of sensors producing the Forward Right Down (FRD) ``Measurement``,
+                each a device stage into its own buffer plus ``read(meas)``, or a host stage for a
+                sensor whose work leaves the process. Stored as a list.
             controller: Control boundary. ``connect()`` binds and starts the peer, and the
-                preroll waits for it; ``exchange(meas, t, timeout)`` returns controls or ``None``;
-                ``close()`` tears down. Can expose ``host_boundary`` / ``capturable``, and
-                ``attached``, false until the peer dials in, which holds the preroll's clock.
+                seed pass waits for it; its stages set the command buffer; ``close()`` tears down.
+                A controller with a peer exposes ``attached``, false until the peer dials in,
+                which holds the seed pass's clock.
             renderer: Optional render-lifecycle object, for example the Kit render peer's
                 :class:`~nexus._src.rendering.KitRenderer`: the loop calls only
                 ``on_physics_ready()``/``close()``; the host-rate RTX camera *sensors* drive
                 rendering itself at the host seam.
+            peers: The peers the build started for this run, for example the PX4 Software In The
+                Loop (SITL) container. The loop stops each when the run ends, whether it ran out,
+                stopped early or never stepped; it starts none, since a peer boots while the build
+                goes on.
             logger: Optional :class:`~nexus._src.logging.Logger`: the recording
                 sink + shared log calls. ``None`` ⇒ no recording and no per-tick log
                 fan-out, for max speed. When present, each loggable component's
@@ -145,21 +144,12 @@ class Orchestrator:
                 ``>1`` lets a policy control at a coarse rate over finer integration.
         """
         self.clock = clock
-        self.environment = environment
         self.physics = physics
         self.actuator = actuator
         self.sensors = list(sensors)
-        # Sensor partition; architecture: sensors are the one abstraction, renderables are just sensors:
-        # * in-graph sensors: the physics-rate suite, Inertial Measurement Unit (IMU), Global Positioning
-        #   System (GPS), baro, mag and obs: sampled every tick, join the captured CUDA graph when capturable.
-        # * host-rate sensors, ``host_rate = True``: RTX renderables, camera and lidar: inherently
-        #   low-rate and host-bound, because their frames come from the Kit peer over a socket, sampled at
-        #   the host seam of every loop and self-decimating to their own rate. They never veto the
-        #   captured strategy.
-        self._graph_sensors = [s for s in self.sensors if not getattr(s, "host_rate", False)]
-        self._host_sensors = [s for s in self.sensors if getattr(s, "host_rate", False)]
         self.controller = controller
         self.renderer = renderer
+        self.peers = list(peers)
         # The single logging switch: a `Logger`, the recording sink + the shared log_state/log_image
         # calls, or None. None ⇒ no recording and no per-tick log fan-out → max benchmark/CI speed.
         self.logger = logger
@@ -182,9 +172,9 @@ class Orchestrator:
         self._rtf_wall_prev: float | None = None
         self._rtf_sim_prev = 0.0
         # Component-owned observation seam, the read-side twin of logging: a recordable component exposes
-        # a capturable `record_wp()` that snapshots its quantities into a Recorder channel. Sim's `observe`
+        # a device-only `record_wp()` that snapshots its quantities into a Recorder channel. Sim's `observe`
         # attaches the Recorder post-build, via `attach_recorder`, since observation is a
-        # control-surface concern. The taps are device-only, so observing never forces the eager strategy.
+        # control-surface concern. The taps are device stages, so observing never adds a host stage.
         self._recordables = [c for c in (physics, actuator, controller, *self.sensors) if hasattr(c, "record_wp")]
         self._recorder = None
         # Hosting hooks; the control surface, Sim, drives these. on_tick is the per-tick observer,
@@ -222,18 +212,18 @@ class Orchestrator:
     def attach_recorder(self, recorder) -> None:
         """Attach the observation sink, Sim's ``observe=True``, and hand each recordable component the
         Recorder, so it registers its channel. The read-side mirror of the Logger wiring; the taps are
-        capturable, device-only, so observing never forces the eager strategy. Call before ``run()``;
-        the captured graph records the taps at capture time.
+        device-only, so observing never adds a host stage. Call before ``run()``; a captured graph
+        records the taps at capture time.
         """
         self._recorder = recorder
         for c in self._recordables:
             c.set_recorder(recorder)
 
     def _record_tick(self) -> None:
-        """Per-tick observation fan-out: each recordable's capturable tap snapshots its own device buffers,
-        physics' ``state0``, a sensor's measurement, into its Recorder channels. Launched INSIDE the
-        captured device region, device-only, no D2H, so it replays with the graph. A no-op when not
-        observing, leaving the not-observing graph the same byte for byte.
+        """The record stage: each recordable's tap snapshots its own device buffers, physics'
+        ``state0``, a sensor's measurement, into its Recorder channels. A device stage, no D2H, so it
+        replays with its graph. A no-op when not observing, leaving the not-observing graph the same
+        byte for byte.
         """
         if self._recorder is None:
             return
@@ -312,109 +302,6 @@ class Orchestrator:
                 logger.warning(f"recorder debug dump failed: {exc}")
         self.logger.close()
 
-    # -- pre-roll, init/handshake: settle is in physics.reset; here the loop samples the
-    #    settled state and exchanges until PX4 returns its first actuators, so PX4
-    #    establishes lockstep at the settled NED origin, architecture.md §3. --
-    def _sample(self, state, env, t) -> Measurement:
-        meas = Measurement()
-        for s in self._graph_sensors:
-            s.sample(state, env, t, meas)  # sensors read the live newton.State directly
-        return meas
-
-    def _sample_host(self, state, env, t, meas) -> None:
-        """Host-rate sensors, RTX camera/lidar with ``host_rate = True``, sampled at every loop's host
-        seam. Each self-decimates to its own rate, so calling per tick is cheap; their work, the
-        exchange with the Kit peer, is host-bound and must never enter the captured graph.
-        """
-        for s in self._host_sensors:
-            s.sample(state, env, t, meas)
-
-    def _preroll(self, state) -> None:
-        host = getattr(self.controller, "host_boundary", False)
-        if host:  # an external peer such as PX4 takes seconds to dial in; an in-process controller answers at once
-            logger.info("Waiting for the controller to start lockstep...")
-        deadline = time.monotonic() + self.preroll_timeout
-        while time.monotonic() < deadline:
-            # Hold the sim clock until the peer has dialed in: time spent waiting would start the peer's
-            # clock late, and PX4 times its boot checks from its first stamp.
-            t = self.clock.advance() if getattr(self.controller, "attached", True) else self.clock.now()
-            env = self.environment.sample(None, t)
-            meas = self._sample(state, env, t)
-            controls = self.controller.exchange(meas, t, timeout=0.05)
-            if controls is not None:
-                if host:
-                    logger.info("controller lockstep established")
-                return
-        raise ConnectionError(f"controller did not respond within {self.preroll_timeout}s")
-
-    def _loop(self, state):
-        """Eager per-tick loop as a generator: one control tick per ``yield``, the step() driving seam.
-        ``run()`` exhausts it; ``Sim.step()`` advances it one tick. The ``finally`` stamps the RTF, so
-        it runs whether the generator runs out or closes early on stop.
-        """
-        dt = self.clock.dt
-        steps = 0
-        t0 = time.monotonic()  # for the end-to-end RTF, sim-time advanced / wall-time, of the live run
-        # Steady-state window: the RTF measurement starts here so it excludes lazy kernel compilation, the
-        # first actuator/solver launches, for example the ~1.2 s ClampingDCMotor compile, and the initial settle.
-        warmup_steps = 250
-        t_warm = None
-        steps_warm = 0
-        prof = self._make_profiler("eager")
-        try:
-            while not self._stop and (self.max_steps is None or steps < self.max_steps):
-                steps += 1
-                prof.tick_begin()
-                if steps == warmup_steps:
-                    t_warm, steps_warm = time.monotonic(), steps
-                t = self.clock.advance()
-                self._begin_log(t)  # set the timeline before exchange; the MPC controller logs its horizon there
-                env = self.environment.sample(None, t)
-                meas = self._sample(state, env, t)  # IMU/GPS/baro/mag -> FRD Measurement
-                prof.mark("sensors.sample")  # per-sensor kernels + D2H reads -> Measurement
-
-                controls = self.controller.exchange(meas, t, timeout=self.exchange_timeout)
-                if controls is None:  # blocking-lockstep liveness: a lost peer ends the run
-                    raise ConnectionError("controller disconnected (no actuator controls received)")
-                prof.mark("exchange")  # the host seam, for example the PX4 MAVLink round-trip
-
-                # Zero-order-hold the controls over physics_substeps finer physics steps.
-                sub_dt = dt / self.physics_substeps
-                for _ in range(self.physics_substeps):
-                    self.physics.clear_forces(state)  # physics owns the body_f clear
-                    self.actuator.forces(controls, state, env)  # writes shared body_f, + the actuator joints
-                    state = self.physics.step(state, env, sub_dt)  # collide + solver.step + double-buffer
-                prof.mark("actuate+step")  # actuator kernels + solver step
-
-                self._record_tick()  # observation tap, post-step groundtruth; no-op if not observing
-                self._sample_host(state, env, t, meas)  # host-rate sensors, RTX cameras, self-decimated
-                self._log_tick(t)  # host-seam log fan-out: scene+trail, horizon, …; no-op if logging off
-                if self.on_tick is not None:
-                    self.on_tick(state, t, steps)  # post-step observer, for example waypoint advance
-                self.clock.throttle()
-                prof.mark("record+log")
-                prof.tick_end()
-                yield  # one control tick complete: the step() driving seam
-        finally:
-            # Report the live RTF; for the decoupled PX4 flight this is the sim speed *with* PX4 in the
-            # lockstep loop, the meaningful end-to-end number; the controller exchange paces the loop.
-            # Steady RTF, post-warmup and compilation-free, is the headline; full RTF is for reference.
-            now = time.monotonic()
-            full_rtf = round(steps * dt / (now - t0), 3) if now > t0 else 0.0
-            if t_warm is not None and now > t_warm:
-                rtf = round((steps - steps_warm) * dt / (now - t_warm), 3)
-                window = steps - steps_warm
-            else:  # never reached the warmup window
-                rtf, window = full_rtf, steps
-            self.run_stats = {"control_steps": steps, "rtf": rtf, "full_rtf": full_rtf}
-            if steps:
-                logger.info(
-                    f"sim RTF {rtf:.2f}x (steady, over {window} steps); full {full_rtf:.2f}x incl. warmup/compile",
-                    extra={"console_only": True},  # in-viewer this lives in the RTF pane + Profile tab
-                )
-            prof.close()
-            self.run_stats["profile"] = prof.stats()
-
     def _record_rtf(self, steps: int, t0: float, t_warm: float | None, steps_warm: int) -> None:
         """Stamp ``run_stats`` and log the live RTF, the sim speed, sim-time advanced / wall-time,
         shared by the eager and captured loops. The steady window, post-``warmup_steps``, excludes lazy
@@ -435,193 +322,6 @@ class Orchestrator:
                 f"sim RTF {rtf:.2f}x (steady, over {window} steps); full {full_rtf:.2f}x incl. warmup/compile",
                 extra={"console_only": True},  # in-viewer this lives in the RTF pane + Profile tab
             )
-
-    def _loop_captured_inprocess(self, state, steps: int | None = None):
-        """Captured strategy for an **in-process controller**, architecture.md §5: the loop records the
-        whole per-tick device region, sensors -> controller.exchange -> actuator -> physics, into a CUDA
-        graph once and replays it, with no per-tick Python / kernel-launch overhead. The Python glue,
-        Measurement / Controls, runs once at capture; replay re-runs only the recorded kernels over the
-        components' persistent buffers, advancing ``state``. ``steps`` defaults to ``max_steps``.
-
-        A generator: one control tick per ``yield``, the step() driving seam: ``run()`` exhausts it,
-        ``Sim.step()`` advances it one tick. The loop captures the graph once before the first yield.
-        """
-        import warp as wp
-
-        steps = self.max_steps if steps is None else steps
-        dt = self.clock.dt
-        t = self.clock.advance()
-        env = self.environment.sample(None, t)
-        meas = Measurement()
-        # Warm pass, outside the graph: every device buffer must exist before capture.
-        # Memory allocated during CUDA stream capture is graph-owned; referencing it from outside
-        # the graph reads as stable right up until another consumer allocates between replays. The
-        # Kit renderer exposed this: the PID's lazily built mixer buffers silently diverged from the
-        # graph's and the flight froze at the settle pose. Sampling + exchange only write their
-        # persistent buffers, state-free, so the captured semantics stay the same.
-        for s in self._graph_sensors:
-            s.sample(state, env, t, meas)
-        self.controller.exchange(meas, t, None)
-        wp.synchronize()
-        with wp.ScopedCapture() as cap:
-            for s in self._graph_sensors:
-                s.sample(state, env, t, meas)  # device-native obs -> meas.observation, a Warp array
-            controls = self.controller.exchange(meas, t, None)  # in-process: Warp Controls, no host wait
-            self.physics.clear_forces(state)
-            self.actuator.forces(controls, state, env)
-            self.physics.step(state, env, dt)
-            self._record_tick()  # capturable observation tap; joins the graph, device-only; no-op if not observing
-        graph = cap.graph
-        count = 0
-        t0 = time.monotonic()
-        warmup_steps = 250
-        t_warm = None
-        steps_warm = 0
-        prof = self._make_profiler("captured-inprocess")
-        try:
-            while not self._stop and (steps is None or count < steps):
-                count += 1
-                prof.tick_begin()
-                if count == warmup_steps:
-                    t_warm, steps_warm = time.monotonic(), count
-                prof.gpu_begin()
-                wp.capture_launch(graph)
-                prof.gpu_end()
-                prof.mark("replay.launch")
-                t = self.clock.advance()
-                self._begin_log(t)  # set the timeline for this tick's overlays
-                self._sample_host(state, env, t, meas)  # host-rate sensors, RTX cameras, self-decimated
-                prof.mark("sensors.host")
-                self._log_tick(t)  # host-seam log fan-out, outside the graph; no-op if logging off
-                if self.on_tick is not None:
-                    self.on_tick(state, t, count)  # post-step observer, for example waypoint advance
-                self.clock.throttle()
-                prof.mark("log")
-                prof.tick_end()
-                yield  # one control tick complete: the step() driving seam
-        finally:
-            self._record_rtf(count, t0, t_warm, steps_warm)
-            prof.close()
-            self.run_stats["profile"] = prof.stats()
-
-    def _loop_captured_host_exchange(self, state, steps: int | None = None):
-        """Captured strategy for a controller that exchanges at the **host seam**, architecture.md §5:
-        any controller whose ``exchange`` can't join the graph: a ``host_boundary`` peer, PX4, whose
-        blocking MAVLink lockstep is an off-device round-trip, or an in-process host solver, an MPC's
-        per-tick optimization, a torch policy. Everything else still captures; the graph is the
-        device region, reordered contiguous: ``actuator.forces_wp -> physics.step ->
-        sensors.sample_wp``. Per tick the host seam does one D2H, sensors ``read`` ->
-        ``Measurement``, the ``exchange``, and one H2D, ``actuator.write_controls``; the graph
-        replays between. Uses only the generic component interfaces, no controller-specific code.
-
-        Load-bearing: sensor noise must **dither per replay**; the sensors increment a device step
-        counter inside the graph. A frozen captured stream reads to a state-estimator, PX4's Extended
-        Kalman Filter (EKF), as a stuck sensor, so position fusion never starts and the vehicle won't arm.
-        The preroll re-samples each iteration likewise. ``steps`` defaults to ``max_steps``; ``None``
-        runs until the controller ends the run, on disconnect / ``stop()``.
-
-        The loop connects the controller itself, after the seed row and the capture, so it compiles
-        and loads every kernel it launches before a peer is up. From the moment PX4 dials in, it
-        logs a ``poll timeout`` error for each 1 s of wall time that brings no message, and on a cold
-        kernel cache the first launches here compile for longer than that.
-
-        A generator: one control tick per ``yield``, the step() driving seam: ``run()`` exhausts it,
-        ``Sim.step()`` advances it one tick. The loop captures the graph once before the first yield.
-        """
-        import warp as wp
-
-        steps = self.max_steps if steps is None else steps
-        dt = self.clock.dt
-        meas = Measurement()
-        # Sense the settled state once, which seeds the IMU finite-diff so capture runs first=0.
-        t = self.clock.advance()
-        env = self.environment.sample(None, t)
-        for s in self._graph_sensors:
-            s.sample_wp(state, env, t)
-        # Seed one observation row: the settled pre-flight state, which is a datum in its own right,
-        # the pose every climb measures against. The eager loop seeds one too, so both strategies
-        # record the same pre-flight row. It also warms the record kernels' module load, so that
-        # happens outside the capture below.
-        self._record_tick()
-        wp.synchronize()  # complete the seed row's launches before the capture below opens
-
-        # Capture the device region before the first tick: any other stream op during CUDA stream
-        # capture kills the capture, and the run would then die silently with PX4 lockstep frozen
-        # mid-boot. Replays are safe. The graph reads the actuator's persistent command buffers, which
-        # the first write_controls below fills before the first replay.
-        with wp.ScopedCapture() as cap:
-            self.physics.clear_forces(state)
-            self.actuator.forces_wp(state)
-            self.physics.step(state, env, dt)
-            for s in self._graph_sensors:
-                s.sample_wp(state, env, t)
-            self._record_tick()  # capturable observation tap, post-step groundtruth; no-op if not observing
-        graph = cap.graph
-
-        # Pre-roll: connect, then stream the sensor feed until the controller's first exchange
-        # completes; an external host-boundary peer takes seconds to dial in; an in-process controller
-        # answers on the first try.
-        self.controller.connect()  # bind tcpin:4560 and return listening, then start the peer
-        controls = None
-        host = getattr(self.controller, "host_boundary", False)
-        if host:
-            logger.info("Waiting for the controller to start lockstep...")
-        deadline = time.monotonic() + self.preroll_timeout
-        while time.monotonic() < deadline:
-            # Hold the sim clock until the peer has dialed in, as the eager preroll does.
-            t = self.clock.advance() if getattr(self.controller, "attached", True) else self.clock.now()
-            for s in self._graph_sensors:
-                s.sample_wp(state, env, t)  # re-sample, state static, noise dithers -> live feed
-                s.read(meas)
-            controls = self.controller.exchange(meas, t, timeout=0.05)
-            if controls is not None:
-                break
-        if controls is None:
-            raise ConnectionError(f"controller did not establish lockstep within {self.preroll_timeout}s")
-        if host:
-            logger.info("controller lockstep established")
-        self.actuator.write_controls(controls)  # H2D for the first replay, host seam
-        count = 0
-        t0 = time.monotonic()
-        warmup_steps = 250
-        t_warm = None
-        steps_warm = 0
-        prof = self._make_profiler("captured-host")
-        try:
-            while not self._stop and (steps is None or count < steps):
-                count += 1
-                prof.tick_begin()
-                if count == warmup_steps:
-                    t_warm, steps_warm = time.monotonic(), count
-                prof.gpu_begin()
-                wp.capture_launch(graph)  # apply controls -> step -> sense, into device meas buffers
-                prof.gpu_end()
-                prof.mark("replay.launch")
-                t = self.clock.advance()
-                self._begin_log(t)  # set the timeline for this tick's overlays
-                for s in self._graph_sensors:
-                    s.read(meas)  # D2H the new measurement; also the sync point that completes the replay
-                prof.mark("gpu+read")  # the D2H read forces the replay's sync; device time lands here
-                controls = self.controller.exchange(meas, t, timeout=self.exchange_timeout)
-                prof.mark("exchange")  # the host seam: the PX4 MAVLink round-trip / the MPC solve
-                if controls is None:  # controller disconnected -> end the run
-                    count -= 1  # the disconnect tick didn't advance the sim
-                    raise ConnectionError("controller disconnected (no actuator controls received)")
-                self.actuator.write_controls(controls)  # H2D for the next replay, host seam
-                prof.mark("write")
-                self._sample_host(state, env, t, meas)  # host-rate sensors, RTX cameras, self-decimated
-                prof.mark("sensors.host")
-                self._log_tick(t)  # host-seam log fan-out: scene+trail, …; no-op if logging off
-                if self.on_tick is not None:
-                    self.on_tick(state, t, count)  # post-step observer, for example the operator's waypoint advance
-                self.clock.throttle()  # no-op unless rtf>0, the interactive real-time throttle
-                prof.mark("log")
-                prof.tick_end()
-                yield  # one control tick complete: the step() driving seam
-        finally:
-            self._record_rtf(count, t0, t_warm, steps_warm)
-            prof.close()
-            self.run_stats["profile"] = prof.stats()
 
     def _make_profiler(self, label: str) -> LoopProfiler:
         """Always-on loop profiler, integer-ns marks, noise at 250 Hz. The shared ``--profile``
@@ -648,75 +348,63 @@ class Orchestrator:
         """
         self._stop = True
 
-    def _execution_strategy(self) -> str:
-        """Resolve the execution strategy for this run from the active device, architecture.md §5:
-        ``"captured-inprocess"``, ``"captured-host-exchange"``, or ``"eager"``. No separate knob, one
-        rule, capture everything capturable and host-exchange only what needs it: on a CUDA device with
-        the whole device region, physics + actuator + in-graph sensors, ``capturable``, the tick
-        captures; the controller then picks its seam: a ``capturable`` in-process controller joins
-        the graph, captured-inprocess; any other, a ``host_boundary`` peer such as PX4, or an in-process
-        host solver such as an MPC, exchanges between replays, captured-host-exchange. A CPU device or a
-        non-capturable device-region component -> eager.
-        """
-        try:
-            import warp as wp
-
-            on_cuda = wp.get_device().is_cuda
-        except Exception:
-            on_cuda = False
-        device_capturable = (
-            on_cuda
-            and getattr(self.physics, "capturable", False)
-            and getattr(self.actuator, "capturable", False)
-            and bool(self._graph_sensors)
-            and all(getattr(s, "capturable", False) for s in self._graph_sensors)
-        )
-        if not device_capturable:
-            return "eager"
-        controller_in_graph = getattr(self.controller, "capturable", False) and not getattr(
-            self.controller, "host_boundary", False
-        )
-        return "captured-inprocess" if controller_in_graph else "captured-host-exchange"
-
     def _ticks(self):
         """The single execution path, as a generator that yields once per control tick, driving both
         ``run()``, which exhausts it, and ``Sim.step()``, which advances it one tick.
 
-        Resets physics, which builds + settles the vehicle at the NED origin, resolves the execution
-        strategy and delegates to the matching loop. The controller connects, which binds its port and
-        starts its peer, before the in-process and eager loops, and inside the host-exchange loop after
-        its capture; the wait for the peer is the preroll, not the connect.
-        Every loop is a generator; it ``yield``s per tick and step-drives, for every control kind
-        alike: a host-boundary peer, PX4, and an in-process autopilot both advance one tick per
-        ``next()``. Common setup runs before the first tick; teardown, renderer/controller/logs close,
-        runs in the ``finally``, whether the generator runs out, on run to completion / peer
-        disconnect, or closes early, via :meth:`close` on ``stop()`` mid-step. The live RTF lands in
-        ``run_stats``.
+        Resets physics, which builds and settles the vehicle at the NED origin, builds the ring of
+        stages and partitions it, runs the warm pass over the settled state, records the seed row,
+        captures each device segment on CUDA, runs the seed pass of the controller's host stages, the
+        preroll for a controller with a peer, then loops. Every controller advances one tick per
+        ``next()``. Teardown, renderer,
+        controller and logs, runs in the ``finally``, whether the generator runs out, on run to
+        completion or peer disconnect, or closes early, via :meth:`close` on ``stop()`` mid-step.
+        The live RTF lands in ``run_stats``.
         """
         try:
             # Inside the try from the first line: the renderer's peer started at build, so a reset or a
             # peer start that fails must still reach the `finally`, which removes its container, and
             # from the connect on the controller owns a live peer too, the PX4 container it launches.
             state = self.physics.reset()  # build + settle the vehicle at the NED origin
-            # Renderer warm-up hook, before PX4 lockstep starts: the Kit peer connects and warms its
-            # stage here, which takes seconds and would stall the lockstep.
+            # Renderer warm-up hook, before the peer's lockstep starts: the Kit peer connects and warms
+            # its stage here, which takes seconds and would stall the lockstep.
             if self.renderer is not None and hasattr(self.renderer, "on_physics_ready"):
                 self.renderer.on_physics_ready()
-            strategy = self._execution_strategy()
-            logger.info(f"execution strategy: {strategy}")
-            if strategy == "captured-host-exchange":
-                # The host-exchange captured loop owns its own connect, after its capture, and its own
-                # streaming preroll, since it must re-sample the sensor feed while the peer dials in,
-                # and its own seed row.
-                yield from self._loop_captured_host_exchange(state)
-            elif strategy == "captured-inprocess":
-                self.controller.connect()  # before the capture: a controller reserves its buffers here
-                yield from self._loop_captured_inprocess(state)
-            else:
-                self.controller.connect()  # bind tcpin:4560 and return listening, then start the peer
-                self._preroll(state)
-                self._record_tick()  # seed one observation row, the same contract as captured
-                yield from self._loop(state)
+            record = Stage("record", "device", lambda tick: self._record_tick())
+            ring = build_ring(
+                sensors=self.sensors,
+                controller=self.controller,
+                physics=self.physics,
+                actuator=self.actuator,
+                record=record,
+                substeps=self.physics_substeps,
+            )
+            segments = partition(ring)
+            captured = _on_cuda()
+            logger.info(plan_line(segments, captured))
+            tick = Tick(
+                state=state,
+                t=self.clock.now(),
+                dt=self.clock.dt / self.physics_substeps,
+                meas=Measurement(),
+                sensors=device_sensors(ring),
+            )
+            # A controller without a peer connects first, which reserves its device buffers before the
+            # warm pass. One with a peer connects after the capture, so every kernel the loop launches has
+            # loaded before the peer is up: from the moment PX4 dials in, it logs a ``poll timeout``
+            # error for each second of wall time that brings no message. The peer's own signal,
+            # ``attached``, says which, until #37 moves it to the peer.
+            peer = hasattr(self.controller, "attached")
+            if not peer:
+                self.controller.connect()
+            for st in warm_stages(ring):
+                st.run(tick)
+            self._record_tick()  # the settled pre-flight row, the datum every climb measures against
+            graphs = self._capture(segments, tick) if captured else None
+            if peer:
+                self.controller.connect()  # bind the peer's port and start it
+            self._seed(ring, tick, peer)
+            yield from self._loop(segments, graphs, tick)
         except ConnectionError as e:
             logger.info(
                 str(e)
@@ -725,19 +413,153 @@ class Orchestrator:
             if self.renderer is not None and hasattr(self.renderer, "close"):
                 self.renderer.close()  # for example flush+close the First Person View (FPV) encoder, an output-only seam
             # Lifecycle teardown of the controller, then the logging teardown: _close_logs flushes each
-            # loggable's accumulated emission, the MPC horizon, into the recording, dumps the Recorder's
+            # loggable's accumulated emission, the Model Predictive Control (MPC) horizon, into the recording, dumps the Recorder's
             # rings and closes the sink last, so every send_columns lands before the .rrd finalizes. The recording is
             # what a failed run is *for*, so a controller that raises on the way out must not lose it.
             try:
                 self.controller.close()
             finally:
-                self._close_logs()
+                try:
+                    self._stop_peers()
+                finally:
+                    self._close_logs()
+
+    def _controller_name(self) -> str:
+        """The controller's class, so a run's end names the peer that left it: ``Px4MavlinkController``."""
+        return type(self.controller).__name__
+
+    def _stop_peers(self) -> None:
+        """Stop each peer the build started. A peer whose stop fails, a docker daemon that went
+        away, must not cost the rest of the teardown: the recording still has to flush.
+        """
+        for peer in self.peers:
+            try:
+                peer.stop()
+            except Exception as exc:
+                logger.warning(f"stopping a peer failed ({exc})")
+
+    def _seed(self, ring, tick, peer: bool) -> None:
+        """The seed pass, for a controller with a host stage: one pass of the sensors' warm stages and
+        the controller's stages over the settled state, whose final exchange writes the controls the
+        first tick applies. A controller with a peer holds the sim clock until the peer attaches, so
+        the peer's first stamp is near zero, and the pass repeats, re-sampling the static settled
+        state so noise dithers into a live feed, until the first controls arrive or the preroll times
+        out. A controller whose stages are all device stages gets no pass: the warm pass seeded it.
+
+        Raises:
+            ConnectionError: No controls arrived within ``preroll_timeout``.
+        """
+        stages = seed_stages(ring)
+        if all(st.kind == "device" for st in stages):
+            return
+        if peer:
+            logger.info("Waiting for the controller to start lockstep...")
+        tick.timeout = 0.05
+        deadline = time.monotonic() + self.preroll_timeout
+        while time.monotonic() < deadline:
+            # Hold the sim clock until the peer has dialed in: time spent waiting would start the peer's
+            # clock late, and PX4 times its boot checks from its first stamp.
+            attached = self.controller.attached if peer else True
+            tick.t = self.clock.advance() if attached else self.clock.now()
+            if all(st.run(tick) is not False for st in stages):
+                if peer:
+                    logger.info("controller lockstep established")
+                return
+        raise ConnectionError(f"controller did not respond within {self.preroll_timeout}s")
+
+    def _open_tick(self, tick) -> bool:
+        """Advance the clock and open the tick's log, before any host stage, so the Model Predictive
+        Control (MPC) example can log its horizon inside ``exchange``. On a graph the loop calls this
+        once it has launched the tick's first replay, so the host work overlaps the device work.
+        """
+        tick.t = self.clock.advance()
+        self._begin_log(tick.t)
+        return True
+
+    def _capture(self, segments, tick) -> list:
+        """Capture each device segment into its own CUDA graph, serially, before the first tick. Any
+        other stream operation during a capture kills it, so the warm pass and the seed row complete
+        first, and nothing else touches the device until the loop replays.
+        """
+        import warp as wp
+
+        wp.synchronize()  # complete the warm pass and the seed row before a capture opens
+        graphs = []
+        for seg in segments:
+            if seg.kind != "device":
+                graphs.append(None)
+                continue
+            with wp.ScopedCapture() as cap:
+                for st in seg.stages:
+                    st.run(tick)
+            graphs.append(cap.graph)
+        return graphs
+
+    def _loop(self, segments, graphs, tick):
+        """The steady loop as a generator: one control tick per ``yield``, the step() driving seam.
+        Each tick advances the clock, opens its log, then runs the segments in ring order: a device
+        segment replays its graph, or runs stage by stage without one, and a host stage runs on the
+        host between replays. A host stage that reports its peer gone ends the run. The ``finally``
+        stamps the RTF, so it runs whether the generator runs out or closes early on stop.
+        """
+        count = 0
+        t0 = time.monotonic()  # for the end-to-end RTF, sim-time advanced / wall-time, of the live run
+        # Steady-state window: the RTF measurement starts here so it excludes lazy kernel compilation and
+        # the initial settle.
+        warmup_steps = 250
+        t_warm = None
+        steps_warm = 0
+        tick.timeout = self.exchange_timeout
+        replay = _replay() if graphs is not None else None
+        prof = self._make_profiler("graph" if graphs is not None else "eager")
+        try:
+            while not self._stop and (self.max_steps is None or count < self.max_steps):
+                count += 1
+                prof.tick_begin()
+                if count == warmup_steps:
+                    t_warm, steps_warm = time.monotonic(), count
+                opened = False
+                for i, seg in enumerate(segments):
+                    if seg.kind == "host":
+                        if not opened:
+                            opened = self._open_tick(tick)
+                        st = seg.stages[0]
+                        if st.run(tick) is False:  # the peer stopped answering: a run's normal end
+                            count -= 1  # the disconnect tick didn't advance the sim
+                            raise ConnectionError(
+                                f"{self._controller_name()} disconnected (no actuator controls received)"
+                            )
+                        prof.mark(st.name)
+                    elif replay is not None:
+                        prof.gpu_begin()
+                        replay(graphs[i])
+                        prof.gpu_end()
+                        if not opened:  # the clock advances while the first graph runs on the device
+                            opened = self._open_tick(tick)
+                        prof.mark("graph")
+                    else:
+                        if not opened:
+                            opened = self._open_tick(tick)
+                        for st in seg.stages:
+                            st.run(tick)
+                        prof.mark("stages")
+                self._log_tick(tick.t)  # host-seam log fan-out: scene+trail, …; no-op if logging off
+                if self.on_tick is not None:
+                    self.on_tick(tick.state, tick.t, count)  # post-step observer, for example waypoint advance
+                self.clock.throttle()  # no-op unless rtf>0, the interactive real-time throttle
+                prof.mark("log")
+                prof.tick_end()
+                yield  # one control tick complete: the step() driving seam
+        finally:
+            self._record_rtf(count, t0, t_warm, steps_warm)
+            prof.close()
+            self.run_stats["profile"] = prof.stats()
 
     def step(self) -> bool:
         """Advance the run one control tick, returning ``True`` if a tick ran or ``False`` when the run has
         ended: mission complete / ``max_steps`` / ``stop()`` / peer disconnect. Setup, reset, connect and
         graph capture, runs on the first call; teardown runs automatically when the run ends. The
-        control surface, ``Sim.step``, drives this for every control kind, PX4 included. Deterministic:
+        control surface, ``Sim.step``, drives this for every controller, PX4 included. Deterministic:
         no wall-clock.
         """
         if self._ticks_iter is None:
@@ -762,8 +584,8 @@ class Orchestrator:
 
     def close(self) -> None:
         """Tear down the run, ``Sim.stop()``. A partially stepped run closes its tick generator, running
-        its ``finally``, RTF stamp + renderer/controller/logs teardown. A run that never stepped closes
-        the renderer, whose peer started at build, and the logs. Idempotent: a no-op once the run has
+        its ``finally``, RTF stamp + renderer/controller/peers/logs teardown. A run that never stepped
+        closes the renderer and stops the peers, which started at build, and closes the logs. Idempotent: a no-op once the run has
         finished, ``run()`` completed / ``step()`` returned ``False``, or closed.
         """
         if self._ticks_iter is not None:
@@ -775,4 +597,7 @@ class Orchestrator:
                 if self.renderer is not None and hasattr(self.renderer, "close"):
                     self.renderer.close()
             finally:
-                self._close_logs()
+                try:
+                    self._stop_peers()
+                finally:
+                    self._close_logs()

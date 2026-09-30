@@ -101,7 +101,7 @@ class AstroMaxWaypointRollout:
         from nexus._src.build.launch import resolve_to_vehicle_builder
         from nexus._src.config import LaunchConfig
 
-        vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle("astro_max_base"))
+        vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
         # Single rigid body collapsed from the astro-max USD, the same seam the sampling
         # Model Predictive Control (MPC) example uses: correct lumped mass/inertia + the real rotor layout,
         # FRD with thrust along −body-z, spawned rotors-up.
@@ -124,7 +124,7 @@ class AstroMaxWaypointRollout:
         # the quad-X rotor geometry, the same builder the deploy paths use. The moment mixer, B^-1 with no
         # rate loop, and the forward B, the RigidBodyRotors motor model, carry the real arm + kappa yaw
         # authority.
-        m = vb.actuator_params()  # aero/thrust map from the vehicle USD, the freefly:actuator:* attributes
+        m = vb.actuator_params()  # aero/thrust map from the rotor joints of the vehicle USD, motor:* and propeller:*
         mixer = build_rotor_mixer_from_layout(
             rotor_offsets, turning_dirs, {"ct": m["ct"], "cd": m["cd"], "rpm_max": m["rpm_max"]}
         )
@@ -391,7 +391,7 @@ def main():
         from nexus._src.rendering import rtx_renderer
         from nexus.examples.controllers.pid.assembly import build_pid_orchestrator
 
-        launch = LaunchConfig().set_vehicle("astro_max_base")
+        launch = LaunchConfig().set_vehicle("astro_max_base").set_scene("empty")
         launch.runtime.device = "cuda"  # prefer CUDA; falls back to CPU without one
         launch.runtime.solver = "semi_implicit"  # the collapsed diffsim plant: deploy ≡ tuning plant
         vb2, _resolved, cfg = resolve_scenario(launch)

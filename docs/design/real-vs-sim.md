@@ -53,7 +53,7 @@ than one monolith:
 | **Pilot training** | simulated | PX4 SITL | companion | real Pilot Pro hardware | cloud VM + streaming |
 | **Customer preview** | simulated | PX4 SITL | companion | browser GCS + joystick | Suite import + NTRIP |
 | **Flight-stack development** | simulated | PX4 SITL | optional | API client | none |
-| **Design optimization** | simulated | in-process differentiable Proportional Integral Derivative (PID) | none | none | none |
+| **Design optimization** | simulated | the differentiable Proportional Integral Derivative (PID) law | none | none | none |
 
 The sim replaces the physical plane in every case. The rest of the stack runs progressively more real
 code as an app moves from batch CI toward a human flying the sim from real hardware. The items

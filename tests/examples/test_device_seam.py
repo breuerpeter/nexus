@@ -1,7 +1,7 @@
 """The device-native control seam, the capture/autodiff prerequisite: with a Warp ``observation`` slot
 the in-process Proportional Integral Derivative (PID) loop has no per-tick host hop. WarpObservationSensor
--> PidController.exchange, the law + moment mixer, -> RigidBodyRotors.forces all stay on-device, and the
-actuator is ``capturable``. A NumPy observation still takes the host path.
+-> PidController.exchange, the law + moment mixer, -> RigidBodyRotors.forces_wp all stay on-device, so
+the whole tick is one graph. A NumPy observation still takes the host path.
 
 The single-body motor model + the moment mixer need rotor geometry for the allocation, so the seam fixture
 builds a real rotored vehicle, the astro-max Universal Scene Description (USD).
@@ -25,7 +25,7 @@ from nexus.examples.controllers.pid import PidController
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")
 
-_ACT_CFG = {"ct": 0.000003463, "cd": 0.05, "rpm_max": 3800.0}  # astro-max thrust map, from freefly:actuator:*
+_ACT_CFG = {"ct": 0.000003463, "cd": 0.05, "rpm_max": 3800.0}  # astro-max thrust map, from motor:* and propeller:*
 
 
 def _is_warp_array(x) -> bool:
@@ -35,7 +35,7 @@ def _is_warp_array(x) -> bool:
 def _rotored_model():
     """A real rotored vehicle, astro-max, + its settled rest pose: the geometry the allocation needs."""
     b = newton.ModelBuilder()
-    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle("astro_max_base"))
+    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
     vb.build(b)
     model = b.finalize()
     state = model.state()
@@ -50,7 +50,7 @@ def test_inprocess_seam_is_device_native():
 
     # 1. obs sensor writes a Warp array into meas.observation, not numpy
     meas = Measurement()
-    WarpObservationSensor(goal_w=(0.0, 0.0, 1.5)).sample(state, None, SimTime(0.0, 0), meas)
+    WarpObservationSensor(goal_w=(0.0, 0.0, 1.5)).sample(state, SimTime(0.0, 0), meas)
     assert _is_warp_array(meas.observation)
     assert meas.observation.numpy().shape == (12,)
 
@@ -60,11 +60,10 @@ def test_inprocess_seam_is_device_native():
     assert _is_warp_array(controls.command)
     assert controls.command.numpy().reshape(-1).shape == (mixer.nr,)
 
-    # 3. the actuator applies the Warp Controls directly, no H2D, and writes a real wrench; it's capturable
+    # 3. the actuator's device stage applies the Warp command buffer directly, no H2D, and writes a real wrench
     act = RigidBodyRotors(mixer=mixer, dt=0.004, thrust_sign=-1.0, motor_tau=0.033)
-    assert act.capturable  # no per-tick host op, the determinism path -> the in-process loop joins a graph
     state.clear_forces()
-    act.forces(controls, state, None)
+    act.forces_wp(controls.command, state)
     wp.synchronize()
     bf = state.body_f.numpy()[act.base]
     assert np.isfinite(bf).all() and np.any(bf != 0.0)

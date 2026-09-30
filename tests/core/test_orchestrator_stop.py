@@ -2,9 +2,12 @@
 
 import pytest
 
+from nexus._src.core.interfaces import Stage
 from nexus._src.core.orchestrator import Orchestrator
 from nexus._src.core.schema import Controls, SimTime
-from nexus._src.rendering.peer import KitPeerError
+from nexus._src.peers.kit.runner import KitPeerError
+
+pytestmark = pytest.mark.usefixtures("warp_cpu")  # Python stand-ins run stage by stage, never as a graph
 
 
 class _Clock:
@@ -24,11 +27,6 @@ class _Clock:
         pass
 
 
-class _Env:
-    def sample(self, pos, t):
-        return None
-
-
 class _Physics:
     def reset(self):
         return {"q": 0}
@@ -36,17 +34,28 @@ class _Physics:
     def clear_forces(self, state):
         pass
 
-    def step(self, state, env, dt):
+    def step(self, state, dt):
         return state
+
+    def stages(self):
+        return [
+            Stage("clear", "device", lambda tick: self.clear_forces(tick.state)),
+            Stage("step", "device", lambda tick: self.step(tick.state, tick.dt)),
+        ]
 
 
 class _Actuator:
-    def forces(self, controls, state, env):
+    def forces(self, controls, state):
         pass
+
+    def stages(self):
+        return [Stage("forces", "device", lambda tick: self.forces(tick.controls, tick.state))]
 
 
 class _Controller:
-    """Lockstep stand-in: returns controls immediately, so preroll succeeds at once."""
+    """Lockstep stand-in: returns controls immediately, so preroll succeeds at once. Its work is the
+    PX4 shape, a ``read`` and an ``exchange`` host stage.
+    """
 
     def __init__(self):
         self.closed = False
@@ -60,11 +69,17 @@ class _Controller:
     def close(self):
         self.closed = True
 
+    def stages(self):
+        def exchange(tick):
+            tick.controls = self.exchange(tick.meas, tick.t, None)
+            return tick.controls is not None
+
+        return [Stage("read", "host", lambda tick: None), Stage("exchange", "host", exchange)]
+
 
 def _orch(sensors=(), **kw):
     return Orchestrator(
         clock=_Clock(),
-        environment=_Env(),
         physics=_Physics(),
         actuator=_Actuator(),
         sensors=list(sensors),
@@ -148,12 +163,15 @@ def test_closing_a_run_that_never_stepped_closes_the_renderer():
 
 
 class _DyingSensor:
-    """A host-rate sensor whose peer dies mid-flight, as an RTX sensor's Kit peer can."""
+    """A sensor whose work is a host stage and whose peer dies mid-flight, as an RTX sensor's Kit peer can."""
 
     host_rate = True
 
-    def sample(self, state, env, t, meas):
+    def sample(self, state, t, meas):
         raise KitPeerError("the Kit render peer died while this run waited for a frame")
+
+    def stages(self):
+        return [Stage("sample", "host", lambda tick: self.sample(tick.state, tick.t, tick.meas))]
 
 
 def test_a_kit_peer_that_dies_mid_flight_ends_the_run_with_its_error():
@@ -164,3 +182,54 @@ def test_a_kit_peer_that_dies_mid_flight_ends_the_run_with_its_error():
         orch.run()
 
     assert orch.renderer.closed and orch.controller.closed
+
+
+class _Peer:
+    """A peer the build started, on the peer contract: the loop only ever stops it."""
+
+    def __init__(self):
+        self.stopped = 0
+
+    def start(self):
+        raise AssertionError("the loop starts no peer; the build does")
+
+    def stop(self):
+        self.stopped += 1
+
+    def alive(self):
+        return self.stopped == 0
+
+
+def test_a_run_that_ends_stops_the_peers_the_build_started():
+    peer = _Peer()
+    orch = _orch(max_steps=2, peers=[peer])
+
+    orch.run()
+
+    assert peer.stopped == 1
+
+
+def test_closing_a_run_that_never_stepped_stops_its_peers():
+    """A `Sim` entered and exited without a step still stops the PX4 container that started at build."""
+    peer = _Peer()
+    orch = _orch(peers=[peer])
+
+    orch.close()
+
+    assert peer.stopped == 1
+
+
+def test_a_peer_whose_stop_fails_does_not_cost_the_recording():
+    """A docker daemon that went away must not skip `_close_logs`, which flushes the recording."""
+    closed_logs = []
+
+    class Boom(_Peer):
+        def stop(self):
+            raise RuntimeError("docker daemon went away")
+
+    orch = _orch(max_steps=1, peers=[Boom()])
+    orch._close_logs = lambda: closed_logs.append(True)
+
+    orch.run()
+
+    assert closed_logs == [True]

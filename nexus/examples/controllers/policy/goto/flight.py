@@ -42,6 +42,7 @@ from nexus.examples.controllers.policy.assembly import build_policy_orchestrator
 # Everything this demo is, in one place: zero required args, the configuration IS the example;
 # --policy optionally deploys a fresh local export instead of the hosted checkpoint.
 VEHICLE = "astro_max_base"
+SCENE = "empty"  # flat ground
 MAX_STEPS = 6000  # safety cap; the operator ends the run on mission completion
 WAYPOINTS = [(1.5, 1.0, 1.5), (-1.5, 1.0, 2.0), (-0.5, -0.5, 1.8)]  # a small tour
 # The hosted default policy, content-addressed and sha-verified, trained by nexus-rl on this
@@ -84,7 +85,7 @@ def main() -> None:
     args, _ = ap.parse_known_args()
     policy = _resolve_policy(args.policy)
     na.logger.info(f"[policy] policy={policy}  {len(WAYPOINTS)} waypoints")
-    launch = LaunchConfig().set_vehicle(VEHICLE)
+    launch = LaunchConfig().set_vehicle(VEHICLE).set_scene(SCENE)
     launch.runtime.device = "cuda"  # prefer CUDA; resolve_device falls back to CPU when there is none
     builder, _resolved, cfg = resolve_scenario(launch)
     orch = build_policy_orchestrator(

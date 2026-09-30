@@ -2,7 +2,7 @@
 
 import time
 
-import nexus._src.containers as containers
+import nexus._src.peers.containers as containers
 
 
 class _FakeContainer:

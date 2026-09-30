@@ -41,7 +41,7 @@ dependencies = [
     "scipy>=1.11.0",
     "rerun-sdk>=0.34.1,<0.35",
     # The docker daemon client: the framework starts the PX4 SITL container it flies against and
-    # the Kit render peer (nexus/_src/containers.py). Pure Python over requests/urllib3, which
+    # the Kit render peer (nexus/_src/peers/containers.py). Pure Python over requests/urllib3, which
     # are already in the tree.
     "docker>=7.1.0",
 ]
@@ -56,6 +56,12 @@ all      = ["nexus-sim[policy,examples]"]
 
 [project.scripts]
 nexus = "nexus._src.cli.main:main"
+
+# The class each nexus schema resolves to, loaded only when a vehicle applies the schema. A project
+# beside nexus declares its own classes in the same group.
+[project.entry-points."nexus.components"]
+NexusImuAPI = "nexus._src.vehicle.sensors:ImuSensor"
+NexusPx4API = "nexus._src.vehicle.controllers.px4:Px4MavlinkController"
 
 [project.urls]
 Homepage = "https://github.com/breuerpeter/nexus"

@@ -19,9 +19,11 @@ layers =
     nexus._src.recording
     nexus._src.logging
     nexus._src.config
+    nexus._src.peers
     nexus._src.assets
     nexus._src.transform
     nexus._src.core
+    nexus._src.usd
 
 [importlinter:contract:src-never-examples]
 name = the core never imports the examples (examples depend on core, one-way)
@@ -31,7 +33,7 @@ source_modules =
 forbidden_modules =
     nexus.examples
 
-; Every Kit call lives in the Kit render peer's program, kit-peer/, package data that no module
+; Every Kit call lives in the Kit render peer's program, peers/kit/peer-src/, package data that no module
 ; imports, so Kit stays out of every tier with no exception.
 [importlinter:contract:no-kit]
 name = Kit stays out of every tier

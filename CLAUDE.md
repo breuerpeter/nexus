@@ -17,13 +17,19 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
 - **RTX sensors render in the Kit render peer**, a container the run starts on the host when the
   vehicle's Universal Scene Description (USD) file authors a `Camera` or `OmniLidar` prim. The loop
   never runs inside Kit, and no module imports Kit, an import-linter contract. Read
-  `nexus/_src/rendering/CLAUDE.md` before changing the peer, its image, or the render link.
+  `nexus/_src/peers/kit/CLAUDE.md` before changing the peer, its program, or the render link.
+- **Each peer lives in one folder**, `nexus/_src/peers/<name>/`, with its runner, its pin, its
+  image or program and its link's definition. The docstring of `nexus/_src/peers/__init__.py`
+  states the layout. Read it before adding a peer or a file to one.
+- **Component schemas live in a USD schema plugin** in `nexus/_src/usd/`, which `import nexus`
+  registers. Read `nexus/_src/usd/CLAUDE.md` before adding or changing a schema.
 - **`evo` is GPLv3** → it lives only in the `ci` dependency-group and never ships as a dependency.
   Examples dump plain `.npz` and JSON files, and only `scripts/ci/evaluate_examples.py` imports
   `evo` to score them.
 - **Use `uv` for all Python.** `uv sync` installs the framework, and
-  `uv run nexus run` runs the command-line tool, PX4 only. Its defaults are the registry
-  default vehicle `astro_max_base` and `--control px4-sitl`.
+  `uv run nexus run --vehicle astro_max_base --scene empty` runs the command-line tool, PX4 only.
+  Every run names its vehicle and scene, since a catalog holds no defaults, and the vehicle's USD
+  declares its controller.
 - **Docs** live in the `docs` dependency-group, not installed by default:
   `uv run --group docs mkdocs serve|build`. The site source is `docs/`, and
   `mkdocs.yml` is at the repo root. Read `docs/CLAUDE.md` before editing anything under `docs/`.

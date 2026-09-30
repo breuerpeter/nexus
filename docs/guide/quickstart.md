@@ -31,17 +31,19 @@ uv sync                 # install the framework
 
 ## Run the simulator
 
-Run the command-line tool with the default vehicle and controller, `astro-max` + `px4-sitl`:
+Run the command-line tool with a vehicle and a scene. `astro_max_base` declares PX4 as its controller, and `empty` is flat ground:
 
 ```bash
-uv run nexus run
+uv run nexus run --vehicle astro_max_base --scene empty
 ```
 
-This builds PX4 Software In The Loop (SITL) and starts the physics simulation with the Rerun
-recording server on gRPC port 9876. Then it launches PX4 in a container that connects back over
-TCP port 4560. One command, no second terminal. It needs a PX4-Autopilot checkout at `$PX4_DIR`,
-default `~/code/px4`. Pick a different vehicle with `--vehicle`. PX4 is the first-class
-controller, and the other controllers are self-contained examples.
+This starts PX4 Software In The Loop (SITL) in a container and the physics simulation with the
+Rerun recording server on gRPC port 9876, and PX4 connects back over TCP port 4560. One command,
+no second terminal. It needs Docker and nothing else: the first run fetches the PX4-Autopilot
+commit the framework pins into `~/.cache/nexus/px4/` and builds it there, which takes minutes once,
+and builds the small `px4-sitl` image. Set `PX4_DIR` to fly a PX4 checkout of your own instead.
+Pick a different vehicle with `--vehicle`. PX4 is the first-class controller, and the other
+controllers are self-contained examples.
 
 ## Run an example
 

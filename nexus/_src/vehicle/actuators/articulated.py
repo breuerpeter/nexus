@@ -21,20 +21,38 @@ The revolute joint transmits the lift to the airframe and the motor's reaction t
 putting the drag on the base would double-count the motor reaction, the runaway-yaw lesson from the
 original conformed-actuator validation.
 
-Fully **capturable**: the host seam, ``write_controls``, does one small H2D of the per-rotor Ω
-targets + drag feedforward; the device region, ``forces_wp``, is all kernels: the target scatter,
-``joint_f`` zero, the motor step, where ``ControllerPID`` is graphable, an in-place actuator-state
-copy-back, the graph-safe twin of the double-buffer swap, as in physics' state swap, and the aero
-kernel.
+One device stage, ``forces_wp``, all kernels: the controller's normalized commands to Ω targets
+and drag feedforward, the target scatter, ``joint_f`` zero, the motor step, where ``ControllerPID``
+is graphable, an in-place actuator-state copy-back, the graph-safe twin of the double-buffer swap,
+as in physics' state swap, and the aero kernel.
 """
 
 from __future__ import annotations
 
-import numpy as np
 import warp as wp
 
+from nexus._src.core.interfaces import Stage
 from nexus._src.vehicle.actuators.layout import RPM_PER_RADS, find_rotor_joints
 from nexus._src.vehicle.actuators.propeller import propeller_force
+
+
+@wp.kernel
+def _rotor_targets(
+    cmd: wp.array2d(dtype=float),  # (1, n) normalized [0, 1] commands, the first nr the rotors
+    omega_max: float,
+    cd: float,
+    kf: float,
+    omega_cmd: wp.array(dtype=float),  # (nr,) rotor-speed targets [rad/s]
+    drag_ff: wp.array(dtype=float),  # (nr,) the aero braking torque at the target speed
+):
+    """Normalized command → all-positive Ω target; rotor-z encodes cw/ccw, so yaw balances through the
+    reaction torques. The drag feedforward, τ = cd·thrust = cd·kf·Ω², keeps the kd-only servo from
+    drooping against the steady load.
+    """
+    i = wp.tid()
+    w = wp.clamp(cmd[0, i], 0.0, 1.0) * omega_max
+    omega_cmd[i] = w
+    drag_ff[i] = cd * kf * w * w
 
 
 @wp.kernel
@@ -47,7 +65,7 @@ def _scatter_rotor_commands(
 ):
     """Scatter the per-rotor velocity target + drag feedforward into the model-sized control arrays,
     device-side, so the captured graph replays it from the persistent ``omega_cmd``/``drag_ff``
-    buffers ``write_controls`` refreshes at the host seam.
+    buffers the targets kernel refreshes each tick.
     """
     i = wp.tid()
     d = rotor_vel_dofs[i]
@@ -123,7 +141,6 @@ class ArticulatedRotors:
     """
 
     requires_articulated = True  # rotor joints *are* the actuator; the pairing guard enforces it
-    capturable = True  # the device region is all kernels; the host seam is one small H2D
 
     def __init__(self, *, model, control, ct: float, cd: float, rpm_max: float, dt: float,
                  aero_h: float = 0.0, aero_hforce: float = 0.0):  # fmt: skip
@@ -148,7 +165,7 @@ class ArticulatedRotors:
         self.base = int(base_body)
         self._rotor_dofs = wp.array(vel_dofs, dtype=wp.int32)
         self._rotor_bodies = wp.array(bodies, dtype=wp.int32)
-        # Persistent small device buffers for the per-rotor command scatter, the one host→device seam.
+        # Persistent small device buffers for the per-rotor command scatter.
         self._omega_cmd = wp.zeros(self.nr, dtype=float)
         self._drag_ff = wp.zeros(self.nr, dtype=float)
         # Double-buffered per-actuator state, because ControllerPID is stateful. Under CUDA-graph capture a
@@ -160,29 +177,22 @@ class ArticulatedRotors:
             list(zip(_state_arrays(cur), _state_arrays(nxt), strict=True)) for cur, nxt in self._states
         ]
 
-    # -- host seam, one H2D per tick ---------------------------------------------------------
-    def write_controls(self, controls) -> None:
-        """Per-rotor normalized ``[0, 1]`` commands → rotor-speed targets + the steady-state drag
-        feedforward, into the persistent device buffers the captured graph reads. All-positive Ω
-        targets; rotor-z encodes cw/ccw, so yaw balances through the reaction torques.
-        """
-        m = np.asarray(controls.command, dtype=np.float32).reshape(-1)
-        if m.shape[0] < self.nr:
-            raise ValueError(f"ArticulatedRotors expects at least {self.nr} per-rotor commands, got {m.shape[0]}")
-        m = np.clip(m[: self.nr], 0.0, 1.0)
-        omega_cmd = m * self.omega_max
-        # The aero braking torque at the target speed, τ = cd·thrust = cd·kf·Ω², fed forward so the
-        # kd-only servo doesn't droop against the steady load.
-        drag_ff = self.cd * self.kf * omega_cmd * omega_cmd
-        self._omega_cmd.assign(omega_cmd.astype(np.float32))
-        self._drag_ff.assign(drag_ff.astype(np.float32))
-
-    # -- device region, in-graph -------------------------------------------------------------
-    def forces_wp(self, state) -> None:
-        """The captured device region: scatter targets → zero ``joint_f`` → step the motors into
+    # -- device stage -------------------------------------------------------------------------
+    def forces_wp(self, cmd, state) -> None:
+        """The device stage: the controller's ``(1, n)`` normalized commands → rotor-speed targets and
+        the steady-state drag feedforward → scatter targets → zero ``joint_f`` → step the motors into
         ``control.joint_f`` → in-place state copy-back → aero into ``state.body_f``. The solver then
-        consumes ``joint_f`` + ``body_f`` in one solve.
+        consumes ``joint_f`` + ``body_f`` in one solve. The first ``nr`` commands are the rotor
+        motors: PX4 streams 16 HIL_ACTUATOR_CONTROLS channels.
         """
+        if cmd.shape[1] < self.nr:
+            raise ValueError(f"ArticulatedRotors expects at least {self.nr} per-rotor commands, got {cmd.shape[1]}")
+        wp.launch(
+            _rotor_targets,
+            dim=self.nr,
+            inputs=(cmd, self.omega_max, self.cd, self.kf),
+            outputs=(self._omega_cmd, self._drag_ff),
+        )
         wp.launch(
             _scatter_rotor_commands,
             dim=self.nr,
@@ -214,10 +224,9 @@ class ArticulatedRotors:
             outputs=(state.body_f,),
         )
 
-    def forces(self, controls, state, env=None) -> None:
-        """Eager path, the ``Sensor``-protocol twin of the captured seam: one host write + the device region."""
-        self.write_controls(controls)
-        self.forces_wp(state)
+    def stages(self) -> list[Stage]:
+        """One device stage over :meth:`forces_wp`, reading the controller's command buffer."""
+        return [Stage("forces", "device", lambda tick: self.forces_wp(tick.controls, tick.state))]
 
 
 __all__ = ["ArticulatedRotors", "aero_from_omega"]

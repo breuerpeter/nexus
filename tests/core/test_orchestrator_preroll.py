@@ -1,7 +1,12 @@
 """The sim clock during the preroll, while a controller's peer dials in."""
 
+import pytest
+
+from nexus._src.core.interfaces import Stage
 from nexus._src.core.orchestrator import Orchestrator
 from nexus._src.core.schema import Controls, SimTime
+
+pytestmark = pytest.mark.usefixtures("warp_cpu")  # Python stand-ins run stage by stage, never as a graph
 
 
 class _Clock:
@@ -21,11 +26,6 @@ class _Clock:
         pass
 
 
-class _Env:
-    def sample(self, pos, t):
-        return None
-
-
 class _Physics:
     def reset(self):
         return {"q": 0}
@@ -33,18 +33,28 @@ class _Physics:
     def clear_forces(self, state):
         pass
 
-    def step(self, state, env, dt):
+    def step(self, state, dt):
         return state
+
+    def stages(self):
+        return [
+            Stage("clear", "device", lambda tick: self.clear_forces(tick.state)),
+            Stage("step", "device", lambda tick: self.step(tick.state, tick.dt)),
+        ]
 
 
 class _Actuator:
-    def forces(self, controls, state, env):
+    def forces(self, controls, state):
         pass
+
+    def stages(self):
+        return [Stage("forces", "device", lambda tick: self.forces(tick.controls, tick.state))]
 
 
 class _LatePeerController:
-    """A host-boundary controller whose peer dials in on the preroll's hundredth try and answers the
-    first message it gets. It keeps the stamp of every message that reached the peer.
+    """A controller with a peer that dials in on the preroll's hundredth try and answers the first
+    message it gets. It keeps the stamp of every message that reached the peer. Its work is the PX4
+    shape, a ``read`` and an ``exchange`` host stage.
     """
 
     host_boundary = True
@@ -71,16 +81,21 @@ class _LatePeerController:
     def close(self):
         pass
 
+    def stages(self):
+        def exchange(tick):
+            tick.controls = self.exchange(tick.meas, tick.t, None)
+            return tick.controls is not None
+
+        return [Stage("read", "host", lambda tick: None), Stage("exchange", "host", exchange)]
+
 
 def test_a_peer_that_dials_in_late_gets_its_first_stamp_near_zero():
-    """A peer that dials in late gets its first stamp near zero: the preroll holds the sim clock until
-    the controller reports its link attached, so the first message the peer gets carries a stamp
-    under 10 ms.
+    """A controller with a host stage and a peer holds the sim clock until the peer attaches, and its
+    first stamp lands near zero: the first message the peer gets carries a stamp under 10 ms.
     """
     controller = _LatePeerController()
     orch = Orchestrator(
         clock=_Clock(),
-        environment=_Env(),
         physics=_Physics(),
         actuator=_Actuator(),
         sensors=[],

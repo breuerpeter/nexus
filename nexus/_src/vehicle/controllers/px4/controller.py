@@ -1,24 +1,23 @@
-"""Px4MavlinkController: the single host and marshalling boundary, architecture.md §2 and §6.
+"""Px4MavlinkController: the loop face of the PX4 peer, architecture.md §2 and §6.
 
-Implements ``Controller.exchange(measurement, t) -> Controls`` as the blocking lockstep that paces
-the loop: opens a tcpin TCP server on :4560, which PX4 dials into as client with no HEARTBEAT,
+Its work is two host stages, ``read`` and ``exchange``: ``exchange(measurement, t)`` is the blocking
+lockstep that paces the loop: opens a tcpin TCP server on :4560, which PX4 dials into as client with no HEARTBEAT,
 serializes the typed Measurement into HIL_SENSOR, HIL_GPS and HIL_STATE_QUATERNION with the
 encoders lifted verbatim from the bridge, then blocks on HIL_ACTUATOR_CONTROLS with a run-ending
 timeout. newton-sensors already derives the Measurement in
 the Forward-Right-Down (FRD) body frame; this layer only encodes wire units and moves bytes.
 
-It also owns the PX4 Software In The Loop (SITL) peer end to end: ``prepare`` builds it,
-``connect`` launches it, ``close`` stops it. This controller is the one thing that already knows it
-talks to a PX4, since it holds the Hardware In The Loop (HIL) socket and the ULog artifact, so the
-autopilot's lifecycle belongs here, and reaches every run through the
-single ``build_from_launch`` seam.
+The autopilot itself is a peer of the run, not of this controller: the build starts the PX4
+Software In The Loop (SITL) container, :class:`~nexus._src.peers.px4_sitl.runner.Px4Sitl`,
+for a managed PX4 peer, and starts nothing for an external one, an autopilot started elsewhere
+that dials in. The build makes this controller the same way for both: it takes the run's
+Hardware In The Loop (HIL) port and PX4's system id, listens, and speaks to whatever dials in.
 """
 
 from __future__ import annotations
 
 import glob
 import os
-import time
 
 import numpy as np
 
@@ -30,7 +29,8 @@ from pymavlink import mavutil
 
 from nexus._src.core import logger
 from nexus._src.core.schema import Controls
-from nexus._src.vehicle.controllers.px4.sitl import CONTAINER, PX4_LOG_DIR, Px4Sitl, build_px4_sitl
+from nexus._src.core.stages import peer_stages
+from nexus._src.peers.px4_sitl import HIL_PORT
 
 # Where this controller looks for PX4's ULog, mirroring the recorder's
 # ~/.cache/nexus/logs convention for the .rrd. PX4 writes the .ulg itself, since it
@@ -42,54 +42,43 @@ PX4_ULOG_DIR = os.path.expanduser("~/.cache/nexus/px4-ulog")
 
 
 class Px4MavlinkController:
-    # The host boundary, architecture.md §5: ``exchange`` is a blocking MAVLink lockstep round-trip,
-    # so it can't join a CUDA graph. The captured strategy records only the device region and runs
-    # this seam, read -> exchange -> write_controls, between replays; see Orchestrator._loop_captured_host_exchange.
-    host_boundary = True
-
     def __init__(
         self,
         *,
+        airframe: str = "",
         ip: str = "0.0.0.0",
-        port: int = 4560,
+        port: int = HIL_PORT,
         sysid: int = 1,
         compid: int = 200,
         gps_rate_hz: float = 10.0,
         ulog_dir: str | None = None,
-        airframe: str = "astro_max",
+        target_system: int = 1,
     ):
+        """Configure the HIL link; nothing listens until ``connect``.
+
+        Args:
+            airframe: The SITL airframe the vehicle declares, `nexus:airframe` of its `NexusPx4API`
+                schema, without PX4's ``none_`` prefix: the peer the run starts flies it.
+            ip: The address the HIL server binds.
+            port: The TCP port the HIL server listens on, the run's ``peers.px4.hil_port``: PX4 dials it.
+            sysid: This end's MAVLink system id.
+            compid: This end's MAVLink component id.
+            gps_rate_hz: How often ``HIL_GPS`` and the ground-truth state go out.
+            ulog_dir: Where PX4's ULog lands, ``PX4_ULOG_DIR`` by default.
+            target_system: PX4's MAVLink system id, the run's ``peers.px4.system_id``: instance + 1.
+        """
+        self.airframe = airframe
         self.ip = ip
         self.port = port
         self.sysid = sysid
         self.compid = compid
+        self.target_system = target_system
         self.gps_interval = 1.0 / gps_rate_hz
         self._last_gps = 0.0
         self.gps_fix_type = 3
         self.mav = None
         self.proto = None
         self._ulog_dir = ulog_dir if ulog_dir is not None else PX4_ULOG_DIR
-        # The PX4 peer this controller flies against. Constructing it starts nothing; `prepare`
-        # builds it and `connect` launches it. `airframe` is the registry's make target, and this
-        # line prepends `none_`, PX4's "no simulator" or external-HIL prefix.
-        os.makedirs(PX4_LOG_DIR, exist_ok=True)
-        self._sitl = Px4Sitl(
-            container=CONTAINER,
-            log_path=os.path.join(PX4_LOG_DIR, f"px4-{time.strftime('%Y%m%d-%H%M%S')}.log"),
-            airframe=f"none_{airframe}",
-        )
-
-    def prepare(self) -> None:
-        """Get the PX4 peer ready before the run starts: check the prerequisites and build PX4 SITL.
-
-        Blocking, and called from ``build_from_launch`` on the caller's thread: the launch's own
-        ``make`` must fit inside the 30 s preroll window, GH #39, which an incremental no-op does
-        and a cold build never does, so the build can't happen any later than this.
-
-        Raises:
-            RuntimeError: No PX4 checkout at ``$PX4_DIR``, or the docker daemon is unreachable.
-        """
-        logger.info("building PX4 SITL (incremental; a cold build takes minutes) …")
-        build_px4_sitl()
 
     @property
     def ulog_path(self) -> str | None:
@@ -116,10 +105,10 @@ class Px4MavlinkController:
         return self.mav is not None and self.mav.port is not None
 
     def artifacts(self) -> dict:
-        """This controller's contribution to Sim.artifacts(): the PX4 ULog and the PX4 console log
-        of the container it started. Keeps the PX4-specific keys out of the generic Sim API.
+        """This controller's contribution to Sim.artifacts(): the PX4 ULog. The console log is the
+        peer's own artifact. Keeps the PX4-specific keys out of the generic Sim API.
         """
-        return {"ulog": self.ulog_path, "px4_log": self._sitl.log_path}
+        return {"ulog": self.ulog_path}
 
     def connect(self) -> None:
         conn_string = f"tcpin:{self.ip}:{self.port}"
@@ -128,16 +117,20 @@ class Px4MavlinkController:
         self.proto = self.mav.mav
         self.proto.srcSystem = self.sysid
         self.proto.srcComponent = self.compid
-        self.mav.target_system = 1
+        self.mav.target_system = self.target_system
         self.mav.target_component = mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1
-        logger.info(f"MAVLink source {self.sysid}/{self.compid} -> target 1/{self.mav.target_component}")
-        # PX4 last, and the ordering is what makes this safe, not a timing margin: the preceding
-        # mavlink_connection("tcpin:") binds and *listens* in the constructor, and the accept
-        # is lazy, on the first recv, so :4560 is already up when the launch asks PX4 to dial in. PX4
-        # retries that connect forever, so the only real constraint is that it comes up inside the
-        # sim's preroll window.
-        logger.info(f"launching PX4 SITL ({self._sitl.airframe}) -> {self._sitl.log_path}")
-        self._sitl.launch()
+        logger.info(
+            f"MAVLink source {self.sysid}/{self.compid} -> target {self.target_system}/{self.mav.target_component}"
+        )
+        # mavlink_connection("tcpin:") binds and *listens* in the constructor, and the accept is lazy,
+        # on the first recv. The peer started at build, so PX4 might already be dialing: it retries that
+        # connect forever, so the only real constraint is that it comes up inside the sim's preroll window.
+
+    def stages(self):
+        """The ``read`` and ``exchange`` host stages: the MAVLink lockstep round-trip blocks on the
+        peer, so it runs between graph replays.
+        """
+        return peer_stages(self)
 
     def exchange(self, meas, t, timeout):
         time_usec = t.time_usec
@@ -207,14 +200,8 @@ class Px4MavlinkController:
         return Controls(command=np.asarray(msg.controls, dtype=np.float32))
 
     def close(self) -> None:
-        # The peer dies with the run that started it, but this step tolerates failure, the same as
-        # every other step here. A daemon that has gone away must not cost the rest of the teardown:
-        # the MAVLink socket still has to close, and the orchestrator still has to flush the
-        # recording, which is exactly what a failing run needs to have kept.
-        try:
-            self._sitl.stop()
-        except Exception as exc:
-            logger.warning(f"PX4 container teardown failed ({exc})")
+        # The peer is the run's to stop; this end only closes its socket. It tolerates failure, the same
+        # as every other teardown step: the orchestrator still has to flush the recording.
         try:
             if self.mav is not None:
                 self.mav.close()

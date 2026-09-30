@@ -83,9 +83,12 @@ def parse_sensor_prims(usd_path: str | Path) -> list[SensorSpec]:
     return specs
 
 
-# Not authorable as sensor:* attrs: the mount is the prim's translation; dt and the geodetic
-# origin are properties of the run and the world, supplied by the assembly.
-_RESERVED_PARAMS = ("mount_offset", "dt", "ref_lat", "ref_lon", "ref_alt")
+# Not authorable as sensor:* attrs: the mount is the prim's translation; dt is a property of the run,
+# and the geodetic origin, the field, the pressure, the temperature and gravity are the site's, which
+# the assembly resolves from the scene and hands over.
+_RESERVED_PARAMS = (
+    "mount_offset", "dt", "ref_lat", "ref_lon", "ref_alt", "gravity", "mag_ned", "pressure_msl", "temperature",
+)  # fmt: skip
 
 
 def _sensor_registry() -> dict:
@@ -97,20 +100,20 @@ def _sensor_registry() -> dict:
     from .sensors import BaroSensor, GpsSensor, ImuSensor, MagSensor
 
     return {
-        "imu": lambda spec, seedtree, dt, gps_init, ref_alt: ImuSensor(
-            seedtree, dt, mount_offset=spec.mount, **spec.params
+        "imu": lambda spec, seedtree, dt, site: ImuSensor(
+            seedtree, dt, mount_offset=spec.mount, gravity=site.gravity, **spec.params
         ),
-        "mag": lambda spec, seedtree, dt, gps_init, ref_alt: MagSensor(seedtree, **spec.params),
-        "baro": lambda spec, seedtree, dt, gps_init, ref_alt: BaroSensor(seedtree, **spec.params),
-        "gps": lambda spec, seedtree, dt, gps_init, ref_alt: GpsSensor(
-            gps_init["lat"], gps_init["lon"], ref_alt, **spec.params
+        "mag": lambda spec, seedtree, dt, site: MagSensor(seedtree, site.mag_ned, **spec.params),
+        "baro": lambda spec, seedtree, dt, site: BaroSensor(
+            seedtree, pressure_msl=site.pressure_msl, temperature=site.temperature, **spec.params
         ),
+        "gps": lambda spec, seedtree, dt, site: GpsSensor(site.lat, site.lon, site.alt, **spec.params),
     }
 
 
-def build_sensors(specs: list[SensorSpec], *, seedtree, dt: float, gps_init: dict, ref_alt: float) -> list:
-    """Instantiate the sensor suite from its specs; ``gps_init``/``ref_alt`` = the scene's geodetic
-    origin. Controller-agnostic: any assembly builds its suite this way. Raises on an
+def build_sensors(specs: list[SensorSpec], *, seedtree, dt: float, site) -> list:
+    """Instantiate the sensor suite from its specs; ``site`` carries the scene's geodetic origin and
+    the ambient values resolved from it. Controller-agnostic: any assembly builds its suite this way. Raises on an
     unknown/duplicate kind, an unknown/reserved parameter, or a mount on a sensor that can't model
     one; a config bug fails the build, not the flight.
     """
@@ -127,5 +130,5 @@ def build_sensors(specs: list[SensorSpec], *, seedtree, dt: float, gps_init: dic
         make = registry.get(spec.kind)
         if make is None:
             raise ValueError(f"unknown sensor:type {spec.kind!r} (expected one of {sorted(registry)})")
-        sensors.append(make(spec, seedtree, dt, gps_init, ref_alt))
+        sensors.append(make(spec, seedtree, dt, site))
     return sensors

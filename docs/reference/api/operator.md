@@ -10,9 +10,9 @@ Station (GCS) later. Operators are **internal**: reach the one driving a run thr
 [`sim.operator`](simulation.md), not a top-level import.
 
 ```python
-with na.Sim("astro_max_base", control="policy", policy="policy.pt") as sim:
-    sim.operator.set_mission([(1.5, 1.0, 1.5), (-1.5, 1.0, 2.0)])  # InProcessOperator
-    sim.run()
+with na.Sim("astro_max_base", scene="empty") as sim:  # the vehicle declares PX4, so the operator is Px4Offboard
+    sim.start()
+    sim.operator.takeoff(2.0)
 ```
 
 ::: nexus._src.operator.operator.Operator

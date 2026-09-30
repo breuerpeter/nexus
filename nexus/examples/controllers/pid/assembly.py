@@ -16,7 +16,7 @@ this builder from here, because examples ship in the wheel.
 from __future__ import annotations
 
 from nexus._src.build.assembly import resolve_device
-from nexus._src.core import Clock, ConstantEnvironment, Orchestrator, logger
+from nexus._src.core import Clock, Orchestrator, logger
 from nexus._src.physics import NewtonPhysics
 
 
@@ -108,7 +108,7 @@ def build_pid_orchestrator(
         moment_scale=moment_scale,
     )
     # Device-native obs sensor: fills meas.observation with a Warp array so the PID's exchange runs
-    # on-device with no per-tick host hop -> the in-process loop is fully capturable / tape-able.
+    # on-device with no per-tick host hop -> the whole tick is one graph / tape-able.
     sensors = [WarpObservationSensor(goal_w=goal_w)]
     # The one runtime seam, see the core assembly: an optional renderer plus its host-rate sensors.
     renderer, extra_sensors = renderer_factory(physics, builder, cfg) if renderer_factory else (None, [])
@@ -130,7 +130,6 @@ def build_pid_orchestrator(
         )  # fmt: skip
     return Orchestrator(
         clock=Clock(dt, rtf=rtf),
-        environment=ConstantEnvironment(),
         physics=physics,
         actuator=actuator,
         sensors=sensors,

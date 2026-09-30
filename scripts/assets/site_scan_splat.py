@@ -18,9 +18,10 @@ Where the drone starts isn't baked in: the registry scene's ``start``, suggested
 The traced "scene origin" lat/lon/alt is the geodetic anchor of the scene frame: feed it to
 ``spawn_site.py --geo`` to get the registry ``geodetic_origin``, the geo of the start point.
 
-Kit-only: it needs a booted Kit app, which ``nexus script`` provides::
+Kit-only: run from the host with plain Python, it starts the Kit image with this file and boots Kit
+there, see ``kit_container.py``::
 
-    uv run nexus script scripts/assets/site_scan_splat.py \
+    uv run python scripts/assets/site_scan_splat.py \
         "$NEXUS_DATA/scans/gsp/Example Site" \
         --out "$NEXUS_DATA/scans/example_site_splat.usdz" --max-geometric-error 2.5
 """
@@ -85,7 +86,7 @@ def convert_splat(tiles_dir, out_usdz, *, max_geometric_error=0.0) -> str:
     write_gaussian_splat_usd(field, conv_usd)
     # Stage-5 conventions: re-root the typed splat prim under one root Xform, the defaultPrim, and
     # author the sky: the scene USD is the single authority on its own lighting and start target.
-    from scripts.assets.scene_root import finalize_scene_layer
+    from scene_root import finalize_scene_layer
 
     finalize_scene_layer(conv_usd)
     os.makedirs(os.path.dirname(out_usdz) or ".", exist_ok=True)
@@ -320,22 +321,23 @@ def main(argv=None) -> None:
 
     args = build_parser().parse_args(argv)
     _t(f"src={args.src!r} out={args.out!r} max_gse={args.max_geometric_error}")
-    try:
-        import omni.kit.app
+    import omni.kit.app
 
-        omni.kit.app.get_app().get_extension_manager().set_extension_enabled_immediate(
-            "omni.kit.converter.gsplat", True
-        )
-        _t("gsplat enabled; converting…")
-        out = convert_splat(args.src, args.out, max_geometric_error=args.max_geometric_error)
-        _t(f"DONE -> {out}")
-        print(out, flush=True)
-    except Exception:
-        import traceback
-
-        _t("EXCEPTION:\n" + traceback.format_exc())
-        raise
+    omni.kit.app.get_app().get_extension_manager().set_extension_enabled_immediate("omni.kit.converter.gsplat", True)
+    _t("gsplat enabled; converting…")
+    out = convert_splat(args.src, args.out, max_geometric_error=args.max_geometric_error)
+    _t(f"DONE -> {out}")
+    print(out, flush=True)
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+
+    from kit_container import KIT_APP, KIT_EXPERIENCE, finish, in_kit, kit_argv, run_in_kit
+
+    if not in_kit():
+        sys.exit(run_in_kit(__file__, sys.argv[1:]))
+    argv = kit_argv()
+    from isaacsim import SimulationApp
+
+    finish(SimulationApp(KIT_APP, experience=KIT_EXPERIENCE), main, argv)

@@ -32,7 +32,7 @@ def _resolve_astro_max_usd() -> str:
 
     # resolve() fetches with a bounded timeout, via newton-assets; a sha-mismatch raises ValueError so an
     # integrity failure surfaces loudly instead of silently using a stale local file.
-    return str(resolve(LaunchConfig().set_vehicle("astro_max_base")).vehicle_usd_path)
+    return str(resolve(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty")).vehicle_usd_path)
 
 
 ASTRO_MAX_USD = _resolve_astro_max_usd()

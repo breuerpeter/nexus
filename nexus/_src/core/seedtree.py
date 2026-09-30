@@ -8,7 +8,7 @@ Two consumer APIs off one root seed:
   This is the "independent named sub-stream per consumer" the v1 docstring deferred: it
   intentionally gives each Warp sensor its own reproducible noise field, a seed plus a per-tick counter,
   re-baselining determinism off the bridge's single shared sequence onto the device RNG, the
-  prerequisite for capturable / tape-able sensors.
+  prerequisite for graph-safe / tape-able sensors.
 """
 
 from __future__ import annotations

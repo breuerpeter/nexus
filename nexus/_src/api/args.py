@@ -11,6 +11,7 @@ import argparse
 from typing import TYPE_CHECKING
 
 from nexus._src.diagnostics import add_diagnostics_args  # stdlib-only, as is this module
+from nexus._src.peers.px4_sitl import HIL_PORT, OFFBOARD_PORT  # constants only
 
 if TYPE_CHECKING:
     from .sim import Sim
@@ -19,29 +20,27 @@ if TYPE_CHECKING:
 def sim_argparser(description: str | None = None) -> argparse.ArgumentParser:
     """The shared argument parser for ``Sim``-driven scripts and the ``nexus`` command-line tool.
 
-    Carries the common flags :meth:`Sim.from_args` reads, ``--vehicle`` / ``--control`` / ``--device``
-    / ``--scene`` / ``--max-steps`` / ``--log`` / ``--view``, so the command-line tool and any Sim-driven
-    script share one arg surface. The bundled examples are zero-arg by design, and their configuration
+    Carries the common flags :meth:`Sim.from_args` reads, ``--vehicle`` / ``--device``
+    / ``--scene`` / ``--px4`` / ``--px4-instance`` / ``--max-steps`` / ``--log`` / ``--view``, so the
+    command-line tool and any Sim-driven script share one arg surface. The bundled examples are zero-arg by design, and their configuration
     lives in the script; this parser serves the ``nexus`` command-line tool.
     """
     p = argparse.ArgumentParser(description=description, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     p.add_argument(
-        "--vehicle", default=None,
-        help="registry vehicle NAME (e.g. astro_max_fpv) or a local .usd path; omit to take the\n"
-        "registry default",
+        "--vehicle", required=True,
+        help="registry vehicle NAME (e.g. astro_max_fpv) or a local .usd path",
     )  # fmt: skip
     p.add_argument(
         "--registry", default=None,
         help="path to a catalog that extends the bundled one; omit to take the nearest\n"
         "nexus.registry.yaml at or above the working directory, else only the bundled one",
     )  # fmt: skip
-    p.add_argument("--control", default="px4-sitl", help="control kind (px4-sitl)")
     p.add_argument(
         "--device", default="auto", choices=["cpu", "cuda", "auto"], help="compute device (cpu=deterministic)"
     )
     p.add_argument(
-        "--scene", default=None,
-        help="registry scene NAME (e.g. 'slalom') or a local scene .usdz path (a converted\n"
+        "--scene", required=True,
+        help="registry scene NAME (e.g. 'empty' or 'slalom') or a local scene .usdz path (a converted\n"
         "mesh/splat, flown as the visual world)",
     )  # fmt: skip
     p.add_argument(
@@ -56,6 +55,16 @@ def sim_argparser(description: str | None = None) -> argparse.ArgumentParser:
     p.add_argument(
         "--rtf", type=float, default=0.0,
         help="real-time-factor throttle: 0 = unthrottled (default); 1.0 = pace to wall-clock for interactive flying",
+    )  # fmt: skip
+    p.add_argument(
+        "--px4", default="managed", choices=["managed", "external"],
+        help="the run's PX4 peer: managed starts the PX4 SITL container and stops it with the run;\n"
+        "external starts nothing and waits on the HIL port for an autopilot started elsewhere",
+    )  # fmt: skip
+    p.add_argument(
+        "--px4-instance", type=int, default=0, metavar="N",
+        help=f"PX4's SITL instance: it numbers PX4's ports, HIL {HIL_PORT}+N and offboard {OFFBOARD_PORT}+N, so two runs\n"
+        "on one machine take two instances",
     )  # fmt: skip
     p.add_argument("--log", action="store_true", help="write the Rerun .rrd to disk")
     p.add_argument("--view", action="store_true", help="serve the live Rerun viewer on :9876")

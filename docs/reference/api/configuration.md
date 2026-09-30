@@ -1,5 +1,5 @@
 ---
-description: "API reference for LaunchConfig and Registry: launch configuration and the component registry."
+description: "API reference for LaunchConfig and Registry: launch configuration and the vehicle and scene catalog."
 ---
 
 # Configuration

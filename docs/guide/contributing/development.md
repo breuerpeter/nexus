@@ -5,7 +5,7 @@ framework package. Install it and run the command-line tool:
 
 ```bash
 uv sync                 # installs the framework
-uv run nexus run   # fly the default vehicle against PX4 SITL
+uv run nexus run --vehicle astro_max_base --scene empty   # fly a vehicle against PX4 SITL
 ```
 
 ## Pre-commit hooks
@@ -52,3 +52,7 @@ uvx --from import-linter lint-imports
 ```bash
 uv run --extra policy --with pytest pytest tests -q
 ```
+
+## What CI flies
+
+A pull request with the `gpu` label flies every example at once on one GPU box. It gates each example on its correctness rows in `scripts/ci/examples_baselines.json`, so it pays for one box and still proves the change. Main flies each example on a box of its own. It gates the same rows plus each `rtf` row, and it uploads the recordings the docs embed. The weekly schedule flies the benchmark matrix, one cell per box. The Real-Time Factor (RTF) gates run on main, because an RTF is only comparable when a flight has the box to itself. Flights that share a box share its CPUs, and each one's RTF drops. So a speed regression shows on the merge commit, not on the pull request.
