@@ -672,3 +672,138 @@ def test_a_peer_mapping_with_an_unknown_key_fails_the_build_before_any_peer_star
 
     named = all(name in message for name in ("px4-sitl", "px4_sitl", "kit"))
     assert (named, daemon.runs) == (True, []), message
+
+
+# --- the PX4 SITL peer the vehicle declares, and a layer that drops it -----------------------------
+
+# A vehicle root that declares the PX4 controller and the PX4 SITL peer.
+_DECLARED = (
+    '#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n\n'
+    'def Xform "vehicle" (\n    prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n)\n'
+    '{\n    string nexus:airframe = "astro_max"\n}\n'
+)
+
+# A layer that drops the PX4 SITL peer's declaration, so the run attaches to an autopilot started elsewhere.
+_DROP_PX4_SITL = '#usda 1.0\n\nover "vehicle" (\n    delete apiSchemas = ["NexusPx4SitlAPI"]\n)\n{\n}\n'
+
+
+def _declared_run(tmp_path, layer: str | None = None) -> Orchestrator:
+    """Build a run of a catalog vehicle that declares the PX4 SITL peer, over `layer` when the caller passes one."""
+    blob = tmp_path / "declared.usda"
+    blob.write_text(_DECLARED)
+    sha = hashlib.sha256(blob.read_bytes()).hexdigest()
+    catalog = Registry.from_dict(
+        {
+            "vehicles": [{"name": "astro", "usd": {"url": blob.as_uri(), "sha256": sha, "filename": blob.name}}],
+            "scenes": {"empty": {}},
+        }
+    )
+    spec = {"vehicle": "astro", "scene": "empty"}
+    if layer is not None:
+        path = tmp_path / "override.usda"
+        path.write_text(layer)
+        spec["layer"] = str(path)
+    launch = LaunchConfig.from_dict(spec)
+    return launch_mod.build_from_launch(launch, registry=catalog, cache_dir=tmp_path / "cache", preroll_timeout=5.0)
+
+
+def test_a_vehicle_that_declares_the_px4_sitl_peer_starts_it(daemon, monkeypatch, tmp_path, warp_cpu):
+    """A vehicle that declares the PX4 SITL peer starts it.
+
+    Given each vehicle of the bundled catalog and no layer, when the run builds with the PX4 SITL peer
+    sent to its fake, and the Kit peer to its own, then one fake PX4 starts and receives `HIL_SENSOR`
+    over the HIL link as the run steps.
+    """
+    from nexus._src.config.registry import load_registry
+    from nexus._src.peers.kit.fake import KitFake
+
+    monkeypatch.delenv("NEXUS_ASSET_CACHE")  # the shipped vehicles come from the checkout's own cache
+    monkeypatch.chdir(tmp_path)  # no project catalog: only the bundled one
+    # The network is a boundary: a PX4 fetch this run must not make fails at once on an unreachable proxy.
+    for var in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"):
+        monkeypatch.setenv(var, "http://127.0.0.1:9")
+    names = [v.name for v in load_registry().vehicles]
+
+    flown = {}
+    for name in names:
+        launch = LaunchConfig.from_dict({"vehicle": name, "scene": "empty", "runtime": {"device": "cpu"}})
+        loop = launch_mod.build_from_launch(launch, preroll_timeout=10.0, peers={"px4_sitl": Px4Fake, "kit": KitFake})
+        _step(loop, 10)
+        fakes = [p for p in loop.peers if isinstance(p, Px4Fake)]
+        flown[name] = (len(fakes), bool(fakes) and fakes[0].received["HIL_SENSOR"] > 0)
+        loop.close()
+
+    assert flown == dict.fromkeys(names, (1, True))
+
+
+def test_a_layer_that_drops_the_px4_sitl_peer_starts_no_px4_and_waits_on_instance_0s_hil_port(
+    daemon, assembly, tmp_path
+):
+    """A layer that drops the PX4 SITL peer starts no PX4 and waits on instance 0's HIL port.
+
+    Given a stand-in docker daemon and a layer that drops the PX4 SITL peer, when the run enters and a
+    fake PX4 the test starts dials instance 0's HIL port, 4560, then the daemon records no container
+    and the run steps against the fake.
+    """
+    loop = _declared_run(tmp_path, _DROP_PX4_SITL)
+    autopilot = Px4Fake(instance=0)
+    autopilot.start()
+
+    stepped = loop.step()
+    loop.close()
+    autopilot.stop()
+
+    assert (daemon.runs, stepped) == ([], True)
+
+
+def test_a_second_external_run_on_one_machine_fails_and_names_the_holder(daemon, assembly, tmp_path, caplog):
+    """A second external run on one machine fails and names the holder.
+
+    Given a process that holds instance 0's HIL port, 4560, as a first run does, when a run whose
+    layer drops the PX4 SITL peer enters, then it fails and names the process that holds the port.
+    """
+    caplog.set_level(logging.INFO, logger="nexus")
+    holder = socket.socket()
+    holder.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    holder.bind(("127.0.0.1", 4560))
+    holder.listen()
+
+    failed, said = False, ""
+    try:
+        loop = _declared_run(tmp_path, _DROP_PX4_SITL)
+        failed = not loop.step()
+        loop.close()
+    except Exception as exc:
+        failed, said = True, str(exc)
+    finally:
+        holder.close()
+
+    assert (failed, str(os.getpid()) in said + caplog.text) == (True, True), said + caplog.text
+
+
+def test_a_managed_run_takes_a_free_px4_instance_itself(daemon, assembly, tmp_path):
+    """A managed run takes a free PX4 instance itself.
+
+    Given a stand-in docker daemon where a live PX4, owned by this process, holds instance 0, when a
+    run of a vehicle that declares the PX4 SITL peer enters, then its PX4 container runs instance 1,
+    `-i 1`, and the run listens on instance 1's HIL port, 4561.
+    """
+    from nexus._src.peers import LABEL
+
+    held = _Container(
+        daemon, "nexus-px4-held-0", {LABEL: "px4", "nexus.px4.instance": "0", "nexus.owner": str(os.getpid())}
+    )
+    daemon.live[held.name] = held
+
+    loop = _declared_run(tmp_path)
+    commands = [r.get("command") for r in daemon.runs if r.get("detach", True)]
+    stepping = threading.Thread(target=loop.step, daemon=True)  # the preroll waits for PX4 to dial in
+    stepping.start()
+    dialed = _dial(4561)
+    stepping.join(timeout=15.0)
+    loop.close()
+    if dialed is not None:
+        dialed.close()
+
+    instances = [c[c.index("-i") + 1] for c in commands if c and "-i" in c]
+    assert (instances, dialed is not None) == (["1"], True)

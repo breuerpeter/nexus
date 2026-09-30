@@ -155,3 +155,120 @@ def test_a_run_on_a_catalog_with_a_defaults_block_fails_and_says_to_name_the_veh
     argv = ("--registry", str(catalog), "--vehicle", "astro_max_base", "--scene", "empty")
     failed, said = _said_when_run(monkeypatch, capsys, tmp_path, *argv)
     assert (failed, [w in said for w in ("defaults", "remov", "--vehicle", "--scene")]) == (True, [True] * 4)
+
+
+# --- the override layer, and the PX4 flags that go -------------------------------------------------
+
+
+class _Daemon:
+    """A stand-in docker daemon that records each container run and holds no image to build."""
+
+    def __init__(self):
+        from docker.errors import NotFound
+
+        self.runs: list[dict] = []
+        daemon = self
+
+        class _Container:
+            def remove(self, force=False):
+                pass
+
+        class Images:
+            def get(self, tag):
+                return object()
+
+        class Containers:
+            def run(self, image, **kwargs):
+                daemon.runs.append({"image": image, **kwargs})
+                return b"" if not kwargs.get("detach", True) else _Container()
+
+            def get(self, name):
+                raise NotFound(name)
+
+            def list(self, **kwargs):
+                return []
+
+        self.images = Images()
+        self.containers = Containers()
+
+
+def test_the_command_line_takes_the_layer(monkeypatch, tmp_path):
+    """The command line takes the layer.
+
+    Given a local vehicle whose PX4 schema declares airframe `foo`, a layer that sets it to `bar`, and a
+    stand-in docker daemon, when `nexus run --vehicle … --scene empty --layer <layer>` runs, then PX4 Software
+    In The Loop (SITL) starts on the layer's airframe, `PX4_SIM_MODEL=none_bar`, as the same run through `Sim` does.
+    """
+    import nexus._src.peers.containers as containers
+    from nexus._src.api.sim import Sim
+
+    daemon = _Daemon()
+    monkeypatch.setattr(containers, "client", lambda: daemon)
+    monkeypatch.setattr(containers, "_pump_logs", lambda container, log_path: None)
+    px4 = tmp_path / "px4"
+    px4.mkdir()
+    (px4 / "Makefile").write_text("px4_sitl:\n")  # what marks a folder as a PX4 tree
+    monkeypatch.setenv("PX4_DIR", str(px4))
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("NEXUS_ASSET_CACHE", str(tmp_path / "cache"))
+    vehicle = tmp_path / "vehicle.usda"
+    vehicle.write_text(
+        PLAIN_USD.replace('["NexusPx4API"]', '["NexusPx4API", "NexusPx4SitlAPI"]').replace('"astro_max"', '"foo"')
+    )
+    layer = tmp_path / "override.usda"
+    layer.write_text('#usda 1.0\n\nover "vehicle"\n{\n    string nexus:airframe = "bar"\n}\n')
+
+    def started(run) -> list[str]:
+        daemon.runs.clear()
+        try:
+            run()
+        except BaseException:  # the bare vehicle has no bodies, so the run stops after its peer starts
+            pass
+        return [r["environment"].get("PX4_SIM_MODEL") for r in daemon.runs if r.get("detach", True)]
+
+    argv = ["nexus", "run", "--vehicle", str(vehicle), "--scene", "empty", "--device", "cpu", "--layer", str(layer)]
+    monkeypatch.setattr("sys.argv", argv)
+    by_cli = started(cli.main)
+
+    def through_sim():
+        with Sim(str(vehicle), scene="empty", device="cpu", layer=str(layer), observe=False):
+            pass
+
+    by_sim = started(through_sim)
+
+    assert (by_cli, by_sim) == (["none_bar"], ["none_bar"])
+
+
+def test_the_px4_flags_are_gone(monkeypatch, tmp_path, capsys):
+    """Neither the command line nor `Sim` takes a PX4 flag.
+
+    Given `nexus run` with `--px4 external` or `--px4-instance 1`, when it parses, then it exits with
+    argparse's unrecognized-argument error; and `Sim(px4=…)` or `Sim(px4_instance=…)` raises
+    `TypeError`. The vehicle names a file that doesn't exist and `DOCKER_HOST` points nowhere, so no
+    run can start if the tool still takes a flag.
+    """
+    from nexus._src.api.sim import Sim
+
+    monkeypatch.setenv("DOCKER_HOST", f"unix://{tmp_path / 'no-daemon.sock'}")
+    missing = str(tmp_path / "missing.usda")
+
+    def rejected(*flag) -> bool:
+        monkeypatch.setattr("sys.argv", ["nexus", "run", *flag, "--vehicle", missing, "--scene", "empty"])
+        try:
+            cli.main()
+            return False
+        except SystemExit as e:
+            return e.code == 2 and f"unrecognized arguments: {flag[0]}" in capsys.readouterr().err
+        except BaseException:
+            return False
+
+    def refused(**kwargs) -> bool:
+        try:
+            Sim("astro_max_base", scene="empty", **kwargs)
+            return False
+        except TypeError:
+            return True
+
+    flags = (rejected("--px4", "external"), rejected("--px4-instance", "1"))
+    kwargs = (refused(px4="external"), refused(px4_instance=1))
+    assert (flags, kwargs) == ((True, True), (True, True))
