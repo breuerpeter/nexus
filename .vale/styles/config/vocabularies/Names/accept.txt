@@ -80,3 +80,13 @@ terminate[sd]?
 
 # The status the examples harness prints for a gate row that holds.
 ok
+
+# Poly Haven authors, credited on the scenes page.
+Tuytel
+Cilliers
+Kless
+Gyzen
+Dimitrios
+Savva
+Zaal
+Jarod
