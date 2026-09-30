@@ -37,6 +37,7 @@ from nexus._src.api.sim import Sim
 from nexus._src.config import LaunchConfig, Registry
 from nexus._src.core.interfaces import Stage
 from nexus._src.core.orchestrator import Orchestrator
+from nexus._src.core.registry import ComponentRegistry
 from nexus._src.core.schema import SimTime
 from nexus._src.vehicle.controllers.px4 import controller as ctrl
 
@@ -477,7 +478,15 @@ def test_a_local_vehicle_usd_flies_the_airframe_its_px4_schema_declares(daemon, 
     assert _started_models(daemon) == ["none_foo"]
 
 
-# --- the fake PX4, the realization that stands in for the process ---------------------------------
+# --- the fake PX4: the class a registry maps the PX4 SITL peer to ---------------------------------
+
+# A registry that builds the vehicle's PX4 controller and maps the PX4 SITL peer, by its name, to the fake.
+_FAKE_PX4 = ComponentRegistry(
+    {
+        "NexusPx4API": "nexus._src.vehicle.controllers.px4.controller:Px4MavlinkController",
+        "px4_sitl": "nexus._src.peers.px4_sitl.fake:Px4Fake",
+    }
+)
 
 
 class _Commands:
@@ -493,17 +502,38 @@ class _Commands:
         return [Stage("forces", "host", lambda tick: self.seen.append(tuple(tick.controls.numpy()[0].tolist())))]
 
 
-def test_a_run_that_picks_the_fake_px4_starts_no_process_and_needs_no_px4_tree(daemon, run, monkeypatch, tmp_path):
-    """A run that picks the fake PX4 starts no process and needs no PX4 tree.
+def _step(loop, ticks: int) -> list[bool]:
+    """Step ``ticks`` ticks, stopping at the first that fails: stepping an ended run starts a new one."""
+    stepped = []
+    while len(stepped) < ticks and (not stepped or stepped[-1]):
+        stepped.append(loop.step())
+    return stepped
+
+
+def _faked(catalog, tmp_path) -> Orchestrator:
+    """Build the catalog's vehicle with the PX4 SITL peer mapped to its fake."""
+    launch = LaunchConfig.from_dict({"vehicle": "astro"})
+    return launch_mod.build_from_launch(
+        launch, registry=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0, components=_FAKE_PX4
+    )
+
+
+def test_a_run_whose_registry_maps_the_px4_sitl_peer_to_its_fake_starts_no_process_and_needs_no_px4_tree(
+    daemon, assembly, catalog, monkeypatch, tmp_path
+):
+    """A run whose registry maps the PX4 SITL peer to its fake starts no process and needs no PX4 tree.
 
     Given a stand-in docker daemon, no PX4 checkout and no `PX4_DIR`, when a run of the default
-    vehicle with its PX4 peer fake steps 500 ticks, then the daemon records no container, no fetch or
-    build runs, and every tick completes.
+    vehicle, built with a registry that maps the PX4 SITL peer to its fake, steps 500 ticks, then the
+    daemon records no container, no fetch or build runs, and every tick completes.
     """
     monkeypatch.delenv("PX4_DIR")
-    loop = run({"realization": "fake"})
+    # The network is a boundary: a fetch this run must not make fails at once on an unreachable proxy.
+    for var in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"):
+        monkeypatch.setenv(var, "http://127.0.0.1:9")
+    loop = _faked(catalog, tmp_path)
 
-    stepped = [loop.step() for _ in range(500)]
+    stepped = _step(loop, 500)
     loop.close()
 
     fetched = (tmp_path / "home" / ".cache" / "nexus" / "px4").exists()
@@ -519,13 +549,10 @@ def test_the_fake_px4_receives_each_tick_and_the_gps_at_its_sub_rate(daemon, mon
     clock lands a GPS tick one late.
     """
     monkeypatch.delenv("NEXUS_ASSET_CACHE")  # the shipped vehicle comes from the checkout's own cache
-    launch = LaunchConfig.from_dict(
-        {"vehicle": "astro_max_base", "runtime": {"device": "cpu"}, "peers": {"px4": {"realization": "fake"}}}
-    )
-    loop = launch_mod.build_from_launch(launch, preroll_timeout=10.0)
+    launch = LaunchConfig.from_dict({"vehicle": "astro_max_base", "runtime": {"device": "cpu"}})
+    loop = launch_mod.build_from_launch(launch, preroll_timeout=10.0, components=_FAKE_PX4)
 
-    for _ in range(500):
-        loop.step()
+    _step(loop, 500)
     received = dict(loop.peers[0].received)
     loop.close()
 
@@ -537,8 +564,8 @@ def test_the_fake_px4_receives_each_tick_and_the_gps_at_its_sub_rate(daemon, mon
 def test_the_controller_gets_the_fake_px4s_hover_command_every_tick(daemon, catalog, monkeypatch, tmp_path):
     """The fake PX4 answers each `HIL_SENSOR` with the fixed hover command.
 
-    Given a run with the fake PX4, when it steps 500 ticks, then the controller hands the loop a
-    command each tick, and every one is the same command, with thrust on it.
+    Given a run with the fake PX4, when it steps 500 ticks, then the controller hands the loop the same
+    command with thrust on it every tick.
     """
     commands = _Commands()
 
@@ -555,48 +582,50 @@ def test_the_controller_gets_the_fake_px4s_hover_command_every_tick(daemon, cata
         )
 
     monkeypatch.setattr(launch_mod, "build_orchestrator", assemble)
-    launch = LaunchConfig.from_dict({"vehicle": "astro", "peers": {"px4": {"realization": "fake"}}})
-    loop = launch_mod.build_from_launch(launch, registry=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0)
+    loop = _faked(catalog, tmp_path)
 
-    for _ in range(500):
-        loop.step()
+    _step(loop, 500)
     loop.close()
 
     ticks = commands.seen[-500:]
-    assert (len(ticks), len(set(ticks)), any(v > 0 for v in ticks[0])) == (500, 1, True), set(ticks)
+    assert (len(ticks), len(set(ticks)), any(v > 0 for v in (ticks[0] if ticks else ()))) == (500, 1, True), set(ticks)
 
 
-def test_the_px4_controller_is_built_the_same_way_whichever_realization_answers(daemon, run, caplog):
-    """The build makes the PX4 controller the same way whichever realization answers.
+def test_the_px4_controller_is_built_the_same_way_whichever_process_answers(
+    daemon, assembly, catalog, run, caplog, tmp_path
+):
+    """The build makes the PX4 controller the same way whichever process answers.
 
-    Given the default vehicle, when a run builds it with the PX4 peer fake and again with it external,
-    then both loops hold the same stages in the same order, as each run's stage plan line says.
+    Given the default vehicle, when a run builds it with the PX4 SITL peer mapped to its fake and again
+    with the peer external, then both loops hold the same stages in the same order, as each run's stage
+    plan line says, and the fake answered the first tick.
     """
     caplog.set_level(logging.INFO, logger="nexus")
 
-    def plan(px4: dict) -> list[str]:
-        caplog.clear()
-        loop = run(px4)
-        loop.step()  # the plan logs before the preroll: the external run then times out waiting for PX4
+    def plan(loop) -> tuple[bool, list[str]]:
+        flew = loop.step()  # the plan logs before the preroll: the external run then times out waiting for PX4
         loop.close()
-        return [r.getMessage() for r in caplog.records if r.getMessage().startswith("stage plan:")]
+        lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("stage plan:")]
+        caplog.clear()
+        return flew, lines
 
-    fake = plan({"realization": "fake"})
-    external = plan({"realization": "external", "instance": _free_instance()})
+    flew, fake = plan(_faked(catalog, tmp_path))
+    _, external = plan(run({"realization": "external", "instance": _free_instance()}))
 
-    assert (len(fake), fake) == (1, external)
+    assert (flew, len(fake), fake) == (True, 1, external)
 
 
-def test_a_fake_px4_whose_link_dies_ends_the_run_as_a_real_peers_death_does(daemon, run, caplog):
+def test_a_fake_px4_whose_link_dies_ends_the_run_as_a_real_peers_death_does(
+    daemon, assembly, catalog, caplog, tmp_path
+):
     """A fake PX4 whose link dies ends the run as a real peer's death does.
 
     Given a run whose fake PX4 stops after 100 ticks, when the run steps on, then it stops with
     `ConnectionError` naming PX4 and `step()` returns `False` after it.
     """
     caplog.set_level(logging.INFO, logger="nexus")
-    loop = run({"realization": "fake"})
-    for _ in range(100):
-        loop.step()
+    loop = _faked(catalog, tmp_path)
+    answered = _step(loop, 100).count(True)
 
     loop.peers[0].stop()
     ended = False
@@ -607,19 +636,18 @@ def test_a_fake_px4_whose_link_dies_ends_the_run_as_a_real_peers_death_does(daem
             break
     after = loop.step()
 
-    assert (ended, after, "Px4MavlinkController disconnected" in caplog.text) == (True, False, True), caplog.text
+    assert (answered, ended, after, "Px4MavlinkController disconnected" in caplog.text) == (100, True, False, True), (
+        caplog.text
+    )
 
 
 def test_the_operator_on_a_fake_px4_run_fails_at_once_with_a_clear_error(daemon, assembly, catalog, tmp_path):
     """The operator on a fake PX4 run fails at once with a clear error.
 
-    Given a run with the fake PX4, when a caller takes `sim.operator`, then it raises an error that names the
-    fake PX4, and nothing waits on the offboard port.
+    Given a run with the fake PX4, when a caller takes `sim.operator`, then it raises an error that names
+    the fake PX4, and nothing waits on the offboard port.
     """
-    project = tmp_path / "nexus.registry.yaml"
-    project.write_text(yaml.safe_dump({"vehicles": [_vehicle(tmp_path)]}))
-
-    with Sim("astro", registry=str(project), device="cpu", observe=False, px4="fake") as sim:
+    with Sim.from_orchestrator(_faked(catalog, tmp_path), observe=False) as sim:
         sim.start(timeout=5.0)
         t0 = time.monotonic()
         try:

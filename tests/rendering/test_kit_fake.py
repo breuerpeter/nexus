@@ -1,5 +1,5 @@
-"""The fake Kit peer: the realization of the render peer that starts no container and answers each
-``frame`` request with a synthetic frame.
+"""The fake Kit peer: the class a registry maps the Kit peer to, which starts no container and answers
+each ``frame`` request with a synthetic frame.
 
 The docker daemon is the system boundary, and the stand-in daemon records any container a run would
 start. A test reads a run's frames back from the ``.rrd`` it writes, through Rerun's command-line tool.
@@ -13,7 +13,9 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from nexus._src.api.sim import Sim
+import nexus._src.build.launch as launch_mod
+from nexus._src.config import LaunchConfig
+from nexus._src.core.registry import ComponentRegistry
 from nexus._src.peers.kit.fake import KitFake
 from nexus._src.peers.kit.runner import KitPeerError
 from nexus._src.rendering.link import KitRenderer
@@ -27,18 +29,35 @@ def _frames(rrd: str) -> list[tuple[int, int]]:
     return [(int(w), int(h)) for w, h in re.findall(r"\{width: (\d+), height: (\d+), pixel_format", out)]
 
 
-def test_a_run_that_picks_the_fake_kit_peer_starts_no_container_and_gets_frames_at_the_declared_rate(daemon, warp_cpu):
-    """A run that picks the fake Kit peer starts no container and gets frames at the declared rate.
+def test_a_run_whose_registry_maps_the_kit_peer_to_its_fake_starts_no_container_and_gets_frames_at_the_declared_rate(
+    daemon, warp_cpu, monkeypatch
+):
+    """A run whose registry maps the Kit peer to its fake starts no container and gets frames at the
+    declared rate.
 
-    Given `astro_max_fpv`, whose `FpvCam` declares 1280x720 at 24 Hz, a stand-in docker daemon and the
-    Kit peer fake, when the run steps 1 s of sim time, 250 ticks of 0.004 s, then the daemon records no
-    container, and the camera yields 24 frames, give or take the one in flight at either end, each
-    1280x720.
+    Given `astro_max_fpv`, whose `FpvCam` declares 1280x720 at 24 Hz, a stand-in docker daemon and a
+    registry that maps the Kit peer to its fake, when the run steps 1 s of sim time, 250 ticks of 0.004 s,
+    then the daemon records no container, and the camera yields 24 frames, give or take the one in flight
+    at either end, each 1280x720. The PX4 peer maps to its fake too, so nothing else starts a container.
     """
-    with Sim("astro_max_fpv", device="cpu", log=True, px4="fake", kit="fake") as sim:
-        for _ in range(250):
-            sim.step()
-    frames = _frames(sim.artifacts()["rrd"])
+    registry = ComponentRegistry(
+        {
+            "NexusPx4API": "nexus._src.vehicle.controllers.px4.controller:Px4MavlinkController",
+            "px4_sitl": "nexus._src.peers.px4_sitl.fake:Px4Fake",
+            "kit": "nexus._src.peers.kit.fake:KitFake",
+        }
+    )
+    # The network is a boundary: a PX4 fetch this run must not make fails at once on an unreachable proxy.
+    for var in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"):
+        monkeypatch.setenv(var, "http://127.0.0.1:9")
+    launch = LaunchConfig.from_dict({"vehicle": "astro_max_fpv", "runtime": {"device": "cpu"}, "output": {"log": True}})
+    loop = launch_mod.build_from_launch(launch, preroll_timeout=10.0, components=registry)
+
+    ticks = 0
+    while ticks < 250 and loop.step():  # stepping an ended run starts a new one
+        ticks += 1
+    loop.close()
+    frames = _frames(loop.logger.rrd_path)
 
     assert (daemon.runs, 23 <= len(frames) <= 25, set(frames)) == ([], True, {(1280, 720)}), len(frames)
 
@@ -66,8 +85,8 @@ def _state():
 def test_a_fake_kit_peer_that_sends_error_ends_the_run_with_that_error():
     """A fake Kit peer that sends `error` ends the run with that error.
 
-    Given a run whose fake Kit peer answers a `frame` request with `error` after 10 frames, when the run
-    steps on, then it stops with an error naming the Kit peer and carrying the peer's message.
+    Given a fake Kit peer that answers a `frame` request with `error` after 10 frames, when the run steps
+    on, then it stops with an error naming the Kit peer and carrying the peer's message.
     """
     peer = KitFake(error_after=10, error="the render product died")
     peer.start()

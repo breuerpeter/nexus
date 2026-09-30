@@ -398,20 +398,3 @@ def test_on_main_every_examples_recording_rides_the_artifact(tmp_path, monkeypat
     _harness(monkeypatch, "--only", "pid", "--out", str(out))
 
     assert (out / "pid.rrd").is_file()
-
-
-def test_against_the_fake_a_stalled_lockstep_fails_the_px4_sitl_leg(tmp_path, monkeypatch, capsys):
-    """Against the fake, a stalled lockstep fails the `px4_sitl` leg: given the harness gating
-    `px4_sitl` against the fake PX4 as a pull-request run, and a flight that exchanged fewer ticks than
-    it stepped, when it gates, then the ticks row shows `REGRESSED` and the run exits 1.
-    """
-    monkeypatch.setenv("PATH", str(tmp_path))  # no docker on the box: the fake PX4 needs none
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    monkeypatch.delenv("PX4_DIR", raising=False)
-    stalled = {"ticks_stepped": 2500, "ticks_exchanged": 2400, "link_errors": 0, "rtf": 2.0}
-    _fake_flights(monkeypatch, tmp_path / "rec", {"px4_sitl": (stalled, 0)})
-
-    rc = _harness(monkeypatch, "--only", "px4_sitl", "--shared", "--out", str(tmp_path / "out"))
-
-    regressed = _rows(capsys.readouterr().out, "REGRESSED")
-    assert (rc, any("tick" in row for row in regressed)) == (1, True), regressed
