@@ -49,7 +49,9 @@ def test_a_run_whose_peer_mapping_sends_the_kit_peer_to_its_fake_starts_no_conta
     # The network is a boundary: a PX4 fetch this run must not make fails at once on an unreachable proxy.
     for var in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"):
         monkeypatch.setenv(var, "http://127.0.0.1:9")
-    launch = LaunchConfig.from_dict({"vehicle": "astro_max_fpv", "runtime": {"device": "cpu"}, "output": {"log": True}})
+    launch = LaunchConfig.from_dict(
+        {"vehicle": "astro_max_fpv", "scene": "empty", "runtime": {"device": "cpu"}, "output": {"log": True}}
+    )
     loop = launch_mod.build_from_launch(launch, preroll_timeout=10.0, peers={"px4_sitl": Px4Fake, "kit": KitFake})
 
     ticks = 0

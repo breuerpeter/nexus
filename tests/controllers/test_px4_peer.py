@@ -506,7 +506,7 @@ def _step(loop, ticks: int) -> list[bool]:
 
 def _faked(catalog, tmp_path) -> Orchestrator:
     """Build the catalog's vehicle with the PX4 SITL peer sent to its fake."""
-    launch = LaunchConfig.from_dict({"vehicle": "astro"})
+    launch = LaunchConfig.from_dict({"vehicle": "astro", "scene": "empty"})
     return launch_mod.build_from_launch(
         launch, registry=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0, peers=_FAKE_PX4
     )
@@ -543,7 +543,7 @@ def test_the_fake_px4_receives_each_tick_and_the_gps_at_its_sub_rate(daemon, mon
     clock lands a GPS tick one late.
     """
     monkeypatch.delenv("NEXUS_ASSET_CACHE")  # the shipped vehicle comes from the checkout's own cache
-    launch = LaunchConfig.from_dict({"vehicle": "astro_max_base", "runtime": {"device": "cpu"}})
+    launch = LaunchConfig.from_dict({"vehicle": "astro_max_base", "scene": "empty", "runtime": {"device": "cpu"}})
     loop = launch_mod.build_from_launch(launch, preroll_timeout=10.0, peers=_FAKE_PX4)
 
     _step(loop, 500)
