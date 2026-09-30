@@ -1,5 +1,6 @@
 The Kit render peer: `runner.py` pulls NVIDIA's Isaac Sim image and runs its container, and
-`peer-src/` is the program the container runs. The render link's host end is
+`peer-src/` is the program the container runs. `fake.py` is the peer's fake: it serves the same
+link from a thread in this process, for tests. The render link's host end is
 `nexus/_src/rendering/link.py`.
 
 - `peer-src/` runs under Kit's Python, shipped as package data. No module imports it, and it imports
@@ -18,9 +19,10 @@ The Kit render peer: `runner.py` pulls NVIDIA's Isaac Sim image and runs its con
   imports `ensure_image`, `_run_options`, `_cesium_mount`, `LABEL` and `client` from `runner.py`:
   renaming or moving one of them changes that file too.
 - The render link's framing and its message set live once, in `peer-src/link.py`. The peer imports
-  it as a sibling module. The host end runs the same file by path and takes `send`, `recv` and the
-  message names from it. `tests/rendering/test_link.py` drives the host end against a stand-in
-  peer that speaks through it too.
+  it as a sibling module. The host end and `fake.py` run the same file by path and take `send`,
+  `recv` and the message names from it, so a change to a message changes the fake's replies too.
+  `tests/rendering/test_link.py` drives the host end against a stand-in peer that speaks through
+  it too.
 - The container runs as the host user with the image's `isaac-sim` group, gid `1234`, added, since
   only that group can read `/isaac-sim`. Kit's `HOME` is `~/.cache/nexus/kit/home` and its shader
   cache `~/.cache/nexus/kit/cache`.
