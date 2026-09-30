@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from nexus._src.config import LaunchConfig, Registry
+from nexus._src.peers.px4_sitl.fake import Px4Fake
 
 
 @pytest.fixture(autouse=True)
@@ -330,59 +331,73 @@ def _started_models(daemon) -> list[str]:
     return [r["environment"].get("PX4_SIM_MODEL") for r in daemon if r.get("detach", True)]
 
 
-def test_a_layer_that_changes_a_declared_value_changes_what_the_run_builds(tmp_path, monkeypatch, daemon):
+class _Handed(Px4Fake):
+    """The fake PX4 in the peer mapping, which keeps the airframe the build hands it."""
+
+    def __init__(self, *, airframe: str, **run):
+        super().__init__(**run)
+        self.airframe = airframe
+
+
+def _shipped_referenced(tmp_path, metadata: str = "", contents: str = "") -> str:
+    """A local fixture vehicle whose root prim `/vehicle` references the shipped `astro_max_base`, which
+    flies airframe `astro_max`, with `metadata` and `contents` of the root prim's own.
+    """
+    from nexus._src.config import resolve
+
+    shipped = resolve(LaunchConfig.from_dict({"vehicle": "astro_max_base", "scene": "empty"})).vehicle_usd_path
+    path = tmp_path / "fixture_vehicle.usda"
+    path.write_text(
+        f'#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n\n'
+        f'def Xform "vehicle" (\n    references = @{shipped}@\n{metadata})\n{{\n{contents}}}\n'
+    )
+    return str(path)
+
+
+def _handed_airframe(tmp_path, vehicle: str, layer: Path) -> list[str]:
+    """Build `vehicle` over `layer` for real, the PX4 SITL peer sent to a fake that keeps its airframe,
+    and return the airframe the build handed each PX4 peer of the run.
+    """
+    import nexus._src.build.launch as L
+
+    launch = LaunchConfig.from_dict(
+        {"vehicle": vehicle, "scene": "empty", "layer": str(layer), "runtime": {"device": "cpu"}}
+    )
+    loop = L.build_from_launch(launch, preroll_timeout=10.0, peers={"px4_sitl": _Handed})
+    handed = [peer.airframe for peer in loop.peers]
+    loop.close()
+    return handed
+
+
+def test_a_layer_that_changes_a_declared_value_changes_what_the_run_builds(tmp_path, monkeypatch, warp_cpu):
     """A layer that changes a declared value changes what the run builds.
 
-    Given a fixture vehicle whose PX4 schema declares airframe `foo` and a layer that sets
-    `nexus:airframe` to `bar` on that prim, when the run builds, then PX4 SITL starts with
-    `PX4_SIM_MODEL=none_bar`.
+    Given a fixture vehicle that references `astro_max_base`, whose PX4 schema declares airframe
+    `astro_max`, and a layer that sets `nexus:airframe` to `bar` on its root prim, when the run builds
+    with the PX4 SITL peer sent to a fake, then the build hands the fake airframe `bar`.
     """
-    import nexus._src.build.launch as L
-
-    monkeypatch.setattr(L, "build_orchestrator", lambda label, cfg, **kw: kw)
+    monkeypatch.delenv("NEXUS_ASSET_CACHE", raising=False)  # the shipped vehicle comes from the checkout's own cache
     layer = _layer(tmp_path, 'over "vehicle"\n{\n    string nexus:airframe = "bar"\n}\n')
-    launch = _layered(tmp_path, _local_vehicle(tmp_path, PX4_SITL_ROOT), layer)
 
-    L.build_from_launch(launch, registry=_catalog(tmp_path), cache_dir=tmp_path / "cache")
-
-    assert _started_models(daemon) == ["none_bar"]
+    assert _handed_airframe(tmp_path, _shipped_referenced(tmp_path), layer) == ["bar"]
 
 
-def test_a_layer_that_selects_a_variant_builds_that_variant(tmp_path, monkeypatch, daemon):
+def test_a_layer_that_selects_a_variant_builds_that_variant(tmp_path, monkeypatch, warp_cpu):
     """A layer that selects a variant builds that variant.
 
-    Given a fixture vehicle with an `airframe` variant set whose selection is `a`, and a layer that
-    selects its second variant, `b`, when the run builds, then PX4 SITL starts on variant `b`'s
-    airframe, `PX4_SIM_MODEL=none_b`.
+    Given a fixture vehicle that references `astro_max_base` and adds an `airframe` variant set whose
+    selection is `a`, and a layer that selects its second variant, `b`, when the run builds with the
+    PX4 SITL peer sent to a fake, then the build hands the fake variant `b`'s airframe, `b`.
     """
-    import nexus._src.build.launch as L
-
-    monkeypatch.setattr(L, "build_orchestrator", lambda label, cfg, **kw: kw)
-    variants = """\
-def Xform "vehicle" (
-    prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]
-    variants = {
-        string airframe = "a"
-    }
-    prepend variantSets = "airframe"
-)
-{
-    variantSet "airframe" = {
-        "a" {
-            string nexus:airframe = "a"
-        }
-        "b" {
-            string nexus:airframe = "b"
-        }
-    }
-}
-"""
+    monkeypatch.delenv("NEXUS_ASSET_CACHE", raising=False)  # the shipped vehicle comes from the checkout's own cache
+    metadata = '    variants = {\n        string airframe = "a"\n    }\n    prepend variantSets = "airframe"\n'
+    contents = (
+        '    variantSet "airframe" = {\n        "a" {\n            string nexus:airframe = "a"\n        }\n'
+        '        "b" {\n            string nexus:airframe = "b"\n        }\n    }\n'
+    )
     layer = _layer(tmp_path, 'over "vehicle" (\n    variants = {\n        string airframe = "b"\n    }\n)\n{\n}\n')
-    launch = _layered(tmp_path, _local_vehicle(tmp_path, variants), layer)
 
-    L.build_from_launch(launch, registry=_catalog(tmp_path), cache_dir=tmp_path / "cache")
-
-    assert _started_models(daemon) == ["none_b"]
+    assert _handed_airframe(tmp_path, _shipped_referenced(tmp_path, metadata, contents), layer) == ["b"]
 
 
 def test_a_layer_that_deactivates_a_declaration_builds_nothing_for_it(tmp_path, monkeypatch, warp_cpu):
@@ -394,7 +409,6 @@ def test_a_layer_that_deactivates_a_declaration_builds_nothing_for_it(tmp_path, 
     GPS receiver, and no magnetometer.
     """
     import nexus._src.build.launch as L
-    from nexus._src.peers.px4_sitl.fake import Px4Fake
 
     monkeypatch.delenv("NEXUS_ASSET_CACHE", raising=False)  # the shipped vehicle comes from the checkout's own cache
     layer = _layer(
