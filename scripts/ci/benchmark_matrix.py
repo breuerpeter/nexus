@@ -41,7 +41,9 @@ import sys
 import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-SCENES = ("empty", "cesium")
+SCENES = ("empty", "powerline", "cesium")
+# The mission a scene's cell flies, when not the shared 4-waypoint square: benchmark_cell.py --mission.
+MISSIONS = {"powerline": "inspection"}
 KIT_LOGS = pathlib.Path.home() / ".cache" / "nexus" / "logs"  # where the Kit peer writes its benchmark JSON
 
 
@@ -98,6 +100,7 @@ def _run_cell(cell: dict, work: pathlib.Path, budget_s: float, cell_timeout: flo
         "uv", "run", "python", "scripts/ci/benchmark_cell.py",
         "--vehicle", cell["vehicle"], "--scene", cell["scene"], "--device", cell["device"],
         "--log", "--stats-json", str(stats_json),
+        "--mission", MISSIONS.get(cell["scene"], "square"),
     ]
     # fmt: on
     env = {**os.environ, "NEWTON_CELL_FLY_S": str(budget_s)}
