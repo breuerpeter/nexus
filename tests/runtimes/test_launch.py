@@ -55,10 +55,11 @@ def daemon(monkeypatch, tmp_path):
     return runs
 
 
-# A vehicle that declares PX4 on its root prim, and nothing else.
+# A vehicle that declares PX4 and the PX4 SITL peer on its root prim, and nothing else.
 PX4_VEHICLE = (
     b'#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n\n'
-    b'def Xform "vehicle" (\n    prepend apiSchemas = ["NexusPx4API"]\n)\n{\n    string nexus:airframe = "80001"\n}\n'
+    b'def Xform "vehicle" (\n    prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n)\n'
+    b'{\n    string nexus:airframe = "80001"\n}\n'
 )
 
 

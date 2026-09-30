@@ -46,14 +46,6 @@ def test_setters_chain():
     assert lc.scene == "empty"
 
 
-def test_the_px4_peer_numbers_every_address_from_its_instance():
-    """PX4 Software In The Loop (SITL) dials the sim on 4560 + N, streams offboard to 14540 + N and takes
-    N + 1 as its system id.
-    """
-    px4 = LaunchConfig.from_dict({"peers": {"px4": {"instance": 3}}}).peers.px4
-    assert (px4.realization, px4.hil_port, px4.offboard_port, px4.system_id) == ("managed", 4563, 14543, 4)
-
-
 def test_the_environment_launch_key_is_rejected():
     """The `environment` launch key and the receipt's `environment` field go, since nothing reads them."""
     with pytest.raises(ValidationError):

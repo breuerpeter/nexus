@@ -7,11 +7,12 @@ paths.
 
 from __future__ import annotations
 
+import hashlib
 import pathlib
 
 from nexus._src.core import logger
 
-from .models import LaunchConfig
+from .models import AssetRef, LaunchConfig
 from .receipt import ResolvedLaunch, TestedConfig
 from .registry import NoMatchError, Registry, RegistryError, VehicleVariant, load_registry, registry_path
 
@@ -39,6 +40,45 @@ def _local_usd(name: str | None, kind: str) -> pathlib.Path | None:
     if not path.exists():
         raise RegistryError(f"local {kind} USD not found: {path}")
     return path.resolve()
+
+
+def _local_ref(path: pathlib.Path) -> AssetRef:
+    """The receipt entry for a local file: its URL, its sha256 and its name, the form a hosted asset takes."""
+    sha = hashlib.sha256(path.read_bytes()).hexdigest()
+    return AssetRef(url=path.as_uri(), sha256=sha, filename=path.name)
+
+
+def _layer(path: str | None) -> tuple[pathlib.Path, AssetRef] | None:
+    """The override layer a launch names, as its local path and its receipt entry, or ``None``.
+
+    Raises:
+        FileNotFoundError: No file is at the path; the message names it.
+    """
+    if path is None:
+        return None
+    local = pathlib.Path(path).expanduser()
+    if not local.is_file():
+        raise FileNotFoundError(f"override layer not found: {local}")
+    local = local.resolve()
+    return local, _local_ref(local)
+
+
+def _stack(layer: pathlib.Path, layer_sha: str, vehicle: pathlib.Path, vehicle_sha: str, cache_dir) -> pathlib.Path:
+    """A root file in the asset cache that stacks *layer* over *vehicle*, so each reader of the vehicle
+    opens the composed vehicle by one path. USD composes the two; the file only lists them, strongest
+    first, and carries the vehicle's default prim.
+    """
+    from pxr import Sdf
+
+    from nexus._src.assets.resolver import default_cache
+
+    out = pathlib.Path(cache_dir or default_cache()) / "layered" / f"{vehicle_sha}-{layer_sha}" / "vehicle.usda"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    root = Sdf.Layer.CreateAnonymous(".usda")
+    root.subLayerPaths = [str(layer), str(vehicle)]
+    root.defaultPrim = Sdf.Layer.FindOrOpen(str(vehicle)).defaultPrim
+    root.Export(str(out))
+    return out
 
 
 def resolve(
@@ -74,12 +114,7 @@ def resolve(
         # Local vehicle USD, the variant-development workflow: the file *is* the authority. Its
         # controller, actuator params, cameras, and lidars are all authored on it, so it needs no
         # registry row. The receipt stays honest: the file gets a sha256 the same way as a registry asset.
-        import hashlib
-
-        from .models import AssetRef
-
-        sha = hashlib.sha256(local.read_bytes()).hexdigest()
-        variant = VehicleVariant(name=str(local), usd=AssetRef(url=local.as_uri(), sha256=sha, filename=local.name))
+        variant = VehicleVariant(name=str(local), usd=_local_ref(local))
 
     scene_id = launch.scene
     local_scene = _local_usd(scene_id, "scene")
@@ -90,19 +125,18 @@ def resolve(
         # USD, with no cache copy; the receipt stays honest, with a sha256 the same way as a registry
         # asset. ``start`` is registry data: a local scene flies from its own origin, and
         # scripts/assets/spawn_site.py helps pick one.
-        import hashlib
-
-        from .models import AssetRef
         from .registry import Scene
 
-        scene_sha = hashlib.sha256(local_scene.read_bytes()).hexdigest()
-        scene = Scene(usd=AssetRef(url=local_scene.as_uri(), sha256=scene_sha, filename=local_scene.name))
+        scene = Scene(usd=_local_ref(local_scene))
     elif scene_id not in registry.scenes:
         raise RegistryError(f"unknown scene {scene_id!r}; have {list(registry.scenes)}")
     else:
         scene = registry.scenes[scene_id]
 
+    layer = _layer(launch.layer)
     veh_path = local if local is not None else (_resolve_asset(variant.usd, cache_dir) if fetch else None)
+    if layer is not None and veh_path is not None:
+        veh_path = _stack(layer[0], layer[1].sha256, pathlib.Path(veh_path), variant.usd.sha256, cache_dir)
     if local_scene is not None:
         scn_path = local_scene  # in place: sibling files such as a mesh's textures/ must stay resolvable
     else:
@@ -113,6 +147,7 @@ def resolve(
         vehicle=variant.name,
         registry=str(source) if source is not None else None,
         vehicle_usd=variant.usd,
+        layer=layer[1] if layer is not None else None,
         scene=scene_id,
         scene_usd=scene.usd,
         scene_start=scene.start,

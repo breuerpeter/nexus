@@ -142,6 +142,12 @@ class Px4Sitl:
             **kwargs,
         )
 
+    @staticmethod
+    def held_instances() -> set[int]:
+        """The PX4 instances that a live process's container holds on this machine; a run takes another."""
+        held = containers.client().containers.list(all=True, filters={"label": [f"{LABEL}=px4"]})
+        return {int(c.labels[_INSTANCE]) for c in held if (owner := int(c.labels.get(_OWNER) or 0)) and _alive(owner)}
+
     def _clear_leftovers(self) -> None:
         """Remove a PX4 container of this instance whose process has exited, and fail while a live one
         holds the instance.
@@ -162,7 +168,7 @@ class Px4Sitl:
             if owner and _alive(owner):
                 raise RuntimeError(
                     f"PX4 instance {self.instance} is in use by process {owner}, container {other.name}: "
-                    "give this run another instance, --px4-instance or Sim(px4_instance=)"
+                    "another run took it as this one started; start this run again"
                 )
             logger.info(f"removing the leftover PX4 container {other.name}: process {owner} has exited")
             try:

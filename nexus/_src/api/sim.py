@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 
 from nexus._src.api.args import save_run_artifacts, sim_argparser  # noqa: F401  # re-export; defs are import-light
 from nexus._src.build.launch import build_from_launch
-from nexus._src.config import LaunchConfig, Px4Peer
+from nexus._src.config import LaunchConfig
 from nexus._src.core import logger
 from nexus._src.operator import InProcessOperator
 from nexus._src.recording import ChannelMap, Recorder
@@ -67,11 +67,10 @@ class Sim:
         rtf: Real-time-factor throttle. ``0``, the default, runs unthrottled, as fast as the
             controller keeps up. ``1.0`` paces the loop to wall-clock for human-in-the-loop
             flying: 1:1 stick feel, and sim-time protocol timeouts align with wall-clock peers.
-        px4: How the run realizes its PX4 peer: ``"managed"``, the default, starts the PX4
-            Software In The Loop (SITL) container and stops it with the run; ``"external"`` starts
-            nothing and waits on the HIL port for an autopilot started elsewhere.
-        px4_instance: PX4's SITL instance, ``0`` by default. PX4 numbers every link from it, HIL on
-            ``4560 + N`` and offboard on ``14540 + N``, so two runs on one machine take two instances.
+        layer: Path to an override layer, a local Universal Scene Description (USD) file the run
+            composes over the vehicle: it changes a declared value, selects a variant, or drops a
+            declaration. A layer that drops the PX4 Software In The Loop (SITL) peer's,
+            ``NexusPx4SitlAPI``, flies an autopilot started elsewhere, which dials port 4560.
         reached_m: Mission-waypoint arrival threshold [m] for the in-process operator.
         final_hold_s: Keep running this long, in sim-time, after the final goal before stopping.
 
@@ -98,14 +97,13 @@ class Sim:
         solver: str | None = None,
         max_steps: int | None = None,
         rtf: float = 0.0,
-        px4: str = "managed",
-        px4_instance: int = 0,
+        layer: str | None = None,
         reached_m: float = 0.3,
         final_hold_s: float = 2.0,
     ):
         self._launch = LaunchConfig()
-        self._launch.peers.px4 = Px4Peer(realization=px4, instance=px4_instance)
         self._launch.set_vehicle(vehicle)  # a registry *name* or a local .usd path
+        self._launch.layer = layer  # an override layer the run composes over the vehicle, or None
         self._launch.registry = registry  # None: the run finds its own catalog, see load_registry
         if solver is not None:  # physics integrator override: mujoco | semi_implicit | featherstone
             self._launch.runtime.solver = solver
@@ -222,8 +220,7 @@ class Sim:
             "debug": getattr(args, "debug", False),
             "max_steps": getattr(args, "max_steps", None),
             "rtf": getattr(args, "rtf", 0.0),
-            "px4": getattr(args, "px4", "managed"),
-            "px4_instance": getattr(args, "px4_instance", 0),
+            "layer": getattr(args, "layer", None),
         }
         kw.update(overrides)
         return cls(**kw)
@@ -314,6 +311,7 @@ class Sim:
             return self._operator
         if self._operator is None:
             from nexus._src.operator import Px4Offboard
+            from nexus._src.peers.px4_sitl import OFFBOARD_PORT
             from nexus._src.peers.px4_sitl.fake import Px4Fake
 
             if any(isinstance(peer, Px4Fake) for peer in getattr(self._orch, "peers", ())):
@@ -321,20 +319,20 @@ class Sim:
                     "this run flies the fake PX4, which answers only the HIL link: it has no operator link"
                 )
 
-            # The link's port and PX4's system id follow the run's PX4 instance; a self-assembled
-            # orchestrator carries no launch and takes PX4's defaults.
-            px4 = self._launch.peers.px4 if self._launch is not None else Px4Peer()
-            op = Px4Offboard(f"udpin:0.0.0.0:{px4.offboard_port}", system_id=px4.system_id)
+            # The link's port and PX4's system id follow the PX4 instance the build handed the controller;
+            # a controller that names none takes PX4's defaults, instance 0.
+            system_id = getattr(getattr(self._orch, "controller", None), "target_system", 1)
+            offboard_port = OFFBOARD_PORT + system_id - 1
+            op = Px4Offboard(f"udpin:0.0.0.0:{offboard_port}", system_id=system_id)
             op.open()  # bind the MAVLink link + start the pump; returns at once
             self._operator = op  # cache BEFORE the wait, so a failed connect is still closed by stop()
             deadline = time.monotonic() + _PX4_LINK_TIMEOUT_S
             while not op.connected:
                 if not self.step():  # keep PX4's clock moving, or its heartbeat never comes
-                    raise RuntimeError(f"the run ended before PX4 answered on the operator link (:{px4.offboard_port})")
+                    raise RuntimeError(f"the run ended before PX4 answered on the operator link (:{offboard_port})")
                 if time.monotonic() > deadline:
                     raise TimeoutError(
-                        f"no PX4 heartbeat on the operator link (:{px4.offboard_port}) within "
-                        f"{_PX4_LINK_TIMEOUT_S:.0f}s"
+                        f"no PX4 heartbeat on the operator link (:{offboard_port}) within {_PX4_LINK_TIMEOUT_S:.0f}s"
                     )
         return self._operator
 

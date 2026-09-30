@@ -11,7 +11,7 @@ import argparse
 from typing import TYPE_CHECKING
 
 from nexus._src.diagnostics import add_diagnostics_args  # stdlib-only, as is this module
-from nexus._src.peers.px4_sitl import HIL_PORT, OFFBOARD_PORT  # constants only
+from nexus._src.peers.px4_sitl import HIL_PORT  # a constant only
 
 if TYPE_CHECKING:
     from .sim import Sim
@@ -21,7 +21,7 @@ def sim_argparser(description: str | None = None) -> argparse.ArgumentParser:
     """The shared argument parser for ``Sim``-driven scripts and the ``nexus`` command-line tool.
 
     Carries the common flags :meth:`Sim.from_args` reads, ``--vehicle`` / ``--device``
-    / ``--scene`` / ``--px4`` / ``--px4-instance`` / ``--max-steps`` / ``--log`` / ``--view``, so the
+    / ``--scene`` / ``--layer`` / ``--max-steps`` / ``--log`` / ``--view``, so the
     command-line tool and any Sim-driven script share one arg surface. The bundled examples are zero-arg by design, and their configuration
     lives in the script; this parser serves the ``nexus`` command-line tool.
     """
@@ -57,14 +57,10 @@ def sim_argparser(description: str | None = None) -> argparse.ArgumentParser:
         help="real-time-factor throttle: 0 = unthrottled (default); 1.0 = pace to wall-clock for interactive flying",
     )  # fmt: skip
     p.add_argument(
-        "--px4", default="managed", choices=["managed", "external"],
-        help="the run's PX4 peer: managed starts the PX4 SITL container and stops it with the run;\n"
-        "external starts nothing and waits on the HIL port for an autopilot started elsewhere",
-    )  # fmt: skip
-    p.add_argument(
-        "--px4-instance", type=int, default=0, metavar="N",
-        help=f"PX4's SITL instance: it numbers PX4's ports, HIL {HIL_PORT}+N and offboard {OFFBOARD_PORT}+N, so two runs\n"
-        "on one machine take two instances",
+        "--layer", default=None, metavar="PATH",
+        help="an override layer, a local USD file composed over the vehicle: it changes a declared value,\n"
+        "selects a variant, or drops a declaration; one that drops NexusPx4SitlAPI flies an autopilot\n"
+        f"started elsewhere, which dials the HIL port {HIL_PORT}",
     )  # fmt: skip
     p.add_argument("--log", action="store_true", help="write the Rerun .rrd to disk")
     p.add_argument("--view", action="store_true", help="serve the live Rerun viewer on :9876")

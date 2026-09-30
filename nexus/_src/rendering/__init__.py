@@ -165,7 +165,13 @@ def rtx_renderer(
     if not prims:
         return None
     logger.info(f"the vehicle authors RTX sensors {prims}: they render in the Kit container")
-    started = peer([usd, cfg.get("scene_usd_path")], cache_dir=cache_dir or default_cache())
+    # A run with an override layer opens its vehicle through a root file that stacks the layer on the
+    # asset, so the peer reads the files that root file names too.
+    from pxr import Sdf
+
+    root = Sdf.Layer.FindOrOpen(str(usd))
+    stacked = list(root.subLayerPaths)
+    started = peer([usd, *stacked, cfg.get("scene_usd_path")], cache_dir=cache_dir or default_cache())
     started.start()
     return RtxRendererFactory(started, stream=stream)
 

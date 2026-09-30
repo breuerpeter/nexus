@@ -141,11 +141,31 @@ The Cesium ion and Google Maps Platform terms govern the streamed tiles: see
 ## PX4 as a peer
 
 The PX4 autopilot is a **peer** of the run: a process the run starts, speaks to over MAVLink, and
-stops. The run chooses how, with `--px4`:
+stops. The vehicle's USD declares it: `NexusPx4SitlAPI` on the root prim, beside `NexusPx4API`. A
+run of a vehicle that declares it starts the PX4 SITL container and stops it on exit.
 
-- `managed`, the default: the run starts the PX4 SITL container and stops it on exit.
-- `external`: the run starts nothing and waits on its HIL port for an autopilot started elsewhere,
-  a PX4 SITL of your own or a real autopilot on a bench.
+**An autopilot started elsewhere.** To fly a PX4 SITL of your own, or a real autopilot on a bench,
+drop the declaration with an **override layer**, a small USD file the run composes over the vehicle:
+
+```usda
+#usda 1.0
+
+over "astro_max" (
+    delete apiSchemas = ["NexusPx4SitlAPI"]
+)
+{
+}
+```
+
+Name the vehicle's root prim in the `over`, and pass the file with `--layer`, or `Sim(layer=)`:
+
+```bash
+uv run nexus run --vehicle astro_max_base --scene empty --layer external_px4.usda
+```
+
+The run starts nothing and waits on instance 0's HIL port, 4560, which a stock `px4 -i 0` dials. The
+run's receipt records the layer's sha256 beside the vehicle's. The same kind of layer changes a
+declared value or selects a variant without re-authoring the hosted vehicle.
 
 **The PX4 tree.** The PX4 controller pins the PX4-Autopilot commit it flies, in
 `nexus/_src/peers/px4_sitl/px4.ref`, which ships in the package. The first managed run on
@@ -162,10 +182,10 @@ once. Later runs rebuild only what changed. Two overrides:
 Dockerfile the package ships, and tags it with a hash of that folder. An update rebuilds it only
 when the Dockerfile changes.
 
-**Ports.** PX4 SITL numbers every link from its **instance**, `--px4-instance N`, `0` by default.
-It dials the sim's HIL server on 4560 + N, streams its offboard link to 14540 + N, and takes N + 1
-as its MAVLink system id. The run derives its own addresses from the same number. So two runs on
-one machine take two instances and never collide.
+**Ports.** PX4 SITL numbers every link from its **instance** N. It dials the sim's HIL server on
+4560 + N, streams its offboard link to 14540 + N, and takes N + 1 as its MAVLink system id. The run
+picks the lowest instance free on this machine and derives its own addresses from the same number,
+so two runs on one machine take two instances and never collide.
 
 | Port      | Protocol | Link |
 |-----------|----------|------|
@@ -203,10 +223,10 @@ Both modes carry the same content, PX4 included: there is no second recording an
 
 !!! note "One PX4 per instance"
     Each run's container carries the run's own name, `nexus-px4-<pid>-<instance>`, and the run removes it on
-    exit, so a second run stops nothing of the first. Two live runs on one instance would share
-    PX4's ports, so the second fails at its start and names the process that holds the instance:
-    give it `--px4-instance 1`. A run killed without its teardown, a closed terminal or a harness's
-    timeout, leaves its PX4 running, and the next run on that instance removes it.
+    exit, so a second run stops nothing of the first. A second run takes the next free instance. A
+    run killed without its teardown, a closed terminal or a harness's timeout, leaves its PX4
+    running, and the next run on that instance removes it. Two runs that fly autopilots started
+    elsewhere both need port 4560, so the second fails and names the process that holds it.
 
 !!! note "Use `uv run rerun --connect …`, never a bare `rerun`"
     Two reasons. **First,** nexus hosts the Rerun gRPC server on 9876, and the viewer is

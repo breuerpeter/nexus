@@ -192,7 +192,7 @@ class _Daemon:
         self.containers = Containers()
 
 
-def test_the_command_line_takes_the_layer(monkeypatch, tmp_path):
+def test_the_command_line_takes_the_layer(monkeypatch, tmp_path, warp_cpu):
     """The command line takes the layer.
 
     Given a local vehicle whose PX4 schema declares airframe `foo`, a layer that sets it to `bar`, and a

@@ -202,7 +202,8 @@ def _vehicle(tmp_path) -> dict:
     blob = tmp_path / "vehicle.usda"
     blob.write_text(
         '#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n\n'
-        'def Xform "vehicle" (\n    prepend apiSchemas = ["NexusPx4API"]\n)\n{\n    string nexus:airframe = "astro_max"\n}\n'
+        'def Xform "vehicle" (\n    prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n)\n'
+        '{\n    string nexus:airframe = "astro_max"\n}\n'
     )
     sha = hashlib.sha256(blob.read_bytes()).hexdigest()
     return {"name": "astro", "usd": {"url": blob.as_uri(), "sha256": sha, "filename": "vehicle.usda"}}
@@ -215,10 +216,15 @@ def catalog(tmp_path) -> Registry:
 
 @pytest.fixture
 def run(daemon, assembly, catalog, tmp_path):
-    """Build a PX4 run whose ``peers.px4`` entry is the one given, and return its loop."""
+    """Build a PX4 run of the catalog's vehicle, over the override layer given, if one is, and return its loop."""
 
-    def _run(px4: dict) -> Orchestrator:
-        launch = LaunchConfig.from_dict({"vehicle": "astro", "scene": "empty", "peers": {"px4": px4}})
+    def _run(layer: str | None = None) -> Orchestrator:
+        spec = {"vehicle": "astro", "scene": "empty"}
+        if layer is not None:
+            path = tmp_path / "override.usda"
+            path.write_text(layer)
+            spec["layer"] = str(path)
+        launch = LaunchConfig.from_dict(spec)
         return launch_mod.build_from_launch(launch, registry=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0)
 
     return _run
@@ -231,18 +237,6 @@ def _free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
-
-
-def _free_instance() -> int:
-    """A PX4 instance whose HIL port, 4560 + N, nothing on this machine holds."""
-    for instance in range(20, 200):
-        with socket.socket() as s:
-            try:
-                s.bind(("127.0.0.1", 4560 + instance))
-            except OSError:
-                continue
-            return instance
-    raise RuntimeError("no free PX4 instance")
 
 
 def _dial(port: int, within: float = 5.0) -> socket.socket | None:
@@ -294,7 +288,7 @@ def test_a_managed_peer_starts_when_the_run_starts_and_stops_when_the_run_closes
     Given a PX4 run with a managed peer and a stand-in docker daemon, when the run enters and exits,
     then the daemon records one container start before the controller connects and one stop at close.
     """
-    loop = run({"realization": "managed"})
+    loop = run()
     started = [r["name"] for r in daemon.runs if r.get("detach", True)]  # the build's own foreground make aside
 
     loop.close()  # entered and left without a step: the controller never connected
@@ -303,11 +297,11 @@ def test_a_managed_peer_starts_when_the_run_starts_and_stops_when_the_run_closes
 
 
 def test_two_managed_runs_in_one_process_on_two_instances_keep_both_containers(daemon, run):
-    """Two runs in one process, instances 0 and 1: the second run's start removes nothing of the
+    """Two runs in one process take two instances: the second run's start removes nothing of the
     first, and each run's close removes only its own container.
     """
-    first = run({"realization": "managed", "instance": 0})
-    second = run({"realization": "managed", "instance": 1})
+    first = run()
+    second = run()
     started = [r["name"] for r in daemon.runs if r.get("detach", True)]
 
     first.close()
@@ -315,27 +309,6 @@ def test_two_managed_runs_in_one_process_on_two_instances_keep_both_containers(d
     second.close()
 
     assert (len(set(started)), removed_by_first, daemon.removed) == (2, [started[0]], started)
-
-
-def test_an_external_peer_starts_no_process_and_the_run_waits_on_its_hil_port(daemon, run):
-    """An external peer starts no process: the run listens on its HIL address and waits for the
-    autopilot to dial in.
-
-    Given a PX4 run with an external peer and a stand-in docker daemon, when the run enters, then the
-    daemon records no container and the controller waits on the run's HIL port, 4560 + instance.
-    """
-    instance = _free_instance()
-    port = 4560 + instance
-    loop = run({"realization": "external", "instance": instance})
-
-    stepping = threading.Thread(target=loop.step, daemon=True)  # the preroll waits for the autopilot
-    stepping.start()
-    dialed = _dial(port)
-    stepping.join(timeout=15.0)
-    if dialed is not None:
-        dialed.close()
-
-    assert (daemon.runs, dialed is not None) == ([], True)
 
 
 def test_a_peer_that_dies_ends_the_run_as_the_controllers_disconnect(daemon, caplog):
@@ -366,19 +339,20 @@ def test_a_peer_that_dies_ends_the_run_as_the_controllers_disconnect(daemon, cap
 def test_the_peers_ports_come_from_the_run(daemon, run):
     """The peer's ports come from the run, not from the peer.
 
-    PX4 Software In The Loop (SITL) numbers every port from its instance, so the run names the instance. Given a run whose
-    launch names its PX4 instance and a stand-in docker daemon, when the peer starts, then the
-    container's command carries that instance and no port literal.
+    PX4 Software In The Loop (SITL) numbers every port from its instance, so the run hands the peer
+    the instance it picked. Given a run and a stand-in docker daemon, when the peer starts, then the
+    container's command carries an instance number and no port literal.
     """
-    loop = run({"realization": "managed", "instance": 3})
+    loop = run()
 
     launches = [r for r in daemon.runs if r.get("detach", True)]
     request = json.dumps([[r.get("command"), r.get("environment")] for r in launches], default=str)
     loop.close()
 
-    instance = ["-i", "3"] if any("-i" in r["command"] and "3" in r["command"] for r in launches) else []
+    commands = [r["command"] for r in launches if "-i" in r["command"]]
+    numbered = [c[c.index("-i") + 1].isdigit() for c in commands]
     literals = [p for p in ("4560", "14540", "14550") if p in request]
-    assert (len(launches), instance, literals) == (1, ["-i", "3"], []), request
+    assert (len(launches), numbered, literals) == (1, [True], []), request
 
 
 def test_the_peers_console_log_stays_in_the_runs_artifacts(daemon, assembly, catalog, tmp_path, monkeypatch):
@@ -403,9 +377,9 @@ def test_the_px4_sitl_image_builds_once_from_the_packages_dockerfile(daemon, run
     Given a stand-in docker daemon with no image under the tag, when the run enters, then the daemon
     receives one build of the package's Dockerfile at that tag; given the image exists, no build.
     """
-    run({"realization": "managed"}).close()
+    run().close()
     first = daemon.runs[0]["image"]
-    run({"realization": "managed"}).close()
+    run().close()
 
     built = [(b["tag"], Path(b["path"])) for b in daemon.builds]
     package = Path(nexus.__file__).resolve().parent
@@ -466,12 +440,10 @@ def test_a_local_vehicle_usd_flies_the_airframe_its_px4_schema_declares(daemon, 
     usd = tmp_path / "local_vehicle.usda"
     usd.write_text(
         '#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n\n'
-        'def Xform "vehicle" (\n    prepend apiSchemas = ["NexusPx4API"]\n)\n'
+        'def Xform "vehicle" (\n    prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n)\n'
         '{\n    string nexus:airframe = "foo"\n}\n'
     )
-    launch = LaunchConfig.from_dict(
-        {"vehicle": str(usd), "scene": "empty", "peers": {"px4": {"realization": "managed"}}}
-    )
+    launch = LaunchConfig.from_dict({"vehicle": str(usd), "scene": "empty"})
 
     launch_mod.build_from_launch(launch, registry=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0).close()
 
@@ -604,7 +576,7 @@ def test_the_px4_controller_is_built_the_same_way_whichever_process_answers(
         return flew, lines
 
     flew, fake = plan(_faked(catalog, tmp_path))
-    _, external = plan(run({"realization": "external", "instance": _free_instance()}))
+    _, external = plan(run(_DROP_PX4_SITL))
 
     assert (flew, len(fake), fake) == (True, 1, external)
 

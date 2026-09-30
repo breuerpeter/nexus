@@ -67,3 +67,14 @@ def declared_controller(usd_path: str | pathlib.Path, registry: ComponentRegistr
         schemas = ", ".join(spec.schema for spec in controllers)
         raise ValueError(f"{root}: the vehicle declares {len(controllers)} controllers, {schemas}; it flies one")
     return controllers[0]
+
+
+def root_schemas(usd_path: str | pathlib.Path) -> tuple[str, list[str]]:
+    """The vehicle file's root prim, its default prim, and the API schemas applied to it, which a peer's
+    declaration is one of.
+    """
+    from pxr import Usd
+
+    stage = Usd.Stage.Open(str(usd_path))
+    root = stage.GetDefaultPrim()
+    return str(root.GetPath()), list(root.GetAppliedSchemas())
