@@ -648,6 +648,24 @@ def test_a_started_mission_arms_only_once_px4_is_at_its_first_item():
     assert len(_sent(p, arm_cmd)) == 1
 
 
+def test_a_takeoff_after_an_unconfirmed_mission_start_still_arms():
+    """A takeoff after a mission start PX4 never confirmed still arms: the takeoff replaces the
+    mission, so its wait for PX4's first item goes with it.
+    """
+    from pymavlink import mavutil
+
+    arm_cmd = mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM
+    p = _pilot()
+    p._rel_alt = 0.0
+    p.upload_mission(_box())
+    p._on_msg(_FakeMsg("MISSION_ACK", type=0))
+    p.start_mission()  # PX4 never reports item 0 current
+    p.takeoff(5.0)
+    p._mode = "Takeoff"
+    _service(p, now=p._arm_since + 20.0)
+    assert len(_sent(p, arm_cmd)) == 1
+
+
 def test_starting_a_mission_asks_px4_for_its_first_item():
     """Starting a mission asks PX4 for its first item, with MISSION_SET_CURRENT seq 0."""
     p = _pilot()

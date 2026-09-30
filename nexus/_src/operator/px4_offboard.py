@@ -377,6 +377,8 @@ class Px4Offboard(BaseOperator):
             # Settles the upload either way: on an error ack, stop resending MISSION_COUNT rather
             # than loop forever on a mission PX4 has already refused.
             self._mission_ack = msg.type
+            if msg.type != mavutil.mavlink.MAV_MISSION_ACCEPTED:
+                self._want_restart = False  # a refused mission has no first item to start at
             self._want_upload = False
         elif t == "MISSION_ITEM_REACHED":
             self._reached = max(self._reached, msg.seq)
@@ -613,6 +615,7 @@ class Px4Offboard(BaseOperator):
             alt_m: Target takeoff altitude in meters, written to ``MIS_TAKEOFF_ALT``.
         """
         self.param_set("MIS_TAKEOFF_ALT", alt_m)
+        self._want_restart = False  # a takeoff replaces any mission start still waiting on PX4
         self._target = _ClimbTarget(rel_alt=alt_m)
         self.set_mode("Takeoff")
         self.arm()
@@ -620,6 +623,7 @@ class Px4Offboard(BaseOperator):
     def land(self) -> None:
         """Request Land mode to land the vehicle in place. Returns at once."""
         self._target = None  # nothing to arrive at; at_target goes False
+        self._want_restart = False  # a landing replaces any mission start still waiting on PX4
         self.set_mode("Land")
 
     # ---- the mission: a QGroundControl .plan, uploaded and flown in Mission mode ----
@@ -646,6 +650,7 @@ class Px4Offboard(BaseOperator):
         self._reached = -1
         self._mission_current = 0
         self._want_upload = True
+        self._want_restart = False  # a new mission replaces any start still waiting on PX4
 
     def mission_uploaded(self) -> bool:
         """Report whether PX4 has accepted the uploaded mission.
