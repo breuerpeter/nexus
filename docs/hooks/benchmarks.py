@@ -84,6 +84,8 @@ def _matrix_tables() -> str:
         out.append("")
         if any(s == "cesium" for s in scenes):
             out += ["<small>`cesium` streams Google 3D Tiles over the network: its RTF varies with tile traffic.</small>", ""]
+        if any(s == "powerline" for s in scenes):
+            out += ["<small>`powerline` flies an inspection of its power line, not the waypoints below.</small>", ""]
     else:
         out += ["*RTX cells pending the first scheduled `gpu-benchmark-matrix` run.*", ""]
 

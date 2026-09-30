@@ -17,10 +17,10 @@ compilation and initial settle happen. Whole-run wall time is never used as a sp
 Alongside the steady figure, the loop profiler records an RTF **window series** of 1000-tick
 windows, first window dropped, whose min / avg / max / σ show how stable a run is.
 
-**The benchmark mission**: one PX4 flight, the same for every matrix cell. It
+**The benchmark mission**: one PX4 flight, the same for every matrix cell but one. It
 arms, runs `AUTO.TAKEOFF`, then flies a 4-waypoint `DO_REPOSITION` mission with confirmed arrival
-at each waypoint. The script `scripts/ci/benchmark_cell.py` flies it against the `Px4Offboard`
-operator. PX4 Software In The Loop (SITL) runs in the loop, in lockstep on `:4560`, so these
+at each waypoint. The `powerline` cell flies an inspection of its power line instead, as a PX4
+mission. It follows the line pole by pole at 1.5 m over the top conductor and lands at its far end. The script `scripts/ci/benchmark_cell.py` flies both against the `Px4Offboard` operator. PX4 Software In The Loop (SITL) runs in the loop, in lockstep on `:4560`, so these
 figures come from a closed loop, not from physics-only throughput. All cells record their flight
 with `--log` on: recording is part of the measured configuration.
 
