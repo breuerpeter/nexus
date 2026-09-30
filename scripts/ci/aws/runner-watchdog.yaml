@@ -1,0 +1,236 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Terminate tagged nexus GPU CI runners that outlive their run, and alarm on overdue ones.
+
+# The shape follows newton-physics/newton's runner watchdog (scripts/ci/aws/ in that repo). See
+# README.md here for what each piece does and how to deploy it.
+
+Parameters:
+  AlertTopicArn:
+    Type: String
+    Description: Existing SNS topic that receives the alarm transitions.
+  TerminateAfterMinutes:
+    Type: Number
+    Default: 90
+    MinValue: 1
+    MaxValue: 120
+    Description: Age at which a tagged runner is terminated. Keep it above the run job's timeout-minutes plus the box's boot.
+  TerminationEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: "false is shadow mode: the watchdog logs what it would terminate and terminates nothing."
+  RequiredRepository:
+    Type: String
+    Default: ""
+    Description: When set, only runners whose GitHub-Repository tag equals it are candidates. Use it with a short limit for a canary.
+  MonitoredRegions:
+    Type: String
+    Default: us-west-2,eu-central-1,us-east-1,us-east-2
+    Description: Regions the runners may launch in, the AWS_REGION_CANDIDATES of gpu-runner.yml.
+
+Resources:
+  WatchdogRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: nexus-gpu-runner-watchdog
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: nexus-gpu-runner-watchdog
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: FindRunners
+                Effect: Allow
+                Action: ec2:DescribeInstances
+                Resource: "*"
+              # The ownership boundary: the role can terminate only an instance that carries the
+              # tag gpu-runner.yml sets at launch.
+              - Sid: TerminateOwnedRunners
+                Effect: Allow
+                Action: ec2:TerminateInstances
+                Resource: !Sub arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:instance/*
+                Condition:
+                  StringEquals:
+                    ec2:ResourceTag/created-by: nexus-gpu-ci
+              - Sid: PublishMetrics
+                Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: Nexus/GpuRunnerWatchdog
+
+  WatchdogFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: nexus-gpu-runner-watchdog
+      Description: Terminate tagged nexus GPU CI runners that outlive their run.
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt WatchdogRole.Arn
+      Timeout: 120
+      MemorySize: 128
+      Environment:
+        Variables:
+          MONITORED_REGIONS: !Ref MonitoredRegions
+          TERMINATE_AFTER_MINUTES: !Ref TerminateAfterMinutes
+          TERMINATION_ENABLED: !Ref TerminationEnabled
+          REQUIRED_REPOSITORY: !Ref RequiredRepository
+          ALERT_AFTER_MINUTES: "120"
+      Code:
+        ZipFile: |
+          """Terminate tagged nexus GPU CI runners past their age limit and report the overdue ones."""
+
+          import json
+          import os
+          from datetime import datetime, timezone
+
+          import boto3
+
+          OWNER_TAG = "nexus-gpu-ci"
+          NAMESPACE = "Nexus/GpuRunnerWatchdog"
+
+
+          def handler(event, context):
+              regions = [r.strip() for r in os.environ["MONITORED_REGIONS"].split(",") if r.strip()]
+              limit = float(os.environ["TERMINATE_AFTER_MINUTES"])
+              alert_after = float(os.environ["ALERT_AFTER_MINUTES"])
+              enabled = os.environ["TERMINATION_ENABLED"] == "true"
+              repository = os.environ["REQUIRED_REPOSITORY"]
+              now = datetime.now(timezone.utc)
+              runners, decisions, failures = [], [], []
+
+              for region in regions:
+                  ec2 = boto3.client("ec2", region_name=region)
+                  try:
+                      pages = ec2.get_paginator("describe_instances").paginate(
+                          Filters=[
+                              {"Name": "tag:created-by", "Values": [OWNER_TAG]},
+                              {"Name": "instance-state-name", "Values": ["pending", "running"]},
+                          ]
+                      )
+                      for page in pages:
+                          for reservation in page["Reservations"]:
+                              for instance in reservation["Instances"]:
+                                  tags = {t["Key"]: t["Value"] for t in instance.get("Tags", [])}
+                                  runners.append({
+                                      "instance_id": instance["InstanceId"],
+                                      "region": region,
+                                      "age_minutes": (now - instance["LaunchTime"]).total_seconds() / 60,
+                                      "repository": tags.get("GitHub-Repository", "unknown"),
+                                      "run_id": tags.get("GitHub-Run-ID", "unknown"),
+                                      "run_attempt": tags.get("GitHub-Run-Attempt", "unknown"),
+                                  })
+                  except Exception as error:
+                      failures.append({"operation": "scan", "region": region, "error": str(error)})
+
+              for runner in runners:
+                  if runner["age_minutes"] < limit or (repository and runner["repository"] != repository):
+                      continue
+                  if not enabled:
+                      decisions.append({**runner, "decision": "would_terminate"})
+                      continue
+                  try:
+                      boto3.client("ec2", region_name=runner["region"]).terminate_instances(
+                          InstanceIds=[runner["instance_id"]]
+                      )
+                      decisions.append({**runner, "decision": "terminated"})
+                  except Exception as error:
+                      decisions.append({**runner, "decision": "termination_failed", "error": str(error)})
+                      failures.append({"operation": "terminate", **runner, "error": str(error)})
+
+              overdue = [r for r in runners if r["age_minutes"] >= alert_after]
+              boto3.client("cloudwatch").put_metric_data(
+                  Namespace=NAMESPACE,
+                  MetricData=[
+                      {"MetricName": "RunnerCount", "Value": len(runners), "Unit": "Count"},
+                      {"MetricName": "OverdueRunnerCount", "Value": len(overdue), "Unit": "Count"},
+                      {
+                          "MetricName": "TerminatedRunnerCount",
+                          "Value": sum(d["decision"] == "terminated" for d in decisions),
+                          "Unit": "Count",
+                      },
+                  ],
+              )
+              summary = {
+                  "scan_time": now.isoformat(),
+                  "terminate_after_minutes": limit,
+                  "termination_enabled": enabled,
+                  "required_repository": repository,
+                  "runners": runners,
+                  "decisions": decisions,
+                  "failures": failures,
+              }
+              print(json.dumps(summary, default=str, sort_keys=True))
+              if failures:
+                  # A raise counts as a Lambda error, which WatchdogErrorAlarm reports.
+                  raise RuntimeError(f"{len(failures)} watchdog failure(s), see the summary above")
+              return summary
+
+  WatchdogSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: nexus-gpu-runner-watchdog
+      Description: Run the nexus GPU runner watchdog every 15 minutes.
+      ScheduleExpression: rate(15 minutes)
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt WatchdogFunction.Arn
+          Id: WatchdogFunction
+
+  WatchdogInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref WatchdogFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt WatchdogSchedule.Arn
+
+  # Missing data breaches, so the alarm also fires when the watchdog stops reporting.
+  OverdueAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: nexus-gpu-runner-overdue
+      AlarmDescription: A tagged nexus GPU runner is at least 120 minutes old, or the watchdog stopped reporting.
+      Namespace: Nexus/GpuRunnerWatchdog
+      MetricName: OverdueRunnerCount
+      Statistic: Maximum
+      Period: 1800
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref AlertTopicArn]
+      OKActions: [!Ref AlertTopicArn]
+
+  WatchdogErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: nexus-gpu-runner-watchdog-errors
+      AlarmDescription: A nexus GPU runner watchdog run failed to scan or terminate.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref WatchdogFunction
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopicArn]
+      OKActions: [!Ref AlertTopicArn]
+
+Outputs:
+  RoleArn:
+    Value: !GetAtt WatchdogRole.Arn
+  FunctionName:
+    Value: !Ref WatchdogFunction

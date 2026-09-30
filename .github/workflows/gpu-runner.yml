@@ -26,6 +26,8 @@ name: gpu-runner
 # flights read a private S3 prefix. Its role must grant reads alone, and AWS_GPU_ROLE_ARN's role needs
 # iam:PassRole on it, an act of the AWS account's admin. They name
 # resources in an AWS account, so they are secrets and the runner masks them in the public logs.
+# The OIDC role grants ec2:CreateTags on RunInstances, since every box is tagged at launch. The
+# runner watchdog stack in scripts/ci/aws/ terminates a tagged box that outlives its run.
 # Var CI_APP_CLIENT_ID and secret CI_APP_PRIVATE_KEY, the GitHub App (repo permissions
 # Administration, Contents and Pull requests, each read and write) whose per-job tokens register
 # the self-hosted runner; var AWS_REGION_CANDIDATES (placement preference order — us-west-2 leads,
@@ -208,6 +210,15 @@ jobs:
             sudo usermod -aG docker ubuntu || true
             sudo systemctl enable docker || true
             sudo systemctl start docker || true
+          # The action sets these on the RunInstances call itself, so a box is tagged from launch,
+          # even when a cancel lands before this job publishes the instance id. created-by is the
+          # ownership tag the runner watchdog (scripts/ci/aws/) scans for and may terminate.
+          aws-resource-tags: >-
+            [{"Key": "Name", "Value": "ec2-github-runner"},
+             {"Key": "created-by", "Value": "nexus-gpu-ci"},
+             {"Key": "GitHub-Repository", "Value": "${{ github.repository }}"},
+             {"Key": "GitHub-Run-ID", "Value": "${{ github.run_id }}"},
+             {"Key": "GitHub-Run-Attempt", "Value": "${{ github.run_attempt }}"}]
 
   run:
     needs: start-runner
@@ -216,6 +227,9 @@ jobs:
     # box started and stopped with no work done while the callers' contexts reported success.
     if: ${{ !cancelled() && needs.start-runner.result == 'success' }}
     runs-on: ${{ needs.start-runner.outputs.label }} # the ephemeral GPU box
+    # Below the runner watchdog's 90-min age limit, so the watchdog never reclaims a box that is
+    # still working. The longest green run job was 19 min, a cesium cell of the benchmark matrix.
+    timeout-minutes: 45
     permissions: { contents: read }
     steps:
       # The box's runner service exports no $HOME; anything running `git config --global`
@@ -384,24 +398,30 @@ jobs:
   stop-runner:
     needs: [start-runner, run]
     runs-on: ubuntu-latest
-    # Tear the box down even if the command failed — but only if there IS a box. When the spend
-    # gate skips start-runner there is no instance id, and an unconditional teardown fails with
-    # "The 'ec2-instance-id' input is required for the 'stop' mode", burying the real reason.
-    if: ${{ always() && needs.start-runner.result == 'success' }}
+    # Tear the box down whenever start-runner ran: failed or cancelled, it may have launched one.
+    # Only a spend-gate skip starts nothing. Each step needs the instance id, since the stop fails
+    # without it with "The 'ec2-instance-id' input is required for the 'stop' mode", burying the
+    # real reason. The action publishes the id right after RunInstances, so a cancel while the box
+    # boots still leaves the id here. The runner watchdog in scripts/ci/aws/ reclaims a box by its
+    # tags when no id was published or this job did not stop it.
+    if: ${{ always() && needs.start-runner.result != 'skipped' }}
     permissions: { id-token: write, contents: read }
     steps:
-      - uses: aws-actions/configure-aws-credentials@v4
+      - if: ${{ needs.start-runner.outputs.ec2-instance-id != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           # The instance may have launched in any discovered region — stop it where it lives.
           aws-region: ${{ needs.start-runner.outputs.region || env.AWS_REGION }}
           role-to-assume: ${{ secrets.AWS_GPU_ROLE_ARN }}
       - id: app-token
+        if: ${{ needs.start-runner.outputs.ec2-instance-id != '' }}
         uses: actions/create-github-app-token@v3
         with:
           client-id: ${{ vars.CI_APP_CLIENT_ID }}
           private-key: ${{ secrets.CI_APP_PRIVATE_KEY }}
           permission-administration: write # removes the runner registration
-      - uses: machulav/ec2-github-runner@v2
+      - if: ${{ needs.start-runner.outputs.ec2-instance-id != '' }}
+        uses: machulav/ec2-github-runner@v2
         with:
           mode: stop
           github-token: ${{ steps.app-token.outputs.token }}
