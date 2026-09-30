@@ -5,8 +5,8 @@ A 50 m square of grassy, rocky ground. A two-lane road, its tarmac raised over t
 along x down a smooth 3 m drop, turns 90 degrees through a 10 m radius curve and runs along y; the
 power line follows it on the inside of the turn, with a corner pole at the turn. Tall firs on their
 roots, ferns, stumps, fallen logs, dry branches and rocks stand clear of the road, the line and the
-square's edge. The span from the start's pole up the drop to the first pole, 20 m, is straight: the
-inspection flies it.
+square's edge. The inspection takes off from the road beside the line's end pole on the low ground,
+flies the whole line round the corner and up the drop to its other end on the high ground.
 
 The poles, plants, rocks, ground textures and sky are Poly Haven's, all CC0:
 ``modular_electricity_poles``, ``fir_tree_01``, ``pine_roots``, ``fern_02``, ``tree_stump_01``,
@@ -20,9 +20,10 @@ sky-only sunset High Dynamic Range Image (HDRI): the sunset and its clouds are t
 "puresky" image holds no captured ground, so it can't stand in for the scene's own.
 
 Everything renders from Poly Haven's meshes, while the physics collides with invisible shapes: a
-capsule along each pole, crossarm and wire span, and boxes under the drop and the high ground. The
-scene adds about a hundred shapes to the Newton model, not the meshes' millions of triangles. The
-plants and rocks carry no colliders. The low ground is the physics' own plane at z = 0.
+capsule along each pole, crossarm and wire span, boxes under the drop and the high ground, and boxes
+along the road whose tops are the tarmac. The scene adds about a hundred shapes to the Newton model,
+not the meshes' millions of triangles. The plants and rocks carry no colliders. The physics' own
+plane is the low ground's collider, 6 cm over the grass, level with the tarmac at the start.
 
     uv run python scripts/assets/author_powerline_scene.py /tmp/powerline.usdz
 then prepare it for upload, which prints the sha, the upload key, and the registry snippet:
@@ -60,6 +61,7 @@ ROAD_TURN_R = 10.0
 ROAD_HALF_WIDTH = 3.5
 ROAD_THICK = 0.06  # the tarmac's top over the ground [m]
 ROAD_SKIRT = 0.05  # its sides reach this far below the ground, so no gap shows on a slope [m]
+ROAD_COLLIDER = 2.0  # the length of each box the tarmac collides through [m]
 EDGE_INSET, LINE_WIDTH = 0.3, 0.15  # road markings [m]
 DASH, GAP = 3.0, 6.0
 
@@ -67,10 +69,13 @@ FLOOR = ("aerial_grass_rock", 15.0)  # the ground everywhere: grass over rocky s
 
 # The line: its poles in order, on the inside of the road's turn.
 POLES = ((-22.0, 0.0), (-2.0, 0.0), (10.0, 0.0), (10.0, 12.0), (10.0, 24.0))
-START_XY = (-2.0, -2.0)  # beside the second pole, on the low ground; the registry's ``start``
-LANDING_XY = (-22.0, -2.0)  # beside the first pole, on the high ground, where the inspection ends
-# The physics always adds its own plane at world z = 0, where the registry ``start`` puts START_XY,
-# and no ground can lie below it: so START_XY stands on the low ground, and the inspection climbs.
+# Open ground kept free of props: beside the pole at the foot of the drop, and beside the line's
+# far end pole on the high ground, where the inspection lands. The registry ``start`` is on the
+# tarmac beside the line's other end pole, which the props keep clear of already. The physics adds
+# its own plane at world z = 0, where ``start`` goes, and a vehicle can't go below it, so the start
+# stands on the low ground and the inspection climbs. On the tarmac top, the start leaves the
+# plane 6 cm over the grass, which nothing lands on.
+CLEAR_SPOTS = ((-2.0, -2.0), (-22.0, -2.0))
 
 # preset_02 in the pole asset is the assembled line pole, its axis at asset (-4.5, 0), its crossarms
 # along asset x and its insulator strings along asset y.
@@ -400,6 +405,34 @@ def _ground_colliders(stage, root: str) -> None:
         _box(stage, f"{root}/drop_{k}", centre, (length, 2.0 * HALF, thick), math.degrees(math.atan2(-dz, dx)))
 
 
+def _road_colliders(stage, root: str, centre) -> None:
+    """Boxes whose top faces are the tarmac, chord by chord along the road, so a vehicle stands on
+    the road surface rather than on the ground under it.
+    """
+    from pxr import Gf, UsdGeom, UsdPhysics
+
+    thick = 0.3
+    step = max(1, round(ROAD_COLLIDER / math.dist(centre[0], centre[1])))
+    marks = [*centre[::step], centre[-1]] if (len(centre) - 1) % step else centre[::step]
+    for k, (a, b) in enumerate(itertools.pairwise(marks)):
+        top_a = Gf.Vec3d(a[0], a[1], height(*a) + ROAD_THICK)
+        top_b = Gf.Vec3d(b[0], b[1], height(*b) + ROAD_THICK)
+        along = (top_b - top_a).GetNormalized()
+        across = Gf.Cross(Gf.Vec3d(0.0, 0.0, 1.0), along).GetNormalized()
+        up = Gf.Cross(along, across)
+        frame = Gf.Matrix3d(*along, *across, *up)  # rows: the box's x, y and z axes in the world
+        centre_pt = (top_a + top_b) / 2.0 - up * (thick / 2.0)
+        box = UsdGeom.Cube.Define(stage, f"{root}/road_{k}")
+        box.CreateSizeAttr(1.0)
+        xf = UsdGeom.Xformable(box)
+        xf.AddTranslateOp().Set(centre_pt)
+        xf.AddOrientOp().Set(Gf.Quatf(frame.ExtractRotation().GetQuat()))
+        # A little longer than its chord, so neighbouring boxes overlap and leave no seam in a turn.
+        xf.AddScaleOp().Set(Gf.Vec3f((top_b - top_a).GetLength() + 0.2, 2.0 * ROAD_HALF_WIDTH, thick))
+        box.CreateVisibilityAttr(UsdGeom.Tokens.invisible)
+        UsdPhysics.CollisionAPI.Apply(box.GetPrim())
+
+
 def _place(
     stage, path: str, asset: Path, x: float, y: float, z: float, turn: float, scale: float, *, instanceable: bool
 ):
@@ -635,6 +668,7 @@ def author(out_path: str) -> str:
                     0.02,
                 )
     _ground_colliders(stage, "/World/Colliders")
+    _road_colliders(stage, "/World/Colliders", centre)
 
     # Plants and rocks at seeded random spots, each clear of the road, the line,
     # the start and landing spots and the square's edge; neighbours can overlap a little, as in a
@@ -661,7 +695,7 @@ def author(out_path: str) -> str:
             if (
                 _distance_to(centre, x, y) < ROAD_HALF_WIDTH + r + CLEAR
                 or _distance_to(line, x, y) < r + CLEAR
-                or min(math.dist((x, y), START_XY), math.dist((x, y), LANDING_XY)) < r + CLEAR
+                or min(math.dist((x, y), spot) for spot in CLEAR_SPOTS) < r + CLEAR
                 or any(math.hypot(x - px, y - py) < (1.0 - OVERLAP) * (r + pr) for px, py, pr in placed)
             ):
                 continue

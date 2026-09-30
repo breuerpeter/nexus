@@ -59,8 +59,8 @@ a scene:
 - `start: [x, y, z]`: the scene-frame point the runtime moves to the world origin, so the
   drone, placed at the origin on the z=0 physics ground, starts on that surface.
   `scripts/assets/spawn_site.py` suggests one. Tweaking it takes a registry edit, no reconversion.
-  The physics ground is an endless plane at the start's height, so no ground in the scene can lie
-  below the start: a scene with a slope starts at its foot.
+  The physics ground is an endless plane at the start's height, so no ground a vehicle touches can
+  lie below the start: a scene with a slope starts at its foot.
 - `geodetic_origin: { lat, lon[, alt] }`: where the **world origin**, which is the start point,
   sits on Earth. It initializes the Hardware In The Loop (HIL) Global Positioning System (GPS) and
   anchors a Cesium globe. `alt` is the WGS84 *ellipsoidal* height of the start surface. It's
