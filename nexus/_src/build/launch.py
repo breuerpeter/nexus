@@ -25,7 +25,7 @@ from __future__ import annotations
 import os
 import pathlib
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 
 from nexus._src.config import LaunchConfig, Px4Spec, Registry, ResolvedLaunch, resolve
 from nexus._src.core import Orchestrator
@@ -140,7 +140,7 @@ def build_from_launch(
     stream: bool = False,
     preroll_timeout: float = 30.0,
     components: ComponentRegistry | None = None,
-    peers: Mapping[str, type] | None = None,
+    peers: Mapping[str, Callable] | None = None,
 ) -> Orchestrator:
     """Resolve *launch* and assemble the core Orchestrator around the controller the vehicle declares.
 
@@ -148,8 +148,8 @@ def build_from_launch(
     self-assembles from ``resolve_scenario`` plus its own components plus ``Sim.from_orchestrator``.
     ``stream`` publishes each RTX camera's feed over Real Time Streaming Protocol (RTSP).
     ``components`` resolves the vehicle's schemas to classes; ``None`` takes the default registry.
-    ``peers`` maps a peer's name, ``px4_sitl`` or ``kit``, to the class the build starts for it, over
-    :func:`shipped_peers`: a test sends a peer to its fake here.
+    ``peers`` maps a peer's name, ``px4_sitl`` or ``kit``, to the class the build starts for it, or a
+    callable that builds one, over :func:`shipped_peers`: a test sends a peer to its fake here.
 
     Raises:
         ValueError: The vehicle declares no controller, two, one off its root prim, one other than
@@ -217,7 +217,7 @@ def build_from_launch(
         raise
 
 
-def _start_px4(cls: type, resolved: ResolvedLaunch, instance: int, airframe: str):
+def _start_px4(cls: Callable, resolved: ResolvedLaunch, instance: int, airframe: str):
     """Start the PX4 SITL peer for this run from ``cls``: the catalog whose pin names the PX4 tree,
     the vehicle's airframe, the run's instance, and a container name and console log of this run's
     own. The name carries the process and the instance, so two runs in one process on two instances
