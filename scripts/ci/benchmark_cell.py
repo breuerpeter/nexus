@@ -37,12 +37,22 @@ WP_ARRIVE_M = 2.0  # 3D arrival radius per waypoint [m]
 WP_TIMEOUT_S = 90.0  # per-waypoint budget [sim s]
 
 # The inspection of the ``powerline`` scene, in the same world axes, from its registry ``start``
-# beside a pole: climb to 2 m over the line's top conductor, fly straight over the line 20 m up the
-# drop at 2 m/s, and land beside the far pole on the high ground. The line runs along -x at y = 2;
-# the near pole's base is at z = 0 and the far one's at z = 3, the top conductor 5.69 m over each.
-INSPECTION_START = (0.0, 2.0, 7.69)
-INSPECTION_END = (-20.0, 2.0, 10.69)
-INSPECTION_LAND = (-20.0, 0.0)
+# on the road beside the line's end pole: climb to INSPECTION_CLEAR over the line's top conductor, move over the
+# end pole, fly the whole line pole by pole, round the corner and up the 3 m drop to the far end,
+# move off to the side over the landing spot, and land on the high ground. A waypoint over each
+# pole where the line turns or changes slope keeps the height over the conductor. The top
+# conductor runs 5.69 m over each pole's base, and home is the tarmac, 0.06 m over the low poles'.
+INSPECTION_CLEAR = 1.5  # [m] over the top conductor
+_TOP = 5.69 + INSPECTION_CLEAR - 0.06
+INSPECTION_TAKEOFF = _TOP
+INSPECTION_WAYPOINTS = (
+    (-4.5, 0.0, _TOP),  # over the end pole, base at z = 0
+    (-4.5, -24.0, _TOP),  # over the corner pole, base at z = 0
+    (-16.5, -24.0, _TOP),  # over the pole at the foot of the drop, base at z = 0
+    (-36.5, -24.0, 3.0 + _TOP),  # over the far end pole, base at z = 3
+    (-36.5, -26.0, 3.0 + _TOP),  # off to the side, over the landing spot
+)
+INSPECTION_LAND = (-36.5, -26.0)
 INSPECTION_SPEED = 2.0  # [m/s]
 # Where the world origin sits on the globe for the inspection: the mission's items are geodetic, so
 # the cell pins the origin rather than read it back from the run.
@@ -93,10 +103,9 @@ def _inspection_items() -> list[MissionItem]:
 
     nan = float("nan")
     steps = [
-        (NAV_TAKEOFF, (0.0, 0.0, 0.0, nan), fix(0.0, 0.0), INSPECTION_START[2]),
+        (NAV_TAKEOFF, (0.0, 0.0, 0.0, nan), fix(0.0, 0.0), INSPECTION_TAKEOFF),
         (DO_CHANGE_SPEED, (1.0, INSPECTION_SPEED, -1.0, 0.0), None, 0.0),
-        (NAV_WAYPOINT, (0.0, 0.0, 0.0, nan), fix(*INSPECTION_START[:2]), INSPECTION_START[2]),
-        (NAV_WAYPOINT, (0.0, 0.0, 0.0, nan), fix(*INSPECTION_END[:2]), INSPECTION_END[2]),
+        *((NAV_WAYPOINT, (0.0, 0.0, 0.0, nan), fix(x, y), z) for x, y, z in INSPECTION_WAYPOINTS),
         (NAV_LAND, (0.0, 0.0, 0.0, nan), fix(*INSPECTION_LAND), 0.0),
     ]
     return [
