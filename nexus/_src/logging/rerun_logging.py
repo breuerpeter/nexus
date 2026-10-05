@@ -245,12 +245,13 @@ class Logger:
 
     **serve or file, never both**: a live gRPC server and a *complete* ``.rrd`` can't both come out
     of one process, because rerun's serve and file sinks are mutually exclusive. The public surface is
-    one knob, ``viewer``: Output / the command-line ``--viewer``/``--no-viewer`` / ``Sim(viewer=)``.
+    two exclusive flags, both off: ``Output.view``/``Output.log``, the command-line ``--view``/``--log``,
+    ``Sim(view=, log=)``. With neither set, the run builds no Logger.
 
-    * **viewer**, ``serve=True``, the default: serve the recording live on :9876 for a native
+    * **view**, ``serve=True``: serve the recording live on :9876 for a native
       viewer, ``rerun --connect rerun+http://127.0.0.1:9876/proxy``. No file gets written;
       to keep one, save it from the connected viewer.
-    * **not viewer**, ``serve=False``: write the full ``.rrd`` to disk.
+    * **log**, ``serve=False``: write the full ``.rrd`` to disk.
 
     Every producer writes through this one Logger, in-process on this seam, so both modes
     carry the same content.
