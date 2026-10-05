@@ -1,9 +1,9 @@
 name: gpu-pytest
 
 # The full pytest suite on the GPU runner — same suite as cpu-pytest, but on warp-cuda + MuJoCo-GPU,
-# so it exercises the CUDA paths and runs tests/runtimes/test_capture.py (which auto-skips on CPU).
+# so it exercises the CUDA paths and runs tests/vehicle/sensors/test_capture.py (which auto-skips on CPU).
 # The command fetches and builds the PX4 tree the controller pins first, the way a user's first run
-# does, cached per pin with the px4-sitl image as in gpu-examples, so tests/controllers/test_px4_gcs_link.py
+# does, cached per pin with the px4-sitl image as in gpu-examples, so tests/peers/px4_sitl/test_px4_gcs_link.py
 # flies a real PX4 SITL here; that module skips wherever no PX4 tree is on the box, cpu-pytest included. The 25 slowest
 # tests print at the end: whether the leg's minutes are a few GPU flights or many small tests
 # decides whether it can fan out like gpu-examples.

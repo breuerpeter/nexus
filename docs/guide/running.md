@@ -36,8 +36,8 @@ PX4 sends a heartbeat.
 uv run nexus run --vehicle astro_max_base --scene empty
 ```
 
-Builds PX4 SITL, starts the PX4 container, then the physics sim and the Rerun server on
-gRPC :9876, and stops the container again on exit. The `astro_max_base` vehicle's
+Builds PX4 SITL, starts the PX4 container, then the physics sim, and stops the container again
+on exit. Add `--view` to serve the Rerun recording on gRPC :9876, see [Observability in Rerun](#observability-in-rerun). The `astro_max_base` vehicle's
 Universal Scene Description (USD) file declares PX4 and its airframe. The PX4 console is a file, next to the run's recording:
 `~/.cache/nexus/logs/px4-*.log`.
 
@@ -48,7 +48,7 @@ uv run rerun --connect
 ```
 
 Attaches as a *client* to nexus's recording. `--connect` defaults to
-`rerun+http://127.0.0.1:9876/proxy`. Start it after the sim, which must own
+`rerun+http://127.0.0.1:9876/proxy`. Start it after a sim run with `--view`, which must own
 :9876 first. `uv run` launches the viewer bundled with the framework, so its
 version matches the logger.
 
@@ -208,15 +208,19 @@ Everything lands in **one** recording, app ID `nexus` and recording ID
 - **test and driver stages**: a driver in the sim's process logs each stage with `na.logger.info("…")`,
   which writes to the console and, when recording, the `logs/sim` panel.
 
-**Serve or file, never both: one knob, `--viewer`.** A run can't produce both a live gRPC server
-and a *complete* `.rrd` from one process, because rerun's serve and file sinks are mutually exclusive, so:
+**Serve or file, never both: two flags, `--view` and `--log`, both off.** A run can't produce both
+a live gRPC server and a *complete* `.rrd` from one process, because rerun's serve and file sinks are
+mutually exclusive, so:
 
-- **`--viewer`**, the default: serve the recording live on `:9876` and connect a viewer with
-  `uv run rerun --connect rerun+http://127.0.0.1:9876/proxy`. It writes no file, so
-  **save it from the viewer** to keep an `.rrd`.
-- **`--no-viewer`** on the command line, or [`Sim(viewer=False)`][nexus.Sim]: write the full
-  `.rrd` to disk. `uv run nexus run` logs its path, and a driver reads it from `sim.artifacts()`.
-  Use it for CI, or when something else holds `:9876`.
+- **`--view`** on the command line, or [`Sim(view=True)`][nexus.Sim]: serve the recording live on
+  `:9876` and connect a viewer with `uv run rerun --connect rerun+http://127.0.0.1:9876/proxy`.
+  It writes no file, so **save it from the viewer** to keep an `.rrd`.
+- **`--log`** on the command line, or [`Sim(log=True)`][nexus.Sim]: write the full `.rrd` to disk.
+  `uv run nexus run` logs its path, and a driver reads it from `sim.artifacts()`. Use it for CI,
+  or when something else holds `:9876`.
+
+The tool refuses `--view` and `--log` together, and `Sim` raises `ValueError`. A run with neither
+records nothing: it serves nothing and writes no `.rrd`, so it runs at full headless speed.
 
 Both modes carry the same content, PX4 included: there is no second recording and no merge step.
 
