@@ -484,6 +484,76 @@ def test_a_run_with_no_layer_builds_and_records_as_today(tmp_path, monkeypatch, 
     )
 
 
+def _shipped_px4_run(monkeypatch, tmp_path, device: str):
+    """Build `astro_max_base` in `empty` on the PX4 fake, and return the loop and the run's receipt as JSON."""
+    import nexus._src.build.launch as L
+
+    monkeypatch.delenv("NEXUS_ASSET_CACHE", raising=False)  # the shipped vehicle comes from the checkout's own cache
+    monkeypatch.chdir(tmp_path)  # no project catalog: only the bundled one
+    launch = LaunchConfig.from_dict({"vehicle": "astro_max_base", "scene": "empty", "runtime": {"device": device}})
+    loop = L.build_from_launch(launch, preroll_timeout=10.0, peers={"px4_sitl": Px4Fake})
+    return loop, L.resolve_to_vehicle_builder(launch)[1].tested_config.model_dump(mode="json")
+
+
+def test_a_px4_runs_receipt_carries_no_substeps_determinism_or_sensors(tmp_path, monkeypatch, warp_cpu):
+    """A PX4 run's receipt carries no `substeps`, no `determinism` and no `sensors`.
+
+    Given a launch of `astro_max_base` in `empty` on the PX4 fake, when the run builds and a caller reads
+    its receipt as JSON, then `runtime` holds exactly `device`, `seed`, `dt`, `max_steps`, `rtf` and
+    `solver`, and the receipt has no `sensors` key.
+    """
+    loop, receipt = _shipped_px4_run(monkeypatch, tmp_path, "cpu")
+    loop.close()
+
+    assert (sorted(receipt["runtime"]), "sensors" in receipt) == (
+        ["device", "dt", "max_steps", "rtf", "seed", "solver"],
+        False,
+    )
+
+
+def test_the_receipt_of_a_run_on_auto_records_the_device_the_run_picked(tmp_path, monkeypatch, warp_cpu):
+    """The receipt of a run on `auto` records the device the run picked, never `auto`.
+
+    Given a launch on `runtime.device: auto` on the PX4 fake, when the run builds, then its receipt's
+    `runtime.device` is `cuda` on a box with CUDA and `cpu` on a box without, the same kind as the Warp
+    device the loop runs on.
+    """
+    import warp as wp
+
+    loop, receipt = _shipped_px4_run(monkeypatch, tmp_path, "auto")
+    ran_on = "cuda" if loop.physics.model.device.is_cuda else "cpu"
+    loop.close()
+
+    box = "cuda" if wp.is_cuda_available() else "cpu"
+    assert (receipt["runtime"]["device"], ran_on) == (box, box)
+
+
+def test_a_run_on_an_explicit_cpu_runs_on_the_cpu_and_records_cpu(tmp_path, monkeypatch, warp_cpu):
+    """A run on an explicit `cpu` still runs on the CPU and records `cpu`.
+
+    Given a launch on `runtime.device: cpu` on the PX4 fake, on a box with or without CUDA, when the run
+    builds, then the loop's Warp device is `cpu` and the receipt's `runtime.device` is `cpu`.
+    """
+    loop, receipt = _shipped_px4_run(monkeypatch, tmp_path, "cpu")
+    ran_on = str(loop.physics.model.device)
+    loop.close()
+
+    assert (ran_on, receipt["runtime"]["device"]) == ("cpu", "cpu")
+
+
+def test_a_px4_run_steps_the_physics_once_per_control_tick(tmp_path, monkeypatch, warp_cpu):
+    """A PX4 run still steps the physics once per control tick.
+
+    Given a launch of `astro_max_base` in `empty` on the PX4 fake, when the run builds, then its loop
+    steps the physics once per control tick.
+    """
+    loop, _ = _shipped_px4_run(monkeypatch, tmp_path, "cpu")
+    per_tick = loop.physics_substeps
+    loop.close()
+
+    assert per_tick == 1
+
+
 def test_a_layer_path_that_does_not_exist_fails_before_any_peer_starts(tmp_path, daemon):
     """A layer path that doesn't exist fails before any peer starts.
 
