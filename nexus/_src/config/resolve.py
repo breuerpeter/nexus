@@ -81,15 +81,6 @@ def _stack(layer: pathlib.Path, layer_sha: str, vehicle: pathlib.Path, vehicle_s
     return out
 
 
-def _picked_device(device: str) -> str:
-    """The device a run on *device* picks: ``cpu`` for an explicit ``cpu`` or a machine with no CUDA
-    device, else ``cuda``.
-    """
-    import warp as wp
-
-    return "cpu" if device == "cpu" or not wp.is_cuda_available() else "cuda"
-
-
 def resolve(
     launch: LaunchConfig,
     registry: Registry | None = None,
@@ -163,8 +154,7 @@ def resolve(
         scene_usd=scene.usd,
         scene_start=scene.start,
         geodetic_origin=geodetic_origin,
-        # The receipt names the device the run picks, so it never says ``auto``.
-        runtime=launch.runtime.model_copy(update={"device": _picked_device(launch.runtime.device)}),
+        runtime=launch.runtime,
     )
     return ResolvedLaunch(
         tested_config=tested,

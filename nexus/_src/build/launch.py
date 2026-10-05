@@ -29,6 +29,8 @@ import time
 from collections.abc import Callable, Mapping
 from typing import IO
 
+import warp as wp
+
 from nexus._src.config import LaunchConfig, Px4Spec, Registry, ResolvedLaunch, Runtime, resolve
 from nexus._src.core import Orchestrator
 from nexus._src.core.registry import ComponentRegistry
@@ -62,9 +64,15 @@ def resolve_to_vehicle_builder(
 ) -> tuple[USDBuilder, ResolvedLaunch]:
     """Resolve *launch*, fetching and sha-verifying assets, and wrap the vehicle USD in a USDBuilder.
 
-    The receipt records the airframe of the PX4 schema the vehicle declares, if it declares one.
+    The receipt records the airframe of the PX4 schema the vehicle declares, if it declares one, and
+    the device the run picks: ``cpu`` for an explicit ``cpu`` or a machine with no CUDA device, else
+    ``cuda``. The pick sits here, not in ``resolve``, so a caller that only resolves an asset path
+    never starts Warp.
     """
     resolved = resolve(launch, registry, cache_dir=cache_dir)
+    rt = resolved.tested_config.runtime
+    picked = "cpu" if rt.device == "cpu" or not wp.is_cuda_available() else "cuda"
+    resolved.tested_config.runtime = rt.model_copy(update={"device": picked})
     if resolved.vehicle_usd_path is not None:
         airframes = [
             kw["airframe"] for _, schema, kw in read_declarations(resolved.vehicle_usd_path) if schema == PX4_SCHEMA
