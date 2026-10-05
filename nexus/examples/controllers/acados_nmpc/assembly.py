@@ -8,7 +8,7 @@ planner lives with the **operator**: this attaches the planner factory to the or
 ``reference_planner`` so ``Sim`` hands it to the ``InProcessOperator``, which plans the whole-path
 ``ReferenceTrajectory`` and feeds ``accept_setpoint``. The NMPC's per-tick Sequential Quadratic
 Programming (SQP) Real-Time Iteration (RTI) solve runs at the host seam; everything else captures,
-the captured-host-exchange strategy. acados needs provisioning first: ``scripts/setup_acados.sh``.
+the captured-host-exchange strategy. acados needs provisioning first: ``python -m nexus.examples acados_nmpc --provision``.
 """
 
 from __future__ import annotations

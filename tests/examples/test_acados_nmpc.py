@@ -1,4 +1,4 @@
-"""The `acados_nmpc` example on a machine that cannot fly it: it says what is missing and what to run."""
+"""The `acados_nmpc` example on a machine that lacks acados: it names each missing part and its command."""
 
 from __future__ import annotations
 

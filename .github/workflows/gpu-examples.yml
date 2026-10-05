@@ -8,7 +8,7 @@ name: gpu-examples
 # red flight's .rrd rides the artifact. A push or a dispatch flies one box per example, `gpu`,
 # through a matrix over gpu-runner.yml, with the rtf gates: a measured flight cannot share a GPU,
 # so a speed regression is caught on the merge commit. Each box provisions what its examples need,
-# in-command: acados via scripts/setup_acados.sh (cached) — no --skip-missing, so a broken
+# in-command: acados via the example's --provision (cached) — no --skip-missing, so a broken
 # provision fails loudly. PX4 provisions by no hand: evaluate_examples.py fetches the PX4 tree the
 # controller pins and builds it before the examples fly, the way a user's first run does, and the
 # box caches that tree and the px4-sitl image under the pin (scripts/ci/px4_image_cache.sh saves
@@ -79,10 +79,12 @@ jobs:
           - example: acados_nmpc
             cache-path: ~/.cache/nexus/acados
             cache-name: acados
-            cache-files: scripts/setup_acados.sh
+            cache-files: |
+              nexus/examples/controllers/acados_nmpc/acados.ref
+              nexus/examples/controllers/acados_nmpc/provision.py
             setup: >-
               (command -v cmake >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq cmake)) &&
-              bash scripts/setup_acados.sh
+              uv run --extra acados -m nexus.examples acados_nmpc --provision
           - example: px4_sitl
             cache-path: |
               ~/.cache/nexus/px4
@@ -128,12 +130,13 @@ jobs:
         nexus/_src/peers/px4_sitl/px4.ref
         nexus/_src/peers/px4_sitl/checkout.py
         nexus/_src/peers/px4_sitl/image/Dockerfile
-        scripts/setup_acados.sh
+        nexus/examples/controllers/acados_nmpc/acados.ref
+        nexus/examples/controllers/acados_nmpc/provision.py
       command: >-
         (command -v cmake >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq cmake)) &&
         bash scripts/ci/px4_image_cache.sh load &&
-        bash scripts/setup_acados.sh &&
         uv sync --group ci --extra examples --extra acados --extra policy &&
+        uv run --no-sync -m nexus.examples acados_nmpc --provision &&
         uv run --no-sync python scripts/ci/evaluate_examples.py --shared &&
         bash scripts/ci/px4_image_cache.sh save
       artifact-name: examples-eval

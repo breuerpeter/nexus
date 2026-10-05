@@ -401,7 +401,7 @@ def test_on_main_every_examples_recording_rides_the_artifact(tmp_path, monkeypat
 
 
 def test_with_skip_missing_the_harness_skips_an_example_whose_acados_is_not_provisioned(tmp_path, monkeypatch, capsys):
-    """The harness still skips or fails the example when acados is not provisioned: given
+    """The harness still skips or fails the example when acados isn't provisioned: given
     `ACADOS_SOURCE_DIR` set to an empty directory, when `evaluate_examples.py --only acados_nmpc` runs
     with `--skip-missing`, then it skips the example and exits 0.
     """
@@ -415,7 +415,7 @@ def test_with_skip_missing_the_harness_skips_an_example_whose_acados_is_not_prov
 def test_without_skip_missing_the_harness_fails_an_example_whose_acados_is_not_provisioned(
     tmp_path, monkeypatch, capsys
 ):
-    """The harness still skips or fails the example when acados is not provisioned: given
+    """The harness still skips or fails the example when acados isn't provisioned: given
     `ACADOS_SOURCE_DIR` set to an empty directory, when `evaluate_examples.py --only acados_nmpc` runs
     without `--skip-missing`, then it exits non-zero and names the provisioning.
     """

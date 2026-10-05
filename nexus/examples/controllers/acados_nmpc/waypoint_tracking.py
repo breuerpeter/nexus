@@ -16,13 +16,18 @@ nose-first yaw: N=20 shooting nodes, HPIPM partial
 condensing, SQP Real Time Iteration (RTI) re-solved every control tick. The ruckig ``FlatnessReference``
 remains as the jerk-limited fallback planner.
 
-acados is **not** a plain pip dependency: it code-generates and compiles a C solver. Provision it once:
+acados is **not** a plain pip dependency: it's a C library this machine compiles, and it generates and
+compiles a C solver. Provision it once, then fly:
 
-    bash scripts/setup_acados.sh
+    uv run --extra acados -m nexus.examples acados_nmpc --provision   # fetches + builds acados
     uv run --extra acados -m nexus.examples acados_nmpc    # flies + asserts + writes the .rrd
 
-Needs a CUDA device, for the Newton sim, and a C compiler, for acados codegen. The first run compiles the
-generated solver, taking a few seconds; later runs reuse it.
+From an installed package the same two commands are ``python -m nexus.examples acados_nmpc``, with and
+without ``--provision``, after ``pip install 'nexus-sim[acados]'``. See :mod:`provision` for what the
+provisioning builds and where.
+
+Needs a CUDA device, for the Newton sim, and CMake and a C compiler, for acados and its codegen. The first
+flight compiles the generated solver, taking a few seconds; later flights reuse it.
 """
 
 from __future__ import annotations
@@ -30,13 +35,22 @@ from __future__ import annotations
 import os
 import sys
 
-# Self-configure acados to the location scripts/setup_acados.sh installs to, overridable via
-# ACADOS_SOURCE_DIR; the single default lives in examples._external. libacados.so dynamically loads
-# libhpipm.so / libblasfeo.so from the same lib dir, and the dynamic loader reads LD_LIBRARY_PATH only
-# at process start, so setting it via os.environ here isn't enough; the script re-execs once with it set,
-# a no-op if the caller already exported it.
-from nexus.examples._external import acados_dir
+# First, before the example builds anything: --provision builds acados and ends, and a machine that lacks the
+# acados extra or the acados build gets one message that names what to run.
+from nexus.examples.controllers.acados_nmpc.provision import acados_dir, provision, require
 
+if "--provision" in sys.argv[1:]:
+    provision()
+    sys.exit(0)
+try:
+    require()
+except RuntimeError as missing:
+    sys.exit(str(missing))
+
+# Self-configure acados to the tree the provisioning builds, overridable via ACADOS_SOURCE_DIR.
+# libacados.so dynamically loads libhpipm.so / libblasfeo.so from the same lib dir, and the dynamic
+# loader reads LD_LIBRARY_PATH only at process start, so setting it via os.environ here isn't enough;
+# the script re-execs once with it set, a no-op if the caller already exported it.
 ACADOS_SOURCE_DIR = os.environ.setdefault("ACADOS_SOURCE_DIR", str(acados_dir()))
 _acados_lib = os.path.join(ACADOS_SOURCE_DIR, "lib")
 if _acados_lib not in os.environ.get("LD_LIBRARY_PATH", "").split(os.pathsep):
