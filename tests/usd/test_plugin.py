@@ -91,7 +91,7 @@ def test_the_conformance_fixture_applies_every_schema_the_plugin_defines():
     stage = Usd.Stage.Open(str(FIXTURE))
     applied = {name for prim in stage.Traverse() for name in prim.GetAppliedSchemas()}
     sensors = {f"Nexus{name}API" for name in ("Imu", "Mag", "Baro", "Gps", "Camera", "ThermalCamera", "Lidar")}
-    assert applied == set(schema_names()) == sensors | {"NexusPx4API", "NexusPx4SitlAPI"}
+    assert applied == set(schema_names()) == sensors | {"NexusPropellerAPI", "NexusPx4API", "NexusPx4SitlAPI"}
 
 
 def test_the_script_beside_the_fixture_reproduces_it(tmp_path):

@@ -83,7 +83,7 @@ def build_policy_orchestrator(
     # thrust map; split across the seam: the controller runs the CTBR mixer, rate loop → B⁻¹, the actuator
     # runs the single-body motor model, per-rotor cmd → lag → forward B → wrench. Both derive from this one
     # RotorMixer so they can't drift.
-    mixer = build_rotor_mixer_from_model(physics.model, act, physics.state0.body_q.numpy())
+    mixer = build_rotor_mixer_from_model(physics.model, builder.rotor_joints(), act, physics.state0.body_q.numpy())
     actuator = RigidBodyRotors(
         mixer=mixer, dt=dt, thrust_sign=thrust_sign, motor_tau=act["tau"]
     )  # τ from the vehicle USD, the single authority

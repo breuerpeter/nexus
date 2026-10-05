@@ -13,7 +13,7 @@ import nexus  # noqa: F401  # registers the nexus schema plugin
 
 
 def author(out: Path) -> None:
-    """Write the fixture to `out`: PX4 and its Software In The Loop (SITL) peer on the default prim, and one body under it with an Inertial Measurement Unit (IMU) on a lever arm and one prim for each other sensor schema."""
+    """Write the fixture to `out`: PX4 and its Software In The Loop (SITL) peer on the default prim, one body under it with an Inertial Measurement Unit (IMU) on a lever arm and one prim for each other sensor schema, and one rotor body with a propeller."""
     stage = Usd.Stage.CreateNew(str(out))
     UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
     UsdGeom.SetStageMetersPerUnit(stage, 1.0)
@@ -34,6 +34,9 @@ def author(out: Path) -> None:
     UsdGeom.Camera.Define(stage, "/Vehicle/body/Ir").GetPrim().ApplyAPI("NexusThermalCameraAPI")
     # OpenUSD doesn't know Kit's lidar type here, so it can't check the schema against it.
     stage.DefinePrim("/Vehicle/body/Lidar", "OmniLidar").AddAppliedSchema("NexusLidarAPI")
+    rotor = UsdGeom.Xform.Define(stage, "/Vehicle/rotor").GetPrim()
+    rotor.ApplyAPI("NexusPropellerAPI")
+    rotor.GetAttribute("nexus:ct").Set(3.463e-6)
     stage.GetRootLayer().Save()
 
 

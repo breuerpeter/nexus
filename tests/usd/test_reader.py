@@ -137,7 +137,7 @@ def test_a_schema_no_class_claims_fails_the_build_and_names_the_prim():
     naming the prim path and the schema.
     """
     with pytest.raises(ValueError) as e:
-        resolve_components(FIXTURE, ComponentRegistry({"NexusPx4API": StandIn}))
+        resolve_components(FIXTURE, ComponentRegistry({"NexusPropellerAPI": StandIn, "NexusPx4API": StandIn}))
     assert IMU in str(e.value) and "NexusImuAPI" in str(e.value)
 
 
