@@ -8,4 +8,6 @@ A component schema is an applied API schema whose attributes sit in the `nexus:`
 
 This page comes from the schema plugin that ships with nexus, so it lists what the build accepts. An authored `nexus:` attribute that no applied schema defines fails the build and names the prim.
 
+A schema changes only by a new version, which OpenUSD names with a suffix: `NexusImuAPI`, then `NexusImuAPI_1`. A version can gain an attribute with a default. A renamed or removed attribute, or a new type or unit, makes a new version, and its section below states what changed. A prim that applies a version this release doesn't define fails the build, and the message names the prim, the version, and the nexus version.
+
 <!-- schema-reference -->

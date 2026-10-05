@@ -32,20 +32,39 @@ def _attribute_row(definition, name: str) -> str:
     return f"| `{name}` | `{type_name}` | `{default}` | {units} | {value_range} | {description} |"
 
 
-def schema_reference() -> str:
-    """The reference page body: one section per schema the plugin defines."""
+def _changes(registry, schema: str) -> list[str]:
+    """What `schema` changed from the version of its family before it; nothing for a family's first version."""
+    family, version = registry.ParseSchemaFamilyAndVersionFromIdentifier(schema)
+    earlier = [info for info in registry.FindSchemaInfosInFamily(family) if info.version < version]
+    if not earlier:
+        return []
+    before = max(earlier, key=lambda info: info.version).identifier
+    old, new = registry.FindAppliedAPIPrimDefinition(before), registry.FindAppliedAPIPrimDefinition(schema)
+    old_rows = {name: _attribute_row(old, name) for name in old.GetPropertyNames()}
+    new_rows = {name: _attribute_row(new, name) for name in new.GetPropertyNames()}
+    parts = [f"adds `{name}`" for name in new_rows if name not in old_rows]
+    parts += [f"removes `{name}`" for name in old_rows if name not in new_rows]
+    parts += [f"changes `{name}`" for name in new_rows if name in old_rows and new_rows[name] != old_rows[name]]
+    return [f"Changed from `{before}`: {', '.join(parts) or 'no attribute'}.", ""]
+
+
+def schema_reference(schemas: list[str] | None = None) -> str:
+    """The reference page body: one section per schema in `schemas`, by default every one the plugin defines.
+
+    A later version of a family states what it changed from the version before it.
+    """
     from pxr import Usd
 
     registry = Usd.SchemaRegistry()
     sections = []
-    for schema in schema_names():
+    for schema in schema_names() if schemas is None else schemas:
         definition = registry.FindAppliedAPIPrimDefinition(schema)
         types = registry.GetAPISchemaCanOnlyApplyToTypeNames(schema)
         applies_to = ", ".join(f"`{name}`" for name in types) or "any prim"
         rows = [_attribute_row(definition, name) for name in definition.GetPropertyNames()]
         header = ["| Attribute | Type | Default | Units | Range | Description |", "|---|---|---|---|---|---|"]
-        body = [f"## {schema}", "", definition.GetDocumentation(), "", f"Applies to: {applies_to}.", "", *header]
-        sections.append("\n".join(body + rows))
+        body = [f"## {schema}", "", definition.GetDocumentation(), "", f"Applies to: {applies_to}.", ""]
+        sections.append("\n".join(body + _changes(registry, schema) + header + rows))
     return "\n\n".join(sections) + "\n"
 
 

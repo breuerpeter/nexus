@@ -153,3 +153,19 @@ def test_an_attribute_that_joins_a_released_version_with_a_fallback_passes_the_c
 
     joined = f'float nexus:accBias = 0 (\n        doc = "A new attribute."\n    )\n    {ACC_NOISE}'
     assert in_place_changes(_plugin_with(tmp_path, ACC_NOISE, joined)) == []
+
+
+def test_no_released_version_of_the_nexus_plugin_changed_in_place():
+    """No released version of the nexus plugin lost or renamed an attribute, or changed one's type or unit."""
+    from nexus._src.usd.released import in_place_changes
+
+    assert in_place_changes(PLUGIN) == []
+
+
+def test_the_released_record_holds_every_attribute_the_nexus_plugin_defines():
+    """The record holds every schema and attribute the nexus plugin defines, so the check covers a new one from its first release."""
+    import json
+
+    from nexus._src.usd.released import RECORD, schema_record
+
+    assert json.loads(RECORD.read_text()) == schema_record(PLUGIN)

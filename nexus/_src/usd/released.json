@@ -1,0 +1,19 @@
+{
+  "NexusImuAPI": {
+    "nexus:accNoise": {
+      "type": "float",
+      "units": "meters per second squared"
+    },
+    "nexus:gyroNoise": {
+      "type": "float",
+      "units": "radians per second"
+    }
+  },
+  "NexusPx4API": {
+    "nexus:airframe": {
+      "type": "string",
+      "units": "none"
+    }
+  },
+  "NexusPx4SitlAPI": {}
+}
