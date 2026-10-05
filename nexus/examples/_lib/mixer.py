@@ -226,13 +226,14 @@ class RotorMixer:
         return float(self.nr) * self.kf * self.omega_max_motor**2 / (float(mass) * 9.81)
 
 
-def build_rotor_mixer_from_model(model, act_cfg: dict, rest_body_q) -> RotorMixer:
+def build_rotor_mixer_from_model(model, joints, act_cfg: dict, rest_body_q) -> RotorMixer:
     """Build the :class:`RotorMixer` from a finalized model's rotor joints + the actuator thrust map:
     the airframe that configures both the controller, ``B_inv``, and the :class:`RigidBodyRotors` actuator,
-    forward ``B``. ``rest_body_q`` is the settled rest pose ``(nbodies, 7)`` the allocation builds from,
-    since the rest-pose geometry is rigid.
+    forward ``B``. ``joints`` is the joint path of each rotor the vehicle declares, the vehicle builder's
+    ``rotor_joints()``. ``rest_body_q`` is the settled rest pose ``(nbodies, 7)`` the allocation builds
+    from, since the rest-pose geometry is rigid.
     """
-    _vel, pos_coords, bodies, base = find_rotor_joints(model)
+    _vel, pos_coords, bodies, base = find_rotor_joints(model, joints)
     ct, cd, rpm_max = act_cfg["ct"], act_cfg["cd"], act_cfg["rpm_max"]
     bq = np.asarray(rest_body_q, dtype=np.float32)
     B, B_inv, spins = build_allocation(bq[:, :3], bq[:, 3:7], base, bodies, float(cd))

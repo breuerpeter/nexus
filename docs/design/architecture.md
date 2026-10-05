@@ -115,9 +115,10 @@ The command scales to a rotor-speed target, the job of an Electronic Speed Contr
 reduced to one multiply. The motor is a `NewtonActuator` prim authored in the vehicle USD: a velocity servo under a
 torque-speed envelope that Newton solves on the real rotor joint. So the rotor speed is a
 solver-integrated state with physical lag and saturation. The propeller is the airflow-aware closed
-form that turns rotor speed and inflow into thrust and in-plane force on the rotor body. The motor
-and propeller parameters, `ct`, `cd`, `rpm_max` and the aero terms, come from the `motor:*` and
-`propeller:*` attributes authored on the rotor joints in the vehicle USD. The **mixer**, the
+form that turns rotor speed and inflow into thrust and in-plane force on the rotor body. The
+propeller's parameters, `ct`, `cd` and the aero terms, come from the `NexusPropellerAPI` schema that
+each rotor's rigid body applies in the vehicle USD. The rotor speed at full command is the motor's
+no-load speed, `newton:velocityLimit`. The **mixer**, the
 Collective Thrust and Body Rates (CTBR) rate loop and the `B⁻¹` control allocation, lives in the
 *controllers*, not the actuator. So `Controls.command` is always one entry per actuator, and the
 actuator only ever applies the forward map. The same actuator drives the PX4, PID, policy, and Model

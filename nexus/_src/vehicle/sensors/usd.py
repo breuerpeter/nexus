@@ -2,7 +2,7 @@
 for the sensor suite.
 
 The analytic PX4 sensors ride in the vehicle USD the same way as the RTX ones, the ``Camera`` /
-``OmniLidar`` prims, and the actuator params, the ``motor:*`` / ``propeller:*`` joint attrs: each sensor
+``OmniLidar`` prims, and the rotors, whose bodies declare their propellers: each sensor
 is an ``Xform`` child of the base body carrying a ``sensor:type`` custom token, ``imu`` / ``mag`` /
 ``baro`` / ``gps``, plus its parameters as ``sensor:*`` custom attributes, named exactly after the
 sensor constructors' keyword arguments, ``sensor:acc_noise`` → ``ImuSensor(acc_noise=...)``,

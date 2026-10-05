@@ -150,7 +150,9 @@ class NewtonPhysics:
             if self.vehicle_builder is None:
                 raise ValueError("prespin='hover' needs a vehicle_builder to read ct from the USD")
             ct = float(self.vehicle_builder.actuator_params()["ct"])
-            self._rotor_vel_dofs, _pos, _bodies, _base = find_rotor_joints(self.model)
+            self._rotor_vel_dofs, _pos, _bodies, _base = find_rotor_joints(
+                self.model, self.vehicle_builder.rotor_joints()
+            )
             mass = float(self.model.body_mass.numpy().sum())
             hover_thrust = mass * GRAVITY / len(self._rotor_vel_dofs)
             self._hover_omega = float(np.sqrt(hover_thrust / ct) / RPM_PER_RADS)
@@ -193,10 +195,11 @@ class NewtonPhysics:
         """
         m = self.model
         src = type(self).__name__
-        try:
-            _vel, _pos, _bodies, base = find_rotor_joints(m)  # articulated: the actuator joints' shared parent
+        try:  # articulated: the declared rotor joints' shared parent
+            joints = self.vehicle_builder.rotor_joints() if self.vehicle_builder is not None else []
+            _vel, _pos, _bodies, base = find_rotor_joints(m, joints)
         except ValueError:
-            base = 0  # single body, no actuator joints: body 0 is the base body
+            base = 0  # single body, no rotor joints: body 0 is the base body
         body_keys = leaf_keys(list(m.body_label))  # friendly names: leaf when unique, else the full path
         self.base_body = body_keys[base]
         self._body_taps = [

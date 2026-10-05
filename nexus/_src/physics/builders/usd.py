@@ -1,51 +1,96 @@
+import math
+from dataclasses import asdict
 from pathlib import Path
 
 import newton
 import warp as wp
 
+from nexus._src.usd.reader import read_declarations
+from nexus._src.vehicle.actuators.layout import RPM_PER_RADS
+from nexus._src.vehicle.actuators.propeller import Propeller
+
 from .builder_base import BuilderBase
 
-_ROTOR_ATTR_PREFIXES = ("motor:", "propeller:")  # the unified motor + propeller param namespaces
+PROPELLER_SCHEMA = "NexusPropellerAPI"  # the schema a rotor's rigid body applies to declare its propeller
+_MOTOR_PREFIX = "motor:"  # the joint attributes of the single-body examples' motor model, such as motor:tau
 
 
-def parse_rotor_joint_params(usd_path: str | Path) -> dict:
-    """Read the ``motor:*`` and ``propeller:*`` params authored on the rotor revolute joints of the vehicle's
-    Universal Scene Description (USD) file.
+def parse_rotors(usd_path: str | Path) -> tuple[dict, list[str]]:
+    """Read the rotors the vehicle's Universal Scene Description (USD) file declares.
 
-    The unified actuator's per-rotor params ride in the vehicle USD as ``motor:*`` for the motor model plus
-    ``propeller:*`` for the propeller model, custom attributes on the per-rotor ``PhysicsRevoluteJoint``
-    prims, so the rotor joint is the single home for all actuator params, with no YAML and USD duplication.
-    This replaces the old ``NewtonActuator`` prims plus the ``freefly:actuator:*`` and ``newton:*`` schema,
-    dropped with ``newton.actuators``. This strips the namespace prefix, so it returns the flat aero, thrust
-    and motor map every consumer reads: ``ct``, ``cd``, ``rpm_max``, ``aero_h``, ``aero_hforce``, ``tau``.
-    The propeller model is a lumped-scalar one, so the rotors must declare the same params; this asserts
-    that and returns the shared dict, or ``{}`` if none of the joints authors any.
+    A rotor is a rigid body that applies ``NexusPropellerAPI``. Its joint is the revolute joint that has it
+    as child body, and its motor is the ``NewtonActuator`` prim that drives that joint. The motor's no-load speed,
+    ``newton:velocityLimit``, is the rotor speed at full command. The propeller model is a lumped-scalar one,
+    so the rotors must declare the same values.
+
+    Returns:
+        The flat map every consumer reads and each rotor's joint path. The map holds the propeller's ``ct``,
+        ``cd``, ``aero_h`` and ``aero_hforce``, the speed at full command as ``rpm_max``, and each ``motor:*``
+        attribute of the rotor joints under its bare name, such as ``tau``.
+
+    Raises:
+        ValueError: The vehicle declares no rotor; a propeller sits on a prim that isn't the child body of a
+            revolute joint; the rotors don't share one parent body or one set of values; no motor with a finite
+            ``newton:velocityLimit`` drives a rotor's joint; or a prim still authors a ``propeller:*`` attribute,
+            which the schema replaces. The message names the prim.
     """
     from pxr import Usd
 
-    stage = Usd.Stage.Open(str(usd_path))
-    per_rotor: list[dict] = []
-    for prim in stage.Traverse():
-        if prim.GetTypeName() != "PhysicsRevoluteJoint":
-            continue
-        params = {}
-        for a in prim.GetAttributes():
-            name = a.GetName()
-            for prefix in _ROTOR_ATTR_PREFIXES:
-                if name.startswith(prefix):
-                    params[name[len(prefix) :]] = a.Get()
-        if params:
-            per_rotor.append(params)
-    if not per_rotor:
-        return {}
-    first = per_rotor[0]
-    for other in per_rotor[1:]:
-        if other != first:
+    stage = Usd.Stage.Open(str(usd_path), Usd.Stage.LoadAll)
+    joint_of, motor_of = {}, {}  # a child body's revolute joint, and the actuator prim that drives a joint
+    for prim in stage.Traverse(Usd.TraverseInstanceProxies()):
+        if legacy := [prop.GetName() for prop in prim.GetAuthoredPropertiesInNamespace("propeller")]:
             raise ValueError(
-                f"non-uniform motor:*/propeller:* params across rotor joints ({per_rotor}); the lumped "
-                "propeller model requires identical rotors"
+                f"{prim.GetPath()}: {', '.join(legacy)} is no longer read; declare the propeller with "
+                f"{PROPELLER_SCHEMA} on the rotor's rigid body"
             )
-    return {k: float(v) for k, v in first.items()}
+        if prim.GetTypeName() == "PhysicsRevoluteJoint":
+            for body in prim.GetRelationship("physics:body1").GetTargets():
+                joint_of[str(body)] = prim
+        elif prim.GetTypeName() == "NewtonActuator":
+            for joint in prim.GetRelationship("newton:targets").GetTargets()[:1]:  # Newton honors the first
+                motor_of[str(joint)] = prim
+
+    rotors = []  # each rotor's body path, its parent body's path, its joint's path and its values
+    for body, schema, kwargs in read_declarations(usd_path):
+        if schema != PROPELLER_SCHEMA:
+            continue
+        joint = joint_of.get(body)
+        if joint is None:
+            raise ValueError(
+                f"{body}: {PROPELLER_SCHEMA} sits on a prim that isn't the child body of a revolute joint; "
+                "apply it to a rotor's rigid body"
+            )
+        motor = motor_of.get(str(joint.GetPath()))
+        if motor is None:
+            raise ValueError(f"{body}: no NewtonActuator prim drives its joint {joint.GetPath()}, so it has no motor")
+        attr = motor.GetAttribute("newton:velocityLimit")
+        speed = attr.Get() if attr else None
+        if speed is None or not math.isfinite(speed):
+            raise ValueError(
+                f"{motor.GetPath()}: newton:velocityLimit is the rotor speed at full command, and it is {speed}; "
+                "author the motor's no-load speed"
+            )
+        values = {**asdict(Propeller(**kwargs)), "rpm_max": speed * RPM_PER_RADS}
+        for a in joint.GetAttributes():
+            if a.GetName().startswith(_MOTOR_PREFIX):
+                values[a.GetName().removeprefix(_MOTOR_PREFIX)] = a.Get()
+        parent = next(iter(joint.GetRelationship("physics:body0").GetTargets()), None)
+        rotors.append((body, str(parent), str(joint.GetPath()), {k: float(v) for k, v in values.items()}))
+
+    if not rotors:
+        root = stage.GetDefaultPrim().GetPath() if stage.GetDefaultPrim() else usd_path
+        raise ValueError(f"{root}: the vehicle declares no rotor; apply {PROPELLER_SCHEMA} to each rotor's rigid body")
+    if len({parent for _, parent, _, _ in rotors}) > 1:
+        placed = ", ".join(f"{body} on {parent}" for body, parent, _, _ in rotors)
+        raise ValueError(f"the rotors don't share one parent body: {placed}")
+    first = rotors[0][3]
+    if odd := [f"{body} {values}" for body, _, _, values in rotors if values != first]:
+        raise ValueError(
+            "the rotors declare different values, and the propeller model takes one set: "
+            f"{rotors[0][0]} {first}, {', '.join(odd)}"
+        )
+    return first, [joint for _, _, joint, _ in rotors]
 
 
 class USDBuilder(BuilderBase):
@@ -61,8 +106,8 @@ class USDBuilder(BuilderBase):
 
     USD support needs ``usd-core`` to parse and ``newton-usd-schemas`` for the schema resolvers: newton's
     ``importers`` deps *minus* the open3d remesh and convex-decomp stack the lean runtime skips, see the
-    pyproject. The unified motor plus propeller params ride as ``motor:*`` and ``propeller:*`` USD custom
-    attributes on the rotor revolute joints, which :func:`parse_rotor_joint_params` reads at build time.
+    pyproject. Each rotor declares its propeller with the ``NexusPropellerAPI`` schema on its rigid body, beside
+    the ``NewtonActuator`` prim that declares its motor, which :func:`parse_rotors` reads at build time.
 
     Start pose: ``cfg['spawn_pos']``; the default is support-height placement, where the lowest point
     of the USD bounds, in the start attitude, lands 1 cm off the ground, so no more 2 m settle drop.
@@ -76,8 +121,12 @@ class USDBuilder(BuilderBase):
     """
 
     def actuator_params(self) -> dict:
-        """The motor plus propeller params authored on the USD rotor joints; see :func:`parse_rotor_joint_params`."""
-        return parse_rotor_joint_params(self.cfg["usd_path"])
+        """The values the rotors the USD declares share; see :func:`parse_rotors`."""
+        return parse_rotors(self.cfg["usd_path"])[0]
+
+    def rotor_joints(self) -> list[str]:
+        """The joint path of each rotor the USD declares; see :func:`parse_rotors`."""
+        return parse_rotors(self.cfg["usd_path"])[1]
 
     def sensor_specs(self) -> list:
         """The analytic sensors authored on the vehicle USD as ``sensor:*`` prims; see

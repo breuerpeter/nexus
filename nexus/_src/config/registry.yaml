@@ -9,9 +9,9 @@
 # self-contained `.usdz` at <base>/assets/usd/{vehicles,scenes}/<name>-<sha256>.usdz; see
 # nexus/_src/assets/resolver.py, which also places an example's hosted policy at
 # <base>/assets/policies/<name>-<sha256>.pt. An entry may carry a full `url` instead, which is how a catalog
-# names a blob hosted somewhere else, or a local file. Each USD carries
-# the actuator map as motor:* and propeller:* attrs on the actuator joint prims AND — for the FPV mods —
-# an authored FpvCam the Kit render peer renders; both non-physical (nexus model unchanged).
+# names a blob hosted somewhere else, or a local file. Each USD declares
+# its rotors, a `NexusPropellerAPI` propeller on each rotor body beside the `NewtonActuator` motor on its
+# joint, AND — for the FPV mods — an authored FpvCam the Kit render peer renders.
 #
 # Each vehicle USD declares PX4 with `NexusPx4API` on its root prim, and its `nexus:airframe` is the
 # SITL airframe make target minus PX4's `none_` prefix: `astro_max` runs `make px4_sitl
@@ -25,10 +25,10 @@ assets:
 
 vehicles:
   astro_max_base:
-    usd: { name: astro_max_base, sha256: 38700d1d05b739bba445b1b1d4fb35c7aec8ec4ef05d49d4dcb8b8941ef84ca9 }
+    usd: { name: astro_max_base, sha256: ecf33d726ee9d0bcbc4df97574005ff0c6e582d797f78efa5f570d760353a41f }
 
   astro_max_fpv:
-    usd: { name: astro_max_fpv, sha256: 51cec8c50db9b50d9a8baa86730b780e574d1d8846c5483ffe92d168cf2cbbe8 }
+    usd: { name: astro_max_fpv, sha256: d64c06fd4533e68b9a70481a7010c3594b209a62cfd50c7888ac97f9c3cc4259 }
 
 # The scene USD is the single authority on what it is: authored UsdPhysics collision schemas ->
 # simulation geometry (ModelBuilder); no physics schemas -> visual-only; and since the stage-5

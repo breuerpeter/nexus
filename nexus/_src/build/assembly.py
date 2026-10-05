@@ -70,16 +70,18 @@ def assemble(
     # ambient values resolved from it once, here, for the sensors that read them.
     gps = cfg["sensors"]["gps"]["init"]
     site = Site.at(gps["lat"], gps["lon"], gps["alt"])
-    # Actuator aero/thrust map: read straight from the motor:*/propeller:* attrs of the vehicle USD, the
-    # single, hash-pinned source. Not in cfg.
+    # Actuator aero/thrust map: read straight from the rotors the vehicle USD declares, the single,
+    # hash-pinned source. Not in cfg.
     act = vehicle_builder.actuator_params()
     # The shipped actuator: motors as USD-authored ``newton.actuators``, NewtonActuator prims,
     # a ControllerPID velocity servo + the ClampingDCMotor envelope on each real actuator joint, and aero,
-    # thrust/H-force from the solver-integrated Ω via the propeller:* attrs, as nexus's body_f kernel.
-    # Ω is a physical joint state: real motor lag + saturation, and spinning props at no extra cost.
+    # thrust/H-force from the solver-integrated Ω via each rotor body's propeller schema, as nexus's
+    # body_f kernel. Ω is a physical joint state: real motor lag + saturation, and spinning props at no
+    # extra cost.
     actuator = ArticulatedRotors(
         model=physics.model,
         control=physics.control,
+        joints=vehicle_builder.rotor_joints(),
         ct=act["ct"],
         cd=act["cd"],
         rpm_max=act["rpm_max"],
@@ -138,7 +140,7 @@ DEFAULT_SCENARIO = {
         "gps": {"init": {"lat": 47.747944, "lon": -122.163917, "alt": 5.02}},
     },
     # No actuator entry, by design. The aero/thrust map (rpm_max, ct, cd, tau, aero_h, aero_hforce)
-    # lives in the vehicle USD as motor:* / propeller:* custom attributes on the actuator joint prims, and
+    # lives in the vehicle USD, declared per rotor on its body, its motor and its joint, and
     # USDBuilder.actuator_params() reads it; since the USD is content-hashed, the vehicle hash pins the
     # actuator model, not any config. Every build reads those params directly from the builder.
 }

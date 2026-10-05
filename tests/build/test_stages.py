@@ -22,10 +22,11 @@ from nexus.examples.controllers.pid.assembly import build_pid_orchestrator
 # The Secure Hash Algorithm (SHA) 256 digest of main's 200-tick PID body poses, float32 (200, 5, 7),
 # per GPU model, flown through main's captured loop before the change: a CUDA trajectory repeats to the
 # byte on one model and differs across models. A local run recorded the RTX 5080's, and a gpu-pytest
-# run the A10G's.
+# run the A10G's. The same two runs recorded both again when the rotor speed at full command became
+# the motor's no-load speed, a 32-bit float that reads 3e-8 below 3800 rpm.
 _MAIN_TRAJECTORY = {
-    "NVIDIA GeForce RTX 5080": "ef9c3ffa39ac2f92c37381d14ffa187a429e885763291952a026c781fcb8899b",
-    "NVIDIA A10G": "950e1f33afbbf695a861dea9279c3a772ec7ec93827acd074ee230f7cf8c7606",
+    "NVIDIA GeForce RTX 5080": "34dbc4aff792652d26d13262f94a88e56635906bedfd7030978037d970bbc186",
+    "NVIDIA A10G": "c5ac89a9fdfe35221173d401a9c735969b8b97b6864ca97b24245e4c3723d603",
 }
 
 

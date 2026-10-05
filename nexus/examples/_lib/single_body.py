@@ -72,7 +72,7 @@ def _fix_rotor_joints(builder) -> int:
 
 
 def _read_rotor_layout(vehicle_builder):
-    """Read ``(mass, offsets(nr,3), dirs(nr,))`` from the articulated USD, its rotor REVOLUTE joints, before
+    """Read ``(mass, offsets(nr,3), dirs(nr,))`` from the articulated USD, its declared rotor joints, before
     the collapse: offsets in the base-body frame, spin signs from each rotor-z compared to the base-z,
     USD-authored.
     """
@@ -85,7 +85,7 @@ def _read_rotor_layout(vehicle_builder):
     st = m.state()
     newton.eval_fk(m, m.joint_q, m.joint_qd, st)
     bq = st.body_q.numpy()
-    _vel, _pos, bodies, base = find_rotor_joints(m)
+    _vel, _pos, bodies, base = find_rotor_joints(m, vehicle_builder.rotor_joints())
     rb = _quat_to_R(bq[base, 3:7])
     bz = rb @ np.array([0.0, 0.0, 1.0])
     offsets = np.array([rb.T @ (bq[r, :3] - bq[base, :3]) for r in bodies], dtype=np.float32)  # base-frame

@@ -22,11 +22,30 @@ from the allocation, uniform with the single-body model.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import warp as wp
 
 from nexus._src.vehicle.actuators.layout import RPM_PER_RADS
 
-__all__ = ["RPM_PER_RADS", "propeller_force"]
+__all__ = ["RPM_PER_RADS", "Propeller", "propeller_force"]
+
+
+@dataclass(frozen=True)
+class Propeller:
+    """One rotor's propeller, as the ``NexusPropellerAPI`` schema on the rotor's rigid body declares it.
+
+    Args:
+        ct: Thrust coefficient [N/rpm²]: the static thrust is ``ct·rpm²``.
+        cd: Reaction torque per unit of thrust [m], the yaw allocation κ.
+        aero_h: Forward-flight thrust-loss coefficient [kg/m]; 0 is the quasi-static ``kf·Ω²``.
+        aero_hforce: In-plane rotor H-force coefficient [kg/rad].
+    """
+
+    ct: float
+    cd: float
+    aero_h: float
+    aero_hforce: float
 
 
 @wp.func

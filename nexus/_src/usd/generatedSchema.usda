@@ -22,6 +22,36 @@ class "NexusImuAPI" (
     )
 }
 
+class "NexusPropellerAPI" (
+    doc = "A propeller on its rotor's rigid body, the child body of the rotor's revolute joint: its thrust, its reaction torque and its in-plane drag, from the rotor's speed and the airflow at its hub."
+)
+{
+    float nexus:ct = 0 (
+        doc = """Thrust coefficient: the static thrust is this value times the square of the rotor speed in revolutions per minute. At 0 the propeller makes no thrust.
+
+        Range: [0, inf)
+        Units: newtons per (revolution per minute) squared"""
+    )
+    float nexus:cd = 0 (
+        doc = """Reaction torque per unit of thrust: the drag torque about the rotor's axis is this value times the thrust.
+
+        Range: [0, inf)
+        Units: meters"""
+    )
+    float nexus:aeroH = 0 (
+        doc = """Thrust lost in forward flight: the thrust falls by this value times the square of the airflow speed in the rotor's plane. At 0 the thrust depends on the rotor speed alone.
+
+        Range: [0, inf)
+        Units: kilograms per meter"""
+    )
+    float nexus:aeroHforce = 0 (
+        doc = """In-plane drag of the rotor: a force against the airflow in the rotor's plane, of this value times the rotor speed times the airflow speed.
+
+        Range: [0, inf)
+        Units: kilograms per radian"""
+    )
+}
+
 class "NexusPx4API" (
     doc = "PX4 flies the vehicle over its Software In The Loop (SITL) link, on the vehicle's root prim."
 )
