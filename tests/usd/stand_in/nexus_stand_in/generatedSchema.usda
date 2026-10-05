@@ -29,3 +29,27 @@ class "StandInSensorAPI" (
         Units: dimensionless"""
     )
 }
+
+class "StandInGearAPI" (
+    doc = "A stand-in family at two versions: this is the first."
+)
+{
+    float nexus:ratio = 1 (
+        doc = """The ratio of the stand-in gear.
+
+        Range: (0, inf)
+        Units: dimensionless"""
+    )
+}
+
+class "StandInGearAPI_1" (
+    doc = "A stand-in family at two versions: this is the second."
+)
+{
+    float nexus:gearRatio = 1 (
+        doc = """The ratio of the stand-in gear.
+
+        Range: (0, inf)
+        Units: dimensionless"""
+    )
+}
