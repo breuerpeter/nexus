@@ -23,11 +23,6 @@ work/
 *.rrd
 .rl-artifacts/
 
-# airspeed velocity (asv): generated envs / results / html dashboard (see asv.conf.json)
-asv/env/
-asv/results/
-asv/html/
-
 # mkdocs social-card plugin build cache
 .cache/
 
