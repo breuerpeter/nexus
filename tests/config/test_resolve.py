@@ -14,7 +14,7 @@ from nexus._src.config import LaunchConfig, NoMatchError, Registry, TestedConfig
 def _reg(vehicle_usd):
     return Registry.from_dict(
         {
-            "vehicles": [{"name": "black", "usd": vehicle_usd}],
+            "vehicles": {"black": {"usd": vehicle_usd}},
             "scenes": {"empty": {}},
         }
     )
@@ -64,7 +64,7 @@ def _fpv_reg(vehicle_usd, scene_usd, **scene_extra):
     """
     return Registry.from_dict(
         {
-            "vehicles": [{"name": "black", "usd": vehicle_usd}],
+            "vehicles": {"black": {"usd": vehicle_usd}},
             "scenes": {
                 "empty": {},
                 "fpv": {
@@ -159,7 +159,7 @@ def _catalog(vehicle: str) -> str:
     """A one-vehicle registry naming *vehicle*, enough to tell two catalogs apart."""
     return (
         "vehicles:\n"
-        f"  - name: {vehicle}\n"
+        f"  {vehicle}:\n"
         '    usd: { url: "file:///' + '{v}.usdz", sha256: "0" }\n'.replace("{v}", vehicle) + "scenes:\n  empty: {}\n"
     )
 

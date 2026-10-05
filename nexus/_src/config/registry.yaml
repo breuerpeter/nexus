@@ -1,7 +1,7 @@
 # registry.yaml — the checked-in vehicle/scene catalog.
 #
 # S3 holds only content-addressed blobs; this file is the semantic <-> content binding. Every
-# vehicle variant is a `name` handle plus its USD, which declares its controller. A launch names the variant it flies,
+# vehicle variant is a name, its key, plus its USD, which declares its controller. A launch names the variant it flies,
 # `--vehicle astro_max_fpv`, and the scene it flies in, `--scene empty`. The name is what the run's
 # receipt records.
 #
@@ -24,10 +24,10 @@ assets:
   base: https://d2837jz4fvtxko.cloudfront.net/public
 
 vehicles:
-  - name: astro_max_base
+  astro_max_base:
     usd: { name: astro_max_base, sha256: 38700d1d05b739bba445b1b1d4fb35c7aec8ec4ef05d49d4dcb8b8941ef84ca9 }
 
-  - name: astro_max_fpv
+  astro_max_fpv:
     usd: { name: astro_max_fpv, sha256: 51cec8c50db9b50d9a8baa86730b780e574d1d8846c5483ffe92d168cf2cbbe8 }
 
 # The scene USD is the single authority on what it is: authored UsdPhysics collision schemas ->
