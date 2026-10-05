@@ -185,49 +185,85 @@ def _open_stage(path):
 # physics/builders/usd.parse_rotors.
 _PROPELLER_ATTRS = {"nexus:ct": "ct", "nexus:cd": "cd", "nexus:aeroH": "aero_h", "nexus:aeroHforce": "aero_hforce"}
 _JOINT_ATTRS = {"motor:tau": "tau"}
+# Where a source declares its rotors' values before conversion: on each rotor joint, and on the
+# ``NewtonActuator`` prim that drives it in an as-built USD. A joint or a prim with these is a rotor's.
+_JOINT_PREFIXES = ("propeller:", "motor:")
+_AS_BUILT_PREFIX = "freefly:actuator:"
 
 
-def author_rotor_params(usdz, out, *, params=None) -> str:
+def author_rotor_params(usdz, out, *, params=None, rotors=None) -> str:
     """Re-author the vehicle USD so each rotor declares its propeller where the run reads it: the
-    ``NexusPropellerAPI`` schema and its values on the rotor's rigid body, the child body of the joint a
-    ``NewtonActuator`` prim drives. Each actuator prim stays untouched, with Newton's schemas alone,
-    ``motor:tau`` goes on each rotor joint, and the older ``propeller:*`` attributes go. ``pxr``-only: runs
-    host-side. Everything else survives: geometry, joints, the authored ``FpvCam``.
+    ``NexusPropellerAPI`` schema and its values on the rotor's rigid body, the child body of the rotor's
+    joint. Each ``NewtonActuator`` prim stays untouched, with Newton's schemas alone, ``motor:tau`` goes on
+    each rotor joint, and the older ``propeller:*`` attributes go. ``pxr``-only: runs host-side. Everything
+    else survives: geometry, joints, the authored ``FpvCam``.
 
-    ``params`` is a ``{ct, cd, aero_h, aero_hforce, tau}`` dict; if omitted, the function reads the uniform
-    values from the ``freefly:actuator:*`` attrs on the ``NewtonActuator`` prims of an as-built USD. The
-    rotor speed at full command isn't one of them: the run reads it from each motor's
-    ``newton:velocityLimit``. Returns the output path.
+    ``rotors`` names the rotor joints by prim path. If omitted, the rotors are the joints the source itself
+    declares as such: the revolute joints that author ``propeller:*``, else the joints whose ``NewtonActuator``
+    prim authors ``freefly:actuator:*``, as an as-built USD does. A joint Newton drives for another purpose,
+    such as a gimbal servo, is no rotor.
+
+    ``params`` is a ``{ct, cd, aero_h, aero_hforce, tau}`` dict that overrides the values the source's rotors
+    declare; a value neither gives is an error. The rotor speed at full command isn't authored: the run reads
+    it from each motor's ``newton:velocityLimit``.
+
+    Returns:
+        The output path.
+
+    Raises:
+        ValueError: The source declares no rotor and ``rotors`` names none, a rotor joint has no child body, a
+            value is missing or differs between rotors.
     """
     from pxr import Sdf
 
     stage = _open_stage(usdz)
-    if params is None:
-        params = _read_legacy_actuator_params(stage)
-
     prims = list(stage.Traverse())
-    rotors = []  # each rotor's joint and rigid body, found from the actuator prim that drives the joint
+    motors = {}  # the actuator prim that drives each joint, by the joint's path
     for prim in prims:
-        if prim.GetTypeName() != "NewtonActuator":
-            continue
-        targets = prim.GetRelationship("newton:targets").GetTargets()
-        joint = stage.GetPrimAtPath(targets[0]) if targets else None
-        bodies = joint.GetRelationship("physics:body1").GetTargets() if joint else []
-        if not bodies:
-            raise ValueError(f"{prim.GetPath()}: its newton:targets names no joint with a child body")
-        rotors.append((joint, stage.GetPrimAtPath(bodies[0])))
-    if not rotors:
-        raise ValueError("no NewtonActuator prims found: each rotor needs one on its joint, for its motor")
+        if prim.GetTypeName() == "NewtonActuator":
+            for target in prim.GetRelationship("newton:targets").GetTargets()[:1]:  # Newton honors the first
+                motors[target] = prim
 
+    if rotors is not None:
+        joints = [stage.GetPrimAtPath(path) for path in rotors]
+        if unknown := [str(path) for path, joint in zip(rotors, joints, strict=True) if not joint]:
+            raise ValueError(f"rotors= names no prim at {', '.join(unknown)}")
+    else:
+        joints = [p for p in prims if p.GetTypeName() == "PhysicsRevoluteJoint" and _declared(p, _JOINT_PREFIXES)]
+        joints = joints or [
+            stage.GetPrimAtPath(path) for path, m in motors.items() if _declared(m, (_AS_BUILT_PREFIX,))
+        ]
+    if not joints:
+        raise ValueError("the source declares no rotor: name the rotor joints with rotors=")
+    bodies = []
+    for joint in joints:
+        targets = joint.GetRelationship("physics:body1").GetTargets()
+        if not targets:
+            raise ValueError(f"{joint.GetPath()}: the rotor joint has no child body to declare the propeller on")
+        bodies.append(stage.GetPrimAtPath(targets[0]))
+
+    per_rotor = [
+        {**_declared(motors.get(j.GetPath()), (_AS_BUILT_PREFIX,)), **_declared(j, _JOINT_PREFIXES)} for j in joints
+    ]
+    if any(values != per_rotor[0] for values in per_rotor):
+        raise ValueError(
+            f"the source's rotors declare different values ({per_rotor}); the propeller model takes one set"
+        )
+    values = {**per_rotor[0], **(params or {})}
+    missing = [k for k in (*_PROPELLER_ATTRS.values(), *_JOINT_ATTRS.values()) if k not in values]
+    if missing:
+        raise ValueError(
+            f"no value for {missing}: neither params nor the source's rotors give one (have {sorted(values)})"
+        )
     for prim in prims:
         for prop in prim.GetAuthoredPropertiesInNamespace("propeller"):
             prim.RemoveProperty(prop.GetName())
-    for joint, body in rotors:
+    for joint, body in zip(joints, bodies, strict=True):
         body.AddAppliedSchema("NexusPropellerAPI")
         for attr_name, key in _PROPELLER_ATTRS.items():
-            body.CreateAttribute(attr_name, Sdf.ValueTypeNames.Float).Set(float(params[key]))
+            body.CreateAttribute(attr_name, Sdf.ValueTypeNames.Float).Set(float(values[key]))
         for attr_name, key in _JOINT_ATTRS.items():
-            joint.CreateAttribute(attr_name, Sdf.ValueTypeNames.Float, custom=True).Set(float(params[key]))
+            joint.CreateAttribute(attr_name, Sdf.ValueTypeNames.Float, custom=True).Set(float(values[key]))
 
     out = str(out)
     if out.endswith(".usdz"):
@@ -248,20 +284,15 @@ def author_rotor_params(usdz, out, *, params=None) -> str:
     return out
 
 
-def _read_legacy_actuator_params(stage) -> dict:
-    """Read the uniform ``freefly:actuator:*`` params off the ``NewtonActuator`` prims of an as-built USD."""
-    prefix = "freefly:actuator:"
-    per_rotor = []
-    for prim in stage.Traverse():
-        if prim.GetTypeName() != "NewtonActuator":
-            continue
-        p = {a.GetName()[len(prefix) :]: a.Get() for a in prim.GetAttributes() if a.GetName().startswith(prefix)}
-        if p:
-            per_rotor.append(p)
-    if not per_rotor:
-        raise ValueError("no freefly:actuator:* params found on NewtonActuator prims; pass params= explicitly")
-    first = {k: float(v) for k, v in per_rotor[0].items()}
-    missing = [k for k in (*_PROPELLER_ATTRS.values(), *_JOINT_ATTRS.values()) if k not in first]
-    if missing:
-        raise ValueError(f"legacy actuator params missing keys {missing} (have {sorted(first)})")
-    return first
+def _declared(prim, prefixes) -> dict:
+    """The values ``prim`` authors under ``prefixes``, by their bare name as a float: ``propeller:ct`` is
+    ``ct``. Empty for no prim.
+    """
+    if not prim:
+        return {}
+    out = {}
+    for attr in prim.GetAttributes():
+        for prefix in prefixes:
+            if attr.GetName().startswith(prefix) and attr.HasAuthoredValue():
+                out[attr.GetName()[len(prefix) :]] = float(attr.Get())
+    return out
