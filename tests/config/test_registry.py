@@ -101,12 +101,12 @@ def test_the_two_astro_max_vehicles_keep_the_usds_they_fly_today():
     """
     reg = nexus.Registry.from_yaml()
     assert [reg.vehicles[name].usd.url for name in ("astro_max_base", "astro_max_fpv")] == [
-        f"{HOSTED}/astro_max_base-38700d1d05b739bba445b1b1d4fb35c7aec8ec4ef05d49d4dcb8b8941ef84ca9.usdz",
-        f"{HOSTED}/astro_max_fpv-51cec8c50db9b50d9a8baa86730b780e574d1d8846c5483ffe92d168cf2cbbe8.usdz",
+        f"{HOSTED}/astro_max_base-a77711f1d6b7c7c1cd98b8b18c7783f504a56eb1ba6d7c113babeabf88f2bb67.usdz",
+        f"{HOSTED}/astro_max_fpv-80983ddcaf2a5fef6a24efa7a765f998ca147347a73ec663d74f2ad9cc32892e.usdz",
     ]
 
 
-BUNDLED_ASTRO = f"{HOSTED}/astro_max_base-38700d1d05b739bba445b1b1d4fb35c7aec8ec4ef05d49d4dcb8b8941ef84ca9.usdz"
+BUNDLED_ASTRO = f"{HOSTED}/astro_max_base-a77711f1d6b7c7c1cd98b8b18c7783f504a56eb1ba6d7c113babeabf88f2bb67.usdz"
 BUNDLED_EMPTY_SHA = "ab15e88be59c0ee93e63160c34b08485e3136d1f88313f24dcd67e482ecbed05"
 REPIN_SHA = "1111111111111111111111111111111111111111111111111111111111111111"
 
@@ -238,8 +238,8 @@ def test_a_project_catalog_that_lists_only_what_it_adds_loads_on_its_own(tmp_pat
     assert list(nexus.Registry.from_yaml(catalog).vehicles) == ["my_quad"]
 
 
-BUNDLED_ASTRO_SHA = "38700d1d05b739bba445b1b1d4fb35c7aec8ec4ef05d49d4dcb8b8941ef84ca9"
-BUNDLED_FPV_SHA = "51cec8c50db9b50d9a8baa86730b780e574d1d8846c5483ffe92d168cf2cbbe8"
+BUNDLED_ASTRO_SHA = "a77711f1d6b7c7c1cd98b8b18c7783f504a56eb1ba6d7c113babeabf88f2bb67"
+BUNDLED_FPV_SHA = "80983ddcaf2a5fef6a24efa7a765f998ca147347a73ec663d74f2ad9cc32892e"
 
 KEYED_REPIN = f"""\
 vehicles:
