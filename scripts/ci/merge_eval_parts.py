@@ -3,7 +3,7 @@
 
 Each GPU box flies one example and uploads its ``.eval-artifacts`` as ``examples-eval-<example>``.
 Downloaded one folder per part, they join here into the one ``examples-eval`` tree a reader and the
-data-refresh PR expect: every recording and score file copied over, and the files every part writes
+data-refresh PR expect: every score file copied over, and the files every part writes
 merged by example, ``benchmark.json`` and ``examples_bench.json`` by entry name, and
 ``examples_baselines.json``, present after ``--update-baselines``, each example's block from the part
 that flew it. Standard library only: the merge job runs on a plain runner.
@@ -47,6 +47,8 @@ def main() -> int:
         example = part.name[len(PREFIX) :]
         for src in sorted(p for p in part.rglob("*") if p.is_file()):
             rel = src.relative_to(part)
+            if src.suffix == ".rrd":  # a red flight's recording rides its own part, once
+                continue
             if src.parent != part or rel.name not in MERGED:
                 dst = out / rel
                 dst.parent.mkdir(parents=True, exist_ok=True)

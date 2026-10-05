@@ -396,6 +396,8 @@ jobs:
           name: ${{ inputs.artifact-name }}
           path: ${{ inputs.artifact-path }}
           include-hidden-files: true
+          # Nothing reads an artifact after its own run, so it does not live the default 90 days.
+          retention-days: 14
 
   stop-runner:
     needs: [start-runner, run]
