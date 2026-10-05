@@ -16,6 +16,7 @@ import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 BASELINES = json.loads((ROOT / "scripts" / "ci" / "examples_baselines.json").read_text())
+_REAL_RUN = subprocess.run  # the real one, kept before a test fakes the flights
 
 # Loaded as it runs, `python scripts/ci/evaluate_examples.py`: its own folder first on sys.path,
 # where its sibling merge_eval_parts lives.
@@ -388,13 +389,116 @@ def test_on_main_an_rtf_under_its_ratchet_still_fails_the_leg(tmp_path, monkeypa
     assert (rc, "rtf" in _rows(capsys.readouterr().out, "REGRESSED")) == (1, True)
 
 
-def test_on_main_every_examples_recording_rides_the_artifact(tmp_path, monkeypatch):
-    """On main every example's recording rides the artifact, green or red: given a green `pid` flight that
-    wrote an `.rrd`, when the harness runs it as a main run, then the output holds `pid.rrd`.
+def test_on_main_a_green_flights_recording_stays_out_of_the_github_artifact(tmp_path, monkeypatch):
+    """On main a green flight's recording stays out of the GitHub artifact: given a green `pid` flight
+    that wrote an `.rrd`, when the harness runs it as a main run, then the output holds its scores and
+    `benchmark.json` but no `pid.rrd`.
     """
     _fake_flights(monkeypatch, tmp_path / "rec", {"pid": (_HEALTHY["pid"], 0)})
     out = tmp_path / "out"
 
     _harness(monkeypatch, "--only", "pid", "--out", str(out))
 
+    kept = {p.name for p in out.iterdir()}
+    assert ({"pid.json", "benchmark.json"} <= kept, "pid.rrd" in kept) == (True, False)
+
+
+def test_on_main_a_flight_that_fails_a_gate_carries_its_recording(tmp_path, monkeypatch):
+    """On main a flight that fails a gate carries its recording: given a `pid` flight that wrote an
+    `.rrd` and regressed a correctness row, when the harness runs it as a main run, then the output
+    holds `pid.rrd`.
+    """
+    _fake_flights(monkeypatch, tmp_path / "rec", {"pid": ({**_HEALTHY["pid"], "reached": 3}, 0)})  # of 4
+    out = tmp_path / "out"
+
+    _harness(monkeypatch, "--only", "pid", "--out", str(out))
+
     assert (out / "pid.rrd").is_file()
+
+
+def test_on_main_a_flight_whose_run_fails_carries_its_recording(tmp_path, monkeypatch):
+    """On main a flight whose run fails carries its recording: given a `pid` flight that wrote an `.rrd`
+    and exited non-zero, when the harness runs it as a main run, then the output holds `pid.rrd`.
+    """
+    _fake_flights(monkeypatch, tmp_path / "rec", {"pid": (_HEALTHY["pid"], 1)})
+    out = tmp_path / "out"
+
+    _harness(monkeypatch, "--only", "pid", "--out", str(out))
+
+    assert (out / "pid.rrd").is_file()
+
+
+def _stand_in_aws(monkeypatch, tmp_path: pathlib.Path) -> pathlib.Path:
+    """Put a stand-in `aws` on `PATH` for an `--upload` run and return the file it logs to, one line of
+    arguments per call. It finds no bench feed and accepts every write. Call it after faking the
+    flights: they stay faked, and the harness's `aws` calls reach the stand-in.
+    """
+    log = tmp_path / "aws.log"
+    aws = tmp_path / "bin" / "aws"
+    aws.parent.mkdir()
+    aws.write_text(
+        "#!/bin/sh\n"
+        f'echo "$*" >> {log}\n'
+        'case "$*" in *get-object*)\n'
+        "  echo 'An error occurred (NoSuchKey) when calling the GetObject operation' >&2; exit 254;;\n"
+        "esac\n"
+    )
+    aws.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{aws.parent}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("NEXUS_BUCKET", "ci-bucket")
+    monkeypatch.setenv("GITHUB_SHA", "0123456789abcdef0123456789abcdef01234567")
+    real_run, flight = _REAL_RUN, subprocess.run
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: (real_run if cmd[0] == "aws" else flight)(cmd, **kw))
+    return log
+
+
+def _recordings_copied(log: pathlib.Path) -> set[str]:
+    """The S3 destinations of the `.rrd` files the logged `aws s3 cp` calls copied."""
+    calls = [line.split() for line in log.read_text().splitlines()] if log.exists() else []
+    return {call[3] for call in calls if call[:2] == ["s3", "cp"] and call[3].endswith(".rrd")}
+
+
+def test_an_upload_run_writes_a_recording_to_s3_only_under_the_key_the_docs_serve(tmp_path, monkeypatch):
+    """An upload run writes a recording to S3 only under the key the docs serve: given a green `pid`
+    flight that wrote an `.rrd`, when the harness runs with `--upload` against a stand-in `aws`, then it
+    copies the recording to `public/ci/logs/pid.rrd` and to no key under `public/ci/logs/<sha12>/`.
+    """
+    _fake_flights(monkeypatch, tmp_path / "rec", {"pid": (_HEALTHY["pid"], 0)})
+    log = _stand_in_aws(monkeypatch, tmp_path)
+
+    _harness(monkeypatch, "--only", "pid", "--out", str(tmp_path / "out"), "--upload")
+
+    assert _recordings_copied(log) == {"s3://ci-bucket/public/ci/logs/pid.rrd"}
+
+
+def test_an_upload_run_writes_no_recording_the_docs_do_not_serve(tmp_path, monkeypatch):
+    """An upload run writes no recording the docs don't serve: given a green `goto_policy_fresh` flight
+    that wrote an `.rrd`, when the harness runs with `--upload` against a stand-in `aws`, then it copies
+    no `.rrd` to S3.
+    """
+    policy = tmp_path / "policy.pt"
+    policy.write_bytes(b"a fresh export")
+    # The fresh flight runs the `goto_policy` launcher, which is the name its process carries.
+    _fake_flights(monkeypatch, tmp_path / "rec", {"goto_policy": (_HEALTHY["goto_policy"], 0)})
+    log = _stand_in_aws(monkeypatch, tmp_path)
+
+    _harness(
+        monkeypatch, "--only", "goto_policy_fresh", "--policy", str(policy), "--out", str(tmp_path / "out"), "--upload"
+    )
+
+    assert _recordings_copied(log) == set()
+
+
+def test_an_upload_run_still_writes_the_bench_feed_under_its_per_commit_key_and_latest(tmp_path, monkeypatch):
+    """An upload run still writes the bench feed under its per-commit key and its fixed key: given a
+    green `pid` flight with scores, when the harness runs with `--upload` against a stand-in `aws`, then
+    it writes `public/ci/bench/<sha12>.json` and the fixed key beside it.
+    """
+    _fake_flights(monkeypatch, tmp_path / "rec", {"pid": (_HEALTHY["pid"], 0)})
+    log = _stand_in_aws(monkeypatch, tmp_path)
+
+    _harness(monkeypatch, "--only", "pid", "--out", str(tmp_path / "out"), "--upload")
+
+    puts = [line.split() for line in log.read_text().splitlines() if "put-object" in line]
+    written = {call[call.index("--key") + 1] for call in puts}
+    assert written == {"public/ci/bench/0123456789ab.json", "public/ci/bench/latest.json"}
