@@ -11,6 +11,28 @@
       "units": "radians per second"
     }
   },
+  "NexusPropellerAPI": {
+    "nexus:aeroH": {
+      "fallback": "0",
+      "type": "float",
+      "units": "kilograms per meter"
+    },
+    "nexus:aeroHforce": {
+      "fallback": "0",
+      "type": "float",
+      "units": "kilograms per radian"
+    },
+    "nexus:cd": {
+      "fallback": "0",
+      "type": "float",
+      "units": "meters"
+    },
+    "nexus:ct": {
+      "fallback": "0",
+      "type": "float",
+      "units": "newtons per (revolution per minute) squared"
+    }
+  },
   "NexusPx4API": {
     "nexus:airframe": {
       "fallback": "",

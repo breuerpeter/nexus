@@ -82,7 +82,7 @@ def build_pid_orchestrator(
         physics = NewtonPhysics(vehicle_builder=builder, cfg=cfg)  # articulated plant
         robot_mass = float(np.sum(physics.model.body_mass.numpy()))
         # The airframe mixer built from the model rotor geometry + the settled rest pose.
-        mixer = build_rotor_mixer_from_model(physics.model, act, physics.state0.body_q.numpy())
+        mixer = build_rotor_mixer_from_model(physics.model, builder.rotor_joints(), act, physics.state0.body_q.numpy())
     if thrust_to_weight is None:
         # The action scale = the plant's true thrust-to-weight, from the USD-authored thrust map, not a
         # declared constant: action = +1 means the plant's real max thrust. DEFAULT_GAINS' altitude

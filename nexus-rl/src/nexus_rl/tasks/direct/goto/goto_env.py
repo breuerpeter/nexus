@@ -29,7 +29,7 @@ import torch
 import warp as wp
 from isaaclab.utils.configclass import configclass
 
-from nexus._src.physics.builders.usd import parse_rotor_joint_params  # motor:*/propeller:* from the USD joints
+from nexus._src.physics.builders.usd import parse_rotors  # the rotors the vehicle USD declares
 from nexus._src.vehicle.actuators import RPM_PER_RADS, quat_to_R  # shared rotor geometry, from the core
 from nexus.examples._lib import (  # the shared single-body model + mixer: train + deploy + diff
     build_allocation,  # the one allocation builder; replaces the hand-rolled torch B
@@ -73,8 +73,8 @@ class GoToEnv(QuadcopterNewtonEnv):
     Reuses the base env's CTBR params, obs including the last action, reward, NaN-robustness and
     start-state randomization; only the actuation differs: ``_pre_physics_step``, which writes the same
     ``self._thrust``/``self._moment`` the stock ``_apply_action`` applies to the base body. The env reads
-    the thrust map, ct/cd/rpm_max, from the vehicle USD, the rotor-joint ``motor:*``/``propeller:*`` attrs,
-    so it carries no per-vehicle constants.
+    the thrust map, ct/cd/rpm_max, from the rotors the vehicle USD declares, so it carries no per-vehicle
+    constants.
     """
 
     def __init__(self, cfg, render_mode=None, **kwargs):
@@ -83,9 +83,9 @@ class GoToEnv(QuadcopterNewtonEnv):
         bn = list(robot.body_names)
         self._rotor_bodies = [i for i, n in enumerate(bn) if "rotor" in n.lower()]
         self._nr = len(self._rotor_bodies)
-        # Actuator aero/thrust + motor map from the vehicle USD rotor joints: the one source the core also
-        # reads, in physics/builders/usd.parse_rotor_joint_params, so no hardcoded per-vehicle dup.
-        act = parse_rotor_joint_params(cfg.robot.spawn.usd_path)
+        # Actuator aero/thrust + motor map from the rotors the vehicle USD declares: the one source the core
+        # also reads, in physics/builders/usd.parse_rotors, so no hardcoded per-vehicle dup.
+        act, _joints = parse_rotors(cfg.robot.spawn.usd_path)
         self._kf = act["ct"] * RPM_PER_RADS**2  # thrust = kf·Ω², with Ω in rad/s
         self._omega_max = act["rpm_max"] / RPM_PER_RADS  # motor saturation speed [rad/s]
         # First-order motor lag at the control rate: Ω += α·(Ω_cmd − Ω), α = 1 − e^{−Δt/τ}.

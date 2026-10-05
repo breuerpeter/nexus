@@ -13,7 +13,7 @@ import nexus  # noqa: F401  # registers the nexus schema plugin
 
 
 def author(out: Path) -> None:
-    """Write the fixture to `out`: PX4 and its Software In The Loop (SITL) peer on the default prim, and one body under it with an Inertial Measurement Unit (IMU) on a lever arm."""
+    """Write the fixture to `out`: PX4 and its Software In The Loop (SITL) peer on the default prim, one body under it with an Inertial Measurement Unit (IMU) on a lever arm, and one rotor body with a propeller."""
     stage = Usd.Stage.CreateNew(str(out))
     UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
     UsdGeom.SetStageMetersPerUnit(stage, 1.0)
@@ -28,6 +28,9 @@ def author(out: Path) -> None:
     prim = imu.GetPrim()
     prim.ApplyAPI("NexusImuAPI")
     prim.GetAttribute("nexus:accNoise").Set(0.05)
+    rotor = UsdGeom.Xform.Define(stage, "/Vehicle/rotor").GetPrim()
+    rotor.ApplyAPI("NexusPropellerAPI")
+    rotor.GetAttribute("nexus:ct").Set(3.463e-6)
     stage.GetRootLayer().Save()
 
 

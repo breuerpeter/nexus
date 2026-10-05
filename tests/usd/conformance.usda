@@ -22,5 +22,12 @@ def Xform "Vehicle" (
             uniform token[] xformOpOrder = ["xformOp:translate"]
         }
     }
+
+    def Xform "rotor" (
+        prepend apiSchemas = ["NexusPropellerAPI"]
+    )
+    {
+        float nexus:ct = 0.000003463
+    }
 }
 

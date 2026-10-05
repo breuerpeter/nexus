@@ -10,7 +10,7 @@ a `NewtonActuator` prim on the real rotor joint, made of a `ControllerPID` veloc
 `ClampingDCMotor` four-quadrant envelope. So the rotor speed Ω is a solver-integrated joint state
 with physical lag and saturation, and the props spin for real. The aerodynamics stay a Warp `body_f`
 kernel over that solver-integrated Ω: airflow-aware thrust, H-force, and reaction drag, from the
-`propeller:*` attributes. PX4 runs its real flight stack. The only thing it talks to is the
+propeller each rotor's rigid body declares with `NexusPropellerAPI`. PX4 runs its real flight stack. The only thing it talks to is the
 Hardware In The Loop (HIL) link on `:4560`.
 
 <iframe src="https://app.rerun.io/version/0.34.1/?url=https://d2837jz4fvtxko.cloudfront.net/public/ci/logs/px4_sitl.rrd" width="100%" height="600" frameborder="0"></iframe>
@@ -22,7 +22,7 @@ Hardware In The Loop (HIL) link on `:4560`.
 | Flight | PX4 closed-loop: `AUTO.TAKEOFF` → arm → climb → 4 yaw sweeps, the one flight profile |
 | Takeoff | **confirmed**, climbed **+5.0 m**, yawed 90/180/270/0° |
 | PX4 warnings | **0**, gated: the run fails on any `WARN` or `ERROR` line about the sim |
-| Actuator | `ArticulatedRotors`, with USD-authored `newton.actuators` DC-motor servos on the real rotor joints, one `NewtonActuator` prim each, plus `propeller:*` aero |
+| Actuator | `ArticulatedRotors`, with USD-authored `newton.actuators` DC-motor servos on the real rotor joints, one `NewtonActuator` prim each, plus the aero of each rotor body's `NexusPropellerAPI` |
 | **Sim speed with PX4** | **~3.7×** real-time on the GPU with the captured strategy, RTX 5080, for the full takeoff+yaw profile with recording on |
 
 **Clean log gate.** The flight asserts **zero PX4 warnings**, the `px4_warnings` metric gated to 0.

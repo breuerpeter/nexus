@@ -45,7 +45,10 @@ vehicles:
 
 A vehicle entry names no controller: the vehicle's Universal Scene Description (USD) file declares
 it. PX4 flies a vehicle whose root prim applies `NexusPx4API` and names its airframe for Software
-In The Loop (SITL) in `nexus:airframe`, the make target without PX4's `none_` prefix. The [schema reference](../reference/schemas.md) lists the attribute.
+In The Loop (SITL) in `nexus:airframe`, the make target without PX4's `none_` prefix. Each rotor
+declares its propeller with `NexusPropellerAPI` on its rigid body, and its motor with a
+`NewtonActuator` prim that drives its joint, whose `newton:velocityLimit` is the rotor speed at full
+command. The [schema reference](../reference/schemas.md) lists the attributes.
 
 An entry either carries a full `url` or a compact `{name, sha256}` that its own catalog's
 `assets.base` completes into `<base>/assets/usd/{vehicles,scenes}/<name>-<sha256>.usdz`. The hosted
