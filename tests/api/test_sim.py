@@ -346,3 +346,13 @@ def test_a_sim_that_names_no_scene_fails_at_construction():
     """
     with pytest.raises((TypeError, ValueError), match="scene"):
         sim_mod.Sim(vehicle="astro_max_base")
+
+
+def test_reading_the_guidance_of_a_run_that_has_none_fails_with_the_way_to_construct_one():
+    """Reading the guidance of a run that has none fails with the way to construct one.
+
+    Given a `Sim` over a setpoint controller and no guidance, when a caller reads `sim.guidance`, then it
+    raises `RuntimeError` whose message shows how a flight constructs one.
+    """
+    with sim_mod.Sim.from_orchestrator(_InProcessOrch()) as sim, pytest.raises(RuntimeError, match="MissionGuidance"):
+        _ = sim.guidance
