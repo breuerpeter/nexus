@@ -7,6 +7,7 @@ defines it, so a project's own schemas read the same way as the ones nexus ships
 from __future__ import annotations
 
 import re
+from importlib.metadata import version
 from pathlib import Path
 
 _NAMESPACE = "nexus:"
@@ -29,6 +30,35 @@ def _value(prim, name: str):
     return value
 
 
+def _retired() -> set[str]:
+    """Every schema version a registered plugin lists as retired, under `NexusRetiredSchemas` in its `plugInfo.json`."""
+    from pxr import Plug
+
+    plugins = Plug.Registry().GetAllPlugins()
+    return {name for plugin in plugins for name in plugin.metadata.get("NexusRetiredSchemas", ())}
+
+
+def _fail_unread_version(prim, applied: list[str], retired: set[str]) -> None:
+    """Fail on a schema the prim lists that no plugin defines, when its family is one a plugin defines or has retired.
+
+    OpenUSD drops such a schema from the prim's applied schemas, so without this the prim would build
+    without it and say nothing. The check skips a schema of a family no plugin has ever defined.
+    """
+    from pxr import Usd
+
+    registry = Usd.SchemaRegistry
+    listed = prim.GetMetadata("apiSchemas")
+    for schema in listed.GetAppliedItems() if listed else ():
+        name = schema.partition(":")[0]  # an instance of a schema applied more than once, `CollectionAPI:colliders`
+        if schema in applied or registry.FindSchemaInfo(name) is not None:
+            continue
+        family, _ = registry.ParseSchemaFamilyAndVersionFromIdentifier(name)
+        if name in retired or registry.FindSchemaInfosInFamily(family):
+            raise ValueError(
+                f"{prim.GetPath()}: applies {name}, a schema version that nexus {version('nexus-sim')} does not define"
+            )
+
+
 def read_declarations(usd_path: str | Path) -> list[tuple[str, str, dict]]:
     """One `(prim path, schema, keyword arguments)` per applied nexus schema on the stage's active prims.
 
@@ -36,17 +66,22 @@ def read_declarations(usd_path: str | Path) -> list[tuple[str, str, dict]]:
 
     Raises:
         ValueError: A prim authors a `nexus:` attribute that none of its applied schemas defines, or an
-            asset path that resolves to no file; the message names the prim.
+            asset path that resolves to no file; the message names the prim. Or a prim applies a version
+            of a schema that no plugin defines, of a family a plugin defines or has retired; the message
+            names the prim, the version and the nexus version reading it.
     """
     from pxr import Usd
 
     registry = Usd.SchemaRegistry()
     stage = Usd.Stage.Open(str(usd_path), Usd.Stage.LoadAll)
+    retired = _retired()
     declarations = []
     # The default predicate skips inactive prims; instance proxies reach into instanced references.
     for prim in stage.Traverse(Usd.TraverseInstanceProxies()):
+        applied = prim.GetAppliedSchemas()
+        _fail_unread_version(prim, applied, retired)
         defined = set()
-        for schema in prim.GetAppliedSchemas():
+        for schema in applied:
             definition = registry.FindAppliedAPIPrimDefinition(schema)
             if definition is None:  # one instance of a schema applied more than once, `CollectionAPI:colliders`
                 continue

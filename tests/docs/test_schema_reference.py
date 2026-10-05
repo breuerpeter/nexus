@@ -20,6 +20,18 @@ def test_the_hook_replaces_its_marker_with_the_reference():
     assert "<!-- schema-reference -->" not in page and "## NexusImuAPI" in page
 
 
+def test_the_reference_page_lists_every_version_of_a_family_and_what_changed():
+    """The schema reference page lists every version of a family and what changed in each.
+
+    Given a plugin that defines a family at two versions with a renamed attribute, when the hook renders
+    the page, then it carries a section per version and the later one names the attribute that changed.
+    The family is the stand-in project's `StandInGearAPI`, whose second version renames `nexus:ratio`.
+    """
+    page = _hook().schema_reference(["StandInGearAPI", "StandInGearAPI_1"])
+    first, _, second = page.partition("## StandInGearAPI_1\n")
+    assert "## StandInGearAPI\n" in first and "nexus:ratio" in second
+
+
 def test_the_reference_page_is_generated_from_the_plugin():
     """The docs reference page comes from the plugin: every schema, what it applies to, its
     attributes, their units, limits and defaults.
