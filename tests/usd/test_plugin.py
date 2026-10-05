@@ -56,6 +56,27 @@ def test_the_imu_schema_defines_its_two_noise_attributes():
     assert sorted(definition.GetPropertyNames()) == ["nexus:accNoise", "nexus:gyroNoise"]
 
 
+def test_every_sensor_schema_shares_one_rate_attribute():
+    """Every sensor schema shares one rate attribute, and each sensor receives its authored rate.
+
+    Given the plugin, when a test lists each sensor schema's attributes, then all seven define
+    `nexus:rate` with one type and one unit.
+    """
+    from pxr import Usd
+
+    import nexus  # noqa: F401  # registers the plugin
+
+    sensors = ("Imu", "Mag", "Baro", "Gps", "Camera", "ThermalCamera", "Lidar")
+    rates = set()
+    for sensor in sensors:
+        definition = Usd.SchemaRegistry().FindAppliedAPIPrimDefinition(f"Nexus{sensor}API")
+        rate = definition.GetAttributeDefinition("nexus:rate")
+        (unit,) = [line.strip() for line in rate.GetDocumentation().splitlines() if line.strip().startswith("Units:")]
+        rates.add((str(rate.GetTypeName()), unit))
+
+    assert rates == {("float", "Units: hertz")}
+
+
 def test_the_conformance_fixture_applies_every_schema_the_plugin_defines():
     """The conformance fixture applies every schema the plugin defines.
 

@@ -17,3 +17,15 @@ class "StandInAPI" (
         doc = "A file the stand-in loads, resolved against the layer that authors it."
     )
 }
+
+class "StandInSensorAPI" (
+    doc = "A stand-in sensor on its mount prim: one gain."
+)
+{
+    float nexus:gain = 1 (
+        doc = """The value the stand-in sensor reports.
+
+        Range: [0, inf)
+        Units: dimensionless"""
+    )
+}
