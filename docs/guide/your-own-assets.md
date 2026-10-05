@@ -35,11 +35,11 @@ assets:
   base: https://assets.example.com/catalog   # where this catalog's blobs live
 
 vehicles:
-  - name: my_quad
+  my_quad:
     usd: { name: my_quad, sha256: 3f1c…d92 }             # completed against the base
-  - name: borrowed
+  borrowed:
     usd: { url: "https://cdn.example/x-3f1c…d92.usdz", sha256: 3f1c…d92 }   # hosted elsewhere
-  - name: in_progress
+  in_progress:
     usd: { url: "file:///home/me/assets/draft.usdz", sha256: 9ab2…40f }     # still being authored
 ```
 

@@ -46,7 +46,7 @@ def _glb_targets() -> dict[str, tuple[str, str]]:
     data = yaml.safe_load(_REGISTRY.read_text())
     base = (data.get("assets") or {}).get("base")
     targets: dict[str, tuple[str, str]] = {}
-    for vehicle in data.get("vehicles", []):
+    for vehicle in (data.get("vehicles") or {}).values():
         usd = vehicle.get("usd") or {}
         name, sha = usd.get("name"), usd.get("sha256")
         if not (name and sha and base):  # an entry with a URL of its own carries no derivable preview

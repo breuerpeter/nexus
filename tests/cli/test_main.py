@@ -27,7 +27,7 @@ def test_stream_on_a_vehicle_without_a_camera_fails_before_the_run(monkeypatch, 
     usd.write_text(PLAIN_USD)
     registry = tmp_path / "catalog.yaml"
     registry.write_text(
-        "vehicles:\n  - name: plain\n"
+        "vehicles:\n  plain:\n"
         f'    usd: {{ url: "{usd.as_uri()}", sha256: {hashlib.sha256(usd.read_bytes()).hexdigest()} }}\n'
         "scenes:\n  empty: {}\n"
     )
@@ -149,8 +149,7 @@ def test_a_run_on_a_catalog_with_a_defaults_block_fails_and_says_to_name_the_veh
     """
     catalog = tmp_path / "nexus.registry.yaml"
     catalog.write_text(
-        'vehicles:\n  - name: my_quad\n    usd: { url: "file:///my_quad.usda", sha256: abc }\n'
-        "defaults: { vehicle: my_quad }\n"
+        'vehicles:\n  my_quad:\n    usd: { url: "file:///my_quad.usda", sha256: abc }\ndefaults: { vehicle: my_quad }\n'
     )
     argv = ("--registry", str(catalog), "--vehicle", "astro_max_base", "--scene", "empty")
     failed, said = _said_when_run(monkeypatch, capsys, tmp_path, *argv)
