@@ -15,7 +15,7 @@ import pytest
 from nexus._src.peers.kit.runner import KitPeer, KitPeerError
 
 _spec = importlib.util.spec_from_file_location(
-    "kit_container", Path(__file__).resolve().parents[2] / "scripts" / "assets" / "kit_container.py"
+    "kit_container", Path(__file__).resolve().parents[3] / "scripts" / "assets" / "kit_container.py"
 )
 kit_container = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(kit_container)
