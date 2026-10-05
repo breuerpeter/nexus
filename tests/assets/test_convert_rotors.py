@@ -48,18 +48,27 @@ def _authored_schemas(prim):
     return list(authored.GetAddedOrExplicitItems()) if authored else []
 
 
+def _actuator_schemas(path):
+    """The schemas the vehicle at `path` authors on each of its `NewtonActuator` prims."""
+    stage = Usd.Stage.Open(str(path))  # held: its prims expire with it
+    return {str(p.GetPath()): _authored_schemas(p) for p in stage.Traverse() if p.GetTypeName() == "NewtonActuator"}
+
+
 def test_the_converter_authors_the_propeller_schema_on_each_rotor_body_and_keeps_the_actuator_prims(tmp_path):
     """The asset converter keeps each `NewtonActuator` prim with Newton's schemas alone and authors the
     propeller schema on each rotor body.
 
     Given `scripts/assets/convert.py` run on a source vehicle, when it finishes, then each actuator prim
     carries only Newton's schemas, each rotor body applies the propeller schema, and no joint authors
-    `propeller:*`.
+    `propeller:*`. The source authors Newton's schemas alone on its two actuator prims, so they must
+    come out as they went in.
     """
-    out = convert.author_rotor_params(_source_vehicle(tmp_path / "source.usda"), tmp_path / "out.usda", params=PARAMS)
+    source = _source_vehicle(tmp_path / "source.usda")
+    before = _actuator_schemas(source)
+    out = convert.author_rotor_params(source, tmp_path / "out.usda", params=PARAMS)
 
-    prims = list(Usd.Stage.Open(str(out)).Traverse())
-    actuators = {str(p.GetPath()): _authored_schemas(p) for p in prims if p.GetTypeName() == "NewtonActuator"}
+    stage = Usd.Stage.Open(str(out))  # held: its prims expire with it
+    prims = list(stage.Traverse())
     bodies = {
         str(p.GetPath()): "NexusPropellerAPI" in _authored_schemas(p)
         for p in prims
@@ -72,8 +81,9 @@ def test_the_converter_authors_the_propeller_schema_on_each_rotor_body_and_keeps
         for attr in p.GetAttributes()
         if attr.GetName().startswith("propeller:")
     ]
-    assert (actuators, bodies, on_joints) == (
-        {"/Vehicle/rotor_0_motor": NEWTON, "/Vehicle/rotor_1_motor": NEWTON},
+    assert (len(before), _actuator_schemas(out), bodies, on_joints) == (
+        2,
+        before,
         {"/Vehicle/body": False, "/Vehicle/rotor_0": True, "/Vehicle/rotor_1": True},
         [],
     )

@@ -180,27 +180,24 @@ def _open_stage(path):
     return stage
 
 
-# The unified-actuator param attrs authored on each rotor REVOLUTE joint, and the legacy
-# ``freefly:actuator:*`` keys they migrate from; see physics/builders/usd.parse_rotor_joint_params.
-_ROTOR_PARAM_MAP = {
-    "propeller:ct": "ct",
-    "propeller:cd": "cd",
-    "propeller:rpm_max": "rpm_max",
-    "propeller:aero_h": "aero_h",
-    "propeller:aero_hforce": "aero_hforce",
-    "motor:tau": "tau",
-}
+# The values the converter authors, by their key in ``params``: the propeller's on each rotor body, as
+# ``NexusPropellerAPI`` attributes, and the motor lag on each rotor joint. The run reads them back in
+# physics/builders/usd.parse_rotors.
+_PROPELLER_ATTRS = {"nexus:ct": "ct", "nexus:cd": "cd", "nexus:aeroH": "aero_h", "nexus:aeroHforce": "aero_hforce"}
+_JOINT_ATTRS = {"motor:tau": "tau"}
 
 
 def author_rotor_params(usdz, out, *, params=None) -> str:
-    """Re-author the vehicle USD onto the unified-actuator schema: write the motor + propeller params as
-    ``motor:*`` / ``propeller:*`` custom Float attrs on each rotor ``PhysicsRevoluteJoint``, then delete
-    the legacy ``NewtonActuator`` prims. ``pxr``-only: runs host-side. Everything else survives: geometry,
-    joints, the authored ``FpvCam``.
+    """Re-author the vehicle USD so each rotor declares its propeller where the run reads it: the
+    ``NexusPropellerAPI`` schema and its values on the rotor's rigid body, the child body of the joint a
+    ``NewtonActuator`` prim drives. Each actuator prim stays untouched, with Newton's schemas alone,
+    ``motor:tau`` goes on each rotor joint, and the older ``propeller:*`` attributes go. ``pxr``-only: runs
+    host-side. Everything else survives: geometry, joints, the authored ``FpvCam``.
 
-    ``params`` is an optional ``{ct, cd, rpm_max, aero_h, aero_hforce, tau}`` dict; if omitted, the function
-    reads the uniform values from the existing ``freefly:actuator:*`` attrs on the ``NewtonActuator`` prims,
-    so the migration keeps the same values. Returns the output path.
+    ``params`` is a ``{ct, cd, aero_h, aero_hforce, tau}`` dict; if omitted, the function reads the uniform
+    values from the ``freefly:actuator:*`` attrs on the ``NewtonActuator`` prims of an as-built USD. The
+    rotor speed at full command isn't one of them: the run reads it from each motor's
+    ``newton:velocityLimit``. Returns the output path.
     """
     from pxr import Sdf
 
@@ -208,22 +205,29 @@ def author_rotor_params(usdz, out, *, params=None) -> str:
     if params is None:
         params = _read_legacy_actuator_params(stage)
 
-    joints, actuators = [], []
-    for prim in stage.Traverse():
-        tn = prim.GetTypeName()
-        if tn == "PhysicsRevoluteJoint":
-            joints.append(prim)
-        elif tn == "NewtonActuator":
-            actuators.append(prim.GetPath())
-    if not joints:
-        raise ValueError("no PhysicsRevoluteJoint rotor joints found to author motor:*/propeller:* onto")
+    prims = list(stage.Traverse())
+    rotors = []  # each rotor's joint and rigid body, found from the actuator prim that drives the joint
+    for prim in prims:
+        if prim.GetTypeName() != "NewtonActuator":
+            continue
+        targets = prim.GetRelationship("newton:targets").GetTargets()
+        joint = stage.GetPrimAtPath(targets[0]) if targets else None
+        bodies = joint.GetRelationship("physics:body1").GetTargets() if joint else []
+        if not bodies:
+            raise ValueError(f"{prim.GetPath()}: its newton:targets names no joint with a child body")
+        rotors.append((joint, stage.GetPrimAtPath(bodies[0])))
+    if not rotors:
+        raise ValueError("no NewtonActuator prims found: each rotor needs one on its joint, for its motor")
 
-    for joint in joints:
-        for attr_name, key in _ROTOR_PARAM_MAP.items():
-            attr = joint.CreateAttribute(attr_name, Sdf.ValueTypeNames.Float, custom=True)
-            attr.Set(float(params[key]))
-    for path in actuators:
-        stage.RemovePrim(path)  # drop the legacy NewtonActuator schema, which went away with newton.actuators
+    for prim in prims:
+        for prop in prim.GetAuthoredPropertiesInNamespace("propeller"):
+            prim.RemoveProperty(prop.GetName())
+    for joint, body in rotors:
+        body.AddAppliedSchema("NexusPropellerAPI")
+        for attr_name, key in _PROPELLER_ATTRS.items():
+            body.CreateAttribute(attr_name, Sdf.ValueTypeNames.Float).Set(float(params[key]))
+        for attr_name, key in _JOINT_ATTRS.items():
+            joint.CreateAttribute(attr_name, Sdf.ValueTypeNames.Float, custom=True).Set(float(params[key]))
 
     out = str(out)
     if out.endswith(".usdz"):
@@ -257,7 +261,7 @@ def _read_legacy_actuator_params(stage) -> dict:
     if not per_rotor:
         raise ValueError("no freefly:actuator:* params found on NewtonActuator prims; pass params= explicitly")
     first = {k: float(v) for k, v in per_rotor[0].items()}
-    missing = [k for k in _ROTOR_PARAM_MAP.values() if k not in first]
+    missing = [k for k in (*_PROPELLER_ATTRS.values(), *_JOINT_ATTRS.values()) if k not in first]
     if missing:
         raise ValueError(f"legacy actuator params missing keys {missing} (have {sorted(first)})")
     return first
