@@ -197,10 +197,8 @@ def test_no_released_version_of_the_nexus_plugin_changed_in_place():
     assert in_place_changes(PLUGIN) == []
 
 
-def test_the_released_record_holds_every_attribute_the_nexus_plugin_defines():
-    """The record holds every schema and attribute the nexus plugin defines, so the check covers a new one from its first release."""
-    import json
+def test_the_released_record_is_what_its_command_writes_from_the_nexus_plugin():
+    """The committed record is what `python -m nexus._src.usd.released` writes, so it holds every schema and attribute the plugin defines."""
+    from nexus._src.usd.released import RECORD, record_text
 
-    from nexus._src.usd.released import RECORD, schema_record
-
-    assert json.loads(RECORD.read_text()) == schema_record(PLUGIN)
+    assert RECORD.read_text() == record_text(PLUGIN)

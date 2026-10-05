@@ -3,6 +3,8 @@
 `released.json` beside this file records every schema version ever released: each attribute's type,
 fallback and unit. A version changes only by a new version, so an attribute in the record keeps its name,
 type, fallback and unit until its version retires, and a retired version stays in the record.
+
+Run `uv run python -m nexus._src.usd.released` to rewrite the record from the plugin.
 """
 
 from __future__ import annotations
@@ -74,3 +76,12 @@ def in_place_changes(plugin: Path) -> list[str]:
             if name not in attributes and found["fallback"] is None:
                 changes.append(f"{schema}: {name} joins with no fallback")
     return changes
+
+
+def record_text(plugin: Path) -> str:
+    """The record as the plugin folder at `plugin` now stands: each version it defines, and each recorded one it no longer does."""
+    return json.dumps({**json.loads(RECORD.read_text()), **schema_record(plugin)}, indent=2, sort_keys=True) + "\n"
+
+
+if __name__ == "__main__":
+    RECORD.write_text(record_text(PLUGIN))
