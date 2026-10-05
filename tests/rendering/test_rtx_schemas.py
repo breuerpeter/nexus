@@ -56,15 +56,19 @@ def test_a_camera_a_thermal_camera_and_a_lidar_schema_each_build_their_sensor_wi
     """
     kit, _ = _kit()
     loop = sv.build(sv.vehicle(tmp_path, CAMERA + THERMAL + LIDAR), peers={"kit": kit})
-    built = [(type(s), getattr(s, "width", None), getattr(s, "height", None), s.rate) for s in loop.sensors]
+    built = [(type(s), s.rate) for s in loop.sensors]
+    sizes = [(s.width, s.height) for s in loop.sensors[:2]]  # the lidar declares no resolution
     loop.close()
 
     registry = default_registry()
-    assert built == [
-        (registry.resolve("NexusCameraAPI"), 640, 480, 30.0),
-        (registry.resolve("NexusThermalCameraAPI"), 320, 240, 10.0),
-        (registry.resolve("NexusLidarAPI"), None, None, 10.0),
-    ]
+    assert (built, sizes) == (
+        [
+            (registry.resolve("NexusCameraAPI"), 30.0),
+            (registry.resolve("NexusThermalCameraAPI"), 10.0),
+            (registry.resolve("NexusLidarAPI"), 10.0),
+        ],
+        [(640, 480), (320, 240)],
+    )
 
 
 def test_a_resolution_or_rate_a_camera_prim_does_not_author_takes_the_schemas_fallback_with_no_warning(
