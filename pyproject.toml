@@ -119,6 +119,12 @@ explicit = true  # only the warp-lang source references it (isaaclab's transitiv
 # pandas), so it must NEVER become a [project] dependency — examples dump plain numpy/JSON and the
 # harness alone imports evo to score them.
 ci = ["evo>=1.36"]
+# The test and lint tools. uv installs this group on every plain `uv sync`, and the lock pins each one.
+dev = [
+    "import-linter>=2.15",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+]
 docs = [
     "mkdocs-awesome-pages-plugin>=2.10.1",
     "mkdocs-material[imaging]>=9.7.6",  # [imaging] = pillow + cairosvg for the social-card plugin
@@ -131,6 +137,7 @@ docs = [
 [tool.pytest.ini_options]
 # pytest's default list also skips `build`, the name of the folder that mirrors `nexus/_src/build/`.
 norecursedirs = [".*", "dist", "node_modules", "venv"]
+testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 120
