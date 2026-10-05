@@ -145,7 +145,7 @@ class LaunchConfig(_Base):
     output: Output = Field(default_factory=Output)
     """The Rerun recording the run produces.
 
-    Defaults to a :class:`Output` with no recording and no viewer.
+    Defaults to an ``Output`` with no recording and no viewer.
     """
 
     # --- front-doors: dict / YAML / programmatic all build the one model ---
