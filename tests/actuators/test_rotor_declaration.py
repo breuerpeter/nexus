@@ -1,9 +1,10 @@
-"""Each rotor declares its propeller on its ``NewtonActuator`` prim, beside Newton's motor, and the run
-finds its rotors by that declaration.
+"""Each rotor declares its propeller on its rigid body, beside Newton's motor, and the run finds its
+rotors by that declaration.
 
 Real builds on the Warp CPU backend: a quad authored per test, four rotor bodies on revolute joints
-under one airframe, each with a ``NewtonActuator`` prim carrying Newton's velocity servo and DC motor
-clamp and the nexus propeller schema, and a stand-in controller that commands full throttle.
+under one airframe, each body carrying the nexus propeller schema and each joint driven by a
+``NewtonActuator`` prim with Newton's velocity servo and DC motor clamp, and a stand-in controller that
+commands full throttle. The motor's no-load speed, 398 rad/s, is the rotor speed at full command.
 Skipped without newton or pxr.
 """
 
@@ -27,7 +28,7 @@ ARM = 0.2  # rotor offset from the airframe's center on each axis [m]
 LIFT_CT = 4e-7  # N/rpm²: four rotors at full command make about twice the 1.08 kg vehicle's weight
 WEAK_CT = 1e-7  # N/rpm²: four rotors at full command make about half its weight
 FLIGHT_STEPS = 125  # 0.5 s at the default 4 ms tick
-PROPELLER = {"nexus:cd": 0.05, "nexus:rpmMax": 3800.0, "nexus:aeroH": 0.0, "nexus:aeroHforce": 0.0}
+PROPELLER = {"nexus:cd": 0.05, "nexus:aeroH": 0.0, "nexus:aeroHforce": 0.0}
 
 
 def _author(
@@ -37,20 +38,20 @@ def _author(
     propeller=True,
     odd_ct=None,
     legacy_attr=False,
-    stray=False,
+    pod=False,
     gimbal=False,
     reparent=False,
 ):
-    """A quad whose rotors each declare Newton's motor and the propeller schema on their actuator prim.
+    """A quad whose rotor bodies each declare the propeller schema, with Newton's motor on each rotor joint.
 
     Args:
         path: Where to write the vehicle.
         ct: The thrust coefficient every rotor declares.
-        propeller: Whether the actuator prims apply the propeller schema.
+        propeller: Whether the rotor bodies apply the propeller schema.
         odd_ct: A thrust coefficient rotor 2 declares instead of `ct`.
         legacy_attr: Also author `propeller:ct` on rotor 0's joint.
-        stray: Also apply the propeller schema to a prim that targets no joint.
-        gimbal: Add a fifth body on a revolute joint that no actuator prim declares.
+        pod: Add a fifth body on a fixed joint that applies the propeller schema.
+        gimbal: Add a fifth body on a revolute joint that applies no propeller schema.
         reparent: Hang rotor 3's joint off rotor 0's body instead of the airframe.
     """
     stage = Usd.Stage.CreateNew(str(path))
@@ -114,13 +115,19 @@ def _author(
         motor.GetAttribute("newton:maxMotorEffort").Set(8.0)
         motor.GetAttribute("newton:velocityLimit").Set(398.0)
         if propeller:
-            apply_propeller(motor, odd_ct if odd_ct is not None and i == 2 else ct)
+            apply_propeller(rotor.GetPrim(), odd_ct if odd_ct is not None and i == 2 else ct)
     if gimbal:
         offset = (0.0, 0.0, 0.12)
         mount = child_body("gimbal", offset)
         revolute("gimbal_joint", f"{ROOT}/body", mount.GetPath(), offset)
-    if stray:
-        apply_propeller(UsdGeom.Xform.Define(stage, f"{ROOT}/stray").GetPrim(), ct)
+    if pod:
+        offset = (0.0, 0.0, -0.12)
+        fixed = UsdPhysics.FixedJoint.Define(stage, f"{ROOT}/pod_joint")
+        fixed.CreateBody0Rel().SetTargets([f"{ROOT}/body"])
+        fixed.CreateBody1Rel().SetTargets([child_body("pod", offset).GetPath()])
+        fixed.CreateLocalPos0Attr().Set(Gf.Vec3f(*offset))
+        fixed.CreateLocalPos1Attr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
+        apply_propeller(stage.GetPrimAtPath(f"{ROOT}/pod"), ct)
     stage.GetRootLayer().Save()
     return path
 
@@ -166,21 +173,21 @@ def _build_error(path):
 
 
 @pytest.mark.parametrize(("ct", "climbs"), [(LIFT_CT, True), (WEAK_CT, False)])
-def test_each_rotors_thrust_comes_from_the_propeller_schema_on_its_actuator_prim(tmp_path, ct, climbs):
-    """Each rotor's thrust and drag values come from the propeller schema on its `NewtonActuator` prim.
+def test_each_rotors_thrust_comes_from_the_propeller_schema_on_its_rigid_body(tmp_path, ct, climbs):
+    """Each rotor's thrust and drag values come from the propeller schema on its rigid body.
 
-    Given a fixture vehicle whose actuator prims apply the propeller schema with a distinctive `ct`, when
+    Given a fixture vehicle whose rotor bodies apply the propeller schema with a distinctive `ct`, when
     the run builds it, then the actuator flies with that `ct`: at full throttle, a `ct` that lifts twice
     the weight climbs half a meter in half a second, and one that lifts half of it stays down.
     """
     assert (_climb(_author(tmp_path / "quad.usda", ct=ct)) > 0.5) is climbs
 
 
-def test_a_revolute_joint_no_actuator_prim_declares_is_not_a_rotor(tmp_path):
-    """A revolute joint that no actuator prim declares as a rotor isn't a rotor.
+def test_a_revolute_joint_whose_child_body_declares_no_propeller_is_not_a_rotor(tmp_path):
+    """A revolute joint whose child body declares no propeller isn't a rotor.
 
-    Given the fixture with a fifth revolute joint and no propeller schema on it, when built, then the run
-    has four rotors and the fifth joint carries no thrust: four commands at full throttle fly it up.
+    Given the fixture with a fifth revolute joint whose body applies no propeller schema, when built, then
+    the run has four rotors and the fifth joint carries no thrust: four commands at full throttle fly it up.
     """
     assert _climb(_author(tmp_path / "quad.usda", gimbal=True)) > 0.5
 
@@ -194,33 +201,33 @@ def test_a_vehicle_that_declares_no_rotor_fails_the_build_and_names_the_vehicle(
     assert ROOT in _build_error(_author(tmp_path / "quad.usda", propeller=False))
 
 
-def test_a_propeller_schema_on_a_prim_that_targets_no_joint_fails_the_build_and_names_the_prim(tmp_path):
-    """A propeller schema on a prim that targets no joint fails the build and names the prim.
+def test_a_propeller_schema_off_a_revolute_joints_child_body_fails_the_build_and_names_the_prim(tmp_path):
+    """A propeller schema on a prim that isn't the child body of a revolute joint fails the build and names the prim.
 
-    Given the fixture with the propeller schema on a prim without `newton:targets`, when built, then the
-    build fails naming that prim.
+    Given the fixture with the propeller schema on a body that no revolute joint connects to a parent, when
+    built, then the build fails naming that prim.
     """
-    assert f"{ROOT}/stray" in _build_error(_author(tmp_path / "quad.usda", stray=True))
+    assert f"{ROOT}/pod" in _build_error(_author(tmp_path / "quad.usda", pod=True))
 
 
 def test_rotors_that_do_not_share_one_parent_body_fail_the_build_and_name_the_prims(tmp_path):
     """Rotors that don't share one parent body fail the build and name the prims.
 
     Given the fixture with one rotor joint re-parented to another body, when built, then the build fails
-    naming the rotor prims and their parents.
+    naming the rotor bodies and their parents.
     """
     message = _build_error(_author(tmp_path / "quad.usda", reparent=True))
-    assert all(name in message for name in (f"{ROOT}/rotor_3_motor", f"{ROOT}/rotor_0", f"{ROOT}/body"))
+    assert all(name in message for name in (f"{ROOT}/rotor_3", f"{ROOT}/rotor_0", f"{ROOT}/body"))
 
 
 def test_rotors_whose_propeller_values_differ_fail_the_build_and_name_the_prims(tmp_path):
     """Rotors whose propeller values differ fail the build and name the prims.
 
-    Given the fixture with one rotor's `ct` changed, when built, then the build fails naming the rotors
-    whose values differ.
+    Given the fixture with one rotor's `ct` changed, when built, then the build fails naming the rotor
+    bodies whose values differ.
     """
     message = _build_error(_author(tmp_path / "quad.usda", odd_ct=2 * LIFT_CT))
-    assert all(f"{ROOT}/rotor_{i}_motor" in message for i in (0, 2))
+    assert all(f"{ROOT}/rotor_{i}" in message for i in (0, 2))
 
 
 def test_a_vehicle_that_still_authors_propeller_joint_attributes_fails_the_build_and_names_the_prim(tmp_path):
@@ -233,11 +240,11 @@ def test_a_vehicle_that_still_authors_propeller_joint_attributes_fails_the_build
     assert f"{ROOT}/rotor_0_joint" in message and "propeller:ct" in message
 
 
-def test_newton_still_builds_each_rotors_motor_from_the_actuator_prim_that_carries_the_propeller_schema(tmp_path):
-    """Newton still builds each rotor's motor from the actuator prim that carries the propeller schema.
+def test_newton_still_builds_each_rotors_motor_from_its_actuator_prim(tmp_path):
+    """Newton still builds each rotor's motor from its `NewtonActuator` prim.
 
-    Given the fixture, when built, then `model.actuators` holds one Proportional Integral Derivative (PID) controlled, DC-clamped motor per
-    rotor.
+    Given the fixture, when built, then `model.actuators` holds, per rotor, one
+    Proportional Integral Derivative (PID) controlled, DC-clamped motor.
     """
     with wp.ScopedDevice("cpu"):
         model = _build(_author(tmp_path / "quad.usda")).physics.model
