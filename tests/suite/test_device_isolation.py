@@ -15,7 +15,7 @@ wp = pytest.importorskip("warp")
 
 pytestmark = pytest.mark.skipif(not wp.is_cuda_available(), reason="no CUDA device")
 
-_ROOT = Path(__file__).resolve().parents[1]
+_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _pytest(*args: str) -> subprocess.CompletedProcess:
@@ -43,8 +43,8 @@ def test_api_passes_after_logging():
 
 
 def test_api_passes_before_sensors():
-    """`pytest tests/api tests/sensors/test_sensors.py` passes on a GPU machine."""
-    run = _pytest("tests/api", "tests/sensors/test_sensors.py")
+    """`pytest tests/api tests/vehicle/sensors/test_sensors.py` passes on a GPU machine."""
+    run = _pytest("tests/api", "tests/vehicle/sensors/test_sensors.py")
     assert run.returncode == 0, run.stdout[-3000:] + run.stderr[-3000:]
 
 

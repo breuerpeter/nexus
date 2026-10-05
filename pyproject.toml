@@ -121,6 +121,10 @@ docs = [
     "ruff",  # lets mkdocstrings format rendered signatures (separate_signature)
 ]
 
+[tool.pytest.ini_options]
+# pytest's default list also skips `build`, the name of the folder that mirrors `nexus/_src/build/`.
+norecursedirs = [".*", "dist", "node_modules", "venv"]
+
 [tool.ruff]
 line-length = 120
 extend-exclude = ["docs"]
