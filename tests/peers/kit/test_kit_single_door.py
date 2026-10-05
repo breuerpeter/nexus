@@ -17,7 +17,7 @@ Needs no Kit, no GPU and no container, so it runs in the ordinary test job.
 import subprocess
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[3]
 SCANNED_SUFFIXES = {".py", ".md", ".sh", ".yml", ".yaml", ".toml", ".txt"}
 
 BOOT_CALL = "SimulationApp" + "("  # the *call*, so a prose mention of the class isn't a hit

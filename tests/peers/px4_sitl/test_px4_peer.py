@@ -7,7 +7,7 @@ The docker daemon and the autopilot on the far end of the HIL link are the syste
 stand-in daemon records what the run asks of it, and a stand-in autopilot dials the HIL port and
 speaks MAVLink lockstep. The core assembly needs a full vehicle Universal Scene Description (USD)
 file with motors and sensors, so the build's assembly step returns the loop over stand-in core
-components, as ``tests/runtimes/test_launch.py`` does.
+components, as ``tests/build/test_launch.py`` does.
 """
 
 import hashlib

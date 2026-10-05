@@ -24,6 +24,8 @@ def _tracked_test_modules() -> list[Path]:
 
 def _unmirrored(folders: list[str]) -> list[str]:
     """The test folders, as repo-relative paths, that match no source folder and no name in ``UNMIRRORED``."""
+    paths = [(f, Path(f).relative_to("tests")) for f in folders]
+    return [f for f, rel in paths if rel.parts[0] not in UNMIRRORED and not (REPO / "nexus" / "_src" / rel).is_dir()]
 
 
 def test_every_test_folder_mirrors_a_source_folder() -> None:
