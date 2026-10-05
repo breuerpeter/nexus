@@ -12,7 +12,7 @@ line here, so no checkout carries an account's name.
 - The Kit-only scripts, `obj_to_usd.py`, `site_scan_splat.py` and `author_cesium_scene.py`, run
   from the host with `uv run python scripts/assets/<script>.py …`. Each starts the Kit image with
   its own file through `kit_container.py` and boots Kit there. The boot call sits in the script
-  itself, and `tests/test_kit_single_door.py` allows it in these three files and the peer program
+  itself, and `tests/peers/kit/test_kit_single_door.py` allows it in these three files and the peer program
   only. A sibling module imports as `from scene_root import …`: the script's folder is on the path
   on both sides, and the working folder isn't.
 - Uploads are **manual**. Prepare an asset with
@@ -22,6 +22,6 @@ line here, so no checkout carries an account's name.
   `bpy`. Pass `--rotate-x 180` for assets authored "up = -Z" such as Astro Max. Scenes get no
   `.glb`.
 - A vehicle re-pin that changes a flown value changes the per-GPU trajectory hashes in
-  `tests/runtimes/test_stages.py`, a test that skips without CUDA. Record the local GPU's hash from
+  `tests/build/test_stages.py`, a test that skips without CUDA. Record the local GPU's hash from
   the failing test, and the A10G's from the `gpu-pytest` log of a pull request that carries the
   `gpu` label.

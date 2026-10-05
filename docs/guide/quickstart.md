@@ -37,8 +37,9 @@ Run the command-line tool with a vehicle and a scene. `astro_max_base` declares 
 uv run nexus run --vehicle astro_max_base --scene empty
 ```
 
-This starts PX4 Software In The Loop (SITL) in a container and the physics simulation with the
-Rerun recording server on gRPC port 9876, and PX4 connects back over TCP port 4560. One command,
+This starts PX4 Software In The Loop (SITL) in a container and the physics simulation, and PX4
+connects back over TCP port 4560. Add `--view` to serve the Rerun recording on gRPC port 9876,
+or `--log` to write it to an `.rrd` file. One command,
 no second terminal. It needs Docker and nothing else: the first run fetches the PX4-Autopilot
 commit the framework pins into `~/.cache/nexus/px4/` and builds it there, which takes minutes once,
 and builds the small `px4-sitl` image. Set `PX4_DIR` to fly a PX4 checkout of your own instead.
