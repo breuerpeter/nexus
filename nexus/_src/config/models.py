@@ -7,7 +7,7 @@ serialize to and deserialize from: one model, two front doors.
 from __future__ import annotations
 
 import pathlib
-from typing import Any, Literal
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -15,8 +15,9 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 class _Base(BaseModel):
     # extra="forbid" turns a typo in a YAML key, say ``vehicel:``, into a load error instead of a
-    # silently ignored field: config bugs should fail loudly.
-    model_config = ConfigDict(extra="forbid")
+    # silently ignored field: config bugs should fail loudly. The model checks a value set on it later
+    # the same way, so ``launch.runtime.device = "cuda:1"`` fails as the launch file would.
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
 
 class AssetRef(_Base):
@@ -62,25 +63,24 @@ class Px4Spec(_Base):
 
 class Runtime(_Base):
     # "auto" resolves to CUDA when present, the captured default. An EXPLICIT "cpu" is the bit-exact
-    # determinism authority, and every run honors it, one that renders included.
-    device: str = "auto"
+    # determinism authority, and every run honors it, one that renders included. A CUDA run is
+    # tolerance-gated. The receipt records the device the run picked, "cpu" or "cuda".
+    device: Literal["auto", "cpu", "cuda"] = "auto"
     seed: int = 42
     dt: float = 0.004
-    substeps: int = 4
     max_steps: int | None = None
     # Real-time factor throttle: 0 = unthrottled, run as fast as the controller keeps up, the
     # headless/CI default. 1.0 paces the loop to wall-clock for human-in-the-loop flying: sticks
     # feel 1:1 and sim-time protocol timeouts line up with wall-clock peers such as the companion's
     # 1 Hz Remote ID heartbeat, since PX4's hrt runs on sim time under lockstep.
     rtf: float = 0.0
-    determinism: Literal["bit-exact", "tolerance"] = "bit-exact"
     # Physics integrator: mujoco, with contact fidelity, is the SITL default; the
     # gradient-capable semi_implicit / featherstone serve the design-optimization path.
     solver: Literal["mujoco", "semi_implicit", "featherstone"] = "mujoco"
 
 
 class Output(_Base):
-    """Artifacts produced for newton-suite. Rerun logging is two mutually exclusive flags, serve or
+    """The Rerun recording a run produces. Rerun logging is two mutually exclusive flags, serve or
     file but not both: a live server and a complete ``.rrd`` can't both come out of one process. Omitting
     both means the sim builds no ``Logger`` at all: no recording, no per-tick log fan-out, max benchmark/CI speed.
     """
@@ -88,9 +88,6 @@ class Output(_Base):
     log: bool = False  # write the full .rrd to disk, no server
     view: bool = False  # serve the live recording on :9876 for a viewer; a viewer + PX4 merge in
     debug: bool = False  # axes-only scene: log each body's coordinate-frame triad, not its mesh, for a small .rrd
-    ulog: bool = True
-    video: bool = False
-    run_id: str | None = None
 
     @model_validator(mode="after")
     def _check_log_view(self) -> Output:
@@ -141,19 +138,14 @@ class LaunchConfig(_Base):
     its file declares it.
     """
     runtime: Runtime = Field(default_factory=Runtime)
-    """Solver, device, timestep, and determinism settings for the run.
+    """Solver, device, timestep, and seed settings for the run.
 
-    Defaults to the ``auto`` device with the ``mujoco`` solver and bit-exact determinism.
-    """
-    sensors: dict[str, Any] = Field(default_factory=dict)
-    """Per-sensor configuration overrides, keyed by sensor name.
-
-    Empty by default, meaning sensors take their vehicle/registry defaults.
+    Defaults to the ``auto`` device with the ``mujoco`` solver.
     """
     output: Output = Field(default_factory=Output)
-    """Artifacts produced for newton-suite (Rerun recording, ULog, video).
+    """The Rerun recording the run produces.
 
-    Defaults to a :class:`Output` (Rerun viewer + ULog on, video off).
+    Defaults to a :class:`Output` with no recording and no viewer.
     """
 
     # --- front-doors: dict / YAML / programmatic all build the one model ---

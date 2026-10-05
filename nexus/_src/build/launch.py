@@ -29,7 +29,7 @@ import time
 from collections.abc import Callable, Mapping
 from typing import IO
 
-from nexus._src.config import LaunchConfig, Px4Spec, Registry, ResolvedLaunch, resolve
+from nexus._src.config import LaunchConfig, Px4Spec, Registry, ResolvedLaunch, Runtime, resolve
 from nexus._src.core import Orchestrator
 from nexus._src.core.registry import ComponentRegistry
 from nexus._src.peers.px4_sitl import HIL_PORT
@@ -75,19 +75,13 @@ def resolve_to_vehicle_builder(
     return builder, resolved
 
 
-def _scenario_from_launch(launch: LaunchConfig) -> dict:
-    """Map the LaunchConfig runtime fields onto the scenario cfg dict.
-
-    Honors dt, device, cpu or cuda, and seed. Still TODO, as a follow-on: the GPU *ordinal*, since
-    only cpu-or-cuda threads through, not cuda:1; ``substeps``, since the policy path intentionally
-    pins physics_substeps=1 for thrust calibration; and sensor overrides. So the tested-config receipt
-    is faithful for what's mapped here; nothing consumes the unmapped runtime fields yet.
+def _scenario_from_receipt(rt: Runtime) -> dict:
+    """Map the receipt's runtime fields onto the scenario cfg dict, so the run applies what its receipt
+    records: dt, device, solver, rtf and seed. ``max_steps`` goes to the loop.
     """
     cfg = build_scenario()
-    rt = launch.runtime
     cfg["physics"]["dt"] = rt.dt
-    # Only an *explicit* "cpu" forces CPU; "auto" and "cuda:*" let resolve_device pick CUDA when available.
-    # The GPU ordinal is still TODO: only cpu-or-cuda threads through.
+    # The receipt names the device the run picked, "cpu" or "cuda".
     cfg["physics"]["force_cpu"] = rt.device == "cpu"
     cfg["physics"]["solver"] = rt.solver  # mujoco, the default | semi_implicit | featherstone
     cfg["physics"]["rtf"] = rt.rtf  # 0 = unthrottled; 1.0 = pace to wall-clock, for interactive flying
@@ -131,7 +125,7 @@ def resolve_scenario(
     hands the built orchestrator to ``Sim.from_orchestrator``.
     """
     builder, resolved = resolve_to_vehicle_builder(launch, registry, cache_dir=cache_dir)
-    cfg = _scenario_from_launch(launch)
+    cfg = _scenario_from_receipt(resolved.tested_config.runtime)
     _thread_scene(cfg, resolved)
     return builder, resolved, cfg
 
@@ -166,7 +160,7 @@ def build_from_launch(
     """
     builder, resolved = resolve_to_vehicle_builder(launch, registry, cache_dir=cache_dir)
     if cfg is None:
-        cfg = _scenario_from_launch(launch)
+        cfg = _scenario_from_receipt(resolved.tested_config.runtime)
     _thread_scene(cfg, resolved)
     label = resolved.tested_config.vehicle or "vehicle"
     shipped = shipped_peers()

@@ -93,16 +93,16 @@ def test_resolve_to_vehicle_builder_uses_resolved_usd(tmp_path):
     assert resolved.tested_config.px4.airframe == "80001"
 
 
-def test_scenario_from_launch_honors_dt_seed_device(tmp_path):
-    from nexus._src.build.launch import _scenario_from_launch
+def test_scenario_from_receipt_honors_dt_seed_device(tmp_path):
+    from nexus._src.build.launch import _scenario_from_receipt
+    from nexus._src.config import Runtime
 
-    lc = LaunchConfig.from_dict({"vehicle": "astro", "runtime": {"dt": 0.01, "seed": 7, "device": "cpu"}})
-    cfg = _scenario_from_launch(lc)
+    cfg = _scenario_from_receipt(Runtime(dt=0.01, seed=7, device="cpu"))
     assert cfg["physics"]["dt"] == 0.01
     assert cfg["physics"]["force_cpu"] is True
     assert cfg["seed"] == 7
 
-    cfg_gpu = _scenario_from_launch(LaunchConfig.from_dict({"runtime": {"device": "cuda:0"}}))
+    cfg_gpu = _scenario_from_receipt(Runtime(device="cuda"))
     assert cfg_gpu["physics"]["force_cpu"] is False
 
 
@@ -449,7 +449,7 @@ def test_a_run_with_no_layer_builds_and_records_as_today(tmp_path, monkeypatch, 
     Given the catalog vehicle `astro_max_base` and no layer, when the run builds with the PX4 SITL peer
     sent to its fake, then it builds the PX4 controller on airframe `astro_max`, its IMU, magnetometer,
     barometer and Global Positioning System (GPS) sensors, and one PX4 peer; and its receipt names the
-    vehicle, the airframe and the scene, and no layer, sensor override or geodetic origin.
+    vehicle, the airframe and the scene, and no layer or geodetic origin.
     """
     import nexus._src.build.launch as L
 
@@ -466,9 +466,7 @@ def test_a_run_with_no_layer_builds_and_records_as_today(tmp_path, monkeypatch, 
     )
     loop.close()
     receipt = L.resolve_to_vehicle_builder(launch)[1].tested_config.model_dump(mode="json")
-    recorded = {
-        k: receipt[k] for k in ("vehicle", "layer", "px4", "scene", "scene_start", "geodetic_origin", "sensors")
-    }
+    recorded = {k: receipt[k] for k in ("vehicle", "layer", "px4", "scene", "scene_start", "geodetic_origin")}
 
     assert (built, recorded) == (
         ("Px4MavlinkController", "astro_max", ["ImuSensor", "MagSensor", "BaroSensor", "GpsSensor"], ["Px4Fake"]),
@@ -479,7 +477,6 @@ def test_a_run_with_no_layer_builds_and_records_as_today(tmp_path, monkeypatch, 
             "scene": "empty",
             "scene_start": None,
             "geodetic_origin": None,
-            "sensors": {},
         },
     )
 

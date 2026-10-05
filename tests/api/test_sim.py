@@ -152,9 +152,9 @@ def test_sim_passes_device_into_launch(monkeypatch):
         return _FakeOrch()
 
     monkeypatch.setattr(sim_mod, "build_from_launch", _cap)
-    with sim_mod.Sim("astro_max_base", scene="empty", device="cuda:0") as sim:
+    with sim_mod.Sim("astro_max_base", scene="empty", device="cuda") as sim:
         sim.start(timeout=30.0)
-    assert captured["device"] == "cuda:0"
+    assert captured["device"] == "cuda"
 
 
 class _FakeController:

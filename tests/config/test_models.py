@@ -10,7 +10,6 @@ def test_empty_launch_config_defaults():
     lc = LaunchConfig()
     assert lc.vehicle is None
     assert lc.runtime.device == "auto"  # resolved per runtime, CUDA when present; explicit "cpu" = bit-exact
-    assert lc.runtime.determinism == "bit-exact"
     assert lc.runtime.max_steps is None
     assert lc.scene is None
 
@@ -20,12 +19,12 @@ def test_from_dict_nested():
         {
             "vehicle": "astro_max_fpv",
             "scene": "seattle-waterfront",
-            "runtime": {"device": "cuda:0", "seed": 7},
+            "runtime": {"device": "cuda", "seed": 7},
         }
     )
     assert lc.vehicle == "astro_max_fpv"
     assert lc.scene == "seattle-waterfront"
-    assert lc.runtime.device == "cuda:0" and lc.runtime.seed == 7
+    assert lc.runtime.device == "cuda" and lc.runtime.seed == 7
 
 
 def test_from_yaml(tmp_path):
