@@ -252,3 +252,54 @@ def test_a_project_catalog_that_lists_only_what_it_adds_loads_on_its_own(tmp_pat
     catalog.write_text(MY_QUAD + "scenes: {}\n")
 
     assert [v.name for v in nexus.Registry.from_yaml(catalog).vehicles] == ["my_quad"]
+
+
+BUNDLED_ASTRO_SHA = "38700d1d05b739bba445b1b1d4fb35c7aec8ec4ef05d49d4dcb8b8941ef84ca9"
+BUNDLED_FPV_SHA = "51cec8c50db9b50d9a8baa86730b780e574d1d8846c5483ffe92d168cf2cbbe8"
+
+KEYED_REPIN = f"""\
+vehicles:
+  astro_max_base:
+    usd: {{ url: "file:///astro_max_base.usdz", sha256: "{REPIN_SHA}" }}
+"""
+
+KEYED_PROJECT = """\
+vehicles:
+  project_vehicle:
+    usd: { url: "file:///project_vehicle.usdz", sha256: abc }
+"""
+
+
+def test_a_project_vehicle_keyed_by_a_bundled_name_replaces_the_bundled_entry_with_a_warning(
+    tmp_path, monkeypatch, caplog
+):
+    """A project vehicle keyed by a bundled name replaces the bundled entry and warns with both hashes.
+
+    Given a project catalog with `vehicles: { astro_max_base: { usd: … } }`, when `load_registry`
+    loads it, then `astro_max_base` resolves to the project's USD, `astro_max_fpv` still resolves to
+    the bundled one, and one warning names both sha256 values.
+    """
+    (tmp_path / "nexus.registry.yaml").write_text(KEYED_REPIN)
+    monkeypatch.chdir(tmp_path)
+
+    with caplog.at_level(logging.WARNING):
+        reg = load_registry()
+    shas = (reg.vehicles["astro_max_base"].usd.sha256, reg.vehicles["astro_max_fpv"].usd.sha256)
+    named = [all(s in m for s in ("astro_max_base", REPIN_SHA, BUNDLED_ASTRO_SHA)) for m in _warnings(caplog)]
+
+    assert (shas, named) == ((REPIN_SHA, BUNDLED_FPV_SHA), [True])
+
+
+def test_a_project_catalog_that_adds_one_vehicle_by_key_still_flies_the_bundled_ones(tmp_path, monkeypatch):
+    """A project catalog that adds one vehicle by key still flies the bundled vehicles and scenes.
+
+    Given a project catalog with only `vehicles: { project_vehicle: … }`, when `load_registry` loads
+    it, then `project_vehicle`, `astro_max_base`, `astro_max_fpv` and the scene `empty` all resolve.
+    """
+    (tmp_path / "nexus.registry.yaml").write_text(KEYED_PROJECT)
+    monkeypatch.chdir(tmp_path)
+
+    reg = load_registry()
+    resolved = [name in reg.vehicles for name in ("project_vehicle", "astro_max_base", "astro_max_fpv")]
+
+    assert (resolved, "empty" in reg.scenes) == ([True, True, True], True)
