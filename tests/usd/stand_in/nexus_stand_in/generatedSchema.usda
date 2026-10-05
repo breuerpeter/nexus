@@ -18,6 +18,18 @@ class "StandInAPI" (
     )
 }
 
+class "StandInSensorAPI" (
+    doc = "A stand-in sensor on its mount prim: one gain."
+)
+{
+    float nexus:gain = 1 (
+        doc = """The value the stand-in sensor reports.
+
+        Range: [0, inf)
+        Units: dimensionless"""
+    )
+}
+
 class "StandInGearAPI" (
     doc = "A stand-in family at two versions: this is the first."
 )

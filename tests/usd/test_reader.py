@@ -11,6 +11,7 @@ from pxr import Sdf, Usd, UsdGeom
 
 from nexus._src.build.components import resolve_components
 from nexus._src.core.registry import ComponentRegistry
+from nexus._src.usd import schema_names
 
 FIXTURE = Path(__file__).with_name("conformance.usda")
 IMU = "/Vehicle/body/Imu"
@@ -36,7 +37,7 @@ def test_the_reader_names_each_schema_attribute_in_snake_case_without_its_namesp
     from nexus._src.usd.reader import read_declarations
 
     kwargs = {prim: kwargs for prim, _, kwargs in read_declarations(FIXTURE)}[IMU]
-    assert sorted(kwargs) == ["acc_noise", "gyro_noise"]
+    assert sorted(kwargs) == ["acc_noise", "gyro_noise", "rate"]
 
 
 def test_the_reader_fails_on_an_asset_path_that_resolves_to_no_file_and_names_the_prim(tmp_path):
@@ -75,11 +76,7 @@ def test_each_attribute_the_schema_defines_reaches_the_class_as_the_snake_case_k
     authored, when the build resolves it with a registry that maps the schema to a stand-in, then the
     stand-in's keyword arguments hold the snake-case name with the authored value.
     """
-    (imu,) = _imu(
-        resolve_components(
-            FIXTURE, ComponentRegistry({"NexusImuAPI": StandIn, "NexusPropellerAPI": StandIn, "NexusPx4API": StandIn})
-        )
-    )
+    (imu,) = _imu(resolve_components(FIXTURE, ComponentRegistry(dict.fromkeys(schema_names(), StandIn))))
     assert imu.kwargs["acc_noise"] == pytest.approx(0.05)
 
 
@@ -89,11 +86,7 @@ def test_an_attribute_the_prim_does_not_author_takes_the_fallback_the_plugin_def
     Given the fixture prim with one attribute unauthored, when resolved, then the stand-in's keyword
     arguments hold that name at the plugin's fallback.
     """
-    (imu,) = _imu(
-        resolve_components(
-            FIXTURE, ComponentRegistry({"NexusImuAPI": StandIn, "NexusPropellerAPI": StandIn, "NexusPx4API": StandIn})
-        )
-    )
+    (imu,) = _imu(resolve_components(FIXTURE, ComponentRegistry(dict.fromkeys(schema_names(), StandIn))))
     assert imu.kwargs["gyro_noise"] == pytest.approx(0.02)
 
 

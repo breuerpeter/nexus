@@ -128,14 +128,6 @@ class USDBuilder(BuilderBase):
         """The joint path of each rotor the USD declares; see :func:`parse_rotors`."""
         return parse_rotors(self.cfg["usd_path"])[1]
 
-    def sensor_specs(self) -> list:
-        """The analytic sensors authored on the vehicle USD as ``sensor:*`` prims; see
-        :func:`nexus._src.vehicle.sensors.usd.parse_sensor_prims`.
-        """
-        from nexus._src.vehicle.sensors.usd import parse_sensor_prims
-
-        return parse_sensor_prims(self.cfg["usd_path"])
-
     @staticmethod
     def _ground_spawn(usd_path, att) -> tuple:
         """Support-height placement: place the base so the model's lowest point, its USD bounds

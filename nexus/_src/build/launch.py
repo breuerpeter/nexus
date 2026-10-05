@@ -9,8 +9,8 @@ its root prim. PX4 is the one first-class controller, and *this* layer builds it
 self-assembles its orchestrator via :func:`resolve_scenario` plus ``Sim.from_orchestrator``, and
 renders through :func:`~nexus._src.rendering.rtx_renderer` the same way.
 
-A vehicle whose USD authors RTX sensor prims renders them in the Kit peer, a container this build
-starts right after the fetch, so Kit boots while PX4 builds and the physics compiles. The PX4
+A vehicle whose USD declares RTX sensors renders them in the Kit peer, a required peer: a container
+this build starts right after the fetch, so Kit boots while PX4 builds and the physics compiles. The PX4
 autopilot is a peer too: when the vehicle declares the PX4 Software In The Loop (SITL) peer,
 ``NexusPx4SitlAPI``, the build starts its container on the peer contract before the assembly, on a
 PX4 instance free on this machine, and hands it to the orchestrator, which stops it when the run
@@ -162,7 +162,7 @@ def build_from_launch(
             PX4, a PX4 schema with no airframe, or the PX4 SITL peer with no PX4 schema, or ``peers``
             names a peer the build doesn't know; raised before any peer starts.
         FileNotFoundError: The launch names an override layer with no file behind it.
-        KitPeerError: The vehicle authors RTX sensors and the Kit peer couldn't start.
+        KitPeerError: The vehicle declares RTX sensors and the Kit peer couldn't start.
     """
     builder, resolved = resolve_to_vehicle_builder(launch, registry, cache_dir=cache_dir)
     if cfg is None:
@@ -191,8 +191,10 @@ def build_from_launch(
             f"{spec.prim}: {PX4_SCHEMA} authors no nexus:airframe; name the PX4 SITL airframe, such as astro_max"
         )
     # By now the run has fetched every asset it renders, so the Kit peer starts first and boots while
-    # PX4 builds and the physics compiles; None for a vehicle with no RTX sensor prims.
-    renderer_factory = rtx_renderer(builder, cfg, cache_dir=cache_dir, stream=stream, peer=peer_classes["kit"])
+    # PX4 builds and the physics compiles; None for a vehicle that declares no RTX sensor.
+    renderer_factory = rtx_renderer(
+        builder, cfg, cache_dir=cache_dir, stream=stream, peer=peer_classes["kit"], components=components
+    )
     started: list = []
     try:
         # *This* is where the declared controller becomes an instance; the assembly that follows is
@@ -220,6 +222,7 @@ def build_from_launch(
             # The viewer's Settings tab shows the tested-config receipt, "every input that affects the
             # simulation" per config.receipt, so a recording says what produced it.
             settings=resolved.tested_config.model_dump(mode="json"),
+            components=components,
         )
     except BaseException:
         # The loop never took the peers over, so their containers stop here.

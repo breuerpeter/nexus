@@ -43,17 +43,38 @@ def test_the_plugin_ships_in_the_wheel_and_import_nexus_registers_it(tmp_path):
         text=True,
     )
     assert r.returncode == 0, r.stderr
-    assert r.stdout.strip() == "['nexus:accNoise', 'nexus:gyroNoise'] [0.02, 0.02]"
+    assert r.stdout.strip() == "['nexus:accNoise', 'nexus:gyroNoise', 'nexus:rate'] [0.02, 0.02, 0.0]"
 
 
-def test_the_imu_schema_defines_its_two_noise_attributes():
-    """The Inertial Measurement Unit (IMU) schema defines `nexus:accNoise` and `nexus:gyroNoise`."""
+def test_the_imu_schema_defines_its_two_noise_attributes_and_the_rate():
+    """The Inertial Measurement Unit (IMU) schema defines `nexus:accNoise`, `nexus:gyroNoise` and the shared `nexus:rate`."""
     from pxr import Usd
 
     import nexus  # noqa: F401  # registers the plugin
 
     definition = Usd.SchemaRegistry().FindAppliedAPIPrimDefinition("NexusImuAPI")
-    assert sorted(definition.GetPropertyNames()) == ["nexus:accNoise", "nexus:gyroNoise"]
+    assert sorted(definition.GetPropertyNames()) == ["nexus:accNoise", "nexus:gyroNoise", "nexus:rate"]
+
+
+def test_every_sensor_schema_shares_one_rate_attribute():
+    """Every sensor schema shares one rate attribute, and each sensor receives its authored rate.
+
+    Given the plugin, when a test lists each sensor schema's attributes, then all seven define
+    `nexus:rate` with one type and one unit.
+    """
+    from pxr import Usd
+
+    import nexus  # noqa: F401  # registers the plugin
+
+    sensors = ("Imu", "Mag", "Baro", "Gps", "Camera", "ThermalCamera", "Lidar")
+    rates = set()
+    for sensor in sensors:
+        definition = Usd.SchemaRegistry().FindAppliedAPIPrimDefinition(f"Nexus{sensor}API")
+        rate = definition.GetAttributeDefinition("nexus:rate")
+        (unit,) = [line.strip() for line in rate.GetDocumentation().splitlines() if line.strip().startswith("Units:")]
+        rates.add((str(rate.GetTypeName()), unit))
+
+    assert rates == {("float", "Units: hertz")}
 
 
 def test_the_conformance_fixture_applies_every_schema_the_plugin_defines():
@@ -69,7 +90,8 @@ def test_the_conformance_fixture_applies_every_schema_the_plugin_defines():
 
     stage = Usd.Stage.Open(str(FIXTURE))
     applied = {name for prim in stage.Traverse() for name in prim.GetAppliedSchemas()}
-    assert applied == set(schema_names()) == {"NexusImuAPI", "NexusPropellerAPI", "NexusPx4API", "NexusPx4SitlAPI"}
+    sensors = {f"Nexus{name}API" for name in ("Imu", "Mag", "Baro", "Gps", "Camera", "ThermalCamera", "Lidar")}
+    assert applied == set(schema_names()) == sensors | {"NexusPropellerAPI", "NexusPx4API", "NexusPx4SitlAPI"}
 
 
 def test_the_script_beside_the_fixture_reproduces_it(tmp_path):

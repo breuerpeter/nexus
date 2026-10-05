@@ -59,14 +59,38 @@ def _fail_unread_version(prim, applied: list[str], retired: set[str]) -> None:
             )
 
 
+def _check_type(prim, schema: str) -> None:
+    """Fail a schema on a prim of a type its plugin doesn't let it apply to.
+
+    A type OpenUSD doesn't know here, such as Kit's `OmniLidar`, matches by its name.
+
+    Raises:
+        ValueError: The prim's type is none of the schema's; the message names the prim and the types.
+    """
+    from pxr import Usd
+
+    allowed = list(Usd.SchemaRegistry.GetAPISchemaCanOnlyApplyToTypeNames(schema))
+    if not allowed or prim.GetTypeName() in allowed:
+        return
+    for name in allowed:
+        tf_type = Usd.SchemaRegistry.GetTypeFromSchemaTypeName(name)
+        if tf_type and prim.IsA(tf_type):
+            return
+    raise ValueError(
+        f"{prim.GetPath()}: {schema} applies to a prim of type {' or '.join(allowed)}, "
+        f"and this prim's type is {prim.GetTypeName() or 'none'}"
+    )
+
+
 def read_declarations(usd_path: str | Path) -> list[tuple[str, str, dict]]:
     """One `(prim path, schema, keyword arguments)` per applied nexus schema on the stage's active prims.
 
     Each attribute the schema defines becomes the keyword of the same name in snake case.
 
     Raises:
-        ValueError: A prim authors a `nexus:` attribute that none of its applied schemas defines, or an
-            asset path that resolves to no file; the message names the prim. Or a prim applies a version
+        ValueError: A prim authors a `nexus:` attribute that none of its applied schemas defines, an
+            asset path that resolves to no file, or a schema that doesn't apply to its type; the
+            message names the prim. Or a prim applies a version
             of a schema that no plugin defines, of a family a plugin defines or has retired; the message
             names the prim, the version and the nexus version reading it.
     """
@@ -87,6 +111,7 @@ def read_declarations(usd_path: str | Path) -> list[tuple[str, str, dict]]:
                 continue
             names = [name for name in definition.GetPropertyNames() if name.startswith(_NAMESPACE)]
             if names:
+                _check_type(prim, schema)
                 defined.update(names)
                 kwargs = {_keyword(name): _value(prim, name) for name in names}
                 declarations.append((str(prim.GetPath()), schema, kwargs))
