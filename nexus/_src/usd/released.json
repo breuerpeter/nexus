@@ -1,4 +1,45 @@
 {
+  "NexusBaroAPI": {
+    "nexus:noise": {
+      "fallback": "0.02",
+      "type": "float",
+      "units": "hectopascals"
+    },
+    "nexus:rate": {
+      "fallback": "0",
+      "type": "float",
+      "units": "hertz"
+    }
+  },
+  "NexusCameraAPI": {
+    "nexus:height": {
+      "fallback": "720",
+      "type": "int",
+      "units": "pixels"
+    },
+    "nexus:rate": {
+      "fallback": "24",
+      "type": "float",
+      "units": "hertz"
+    },
+    "nexus:width": {
+      "fallback": "1280",
+      "type": "int",
+      "units": "pixels"
+    }
+  },
+  "NexusGpsAPI": {
+    "nexus:fixType": {
+      "fallback": "3",
+      "type": "int",
+      "units": "none"
+    },
+    "nexus:rate": {
+      "fallback": "0",
+      "type": "float",
+      "units": "hertz"
+    }
+  },
   "NexusImuAPI": {
     "nexus:accNoise": {
       "fallback": "0.02",
@@ -9,6 +50,35 @@
       "fallback": "0.02",
       "type": "float",
       "units": "radians per second"
+    },
+    "nexus:rate": {
+      "fallback": "0",
+      "type": "float",
+      "units": "hertz"
+    }
+  },
+  "NexusLidarAPI": {
+    "nexus:rate": {
+      "fallback": "10",
+      "type": "float",
+      "units": "hertz"
+    }
+  },
+  "NexusMagAPI": {
+    "nexus:noise": {
+      "fallback": "(0.02, 0.02, 0.03)",
+      "type": "float3",
+      "units": "gauss"
+    },
+    "nexus:offset": {
+      "fallback": "(0, 0, 0)",
+      "type": "float3",
+      "units": "gauss"
+    },
+    "nexus:rate": {
+      "fallback": "0",
+      "type": "float",
+      "units": "hertz"
     }
   },
   "NexusPx4API": {
@@ -18,5 +88,22 @@
       "units": "none"
     }
   },
-  "NexusPx4SitlAPI": {}
+  "NexusPx4SitlAPI": {},
+  "NexusThermalCameraAPI": {
+    "nexus:height": {
+      "fallback": "1024",
+      "type": "int",
+      "units": "pixels"
+    },
+    "nexus:rate": {
+      "fallback": "24",
+      "type": "float",
+      "units": "hertz"
+    },
+    "nexus:width": {
+      "fallback": "1280",
+      "type": "int",
+      "units": "pixels"
+    }
+  }
 }

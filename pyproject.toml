@@ -61,6 +61,12 @@ nexus = "nexus._src.cli.main:main"
 # beside nexus declares its own classes in the same group.
 [project.entry-points."nexus.components"]
 NexusImuAPI = "nexus._src.vehicle.sensors:ImuSensor"
+NexusMagAPI = "nexus._src.vehicle.sensors:MagSensor"
+NexusBaroAPI = "nexus._src.vehicle.sensors:BaroSensor"
+NexusGpsAPI = "nexus._src.vehicle.sensors:GpsSensor"
+NexusCameraAPI = "nexus._src.vehicle.sensors.rtx_camera:RtxCameraSensor"
+NexusThermalCameraAPI = "nexus._src.vehicle.sensors.rtx_thermal:RtxThermalSensor"
+NexusLidarAPI = "nexus._src.vehicle.sensors.rtx_lidar:RtxLidarSensor"
 NexusPx4API = "nexus._src.vehicle.controllers.px4:Px4MavlinkController"
 
 [project.urls]

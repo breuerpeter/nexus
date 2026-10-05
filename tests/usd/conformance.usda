@@ -21,6 +21,42 @@ def Xform "Vehicle" (
             double3 xformOp:translate = (0.01, -0.02, 0.03)
             uniform token[] xformOpOrder = ["xformOp:translate"]
         }
+
+        def Xform "Mag" (
+            prepend apiSchemas = ["NexusMagAPI"]
+        )
+        {
+        }
+
+        def Xform "Baro" (
+            prepend apiSchemas = ["NexusBaroAPI"]
+        )
+        {
+        }
+
+        def Xform "Gps" (
+            prepend apiSchemas = ["NexusGpsAPI"]
+        )
+        {
+        }
+
+        def Camera "Cam" (
+            prepend apiSchemas = ["NexusCameraAPI"]
+        )
+        {
+        }
+
+        def Camera "Ir" (
+            prepend apiSchemas = ["NexusThermalCameraAPI"]
+        )
+        {
+        }
+
+        def OmniLidar "Lidar" (
+            prepend apiSchemas = ["NexusLidarAPI"]
+        )
+        {
+        }
     }
 }
 
