@@ -132,17 +132,20 @@ class ArticulatedRotors:
             authors one ``NewtonActuator`` per rotor joint. No fallback.
         control: The model's persistent ``newton.Control``; physics owns it. The motors write
             ``control.joint_f``, and the solver consumes it with the aero ``body_f`` in one solve.
-        ct: Thrust coefficient [N/rpm²], ``propeller:ct``, the vehicle USD authority.
-        cd: Reaction-torque-per-thrust, ``propeller:cd``, the yaw allocation κ.
-        rpm_max: Rotor speed at normalized command 1.0 [rpm], ``propeller:rpm_max``.
+        joints: The joint path of each rotor the vehicle USD declares, the vehicle builder's
+            ``rotor_joints()``. A joint that isn't one of them is no rotor.
+        ct: Thrust coefficient [N/rpm²], the propeller schema's ``nexus:ct``, the vehicle USD authority.
+        cd: Reaction-torque-per-thrust, ``nexus:cd``, the yaw allocation κ.
+        rpm_max: Rotor speed at normalized command 1.0 [rpm], the motor's no-load speed,
+            ``newton:velocityLimit``.
         dt: Control timestep [s].
-        aero_h: Forward-flight thrust-loss coefficient, ``propeller:aero_h``; 0 = quasi-static.
-        aero_hforce: In-plane rotor H-force coefficient, ``propeller:aero_hforce``.
+        aero_h: Forward-flight thrust-loss coefficient, ``nexus:aeroH``; 0 = quasi-static.
+        aero_hforce: In-plane rotor H-force coefficient, ``nexus:aeroHforce``.
     """
 
     requires_articulated = True  # rotor joints *are* the actuator; the pairing guard enforces it
 
-    def __init__(self, *, model, control, ct: float, cd: float, rpm_max: float, dt: float,
+    def __init__(self, *, model, control, joints, ct: float, cd: float, rpm_max: float, dt: float,
                  aero_h: float = 0.0, aero_hforce: float = 0.0):  # fmt: skip
         if not getattr(model, "actuators", None):
             raise ValueError(
@@ -160,7 +163,7 @@ class ArticulatedRotors:
         self.aero_h = float(aero_h)
         self.aero_hforce = float(aero_hforce)
         self.omega_max = float(rpm_max) / RPM_PER_RADS  # rotor speed [rad/s] at normalized command 1.0
-        vel_dofs, _pos_coords, bodies, base_body = find_rotor_joints(model)
+        vel_dofs, _pos_coords, bodies, base_body = find_rotor_joints(model, joints)
         self.nr = len(vel_dofs)
         self.base = int(base_body)
         self._rotor_dofs = wp.array(vel_dofs, dtype=wp.int32)

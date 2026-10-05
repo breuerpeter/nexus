@@ -14,6 +14,7 @@ import pytest
 pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
+import newton
 import warp as wp
 from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics
 
@@ -21,7 +22,8 @@ from nexus._src.api.sim import Sim
 from nexus._src.build.assembly import build_orchestrator, build_scenario
 from nexus._src.core.schema import Controls
 from nexus._src.core.stages import peer_stages
-from nexus._src.physics.builders.usd import USDBuilder
+from nexus._src.physics.builders.usd import USDBuilder, parse_rotors
+from nexus._src.vehicle.actuators import find_rotor_joints
 
 ROOT = "/Vehicle"
 ARM = 0.2  # rotor offset from the airframe's center on each axis [m]
@@ -254,3 +256,29 @@ def test_newton_still_builds_each_rotors_motor_from_its_actuator_prim(tmp_path):
         for _ in range(a.num_actuators)
     ]
     assert motors == [("ControllerPID", ("ClampingDCMotor",))] * 4
+
+
+def test_the_rotor_reader_returns_the_values_the_rotors_share_and_each_rotors_joint(tmp_path):
+    """The rotor reader returns the values the rotors share and each rotor's joint.
+
+    Given the fixture, when read, then the map holds the propeller's values, with the motor's no-load
+    speed, 398 rad/s or 3800.62 rpm, as the speed at full command, and the joints are the four rotor joints.
+    """
+    values = {"ct": LIFT_CT, "cd": 0.05, "aero_h": 0.0, "aero_hforce": 0.0, "rpm_max": 3800.62}
+    expected = (pytest.approx(values, rel=1e-5), [f"{ROOT}/rotor_{i}_joint" for i in range(4)])
+    assert parse_rotors(_author(tmp_path / "quad.usda")) == expected
+
+
+def test_find_rotor_joints_returns_the_declared_joints_and_no_other(tmp_path):
+    """`find_rotor_joints` returns the model's joints the vehicle declares as rotors, and no other.
+
+    Given the fixture with a fifth revolute joint, built into a model, when asked for the four declared
+    joints, then it returns the four rotor bodies, on the airframe.
+    """
+    with wp.ScopedDevice("cpu"):
+        builder = newton.ModelBuilder()
+        USDBuilder({"usd_path": str(_author(tmp_path / "quad.usda", gimbal=True))}, None).build(builder)
+        model = builder.finalize()
+    _vel, _pos, bodies, base = find_rotor_joints(model, [f"{ROOT}/rotor_{i}_joint" for i in range(4)])
+    labels = list(model.body_label)
+    assert ([labels[b] for b in bodies], labels[base]) == ([f"{ROOT}/rotor_{i}" for i in range(4)], f"{ROOT}/body")

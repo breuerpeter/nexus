@@ -117,12 +117,12 @@ def test_the_two_astro_max_vehicles_keep_the_usds_they_fly_today():
     """
     reg = nexus.Registry.from_yaml()
     assert [reg.by_name(name).usd.url for name in ("astro_max_base", "astro_max_fpv")] == [
-        f"{HOSTED}/astro_max_base-38700d1d05b739bba445b1b1d4fb35c7aec8ec4ef05d49d4dcb8b8941ef84ca9.usdz",
-        f"{HOSTED}/astro_max_fpv-51cec8c50db9b50d9a8baa86730b780e574d1d8846c5483ffe92d168cf2cbbe8.usdz",
+        f"{HOSTED}/astro_max_base-ecf33d726ee9d0bcbc4df97574005ff0c6e582d797f78efa5f570d760353a41f.usdz",
+        f"{HOSTED}/astro_max_fpv-d64c06fd4533e68b9a70481a7010c3594b209a62cfd50c7888ac97f9c3cc4259.usdz",
     ]
 
 
-BUNDLED_ASTRO = f"{HOSTED}/astro_max_base-38700d1d05b739bba445b1b1d4fb35c7aec8ec4ef05d49d4dcb8b8941ef84ca9.usdz"
+BUNDLED_ASTRO = f"{HOSTED}/astro_max_base-ecf33d726ee9d0bcbc4df97574005ff0c6e582d797f78efa5f570d760353a41f.usdz"
 BUNDLED_EMPTY_SHA = "ab15e88be59c0ee93e63160c34b08485e3136d1f88313f24dcd67e482ecbed05"
 REPIN_SHA = "1111111111111111111111111111111111111111111111111111111111111111"
 
