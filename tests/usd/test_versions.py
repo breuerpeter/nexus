@@ -155,6 +155,23 @@ def test_an_attribute_that_joins_a_released_version_with_a_fallback_passes_the_c
     assert in_place_changes(_plugin_with(tmp_path, ACC_NOISE, joined)) == []
 
 
+def test_a_released_attribute_given_another_fallback_fails_the_check(tmp_path):
+    """A released attribute given another fallback fails the check, which names the schema version and the attribute."""
+    from nexus._src.usd.released import in_place_changes
+
+    changes = in_place_changes(_plugin_with(tmp_path, ACC_NOISE, "float nexus:accNoise = 0.05"))
+    assert [change for change in changes if "NexusImuAPI" in change and "nexus:accNoise" in change]
+
+
+def test_an_attribute_that_joins_a_released_version_with_no_fallback_fails_the_check(tmp_path):
+    """An attribute that joins a released version with no fallback fails the check, which names the schema version and the attribute."""
+    from nexus._src.usd.released import in_place_changes
+
+    joined = f'float nexus:accBias (\n        doc = "A new attribute."\n    )\n    {ACC_NOISE}'
+    changes = in_place_changes(_plugin_with(tmp_path, ACC_NOISE, joined))
+    assert [change for change in changes if "NexusImuAPI" in change and "nexus:accBias" in change]
+
+
 def test_no_released_version_of_the_nexus_plugin_changed_in_place():
     """No released version of the nexus plugin lost or renamed an attribute, or changed one's type or unit."""
     from nexus._src.usd.released import in_place_changes
