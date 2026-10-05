@@ -67,7 +67,7 @@ PX4_VEHICLE = (
 def _registry(usd_ref: dict) -> Registry:
     return Registry.from_dict(
         {
-            "vehicles": [{"name": "astro", "usd": usd_ref}],
+            "vehicles": {"astro": {"usd": usd_ref}},
             "scenes": {"empty": {}},
         }
     )
@@ -124,7 +124,7 @@ def test_scene_threads_uniformly_and_anchors_gps(tmp_path, monkeypatch):
 
     reg = Registry.from_dict(
         {
-            "vehicles": [{"name": "astro", "usd": _usd_ref(tmp_path)}],
+            "vehicles": {"astro": {"usd": _usd_ref(tmp_path)}},
             "scenes": {
                 "empty": {},
                 "geo-scene": {
@@ -199,7 +199,7 @@ def _catalog(tmp_path) -> Registry:
     """A catalog with one vehicle and no PX4 entry: the airframe lives in the vehicle's USD."""
     return Registry.from_dict(
         {
-            "vehicles": [{"name": "astro", "usd": _usd_ref(tmp_path)}],
+            "vehicles": {"astro": {"usd": _usd_ref(tmp_path)}},
             "scenes": {"empty": {}},
         }
     )

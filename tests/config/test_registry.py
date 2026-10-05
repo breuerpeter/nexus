@@ -5,41 +5,25 @@ import logging
 import pytest
 
 import nexus
-from nexus._src.config import NoMatchError, Registry, RegistryError, load_registry
+from nexus._src.config import Registry, RegistryError, load_registry
 
 
 def _veh(name):
-    return {"name": name, "usd": {"url": f"file:///{name}", "sha256": "0"}}
+    return {"usd": {"url": f"file:///{name}", "sha256": "0"}}
 
 
-BASE = _veh("base")
-FPV = _veh("fpv")
-FPV_LR1 = _veh("fpv_lr1")
+def _reg(*names, **kw):
+    return Registry.from_dict({"vehicles": {n: _veh(n) for n in names}, "scenes": {"empty": {}}, **kw})
 
 
-def _reg(vehicles, **kw):
-    return Registry.from_dict({"vehicles": vehicles, "scenes": {"empty": {}}, **kw})
-
-
-def test_by_name():
-    reg = _reg([BASE, FPV_LR1])
-    assert reg.by_name("fpv_lr1").usd.url == "file:///fpv_lr1"
-
-
-def test_unknown_name_raises():
-    reg = _reg([BASE])
-    with pytest.raises(NoMatchError):
-        reg.by_name("nope")
-
-
-def test_duplicate_name_errors_at_load():
-    with pytest.raises(RegistryError):
-        _reg([FPV, dict(FPV, usd={"url": "file:///dup", "sha256": "0"})])  # two variants named 'fpv'
+def test_a_vehicle_resolves_by_its_key():
+    reg = _reg("base", "fpv_lr1")
+    assert reg.vehicles["fpv_lr1"].usd.url == "file:///fpv_lr1"
 
 
 SIBLING = """\
 vehicles:
-  - name: sibling_vehicle
+  sibling_vehicle:
     usd: { url: "file:///sibling.usdz", sha256: "0" }
 """
 
@@ -54,9 +38,9 @@ def test_a_registry_beside_the_run_extends_the_one_in_the_wheel(tmp_path, monkey
     (project / "nexus.registry.yaml").write_text(SIBLING)
 
     monkeypatch.chdir(project / "scripts")  # started below the file, which the walk up still finds
-    beside = [v.name for v in load_registry().vehicles]
+    beside = list(load_registry().vehicles)
     monkeypatch.chdir(tmp_path)  # no parent of this one holds a registry
-    shipped = [v.name for v in load_registry().vehicles]
+    shipped = list(load_registry().vehicles)
 
     assert ("sibling_vehicle" in beside, "sibling_vehicle" in shipped) == (True, False)
 
@@ -68,14 +52,14 @@ def test_an_entry_addresses_its_own_blob():
     reg = Registry.from_dict(
         {
             "assets": {"base": "https://assets.example/catalog"},
-            "vehicles": [
-                {"name": "derived", "usd": {"name": "astro", "sha256": "abc"}},
-                {"name": "direct", "usd": {"url": "s3://example-bucket/elsewhere/x.usdz", "sha256": "def"}},
-            ],
+            "vehicles": {
+                "derived": {"usd": {"name": "astro", "sha256": "abc"}},
+                "direct": {"usd": {"url": "s3://example-bucket/elsewhere/x.usdz", "sha256": "def"}},
+            },
             "scenes": {"empty": {}},
         }
     )
-    assert (reg.by_name("derived").usd.url, reg.by_name("direct").usd.url) == (
+    assert (reg.vehicles["derived"].usd.url, reg.vehicles["direct"].usd.url) == (
         "https://assets.example/catalog/assets/usd/vehicles/astro-abc.usdz",
         "s3://example-bucket/elsewhere/x.usdz",
     )
@@ -87,8 +71,8 @@ def test_the_shipped_catalog_resolves_exactly_as_today():
     """
     reg = load_registry()
     base = "https://d2837jz4fvtxko.cloudfront.net/public/assets/usd"
-    hosted = [v.usd.url for v in reg.vehicles] + [s.usd.url for s in reg.scenes.values() if s.usd]
-    astro = reg.by_name("astro_max_base").usd
+    hosted = [v.usd.url for v in reg.vehicles.values()] + [s.usd.url for s in reg.scenes.values() if s.usd]
+    astro = reg.vehicles["astro_max_base"].usd
     assert all(u.startswith(base) for u in hosted)
     assert astro.url == f"{base}/vehicles/astro_max_base-{astro.sha256}.usdz"
 
@@ -97,7 +81,7 @@ def test_the_shipped_catalog_names_two_vehicles():
     """The shipped catalog names two vehicles, `astro_max_base` and `astro_max_fpv`: the payload
     variants leave the tree, and a project that wants one brings it in its own catalog.
     """
-    assert [v.name for v in nexus.Registry.from_yaml().vehicles] == ["astro_max_base", "astro_max_fpv"]
+    assert list(nexus.Registry.from_yaml().vehicles) == ["astro_max_base", "astro_max_fpv"]
 
 
 def test_the_shipped_catalog_lists_a_hosted_scene_with_static_geometry():
@@ -116,7 +100,7 @@ def test_the_two_astro_max_vehicles_keep_the_usds_they_fly_today():
     by hash, stay the source of record once the scripts that authored them leave the tree.
     """
     reg = nexus.Registry.from_yaml()
-    assert [reg.by_name(name).usd.url for name in ("astro_max_base", "astro_max_fpv")] == [
+    assert [reg.vehicles[name].usd.url for name in ("astro_max_base", "astro_max_fpv")] == [
         f"{HOSTED}/astro_max_base-38700d1d05b739bba445b1b1d4fb35c7aec8ec4ef05d49d4dcb8b8941ef84ca9.usdz",
         f"{HOSTED}/astro_max_fpv-51cec8c50db9b50d9a8baa86730b780e574d1d8846c5483ffe92d168cf2cbbe8.usdz",
     ]
@@ -130,7 +114,7 @@ PROJECT = """\
 assets:
   base: s3://example-bucket/catalog
 vehicles:
-  - name: project_vehicle
+  project_vehicle:
     usd: { name: project_vehicle, sha256: abc }
 """
 
@@ -155,9 +139,9 @@ def test_a_project_catalog_that_lists_only_its_own_entries_also_flies_the_bundle
 
     with caplog.at_level(logging.WARNING):
         reg = load_registry()
-        resolved = (reg.by_name("project_vehicle").name, reg.by_name("astro_max_base").name, "empty" in reg.scenes)
+        resolved = ("project_vehicle" in reg.vehicles, "astro_max_base" in reg.vehicles, "empty" in reg.scenes)
 
-    assert (resolved, _warnings(caplog)) == (("project_vehicle", "astro_max_base", True), [])
+    assert (resolved, _warnings(caplog)) == ((True, True, True), [])
 
 
 def test_each_entry_resolves_against_its_own_catalogs_base(tmp_path, monkeypatch):
@@ -169,7 +153,7 @@ def test_each_entry_resolves_against_its_own_catalogs_base(tmp_path, monkeypatch
 
     reg = load_registry()
 
-    assert (reg.by_name("project_vehicle").usd.url, reg.by_name("astro_max_base").usd.url) == (
+    assert (reg.vehicles["project_vehicle"].usd.url, reg.vehicles["astro_max_base"].usd.url) == (
         "s3://example-bucket/catalog/assets/usd/vehicles/project_vehicle-abc.usdz",
         BUNDLED_ASTRO,
     )
@@ -198,7 +182,7 @@ def test_a_catalog_named_by_path_also_extends_the_bundled_one(tmp_path, monkeypa
     named.write_text(PROJECT)
     monkeypatch.chdir(tmp_path)
 
-    assert load_registry(named).by_name("astro_max_base").usd.url == BUNDLED_ASTRO
+    assert load_registry(named).vehicles["astro_max_base"].usd.url == BUNDLED_ASTRO
 
 
 def test_a_catalog_entry_that_still_carries_px4_fails_to_load(tmp_path):
@@ -210,18 +194,18 @@ def test_a_catalog_entry_that_still_carries_px4_fails_to_load(tmp_path):
     catalog = tmp_path / "catalog.yaml"
     catalog.write_text(
         "vehicles:\n"
-        "  - name: project_vehicle\n"
+        "  project_vehicle:\n"
         '    usd: { url: "file:///project_vehicle.usda", sha256: abc }\n'
         "    px4: { airframe: astro_max }\n"
         "scenes:\n  empty: {}\n"
     )
-    with pytest.raises(ValueError, match=r"vehicles\.0\.px4"):
+    with pytest.raises(ValueError, match=r"vehicles\.project_vehicle\.px4"):
         nexus.Registry.from_yaml(catalog)
 
 
 MY_QUAD = """\
 vehicles:
-  - name: my_quad
+  my_quad:
     usd: { url: "file:///my_quad.usda", sha256: abc }
 """
 
@@ -251,4 +235,55 @@ def test_a_project_catalog_that_lists_only_what_it_adds_loads_on_its_own(tmp_pat
     catalog = tmp_path / "catalog.yaml"
     catalog.write_text(MY_QUAD + "scenes: {}\n")
 
-    assert [v.name for v in nexus.Registry.from_yaml(catalog).vehicles] == ["my_quad"]
+    assert list(nexus.Registry.from_yaml(catalog).vehicles) == ["my_quad"]
+
+
+BUNDLED_ASTRO_SHA = "38700d1d05b739bba445b1b1d4fb35c7aec8ec4ef05d49d4dcb8b8941ef84ca9"
+BUNDLED_FPV_SHA = "51cec8c50db9b50d9a8baa86730b780e574d1d8846c5483ffe92d168cf2cbbe8"
+
+KEYED_REPIN = f"""\
+vehicles:
+  astro_max_base:
+    usd: {{ url: "file:///astro_max_base.usdz", sha256: "{REPIN_SHA}" }}
+"""
+
+KEYED_PROJECT = """\
+vehicles:
+  project_vehicle:
+    usd: { url: "file:///project_vehicle.usdz", sha256: abc }
+"""
+
+
+def test_a_project_vehicle_keyed_by_a_bundled_name_replaces_the_bundled_entry_with_a_warning(
+    tmp_path, monkeypatch, caplog
+):
+    """A project vehicle keyed by a bundled name replaces the bundled entry and warns with both hashes.
+
+    Given a project catalog with `vehicles: { astro_max_base: { usd: … } }`, when `load_registry`
+    loads it, then `astro_max_base` resolves to the project's USD, `astro_max_fpv` still resolves to
+    the bundled one, and one warning names both sha256 values.
+    """
+    (tmp_path / "nexus.registry.yaml").write_text(KEYED_REPIN)
+    monkeypatch.chdir(tmp_path)
+
+    with caplog.at_level(logging.WARNING):
+        reg = load_registry()
+    shas = (reg.vehicles["astro_max_base"].usd.sha256, reg.vehicles["astro_max_fpv"].usd.sha256)
+    named = [all(s in m for s in ("astro_max_base", REPIN_SHA, BUNDLED_ASTRO_SHA)) for m in _warnings(caplog)]
+
+    assert (shas, named) == ((REPIN_SHA, BUNDLED_FPV_SHA), [True])
+
+
+def test_a_project_catalog_that_adds_one_vehicle_by_key_still_flies_the_bundled_ones(tmp_path, monkeypatch):
+    """A project catalog that adds one vehicle by key still flies the bundled vehicles and scenes.
+
+    Given a project catalog with only `vehicles: { project_vehicle: … }`, when `load_registry` loads
+    it, then `project_vehicle`, `astro_max_base`, `astro_max_fpv` and the scene `empty` all resolve.
+    """
+    (tmp_path / "nexus.registry.yaml").write_text(KEYED_PROJECT)
+    monkeypatch.chdir(tmp_path)
+
+    reg = load_registry()
+    resolved = [name in reg.vehicles for name in ("project_vehicle", "astro_max_base", "astro_max_fpv")]
+
+    assert (resolved, "empty" in reg.scenes) == ([True, True, True], True)

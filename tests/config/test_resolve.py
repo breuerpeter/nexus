@@ -14,7 +14,7 @@ from nexus._src.config import LaunchConfig, NoMatchError, Registry, TestedConfig
 def _reg(vehicle_usd):
     return Registry.from_dict(
         {
-            "vehicles": [{"name": "black", "usd": vehicle_usd}],
+            "vehicles": {"black": {"usd": vehicle_usd}},
             "scenes": {"empty": {}},
         }
     )
@@ -64,7 +64,7 @@ def _fpv_reg(vehicle_usd, scene_usd, **scene_extra):
     """
     return Registry.from_dict(
         {
-            "vehicles": [{"name": "black", "usd": vehicle_usd}],
+            "vehicles": {"black": {"usd": vehicle_usd}},
             "scenes": {
                 "empty": {},
                 "fpv": {
@@ -159,7 +159,7 @@ def _catalog(vehicle: str) -> str:
     """A one-vehicle registry naming *vehicle*, enough to tell two catalogs apart."""
     return (
         "vehicles:\n"
-        f"  - name: {vehicle}\n"
+        f"  {vehicle}:\n"
         '    usd: { url: "file:///' + '{v}.usdz", sha256: "0" }\n'.replace("{v}", vehicle) + "scenes:\n  empty: {}\n"
     )
 
@@ -208,3 +208,34 @@ def test_the_receipt_carries_no_environment_field():
     rl = resolve(LaunchConfig().set_vehicle("black").set_scene("empty"), reg, fetch=False)
 
     assert "environment" not in json.loads(rl.tested_config.to_json())
+
+
+def test_a_catalog_that_keys_vehicles_by_name_flies_a_vehicle_by_its_key(tmp_path, monkeypatch):
+    """A catalog that keys `vehicles` by name loads, and a run flies a vehicle by its key.
+
+    Given a project catalog with `vehicles: { my_quad: { usd: … } }` and no `name` field, when a
+    launch names `--vehicle my_quad` and resolves, then it resolves that entry's USD and the receipt
+    records the vehicle `my_quad`.
+    """
+    (tmp_path / "nexus.registry.yaml").write_text(
+        'vehicles:\n  my_quad:\n    usd: { url: "file:///my_quad.usdz", sha256: abc }\n'
+    )
+    monkeypatch.chdir(tmp_path)
+
+    tc = resolve(LaunchConfig().set_vehicle("my_quad").set_scene("empty"), fetch=False).tested_config
+
+    assert (tc.vehicle, tc.vehicle_usd.url) == ("my_quad", "file:///my_quad.usdz")
+
+
+def test_a_launch_that_names_an_unknown_vehicle_fails_and_lists_the_catalogs_vehicle_names(tmp_path, monkeypatch):
+    """A launch that names an unknown vehicle fails and lists the catalog's vehicle names.
+
+    Given the bundled catalog, when a launch names `--vehicle nope`, then it raises `NoMatchError`
+    whose message lists `astro_max_base` and `astro_max_fpv`.
+    """
+    monkeypatch.chdir(tmp_path)  # no parent of this one holds a registry
+
+    with pytest.raises(NoMatchError) as e:
+        resolve(LaunchConfig().set_vehicle("nope").set_scene("empty"), fetch=False)
+
+    assert [name in str(e.value) for name in ("astro_max_base", "astro_max_fpv")] == [True, True]
