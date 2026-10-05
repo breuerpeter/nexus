@@ -2,7 +2,7 @@
 
 ``run`` builds a :class:`~nexus._src.api.sim.Sim` from the shared ``sim_argparser`` flags plus
 ``--stream`` and drives it to completion. A vehicle whose Universal Scene Description (USD) file
-authors RTX sensor prims renders them in the Kit render peer, a container the run starts from this
+declares RTX sensors renders them in the Kit render peer, a container the run starts from this
 host.
 """
 

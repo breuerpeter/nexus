@@ -79,8 +79,9 @@ no container.
   path**. `--scene` accepts a registry scene name, such as `empty`, or a local scene USD path.
   A run names both.
   Every Astro Max vehicle carries the analytic PX4 suite, an Inertial Measurement Unit (IMU),
-  mag, barometer, and Global Positioning System (GPS) as `sensor:*` prims. The vehicle USD is the
-  single authority for all sensors, and a PX4 vehicle USD authoring none fails the build loudly.
+  mag, barometer, and Global Positioning System (GPS). Each is a prim under the body it rides that
+  applies its sensor schema, such as `NexusImuAPI`. The vehicle USD is the single authority for all
+  sensors, and the [schema reference](../reference/schemas.md) lists the attributes of each schema.
 - Cameras log JPEG frames and a `Pinhole` frustum to `cameras/<name>`. The lidar logs world-frame
   `Points3D` to `lidar/<name>`. `--debug` records the axes-only scene, which gives small `.rrd`s,
   and is the default for verification flights.
@@ -119,8 +120,8 @@ Sim physics and PX4 state both appear in the Rerun viewer, because they share th
 
 ## Worlds for the FPV camera
 
-A vehicle whose USD authors RTX sensors, such as the `astro_max_fpv` variant's `FpvCam`, renders
-them in the Kit peer. The FPV camera's world comes from the registry scene:
+A vehicle whose USD declares RTX sensors, such as the `astro_max_fpv` variant's `FpvCam` with its
+`NexusCameraAPI` schema, renders them in the Kit peer. The FPV camera's world comes from the registry scene:
 
 ```bash
 # photoreal geolocated globe: Google Photorealistic 3D Tiles streamed live at
