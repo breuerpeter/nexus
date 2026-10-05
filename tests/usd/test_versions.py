@@ -172,6 +172,24 @@ def test_an_attribute_that_joins_a_released_version_with_no_fallback_fails_the_c
     assert [change for change in changes if "NexusImuAPI" in change and "nexus:accBias" in change]
 
 
+def test_a_released_version_removed_without_being_retired_fails_the_check(tmp_path):
+    """A released version the plugin no longer defines and doesn't list as retired fails the check, which names it."""
+    from nexus._src.usd.released import in_place_changes
+
+    changes = in_place_changes(_plugin_with(tmp_path, 'class "NexusPx4SitlAPI"', 'class "NexusOtherAPI"'))
+    assert [change for change in changes if "NexusPx4SitlAPI" in change]
+
+
+def test_a_released_version_the_plugin_lists_as_retired_passes_the_check(tmp_path):
+    """A released version the plugin no longer defines passes the check when the plugin lists it as retired."""
+    from nexus._src.usd.released import in_place_changes
+
+    plugin = _plugin_with(tmp_path, 'class "NexusPx4SitlAPI"', 'class "NexusOtherAPI"')
+    info = plugin / "plugInfo.json"
+    info.write_text(info.read_text().replace('"Types": {', '"NexusRetiredSchemas": ["NexusPx4SitlAPI"], "Types": {'))
+    assert in_place_changes(plugin) == []
+
+
 def test_no_released_version_of_the_nexus_plugin_changed_in_place():
     """No released version of the nexus plugin lost or renamed an attribute, or changed one's type or unit."""
     from nexus._src.usd.released import in_place_changes
