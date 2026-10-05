@@ -75,7 +75,11 @@ def test_each_attribute_the_schema_defines_reaches_the_class_as_the_snake_case_k
     authored, when the build resolves it with a registry that maps the schema to a stand-in, then the
     stand-in's keyword arguments hold the snake-case name with the authored value.
     """
-    (imu,) = _imu(resolve_components(FIXTURE, ComponentRegistry({"NexusImuAPI": StandIn, "NexusPx4API": StandIn})))
+    (imu,) = _imu(
+        resolve_components(
+            FIXTURE, ComponentRegistry({"NexusImuAPI": StandIn, "NexusPropellerAPI": StandIn, "NexusPx4API": StandIn})
+        )
+    )
     assert imu.kwargs["acc_noise"] == pytest.approx(0.05)
 
 
@@ -85,7 +89,11 @@ def test_an_attribute_the_prim_does_not_author_takes_the_fallback_the_plugin_def
     Given the fixture prim with one attribute unauthored, when resolved, then the stand-in's keyword
     arguments hold that name at the plugin's fallback.
     """
-    (imu,) = _imu(resolve_components(FIXTURE, ComponentRegistry({"NexusImuAPI": StandIn, "NexusPx4API": StandIn})))
+    (imu,) = _imu(
+        resolve_components(
+            FIXTURE, ComponentRegistry({"NexusImuAPI": StandIn, "NexusPropellerAPI": StandIn, "NexusPx4API": StandIn})
+        )
+    )
     assert imu.kwargs["gyro_noise"] == pytest.approx(0.02)
 
 
@@ -136,7 +144,7 @@ def test_a_schema_no_class_claims_fails_the_build_and_names_the_prim():
     naming the prim path and the schema.
     """
     with pytest.raises(ValueError) as e:
-        resolve_components(FIXTURE, ComponentRegistry({"NexusPx4API": StandIn}))
+        resolve_components(FIXTURE, ComponentRegistry({"NexusPropellerAPI": StandIn, "NexusPx4API": StandIn}))
     assert IMU in str(e.value) and "NexusImuAPI" in str(e.value)
 
 
