@@ -24,13 +24,6 @@ class BuilderBase(ABC):
         """
         return {}
 
-    def sensor_specs(self) -> list:
-        """Per-vehicle analytic sensor suite, a list of :class:`~nexus._src.vehicle.sensors.usd.SensorSpec`,
-        the canonical single source for the sensors. USD vehicles author them as ``sensor:*`` prims; see
-        :mod:`nexus._src.vehicle.sensors.usd`. A builder with no authored sensors returns ``[]``.
-        """
-        return []
-
     def model_debug_print(self, model: Model) -> None:
         for i, key in enumerate(model.body_label):
             mass = model.body_mass.numpy()[i]

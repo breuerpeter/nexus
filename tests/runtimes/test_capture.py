@@ -21,6 +21,14 @@ class _WarpView:
         self.body_qd = wp.array(bqd, dtype=wp.spatial_vector)
 
 
+def _run():
+    """The run's values each sensor here takes: a 4 ms tick and a site at 47.6, -122.3, 5 m."""
+    from nexus._src.core.interfaces import SensorRun
+    from nexus._src.scene import Site
+
+    return SensorRun(seed=42, dt=0.004, site=Site(lat=47.6, lon=-122.3, alt=5.0, mag_ned=(0.21, 0.05, 0.43)))
+
+
 def test_captured_sensor_noise_dithers_per_replay():
     """The device step counter must make sensor noise vary across graph replays. A frozen captured
     sensor stream, with a baked-at-capture step, reads to PX4's Extended Kalman Filter (EKF) as a stuck
@@ -30,12 +38,11 @@ def test_captured_sensor_noise_dithers_per_replay():
     if not wp.is_cuda_available():
         pytest.skip("no CUDA device")
     from nexus._src.core.schema import SimTime
-    from nexus._src.core.seedtree import SeedTree
     from nexus._src.vehicle.sensors import ImuSensor
 
     with wp.ScopedDevice("cuda:0"):
         view = _WarpView((0.0, 0.0, 1.0), (0.0, 0.0, 0.0, 1.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
-        s = ImuSensor(SeedTree(42), 0.004)  # noise on, the default
+        s = ImuSensor(_run())  # noise on, the default
         s.sample_wp(view, SimTime(0.0, 0))  # warmup: first=1, seeds prev
         with wp.ScopedCapture() as cap:
             s.sample_wp(view, SimTime(0.0, 0))
@@ -57,7 +64,6 @@ def test_captured_px4_sensors_match_eager():
     if not wp.is_cuda_available():
         pytest.skip("no CUDA device")
     from nexus._src.core.schema import Measurement, SimTime
-    from nexus._src.core.seedtree import SeedTree
     from nexus._src.vehicle.sensors import BaroSensor, GpsSensor, ImuSensor, MagSensor
 
     with wp.ScopedDevice("cuda:0"):
@@ -65,10 +71,10 @@ def test_captured_px4_sensors_match_eager():
 
         def fresh():
             return [
-                ImuSensor(SeedTree(42), 0.004, acc_noise=0.0, gyro_noise=0.0),
-                MagSensor(SeedTree(42), (0.21, 0.05, 0.43), noise=(0.0, 0.0, 0.0)),
-                BaroSensor(SeedTree(42), noise=0.0),
-                GpsSensor(47.6, -122.3, 5.0),
+                ImuSensor(_run(), acc_noise=0.0, gyro_noise=0.0),
+                MagSensor(_run(), noise=(0.0, 0.0, 0.0)),
+                BaroSensor(_run(), noise=0.0),
+                GpsSensor(_run()),
             ]
 
         eager = fresh()
