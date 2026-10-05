@@ -25,7 +25,7 @@ def _tracked_test_modules() -> list[Path]:
 def _unmirrored(folders: list[str]) -> list[str]:
     """The test folders, as repo-relative paths, that match no source folder and no name in ``UNMIRRORED``."""
     paths = [(f, Path(f).relative_to("tests")) for f in folders]
-    return [f for f, rel in paths if rel.parts[0] not in UNMIRRORED and not (REPO / "nexus" / "_src" / rel).is_dir()]
+    return [f for f, rel in paths if rel.as_posix() not in UNMIRRORED and not (REPO / "nexus" / "_src" / rel).is_dir()]
 
 
 def test_every_test_folder_mirrors_a_source_folder() -> None:
@@ -40,6 +40,11 @@ def test_every_test_folder_mirrors_a_source_folder() -> None:
 def test_a_test_folder_with_no_source_folder_fails_the_rule_by_name() -> None:
     """A test folder with no source folder fails the rule, and the failure names the folder."""
     assert _unmirrored(["tests/vehicle/sensors", "tests/runtimes"]) == ["tests/runtimes"]
+
+
+def test_a_folder_beneath_an_unmirrored_folder_fails_the_rule() -> None:
+    """Only the stated folders themselves mirror no source folder: a folder beneath one fails the rule."""
+    assert _unmirrored(["tests/suite", "tests/suite/misc"]) == ["tests/suite/misc"]
 
 
 def test_no_test_module_sits_at_the_root() -> None:
