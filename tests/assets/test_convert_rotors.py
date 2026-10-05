@@ -7,6 +7,7 @@ joint Newton drives for another purpose, such as a gimbal servo, is none.
 import importlib.util
 import pathlib
 
+import pytest
 from pxr import Sdf, Usd, UsdGeom, UsdPhysics
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -112,3 +113,15 @@ def test_the_converter_takes_the_rotors_a_caller_names(tmp_path):
     rotors = ["/Vehicle/rotor_0_joint", "/Vehicle/rotor_1_joint"]
     out = convert.author_rotor_params(source, tmp_path / "out.usda", params=PARAMS, rotors=rotors)
     assert _rotor_bodies(out) == ["/Vehicle/rotor_0", "/Vehicle/rotor_1"]
+
+
+def test_the_converter_fails_when_the_declared_top_speed_and_the_motors_no_load_speed_differ(tmp_path):
+    """The converter fails when the speed a source declares and its motor's no-load speed differ.
+
+    Given a source whose rotor joints declare 3800 rpm and whose motors declare 300 rad/s, 2865 rpm, when
+    the converter runs, then it fails and names the motor and both speeds, since the run reads the motor's.
+    """
+    source = _source_vehicle(tmp_path / "source.usda", limit=300.0)
+    with pytest.raises(ValueError) as e:
+        convert.author_rotor_params(source, tmp_path / "out.usda", params=PARAMS)
+    assert all(text in str(e.value) for text in ("/Vehicle/rotor_0_motor", "3800", "300"))

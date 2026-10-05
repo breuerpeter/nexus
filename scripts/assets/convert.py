@@ -9,6 +9,8 @@ with ``usd-core``; it's host-side and unit-tested, with no Kit dependency. The p
 
 from __future__ import annotations
 
+import math
+
 # --- FPV camera mount math: the single source of truth for the authored FpvCam -----------
 # This module bakes the FPV camera into the vehicle USD as a body-child once; the Kit render peer
 # just creates a render product on that authored prim, with no in-code camera. The mount/intrinsics
@@ -189,6 +191,7 @@ _JOINT_ATTRS = {"motor:tau": "tau"}
 # ``NewtonActuator`` prim that drives it in an as-built USD. A joint or a prim with these is a rotor's.
 _JOINT_PREFIXES = ("propeller:", "motor:")
 _AS_BUILT_PREFIX = "freefly:actuator:"
+_RPM_PER_RADS = 60.0 / (2.0 * math.pi)  # rad/s -> rpm
 
 
 def author_rotor_params(usdz, out, *, params=None, rotors=None) -> str:
@@ -205,14 +208,15 @@ def author_rotor_params(usdz, out, *, params=None, rotors=None) -> str:
 
     ``params`` is a ``{ct, cd, aero_h, aero_hforce, tau}`` dict that overrides the values the source's rotors
     declare; a value neither gives is an error. The rotor speed at full command isn't authored: the run reads
-    it from each motor's ``newton:velocityLimit``.
+    it from each motor's ``newton:velocityLimit``. A ``rpm_max`` that ``params`` or the source gives must
+    agree with it, or the conversion would change the top speed.
 
     Returns:
         The output path.
 
     Raises:
         ValueError: The source declares no rotor and ``rotors`` names none, a rotor joint has no child body, a
-            value is missing or differs between rotors.
+            value is missing or differs between rotors, or ``rpm_max`` and a motor's no-load speed differ.
     """
     from pxr import Sdf
 
@@ -255,6 +259,20 @@ def author_rotor_params(usdz, out, *, params=None, rotors=None) -> str:
         raise ValueError(
             f"no value for {missing}: neither params nor the source's rotors give one (have {sorted(values)})"
         )
+    if "rpm_max" in values:
+        for joint in joints:
+            motor = motors.get(joint.GetPath())
+            if motor is None:
+                raise ValueError(
+                    f"{joint.GetPath()}: no NewtonActuator prim drives the rotor joint, so rpm_max has no motor"
+                )
+            limit = motor.GetAttribute("newton:velocityLimit").Get()
+            if limit is None or not math.isclose(limit * _RPM_PER_RADS, values["rpm_max"], rel_tol=1e-6):
+                raise ValueError(
+                    f"{motor.GetPath()}: rpm_max is {values['rpm_max']:g}, and the motor's newton:velocityLimit is "
+                    f"{limit} rad/s; the run reads the motor's, so make them agree"
+                )
+
     for prim in prims:
         for prop in prim.GetAuthoredPropertiesInNamespace("propeller"):
             prim.RemoveProperty(prop.GetName())
