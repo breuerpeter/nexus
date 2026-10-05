@@ -192,7 +192,7 @@ def _registry_snippet(kind: str, name: str, sha: str, url: str, compact: bool) -
     ref = f"{{ name: {name}, sha256: {sha} }}" if compact else f'{{ url: "{url}", sha256: {sha} }}'
     usd = f"    usd: {ref}"
     if kind == "vehicle":
-        return f"  - name: {name}\n{usd}"
+        return f"  {name}:\n{usd}"
     return f"  {name}:\n{usd}\n    geodetic_origin: null   # or {{ lat: .., lon: .. }} for a geo-anchored scene"
 
 

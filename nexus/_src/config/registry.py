@@ -1,7 +1,7 @@
 """The checked-in catalog + name resolution.
 
-Each vehicle variant carries a ``name`` handle, its Universal Scene Description (USD) and its PX4
-spec; a launch names the variant it flies and the scene it flies in.
+The catalog keys each vehicle variant and each scene by name; a launch names the variant it flies
+and the scene it flies in.
 No per-key override/transform machinery: that "clever" path is on hold.
 """
 
@@ -41,7 +41,7 @@ def _expand_usd(data, kind: str, base: str | None):
 
 
 class RegistryError(Exception):
-    """A malformed registry: a duplicate name, a dangling reference, and so on."""
+    """A malformed registry: a dangling reference, an unknown scene, and so on."""
 
 
 class NoMatchError(RegistryError):
@@ -49,11 +49,11 @@ class NoMatchError(RegistryError):
 
 
 class VehicleVariant(_Base):
-    """One catalog entry: a `name` handle and its Universal Scene Description (USD) file, which
-    declares its controller.
+    """One catalog entry: a Universal Scene Description (USD) file, which declares its controller.
+
+    The entry's name is its key in :attr:`Registry.vehicles`.
     """
 
-    name: str
     usd: AssetRef
 
 
@@ -96,8 +96,8 @@ class Registry(_Base):
 
     assets: Assets = Field(default_factory=Assets)
     """Where this catalog's blobs live; see :class:`Assets`."""
-    vehicles: list[VehicleVariant] = Field(default_factory=list)
-    """The catalog of vehicle variants, each under its ``name`` handle.
+    vehicles: dict[str, VehicleVariant] = Field(default_factory=dict)
+    """The catalog of vehicle variants, keyed by name (the key a ``LaunchConfig.vehicle`` refers to).
 
     Empty by default; an empty catalog resolves no name.
     """
@@ -123,10 +123,9 @@ class Registry(_Base):
             )
         base = (data.get("assets") or {}).get("base") if isinstance(data.get("assets"), dict) else None
         out = dict(data)
-        if isinstance(out.get("vehicles"), list):
-            out["vehicles"] = [_expand_usd(v, "vehicles", base) for v in out["vehicles"]]
-        if isinstance(out.get("scenes"), dict):
-            out["scenes"] = {k: _expand_usd(s, "scenes", base) for k, s in out["scenes"].items()}
+        for kind in ("vehicles", "scenes"):
+            if isinstance(out.get(kind), dict):
+                out[kind] = {k: _expand_usd(e, kind, base) for k, e in out[kind].items()}
         return out
 
     @classmethod
@@ -143,11 +142,9 @@ class Registry(_Base):
         Raises:
             pydantic.ValidationError: If ``data`` has unknown keys or values that fail
                 validation.
-            RegistryError: If the catalog fails load-time validation; see :meth:`validate`.
+            RegistryError: If a compact ``usd`` entry has no ``assets.base`` to complete it.
         """
-        reg = cls.model_validate(data or {})
-        reg.validate()
-        return reg
+        return cls.model_validate(data or {})
 
     @classmethod
     def from_yaml(cls, path: str | pathlib.Path | None = None) -> Registry:
@@ -162,27 +159,10 @@ class Registry(_Base):
 
         Raises:
             pydantic.ValidationError: If the parsed document fails validation.
-            RegistryError: If the catalog fails load-time validation; see :meth:`validate`.
+            RegistryError: If a compact ``usd`` entry has no ``assets.base`` to complete it.
         """
         path = pathlib.Path(path) if path is not None else _DEFAULT_REGISTRY
         return cls.from_dict(yaml.safe_load(path.read_text()))
-
-    def validate(self) -> None:
-        """Load-time validation, so a checked-in registry can't ship broken:
-
-        * two variants with the same `name`: resolution would be non-deterministic; reject.
-        """
-        names = [v.name for v in self.vehicles]
-        dupes = sorted({n for n in names if names.count(n) > 1})
-        if dupes:
-            raise RegistryError(f"duplicate vehicle name(s): {dupes}")
-
-    def by_name(self, name: str) -> VehicleVariant:
-        """Look up a variant by its `name` handle: the `--vehicle <name>` path."""
-        for v in self.vehicles:
-            if v.name == name:
-                return v
-        raise NoMatchError(f"no vehicle named {name!r}; registry names: {[v.name for v in self.vehicles]}")
 
 
 _DEFAULT_REGISTRY = pathlib.Path(__file__).parent / "registry.yaml"
@@ -229,23 +209,19 @@ def _extend(bundled: Registry, project: Registry) -> Registry:
     Both catalogs have completed their compact refs against their own ``assets.base`` already, so
     each entry keeps its own catalog's URL. The project's ``assets`` stays the catalog's, since that base is where the project's new blobs go.
     """
-    shipped = {v.name: v for v in bundled.vehicles}
-    for v in project.vehicles:
-        if v.name in shipped:
-            logger.warning(
-                f"vehicle {v.name!r}: the project's entry (sha256 {_sha(v.usd)}) replaces the bundled one "
-                f"(sha256 {_sha(shipped[v.name].usd)})"
-            )
-    for name, scene in project.scenes.items():
-        if name in bundled.scenes:
-            logger.warning(
-                f"scene {name!r}: the project's entry (sha256 {_sha(scene.usd)}) replaces the bundled one "
-                f"(sha256 {_sha(bundled.scenes[name].usd)})"
-            )
-    own = {v.name for v in project.vehicles}
+    for kind, shipped, own in (
+        ("vehicle", bundled.vehicles, project.vehicles),
+        ("scene", bundled.scenes, project.scenes),
+    ):
+        for name, entry in own.items():
+            if name in shipped:
+                logger.warning(
+                    f"{kind} {name!r}: the project's entry (sha256 {_sha(entry.usd)}) replaces the bundled one "
+                    f"(sha256 {_sha(shipped[name].usd)})"
+                )
     return Registry(
         assets=project.assets,
-        vehicles=[v for v in bundled.vehicles if v.name not in own] + project.vehicles,
+        vehicles={**bundled.vehicles, **project.vehicles},
         scenes={**bundled.scenes, **project.scenes},
     )
 
@@ -254,12 +230,9 @@ def load_registry(path: str | pathlib.Path | None = None) -> Registry:
     """Load + validate the bundled catalog, extended by the one :func:`registry_path` picks for *path*.
 
     A project catalog lists only what it adds; see :func:`_extend` for how a name in both resolves.
-    Validation runs on the merged catalog.
     """
     bundled = Registry.from_yaml(_DEFAULT_REGISTRY)
     source = registry_path(path)
     if source.resolve() == _DEFAULT_REGISTRY.resolve():
         return bundled
-    reg = _extend(bundled, Registry.model_validate(yaml.safe_load(source.read_text()) or {}))
-    reg.validate()
-    return reg
+    return _extend(bundled, Registry.model_validate(yaml.safe_load(source.read_text()) or {}))

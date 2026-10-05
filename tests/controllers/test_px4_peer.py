@@ -206,12 +206,12 @@ def _vehicle(tmp_path) -> dict:
         '{\n    string nexus:airframe = "astro_max"\n}\n'
     )
     sha = hashlib.sha256(blob.read_bytes()).hexdigest()
-    return {"name": "astro", "usd": {"url": blob.as_uri(), "sha256": sha, "filename": "vehicle.usda"}}
+    return {"astro": {"usd": {"url": blob.as_uri(), "sha256": sha, "filename": "vehicle.usda"}}}
 
 
 @pytest.fixture
 def catalog(tmp_path) -> Registry:
-    return Registry.from_dict({"vehicles": [_vehicle(tmp_path)], "scenes": {"empty": {}}})
+    return Registry.from_dict({"vehicles": _vehicle(tmp_path), "scenes": {"empty": {}}})
 
 
 @pytest.fixture
@@ -362,7 +362,7 @@ def test_the_peers_console_log_stays_in_the_runs_artifacts(daemon, assembly, cat
     console log path.
     """
     project = tmp_path / "nexus.registry.yaml"
-    project.write_text(yaml.safe_dump({"vehicles": [_vehicle(tmp_path)]}))
+    project.write_text(yaml.safe_dump({"vehicles": _vehicle(tmp_path)}))
 
     with Sim("astro", scene="empty", registry=str(project), device="cpu", observe=False) as sim:
         pass
@@ -666,7 +666,7 @@ def _declared_run(tmp_path, layer: str | None = None) -> Orchestrator:
     sha = hashlib.sha256(blob.read_bytes()).hexdigest()
     catalog = Registry.from_dict(
         {
-            "vehicles": [{"name": "astro", "usd": {"url": blob.as_uri(), "sha256": sha, "filename": blob.name}}],
+            "vehicles": {"astro": {"usd": {"url": blob.as_uri(), "sha256": sha, "filename": blob.name}}},
             "scenes": {"empty": {}},
         }
     )
@@ -694,7 +694,7 @@ def test_a_vehicle_that_declares_the_px4_sitl_peer_starts_it(daemon, monkeypatch
     # The network is a boundary: a PX4 fetch this run must not make fails at once on an unreachable proxy.
     for var in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"):
         monkeypatch.setenv(var, "http://127.0.0.1:9")
-    names = [v.name for v in load_registry().vehicles]
+    names = list(load_registry().vehicles)
 
     flown = {}
     for name in names:

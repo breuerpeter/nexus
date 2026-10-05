@@ -104,17 +104,19 @@ def resolve(
         logger.info(f"registry: {source}")
 
     if launch.vehicle is None:
-        raise NoMatchError(f"the launch names no vehicle; name one of {[v.name for v in registry.vehicles]}")
+        raise NoMatchError(f"the launch names no vehicle; name one of {list(registry.vehicles)}")
     if launch.scene is None:
         raise RegistryError(f"the launch names no scene; name one of {list(registry.scenes)}")
     local = _local_usd(launch.vehicle, "vehicle")
     if local is None:
-        variant = registry.by_name(launch.vehicle)  # `--vehicle <name>`
+        if launch.vehicle not in registry.vehicles:  # `--vehicle <name>`
+            raise NoMatchError(f"no vehicle named {launch.vehicle!r}; registry names: {list(registry.vehicles)}")
+        variant = registry.vehicles[launch.vehicle]
     else:
         # Local vehicle USD, the variant-development workflow: the file *is* the authority. Its
         # controller, actuator params, cameras, and lidars are all authored on it, so it needs no
         # registry row. The receipt stays honest: the file gets a sha256 the same way as a registry asset.
-        variant = VehicleVariant(name=str(local), usd=_local_ref(local))
+        variant = VehicleVariant(usd=_local_ref(local))
 
     scene_id = launch.scene
     local_scene = _local_usd(scene_id, "scene")
@@ -144,7 +146,7 @@ def resolve(
     # The geodetic origin: a launch override wins, else the registry scene's default, which can be None.
     geodetic_origin = launch.geodetic_origin or scene.geodetic_origin
     tested = TestedConfig(
-        vehicle=variant.name,
+        vehicle=str(local) if local is not None else launch.vehicle,
         registry=str(source) if source is not None else None,
         vehicle_usd=variant.usd,
         layer=layer[1] if layer is not None else None,

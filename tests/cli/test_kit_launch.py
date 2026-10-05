@@ -49,8 +49,7 @@ def test_the_host_fetches_the_vehicle_and_the_scene_before_the_kit_container_sta
     scene.write_text(PLAIN_USD)
     registry = tmp_path / "catalog.yaml"
     registry.write_text(
-        f"vehicles:\n  - name: v\n    usd: {_ref(vehicle)}\n"
-        f"scenes:\n  s:\n    usd: {_ref(scene)}\n    geodetic_origin: null\n"
+        f"vehicles:\n  v:\n    usd: {_ref(vehicle)}\nscenes:\n  s:\n    usd: {_ref(scene)}\n    geodetic_origin: null\n"
     )
     exe = shutil.which("nexus")
     assert exe, "no `nexus` command on the path"
