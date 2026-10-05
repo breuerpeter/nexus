@@ -55,8 +55,7 @@ def _missing() -> list[str]:
     missing = []
     if any(importlib.util.find_spec(module) is None for module in _EXTRA_MODULES):
         missing.append(
-            "the acados extra isn't installed: pip install 'nexus-sim[acados]', "
-            "or uv sync --extra acados in a checkout"
+            "the acados extra isn't installed: pip install 'nexus-sim[acados]', or uv sync --extra acados in a checkout"
         )
     tree = acados_dir()
     built = (tree / "lib" / "libacados.so").exists() and os.access(tree / "bin" / "t_renderer", os.X_OK)
