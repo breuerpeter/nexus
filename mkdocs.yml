@@ -68,7 +68,7 @@ markdown_extensions:
       title: On this page
   - pymdownx.arithmatex:
       generic: true
-  - pymdownx.snippets: # lets docs/changelog.md include the repo-root CHANGELOG.md
+  - pymdownx.snippets: # lets docs/reference/changelog/index.md include the repo-root CHANGELOG.md
       base_path: ["."]
       check_paths: true
   - pymdownx.emoji: # renders :material-*: / :octicons-*: icons (e.g. the landing-page cards)

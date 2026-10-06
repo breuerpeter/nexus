@@ -1,6 +1,6 @@
 # nexus
 
-nexus is a GPU-accelerated drone simulation framework: a `uv` **workspace** with the
+nexus is a GPU-accelerated drone simulation framework: a `uv` **project** with the
 framework as a single `nexus` package and the docs site at the repo root. The Isaac Lab RL
 training app lives under `nexus-rl/` as a **separate `uv` project** with its own virtual
 environment, which depends on `nexus` via an editable path source. That keeps the heavy,

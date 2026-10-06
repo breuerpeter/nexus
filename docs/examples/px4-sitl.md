@@ -71,7 +71,7 @@ for non-flight throughput runs.
 
 ## Run it
 
-This is the decoupled workflow, headless and end-to-end. `docs/running.md` has the interactive
+This is the decoupled workflow, headless and end-to-end. [Running a SITL flight](../guide/running.md) has the interactive
 QGroundControl version:
 
 ```bash
