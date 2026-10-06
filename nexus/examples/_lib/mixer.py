@@ -1,7 +1,7 @@
 """The **mixer**: the airframe control-allocation + Collective Thrust and Body Rates (CTBR) and moment
 control laws that turn a high-level controller action into the per-rotor commands the single-body motor
 model consumes. This is the flight-controller half of the actuator seam: the law + the mixer live here and
-in the controllers, the motor model lives in :class:`~nexus._src.vehicle.actuators.rotors.Rotors`.
+in the controllers, the motor model lives in :class:`~nexus.examples._lib.rotors.Rotors`.
 
 ``Controls.command`` is **always** ``nr`` normalized per-rotor commands ``u ∈ [0, 1]``, the rotor-speed
 fraction; the mixer is what produces them. Pieces, all ``B``-authoritative and shared by RL train + RL
@@ -26,7 +26,7 @@ deploy + the differentiable examples:
   :class:`RotorMixer`, the ``B``/``B⁻¹`` + thrust map, that configures the controller and the actuator.
 
 ``CtbrParams`` lives here, not in ``controllers/policy``, because it's mixer configuration; homing it in
-the leaf ``actuators`` package keeps the import graph acyclic.
+this leaf module keeps the import graph acyclic.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ from dataclasses import dataclass
 import numpy as np
 import warp as wp
 
-from nexus._src.vehicle.actuators.layout import RPM_PER_RADS, find_rotor_joints, quat_to_R
+from nexus._src.vehicle.rotors import RPM_PER_RADS, find_rotor_joints, quat_to_R
 
 
 @wp.struct

@@ -3,9 +3,10 @@
 Side-effect-light contracts so each component is independently testable and
 fault-wrappable. Every loop component states its per-tick work as a list of
 :class:`Stage`, and the loop runs each stage over the shared :class:`Tick`. The per-body
-``Wrench`` takes the form of the shared ``state.body_f`` device buffer the Actuator writes in
-place, the shared-buffer contract, so the actuator's stage and ``Physics.step`` don't pass a
-Wrench value type: Physics reads ``state.body_f``.
+``Wrench`` takes the form of the shared ``state.body_f`` device buffer the force elements add to in
+place, the shared-buffer contract, so a force element's stage and ``Physics.step`` don't pass a
+Wrench value type: Physics reads ``state.body_f``. A command stage and a force element are each one
+shape, a ``stages()`` list, so neither has a Protocol of its own here.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ if TYPE_CHECKING:
 class Tick:
     """The context one control tick hands every stage: the shared state and buffers a stage reads and
     writes in place. ``controls`` is the controller's persistent ``(1, n)`` device buffer of normalized
-    per-actuator commands, which its stage sets and the actuator's device stage reads, so a captured
+    per-actuator commands, which its stage sets and the command stages read, so a captured
     graph reads the same buffer every replay. ``dt`` is one physics step, the control timestep over
     ``physics_substeps``. ``sensors`` are the sensors with device stages, whose ``read`` fills ``meas``
     at a controller's ``read`` host stage. ``timeout`` bounds a host stage's wait on its peer.
@@ -97,19 +98,17 @@ class Physics(Protocol):
     def clear_forces(self, state: newton.State) -> None: ...
     def step(self, state: newton.State, dt: float) -> newton.State: ...
     def stages(self) -> list[Stage]:
-        """The ``clear`` and ``step`` stages; the loop runs ``clear``, the actuator, ``step`` once per
-        physics substep.
+        """The ``clear`` and ``step`` stages; the loop runs ``clear``, the command stages, the force
+        stages and ``step`` once per physics substep, and ``step`` steps Newton's actuators before the solver.
         """
 
 
 @runtime_checkable
 class Actuator(Protocol):
-    """The actuator seam the Orchestrator drives once per physics substep: the controller's command
-    buffer in, forces out. The class marker ``requires_articulated`` says the actuator drives real
-    joints, so the pairing guard refuses a model with nothing on ``model.actuators``.
+    """The old actuator seam, kept for the examples' single-body ``Rotors``: the controller's command
+    buffer in, forces out, in one stage the loop runs with the force stages. A run on the articulated
+    plant states a command stage and a force element instead, with Newton's actuators between them.
     """
-
-    requires_articulated: bool
 
     def forces_wp(self, cmd: Any, state: newton.State) -> None:
         """Write the per-body Wrench into the shared ``state.body_f`` buffer from ``cmd``, the

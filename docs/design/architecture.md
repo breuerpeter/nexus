@@ -17,7 +17,9 @@ Each tick runs the same fixed sequence, and the order is what makes runs reprodu
 t = clock.advance()
 [sensor stages]                           # IMU, GPS, baro, mag into device buffers; a camera's host stage
 [controller stages]                       # PX4: read + exchange host stages; PID: one device stage
-[clear → actuator → step] × substeps      # command buffer → per-body forces → Newton advances the dynamics
+[clear → command stages → force stages → step] × substeps
+                                          # command buffer → Newton's control inputs; state → per-body
+                                          # forces; step: Newton's actuators, then the solver
 [record]                                  # the recorder's device taps
 ```
 
@@ -59,8 +61,9 @@ fault-wrappable:
 | Interface | Responsibility |
 |---|---|
 | `Clock` | sim-time and step, with real-time scaling |
-| `Physics` | `reset` / `step` the Newton dynamics |
-| `Actuator` | one device stage, `forces_wp(cmd, state) → Wrench` from the controller's command buffer |
+| `Physics` | `reset` / `step` the Newton dynamics: `step` steps every Newton actuator the vehicle declares, then the solver |
+| Command stage | device stages that turn the controller's command buffer into Newton's control inputs: the rotors' speed targets and feedforward |
+| Force element | device stages that add body wrenches to the shared `body_f` buffer from the current state: the propellers' thrust and drag |
 | `Sensor` | a device stage into its own buffer plus `read(meas) → Measurement`, or a host stage where a camera sensor uses a renderer |
 | `Controller` | its stages, one contract, many implementations: a peer's `read` and `exchange` host stages, or a device-native law |
 | `Renderer` | the Kit render peer's lifecycle: RTX sensors render in a container fed poses over a socket |
@@ -75,7 +78,7 @@ Universal Scene Description (USD). A single `USDBuilder` reads the vehicle model
 `newton.State`, `body_q` as a transform and `body_qd` as a spatial vector, through Warp kernels.
 Those kernels pin one canonical convention: **`XYZW` quaternions, world-frame velocity taken at the
 center of mass, Z-up in sim**. Because every run is tensors-over-Newton-over-USD, the same sensor,
-actuator, or controller runs verbatim in a CI test and in a rendered flight. The only place that
+rotor chain, or controller runs verbatim in a CI test and in a rendered flight. The only place that
 reorders a quaternion is the PX4 IMU wire, which expects scalar-first `WXYZ`.
 
 **Dependency injection.** The **core injects** the cross-cutting handles a component needs: its
@@ -117,19 +120,29 @@ the ground side, over a separate MAVLink link, with
 
 ## Actuators
 
-The shipped actuator is **`ArticulatedRotors`**, already the chain a real actuator is, only unnamed.
-The command scales to a rotor-speed target, the job of an Electronic Speed Controller (ESC)
-reduced to one multiply. The motor is a `NewtonActuator` prim authored in the vehicle USD: a velocity servo under a
-torque-speed envelope that Newton solves on the real rotor joint. So the rotor speed is a
-solver-integrated state with physical lag and saturation. The propeller is the airflow-aware closed
-form that turns rotor speed and inflow into thrust and in-plane force on the rotor body. The
-propeller's parameters, `ct`, `cd` and the aero terms, come from the `NexusPropellerAPI` schema that
-each rotor's rigid body applies in the vehicle USD. The rotor speed at full command is the motor's
-no-load speed, `newton:velocityLimit`. The **mixer**, the
+The rotor chain has three parts, split along NVIDIA Newton's model, so nothing in nexus overlaps
+Newton's actuator.
+
+- A **command stage** turns the controller's command into Newton's control inputs. The rotors'
+  scales each command to a rotor-speed target, the job of an Electronic Speed Controller (ESC)
+  reduced to one multiply, and adds a drag feedforward.
+- The motor is **Newton's actuator**, a `NewtonActuator` prim authored in the vehicle USD: a velocity
+  servo under a torque-speed envelope on the real rotor joint. Physics steps every Newton actuator
+  the vehicle declares, rotor motor or not, before its solver. So the rotor speed is a
+  solver-integrated state with physical lag and saturation.
+- A **force element** turns the current state into body wrenches and adds them to the shared
+  `body_f` buffer. The propellers' is the airflow-aware closed form that turns rotor speed and
+  inflow into thrust and in-plane force on the rotor body. A force element adds and never assigns,
+  so two elements on one body both act.
+
+The propeller's parameters, `ct`, `cd` and the aero terms, come from the `NexusPropellerAPI` schema
+that each rotor's rigid body applies in the vehicle USD. The rotor speed at full command is the
+motor's no-load speed, `newton:velocityLimit`. The **mixer**, the
 Collective Thrust and Body Rates (CTBR) rate loop and the `B⁻¹` control allocation, lives in the
-*controllers*, not the actuator. So `Controls.command` is always one entry per actuator, and the
-actuator only ever applies the forward map. The same actuator drives the PX4, PID, policy, and Model
-Predictive Control (MPC) paths.
+*controllers*, not the rotor chain. So `Controls.command` is always one entry per actuator, and a
+command stage only ever applies the forward map. PX4 and the acados example fly this chain. The
+PID, policy and sampling Model Predictive Control (MPC) examples fly a single-body plant with a
+motor lag of their own.
 
 ## Observability and recording
 

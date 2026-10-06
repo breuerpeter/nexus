@@ -30,7 +30,7 @@ import warp as wp
 from isaaclab.utils.configclass import configclass
 
 from nexus._src.physics.builders.usd import parse_rotors  # the rotors the vehicle USD declares
-from nexus._src.vehicle.actuators import RPM_PER_RADS, quat_to_R  # shared rotor geometry, from the core
+from nexus._src.vehicle.rotors import RPM_PER_RADS, quat_to_R  # shared rotor geometry, from the core
 from nexus.examples._lib import (  # the shared single-body model + mixer: train + deploy + diff
     build_allocation,  # the one allocation builder; replaces the hand-rolled torch B
     ctbr_to_cmd_batched,  # the same CTBR mixer the deploy policy controller runs, with dim=N here

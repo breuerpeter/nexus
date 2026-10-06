@@ -2,7 +2,7 @@
 
 A motor's speed ``Ω`` is a real state: each control step it relaxes toward the commanded speed by
 ``α = 1 − e^{−Δt/τ}`` and saturates at ``[0, Ω_max]``; thrust is then the propeller's ``kf·Ω²``. This is
-the one motor model the unified :class:`~nexus._src.vehicle.actuators.rotors.Rotors` actuator runs everywhere:
+the one motor model the unified :class:`~nexus.examples._lib.rotors.Rotors` actuator runs everywhere:
 RL train + deploy, Proportional Integral Derivative (PID), sampling Model Predictive Control (MPC),
 design-opt, and the PX4 path. The richer DC-motor Ordinary Differential Equation (ODE), servo torque
 compared to rotor inertia + aero load, is on the roadmap; this lag is its zero-inertia special case.

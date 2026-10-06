@@ -15,7 +15,7 @@ The **actuator is joint-agnostic**, :class:`~nexus.examples._lib.rotors.Rotors`:
 body with a single summed wrench built from the rotor *layout*, offsets + spins + thrust map, which
 :func:`collapse_to_single_body` reads from the articulated USD **before** the joints merge away.
 So the one ``Rotors`` actuator flies the collapsed single body identically to the articulated model; see
-the coupling docstring, ``actuators/coupling.py``. One asset, one actuator; the collapse is the only
+the coupling docstring, ``coupling.py``. One asset, one actuator; the collapse is the only
 single-body-specific step, and it lives here.
 
 Quad-X only, the framework's vehicle class; a different quad is a different USD + a retune, no code change.
@@ -28,8 +28,8 @@ from typing import Any
 
 import numpy as np
 
-from nexus._src.vehicle.actuators.layout import find_rotor_joints
-from nexus._src.vehicle.actuators.layout import quat_to_R as _quat_to_R
+from nexus._src.vehicle.rotors import find_rotor_joints
+from nexus._src.vehicle.rotors import quat_to_R as _quat_to_R
 
 
 @dataclass
@@ -44,7 +44,7 @@ class SingleBody:
         offsets: ``(nr, 3)`` rotor offsets in the base-body frame, the ``r×F`` moment arms.
         dirs: ``(nr,)`` cw/ccw spin sign per rotor, the yaw-reaction sign.
         act: The USD actuator param dict, ``ct``/``cd``/``rpm_max``/``tau``/``aero_*``. Feeds
-            :func:`~nexus._src.vehicle.actuators.mixer.build_rotor_mixer_from_layout` + the ``Rotors`` motor
+            :func:`~nexus.examples._lib.mixer.build_rotor_mixer_from_layout` + the ``Rotors`` motor
             model + the hover-thrust calc.
     """
 

@@ -6,8 +6,8 @@ import newton
 import warp as wp
 
 from nexus._src.usd.reader import read_declarations
-from nexus._src.vehicle.actuators.layout import RPM_PER_RADS
-from nexus._src.vehicle.actuators.propeller import Propeller
+from nexus._src.vehicle.forces.propellers import Propeller
+from nexus._src.vehicle.rotors import RPM_PER_RADS
 
 from .builder_base import BuilderBase
 

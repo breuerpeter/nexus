@@ -36,7 +36,6 @@ def build_sampling_mpc_orchestrator(
     ``set_scene("slalom")``; the controller discovers the scene's shapes from the collapsed model.
     The guidance sequences the mission via ``accept_setpoint(PositionGoal)``.
     """
-    from nexus._src.vehicle.actuators import check_actuator_model_pairing
     from nexus._src.vehicle.sensors import StateSensor
     from nexus.examples._lib import RigidBodyRotors, build_rotor_mixer_from_layout
     from nexus.examples._lib.single_body import collapse_to_single_body
@@ -79,7 +78,6 @@ def build_sampling_mpc_orchestrator(
         motor_tau=m["tau"],
         thrust_sign=-1.0,  # FRD-authored USD: thrust along −body-z; rotors start pointing up
     )
-    check_actuator_model_pairing(actuator, physics.model)  # single-body wrench; a no-op guard
     controller = SamplingMPCController(
         batch_model=batch_model, mass=mass, rotor_offsets=offsets, turning_dirs=dirs,
         ct=m["ct"], rpm_max=m["rpm_max"], goal_w=goal_w, dt=dt, num_rollouts=num_rollouts, reaction_k=m["cd"],

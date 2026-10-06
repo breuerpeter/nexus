@@ -27,7 +27,7 @@ class BuilderBase(ABC):
 
     def rotor_joints(self) -> list[str]:
         """The joint path of each rotor the vehicle declares, which
-        :func:`~nexus._src.vehicle.actuators.layout.find_rotor_joints` maps onto the built model. A builder
+        :func:`~nexus._src.vehicle.rotors.find_rotor_joints` maps onto the built model. A builder
         that declares no rotor returns ``[]``.
         """
         return []

@@ -1,8 +1,9 @@
 """The ring of stages one control tick runs, and its partition into captured segments.
 
 A tick is an ordered ring of stages, per docs/design/execution.md. :func:`build_ring` lays every
-component's stages out in the canonical order, sensors, guidance, controller, ``clear`` -> actuator ->
-``step`` per physics substep, record. :func:`partition` cuts the ring at its host stages and rotates it to
+component's stages out in the canonical order, sensors, guidance, controller, ``clear`` -> the command
+stages -> the force stages -> ``step`` per physics substep, record. :func:`partition` cuts the ring at
+its host stages and rotates it to
 start after the last cut, so the ring's tail folds into the first run and each maximal run of
 device stages becomes one CUDA graph; with no host stage the whole ring is one segment in canonical
 order. :func:`peer_stages` is the one shape for a controller that blocks on a peer or solves on the
@@ -31,7 +32,7 @@ class Bound:
 
     stage: Stage
     component: object
-    role: str  # sensor, guidance, controller, physics, actuator or record
+    role: str  # sensor, guidance, controller, physics, command, force, actuator or record
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,11 +71,14 @@ def device_sensors(ring: list[Bound]) -> list:
     return out
 
 
-def build_ring(*, sensors, controller, physics, actuator, record: Stage, substeps: int, guidance=None) -> list[Bound]:
+def build_ring(
+    *, sensors, controller, physics, commands=(), forces=(), actuator=None, record: Stage, substeps: int, guidance=None
+) -> list[Bound]:
     """Every component's stages in the canonical order the domain fixes: sensors, the guidance when the
-    run has one, controller, then ``clear`` -> actuator -> ``step`` unrolled ``substeps`` times, then
-    ``record``. The guidance sits before the controller, so the setpoint it writes on a tick is the one
-    the controller reads on that tick.
+    run has one, controller, then ``clear`` -> the command stages -> the force stages -> ``step`` unrolled
+    ``substeps`` times, then ``record``. The guidance sits before the controller, so the setpoint it writes
+    on a tick is the one the controller reads on that tick. The old actuator seam's one stage, the
+    examples' single-body ``Rotors``, runs with the force stages, since it writes the body forces too.
 
     Raises:
         ValueError: A component states no stages, a stage of an unknown kind, or physics states no
@@ -89,9 +93,15 @@ def build_ring(*, sensors, controller, physics, actuator, record: Stage, substep
     phys = {b.stage.name: b for b in stages_of(physics, "physics")}
     if "clear" not in phys or "step" not in phys:
         raise ValueError(f"{type(physics).__name__} states {sorted(phys)}, not the clear and step stages")
-    act = stages_of(actuator, "actuator")
+    inner = []
+    for c in commands:
+        inner += stages_of(c, "command")
+    for f in forces:
+        inner += stages_of(f, "force")
+    if actuator is not None:
+        inner += stages_of(actuator, "actuator")
     for _ in range(substeps):
-        ring += [phys["clear"], *act, phys["step"]]
+        ring += [phys["clear"], *inner, phys["step"]]
     ring.append(Bound(record, None, "record"))
     return ring
 
@@ -120,8 +130,8 @@ def partition(ring: list[Bound]) -> list[Segment]:
 
 def seed_stages(ring: list[Bound]) -> list[Stage]:
     """The stages of one pass over the settled state: the sensors' and the controller's warm device
-    stages, and the controller's host stages, in ring order. Physics, the actuator and the record
-    stage never run here, so the settled state is the state the first tick starts from, and a
+    stages, and the controller's host stages, in ring order. Physics, the command stages, the force
+    stages and the record stage never run here, so the settled state is the state the first tick starts from, and a
     sensor's host stage never does, so a camera's frame exchange starts with the first tick.
     """
     out = []
@@ -168,7 +178,7 @@ def read_sensors(tick: Tick) -> None:
 def peer_stages(controller) -> list[Stage]:
     """The stages of a controller that blocks on a peer or solves on the host: ``bind``, a device
     stage with no kernel, binds ``Tick.controls`` to a persistent ``(1, 16)`` device command buffer in
-    the warm pass, so the actuator's stage captures over it before the peer connects; ``read`` fans
+    the warm pass, so the command stages capture over it before the peer connects; ``read`` fans
     the sensors into the ``Measurement``; ``exchange`` runs the controller's ``exchange`` and copies
     its commands into the buffer. ``None`` from the exchange reads as the peer not answering, which
     the stage reports by returning ``False``.

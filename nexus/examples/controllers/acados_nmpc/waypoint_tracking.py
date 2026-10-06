@@ -158,7 +158,7 @@ def main() -> None:
     assert final < 0.2, f"did not reach the final waypoint (final dist {final:.3f} m)"
     assert nose_err < 25.0, f"not flying nose-first (nose-vs-velocity median {nose_err:.1f}°)"
     assert max_tilt < 45.0, f"flight too aggressive (max tilt {max_tilt:.1f}°)"
-    # Tracking gate, the one a regression slips past `final dist`: on the core ArticulatedRotors,
+    # Tracking gate, the one a regression slips past `final dist`: on the core rotor chain,
     # real DC-motor servos, the near-instant thrust the NMPC's Optimal Control Problem (OCP) assumes, the
     # validated flight tracks at ~0.033 m rmse / 0.055 m max; the old lumped first-order lag bloated it to
     # ~0.07/0.17.

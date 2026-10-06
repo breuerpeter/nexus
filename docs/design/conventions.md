@@ -9,17 +9,17 @@ Two rules for the component seams, then the structure of every shipped vehicle.
 ## Where a seam lives
 
 A seam lives at or below its consumer: in the caller's own package, or lower in the import layers
-`.importlinter` fixes. The orchestrator drives `Clock`, `Physics`, `Actuator`, `Sensor`,
-`Controller`, `Renderer` and `Recorder` and sits at the bottom layer, so those contracts live in
-`core/`. A contract that sits higher
+`.importlinter` fixes. The orchestrator drives `Clock`, `Physics`, `Sensor`, `Controller`,
+`Renderer` and `Recorder`, and the stages a command stage or a force element states, and sits at
+the bottom layer, so those contracts live in `core/`. A contract that sits higher
 than its consumer ends up written twice: once where the consumer can import it, once beside the
 implementations. That's how the actuator seam came to exist in two files before this rule.
 
 ## Which seams are customizable
 
 Three tiers. A vehicle or a scene **declares** a component in its Universal Scene Description (USD)
-when the component is a property of the machine or of the site. `Controller`, `Actuator`, `Sensor`
-and `Companion` are the vehicle's. What a scene contributes is the scene's. The guidance turns
+when the component is a property of the machine or of the site. `Controller`, `Sensor`, `Companion`
+and the rotor chain, its command stage and its force element, are the vehicle's. What a scene contributes is the scene's. The guidance turns
 a mission into the setpoint a controller tracks. It's a property of the run, not of either, so it
 stays an **argument**: a flight constructs it and hands it to `Sim`. Its stage runs before the
 controller's. PX4 takes none, because its own navigator is its guidance. The `Renderer` follows from the
@@ -51,7 +51,7 @@ peer, another renderer is another class for the same camera schema, one registry
 ## The vehicle model
 
 The loop names no vehicle type: `Controls` carries one command per actuator, and the base body is
-whatever body the actuator joints share. Only the shipped actuator, the example controllers, and the
+whatever body the rotor joints share. Only the shipped rotor chain, the example controllers, and the
 vehicle USDs are **quad-X**. Every shipped vehicle is a USD authored to the structure and frames
 below, because the framework **only ever builds models from
 USDs** and never synthesizes one in code. Supporting a different quad is a new USD authored this way
@@ -59,7 +59,7 @@ plus a retune of the cost weights and the motor map, with no code changes. In pa
 **must** author the base body as Forward Right Down (FRD), as `body_frd` with body +z down, with
 four rotor **revolute** joints, because:
 
-- the shipped actuator, the example controllers and the PX4 path all assume thrust along
+- the shipped rotor chain, the example controllers and the PX4 path all assume thrust along
   **−body-z**, the FRD convention. It's a hardcoded invariant, not a per-call parameter.
 - the differentiable examples, sampling Model Predictive Control (MPC) and design-opt, build their single rigid body by
   **fixing the rotor revolute joints and collapsing them** with `ModelBuilder.collapse_fixed_joints`.
