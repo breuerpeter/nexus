@@ -13,13 +13,13 @@ import hashlib
 
 import pytest
 
-import nexus._src.build.launch as launch_mod
-from nexus._src.api.sim import Sim
-from nexus._src.config import LaunchConfig, Registry
-from nexus._src.core.interfaces import Stage
-from nexus._src.core.orchestrator import Orchestrator
-from nexus._src.core.schema import SimTime
-from nexus._src.peers.px4_sitl.fake import Px4Fake
+import nexus_sim._src.build.launch as launch_mod
+from nexus_sim._src.api.sim import Sim
+from nexus_sim._src.config import LaunchConfig, Registry
+from nexus_sim._src.core.interfaces import Stage
+from nexus_sim._src.core.orchestrator import Orchestrator
+from nexus_sim._src.core.schema import SimTime
+from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
 
 # --- the stand-in core components, as tests/core builds the loop -----------------------------------
 

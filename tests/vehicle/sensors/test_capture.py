@@ -23,8 +23,8 @@ class _WarpView:
 
 def _run():
     """The run's values each sensor here takes: a 4 ms tick and a site at 47.6, -122.3, 5 m."""
-    from nexus._src.core.interfaces import SensorRun
-    from nexus._src.scene import Site
+    from nexus_sim._src.core.interfaces import SensorRun
+    from nexus_sim._src.scene import Site
 
     return SensorRun(seed=42, dt=0.004, site=Site(lat=47.6, lon=-122.3, alt=5.0, mag_ned=(0.21, 0.05, 0.43)))
 
@@ -37,8 +37,8 @@ def test_captured_sensor_noise_dithers_per_replay():
     """
     if not wp.is_cuda_available():
         pytest.skip("no CUDA device")
-    from nexus._src.core.schema import SimTime
-    from nexus._src.vehicle.sensors import ImuSensor
+    from nexus_sim._src.core.schema import SimTime
+    from nexus_sim._src.vehicle.sensors import ImuSensor
 
     with wp.ScopedDevice("cuda:0"):
         view = _WarpView((0.0, 0.0, 1.0), (0.0, 0.0, 0.0, 1.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
@@ -63,8 +63,8 @@ def test_captured_px4_sensors_match_eager():
     """
     if not wp.is_cuda_available():
         pytest.skip("no CUDA device")
-    from nexus._src.core.schema import Measurement, SimTime
-    from nexus._src.vehicle.sensors import BaroSensor, GpsSensor, ImuSensor, MagSensor
+    from nexus_sim._src.core.schema import Measurement, SimTime
+    from nexus_sim._src.vehicle.sensors import BaroSensor, GpsSensor, ImuSensor, MagSensor
 
     with wp.ScopedDevice("cuda:0"):
         view = _WarpView((1.0, -2.0, 3.0), (0.0, 0.0, 0.0, 1.0), (0.5, -0.1, 0.2), (0.3, -0.4, 0.5))

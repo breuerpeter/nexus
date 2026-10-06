@@ -20,7 +20,7 @@ windows, first window dropped, whose min / avg / max / σ show how stable a run 
 **The benchmark mission**: one PX4 flight, the same for every matrix cell but one. It
 arms, runs `AUTO.TAKEOFF`, then flies a 4-waypoint `DO_REPOSITION` mission with confirmed arrival
 at each waypoint. The `powerline` cell flies an inspection of its power line instead, as a PX4
-mission. It follows the line pole by pole at 1.5 m over the top conductor and lands at its far end. The script `scripts/ci/benchmark_cell.py` flies both through `nexus.px4.OffboardClient`, the client it opens on PX4's offboard link. PX4 Software In The Loop (SITL) runs in the loop, in lockstep on `:4560`, so these
+mission. It follows the line pole by pole at 1.5 m over the top conductor and lands at its far end. The script `scripts/ci/benchmark_cell.py` flies both through `nexus_sim.px4.OffboardClient`, the client it opens on PX4's offboard link. PX4 Software In The Loop (SITL) runs in the loop, in lockstep on `:4560`, so these
 figures come from a closed loop, not from physics-only throughput. All cells record their flight
 with `--log` on: recording is part of the measured configuration.
 

@@ -16,10 +16,10 @@ pytest.importorskip("pxr")
 
 import warp as wp
 
-from nexus._src.config import LaunchConfig, resolve
-from nexus._src.config.registry import load_registry
-from nexus._src.core.schema import Controls
-from nexus._src.core.stages import peer_stages
+from nexus_sim._src.config import LaunchConfig, resolve
+from nexus_sim._src.config.registry import load_registry
+from nexus_sim._src.core.schema import Controls
+from nexus_sim._src.core.stages import peer_stages
 
 ZURICH = (47.3769, 8.5417, 408.0)
 WOODINVILLE = (47.747944, -122.163917)
@@ -72,8 +72,8 @@ def _settled(launch, registry):
     The build's ``force_cpu`` sets the Warp device, and the scope puts it back; a module fixture runs
     before the function-scoped ``warp_cpu`` fixture would.
     """
-    from nexus._src.build.assembly import build_orchestrator
-    from nexus._src.build.launch import resolve_scenario
+    from nexus_sim._src.build.assembly import build_orchestrator
+    from nexus_sim._src.build.launch import resolve_scenario
 
     with wp.ScopedDevice("cpu"):
         builder, resolved, cfg = resolve_scenario(launch, registry=registry)

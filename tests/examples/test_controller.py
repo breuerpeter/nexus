@@ -5,8 +5,8 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from nexus._src.core.schema import Controls  # noqa: E402
-from nexus.examples.controllers.policy.controller import TrainedPolicyController  # noqa: E402
+from nexus_sim._src.core.schema import Controls  # noqa: E402
+from nexus_sim.examples.controllers.policy.controller import TrainedPolicyController  # noqa: E402
 
 
 def _make_stub_policy(tmp_path):

@@ -53,11 +53,11 @@ obstacle slalom and watch it live:
 
 ```bash
 uv pip install nexus-sim
-uv run -m nexus.examples sampling_mpc
+uv run -m nexus_sim.examples sampling_mpc
 uv run rerun ~/.cache/nexus/logs/*.rrd
 ```
 
-List every example with `uv run -m nexus.examples --list`. Each example is zero-arg, its
+List every example with `uv run -m nexus_sim.examples --list`. Each example is zero-arg, its
 configuration lives in the script, and it records an interactive `.rrd` of its flight.
 
 ## Next steps

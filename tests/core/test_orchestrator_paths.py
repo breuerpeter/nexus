@@ -4,9 +4,9 @@ logger scoped to that path. Warp-free stand-ins, as in test_orchestrator_seams.p
 
 import pytest
 
-from nexus._src.core.interfaces import Stage
-from nexus._src.core.orchestrator import Orchestrator
-from nexus._src.core.schema import SimTime
+from nexus_sim._src.core.interfaces import Stage
+from nexus_sim._src.core.orchestrator import Orchestrator
+from nexus_sim._src.core.schema import SimTime
 
 
 class _Clock:

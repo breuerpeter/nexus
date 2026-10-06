@@ -5,7 +5,7 @@ __pycache__/
 
 # Build / packaging artifacts
 dist/
-# Only the root build/ folder: nexus/_src/build/ is a package.
+# Only the root build/ folder: nexus_sim/_src/build/ is a package.
 /build/
 *.egg-info/
 

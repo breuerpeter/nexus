@@ -31,16 +31,16 @@ os.environ.setdefault("MAVLINK_DIALECT", "common")
 
 from pymavlink import mavutil
 
-import nexus
-import nexus._src.build.launch as launch_mod
-import nexus._src.peers.containers as containers
-from nexus._src.api.sim import Sim
-from nexus._src.config import LaunchConfig, Registry
-from nexus._src.core.interfaces import Stage
-from nexus._src.core.orchestrator import Orchestrator
-from nexus._src.core.schema import SimTime
-from nexus._src.peers.px4_sitl.fake import Px4Fake
-from nexus._src.vehicle.controllers.px4 import controller as ctrl
+import nexus_sim
+import nexus_sim._src.build.launch as launch_mod
+import nexus_sim._src.peers.containers as containers
+from nexus_sim._src.api.sim import Sim
+from nexus_sim._src.config import LaunchConfig, Registry
+from nexus_sim._src.core.interfaces import Stage
+from nexus_sim._src.core.orchestrator import Orchestrator
+from nexus_sim._src.core.schema import SimTime
+from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
+from nexus_sim._src.vehicle.controllers.px4 import controller as ctrl
 
 # --- the stand-in docker daemon -------------------------------------------------------------------
 
@@ -393,7 +393,7 @@ def test_the_px4_sitl_image_builds_once_from_the_packages_dockerfile(daemon, run
     run().close()
 
     built = [(b["tag"], Path(b["path"])) for b in daemon.builds]
-    package = Path(nexus.__file__).resolve().parent
+    package = Path(nexus_sim.__file__).resolve().parent
     assert [
         (tag, (path / "Dockerfile").is_file() and path.resolve().is_relative_to(package)) for tag, path in built
     ] == [(first, True)], (built, first)
@@ -661,8 +661,8 @@ def test_a_vehicle_that_declares_the_px4_sitl_peer_starts_it(daemon, monkeypatch
     sent to its fake, and the Kit peer to its own, then one fake PX4 starts and receives `HIL_SENSOR`
     over the HIL link as the run steps.
     """
-    from nexus._src.config.registry import load_registry
-    from nexus._src.peers.kit.fake import KitFake
+    from nexus_sim._src.config.registry import load_registry
+    from nexus_sim._src.peers.kit.fake import KitFake
 
     monkeypatch.delenv("NEXUS_ASSET_CACHE")  # the shipped vehicles come from the checkout's own cache
     monkeypatch.chdir(tmp_path)  # no project catalog: only the bundled one
@@ -735,7 +735,7 @@ def test_a_managed_run_takes_a_free_px4_instance_itself(daemon, assembly, tmp_pa
     run of a vehicle that declares the PX4 SITL peer enters, then its PX4 container runs instance 1,
     `-i 1`, and the run listens on instance 1's HIL port, 4561.
     """
-    from nexus._src.peers import LABEL
+    from nexus_sim._src.peers import LABEL
 
     held = _Container(
         daemon, "nexus-px4-held-0", {LABEL: "px4", "nexus.px4.instance": "0", "nexus.owner": str(os.getpid())}

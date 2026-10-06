@@ -181,7 +181,7 @@ def _reinvoke_convert(src: Path, dst: Path, rotate_x: float) -> None:
 
 def _catalog_base() -> str:
     """The base the catalog this repo ships names, so a printed URL matches what a run would fetch."""
-    from nexus._src.config import load_registry
+    from nexus_sim._src.config import load_registry
 
     return load_registry().assets.base or ""
 
@@ -218,7 +218,7 @@ def main(argv: list[str]) -> int:
     if usd.suffix != ".usdz":
         parser.error(f"hosted assets must be self-contained .usdz (got '{usd.suffix}'): package it as .usdz first")
 
-    from nexus._src.assets.resolver import hosted_url, sha256_file  # reuse the scheme + hasher, no duplicate
+    from nexus_sim._src.assets.resolver import hosted_url, sha256_file  # reuse the scheme + hasher, no duplicate
 
     kind_dir = "vehicles" if is_vehicle else "scenes"
     name = usd.stem  # <name> is the filename stem; the registry stores just this + the sha

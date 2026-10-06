@@ -62,7 +62,7 @@ no container.
 
 - The first RTX run on a machine pulls NVIDIA's `nvcr.io/nvidia/isaac-sim:6.0.1`, about 21 GB,
   with no NGC login. Later runs reuse it, and nexus builds nothing. The container runs the image
-  as pulled. The peer program ships in the package, in `nexus/_src/peers/kit/peer-src/`. It mounts
+  as pulled. The peer program ships in the package, in `nexus_sim/_src/peers/kit/peer-src/`. It mounts
   read-only, so an update to the peer takes effect on the next run.
 - A scene that declares a Cesium tileset, such as `--scene cesium`, fetches Cesium for Omniverse
   into the asset cache on its first run. No other scene fetches it.
@@ -96,7 +96,7 @@ and p95, and the per-phase partition, plus the CUDA-event-timed GPU batch. In th
 in `Orchestrator.run_stats["profile"]`.
 
 Every entry point shares the deep-diagnostics flags below. `nexus run` and the
-examples launcher, `uv run -m nexus.examples <name> --profile`, spell them identically:
+examples launcher, `uv run -m nexus_sim.examples <name> --profile`, spell them identically:
 
 - `--profile`: periodic reports every 5 s. On an RTX run the detail spans `render.send` and
   `render.wait` show what a frame costs the loop: the pose send, and the wait for a frame the peer
@@ -169,7 +169,7 @@ run's receipt records the layer's sha256 beside the vehicle's. The same kind of 
 declared value or selects a variant without re-authoring the hosted vehicle.
 
 **The PX4 tree.** The PX4 controller pins the PX4-Autopilot commit it flies, in
-`nexus/_src/peers/px4_sitl/px4.ref`, which ships in the package. The first managed run on
+`nexus_sim/_src/peers/px4_sitl/px4.ref`, which ships in the package. The first managed run on
 a machine fetches that commit into `~/.cache/nexus/px4/<commit>/` and builds it there, minutes
 once. Later runs rebuild only what changed. Two overrides:
 
@@ -188,12 +188,12 @@ when the Dockerfile changes.
 picks the lowest instance free on this machine and derives its own addresses from the same number,
 so two runs on one machine take two instances and never collide. A script reads the address of a
 link it opens itself from the run's port map: `sim.ports["offboard"]` holds the offboard link's
-port and PX4's system id, which [`nexus.px4.OffboardClient`](../reference/api/px4.md) takes.
+port and PX4's system id, which [`nexus_sim.px4.OffboardClient`](../reference/api/px4.md) takes.
 
 | Port      | Protocol | Link |
 |-----------|----------|------|
 | 4560 + N  | TCP      | PX4 → nexus, lockstep HIL: sensors in, actuators back |
-| 14540 + N | UDP      | PX4 → a script's `nexus.px4.OffboardClient`, the offboard link `sim.ports["offboard"]` names |
+| 14540 + N | UDP      | PX4 → a script's `nexus_sim.px4.OffboardClient`, the offboard link `sim.ports["offboard"]` names |
 | 14550     | UDP      | MAVLink telemetry and commands from PX4 to QGroundControl, every instance |
 | 9876      | gRPC     | Rerun recording, which nexus **serves** and the viewer **connects** to |
 
@@ -207,17 +207,17 @@ Everything lands in **one** recording, app ID `nexus` and recording ID
 - **framework events**: the `nexus` logger, at `sim/logs/<module>`.
 - **PX4's own view of the flight**: not in the recording. PX4 keeps it in its console log,
   `~/.cache/nexus/logs/px4-*.log`, and in its `ULog`, both artifacts of the run.
-- **test and driver stages**: a driver in the sim's process logs each stage with `na.logger.info("…")`,
+- **test and driver stages**: a driver in the sim's process logs each stage with `nx.logger.info("…")`,
   which writes to the console and, when recording, the Logs pane.
 
 **Serve or file, never both: two flags, `--view` and `--log`, both off.** A run can't produce both
 a live gRPC server and a *complete* `.rrd` from one process, because rerun's serve and file sinks are
 mutually exclusive, so:
 
-- **`--view`** on the command line, or [`Sim(view=True)`][nexus.Sim]: serve the recording live on
+- **`--view`** on the command line, or [`Sim(view=True)`][nexus_sim.Sim]: serve the recording live on
   `:9876` and connect a viewer with `uv run rerun --connect rerun+http://127.0.0.1:9876/proxy`.
   It writes no file, so **save it from the viewer** to keep an `.rrd`.
-- **`--log`** on the command line, or [`Sim(log=True)`][nexus.Sim]: write the full `.rrd` to disk.
+- **`--log`** on the command line, or [`Sim(log=True)`][nexus_sim.Sim]: write the full `.rrd` to disk.
   `uv run nexus run` logs its path, and a driver reads it from `sim.artifacts()`. Use it for CI,
   or when something else holds `:9876`.
 

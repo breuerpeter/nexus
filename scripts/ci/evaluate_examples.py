@@ -1,8 +1,8 @@
 """CI evaluation harness for the examples: flight performance, evo pose Absolute Pose Error (APE) plus
 example stats, and speed, the Real-Time Factor (RTF), regression gates, plus the benchmark data feed.
 
-Runs each example as its own subprocess, ``uv run [--extra X] -m nexus.examples <name>``,
-reads the artifacts every example dumps via ``nexus.examples._lib.eval_dump``, where the harness sets
+Runs each example as its own subprocess, ``uv run [--extra X] -m nexus_sim.examples <name>``,
+reads the artifacts every example dumps via ``nexus_sim.examples._lib.eval_dump``, where the harness sets
 ``$NEXUS_EVAL_OUT``, scores them, pose APE with **evo** for translation and, where the example defines
 a reference attitude, rotation, the example's own stats, and the orchestrator's steady RTF, then
 gates everything against the committed ``scripts/ci/examples_baselines.json`` and writes
@@ -83,7 +83,7 @@ EXAMPLES: dict[str, dict] = {
 }
 # The default set = everything the consolidated gpu-examples leg runs. The workflow provides acados
 # via the example's --provision; main() below fetches and builds PX4 the way a run's first use does,
-# from the one container definition in nexus._src.peers.px4_sitl.runner.
+# from the one container definition in nexus_sim._src.peers.px4_sitl.runner.
 # goto_policy_fresh rides the gpu-rl workflow: --only goto_policy_fresh --policy <the fresh export>.
 # Local runs without the PX4/acados prerequisites: add --skip-missing.
 DEFAULT_SET = ["pid", "gain_tuning", "mass_recovery", "sampling_mpc", "acados_nmpc", "goto_policy", "px4_sitl"]
@@ -97,7 +97,7 @@ def _available(requires: str | None, args: argparse.Namespace) -> tuple[bool, st
     # External tool locations come from the one definition of the env-overridable defaults the
     # examples themselves resolve, acados' from the example's provision module. PX4 needs only docker:
     # the run fetches its pinned tree itself, or flies $PX4_DIR.
-    from nexus.examples.controllers.acados_nmpc.provision import PROVISION_COMMAND, acados_dir
+    from nexus_sim.examples.controllers.acados_nmpc.provision import PROVISION_COMMAND, acados_dir
 
     if requires is None:
         return True, ""
@@ -131,7 +131,7 @@ def _run_example(
     # contend for one environment. It gets one CPU thread, since the box's vCPUs are what the flights
     # share, and its own log, since the flights' output would interleave on one stream.
     run = ["uv", "run", "--no-sync"] if shared else ["uv", "run"]
-    cmd = [*run, *spec.get("uv", []), "-m", "nexus.examples", spec.get("launcher", name), *extra_args]
+    cmd = [*run, *spec.get("uv", []), "-m", "nexus_sim.examples", spec.get("launcher", name), *extra_args]
     print(f"\n===== {name}: {' '.join(cmd)} =====", flush=True)
     dump.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, "NEXUS_EVAL_OUT": str(dump), **({"OMP_NUM_THREADS": "1"} if shared else {})}
@@ -450,7 +450,7 @@ def main() -> int:
     # the incremental build and must reach the sim inside its 30 s preroll window, GH #39; a no-op
     # fits, a cold fetch and build never do. Same placement benchmark_matrix.py uses.
     if any(EXAMPLES[n].get("requires") == "px4" for n in names) and _available("px4", args)[0]:
-        from nexus._src.peers.px4_sitl.runner import prepare
+        from nexus_sim._src.peers.px4_sitl.runner import prepare
 
         print("fetching and building PX4 SITL (one-time, outside any example budget)...", flush=True)
         prepare()

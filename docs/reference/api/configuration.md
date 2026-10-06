@@ -5,8 +5,8 @@ description: "API reference for LaunchConfig and Registry: launch configuration 
 # Configuration
 
 ```python
-from nexus import LaunchConfig, Registry
+from nexus_sim import LaunchConfig, Registry
 ```
 
-::: nexus.LaunchConfig
-::: nexus.Registry
+::: nexus_sim.LaunchConfig
+::: nexus_sim.Registry

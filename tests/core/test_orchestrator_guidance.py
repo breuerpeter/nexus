@@ -14,10 +14,10 @@ pytest.importorskip("warp")
 
 import warp as wp
 
-from nexus._src.core.interfaces import Stage
-from nexus._src.core.orchestrator import Orchestrator
-from nexus._src.core.schema import Controls, SimTime
-from nexus._src.guidance import MissionGuidance, TrackingGuidance
+from nexus_sim._src.core.interfaces import Stage
+from nexus_sim._src.core.orchestrator import Orchestrator
+from nexus_sim._src.core.schema import Controls, SimTime
+from nexus_sim._src.guidance import MissionGuidance, TrackingGuidance
 
 GOALS = [(1.0, 0.0, 0.0), (2.0, 0.0, 0.0)]
 

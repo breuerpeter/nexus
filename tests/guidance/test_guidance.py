@@ -11,10 +11,10 @@ pytest.importorskip("warp")
 
 import warp as wp
 
-from nexus._src.core.interfaces import Tick
-from nexus._src.core.schema import PositionGoal, ReferenceTrajectory, SimTime
-from nexus._src.guidance import MissionGuidance, TrackingGuidance
-from nexus.examples.controllers.policy.goto.geofence import GeofenceGuidance
+from nexus_sim._src.core.interfaces import Tick
+from nexus_sim._src.core.schema import PositionGoal, ReferenceTrajectory, SimTime
+from nexus_sim._src.guidance import MissionGuidance, TrackingGuidance
+from nexus_sim.examples.controllers.policy.goto.geofence import GeofenceGuidance
 
 
 class _Reference:

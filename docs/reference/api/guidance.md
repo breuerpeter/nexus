@@ -14,11 +14,11 @@ the run. PX4 takes none, because its own navigator sequences its missions.
 A flight constructs its guidance from the guidance's own parameters and hands it to
 `Sim.from_orchestrator`, then reaches it through
 [`sim.guidance`](simulation.md). The classes are **internal**: an example imports them from
-`nexus._src.guidance`, not from the top-level package.
+`nexus_sim._src.guidance`, not from the top-level package.
 
 ```python
 guidance = MissionGuidance(reached_m=0.3, final_hold_s=2.0)
-with na.Sim.from_orchestrator(orch, guidance=guidance) as sim:
+with nx.Sim.from_orchestrator(orch, guidance=guidance) as sim:
     sim.guidance.set_mission([(3.0, 0.0, 2.0), (3.0, 3.0, 2.5)])
     sim.run()
 ```
@@ -26,5 +26,5 @@ with na.Sim.from_orchestrator(orch, guidance=guidance) as sim:
 The guidance logs its waypoint markers at `sim/guidance/waypoints/wp_<i>` and a tracked reference at
 `sim/guidance/reference`.
 
-::: nexus._src.guidance.mission.MissionGuidance
-::: nexus._src.guidance.tracking.TrackingGuidance
+::: nexus_sim._src.guidance.mission.MissionGuidance
+::: nexus_sim._src.guidance.tracking.TrackingGuidance

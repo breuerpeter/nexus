@@ -6,7 +6,7 @@ Uniform with policy/pid; the operator sequences the mission. CPU-only, with a sm
 import numpy as np
 import pytest
 
-from nexus._src.core.schema import PositionGoal, Waypoints
+from nexus_sim._src.core.schema import PositionGoal, Waypoints
 
 pytest.importorskip("warp")
 pytest.importorskip("newton")
@@ -17,7 +17,7 @@ pytestmark = pytest.mark.usefixtures("warp_cpu")
 def _controller():
     import newton
 
-    from nexus.examples.controllers.sampling_mpc import SamplingMPCController
+    from nexus_sim.examples.controllers.sampling_mpc import SamplingMPCController
 
     b = newton.ModelBuilder()
     for _ in range(2):  # 2 rollouts → 2 free single bodies

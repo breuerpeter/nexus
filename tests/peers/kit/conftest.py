@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 from docker.errors import APIError, ImageNotFound, NotFound
 
-import nexus._src.peers.containers as containers
-import nexus._src.peers.kit.runner as peer
+import nexus_sim._src.peers.containers as containers
+import nexus_sim._src.peers.kit.runner as peer
 
 
 class _Container:

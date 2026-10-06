@@ -39,7 +39,7 @@ from isaaclab_tasks.utils import load_cfg_from_registry
 from isaaclab_tasks.utils.sim_launcher import launch_simulation
 from rsl_rl.runners import OnPolicyRunner
 
-from nexus._src.logging import Logger
+from nexus_sim._src.logging import Logger
 
 TASK = "Nexus-AstroMax-GoTo-Direct-v0"
 

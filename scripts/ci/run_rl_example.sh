@@ -21,7 +21,7 @@ mkdir -p "$OUT"
 # passed to the RL scripts as --vehicle_usd (VEHICLE_USD pre-seeds it, e.g. a local unpublished asset).
 if [ -z "${VEHICLE_USD:-}" ]; then
   VEHICLE_USD="$(cd "$REPO" && uv run --locked --extra policy python -c \
-    "from nexus._src.config import LaunchConfig, resolve; print(resolve(LaunchConfig().set_vehicle('astro_max_base').set_scene('empty')).vehicle_usd_path)")"
+    "from nexus_sim._src.config import LaunchConfig, resolve; print(resolve(LaunchConfig().set_vehicle('astro_max_base').set_scene('empty')).vehicle_usd_path)")"
 fi
 
 echo "===== TRAIN (host, kitless, nexus-rl project) ====="

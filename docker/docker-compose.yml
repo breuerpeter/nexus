@@ -4,8 +4,8 @@
 # `uv run nexus run …`.
 #
 # PX4 SITL and the Kit render peer are NOT services here. The sim starts and stops both itself,
-# through the docker SDK: PX4's container is defined once in nexus/_src/peers/px4_sitl/runner.py
-# and the Kit peer's in nexus/_src/peers/kit/runner.py. A second copy of a peer's definition in this
+# through the docker SDK: PX4's container is defined once in nexus_sim/_src/peers/px4_sitl/runner.py
+# and the Kit peer's in nexus_sim/_src/peers/kit/runner.py. A second copy of a peer's definition in this
 # file drifted from the one the sim runs for months before anyone noticed.
 # docker/README.md says where the images come from.
 services:

@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import re
 
-import nexus  # noqa: F401  # registers the schema plugin
-from nexus._src.usd import schema_names
+import nexus_sim  # noqa: F401  # registers the schema plugin
+from nexus_sim._src.usd import schema_names
 
 _MARKER = "<!-- schema-reference -->"
 _FIELD = re.compile(r"^\s*(Range|Units):\s*(.+?)\s*$", re.MULTILINE)

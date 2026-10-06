@@ -14,7 +14,7 @@ def _run_example(tmp_path) -> subprocess.CompletedProcess:
     """Run the example as a user does, with no acados install where it looks and no CUDA device."""
     env = {**os.environ, "ACADOS_SOURCE_DIR": str(tmp_path), "CUDA_VISIBLE_DEVICES": ""}
     return subprocess.run(
-        [sys.executable, "-m", "nexus.examples", "acados_nmpc"],
+        [sys.executable, "-m", "nexus_sim.examples", "acados_nmpc"],
         check=False,
         env=env,
         capture_output=True,
@@ -26,7 +26,7 @@ def _run_example(tmp_path) -> subprocess.CompletedProcess:
 def test_with_no_acados_install_the_example_says_what_to_run_and_builds_no_sim(tmp_path):
     """With no acados install, the example says what to run and builds no sim: given
     `ACADOS_SOURCE_DIR` set to an empty directory and no CUDA device, when
-    `python -m nexus.examples acados_nmpc` runs, then it exits non-zero with a message that names the
+    `python -m nexus_sim.examples acados_nmpc` runs, then it exits non-zero with a message that names the
     provision command, and no `ModuleNotFoundError` traceback.
     """
     run = _run_example(tmp_path)
@@ -34,7 +34,7 @@ def test_with_no_acados_install_the_example_says_what_to_run_and_builds_no_sim(t
     said = run.stdout + run.stderr
     assert (
         run.returncode != 0,
-        "-m nexus.examples acados_nmpc --provision" in said,
+        "-m nexus_sim.examples acados_nmpc --provision" in said,
         "ModuleNotFoundError" in said,
     ) == (True, True, False)
 
@@ -42,7 +42,7 @@ def test_with_no_acados_install_the_example_says_what_to_run_and_builds_no_sim(t
 @pytest.mark.skipif(importlib.util.find_spec("casadi") is not None, reason="this environment has the acados extra")
 def test_with_the_acados_extra_not_installed_the_example_names_the_extra(tmp_path):
     """With the `acados` extra not installed, the example names the extra: given an environment
-    without `casadi`, when `python -m nexus.examples acados_nmpc` runs, then it exits non-zero with a
+    without `casadi`, when `python -m nexus_sim.examples acados_nmpc` runs, then it exits non-zero with a
     message that names `nexus-sim[acados]`.
     """
     run = _run_example(tmp_path)

@@ -4,9 +4,9 @@ state and the clock, and nothing else. Warp-free stubs, as in test_orchestrator_
 
 import pytest
 
-from nexus._src.core.interfaces import Stage
-from nexus._src.core.orchestrator import Orchestrator
-from nexus._src.core.schema import Controls, SimTime
+from nexus_sim._src.core.interfaces import Stage
+from nexus_sim._src.core.orchestrator import Orchestrator
+from nexus_sim._src.core.schema import Controls, SimTime
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")  # Python stand-ins run stage by stage, never as a graph
 

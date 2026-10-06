@@ -17,17 +17,17 @@ pytest.importorskip("pxr")
 
 import warp as wp
 
-from nexus._src.api.sim import Sim
-from nexus._src.build.assembly import assemble, build_orchestrator, build_scenario, resolve_device
-from nexus._src.build.launch import resolve_to_vehicle_builder
-from nexus._src.config import LaunchConfig
-from nexus._src.core.interfaces import Stage
-from nexus._src.core.orchestrator import Orchestrator
-from nexus._src.core.schema import Controls
-from nexus._src.core.stages import peer_stages
-from nexus._src.physics import NewtonPhysics
-from nexus._src.physics.builders.usd import USDBuilder
-from nexus._src.scene.site import GRAVITY
+from nexus_sim._src.api.sim import Sim
+from nexus_sim._src.build.assembly import assemble, build_orchestrator, build_scenario, resolve_device
+from nexus_sim._src.build.launch import resolve_to_vehicle_builder
+from nexus_sim._src.config import LaunchConfig
+from nexus_sim._src.core.interfaces import Stage
+from nexus_sim._src.core.orchestrator import Orchestrator
+from nexus_sim._src.core.schema import Controls
+from nexus_sim._src.core.stages import peer_stages
+from nexus_sim._src.physics import NewtonPhysics
+from nexus_sim._src.physics.builders.usd import USDBuilder
+from nexus_sim._src.scene.site import GRAVITY
 from tests.vehicle import quad
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")

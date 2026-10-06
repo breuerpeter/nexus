@@ -10,9 +10,9 @@ import numpy as np
 import pytest
 import warp as wp
 
-import nexus._src.api.sim as sim_mod
-from nexus._src.recording import BodyState
-from nexus._src.recording.state import BODY_WIDTH, decode_body, record_body
+import nexus_sim._src.api.sim as sim_mod
+from nexus_sim._src.recording import BodyState
+from nexus_sim._src.recording.state import BODY_WIDTH, decode_body, record_body
 
 
 class _FakePhysics:
@@ -206,7 +206,7 @@ class _InProcessOrch:
 
 
 def test_sim_hands_the_flights_guidance_to_the_orchestrator_and_runs():
-    from nexus._src.guidance import MissionGuidance
+    from nexus_sim._src.guidance import MissionGuidance
 
     fake = _InProcessOrch()
     guidance = MissionGuidance()

@@ -1,4 +1,4 @@
-"""The launch glue: resolve a vehicle Universal Scene Description (USD) via nexus._src.config + route by
+"""The launch glue: resolve a vehicle Universal Scene Description (USD) via nexus_sim._src.config + route by
 control kind.
 
 Exercises the resolution + builder-construction + routing seam, not the heavy NewtonPhysics build,
@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from nexus._src.config import LaunchConfig, Registry
-from nexus._src.peers.px4_sitl.fake import Px4Fake
+from nexus_sim._src.config import LaunchConfig, Registry
+from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
 
 
 @pytest.fixture(autouse=True)
@@ -25,7 +25,7 @@ def daemon(monkeypatch, tmp_path):
     """
     from docker.errors import NotFound
 
-    import nexus._src.peers.containers as containers
+    import nexus_sim._src.peers.containers as containers
 
     runs = []
 
@@ -82,7 +82,7 @@ def _usd_ref(tmp_path) -> dict:
 
 
 def test_resolve_to_vehicle_builder_uses_resolved_usd(tmp_path):
-    from nexus._src.build.launch import resolve_to_vehicle_builder
+    from nexus_sim._src.build.launch import resolve_to_vehicle_builder
 
     ref = _usd_ref(tmp_path)
     reg = _registry(ref)
@@ -96,8 +96,8 @@ def test_resolve_to_vehicle_builder_uses_resolved_usd(tmp_path):
 
 
 def test_scenario_from_receipt_honors_dt_seed_device(tmp_path):
-    from nexus._src.build.launch import _scenario_from_receipt
-    from nexus._src.config import Runtime
+    from nexus_sim._src.build.launch import _scenario_from_receipt
+    from nexus_sim._src.config import Runtime
 
     cfg = _scenario_from_receipt(Runtime(dt=0.01, seed=7, device="cpu"))
     assert cfg["physics"]["dt"] == 0.01
@@ -122,7 +122,7 @@ def test_scene_threads_uniformly_and_anchors_gps(tmp_path, monkeypatch):
     Ground Control Station (GCS) minimap matches the camera feed: the Woodinville-versus-SF bug.
     Runtime-*neutral* since the controller unbind: the one launch glue does this for every runtime.
     """
-    import nexus._src.build.launch as L
+    import nexus_sim._src.build.launch as L
 
     reg = Registry.from_dict(
         {
@@ -164,7 +164,7 @@ def test_build_from_launch_starts_the_px4_peer_before_the_assembly(tmp_path, mon
     airframe reaches the peer, and the peer *starts*, its incremental build first, before the
     orchestrator exists: the build has to stay outside the sim's 30 s preroll window, see GH #39.
     """
-    import nexus._src.build.launch as L
+    import nexus_sim._src.build.launch as L
 
     order = []
     monkeypatch.setattr(L, "build_orchestrator", lambda label, cfg, **kw: order.append("orchestrator") or kw)
@@ -209,7 +209,7 @@ def _catalog(tmp_path) -> Registry:
 
 def _build(tmp_path, prims: str, **kw):
     """Build a run of a local vehicle defined by `prims`."""
-    import nexus._src.build.launch as L
+    import nexus_sim._src.build.launch as L
 
     lc = LaunchConfig().set_vehicle(_local_vehicle(tmp_path, prims)).set_scene("empty")
     return L.build_from_launch(lc, registry=_catalog(tmp_path), cache_dir=tmp_path / "cache", **kw)
@@ -221,7 +221,7 @@ def test_the_receipt_records_the_airframe_the_vehicle_usd_declares(tmp_path):
     Given the local vehicle USD with airframe `foo`, when the run builds, then the receipt's PX4
     airframe is `foo`.
     """
-    from nexus._src.build.launch import resolve_to_vehicle_builder
+    from nexus_sim._src.build.launch import resolve_to_vehicle_builder
 
     lc = LaunchConfig().set_vehicle(_local_vehicle(tmp_path, PX4_ROOT)).set_scene("empty")
     _, resolved = resolve_to_vehicle_builder(lc, _catalog(tmp_path), cache_dir=tmp_path / "cache")
@@ -263,7 +263,7 @@ def test_a_vehicle_that_declares_two_controllers_fails_the_build(tmp_path, daemo
     Given a vehicle USD whose root prim applies two controller schemas, when a run builds, then it
     raises before any peer starts, and the error names the prim and both schemas.
     """
-    from nexus._src.core.registry import ComponentRegistry, default_registry
+    from nexus_sim._src.core.registry import ComponentRegistry, default_registry
 
     components = ComponentRegistry(
         {"NexusPx4API": default_registry().resolve("NexusPx4API"), "StandInAPI": _StandInController}
@@ -340,7 +340,7 @@ def _shipped_referenced(tmp_path, metadata: str = "", contents: str = "") -> str
     """A local fixture vehicle whose root prim `/vehicle` references the shipped `astro_max_base`, which
     flies airframe `astro_max`, with `metadata` and `contents` of the root prim's own.
     """
-    from nexus._src.config import resolve
+    from nexus_sim._src.config import resolve
 
     shipped = resolve(LaunchConfig.from_dict({"vehicle": "astro_max_base", "scene": "empty"})).vehicle_usd_path
     path = tmp_path / "fixture_vehicle.usda"
@@ -355,7 +355,7 @@ def _handed_airframe(tmp_path, vehicle: str, layer: Path) -> list[str]:
     """Build `vehicle` over `layer` for real, the PX4 SITL peer sent to a fake that keeps its airframe,
     and return the airframe the build handed each PX4 peer of the run.
     """
-    import nexus._src.build.launch as L
+    import nexus_sim._src.build.launch as L
 
     launch = LaunchConfig.from_dict(
         {"vehicle": vehicle, "scene": "empty", "layer": str(layer), "runtime": {"device": "cpu"}}
@@ -405,7 +405,7 @@ def test_a_layer_that_deactivates_a_declaration_builds_nothing_for_it(tmp_path, 
     run builds with the PX4 SITL peer sent to its fake, then it builds the IMU, the barometer and the
     GPS receiver, and no magnetometer.
     """
-    import nexus._src.build.launch as L
+    import nexus_sim._src.build.launch as L
 
     monkeypatch.delenv("NEXUS_ASSET_CACHE", raising=False)  # the shipped vehicle comes from the checkout's own cache
     layer = _layer(
@@ -431,7 +431,7 @@ def test_the_receipt_records_the_layers_hash_beside_the_vehicle_assets(tmp_path)
     Given a run with a layer, when it resolves, then its receipt holds the layer's sha256; and after a
     one-byte change to the layer, the receipt holds the new sha256 instead.
     """
-    from nexus._src.config import resolve
+    from nexus_sim._src.config import resolve
 
     vehicle = _local_vehicle(tmp_path, PX4_SITL_ROOT)
     layer = _layer(tmp_path, 'over "vehicle"\n{\n    string nexus:airframe = "bar"\n}\n')
@@ -453,7 +453,7 @@ def test_a_run_with_no_layer_builds_and_records_as_today(tmp_path, monkeypatch, 
     barometer and Global Positioning System (GPS) sensors, and one PX4 peer; and its receipt names the
     vehicle, the airframe and the scene, and no layer or geodetic origin.
     """
-    import nexus._src.build.launch as L
+    import nexus_sim._src.build.launch as L
 
     monkeypatch.delenv("NEXUS_ASSET_CACHE", raising=False)  # the shipped vehicle comes from the checkout's own cache
     monkeypatch.chdir(tmp_path)  # no project catalog: only the bundled one
@@ -487,7 +487,7 @@ def _shipped_px4_run(monkeypatch, tmp_path, device: str):
     """Build `astro_max_base` in `empty` on the PX4 fake, and return the loop and the receipt it carries,
     the one the build handed it, as JSON.
     """
-    import nexus._src.build.launch as L
+    import nexus_sim._src.build.launch as L
 
     monkeypatch.delenv("NEXUS_ASSET_CACHE", raising=False)  # the shipped vehicle comes from the checkout's own cache
     monkeypatch.chdir(tmp_path)  # no project catalog: only the bundled one
@@ -565,7 +565,7 @@ def test_a_layer_path_that_does_not_exist_fails_before_any_peer_starts(tmp_path,
     Given a layer path with no file behind it, when the run builds, then it raises
     `FileNotFoundError` naming the path, and no peer has started.
     """
-    import nexus._src.build.launch as L
+    import nexus_sim._src.build.launch as L
 
     missing = tmp_path / "no_such_layer.usda"
     launch = _layered(tmp_path, _local_vehicle(tmp_path, PX4_SITL_ROOT), missing)

@@ -1,4 +1,4 @@
-"""Kit boots in two places: the programs in the Kit image, ``nexus/_src/peers/kit/peer-src/``, and the
+"""Kit boots in two places: the programs in the Kit image, ``nexus_sim/_src/peers/kit/peer-src/``, and the
 three Kit-only asset scripts under ``scripts/assets/``.
 
 The render peer boots Kit to render a run's RTX sensors, and each Kit-only asset script boots it
@@ -24,7 +24,7 @@ BOOT_CALL = "SimulationApp" + "("  # the *call*, so a prose mention of the class
 
 # The programs the Kit image runs and the three Kit-only asset scripts boot Kit. Nothing else can.
 BOOT_ALLOWED = (
-    "nexus/_src/peers/kit/peer-src/",
+    "nexus_sim/_src/peers/kit/peer-src/",
     "scripts/assets/obj_to_usd.py",
     "scripts/assets/site_scan_splat.py",
     "scripts/assets/author_cesium_scene.py",

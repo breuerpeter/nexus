@@ -67,7 +67,7 @@ uv run nexus run --vehicle astro_max_base --scene empty
 Run a self-contained example. Every example records a Rerun `.rrd`, and `--list` names them:
 
 ```bash
-uv run -m nexus.examples sampling_mpc
+uv run -m nexus_sim.examples sampling_mpc
 ```
 
 The decoupled SITL flight workflow, Newton plus PX4 SITL plus QGroundControl, with the

@@ -14,8 +14,8 @@ import time
 
 import pytest
 
-from nexus._src.peers.px4_sitl import offboard as px4mod
-from nexus._src.peers.px4_sitl.qgc_plan import MissionItem
+from nexus_sim._src.peers.px4_sitl import offboard as px4mod
+from nexus_sim._src.peers.px4_sitl.qgc_plan import MissionItem
 
 
 class _FakeMav:
@@ -312,7 +312,7 @@ def test_takeoff_forwards_mis_takeoff_alt_and_sets_mode():
 
 
 def test_import_nexus_pins_common_mavlink_dialect():
-    # Regression, caught only by a live flight: `import nexus` eagerly imports OffboardClient,
+    # Regression, caught only by a live flight: `import nexus_sim` eagerly imports OffboardClient,
     # which can be the *first* pymavlink import. If it doesn't pin the common dialect, the
     # Hardware In The Loop (HIL) controller's later dialect setting is a cached no-op and HIL_GPS
     # loses its `id`/`yaw` fields, crashing the lockstep loop. Run in a fresh process so import order
@@ -321,7 +321,7 @@ def test_import_nexus_pins_common_mavlink_dialect():
     import sys
 
     code = (
-        "import nexus; from pymavlink import mavutil; import inspect; "
+        "import nexus_sim; from pymavlink import mavutil; import inspect; "
         "p = list(inspect.signature(mavutil.mavlink.MAVLink(0).hil_gps_send).parameters); "
         "assert 'id' in p and 'yaw' in p, p"
     )
@@ -419,7 +419,7 @@ def test_goto_anchor_is_captured_once_and_needs_a_position():
 
 
 def test_goto_yaw_overrides_the_goals_own_yaw():
-    from nexus._src.core.schema import PositionGoal
+    from nexus_sim._src.core.schema import PositionGoal
 
     p = _flying(_pilot())
     p.goto(PositionGoal(pos=(0.0, 0.0, 5.0), yaw=1.0))

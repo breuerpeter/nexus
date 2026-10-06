@@ -22,10 +22,10 @@ pytest.importorskip("pxr")
 import newton
 from newton.sensors import SensorIMU
 
-from nexus._src.core.schema import Measurement, SimTime
-from nexus._src.core.seedtree import SeedTree
-from nexus._src.scene import Site
-from nexus._src.vehicle.sensors.declared import build_sensors, sensor_specs
+from nexus_sim._src.core.schema import Measurement, SimTime
+from nexus_sim._src.core.seedtree import SeedTree
+from nexus_sim._src.scene import Site
+from nexus_sim._src.vehicle.sensors.declared import build_sensors, sensor_specs
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")
 

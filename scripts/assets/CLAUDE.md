@@ -17,7 +17,7 @@ line here, so no checkout carries an account's name.
   on both sides, and the working folder isn't.
 - Uploads are **manual**. Prepare an asset with
   `uv run python scripts/assets/prepare_asset_upload.py {--vehicle|--scene} <usd> [--rotate-x 180]`.
-  It sha256s the USD, prints where to upload it and the `nexus/_src/config/registry.yaml`
+  It sha256s the USD, prints where to upload it and the `nexus_sim/_src/config/registry.yaml`
   snippet, and, for vehicles only, converts to a preview `.glb` in `assets/local/` via headless
   `bpy`. Pass `--rotate-x 180` for assets authored "up = -Z" such as Astro Max. Scenes get no
   `.glb`.
