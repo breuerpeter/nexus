@@ -13,8 +13,10 @@ import warp as wp
 
 # the canonical host reference / oracle
 from nexus._src import transform
+from nexus._src.core.interfaces import SensorRun
 from nexus._src.core.schema import Measurement, SimTime
 from nexus._src.core.seedtree import SeedTree
+from nexus._src.scene import Site
 from nexus._src.vehicle.sensors import BaroSensor, GpsSensor, ImuSensor, MagSensor
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")
@@ -37,9 +39,15 @@ _GRAVITY_WORLD = (0.0, 0.0, -9.81)
 _MAG_NED = (0.21, 0.05, 0.43)
 
 
+def _run(mag_ned=_MAG_NED, body: int = 0) -> SensorRun:
+    """The run's values each sensor here takes: seed 42, a 4 ms tick and a site at 47.6, -122.3, 5 m."""
+    site = Site(lat=47.6, lon=-122.3, alt=5.0, mag_ned=mag_ned)
+    return SensorRun(seed=SeedTree(42).seed_for("sensor"), dt=0.004, site=site, body=body)
+
+
 def test_imu_gyro_and_quat_parity():
     view = _WarpView((0.0, 0.0, 1.0), _Q, (0.0, 0.0, 0.0), (0.3, -0.4, 0.5))
-    s = ImuSensor(SeedTree(42), dt=0.004, acc_noise=0.0, gyro_noise=0.0)
+    s = ImuSensor(_run(), acc_noise=0.0, gyro_noise=0.0)
     meas = Measurement()
     s.sample(view, SimTime(0.0, 0), meas)
     wp.synchronize()
@@ -51,7 +59,7 @@ def test_imu_gyro_and_quat_parity():
 
 
 def test_imu_accel_finite_diff_parity():
-    s = ImuSensor(SeedTree(42), dt=0.004, acc_noise=0.0, gyro_noise=0.0)
+    s = ImuSensor(_run(), acc_noise=0.0, gyro_noise=0.0)
     meas = Measurement()
     v1, v2 = (0.0, 0.0, 0.0), (0.04, -0.02, 0.06)  # velocity change over one tick
     s.sample(_WarpView((0, 0, 1), _Q, v1, (0.3, -0.4, 0.5)), SimTime(0.0, 0), meas)  # first: accel 0
@@ -67,7 +75,7 @@ def test_imu_accel_finite_diff_parity():
 
 def test_mag_parity():
     view = _WarpView((0, 0, 1), _Q, (0, 0, 0), (0, 0, 0))
-    s = MagSensor(SeedTree(42), _MAG_NED, mag_offset=(0.01, -0.02, 0.0), noise=(0.0, 0.0, 0.0))
+    s = MagSensor(_run(), offset=(0.01, -0.02, 0.0), noise=(0.0, 0.0, 0.0))
     meas = Measurement()
     s.sample(view, SimTime(0.0, 0), meas)
     wp.synchronize()
@@ -80,8 +88,8 @@ def test_mag_parity():
 def test_baro_and_gps_parity():
     pos = (12.0, -7.0, 30.0)
     view = _WarpView(pos, _Q, (1.5, -0.5, 0.2), (0, 0, 0))
-    BaroSensor(SeedTree(42), noise=0.0).sample(view, SimTime(0.0, 0), m := Measurement())
-    GpsSensor(47.6, -122.3, 5.0).sample(view, SimTime(0.0, 0), m)
+    BaroSensor(_run(), noise=0.0).sample(view, SimTime(0.0, 0), m := Measurement())
+    GpsSensor(_run()).sample(view, SimTime(0.0, 0), m)
     wp.synchronize()
     assert m.abs_pressure == pytest.approx(1013.25 * (1 - 2.25577e-5 * 30.0) ** 5.25588, abs=1e-3)
     assert m.pressure_alt == pytest.approx(30.0, abs=1e-4)
@@ -102,7 +110,7 @@ def test_world_to_ned_is_a_proper_rotation():
     inv_lon_scale = 1.0 / (111000.0 * math.cos(math.radians(ref_lat)))
 
     def gps_at(pos, vel=(0.0, 0.0, 0.0)):
-        GpsSensor(ref_lat, ref_lon, ref_alt).sample(
+        GpsSensor(_run()).sample(
             _WarpView(pos, (0.0, 0.0, 0.0, 1.0), vel, (0, 0, 0)), SimTime(0.0, 0), m := Measurement()
         )
         wp.synchronize()
@@ -120,7 +128,7 @@ def test_world_to_ned_is_a_proper_rotation():
 
     # The mag map's basis images, read out of the magnetometer at identity attitude.
     for ned, want in ((n_world, n_world), ((0.0, 1.0, 0.0), e_world), ((0.0, 0.0, 1.0), d_world)):
-        MagSensor(SeedTree(42), ned, mag_offset=(0.0, 0.0, 0.0), noise=(0.0, 0.0, 0.0)).sample(
+        MagSensor(_run(mag_ned=ned), noise=(0.0, 0.0, 0.0)).sample(
             _WarpView((0, 0, 1), (0.0, 0.0, 0.0, 1.0), (0, 0, 0), (0, 0, 0)), SimTime(0.0, 0), m := Measurement()
         )
         wp.synchronize()
@@ -129,13 +137,47 @@ def test_world_to_ned_is_a_proper_rotation():
     np.testing.assert_allclose(np.cross(n_world, e_world), d_world, atol=1e-12)
 
 
+def test_a_magnetometer_barometer_and_gps_read_the_body_the_run_names():
+    """A magnetometer, a barometer and a GPS receiver read the body the run's values name, not body 0.
+
+    Given two bodies, the first at the origin and level, the second 30 m up and yawed 90 degrees, and each
+    sensor built for body 1, when sampled, then the barometer and the receiver report 30 m, and the
+    magnetometer the field in the second body's axes.
+    """
+    s2 = math.sqrt(2.0) / 2.0
+    view = _WarpView((0, 0, 0), (0.0, 0.0, 0.0, 1.0), (0, 0, 0), (0, 0, 0))
+    view.body_q = wp.array(
+        np.array([[0, 0, 0, 0, 0, 0, 1], [0, 0, 30, 0, 0, s2, s2]], dtype=np.float32), dtype=wp.transform
+    )
+    view.body_qd = wp.array(np.zeros((2, 6), dtype=np.float32), dtype=wp.spatial_vector)
+    m = Measurement()
+    for sensor in (
+        MagSensor(_run(body=1), noise=(0.0, 0.0, 0.0)),
+        BaroSensor(_run(body=1), noise=0.0),
+        GpsSensor(_run(body=1)),
+    ):
+        sensor.sample(view, SimTime(0.0, 0), m)
+    wp.synchronize()
+
+    # The field in body 1's axes, as in the known-attitude case that follows: (-0.05, -0.21, -0.43).
+    np.testing.assert_allclose(
+        [m.pressure_alt, m.alt_m, m.xmag, m.ymag, m.zmag], [30.0, 35.0, -0.05, -0.21, -0.43], atol=1e-5
+    )
+
+
+def test_a_barometer_whose_prim_sits_off_its_bodys_origin_fails_and_names_the_prim():
+    """A sensor that models no mount offset fails when its prim sits off its body's origin, and names the prim."""
+    run = SensorRun(seed=1, dt=0.004, site=_run().site, mount=(0.1, 0.0, 0.0), path="/Vehicle/body/Baro")
+
+    with pytest.raises(ValueError, match="/Vehicle/body/Baro"):
+        BaroSensor(run)
+
+
 def test_mag_known_attitude():
     """One hand-computed case, no oracle: 90° about world +z, so the map can't drift with it."""
     s2 = math.sqrt(2.0) / 2.0
     view = _WarpView((0, 0, 1), (0.0, 0.0, s2, s2), (0, 0, 0), (0, 0, 0))  # yaw 90° about +z
-    MagSensor(SeedTree(42), _MAG_NED, mag_offset=(0.0, 0.0, 0.0), noise=(0.0, 0.0, 0.0)).sample(
-        view, SimTime(0.0, 0), m := Measurement()
-    )
+    MagSensor(_run(), noise=(0.0, 0.0, 0.0)).sample(view, SimTime(0.0, 0), m := Measurement())
     wp.synchronize()
     # mag_ned (0.21, 0.05, 0.43) -> world (n, -e, -d) = (0.21, -0.05, -0.43); R(q)^-1 maps
     # (x, y, z) -> (y, -x, z), giving body (-0.05, -0.21, -0.43).
@@ -153,7 +195,7 @@ def test_imu_noise_is_run_to_run_bit_identical():
     view = _WarpView((0, 0, 1), _Q, (0.04, 0.0, 0.0), (0.3, -0.4, 0.5))
 
     def run():
-        s = ImuSensor(SeedTree(42), dt=0.004)  # default noise on
+        s = ImuSensor(_run())  # default noise on
         m = Measurement()
         s.sample(view, SimTime(0.0, 0), m)
         s.sample(view, SimTime(0.004, 1), m)

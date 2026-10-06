@@ -19,7 +19,7 @@ PIP/Full/Blend.
 
 Which streams get that flag is decided by the STREAM NAME, so the modality carries end to end
 from the vehicle USD: an ``ir*`` path is a genuinely thermal feed (the isaacsim runtime publishes
-a camera prim authored ``sensor:modality = "ir"`` there) and is flagged on its own. ``--pip``
+a camera prim that applies ``NexusThermalCameraAPI`` there) and is flagged on its own. ``--pip``
 stays the deliberate mislabel for two-EO vehicles: it flags the SECOND stream thermal to buy the
 same simultaneous rendering, at the cost of the UI calling it "Thermal View Mode" and no
 tap-to-swap (mode dropdown only). The pixels are untouched either way; the flag is purely

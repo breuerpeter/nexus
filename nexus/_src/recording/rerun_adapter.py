@@ -14,7 +14,7 @@ import numpy as np
 import rerun as rr
 
 from nexus._src.core import logger
-from nexus._src.logging.rerun_logging import RECORDING_ROOT
+from nexus._src.logging.rerun_logging import ROOT, SERIES
 
 
 def _series_names(field: str, width: int) -> list[str]:
@@ -30,14 +30,14 @@ def _series_names(field: str, width: int) -> list[str]:
     return [f"{field}[{i}]" for i in range(width)]
 
 
-TRAJECTORY_ENTITY = "physics/trajectory"
+TRAJECTORY_ENTITY = f"{ROOT}/vehicle/trajectory"
 TRAIL_COLOR = (40, 160, 255)
 
 
 def dump(channels, sink, *, base_body=None) -> None:
     """Dump every declared channel's ring into the recording, then draw the flown path.
 
-    Each channel becomes time-series entities, ``recording/<channel key>/<field>``, one columnar
+    Each channel becomes time-series entities, ``sim/<channel key>/series/<field>``, one columnar
     ``send_columns`` per quantity, at zero per-tick cost: the rings are the history. Carries its own
     time indexes, since a columnar send takes an explicit index, not the global timeline. Channels
     with no declared schema, and never-written ones, as in a Sim entered but not run, are skipped.
@@ -65,7 +65,7 @@ def dump(channels, sink, *, base_body=None) -> None:
                 wrapped.append(key)
                 wrapped_s = ch.maxlen * ch.dt
             for name, width in fields:
-                entity = f"{RECORDING_ROOT}/{key}/{name}"
+                entity = f"{ROOT}/{key}/{SERIES}/{name}"
                 if width > 1:  # one series per column, named once for the legend, statically
                     rr.log(entity, rr.SeriesLines(names=_series_names(name, width)), static=True)
                 rr.send_columns(

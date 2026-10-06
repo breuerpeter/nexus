@@ -16,6 +16,9 @@ in the script, and it records its flight `.rrd`. The launcher map is `_EXAMPLES`
   `exchange` itself. A controller with a peer, one with an `attached` flag, connects after the
   capture, so its device buffers exist from construction. One without a peer connects before the
   warm pass.
+- A controller that logs, as the MPC examples do, names itself with a `name` class attribute. It
+  logs only its own row's name, `horizon`, through the logger the loop hands it at `set_logger`,
+  so the row lands at `sim/vehicle/controllers/<name>/horizon`.
 - `_lib/` is the shared machinery. It holds the single-body `Rotors` actuator in `rotors.py` plus
   the mixers in `mixer.py`, and the Universal Scene Description (USD) to single-body collapse in
   `single_body.py`. It also holds the reference planners in `reference.py` and `min_snap.py`, the

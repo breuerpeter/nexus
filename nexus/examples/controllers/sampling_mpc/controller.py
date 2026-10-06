@@ -313,8 +313,12 @@ class SamplingMPCController:
         """The ``read`` and ``exchange`` host stages: the per-tick solve runs on the host between replays."""
         return peer_stages(self)
 
+    name = "sampling_mpc"  # the instance name: its rows land at sim/vehicle/controllers/sampling_mpc
+
     def set_logger(self, logger) -> None:
-        """The orchestrator hands over the Logger, ``None`` when off: the gate for the horizon viz."""
+        """The orchestrator hands over the Logger scoped to this controller, ``None`` when off: the
+        gate for the horizon viz.
+        """
         self._logger = logger
 
     def close(self) -> None:  # lifecycle teardown: nothing to release; the horizon logs from _plan()
@@ -428,12 +432,12 @@ class SamplingMPCController:
             pick_best, dim=(self.n_points, self.control_dim), inputs=(self.rollouts, best), outputs=(self.nominal,)
         )
         # Component-owned horizon viz, event-driven, per replan: emit the lowest-cost rollout's predicted
-        # path to controller/mpc_horizon. Gated on self._logger so the code skips the horizon+1 GPU→CPU
+        # path to its row ``horizon``. Gated on self._logger so the code skips the horizon+1 GPU→CPU
         # reads below entirely when not recording; they're pure viz cost. The orchestrator set the timeline
         # at tick start, so scrubbing shows the plan logged most recently before the cursor, the active one.
         if self._logger is not None:
             pred = np.array([self.S[h].body_q.numpy()[best, :3] for h in range(self.horizon + 1)], dtype=np.float32)
-            self._logger.log_strip("controller/mpc_horizon", pred, color=(255, 140, 0))
+            self._logger.log_strip("horizon", pred, color=(255, 140, 0))
 
     def exchange(self, meas, t, timeout=None):
         from nexus._src.core import Controls

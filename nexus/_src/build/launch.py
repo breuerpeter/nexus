@@ -9,8 +9,8 @@ its root prim. PX4 is the one first-class controller, and *this* layer builds it
 self-assembles its orchestrator via :func:`resolve_scenario` plus ``Sim.from_orchestrator``, and
 renders through :func:`~nexus._src.rendering.rtx_renderer` the same way.
 
-A vehicle whose USD authors RTX sensor prims renders them in the Kit peer, a container this build
-starts right after the fetch, so Kit boots while PX4 builds and the physics compiles. The PX4
+A vehicle whose USD declares RTX sensors renders them in the Kit peer, a required peer: a container
+this build starts right after the fetch, so Kit boots while PX4 builds and the physics compiles. The PX4
 autopilot is a peer too: when the vehicle declares the PX4 Software In The Loop (SITL) peer,
 ``NexusPx4SitlAPI``, the build starts its container on the peer contract before the assembly, on a
 PX4 instance free on this machine, and hands it to the orchestrator, which stops it when the run
@@ -29,7 +29,9 @@ import time
 from collections.abc import Callable, Mapping
 from typing import IO
 
-from nexus._src.config import LaunchConfig, Px4Spec, Registry, ResolvedLaunch, resolve
+import warp as wp
+
+from nexus._src.config import LaunchConfig, Px4Spec, Registry, ResolvedLaunch, Runtime, resolve
 from nexus._src.core import Orchestrator
 from nexus._src.core.registry import ComponentRegistry
 from nexus._src.peers.px4_sitl import HIL_PORT
@@ -62,9 +64,15 @@ def resolve_to_vehicle_builder(
 ) -> tuple[USDBuilder, ResolvedLaunch]:
     """Resolve *launch*, fetching and sha-verifying assets, and wrap the vehicle USD in a USDBuilder.
 
-    The receipt records the airframe of the PX4 schema the vehicle declares, if it declares one.
+    The receipt records the airframe of the PX4 schema the vehicle declares, if it declares one, and
+    the device the run picks: ``cpu`` for an explicit ``cpu`` or a machine with no CUDA device, else
+    ``cuda``. The pick sits here, not in ``resolve``, so a caller that only resolves an asset path
+    never starts Warp.
     """
     resolved = resolve(launch, registry, cache_dir=cache_dir)
+    rt = resolved.tested_config.runtime
+    picked = "cpu" if rt.device == "cpu" or not wp.is_cuda_available() else "cuda"
+    resolved.tested_config.runtime = rt.model_copy(update={"device": picked})
     if resolved.vehicle_usd_path is not None:
         airframes = [
             kw["airframe"] for _, schema, kw in read_declarations(resolved.vehicle_usd_path) if schema == PX4_SCHEMA
@@ -75,19 +83,13 @@ def resolve_to_vehicle_builder(
     return builder, resolved
 
 
-def _scenario_from_launch(launch: LaunchConfig) -> dict:
-    """Map the LaunchConfig runtime fields onto the scenario cfg dict.
-
-    Honors dt, device, cpu or cuda, and seed. Still TODO, as a follow-on: the GPU *ordinal*, since
-    only cpu-or-cuda threads through, not cuda:1; ``substeps``, since the policy path intentionally
-    pins physics_substeps=1 for thrust calibration; and sensor overrides. So the tested-config receipt
-    is faithful for what's mapped here; nothing consumes the unmapped runtime fields yet.
+def _scenario_from_receipt(rt: Runtime) -> dict:
+    """Map the receipt's runtime fields onto the scenario cfg dict, so the run applies what its receipt
+    records: dt, device, solver, rtf and seed. ``max_steps`` goes to the loop.
     """
     cfg = build_scenario()
-    rt = launch.runtime
     cfg["physics"]["dt"] = rt.dt
-    # Only an *explicit* "cpu" forces CPU; "auto" and "cuda:*" let resolve_device pick CUDA when available.
-    # The GPU ordinal is still TODO: only cpu-or-cuda threads through.
+    # The receipt names the device the run picked, "cpu" or "cuda".
     cfg["physics"]["force_cpu"] = rt.device == "cpu"
     cfg["physics"]["solver"] = rt.solver  # mujoco, the default | semi_implicit | featherstone
     cfg["physics"]["rtf"] = rt.rtf  # 0 = unthrottled; 1.0 = pace to wall-clock, for interactive flying
@@ -131,7 +133,7 @@ def resolve_scenario(
     hands the built orchestrator to ``Sim.from_orchestrator``.
     """
     builder, resolved = resolve_to_vehicle_builder(launch, registry, cache_dir=cache_dir)
-    cfg = _scenario_from_launch(launch)
+    cfg = _scenario_from_receipt(resolved.tested_config.runtime)
     _thread_scene(cfg, resolved)
     return builder, resolved, cfg
 
@@ -162,11 +164,11 @@ def build_from_launch(
             PX4, a PX4 schema with no airframe, or the PX4 SITL peer with no PX4 schema, or ``peers``
             names a peer the build doesn't know; raised before any peer starts.
         FileNotFoundError: The launch names an override layer with no file behind it.
-        KitPeerError: The vehicle authors RTX sensors and the Kit peer couldn't start.
+        KitPeerError: The vehicle declares RTX sensors and the Kit peer couldn't start.
     """
     builder, resolved = resolve_to_vehicle_builder(launch, registry, cache_dir=cache_dir)
     if cfg is None:
-        cfg = _scenario_from_launch(launch)
+        cfg = _scenario_from_receipt(resolved.tested_config.runtime)
     _thread_scene(cfg, resolved)
     label = resolved.tested_config.vehicle or "vehicle"
     shipped = shipped_peers()
@@ -191,8 +193,10 @@ def build_from_launch(
             f"{spec.prim}: {PX4_SCHEMA} authors no nexus:airframe; name the PX4 SITL airframe, such as astro_max"
         )
     # By now the run has fetched every asset it renders, so the Kit peer starts first and boots while
-    # PX4 builds and the physics compiles; None for a vehicle with no RTX sensor prims.
-    renderer_factory = rtx_renderer(builder, cfg, cache_dir=cache_dir, stream=stream, peer=peer_classes["kit"])
+    # PX4 builds and the physics compiles; None for a vehicle that declares no RTX sensor.
+    renderer_factory = rtx_renderer(
+        builder, cfg, cache_dir=cache_dir, stream=stream, peer=peer_classes["kit"], components=components
+    )
     started: list = []
     try:
         # *This* is where the declared controller becomes an instance; the assembly that follows is
@@ -220,6 +224,7 @@ def build_from_launch(
             # The viewer's Settings tab shows the tested-config receipt, "every input that affects the
             # simulation" per config.receipt, so a recording says what produced it.
             settings=resolved.tested_config.model_dump(mode="json"),
+            components=components,
         )
     except BaseException:
         # The loop never took the peers over, so their containers stop here.

@@ -36,8 +36,8 @@ tree, and `--user` keeps those build artifacts host-owned.
 
 ## The Kit render peer
 
-A vehicle whose Universal Scene Description (USD) file authors a `Camera` or `OmniLidar` prim
-renders it in the **Kit render peer**. The sim starts that container beside PX4 and stops it at the
+A vehicle whose Universal Scene Description (USD) file declares a camera or a lidar, a sensor schema
+on a `Camera` or `OmniLidar` prim, renders it in the **Kit render peer**. The sim starts that container beside PX4 and stops it at the
 end of the run. The loop stays on the host, and the peer takes poses over a socket and returns each
 frame. The program Kit runs lives in
 [`nexus/_src/peers/kit/peer-src/`](../nexus/_src/peers/kit/peer-src/) and ships in the package, and

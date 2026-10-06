@@ -20,8 +20,8 @@ with na.Sim.from_orchestrator(orch, guidance=guidance) as sim:
     sim.run()
 ```
 
-The guidance logs its waypoint markers under `guidance/waypoints` and a tracked reference under
-`guidance/reference`.
+The guidance logs its waypoint markers at `sim/guidance/waypoints/wp_<i>` and a tracked reference at
+`sim/guidance/reference`.
 
 ::: nexus._src.guidance.mission.MissionGuidance
 ::: nexus._src.guidance.tracking.TrackingGuidance

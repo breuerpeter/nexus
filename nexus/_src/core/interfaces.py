@@ -55,6 +55,34 @@ class Stage:
     warm: bool = True
 
 
+@dataclass(frozen=True, slots=True)
+class SensorRun:
+    """The run's values the builder hands a sensor's class as its first argument, before the keyword
+    arguments the sensor's schema gives.
+
+    Attributes:
+        seed: The sensor's own noise seed, from the run's seed and the prim that declares the sensor,
+            so two sensors of one kind draw different noise and a run repeats bit for bit.
+        dt: The control tick, seconds.
+        site: Where the run flies and its ambient values, a :class:`~nexus._src.scene.site.Site`.
+        body: The index of the model body the sensor rides: the parent of its prim.
+        mount: The translation of the sensor's prim from its body's origin, metres, in the body's axes.
+        path: The path of the prim that declares the sensor.
+        prim: That prim on the vehicle's stage, for a sensor that reads what it authors, such as a
+            camera's optics.
+        link: The link to the peer the sensor's class requires, or ``None`` when it requires none.
+    """
+
+    seed: int = 0
+    dt: float = 0.0
+    site: Any = None
+    body: int = 0
+    mount: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    path: str = ""
+    prim: Any = None
+    link: Any = None
+
+
 @runtime_checkable
 class Clock(Protocol):
     dt: float

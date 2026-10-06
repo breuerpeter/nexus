@@ -62,16 +62,16 @@ class GeofenceGuidance(MissionGuidance):
             self.breach_pos = (float(pos[0]), float(pos[1]), float(pos[2]))
             self._done = True
             if self._logger is not None:
-                self._logger.log_points("guidance/breach", [list(self.breach_pos)], colors=_KILL, radii=_KILL_RADIUS)
+                self._logger.log_points("breach", [list(self.breach_pos)], colors=_KILL, radii=_KILL_RADIUS)
             self._end()
             return
         super()._tick(pos, ts)
 
     def _log_fence(self) -> None:
-        """Log the box as two rings, its floor and its ceiling, under ``guidance/fence``."""
+        """Log the box as two rings, at the guidance's rows ``fence/floor`` and ``fence/ceiling``."""
         if self._logger is None:
             return
         (x0, y0, z0), (x1, y1, z1) = self._lo, self._hi
         for name, z in (("floor", z0), ("ceiling", z1)):
             ring = [[x0, y0, z], [x1, y0, z], [x1, y1, z], [x0, y1, z], [x0, y0, z]]
-            self._logger.log_strip(f"guidance/fence/{name}", ring, color=_FENCE, radius=0.02)
+            self._logger.log_strip(f"fence/{name}", ring, color=_FENCE, radius=0.02)

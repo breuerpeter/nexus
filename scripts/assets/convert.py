@@ -154,18 +154,20 @@ def author_vehicle_camera(usdz, out, *, mount=None, intrinsics=None) -> str:
     xf = UsdGeom.Xformable(cam.GetPrim())
     xf.ClearXformOpOrder()
     xf.AddTransformOp().Set(mtx)
-    # RTX render params as sensor:* custom attrs; the vehicle USD is the single authority, so
-    # resolution/rate live here, not in code; constructor-kwarg naming, as in the analytic suite.
+    # The camera schema declares the prim a sensor, and its attributes carry the render size and the
+    # rate: the vehicle USD is the single authority, so they live here, not in code. Applied by name,
+    # so this module needs no schema plugin: `import nexus` registers the one that defines the schema.
     from pxr import Sdf
 
     prim = cam.GetPrim()
-    prim.CreateAttribute("sensor:width", Sdf.ValueTypeNames.Int, custom=True).Set(
+    prim.AddAppliedSchema("NexusCameraAPI")
+    prim.CreateAttribute("nexus:width", Sdf.ValueTypeNames.Int, custom=False).Set(
         int(intr.get("width", _DEFAULT_WIDTH))
     )
-    prim.CreateAttribute("sensor:height", Sdf.ValueTypeNames.Int, custom=True).Set(
+    prim.CreateAttribute("nexus:height", Sdf.ValueTypeNames.Int, custom=False).Set(
         int(intr.get("height", _DEFAULT_HEIGHT))
     )
-    prim.CreateAttribute("sensor:rate_hz", Sdf.ValueTypeNames.Float, custom=True).Set(float(intr.get("rate_hz", 24.0)))
+    prim.CreateAttribute("nexus:rate", Sdf.ValueTypeNames.Float, custom=False).Set(float(intr.get("rate_hz", 24.0)))
 
     out = str(out)
     stage.GetRootLayer().Export(out)

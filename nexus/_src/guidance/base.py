@@ -5,8 +5,8 @@ stage, ``guidance``, which the loop runs before the controller's stages, so a se
 tick is the one the controller reads on that tick. The stage runs between graph replays and only
 writes the controller's setpoint buffer in place, through ``accept_setpoint``, so a captured graph
 stays valid, per the capture contract. Logging is component-owned: the orchestrator hands over the
-Logger, and the guidance emits its ``guidance/`` markers when the mission changes, on set, advance
-or plan. Rerun shows the last value per entity path, so logging only on change is enough.
+Logger scoped to the guidance's path, and the guidance emits its own rows, ``waypoints/wp_<i>`` and
+``reference``, when the mission changes, on set, advance or plan. Rerun shows the last value per entity path, so logging only on change is enough.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import numpy as np
 from nexus._src.core.interfaces import Controller, Stage
 from nexus._src.core.schema import PositionGoal, as_position_goal
 
-# guidance/ waypoint markers: the active goal is gold, a reached goal turns green, a future one is dim.
+# The waypoint markers: the active goal is gold, a reached goal turns green, a future one is dim.
 _GOLD = (255, 215, 0)
 _GREEN = (60, 220, 110)
 _PENDING = (120, 120, 130)
@@ -67,7 +67,9 @@ class Guidance:
 
     # -- component-owned logging ---------------------------------------------------
     def set_logger(self, logger) -> None:
-        """The orchestrator hands over the Logger, ``None`` when off: the gate for the guidance/ markers."""
+        """The orchestrator hands over the Logger, scoped to the guidance's path, or ``None`` when off: the
+        gate for the markers. Each emitter names only its own row.
+        """
         self._logger = logger
 
     def _emit(self, ref=None) -> None:
@@ -86,14 +88,12 @@ class Guidance:
         """
         for i, g in enumerate(self._mission):
             color = _GREEN if i < self._active else (_GOLD if i == self._active else _PENDING)
-            self._logger.log_points(
-                f"guidance/waypoints/wp_{i}", [list(map(float, g.pos))], colors=color, radii=_RADIUS
-            )
+            self._logger.log_points(f"waypoints/wp_{i}", [list(map(float, g.pos))], colors=color, radii=_RADIUS)
 
     def _log_reference(self, ref) -> None:
-        """Emit the planned reference path a tracking controller follows, as a line strip under
-        ``guidance/reference``. ``ref`` exposes ``reference_path()``, sampled only here, so a run that
+        """Emit the planned reference path a tracking controller follows, as a line strip at the
+        guidance's row ``reference``. ``ref`` exposes ``reference_path()``, sampled only here, so a run that
         doesn't record never touches it.
         """
         pts = [[float(p[0]), float(p[1]), float(p[2])] for p in ref.reference_path()]
-        self._logger.log_strip("guidance/reference", pts, color=(90, 160, 255), radius=0.025)
+        self._logger.log_strip("reference", pts, color=(90, 160, 255), radius=0.025)

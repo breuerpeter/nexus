@@ -14,6 +14,7 @@ requires-python = "==3.12.*"
 # The class each schema builds, by import path, loaded at build.
 [project.entry-points."nexus.components"]
 StandInAPI = "nexus_stand_in.heavy:StandIn"
+StandInSensorAPI = "nexus_stand_in.sensor:StandInSensor"
 
 [tool.uv.build-backend]
 module-name = "nexus_stand_in"

@@ -7,12 +7,13 @@ shape to a different sink: each recordable component gets a :class:`Recorder`, r
 device-only kernel, so the tap joins the captured CUDA graph: no host readback in the hot loop, no
 throttle. The host, a test, a benchmark or a CI gate, reads a channel on demand with one locked D2H.
 
-Channel keys are component-kind-prefixed, and the access surface mirrors them. ``Sim.physics`` is a
-name-keyed view over the per-body channels, ``physics/body/<label>``, and the per-joint channels,
-``physics/joint/<label>``, that physics registers: ``sim.physics["body_frd"]`` → :class:`BodyState`,
+A channel's key is its instance's path below the process root, the path its series take in a
+recording, and the access surface mirrors the keys. ``Sim.physics`` is a name-keyed view over the
+per-body channels, ``vehicle/body/<label>``, and the per-joint channels, ``vehicle/joints/<label>``,
+that physics registers: ``sim.physics["body_frd"]`` → :class:`BodyState`,
 ``sim.physics["rotor_1_joint"]`` → :class:`JointState`. ``Sim.sensors`` is the same over the sensor
-channels, ``sensors/<name>``, with flat instance names; the registering class rides along as ``source``
-metadata.
+channels, ``vehicle/sensors/<name>``, with flat instance names; the registering class rides along as
+``source`` metadata.
 """
 
 from .recorder import ChannelMap, RecordChannel, Recorder

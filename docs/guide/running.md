@@ -79,10 +79,11 @@ no container.
   path**. `--scene` accepts a registry scene name, such as `empty`, or a local scene USD path.
   A run names both.
   Every Astro Max vehicle carries the analytic PX4 suite, an Inertial Measurement Unit (IMU),
-  mag, barometer, and Global Positioning System (GPS) as `sensor:*` prims. The vehicle USD is the
-  single authority for all sensors, and a PX4 vehicle USD authoring none fails the build loudly.
-- Cameras log JPEG frames and a `Pinhole` frustum to `cameras/<name>`. The lidar logs world-frame
-  `Points3D` to `lidar/<name>`. `--debug` records the axes-only scene, which gives small `.rrd`s,
+  mag, barometer, and Global Positioning System (GPS). Each is a prim under the body it rides that
+  applies its sensor schema, such as `NexusImuAPI`. The vehicle USD is the single authority for all
+  sensors, and the [schema reference](../reference/schemas.md) lists the attributes of each schema.
+- A camera logs JPEG frames and a `Pinhole` frustum to `sim/vehicle/sensors/<name>`. A lidar logs
+  world-frame `Points3D` to `sim/vehicle/sensors/<name>` too. `--debug` records the axes-only scene, which gives small `.rrd`s,
   and is the default for verification flights.
 
 ## Profiling
@@ -119,8 +120,8 @@ Sim physics and PX4 state both appear in the Rerun viewer, because they share th
 
 ## Worlds for the FPV camera
 
-A vehicle whose USD authors RTX sensors, such as the `astro_max_fpv` variant's `FpvCam`, renders
-them in the Kit peer. The FPV camera's world comes from the registry scene:
+A vehicle whose USD declares RTX sensors, such as the `astro_max_fpv` variant's `FpvCam` with its
+`NexusCameraAPI` schema, renders them in the Kit peer. The FPV camera's world comes from the registry scene:
 
 ```bash
 # photoreal geolocated globe: Google Photorealistic 3D Tiles streamed live at
@@ -200,12 +201,12 @@ Everything lands in **one** recording, app ID `nexus` and recording ID
 `nexus`, and every producer writes it **from the sim's own process**:
 
 - **the sim scene**: logged by nexus itself. The blueprint **hides** the ground plane,
-  `/model/shapes/shape_0`, **by default** because it occludes the vehicle.
-- **framework events**: the `newton` logger, under `logs/sim`.
+  `/sim/model/shapes/shape_0`, **by default** because it occludes the vehicle.
+- **framework events**: the `nexus` logger, at `sim/logs/<module>`.
 - **PX4's own view of the flight**: not in the recording. PX4 keeps it in its console log,
   `~/.cache/nexus/logs/px4-*.log`, and in its `ULog`, both artifacts of the run.
 - **test and driver stages**: a driver in the sim's process logs each stage with `na.logger.info("…")`,
-  which writes to the console and, when recording, the `logs/sim` panel.
+  which writes to the console and, when recording, the Logs pane.
 
 **Serve or file, never both: two flags, `--view` and `--log`, both off.** A run can't produce both
 a live gRPC server and a *complete* `.rrd` from one process, because rerun's serve and file sinks are

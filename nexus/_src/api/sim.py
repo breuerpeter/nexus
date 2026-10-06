@@ -107,15 +107,14 @@ class Sim:
         if geo is not None:  # override the scene's geodetic origin, for example to fly cesium over any lat/lon
             parts = [float(x) for x in geo.split(",")]
             self._launch.set_geodetic_origin(*parts)  # lat,lon[,alt]; alt is the WGS84 ellipsoidal surface height
-        # Resolve the device selector: 'auto'/'gpu' -> 'cuda' if a CUDA device is present, else 'cpu'. The
-        # command-line tool plus sim_argparser default to 'auto'; the launch path itself only distinguishes 'cpu'.
-        if device in ("auto", "gpu"):
+        # 'gpu' is an alias of 'cuda'. The launch takes 'auto', 'cpu' or 'cuda', and the resolve picks the
+        # device: CUDA when a CUDA device is present, else the CPU. The receipt records the pick.
+        if device == "gpu":
             import warp as wp
 
-            have_gpu = wp.is_cuda_available()
-            if device == "gpu" and not have_gpu:
+            if not wp.is_cuda_available():
                 logger.warning("device=gpu requested but no CUDA device found, falling back to CPU")
-            device = "cuda" if have_gpu else "cpu"
+            device = "cuda"
         self._launch.runtime.device = device
         if max_steps is not None:
             self._launch.runtime.max_steps = int(max_steps)
@@ -241,7 +240,7 @@ class Sim:
             self._recorder = Recorder(dt=dt, maxlen=maxlen)
             self._orch.attach_recorder(self._recorder)
             # Cache the base body channel, the discovered base, for the wait_until/sleep sim clock.
-            self._base_ch = self._recorder.channels[f"physics/body/{self._orch.physics.base_body}"]
+            self._base_ch = self._recorder.channels[f"vehicle/body/{self._orch.physics.base_body}"]
         # A PX4 run wires nothing here: its operator is a remote Ground Control Station (GCS),
         # Px4Offboard, built lazily on first access after start(), and the run is step-driven the same
         # way as any other.
@@ -425,7 +424,7 @@ class Sim:
         """
         if self._recorder is None:
             raise RuntimeError("Sim(observe=False): no Recorder attached")
-        return ChannelMap(self._recorder.channels, ("physics/body/", "physics/joint/"))
+        return ChannelMap(self._recorder.channels, ("vehicle/body/", "vehicle/joints/"))
 
     @property
     def sensors(self) -> ChannelMap:
@@ -441,7 +440,7 @@ class Sim:
         """
         if self._recorder is None:
             raise RuntimeError("Sim(observe=False): no Recorder attached")
-        return ChannelMap(self._recorder.channels, ("sensors/",))
+        return ChannelMap(self._recorder.channels, ("vehicle/sensors/",))
 
     @property
     def base_body(self) -> str:

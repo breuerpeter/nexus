@@ -84,6 +84,7 @@ class KitRenderer:
         self._bodies = list(bodies)
         self.setup = dict(setup or {})
         self.sensors = list(sensors)
+        self.streams = None  # where each camera publishes its feed; the factory sets it before the sensors build
         self._sock: socket.socket | None = None
         self._pending = False  # a frame in flight: this link asked for it and hasn't taken it yet
         self._last_t: float | None = None
