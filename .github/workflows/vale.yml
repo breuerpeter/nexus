@@ -26,6 +26,8 @@ jobs:
           version: 3.20.0
           filter_mode: added
           fail_level: any
+          # release-please writes CHANGELOG.md from commit titles; nobody edits it by hand.
+          glob: "!CHANGELOG.md"
 
   # The whole repo, nightly and on demand, as a check run with annotations. Main carries zero alerts,
   # so a red run means something leaked past the gate: a bypassed merge, a package bumped to a
@@ -44,5 +46,5 @@ jobs:
           filter_mode: nofilter
           fail_level: any
           reporter: github-check
-          # The synced style packages ship their own READMEs.
-          glob: "!.vale/**"
+          # The synced style packages ship their own READMEs, and release-please writes CHANGELOG.md.
+          glob: "!{.vale/**,CHANGELOG.md}"

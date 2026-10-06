@@ -7,7 +7,9 @@
       "package-name": "nexus-sim",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
-        { "type": "toml", "path": "pyproject.toml", "jsonpath": "$.project.version" }
+        { "type": "toml", "path": "pyproject.toml", "jsonpath": "$.project.version" },
+        { "type": "toml", "path": "uv.lock", "jsonpath": "$.package[?(@.name.value=='nexus-sim')].version" },
+        { "type": "toml", "path": "nexus-rl/uv.lock", "jsonpath": "$.package[?(@.name.value=='nexus-sim')].version" }
       ]
     }
   }
