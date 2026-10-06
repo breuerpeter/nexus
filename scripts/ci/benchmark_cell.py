@@ -22,14 +22,14 @@ import os
 import sys
 
 import nexus as na
-from nexus._src.operator.qgc_plan import FRAME_GLOBAL_RELATIVE_ALT, NAV_TAKEOFF, NAV_WAYPOINT, MissionItem
+from nexus.px4 import FRAME_GLOBAL_RELATIVE_ALT, NAV_TAKEOFF, NAV_WAYPOINT, MissionItem
 
 READY_S = float(os.environ.get("NEWTON_CELL_READY_S", "300"))  # PX4-lockstep wait budget
 FLY_S = float(os.environ.get("NEWTON_CELL_FLY_S", "600"))  # arm + climb budget [sim s]
 
 # The benchmark mission: 4 waypoints in world axes, Newton FLU, Z-up, relative to the takeoff
 # point. North is +x, so east is -y. These are the same four points the matrix has always flown;
-# tests/operator/test_px4_offboard.py pins that equivalence, because the baselines are only
+# tests/peers/px4_sitl/test_px4_offboard.py pins that equivalence, because the baselines are only
 # comparable across runs if the flown path is the same.
 MISSION = ((20.0, 0.0, 5.0), (20.0, -20.0, 8.0), (0.0, -20.0, 5.0), (0.0, 0.0, 5.0))
 ALT = 5.0  # takeoff altitude [m]; the mission flies relative to the takeoff point

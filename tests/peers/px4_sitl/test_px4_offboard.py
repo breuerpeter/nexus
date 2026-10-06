@@ -1,7 +1,7 @@
 """Px4Offboard command encoding against a fake mavutil connection, with no real PX4.
 
 The tests bypass the background pump thread, setting _mav/_sysid/_compid directly, and assert the
-MAVLink messages the operator verbs emit; the flight itself is the integration proof.
+MAVLink messages the client's verbs emit; the flight itself is the integration proof.
 
 The verbs are **requests**: they lodge intent and return, and the pump puts the commands on
 the wire. So a test that wants to see bytes drives ``_service_requests`` itself, with an
@@ -14,8 +14,8 @@ import time
 
 import pytest
 
-from nexus._src.operator import px4_offboard as px4mod
-from nexus._src.operator.qgc_plan import MissionItem
+from nexus._src.peers.px4_sitl import offboard as px4mod
+from nexus._src.peers.px4_sitl.qgc_plan import MissionItem
 
 
 class _FakeMav:

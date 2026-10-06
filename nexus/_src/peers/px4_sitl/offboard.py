@@ -1,16 +1,19 @@
-"""Px4Offboard: a thin, non-blocking pymavlink operator, the PX4 implementation of the Operator
-role. A background daemon thread keeps the MAVLink link alive: it sends the Ground Control
-Station (GCS) heartbeat plus the current MANUAL_CONTROL setpoint, services the outstanding mode and
-arm requests, and caches telemetry. Every public verb is a **request**: it returns immediately and
-the pump commands PX4 until telemetry confirms it, so no verb ever blocks the thread that drives the
-sim. A script waits on the result instead, ``sim.wait_until(op.at_target, …)``. The arm and mode
-recipe is the proven headless one: switch mode before arming, and wait until armable before
-hammering arm.
+"""Px4Offboard: the host end of the PX4 Software In The Loop (SITL) peer's offboard link, a thin,
+non-blocking pymavlink client. A background daemon thread keeps the MAVLink link alive: it sends
+the Ground Control Station (GCS) heartbeat plus the current MANUAL_CONTROL setpoint, services the
+outstanding mode and arm requests, and caches telemetry. Every public verb is a **request**: it
+returns immediately and the pump commands PX4 until telemetry confirms it, so no verb ever blocks
+the thread that drives the sim. A script waits on the result instead,
+``sim.wait_until(op.at_target, …)``. The arm and mode recipe is the proven headless one: switch
+mode before arming, and wait until armable before hammering arm.
 
 The name refers to the **link**: PX4's offboard and onboard API on User Datagram Protocol (UDP)
 port ``:14540``, where MAVSDK connects with ``-m onboard``, *not* PX4's OFFBOARD flight mode. It's
 a separate link from the controller's Hardware In The Loop (HIL) lockstep on ``:4560``, mirroring
-the real topology, the PX4 link map.
+the real topology, the PX4 link map. The link leaves the run: the loop never calls this class. A
+script opens it on the address the run's port map names, ``sim.ports["offboard"]``, after the sim
+has started, and steps the sim while it waits for PX4's heartbeat, since PX4 runs on the sim's
+clock. The public import is ``nexus.px4``.
 """
 
 from __future__ import annotations
@@ -23,10 +26,11 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from nexus._src.core.schema import Setpoint
-from nexus._src.peers.px4_sitl import OFFBOARD_PORT
+import numpy as np
 
-from .operator import BaseOperator
+from nexus._src.core.schema import PositionGoal, Setpoint
+
+from . import OFFBOARD_PORT
 from .qgc_plan import NAV_WAYPOINT, MissionItem, Plan, read_plan
 
 # Pin the MAVLink dialect before importing mavutil; this matches Px4MavlinkController. Because the
@@ -70,7 +74,7 @@ _LANDED = {
 class _RequestState:
     """The pump's private send-timing for the outstanding mode and arm requests: when each command was
     last put on the wire, and which phase a stick-gesture arm is in. Lives on the pump's stack, not
-    on the operator, because nothing outside the pump has any business reading it.
+    on the client, because nothing outside the pump has any business reading it.
     """
 
     last_mode: float = 0.0
@@ -88,7 +92,7 @@ _R_EARTH = 6378137.0
 # hysteresis, so a gesture it can't act on burns the one edge it gets and never re-fires until the
 # sticks leave the gesture and come back. The pump so cycles hold -> neutral -> hold until the
 # vehicle arms. Both windows are wall-clock, the same as everything else in the pump, while PX4
-# measures COM_RC_ARM_HYST, 1 s, on its sim clock: generous in this operator's favour at any
+# measures COM_RC_ARM_HYST, 1 s, on its sim clock: generous in this client's favour at any
 # Real-Time Factor (RTF) over 1.
 _GESTURE_HOLD_S = 3.0  # hold the gesture this long before dropping the edge
 _GESTURE_GAP_S = 0.5  # then neutral this long, so PX4 registers the falling edge before the next rising one
@@ -122,7 +126,7 @@ class _GotoTarget:
     yaw: float | None
 
 
-class Px4Offboard(BaseOperator):
+class Px4Offboard:
     def __init__(
         self,
         conn: str = f"udpin:0.0.0.0:{OFFBOARD_PORT}",
@@ -133,13 +137,13 @@ class Px4Offboard(BaseOperator):
         alt_tol_m: float = 1.0,
         wait_clear_s: float = 5.0,
     ):
-        """Configure the operator link; nothing opens a connection until entered.
+        """Configure the offboard link; nothing opens a connection until entered.
 
         Args:
-            conn: pymavlink connection string for the PX4 operator link. The default
+            conn: pymavlink connection string for the PX4 offboard link. The default
                 listens on ``OFFBOARD_PORT``, the PX4 offboard and GCS API port of instance 0; the
                 run passes ``OFFBOARD_PORT + instance``.
-            system_id: PX4's MAVLink system id, ``instance + 1``: the heartbeat this operator waits
+            system_id: PX4's MAVLink system id, ``instance + 1``: the heartbeat this client waits
                 for and the system every verb addresses.
             arrive_m: 3D arrival radius for :meth:`at_target` after a :meth:`goto`, in meters.
             yaw_tol_rad: Heading tolerance for :meth:`at_target` when the caller commanded a yaw, in radians.
@@ -147,7 +151,6 @@ class Px4Offboard(BaseOperator):
             wait_clear_s: Seconds the vehicle must be failure-free, and the initial settle
                 period, before the pump sends an arm command.
         """
-        super().__init__()  # BaseOperator, for _as_position_goal; nothing uses the mission and logging members
         self._conn_str = conn
         self._system_id = system_id
         self._arrive_m = arrive_m
@@ -185,7 +188,7 @@ class Px4Offboard(BaseOperator):
         self._anchor: tuple[float, float, float] | None = None
         self._target: _ClimbTarget | _GotoTarget | None = None
         # The uploaded mission; see upload_mission. The upload is a *handshake*, not a send: this
-        # operator puts MISSION_COUNT on the wire and PX4 then asks for each item by seq, so the pump
+        # client puts MISSION_COUNT on the wire and PX4 then asks for each item by seq, so the pump
         # drives it from _on_msg and the caller waits on mission_uploaded().
         self._mission_items: tuple[MissionItem, ...] = ()
         self._want_upload = False  # outstanding upload: keep re-sending MISSION_COUNT until acked
@@ -200,10 +203,11 @@ class Px4Offboard(BaseOperator):
     def open(self) -> Px4Offboard:
         """Open the MAVLink link and start the pump, returning at once, with no wait for PX4.
 
-        The non-blocking half of :meth:`__enter__`, for a caller that owns the waiting. ``Sim``
-        uses it because PX4's clock is the sim's under lockstep: the sim has to keep stepping or
-        no heartbeat ever arrives, so the wait has to be a stepping loop rather than a sleep.
-        Poll :attr:`connected` to know when PX4 has answered.
+        The non-blocking half of :meth:`__enter__`, for a caller that owns the waiting. A script
+        that steps the sim uses it, because PX4's clock is the sim's under lockstep: the sim has to
+        keep stepping or no heartbeat ever arrives, so the wait has to be a stepping loop rather
+        than a sleep, ``sim.wait_until(lambda: op.connected, sim_timeout=…)``. Poll
+        :attr:`connected` to know when PX4 has answered.
 
         Returns:
             ``self``, so it chains the same way as ``__enter__``.
@@ -216,7 +220,7 @@ class Px4Offboard(BaseOperator):
 
     @property
     def connected(self) -> bool:
-        """Whether PX4 has answered on the operator link: a heartbeat has arrived and the pump has
+        """Whether PX4 has answered on the offboard link: a heartbeat has arrived and the pump has
         learned the peer's system id, so every verb has somewhere to send.
 
         Returns:
@@ -274,7 +278,7 @@ class Px4Offboard(BaseOperator):
         silently ignore a single command, because the command races the autopilot's state machine,
         or the vehicle isn't yet armable, and the vehicle simply stays put. Verification-based, so
         it's robust to the sim's real-time factor. Wall-clock pacing is right here because the
-        operator is a remote GCS, not a node in the sim loop.
+        client is a remote GCS, not a node in the sim loop.
 
         Args:
             now: ``time.monotonic()`` for this pump iteration.
@@ -371,7 +375,7 @@ class Px4Offboard(BaseOperator):
                 self._last_fail = time.monotonic()
         elif t in ("MISSION_REQUEST_INT", "MISSION_REQUEST"):
             # PX4 pulls the mission item by item. It asks with the MISSION_REQUEST_INT form; the plain
-            # form costs one name in this tuple and makes this operator robust to a peer that doesn't.
+            # form costs one name in this tuple and makes this client robust to a peer that doesn't.
             self._send_mission_item(msg.seq)
         elif t == "MISSION_ACK":
             # Settles the upload either way: on an error ack, stop resending MISSION_COUNT rather
@@ -428,14 +432,14 @@ class Px4Offboard(BaseOperator):
 
         A sim-driving caller must *not* use this: under lockstep the sim owns PX4's clock, so a
         caller that sleeps here stops the sim and PX4 never sends the heartbeat it's waiting for.
-        ``Sim.operator`` steps the sim instead, GH #70.
+        Such a caller opens the link with :meth:`open` and steps the sim until :attr:`connected`.
         """
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if self.connected:
                 return
             time.sleep(0.1)
-        raise TimeoutError("no PX4 heartbeat on the operator link")
+        raise TimeoutError("no PX4 heartbeat on the offboard link")
 
     def _cmd(self, command, *params) -> None:
         with self._lock:
@@ -465,7 +469,7 @@ class Px4Offboard(BaseOperator):
             altitude over mean sea level, the frame DO_REPOSITION altitudes resolve against.
 
         Raises:
-            RuntimeError: No position has arrived on the operator link yet.
+            RuntimeError: No position has arrived on the offboard link yet.
         """
         if self._anchor is None:
             if self._lat is None or self._lon is None or self._amsl is None or self._rel_alt is None:
@@ -490,7 +494,17 @@ class Px4Offboard(BaseOperator):
         lon = lon0 + math.degrees(east / (_R_EARTH * math.cos(math.radians(lat0))))
         return lat, lon
 
-    # ---- operator verbs: every one returns immediately; the caller waits on telemetry ----
+    # -- setpoint normalization: accept a PositionGoal or a bare position ---------
+    @staticmethod
+    def _as_position_goal(sp: Setpoint) -> PositionGoal:
+        if isinstance(sp, PositionGoal):
+            return sp
+        arr = np.asarray(sp, dtype=float).reshape(-1)
+        if arr.shape[0] != 3:
+            raise TypeError(f"expected a PositionGoal or an (x, y, z) position, got {sp!r}")
+        return PositionGoal(pos=(float(arr[0]), float(arr[1]), float(arr[2])))
+
+    # ---- verbs: every one returns immediately; the caller waits on telemetry ----
     def set_mode(self, mode: str) -> None:
         """Request a flight mode. Returns at once; the pump commands it until telemetry confirms.
 
@@ -639,9 +653,9 @@ class Px4Offboard(BaseOperator):
         so a second mission never reports the first one's arrivals.
 
         Args:
-            plan: A :class:`~nexus._src.operator.qgc_plan.Plan`, a bare sequence of
-                :class:`~nexus._src.operator.qgc_plan.MissionItem`, or a path to a ``.plan``
-                file, read with :func:`~nexus._src.operator.qgc_plan.read_plan`.
+            plan: A :class:`~nexus._src.peers.px4_sitl.qgc_plan.Plan`, a bare sequence of
+                :class:`~nexus._src.peers.px4_sitl.qgc_plan.MissionItem`, or a path to a ``.plan``
+                file, read with :func:`~nexus._src.peers.px4_sitl.qgc_plan.read_plan`.
         """
         if isinstance(plan, (str, os.PathLike)):
             plan = read_plan(plan)
@@ -733,7 +747,7 @@ class Px4Offboard(BaseOperator):
 
         Commanded as ``DO_REPOSITION``: the same guidance PX4 runs for a GCS "fly here" request, and
         what it latches until the next command, so this goes out once rather than streamed. The
-        position is in **world axes**, Newton FLU and Z-up, the same tuples ``InProcessOperator``
+        position is in **world axes**, Newton FLU and Z-up, the same tuples a mission in the loop
         takes, resolved against an anchor captured on the first call; see :meth:`_anchor_now`.
 
         Yaw is in world axes too, and this reflects it on the way out for the same reason it
@@ -749,7 +763,7 @@ class Px4Offboard(BaseOperator):
                 to PX4.
 
         Raises:
-            RuntimeError: No position has arrived on the operator link yet.
+            RuntimeError: No position has arrived on the offboard link yet.
             TypeError: ``setpoint`` isn't a ``PositionGoal`` or an ``(x, y, z)`` position.
         """
         goal = self._as_position_goal(setpoint)
@@ -776,7 +790,7 @@ class Px4Offboard(BaseOperator):
         """Report whether the vehicle has reached what the last verb commanded.
 
         Measured against **what PX4 reports**, the cached ``GLOBAL_POSITION_INT`` and ``ATTITUDE``,
-        never the sim's ground truth. The operator is a remote GCS; reading sim state here would
+        never the sim's ground truth. The client is a remote GCS; reading sim state here would
         let it see a position the autopilot doesn't have.
 
         Returns:

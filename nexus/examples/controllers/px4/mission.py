@@ -31,9 +31,9 @@ import sys
 import time
 
 import nexus as na
-from nexus._src.operator.qgc_plan import NAV_WAYPOINT, read_plan
 from nexus.examples._lib import dump_run
 from nexus.examples.controllers.px4.log_warnings import px4_warnings
+from nexus.px4 import NAV_WAYPOINT, read_plan
 
 PLAN = pathlib.Path(__file__).with_name("box.plan")  # the mission flown; swap the file, fly another
 VEHICLE = "astro_max_base"  # the registry vehicle flown, which declares PX4
