@@ -25,8 +25,8 @@ def _is_entry_point(path: str) -> bool:
 
 
 def test_every_tracked_script_has_a_docs_page() -> None:
-    """Every tracked script a reader runs has a page under `docs/` that says what it is for and how
-    to run it.
+    """Every tracked script a reader runs has a page under `docs/` that says what the script does
+    and how to run it.
     """
     pages = "\n".join(
         (REPO / p).read_text() for p in _tracked("docs/*.md") if Path(p).name != "CLAUDE.md"
