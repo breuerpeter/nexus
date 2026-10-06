@@ -4,11 +4,9 @@ rotors by that declaration.
 Real builds on the Warp CPU backend: a quad authored per test, four rotor bodies on revolute joints
 under one airframe, each body carrying the nexus propeller schema and each joint driven by a
 ``NewtonActuator`` prim with Newton's velocity servo and DC motor clamp, and a stand-in controller that
-commands full throttle. The motor's no-load speed, 398 rad/s, is the rotor speed at full command.
-Skipped without newton or pxr.
+commands full throttle, from ``tests/vehicle/quad.py``. Skipped without newton or pxr.
 """
 
-import numpy as np
 import pytest
 
 pytest.importorskip("newton")
@@ -16,162 +14,14 @@ pytest.importorskip("pxr")
 
 import newton
 import warp as wp
-from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics
 
-from nexus._src.api.sim import Sim
-from nexus._src.build.assembly import build_orchestrator, build_scenario
-from nexus._src.core.schema import Controls
-from nexus._src.core.stages import peer_stages
 from nexus._src.physics.builders.usd import USDBuilder, parse_rotors
 from nexus._src.vehicle.actuators import find_rotor_joints
-
-ROOT = "/Vehicle"
-ARM = 0.2  # rotor offset from the airframe's center on each axis [m]
-LIFT_CT = 4e-7  # N/rpm²: four rotors at full command make about twice the 1.08 kg vehicle's weight
-WEAK_CT = 1e-7  # N/rpm²: four rotors at full command make about half its weight
-FLIGHT_STEPS = 125  # 0.5 s at the default 4 ms tick
-PROPELLER = {"nexus:cd": 0.05, "nexus:aeroH": 0.0, "nexus:aeroHforce": 0.0}
-
-
-def _author(
-    path,
-    *,
-    ct=LIFT_CT,
-    propeller=True,
-    odd_ct=None,
-    legacy_attr=False,
-    pod=False,
-    gimbal=False,
-    reparent=False,
-):
-    """A quad whose rotor bodies each declare the propeller schema, with Newton's motor on each rotor joint.
-
-    Args:
-        path: Where to write the vehicle.
-        ct: The thrust coefficient every rotor declares.
-        propeller: Whether the rotor bodies apply the propeller schema.
-        odd_ct: A thrust coefficient rotor 2 declares instead of `ct`.
-        legacy_attr: Also author `propeller:ct` on rotor 0's joint.
-        pod: Add a fifth body on a fixed joint that applies the propeller schema.
-        gimbal: Add a fifth body on a revolute joint that applies no propeller schema.
-        reparent: Hang rotor 3's joint off rotor 0's body instead of the airframe.
-    """
-    stage = Usd.Stage.CreateNew(str(path))
-    UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
-    UsdGeom.SetStageMetersPerUnit(stage, 1.0)
-    root = UsdGeom.Xform.Define(stage, ROOT).GetPrim()
-    stage.SetDefaultPrim(root)
-    UsdPhysics.ArticulationRootAPI.Apply(root)
-    body = UsdGeom.Cube.Define(stage, f"{ROOT}/body")
-    body.GetSizeAttr().Set(0.2)
-    UsdPhysics.RigidBodyAPI.Apply(body.GetPrim())
-    UsdPhysics.CollisionAPI.Apply(body.GetPrim())
-    UsdPhysics.MassAPI.Apply(body.GetPrim()).GetMassAttr().Set(1.0)
-    imu = UsdGeom.Xform.Define(stage, f"{ROOT}/body/Imu").GetPrim()
-    imu.CreateAttribute("sensor:type", Sdf.ValueTypeNames.Token, custom=True).Set("imu")
-
-    def child_body(name, offset, flipped=False):
-        prim = UsdGeom.Cylinder.Define(stage, f"{ROOT}/{name}")
-        prim.GetRadiusAttr().Set(0.1)
-        prim.GetHeightAttr().Set(0.01)
-        prim.AddTranslateOp().Set(Gf.Vec3d(*offset))
-        if flipped:  # the spin axis points the other way: the rotor turns the other way for the same command
-            prim.AddRotateXOp().Set(180.0)
-        UsdPhysics.RigidBodyAPI.Apply(prim.GetPrim())
-        mass = UsdPhysics.MassAPI.Apply(prim.GetPrim())
-        mass.GetMassAttr().Set(0.02)
-        mass.GetDiagonalInertiaAttr().Set(Gf.Vec3f(5e-5, 5e-5, 1e-4))
-        return prim
-
-    def revolute(name, parent, child, offset, flipped=False):
-        joint = UsdPhysics.RevoluteJoint.Define(stage, f"{ROOT}/{name}")
-        joint.CreateBody0Rel().SetTargets([parent])
-        joint.CreateBody1Rel().SetTargets([child])
-        joint.CreateLocalPos0Attr().Set(Gf.Vec3f(*offset))
-        joint.CreateLocalPos1Attr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
-        if flipped:
-            joint.CreateLocalRot0Attr().Set(Gf.Quatf(0.0, 1.0, 0.0, 0.0))
-        joint.CreateAxisAttr().Set("Z")
-        return joint.GetPrim()
-
-    def apply_propeller(prim, rotor_ct):
-        prim.AddAppliedSchema("NexusPropellerAPI")
-        prim.CreateAttribute("nexus:ct", Sdf.ValueTypeNames.Float).Set(rotor_ct)
-        for name, value in PROPELLER.items():
-            prim.CreateAttribute(name, Sdf.ValueTypeNames.Float).Set(value)
-
-    for i, (x, y) in enumerate([(ARM, ARM), (-ARM, -ARM), (ARM, -ARM), (-ARM, ARM)]):
-        offset = (x, y, -0.12)  # rotors on the airframe's -z, up once the run spawns it upright
-        flipped = bool(i % 2)
-        rotor = child_body(f"rotor_{i}", offset, flipped)
-        parent = f"{ROOT}/rotor_0" if reparent and i == 3 else f"{ROOT}/body"
-        joint = revolute(f"rotor_{i}_joint", parent, rotor.GetPath(), offset, flipped)
-        if legacy_attr and i == 0:
-            joint.CreateAttribute("propeller:ct", Sdf.ValueTypeNames.Float, custom=True).Set(ct)
-        motor = stage.DefinePrim(f"{ROOT}/rotor_{i}_motor", "NewtonActuator")
-        motor.CreateRelationship("newton:targets").SetTargets([joint.GetPath()])
-        motor.ApplyAPI("NewtonPIDControlAPI")
-        motor.ApplyAPI("NewtonDCMotorClampingAPI")
-        motor.GetAttribute("newton:kd").Set(0.025)
-        motor.GetAttribute("newton:saturationEffort").Set(8.0)
-        motor.GetAttribute("newton:maxMotorEffort").Set(8.0)
-        motor.GetAttribute("newton:velocityLimit").Set(398.0)
-        if propeller:
-            apply_propeller(rotor.GetPrim(), odd_ct if odd_ct is not None and i == 2 else ct)
-    if gimbal:
-        offset = (0.0, 0.0, 0.12)
-        mount = child_body("gimbal", offset)
-        revolute("gimbal_joint", f"{ROOT}/body", mount.GetPath(), offset)
-    if pod:
-        offset = (0.0, 0.0, -0.12)
-        fixed = UsdPhysics.FixedJoint.Define(stage, f"{ROOT}/pod_joint")
-        fixed.CreateBody0Rel().SetTargets([f"{ROOT}/body"])
-        fixed.CreateBody1Rel().SetTargets([child_body("pod", offset).GetPath()])
-        fixed.CreateLocalPos0Attr().Set(Gf.Vec3f(*offset))
-        fixed.CreateLocalPos1Attr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
-        apply_propeller(stage.GetPrimAtPath(f"{ROOT}/pod"), ct)
-    stage.GetRootLayer().Save()
-    return path
-
-
-class _FullThrottle:
-    """Answers the preroll at once and commands every rotor to full throttle each tick."""
-
-    def connect(self):
-        pass
-
-    def stages(self):
-        return peer_stages(self)
-
-    def exchange(self, meas, t, timeout=None):
-        return Controls(command=np.ones(4))
-
-    def close(self):
-        pass
-
-
-def _build(path, steps=0):
-    """The run the vehicle at `path` builds, around the full-throttle controller."""
-    cfg = build_scenario()
-    cfg["physics"]["force_cpu"] = True
-    return build_orchestrator(
-        "quad", cfg, USDBuilder({"usd_path": str(path)}, None), controller=_FullThrottle(), max_steps=steps
-    )
-
-
-def _climb(path):
-    """How far the airframe rises over the flight at full throttle [m]."""
-    with wp.ScopedDevice("cpu"), Sim.from_orchestrator(_build(path, FLIGHT_STEPS)) as sim:
-        sim.run()
-        rows = sim.physics["body"].history()
-    return rows[-1].position[2] - rows[0].position[2]
-
-
-def _build_error(path):
-    """The message of the error the build of the vehicle at `path` raises."""
-    with wp.ScopedDevice("cpu"), pytest.raises(ValueError) as e:
-        _build(path)
-    return str(e.value)
+from tests.vehicle.quad import LIFT_CT, ROOT, WEAK_CT
+from tests.vehicle.quad import author as _author
+from tests.vehicle.quad import build as _build
+from tests.vehicle.quad import build_error as _build_error
+from tests.vehicle.quad import climb as _climb
 
 
 @pytest.mark.parametrize(("ct", "climbs"), [(LIFT_CT, True), (WEAK_CT, False)])
