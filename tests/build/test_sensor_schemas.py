@@ -201,6 +201,47 @@ def test_a_sensor_schema_on_a_prim_whose_parent_is_not_a_rigid_body_fails_the_bu
     assert f"{sv.BODY}/Bracket/Gps" in str(err.value)
 
 
+def test_an_imu_prim_whose_transform_scales_fails_the_build_and_names_the_prim(tmp_path):
+    """An Inertial Measurement Unit (IMU) prim whose transform scales or shears fails the build and names the prim.
+
+    Given the fixture with a scale of 2 on the IMU's prim, when built, then the build fails naming the prim
+    path.
+    """
+    scaled = sv.prim(
+        "Imu0", "NexusImuAPI", 'float3 xformOp:scale = (2, 2, 2)\nuniform token[] xformOpOrder = ["xformOp:scale"]'
+    )
+
+    with pytest.raises(ValueError) as err:
+        sv.build(sv.vehicle(tmp_path, scaled)).close()
+
+    assert f"{sv.BODY}/Imu0" in str(err.value)
+
+
+def test_the_ground_truth_attitude_and_rates_are_the_base_bodys_whatever_the_imus_mount_and_body(tmp_path):
+    """The ground-truth attitude and rates in `Measurement` are the base body's, whatever the Inertial Measurement Unit's (IMU) mount and body.
+
+    Given the fixture with the IMU's prim turned 90 degrees about z under the second body, rolled 180
+    degrees against the base, and a gyro noise of 0.5 rad/s, when the run steps 20 ticks at rest, then
+    `quat_wxyz` is the base body's attitude, a half turn about its forward axis, and `rollspeed`,
+    `pitchspeed` and `yawspeed` stay under 1e-3 rad/s, the rates of a body at rest.
+    """
+    turned = sv.prim(
+        "Imu0",
+        "NexusImuAPI",
+        'float nexus:gyroNoise = 0.5\nfloat xformOp:rotateZ = 90\nuniform token[] xformOpOrder = ["xformOp:rotateZ"]',
+    )
+    loop = sv.build(sv.vehicle(tmp_path, mast=turned))
+
+    received = sv.fly(loop, 20)
+    half_turn = min((abs(meas.quat_wxyz[1]) for meas in received), default=0.0)
+    rate = max((abs(r) for meas in received for r in (meas.rollspeed, meas.pitchspeed, meas.yawspeed)), default=1.0)
+
+    assert (len(received), half_turn == pytest.approx(1.0, abs=1e-3), rate < 1e-3) == (20, True, True), (
+        half_turn,
+        rate,
+    )
+
+
 def test_a_vehicle_that_declares_no_sensor_builds(tmp_path):
     """A vehicle that declares no sensor builds.
 
