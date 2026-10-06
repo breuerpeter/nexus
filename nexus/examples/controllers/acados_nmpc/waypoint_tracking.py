@@ -95,12 +95,7 @@ def main() -> None:
     # plus a smooth yaw polynomial, so nose-first flight tracks cleanly; swap in the ruckig
     # FlatnessReference for the jerk-limited fallback.
     mass = float(orch.physics.model.body_mass.numpy().sum())
-    guidance = TrackingGuidance(
-        orch.controller,
-        planner=lambda waypoints: MinSnapReference(waypoints, mass=mass),
-        final_hold_s=3.0,
-        stop=orch.stop,
-    )
+    guidance = TrackingGuidance(planner=lambda waypoints: MinSnapReference(waypoints, mass=mass), final_hold_s=3.0)
     with na.Sim.from_orchestrator(orch, guidance=guidance) as sim:
         sim.guidance.set_mission(WAYPOINTS)  # the guidance plans the min-snap reference; the NMPC tracks it
         sim.run()

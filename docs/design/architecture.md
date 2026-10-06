@@ -107,12 +107,15 @@ same loop:
 
 **What to fly is separate from how it flies.** A controller that takes setpoints flies the mission
 of its **guidance**, the outer loop of the control cascade, reached through
-[`sim.guidance`](../reference/api/guidance.md). The guidance is a component of the loop. Its stage
-runs each tick after the sensors' and before the controller's, so the setpoint it writes, a
-`PositionGoal`, `Waypoints` or `ReferenceTrajectory`, is the one the controller narrows via
-`accept_setpoint` on that same tick. `MissionGuidance` sequences position goals and advances on
-arrival. `TrackingGuidance` hands a tracking controller one reference, which a `ruckig` or min-snap
-planner plans. A flight constructs its guidance and hands it to `Sim.from_orchestrator`.
+[`sim.guidance`](../reference/api/guidance.md). The guidance is a component of the loop, and it
+holds no other component: it passes its output through the tick, as every stage does. Its stage
+runs each tick after the sensors' and before the controller's. It writes a changed setpoint, a
+`PositionGoal`, `Waypoints` or `ReferenceTrajectory`, to the tick, and the loop hands that to the
+controller's `accept_setpoint`, so the controller narrows it on that same tick. When the mission
+is over, the stage marks the tick done, and the loop ends the run. `MissionGuidance` sequences
+position goals and advances on arrival. `TrackingGuidance` plans one reference for a tracking
+controller, with a `ruckig` or min-snap planner. A flight constructs its guidance from the
+guidance's own parameters and hands it to `Sim.from_orchestrator`.
 
 PX4 takes no guidance, because its own navigator sequences its missions, and no setpoint from the
 loop. A script commands it over its offboard link, a MAVLink link of its own beside the lockstep

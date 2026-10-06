@@ -11,7 +11,7 @@ over the horizon, the optimisation replayed from a captured graph, the sampling 
 
 The controller is task-parameterized: the caller passes the **batched rollout model**, ``num_rollouts``
 differentiable drones + the cost-only obstacle pillars, the obstacle shape indices, the rotor geometry,
-and the initial ``goal_w``; the guidance advances the active target via ``accept_setpoint(PositionGoal)``,
+and the initial ``goal_w``; the guidance advances the active target, which ``accept_setpoint(PositionGoal)`` takes,
 uniform with policy/pid. The per-rotor rollout dynamics is the shared single-body motor
 model :func:`~nexus.examples._lib.rigid_body_wrench_world`, so planner ≡ the real-sim
 :class:`~nexus.examples._lib.rotors.RigidBodyRotors` actuator: both consume per-rotor commands and
@@ -216,7 +216,7 @@ class SamplingMPCController:
         turning_dirs,
         ct,
         rpm_max,
-        goal_w=(0.0, 0.0, 1.0),  # initial target; the guidance advances it via accept_setpoint(PositionGoal)
+        goal_w=(0.0, 0.0, 1.0),  # initial target; the guidance advances it, through accept_setpoint(PositionGoal)
         dt,
         num_rollouts=16,
         control_points=5,  # trajectory knots; interpolated over the horizon: low-dim → effective sampling

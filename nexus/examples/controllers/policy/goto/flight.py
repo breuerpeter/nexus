@@ -99,9 +99,9 @@ def main() -> None:
         rerun=True,  # the .rrd is the demo's artifact
         renderer_factory=rtx_renderer(builder, cfg),  # the Kit peer, when the vehicle authors RTX sensors
     )
-    guidance = GeofenceGuidance(orch.controller, bounds=FENCE, stop=orch.stop)
+    guidance = GeofenceGuidance(bounds=FENCE)
     with na.Sim.from_orchestrator(orch, guidance=guidance) as sim:
-        sim.guidance.set_mission(WAYPOINTS)  # the guidance sequences these, advances on arrival, owns the stop
+        sim.guidance.set_mission(WAYPOINTS)  # the guidance sequences these, advances on arrival, ends the run
         t0 = time.time()
         sim.run()  # blocks until the mission completes, or the safety cap
         wall = time.time() - t0

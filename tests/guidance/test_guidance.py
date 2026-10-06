@@ -120,7 +120,7 @@ def test_the_mission_advances_on_arrival_and_ends_after_the_final_hold():
     assert _tick(guidance, (0.0, 1.0, 3.0), 6.5).done is False
     # after final_hold_s (5.0 + 2.0): the mission is over, and the stage marks the tick done
     assert _tick(guidance, (0.0, 1.0, 3.0), 7.0).done is True
-    assert _tick(guidance, (0.0, 1.0, 3.0), 8.0).done is True  # a mission that is over marks every tick
+    assert _tick(guidance, (0.0, 1.0, 3.0), 8.0).done is True  # a mission that's over marks every tick
 
 
 def test_goto_is_a_single_goal_mission():

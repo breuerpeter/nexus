@@ -22,7 +22,8 @@ when the component is a property of the machine or of the site. `Controller`, `S
 and the rotor chain, its command stage and its force element, are the vehicle's. What a scene contributes is the scene's. The guidance turns
 a mission into the setpoint a controller tracks. It's a property of the run, not of either, so it
 stays an **argument**: a flight constructs it and hands it to `Sim`. Its stage runs before the
-controller's. PX4 takes none, because its own navigator is its guidance. The `Renderer` follows from the
+controller's, and it holds no controller: the loop hands the setpoint it writes to the tick to the
+controller. PX4 takes none, because its own navigator is its guidance. The `Renderer` follows from the
 vehicle: a sensor whose class requires the Kit render peer starts it. `Clock`, `Physics`, `Recorder` and `Logger` are the
 framework's own architecture, **fixed**: one implementation each, configured by settings rather than
 swapped, so none gets a resolver or a published Protocol. Fixed is about publishing no resolver, not

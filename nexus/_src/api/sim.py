@@ -150,9 +150,10 @@ class Sim:
 
         Args:
             orch: The built orchestrator; its components already carry the renderer and logger.
-            guidance: The guidance the flight constructed over the orchestrator's controller, for
-                example ``MissionGuidance(orch.controller, stop=orch.stop)``. Its stage runs each tick
-                before the controller's. ``None`` flies with whatever setpoint the controller holds.
+            guidance: The guidance the flight constructed, for example
+                ``MissionGuidance(reached_m=0.3)``. Its stage runs each tick before the controller's,
+                and the loop hands the setpoint it writes to the controller. ``None`` flies with
+                whatever setpoint the controller holds.
             observe: Attach the ``Recorder`` behind ``sim.physics`` and ``sim.sensors``.
 
         Returns:
@@ -255,8 +256,8 @@ class Sim:
         """
         if self._guidance is None:
             raise RuntimeError(
-                "this run has no guidance: a flight constructs one over its controller and hands it over, "
-                "`guidance = MissionGuidance(orch.controller, stop=orch.stop)` then "
+                "this run has no guidance: a flight constructs one and hands it over, "
+                "`guidance = MissionGuidance(reached_m=0.3)` then "
                 "`Sim.from_orchestrator(orch, guidance=guidance)`; a PX4 run takes none"
             )
         return self._guidance

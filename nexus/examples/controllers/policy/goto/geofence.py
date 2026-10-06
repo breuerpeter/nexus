@@ -1,9 +1,9 @@
 """GeofenceGuidance: the worked example of a guidance specialisation, for the goto policy flight.
 
 A mission guidance with a box around the flight. When the vehicle leaves the box, the guidance keeps
-where and when it happened, freezes the mission, logs a red marker at the breach, and ends the run. The flight
-reports the breach in its stats, so a policy that strays fails for that reason, not only for the
-waypoints it then misses.
+where and when it happened, logs a red marker at the breach, and ends its mission, which ends the run.
+The flight reports the breach in its stats, so a policy that strays fails for that reason, not only for
+the waypoints it then misses.
 """
 
 from __future__ import annotations
@@ -23,23 +23,23 @@ class GeofenceGuidance(MissionGuidance):
     """A mission guidance that ends the run when the vehicle leaves its box.
 
     It overrides ``_tick``: the stage reads the vehicle's position once per tick, as the mission
-    guidance does, and this class checks it against the box first. On a breach it sets ``breached_at`` and ``breach_pos``, freezes the mission
-    through ``_done``, logs the breach marker and calls ``stop``. A new mission clears the breach, so the
-    fence fires once per mission rather than once per instance.
+    guidance does, and this class checks it against the box first. On a breach it sets ``breached_at``
+    and ``breach_pos``, logs the breach marker and sets ``_done``, which freezes the mission and ends the
+    run. A new mission clears the breach, so the fence fires once per mission rather than once per
+    instance.
 
     Args:
-        controller: The controller that takes setpoints.
         bounds: The box as ``((x_min, y_min, z_min), (x_max, y_max, z_max))`` in world axes [m].
-        **mission: :class:`MissionGuidance`'s own arguments: ``reached_m``, ``final_hold_s``, ``stop``
-            and ``body_index``.
+        **mission: :class:`MissionGuidance`'s own arguments: ``reached_m``, ``final_hold_s`` and
+            ``body_index``.
     """
 
-    def __init__(self, controller, *, bounds, **mission):
-        super().__init__(controller, **mission)
+    def __init__(self, *, bounds, **mission):
+        super().__init__(**mission)
         lo, hi = bounds
         self._lo = np.asarray(lo, dtype=float)
         self._hi = np.asarray(hi, dtype=float)
-        self._fenced = False  # the first tick logs the rings, once
+        self._fenced = False  # the stage's first run logs the rings, once
         self.breached_at: float | None = None
         """The sim time of the breach, or ``None`` while the vehicle has stayed inside the box."""
         self.breach_pos: tuple[float, float, float] | None = None
@@ -60,11 +60,9 @@ class GeofenceGuidance(MissionGuidance):
         if np.any(pos < self._lo) or np.any(pos > self._hi):
             self.breached_at = ts
             self.breach_pos = (float(pos[0]), float(pos[1]), float(pos[2]))
-            self._done = True
+            self._done = True  # the mission is over: the stage marks the tick done, and the loop ends the run
             if self._logger is not None:
                 self._logger.log_points("breach", [list(self.breach_pos)], colors=_KILL, radii=_KILL_RADIUS)
-            if self._stop is not None:
-                self._stop()
             return
         super()._tick(pos, ts)
 

@@ -10,7 +10,7 @@ def wait_until(predicate: Callable[[], bool], timeout: float, poll: float = 0.05
     """Block until ``predicate()`` is true, or raise ``TimeoutError``.
 
     A wall-clock poll, so the predicate's source must refresh itself: it suits operator telemetry,
-    say ``lambda: not operator.is_armed()``, which ``Px4Offboard``'s pump thread keeps fresh. A
+    say ``lambda: not operator.is_armed()``, which ``OffboardClient``'s pump thread keeps fresh. A
     sim-state predicate needs ``Sim.wait_until``, which steps the sim; nothing else advances it.
 
     Args:

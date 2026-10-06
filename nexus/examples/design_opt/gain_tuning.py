@@ -405,7 +405,7 @@ def main():
             rerun=True,
             renderer_factory=rtx_renderer(vb2, cfg),  # the Kit peer, when the vehicle authors RTX sensors
         )
-        guidance = MissionGuidance(orch.controller, reached_m=0.15, final_hold_s=3.0, stop=orch.stop)
+        guidance = MissionGuidance(reached_m=0.15, final_hold_s=3.0)
         with na.Sim.from_orchestrator(orch, guidance=guidance) as sim:
             sim.guidance.set_mission([GOAL])
             sim.run()

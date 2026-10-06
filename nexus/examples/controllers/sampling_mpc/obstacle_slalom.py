@@ -14,7 +14,7 @@ example-owned :mod:`assembly` that wraps controller + actuator + physics around 
 and hosts it via ``Sim.from_orchestrator`` + ``sim.guidance``. The vehicle is the registry
 ``astro-max`` and the obstacle pillars ride in the registry ``slalom`` scene, a
 Universal Scene Description (USD) file of cost-only capsules. The guidance sequences the waypoints:
-``set_mission`` → advance on arrival → ``accept_setpoint``; the controller logs its MPC horizon to
+``set_mission`` → advance on arrival → the next goal on the tick; the controller logs its MPC horizon to
 ``/controller``; the central recorder, always on, logs the physics trajectory + pillars, and the
 .rrd is the demo's artifact.
 
@@ -62,7 +62,7 @@ def main() -> None:
     )
     # reached_m=0.5 matches the demo's leg spacing: the guidance advances to the next waypoint this close;
     # final_hold_s lets the stochastic MPC settle on the final waypoint before the guidance ends the run.
-    guidance = MissionGuidance(orch.controller, reached_m=0.5, final_hold_s=4.0, stop=orch.stop)
+    guidance = MissionGuidance(reached_m=0.5, final_hold_s=4.0)
     with na.Sim.from_orchestrator(orch, guidance=guidance) as sim:
         sim.guidance.set_mission(WAYPOINTS)  # the guidance sequences these; the planner avoids the pillars
         sim.run()

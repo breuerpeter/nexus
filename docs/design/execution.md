@@ -34,6 +34,14 @@ error that names it, and so does a stage of a kind the loop doesn't know. Nothin
 slower path in silence. A run logs its plan once at start, for example
 `stage plan: graph(clear -> rotors -> propellers -> step -> record -> imu -> mag -> baro -> gps -> bind) host(read) host(exchange)`.
 
+**A guidance passes its output through the tick.** Its stage is a host stage, and it holds no
+controller. It writes a changed setpoint to the tick, and the loop hands that to the controller's
+`accept_setpoint` before the next segment runs. The loop also runs that stage once before the first
+tick, over the settled state, so the controller holds its first setpoint before its own first stage.
+A tracking guidance stays out of that pass, because its plan starts the reference's clock. A stage
+that marks the tick done ends the run once the tick completes, which is how a guidance ends its
+mission.
+
 **Captured execution benefits online Software In The Loop (SITL) runs, not just batch.** The PX4
 controller states two host stages. Its `read` stage is the sensor fan-in into the `Measurement`.
 Its `exchange` stage is the blocking MAVLink lockstep. The graph captures the command and force stages,

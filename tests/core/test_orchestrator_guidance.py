@@ -243,7 +243,7 @@ def test_a_controller_holds_the_first_goal_before_its_own_first_stage():
     """A controller holds the first goal before its own first stage.
 
     Given a run whose controller records the goal it holds each time its device stage runs and a
-    `MissionGuidance` whose mission was set before the run, when the run takes its first tick, then
+    `MissionGuidance` that holds its mission before the run, when the run takes its first tick, then
     every run of that stage, the warm pass included, held the first goal.
     """
     with wp.ScopedDevice("cpu"):
@@ -308,7 +308,7 @@ def test_a_runs_on_tick_hook_and_its_guidance_both_run():
 
 
 def test_a_mission_that_is_over_ends_the_run():
-    """A mission that is over ends the run.
+    """A mission that's over ends the run.
 
     Given a run whose `max_steps` lies far beyond its mission and a `MissionGuidance` with one goal and
     no final hold, when the vehicle reaches the goal, then `run()` returns, and the run took no tick

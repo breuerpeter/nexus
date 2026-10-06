@@ -77,7 +77,8 @@ def build_ring(
     """Every component's stages in the canonical order the domain fixes: sensors, the guidance when the
     run has one, controller, then ``clear`` -> the command stages -> the force stages -> ``step`` unrolled
     ``substeps`` times, then ``record``. The guidance sits before the controller, so the setpoint it writes
-    on a tick is the one the controller reads on that tick. The old actuator seam's one stage, the
+    to the tick, which the loop hands to the controller after the guidance's stage, is the one the
+    controller reads on that tick. The old actuator seam's one stage, the
     examples' single-body ``Rotors``, runs with the force stages, since it writes the body forces too.
 
     Raises:
@@ -147,10 +148,19 @@ def seed_stages(ring: list[Bound]) -> list[Stage]:
 
 
 def warm_stages(ring: list[Bound]) -> list[Stage]:
-    """The device stages of the seed pass: the warm pass that runs once before any capture, so every
-    device buffer exists and every kernel has loaded first, with no peer involved.
+    """The stages of the warm pass, which runs once over the settled state before any capture, in ring
+    order and with no peer involved: the device stages of the seed pass, so every device buffer exists
+    and every kernel has loaded first, and a guidance's warm stage between the sensors' and the
+    controller's, so the controller holds the guidance's first setpoint before its own first stage.
     """
-    return [st for st in seed_stages(ring) if st.kind == "device"]
+    out = []
+    for b in ring:
+        if b.role == "guidance":
+            if b.stage.warm:
+                out.append(b.stage)
+        elif b.role in ("sensor", "controller") and b.stage.kind == "device" and b.stage.warm:
+            out.append(b.stage)
+    return out
 
 
 def plan_line(segments: list[Segment], captured: bool) -> str:

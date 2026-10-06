@@ -149,8 +149,9 @@ class Measurement:
 # *intent* value, such as `Controls`/`Measurement`; the **controller** owns its own typed persistent
 # buffer and writes it in place from the setpoint in ``Controller.accept_setpoint(sp)``, a §6
 # value-mutation, so the next CUDA-graph replay picks it up with zero re-capture, per the capture contract.
-# The guidance, `MissionGuidance`, only flips that buffer, between graph replays, never inside the
-# captured region. Each controller narrows the union to the variant it supports and raises on the rest.
+# A guidance, `MissionGuidance`, writes its setpoint to the tick, and the loop makes that call, between
+# graph replays, never inside the captured region. Each controller narrows the union to the variant it
+# supports and raises on the rest.
 
 
 @dataclass(slots=True)

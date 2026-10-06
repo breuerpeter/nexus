@@ -59,9 +59,9 @@ def main() -> None:
         rerun=True,  # the .rrd is the demo's artifact
         renderer_factory=rtx_renderer(builder, cfg),  # the Kit peer, when the vehicle authors RTX sensors
     )
-    guidance = MissionGuidance(orch.controller, reached_m=0.3, final_hold_s=2.0, stop=orch.stop)
+    guidance = MissionGuidance(reached_m=0.3, final_hold_s=2.0)
     with na.Sim.from_orchestrator(orch, guidance=guidance) as sim:
-        sim.guidance.set_mission(WAYPOINTS)  # the guidance sequences these, advances on arrival, owns the stop
+        sim.guidance.set_mission(WAYPOINTS)  # the guidance sequences these, advances on arrival, ends the run
         sim.run()
 
     states = sim.physics[sim.base_body].history()

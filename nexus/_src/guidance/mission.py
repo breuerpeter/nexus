@@ -2,56 +2,39 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import TYPE_CHECKING
-
 import numpy as np
 
 from nexus._src.core.schema import PositionGoal, Setpoint
 
 from .base import Guidance
 
-if TYPE_CHECKING:
-    from nexus._src.core.interfaces import Controller
-
 
 class MissionGuidance(Guidance):
     """Sequence a mission of position goals: advance on arrival, and end the run after the final hold.
 
-    The stage runs each tick before the controller's: it detects arrival at the active goal, hands the
-    controller the next one through ``accept_setpoint``, and ends the run with ``stop`` once the final
-    goal has held for ``final_hold_s``. The guidance writes a single goal once, before the run; a
-    multi-goal mission advances between graph replays.
+    The stage runs each tick before the controller's: it detects arrival at the active goal, writes the
+    next goal to the tick, which the loop hands to the controller, and marks the tick done once the
+    final goal has held for ``final_hold_s``, which ends the run. The stage is a warm stage, so the
+    controller holds the first goal before its own first stage; a mission of two or more goals advances
+    between graph replays.
 
     A subclass, such as the policy example's geofence, overrides ``_tick``, the stage's work over the
-    vehicle's position and the sim time. It can read and set ``_done``, which freezes the sequencing,
-    call ``_stop`` when the flight handed one over, log through ``_logger``, and read ``_body_index``.
-    The rest is this class's own.
+    vehicle's position and the sim time. It can command a setpoint with ``_command``, read and set
+    ``_done``, which freezes the sequencing and ends the run, log through ``_logger``, and read
+    ``_body_index``. The rest is this class's own.
 
     Args:
-        controller: The controller that takes setpoints; it must expose ``accept_setpoint(Setpoint)``.
         reached_m: Advance to the next goal within this distance [m] of the active one.
         final_hold_s: Keep running this long, in sim time, after the vehicle reaches the final goal.
-        stop: A no-arg callable that ends the run, ``Orchestrator.stop``; ``None`` runs to ``max_steps``.
         body_index: The vehicle body whose position drives arrival detection; 0 is the base.
     """
 
-    def __init__(
-        self,
-        controller: Controller,
-        *,
-        reached_m: float = 0.3,
-        final_hold_s: float = 2.0,
-        stop: Callable[[], None] | None = None,
-        body_index: int = 0,
-    ):
-        super().__init__(controller, body_index=body_index)
+    def __init__(self, *, reached_m: float = 0.3, final_hold_s: float = 2.0, body_index: int = 0):
+        super().__init__(body_index=body_index)
         self._reached_m = float(reached_m)
         self._final_hold_s = float(final_hold_s)
-        self._stop = stop
-        self._stop_at: float | None = None  # sim time to end the run, armed on the final goal
-        self._done = False
-        self._announced = False  # log the first gold marker on the first tick, with a valid timeline
+        self._end_at: float | None = None  # sim time at which the mission is over, set on the final goal
+        self._announced = False  # log the first gold marker on the stage's first run, with a valid timeline
         # Mission telemetry, which post-run evaluation reads: the sim time the vehicle reached each goal.
         self.arrival_times: list[float] = []
 
@@ -66,8 +49,8 @@ class MissionGuidance(Guidance):
     def set_mission(self, setpoints: list[Setpoint]) -> None:
         """Set the mission; the guidance advances through it on arrival and owns the run's end.
 
-        Call before ``sim.run()``: the controller gets the first goal at once, and the guidance advances
-        on arrival.
+        Call before ``sim.run()``: the stage writes the first goal to the tick on its next run, the warm
+        pass of a run that hasn't started, and the guidance advances on arrival.
 
         Args:
             setpoints: Ordered mission setpoints, each a :class:`PositionGoal` or a bare ``(x, y, z)``
@@ -81,33 +64,27 @@ class MissionGuidance(Guidance):
             raise ValueError("set_mission needs at least one setpoint")
         self._mission = mission
         self._active = 0
-        self._stop_at = None
+        self._end_at = None
         self._done = False
         self._announced = False
         self.arrival_times = []
-        self._controller.accept_setpoint(mission[0])  # command the first goal in place, captured once
+        self._command(mission[0])
 
     def _tick(self, pos: np.ndarray, ts: float) -> None:
         if self._done:
             return
-        if not self._announced:  # first tick: show the whole mission, active gold, future dim
+        if not self._announced:  # first run: show the whole mission, active gold, future dim
             self._announced = True
             self._emit()
-        if self._stop_at is not None:  # final goal reached: hold a beat, then end the run
-            if ts >= self._stop_at:
+        if self._end_at is not None:  # final goal reached: hold a beat, then the mission is over
+            if ts >= self._end_at:
                 self._done = True
-                self._end()
             return
         if self._advance_on_arrival(pos, ts):
             if self._active < len(self._mission):
-                self._controller.accept_setpoint(self._mission[self._active])  # in-place, between replays
+                self._command(self._mission[self._active])
             else:
-                self._stop_at = ts + self._final_hold_s
-
-    def _end(self) -> None:
-        """End the run through ``stop``, when the flight handed one over."""
-        if self._stop is not None:
-            self._stop()
+                self._end_at = ts + self._final_hold_s
 
     def _advance_on_arrival(self, pos: np.ndarray, ts: float) -> bool:
         """Within ``reached_m`` of the active goal → record the arrival, advance, and recolor the markers:
