@@ -16,47 +16,45 @@ nose-first yaw: N=20 shooting nodes, HPIPM partial
 condensing, SQP Real Time Iteration (RTI) re-solved every control tick. The ruckig ``FlatnessReference``
 remains as the jerk-limited fallback planner.
 
-acados is **not** a plain pip dependency: it code-generates and compiles a C solver. Provision it once:
+acados is **not** a plain pip dependency: it's a C library this machine compiles, and it generates and
+compiles a C solver. Provision it once, then fly:
 
-    bash scripts/setup_acados.sh
+    uv run --extra acados -m nexus.examples acados_nmpc --provision   # fetches + builds acados
     uv run --extra acados -m nexus.examples acados_nmpc    # flies + asserts + writes the .rrd
 
-Needs a CUDA device, for the Newton sim, and a C compiler, for acados codegen. The first run compiles the
-generated solver, taking a few seconds; later runs reuse it.
+From an installed package the same two commands are ``python -m nexus.examples acados_nmpc``, with and
+without ``--provision``, after ``pip install 'nexus-sim[acados]'``. See :mod:`provision` for what the
+provisioning builds and where.
+
+Needs a CUDA device, for the Newton sim, and CMake and a C compiler, for acados and its codegen. The first
+flight compiles the generated solver, taking a few seconds; later flights reuse it.
 """
 
 from __future__ import annotations
 
-import os
 import sys
 
-# Self-configure acados to the location scripts/setup_acados.sh installs to, overridable via
-# ACADOS_SOURCE_DIR; the single default lives in examples._external. libacados.so dynamically loads
-# libhpipm.so / libblasfeo.so from the same lib dir, and the dynamic loader reads LD_LIBRARY_PATH only
-# at process start, so setting it via os.environ here isn't enough; the script re-execs once with it set,
-# a no-op if the caller already exported it.
-from nexus.examples._external import acados_dir
+# First, before the example builds anything: --provision builds acados and ends, and a machine that lacks the
+# acados extra or the acados build gets one message that names what to run. On a machine that has both,
+# require() makes the acados tree usable in this process, overridable via ACADOS_SOURCE_DIR.
+from nexus.examples.controllers.acados_nmpc.provision import provision, require
 
-ACADOS_SOURCE_DIR = os.environ.setdefault("ACADOS_SOURCE_DIR", str(acados_dir()))
-_acados_lib = os.path.join(ACADOS_SOURCE_DIR, "lib")
-if _acados_lib not in os.environ.get("LD_LIBRARY_PATH", "").split(os.pathsep):
-    os.environ["LD_LIBRARY_PATH"] = os.pathsep.join([_acados_lib, os.environ.get("LD_LIBRARY_PATH", "")]).strip(os.pathsep)  # fmt: skip
-    os.execv(sys.executable, [sys.executable, *sys.argv])
+if "--provision" in sys.argv[1:]:
+    provision()
+    sys.exit(0)
+try:
+    require()
+except RuntimeError as missing:
+    sys.exit(str(missing))
 
-# The preceding exec replaced the process the launcher configured: re-load the shared diagnostics
-# flags (--profile/…) that rode across in argv, a no-op when they're missing or already applied.
-from nexus._src.diagnostics import configure_from_argv  # noqa: E402
+import numpy as np
 
-configure_from_argv()
-
-import numpy as np  # noqa: E402
-
-import nexus as na  # noqa: E402
-from nexus._src.build.launch import resolve_scenario  # noqa: E402
-from nexus._src.config import LaunchConfig  # noqa: E402
-from nexus._src.rendering import rtx_renderer  # noqa: E402
-from nexus.examples._lib import dump_run  # noqa: E402
-from nexus.examples.controllers.acados_nmpc.assembly import build_acados_orchestrator  # noqa: E402
+import nexus as na
+from nexus._src.build.launch import resolve_scenario
+from nexus._src.config import LaunchConfig
+from nexus._src.rendering import rtx_renderer
+from nexus.examples._lib import dump_run
+from nexus.examples.controllers.acados_nmpc.assembly import build_acados_orchestrator
 
 # Everything this demo is, in one place: zero args by design, the configuration IS the example.
 VEHICLE = "astro_max_base"

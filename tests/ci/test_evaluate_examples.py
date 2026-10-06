@@ -416,6 +416,32 @@ def test_on_main_a_flight_that_fails_a_gate_carries_its_recording(tmp_path, monk
     assert (out / "pid.rrd").is_file()
 
 
+def test_with_skip_missing_the_harness_skips_an_example_whose_acados_is_not_provisioned(tmp_path, monkeypatch, capsys):
+    """The harness still skips or fails the example when acados isn't provisioned: given
+    `ACADOS_SOURCE_DIR` set to an empty directory, when `evaluate_examples.py --only acados_nmpc` runs
+    with `--skip-missing`, then it skips the example and exits 0.
+    """
+    monkeypatch.setenv("ACADOS_SOURCE_DIR", str(tmp_path / "acados"))
+
+    rc = _harness(monkeypatch, "--only", "acados_nmpc", "--skip-missing", "--out", str(tmp_path / "out"))
+
+    assert (rc, "acados_nmpc (skipped: acados not provisioned" in capsys.readouterr().out) == (0, True)
+
+
+def test_without_skip_missing_the_harness_fails_an_example_whose_acados_is_not_provisioned(
+    tmp_path, monkeypatch, capsys
+):
+    """The harness still skips or fails the example when acados isn't provisioned: given
+    `ACADOS_SOURCE_DIR` set to an empty directory, when `evaluate_examples.py --only acados_nmpc` runs
+    without `--skip-missing`, then it exits non-zero and names the provisioning.
+    """
+    monkeypatch.setenv("ACADOS_SOURCE_DIR", str(tmp_path / "acados"))
+
+    rc = _harness(monkeypatch, "--only", "acados_nmpc", "--out", str(tmp_path / "out"))
+
+    assert (rc, "acados_nmpc: requirement unmet: acados not provisioned" in capsys.readouterr().out) == (1, True)
+
+
 def test_on_main_a_flight_whose_run_fails_carries_its_recording(tmp_path, monkeypatch):
     """On main a flight whose run fails carries its recording: given a `pid` flight that wrote an `.rrd`
     and exited non-zero, when the harness runs it as a main run, then the output holds `pid.rrd`.

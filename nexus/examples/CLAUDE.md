@@ -21,6 +21,13 @@ in the script, and it records its flight `.rrd`. The launcher map is `_EXAMPLES`
   `single_body.py`. It also holds the reference planners in `reference.py` and `min_snap.py`, the
   train↔deploy observation source in `observation.py`, which `nexus-rl` also imports, and the
   evaluation dump in `eval_dump.py`.
+- The acados example provisions its own acados: `controllers/acados_nmpc/provision.py` fetches the
+  commit `acados.ref` pins and builds it under `~/.cache/nexus/acados/<sha>`, on
+  `python -m nexus.examples acados_nmpc --provision`. The `acados` extra holds PyPI packages only.
+  acados' Python interface, `acados_template`, isn't on PyPI: `provision.require()` puts it on
+  `sys.path` from the built tree and loads the tree's C libraries, so nothing sets
+  `LD_LIBRARY_PATH`. The extra's `casadi` bound comes from the pinned commit, so the two move
+  together.
 - The PX4 examples, `controllers/px4/flight.py`, `flight_manual.py`, and `mission.py`, are plain
   scripts against `sim.operator`. There is no separate flight driver. CI flies `flight.py`
   as `px4_sitl`.
