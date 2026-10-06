@@ -98,7 +98,7 @@ plugins:
   # build that deploys to Pages. Preview locally with `CI=true uv run --group docs mkdocs build`.
   - social:
       enabled: !ENV [CI, false]
-      cards_layout_dir: tools/logo
+      cards_layout_dir: scripts/logo
       cards_layout: nexus-card
       cards_layout_options:
         background_color: "#0b1622"
@@ -154,6 +154,7 @@ nav:
       - guide/contributing/index.md
       - guide/contributing/development.md
       - guide/contributing/documentation.md
+      - guide/contributing/scripts.md
       - guide/contributing/reporting-issues.md
       - guide/contributing/pull-requests.md
   - Design:

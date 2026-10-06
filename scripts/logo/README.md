@@ -11,7 +11,7 @@ restyle it without a design tool, in two themes:
 The GitHub README embeds `docs/assets/lockup-banner.svg`, see [Lockup & hero banner](#lockup--hero-banner).
 
 ```bash
-uv run --with fonttools python tools/logo/generate_wordmark.py
+uv run --with fonttools python scripts/logo/generate_wordmark.py
 ```
 
 ## What it produces
@@ -43,7 +43,7 @@ single self-contained SVG. The `.jpg` is base64-embedded so it renders inside an
 vector so the word mark is crisp at any size. No font or imaging libraries needed:
 
 ```bash
-uv run python tools/logo/generate_lockup.py   # run after the wordmark + subtitle
+uv run python scripts/logo/generate_lockup.py   # run after the wordmark + subtitle
 ```
 
 ## Favicon
@@ -54,7 +54,7 @@ matches the word mark. It renders the glyph to pixels once on a high-res master 
 to each icon size, so the proportions are the same at every resolution:
 
 ```bash
-uv run --with pillow python tools/logo/generate_favicon.py
+uv run --with pillow python scripts/logo/generate_favicon.py
 ```
 
 Edit its `CONFIG` block to change the letter, colors, padding, or the packed sizes.

@@ -98,12 +98,12 @@ NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FO
 DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-tools/logo/OFL.txt
+scripts/logo/OFL.txt
 ------------------
 
-The license of the Michroma font, tools/logo/Michroma-Regular.ttf
+The license of the Michroma font, scripts/logo/Michroma-Regular.ttf
 (https://github.com/googlefonts/Michroma-font), which the logo scripts render. The font is
 distributed under the SIL Open Font License, Version 1.1, whose text and copyright notice
-tools/logo/OFL.txt holds.
+scripts/logo/OFL.txt holds.
 
 Copyright 2011 The Michroma Project Authors

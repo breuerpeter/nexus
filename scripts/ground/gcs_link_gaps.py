@@ -13,9 +13,9 @@ Analyzes a tcpdump capture of the tablet<->BLACK TCP:5790 link and reports, in W
 Capture (either topology; run on BLACK, then fly until the symptom shows):
 
     sudo tcpdump -i any -w /tmp/gcs5790.pcap 'tcp port 5790'
-    uv run python tools/gcs_link_gaps.py /tmp/gcs5790.pcap
+    uv run python scripts/ground/gcs_link_gaps.py /tmp/gcs5790.pcap
 
-Live mode:  sudo tcpdump -i any -U -w - 'tcp port 5790' | uv run python tools/gcs_link_gaps.py -
+Live mode:  sudo tcpdump -i any -U -w - 'tcp port 5790' | uv run python scripts/ground/gcs_link_gaps.py -
 
 Tracks each TCP flow separately, since the Ground Control Station (GCS) and the Mavlink Router App both
 connect to :5790; the sticks flow is auto-detected as the inbound connection carrying MANUAL_CONTROL.
