@@ -2,9 +2,9 @@
 # kitless (no Kit extension manager loads it), so this is here for convention + discoverability.
 [package]
 version = "0.1.0"
-title = "Newton RL — Astro Max"
+title = "nexus RL — Astro Max"
 description = "Astro Max RL tasks on Isaac Lab over the standalone Newton physics backend (kitless)."
-authors = ["Freefly Systems Inc."]
+authors = ["Peter Breuer"]
 repository = "https://github.com/breuerpeter/nexus"
 category = "nexus"
 keywords = ["rl", "isaac lab", "newton", "drone", "quadrotor"]

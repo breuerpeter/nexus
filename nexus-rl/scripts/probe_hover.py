@@ -16,7 +16,7 @@ import torch
 from isaaclab_tasks.utils import load_cfg_from_registry
 from isaaclab_tasks.utils.sim_launcher import compute_kit_requirements, launch_simulation
 
-TASK = "Newton-AstroMax-GoTo-Direct-v0"
+TASK = "Nexus-AstroMax-GoTo-Direct-v0"
 
 
 def main() -> None:

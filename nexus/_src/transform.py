@@ -1,8 +1,7 @@
 """The *one* canonical transform between the world frame and North East Down (NED) / Forward Right
 Down (FRD), shared by every sensor.
 
-This module is the single home for the frame conventions the bridge once
-scattered across ``mavlink_interface``. ``world_to_body`` = R(q)^-1·v unifies the world<->body
+This module is the single home for the frame conventions. ``world_to_body`` = R(q)^-1·v unifies the world<->body
 *rotation*, which the Inertial Measurement Unit (IMU), gyro and mag use, and the world<->NED
 *axis map* below is the one definition the Warp sensor kernels mirror.
 
@@ -10,7 +9,7 @@ The frame contract: the Newton world is right-handed with z UP: X = North,
 Y = West, Z = Up. So world to NED is n = +x, e = -y, d = -z, a proper
 rotation satisfying n x e = d.
 
-The bridge this code came from encoded that map three mutually inconsistent ways:
+This map was once encoded three mutually inconsistent ways:
 Global Positioning System (GPS) velocity said Y=West, ``ve=-vy``, while the magnetometer and the
 GPS lat/lon mapping said Y=East, which is a reflection, not a rotation. Only the velocity map
 was right. The IMU chain is what pins the proper frame, because aligning the velocity map

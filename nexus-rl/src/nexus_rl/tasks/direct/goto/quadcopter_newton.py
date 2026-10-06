@@ -138,7 +138,7 @@ class QuadcopterNewtonEnv(QuadcopterEnv):
         self._body_inertia_diag = inertia[[0, 4, 8]].to(self.device).view(1, 3)
         # CTBR params for the per-rotor subclass's shared mixer, ctbr_to_cmd_batched: the same mixer the
         # deploy policy controller runs, so training and deploy meet the same dynamics, byte for byte, with no
-        # torch reimplementation, FR-7. Constants are the NUM_SUBSTEPS-diluted training twins of the deploy
+        # torch reimplementation. Constants are the NUM_SUBSTEPS-diluted training twins of the deploy
         # values, thrust_to_weight=1.9*NUM_SUBSTEPS and _RATE_GAIN; the solver integrates the wrench over
         # NUM_SUBSTEPS substeps.
         idiag = self._body_inertia_diag.flatten().tolist()
@@ -167,7 +167,7 @@ class QuadcopterNewtonEnv(QuadcopterEnv):
     def _get_observations(self) -> dict:
         # Reuse the single shared obs-from-state builder, nexus.examples._lib.observation, the same
         # code the deploy controller/sensor calls, so the policy trains on observations that match those
-        # it gets in the standalone runtime bit for bit: FR-7 / C-1 round-trip parity.
+        # it gets in the standalone runtime, bit for bit.
         # root_quat_w is native Newton, in x, y, z, w order, the convention observation_from_state expects.
         d = self._robot.data
         obs = observation_from_state(

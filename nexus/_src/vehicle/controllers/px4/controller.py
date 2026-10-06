@@ -1,11 +1,10 @@
-"""Px4MavlinkController: the loop face of the PX4 peer, architecture.md §2 and §6.
+"""Px4MavlinkController: the loop face of the PX4 peer.
 
 Its work is three host stages, ``read``, ``truth`` and ``exchange``: ``exchange(measurement, t)`` is the
 blocking lockstep that paces the loop: opens a tcpin TCP server on :4560, which PX4 dials into as client with no
-HEARTBEAT, serializes the typed Measurement into HIL_SENSOR and HIL_GPS with the encoders lifted verbatim from
-the bridge, and the base body's true state, which ``truth`` reads, into HIL_STATE_QUATERNION, then blocks on
-HIL_ACTUATOR_CONTROLS with a run-ending timeout. The sensors already derive the Measurement in their own axes;
-this layer only encodes wire units and moves bytes.
+HEARTBEAT, serializes the typed Measurement into HIL_SENSOR and HIL_GPS, and the base body's true state, which
+``truth`` reads, into HIL_STATE_QUATERNION, then blocks on HIL_ACTUATOR_CONTROLS with a run-ending timeout. The
+sensors already derive the Measurement in their own axes; this layer only encodes wire units and moves bytes.
 
 The autopilot itself is a peer of the run, not of this controller: the build starts the PX4
 Software In The Loop (SITL) container, :class:`~nexus._src.peers.px4_sitl.runner.Px4Sitl`,
@@ -22,7 +21,7 @@ import os
 
 import numpy as np
 
-# Set the MAVLink dialect before importing mavutil; this matches the bridge.
+# Set the MAVLink 2 common dialect before importing mavutil, which reads it at import.
 os.environ["MAVLINK20"] = "1"
 os.environ["MAVLINK_DIALECT"] = "common"
 

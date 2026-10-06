@@ -1,6 +1,6 @@
-"""Physics plugin backed by NVIDIA Newton, per architecture.md §2 and §5.
+"""Physics plugin backed by NVIDIA Newton.
 
-Lifts the bridge's model build + solver + double-buffered step + the settle after
+Owns the model build + solver + double-buffered step + the settle after
 placing the vehicle. Consumes a per-body Wrench at the shared ``state.body_f`` buffer, which the force
 elements add to before ``step``, and the control inputs the command stages write into the model's
 ``newton.Control``; ``step`` steps every Newton actuator the vehicle declares, then the solver.
@@ -30,11 +30,11 @@ standalone Model Predictive Control (MPC) examples drive the same ``reset``/``cl
 The reset / step paths branch on ``model.body_count``: a single collapsed body uses maximal
 coordinates, ``body_q``, with no joint control; the articulated vehicle uses generalized
 coordinates, ``joint_q``, + the joint control buffer. Vehicle USDs follow FRD authoring, body +z down,
-and spawned free they sit upright; see ``docs/conventions.md``.
+and spawned free they sit upright; see ``docs/design/conventions.md``.
 
-Faithful detail preserved: ``eval_fk`` is intentionally not re-run after the actuator
+``eval_fk`` is intentionally not re-run after the actuator
 joint update, so ``update_body_f`` reads the earlier step's joint pose, a
-one-step lag in thrust direction: exactly the bridge's behavior.
+one-step lag in thrust direction.
 
 Two device stages, ``clear`` and ``step``: the collide + solver.step + double-buffer ping-pong
 is a static launch over persistent buffers, so it joins a CUDA graph with the command and force stages
@@ -341,7 +341,7 @@ class NewtonPhysics:
 
     def _settle(self) -> None:
         """Step physics with zero forces until the body settles to rest at the
-        start origin, the bridge stabilize: so PX4 establishes lockstep / Global
+        start origin, so PX4 establishes lockstep / Global
         Positioning System (GPS) origin at the resting pose, not the start height.
         """
         linear_vel = float("inf")

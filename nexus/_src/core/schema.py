@@ -1,4 +1,4 @@
-"""The neutral, typed vocabulary that flows between components, as architecture.md §1 describes.
+"""The neutral, typed vocabulary that flows between components.
 
 A *logical* schema independent of any array library. For the eager slice the
 hot-loop state is the physics backend's live ``newton.State``, typed under ``TYPE_CHECKING``

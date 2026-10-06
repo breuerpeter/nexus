@@ -1,4 +1,4 @@
-"""Narrow, typed component Protocols and the stage contract, per architecture.md §2.
+"""Narrow, typed component Protocols and the stage contract.
 
 Side-effect-light contracts so each component is independently testable and
 fault-wrappable. Every loop component states its per-tick work as a list of
@@ -187,10 +187,10 @@ class Renderer(Protocol):
 
 class Recorder(Protocol):
     def log(self, t: SimTime, state: newton.State) -> None:
-        """Hand one tick's state to the logger. Output-only, architecture.md §10.
+        """Hand one tick's state to the logger. Output-only.
 
         The minimal per-tick seam: the core loop calls this so something can log the
-        evolving state, for example newton-logging drives NVIDIA Newton's ``ViewerRerun.log_state``,
+        evolving state, for example :mod:`nexus._src.logging` drives NVIDIA Newton's ``ViewerRerun.log_state``,
         without core depending on Rerun. Components log their own *events* through the
         ``newton`` logger directly.
         """

@@ -67,7 +67,7 @@ The **RL training app** in [`nexus-rl/`](../nexus-rl/) no longer needs a contain
 **on the host without Kit** as a **separate `uv` project**. `uv run --project nexus-rl` installs
 Isaac Lab on the Newton backend on demand, in its own virtual environment, and trains on the
 framework's own Newton and Warp. That works via an editable path dependency on `nexus`, so
-training + the standalone deploy share one Newton, for better FR-7 parity. See that app's README.
+training + the standalone deploy share one Newton, so a trained policy flies the same dynamics it trained on. See that app's README.
 [`scripts/ci/run_rl_example.sh`](../scripts/ci/run_rl_example.sh) runs the full train → record →
 deploy → regression pipeline host-side. Historically this used NVIDIA's `nvcr.io/nvidia/isaac-lab`
 image, which it no longer needs.

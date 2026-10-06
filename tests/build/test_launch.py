@@ -1,9 +1,9 @@
-"""The launch glue: resolve a vehicle Universal Scene Description (USD) via newton-config + route by
+"""The launch glue: resolve a vehicle Universal Scene Description (USD) via nexus._src.config + route by
 control kind.
 
 Exercises the resolution + builder-construction + routing seam, not the heavy NewtonPhysics build,
 which needs a real newton-loadable USD asset. The resolved USD is a file:// asset, sha-verified by
-the real newton-assets resolver.
+the real asset resolver.
 """
 
 import hashlib

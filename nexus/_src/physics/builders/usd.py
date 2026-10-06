@@ -97,7 +97,7 @@ class USDBuilder(BuilderBase):
     """Build a vehicle from a **USD** asset: the unified vehicle definition.
 
     The resolved, content-addressed and sha-verified USD path arrives as ``cfg['usd_path']``. In
-    production that path comes from ``newton-config``'s resolver, so the *same* USD asset serves
+    production that path comes from :mod:`nexus._src.config`'s resolver, so the *same* USD asset serves
     every consumer: the standalone runtime, here, via ``ModelBuilder.add_usd``; the Isaac **Sim**
     runtime, RTX and photoreal, which also runs Newton physics, so it can build from the *same* stage
     via ``add_usd(source=stage)`` and then reference the USD onto the Kit stage for

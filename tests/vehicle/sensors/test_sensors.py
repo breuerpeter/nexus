@@ -1,5 +1,5 @@
-"""Warp-native sensors, Stage 3: math parity compared to the canonical ``transform`` oracle with noise
-off, and run-to-run determinism on the Warp random number generator, the re-baselined NFR-1
+"""Warp-native sensors: math parity compared to the canonical ``transform`` oracle with noise
+off, and run-to-run determinism on the Warp random number generator, the per-sensor
 noise field.
 """
 
