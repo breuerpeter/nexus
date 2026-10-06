@@ -3,13 +3,13 @@
 The operator reads input, a script/API now, a joystick, Human Interface Device (HID) or
 Ground Control Station (GCS) later, and converts it to autopilot commands. It's **never a node
 inside the captured graph**: it lives *outside* the device hot loop, as the command source. The
-out-of-process implementations, ``Px4Offboard`` over MAVLink, are literally remote; the in-process
-one, ``InProcessOperator``, runs in-process but still *between* graph replays: it only flips the
-controller's setpoint buffer, which the in-loop controller reads. So capturability survives intact,
-per the capture contract.
+in-process one, ``InProcessOperator``, runs in-process but still *between* graph replays: it only
+flips the controller's setpoint buffer, which the in-loop controller reads. So capturability
+survives intact, per the capture contract. An autopilot in a peer takes no operator: a script
+commands it over a link it opens itself, on an address from the run's port map.
 
 The protocol is synchronous/transport-agnostic, uniform with ``Sim``, with no asyncio imposed on
-callers; ``Px4Offboard`` hides MAVLink's async/streaming nature behind a background thread.
+callers.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ class Operator(Protocol):
 
         Returns:
             Implementation-specific and not a confirmation: ``InProcessOperator`` returns ``True``,
-            since it's always armed when flying; ``Px4Offboard`` returns nothing.
+            since it's always armed when flying.
         """
         ...
 
@@ -136,7 +136,7 @@ class BaseOperator:
     """Shared operator state: the active mission + ``/operator`` logging.
 
     Subclasses supply the **transport**: ``InProcessOperator`` flips the controller's setpoint
-    buffer directly; ``Px4Offboard`` speaks MAVLink. The mission is a list of :class:`PositionGoal`;
+    buffer directly. The mission is a list of :class:`PositionGoal`;
     it also accepts raw 3-tuples / ``np.ndarray`` positions and normalizes them, so a script can pass
     bare waypoints. Logging is the component ``log(t, logger)`` step, which the orchestrator fans out only
     when a ``Logger`` is present; output-only, the same seam every component uses.
@@ -198,8 +198,8 @@ class BaseOperator:
 def wait_until(predicate: Callable[[], bool], timeout: float, poll: float = 0.05) -> None:
     """Block until ``predicate()`` is true, or raise ``TimeoutError``.
 
-    A wall-clock poll, so the predicate's source must refresh itself: it suits operator telemetry,
-    say ``lambda: not operator.is_armed()``, which ``Px4Offboard``'s pump thread keeps fresh. A
+    A wall-clock poll, so the predicate's source must refresh itself: it suits telemetry that a
+    thread of its own keeps fresh, say ``lambda: not client.is_armed()`` on a MAVLink client. A
     sim-state predicate needs ``Sim.wait_until``, which steps the sim; nothing else advances it.
 
     Args:

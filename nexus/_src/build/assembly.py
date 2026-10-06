@@ -183,6 +183,7 @@ def build_orchestrator(
     debug: bool = False,
     renderer_factory=None,
     peers=(),
+    ports=None,
     preroll_timeout: float = 30.0,
     max_steps: int | None = None,
     settings: dict | None = None,
@@ -195,6 +196,7 @@ def build_orchestrator(
     used after the physics build, since the render poses stage prims from the model's bodies;
     ``None`` renders nothing. ``components`` resolves each sensor's schema to its class.
     ``peers`` are the processes the build started for this run, which the loop stops when the run ends.
+    ``ports`` is the run's port map, the links that leave the run, which ``Sim.ports`` exposes.
     ``settings`` is the run's effective configuration, which the loop keeps for a caller to read back
     and the logger shows in the viewer's Settings tab; the launch glue passes the tested-config receipt.
     ``preroll_timeout`` covers a host-boundary controller's boot, since an autopilot in a container
@@ -223,6 +225,7 @@ def build_orchestrator(
         logger=a.logger,
         renderer=renderer,
         peers=peers,
+        ports=ports,
         preroll_timeout=preroll_timeout,
         max_steps=max_steps,
         settings=settings,

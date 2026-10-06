@@ -1,7 +1,7 @@
-"""Px4Offboard command encoding against a fake mavutil connection, with no real PX4.
+"""OffboardClient command encoding against a fake mavutil connection, with no real PX4.
 
 The tests bypass the background pump thread, setting _mav/_sysid/_compid directly, and assert the
-MAVLink messages the operator verbs emit; the flight itself is the integration proof.
+MAVLink messages the client's verbs emit; the flight itself is the integration proof.
 
 The verbs are **requests**: they lodge intent and return, and the pump puts the commands on
 the wire. So a test that wants to see bytes drives ``_service_requests`` itself, with an
@@ -14,8 +14,8 @@ import time
 
 import pytest
 
-from nexus._src.operator import px4_offboard as px4mod
-from nexus._src.operator.qgc_plan import MissionItem
+from nexus._src.peers.px4_sitl import offboard as px4mod
+from nexus._src.peers.px4_sitl.qgc_plan import MissionItem
 
 
 class _FakeMav:
@@ -53,7 +53,7 @@ class _FakeConn:
 
 
 def _pilot():
-    p = px4mod.Px4Offboard()
+    p = px4mod.OffboardClient()
     p._mav = _FakeConn()
     p._sysid, p._compid = 1, 1
     return p
@@ -290,10 +290,10 @@ def test_decode_mode_roundtrip():
 
     # POSCTL custom_mode: main=3 in byte 2
     custom = 3 << 16
-    assert px4mod.Px4Offboard._decode_mode(custom) == "Position"
+    assert px4mod.OffboardClient._decode_mode(custom) == "Position"
     # Land mode: main=4, sub=6
     custom = (4 << 16) | (6 << 24)
-    assert px4mod.Px4Offboard._decode_mode(custom) == "Land"
+    assert px4mod.OffboardClient._decode_mode(custom) == "Land"
     _ = mavutil  # keep import used
 
 
@@ -312,7 +312,7 @@ def test_takeoff_forwards_mis_takeoff_alt_and_sets_mode():
 
 
 def test_import_nexus_pins_common_mavlink_dialect():
-    # Regression, caught only by a live flight: `import nexus` eagerly imports Px4Offboard,
+    # Regression, caught only by a live flight: `import nexus` eagerly imports OffboardClient,
     # which can be the *first* pymavlink import. If it doesn't pin the common dialect, the
     # Hardware In The Loop (HIL) controller's later dialect setting is a cached no-op and HIL_GPS
     # loses its `id`/`yaw` fields, crashing the lockstep loop. Run in a fresh process so import order
@@ -803,3 +803,19 @@ def test_start_mission_sets_the_mode_before_arming():
     p._on_msg(_FakeMsg("MISSION_CURRENT", seq=0))  # PX4 is at the first item, which the arm also needs
     _service(p, now=t0 + 20.0, state=st)
     assert len(_sent(p, arm_cmd)) == 1
+
+
+def test_entering_the_client_opens_the_link_and_returns_before_px4_answers():
+    """Entering the client opens the link and returns at once, before PX4 answers.
+
+    PX4 runs on the sim's clock, so its heartbeat comes only while the caller steps the sim: a
+    `with` that slept for it would stop the sim and never see one. Given a client on a port nothing
+    sends to, when a script enters it, then the entry returns within 5 s, well under the 30 s a
+    wait for the heartbeat took, and the client reports no connection yet.
+    """
+    t0 = time.monotonic()
+    with px4mod.OffboardClient("udpin:127.0.0.1:0") as client:
+        entered_in = time.monotonic() - t0
+        connected = client.connected
+
+    assert (entered_in < 5.0, connected) == (True, False)

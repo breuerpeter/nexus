@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from nexus._src.core.interfaces import Controller
 
 # A verb this command source doesn't model: an in-process autopilot has no arming/RC/mode plane;
-# it flies on accept_setpoint. Px4Offboard models the full PX4 plane.
+# it flies on accept_setpoint. PX4's own offboard client models the full PX4 plane.
 _PX4_ONLY = "{verb} is a PX4 operator verb; an in-process autopilot flies via goto/set_mission"
 
 
@@ -61,7 +61,7 @@ class InProcessOperator(BaseOperator):
         if not hasattr(controller, "accept_setpoint"):
             raise TypeError(
                 f"{type(controller).__name__} has no accept_setpoint: it is not an in-process controller "
-                "(PX4 is commanded over MAVLink via Px4Offboard, not via InProcessOperator)"
+                "(a script commands PX4 over its offboard link, not via InProcessOperator)"
             )
         self._controller = controller
         self._reached_m = float(reached_m)

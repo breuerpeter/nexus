@@ -33,8 +33,9 @@ import warp as wp
 
 from nexus._src.config import LaunchConfig, Px4Spec, Registry, ResolvedLaunch, Runtime, resolve
 from nexus._src.core import Orchestrator
+from nexus._src.core.ports import PortMap
 from nexus._src.core.registry import ComponentRegistry
-from nexus._src.peers.px4_sitl import HIL_PORT
+from nexus._src.peers.px4_sitl import HIL_PORT, OFFBOARD_PORT
 from nexus._src.physics import USDBuilder
 from nexus._src.rendering import rtx_renderer
 from nexus._src.usd.reader import read_declarations
@@ -215,6 +216,7 @@ def build_from_launch(
             vehicle_builder=builder,
             controller=controller,
             peers=started,
+            ports=_ports(instance, started),
             rerun=launch.output.log or launch.output.view,
             viewer=launch.output.view,
             debug=launch.output.debug,
@@ -233,6 +235,21 @@ def build_from_launch(
         if renderer_factory is not None:
             renderer_factory.close()
         raise
+
+
+def _ports(instance: int, peers: list) -> PortMap:
+    """The run's port map on PX4 instance ``instance``: the links that leave the run, which a script
+    opens its own client on. The run owns every address: the build made the HIL link's end inside
+    the run from the same instance, and names here the offboard link for ``nexus.px4.OffboardClient``:
+    the port ``OFFBOARD_PORT + instance``, over the User Datagram Protocol (UDP), and the MAVLink
+    system id ``instance + 1``. The fake PX4 answers the HIL link alone, so a run against it names
+    no offboard link, and a lookup of it says why.
+    """
+    from nexus._src.peers.px4_sitl.fake import Px4Fake  # pymavlink: as late as the runner's docker
+
+    if any(isinstance(peer, Px4Fake) for peer in peers):
+        return PortMap(missing={"offboard": "this run flies the fake PX4, which answers only the HIL link"})
+    return PortMap({"offboard": {"protocol": "udp", "port": OFFBOARD_PORT + instance, "system_id": instance + 1}})
 
 
 def _start_px4(cls: Callable, resolved: ResolvedLaunch, instance: int, airframe: str, claim: IO):
