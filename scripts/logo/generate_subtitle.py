@@ -6,7 +6,7 @@ vendored Michroma, under the Open Font License (OFL), and emitted as outline pat
 so GitHub / the docs site render it without the font installed. It sits directly under the
 wordmark in the README, so it ships in the same light + dark pair::
 
-    uv run --with fonttools python tools/logo/generate_subtitle.py
+    uv run --with fonttools python scripts/logo/generate_subtitle.py
 
 Edit the CONFIG block to change the wording, tracking, or colours.
 """

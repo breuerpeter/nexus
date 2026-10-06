@@ -3,7 +3,7 @@
 The script renders the logo from the Michroma font, vendored beside this script under the
 Open Font License (OFL), so anyone can regenerate or restyle it without a design tool::
 
-    uv run --with fonttools python tools/logo/generate_wordmark.py
+    uv run --with fonttools python scripts/logo/generate_wordmark.py
 
 Edit the CONFIG block below to change the word or its colours. The word is Michroma at 1:1,
 the same size and stroke weight as the tagline, and the canvas is its ink box, so the letters

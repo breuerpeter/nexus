@@ -27,10 +27,10 @@ the GCS's receiver-1 routing key.
 
 Run (topology A, any time after mavp2p is up; reconnects until then):
 
-    uv run python tools/camera_advertiser.py                     # a two-camera vehicle: cam1 + cam2
-    uv run python tools/camera_advertiser.py --pip               # both at once via the thermal slot
-    uv run python tools/camera_advertiser.py --streams cam1      # single-camera vehicles
-    uv run python tools/camera_advertiser.py --streams cam1,ir1:640x512@24   # EO + a real IR feed
+    uv run python scripts/ground/camera_advertiser.py                     # a two-camera vehicle: cam1 + cam2
+    uv run python scripts/ground/camera_advertiser.py --pip               # both at once via the thermal slot
+    uv run python scripts/ground/camera_advertiser.py --streams cam1      # single-camera vehicles
+    uv run python scripts/ground/camera_advertiser.py --streams cam1,ir1:640x512@24   # EO + a real IR feed
 
 The advertised WxH@FPS are what the GCS is TOLD, not what it receives, so give a stream that is not
 1280x720@30 its own suffix; the thermal one returns at the LWIR core size, 640x512@24.

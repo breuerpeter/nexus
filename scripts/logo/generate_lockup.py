@@ -5,9 +5,9 @@ Run *after* ``generate_wordmark.py`` and ``generate_subtitle.py``: this derives 
 canonical outputs, ``logo*.svg`` + ``subtitle*.svg``, rather than re-laying the
 font, so the lockup can never drift from the standalone marks::
 
-    uv run --with fonttools python tools/logo/generate_wordmark.py
-    uv run --with fonttools python tools/logo/generate_subtitle.py
-    uv run python tools/logo/generate_lockup.py        # no font needed here
+    uv run --with fonttools python scripts/logo/generate_wordmark.py
+    uv run --with fonttools python scripts/logo/generate_subtitle.py
+    uv run python scripts/logo/generate_lockup.py        # no font needed here
 
 Both marks render at the *same* width, the wordmark at its native scale, the
 tagline scaled by wordmark_width / tagline_width, stacked with a fixed gap. The

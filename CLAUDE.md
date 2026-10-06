@@ -59,6 +59,9 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
   `docs/reference/api/logging.md` states the rule. A component never spells its path: the
   orchestrator hands it a `ScopedLogger` at `set_logger`, and the component logs only its own
   row's name, such as `horizon`. The Recorder's channel keys are the same paths below the root.
+- **Every script lives under `scripts/`**, and `docs/guide/contributing/scripts.md` or another page
+  names each one a reader runs, `tests/docs/test_scripts.py`. `scripts/ground/` is the one
+  exception: #42 and #43 delete it.
 - `docs/guide/running.md` documents **the decoupled Software In The Loop (SITL) flight workflow**,
   nexus sim plus PX4 SITL plus QGroundControl, and its port map and gotchas.
 - **Lint and format:** `uvx pre-commit run -a`, which runs ruff. Config in

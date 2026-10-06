@@ -5,7 +5,7 @@ A small companion to ``generate_wordmark.py``: the same vendored Michroma, under
 License (OFL), rendered as a single lowercase ``n``, white on a solid-black square, and packed as a
 multi-resolution ``.ico`` so the browser-tab mark matches the wordmark. Regenerate with::
 
-    uv run --with pillow python tools/logo/generate_favicon.py
+    uv run --with pillow python scripts/logo/generate_favicon.py
 
 The script rasterises the glyph once on a high-resolution master canvas, centered on its ink
 bounds, and downsamples it with LANCZOS to each icon size, so its proportions are the same at

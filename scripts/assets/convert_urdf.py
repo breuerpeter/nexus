@@ -3,12 +3,11 @@ Isaac Lab's UrdfConverter. Run once; the USD is a generated artifact Isaac Lab s
 Max RL example, ``nexus`` and ``examples/isaac-lab``, spawns from this USD, which ships in the
 asset registry, so this is a **rare offline regeneration step**, not part of the train/deploy flow.
 It needs the **full Isaac Sim**, because Isaac Lab's URDF importer is Kit/GUI-based, so the kitless
-Newton install can't run it, which is why it lives here rather than in nexus's host-side ``uv``
-example. See README.md for how to run it.
+Newton install can't run it. The Scripts page of the docs says how to run it.
 
 Usage, inside an Isaac Lab image that bundles Isaac Sim, for example nvcr.io/nvidia/isaac-lab:3.0.0-beta2:
     URDF=/path/to/astro_max.urdf OUT=/work/out \
-      /isaac-sim/python.sh tools/convert_urdf.py
+      /isaac-sim/python.sh scripts/assets/convert_urdf.py
 """
 
 import os

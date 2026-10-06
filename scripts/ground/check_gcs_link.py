@@ -4,7 +4,7 @@
 
 Connects as a GCS over TCP, sends a heartbeat so PX4 learns the peer, then
 asserts a PX4 HEARTBEAT and an ATTITUDE arrive within the timeout. Exit 0 on
-success, 1 on timeout. Usage: uv run python tools/check_gcs_link.py [host:port]
+success, 1 on timeout. Usage: uv run python scripts/ground/check_gcs_link.py [host:port]
 """
 
 import sys

@@ -14,7 +14,8 @@ line here, so no checkout carries an account's name.
   its own file through `kit_container.py` and boots Kit there. The boot call sits in the script
   itself, and `tests/peers/kit/test_kit_single_door.py` allows it in these three files and the peer program
   only. A sibling module imports as `from scene_root import …`: the script's folder is on the path
-  on both sides, and the working folder isn't.
+  on both sides, and the working folder isn't. `convert_urdf.py` isn't one of them: it runs by
+  hand inside an Isaac Lab image, not through `kit_container.py`.
 - Uploads are **manual**. Prepare an asset with
   `uv run python scripts/assets/prepare_asset_upload.py {--vehicle|--scene} <usd> [--rotate-x 180]`.
   It sha256s the USD, prints where to upload it and the `nexus_sim/_src/config/registry.yaml`
