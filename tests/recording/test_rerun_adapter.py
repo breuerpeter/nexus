@@ -35,17 +35,18 @@ class _FakeChannel:
 
 
 def test_dump_writes_one_series_entity_per_declared_quantity(tmp_path, rrd_entities):
-    """Every declared field of every channel lands at ``recording/<channel key>/<field>``."""
+    """Every declared field of every channel lands at ``sim/<channel key>/series/<field>``."""
     from nexus._src.logging import Logger
     from nexus._src.recording.rerun_adapter import dump
 
     rrd = str(tmp_path / "dump.rrd")
     rl = Logger(model=None, serve=False, record_to_rrd=rrd)
-    dump({"physics/body/body_frd": _FakeChannel()}, rl)
+    dump({"vehicle/body/body_frd": _FakeChannel()}, rl)
     rl.close()
 
     paths = rrd_entities(rrd)
-    assert {"/recording/physics/body/body_frd/position", "/recording/physics/body/body_frd/q"} <= set(paths), paths
+    series = {"/sim/vehicle/body/body_frd/series/position", "/sim/vehicle/body/body_frd/series/q"}
+    assert series <= set(paths), paths
 
 
 def test_dump_draws_the_flown_path_from_the_airframe_channel(tmp_path, rrd_entities):
@@ -55,7 +56,7 @@ def test_dump_draws_the_flown_path_from_the_airframe_channel(tmp_path, rrd_entit
 
     rrd = str(tmp_path / "trail.rrd")
     rl = Logger(model=None, serve=False, record_to_rrd=rrd)
-    dump({"physics/body/body_frd": _FakeChannel()}, rl, base_body=_FakeChannel())
+    dump({"vehicle/body/body_frd": _FakeChannel()}, rl, base_body=_FakeChannel())
     rl.close()
 
     assert f"/{TRAJECTORY_ENTITY}" in rrd_entities(rrd)
@@ -83,7 +84,7 @@ def test_the_flown_path_carries_the_airframe_channel_positions():
 
     base_body = _FakeChannel()
     sink = _Sink()
-    dump({"physics/body/body_frd": base_body}, sink, base_body=base_body)
+    dump({"vehicle/body/body_frd": base_body}, sink, base_body=base_body)
 
     assert np.array_equal(sink.trail[1], base_body.history_arrays()["position"])
 
@@ -96,6 +97,6 @@ def test_the_flown_path_carries_the_recorded_times():
 
     base_body = _FakeChannel()
     sink = _Sink()
-    dump({"physics/body/body_frd": base_body}, sink, base_body=base_body)
+    dump({"vehicle/body/body_frd": base_body}, sink, base_body=base_body)
 
     assert np.array_equal(sink.trail[2], base_body.history_arrays()["t"])

@@ -12,22 +12,10 @@ exactly as with ``Logger``.
 from __future__ import annotations
 
 import threading
-from collections import Counter
 from collections.abc import Callable, Mapping
 
 import numpy as np
 import warp as wp
-
-
-def leaf_keys(labels: list[str]) -> list[str]:
-    """Friendly channel keys from full model labels, often Universal Scene Description (USD) prim paths
-    such as ``/astro_max/Geometry/body_frd``: the leaf name after the last ``/`` when it's unique across
-    the set, as in ``body_frd`` or ``rotor_1``, else the full label, so a leaf collision never silently
-    aliases two entities. The ``sim.physics[...]`` keys are exactly these.
-    """
-    leaves = [str(lbl).rsplit("/", 1)[-1] for lbl in labels]
-    counts = Counter(leaves)
-    return [leaf if counts[leaf] == 1 else str(lbl) for lbl, leaf in zip(labels, leaves, strict=True)]
 
 
 class RecordChannel:
@@ -46,8 +34,8 @@ class RecordChannel:
     columns after the implicit time column 0, for example ``(("position", 3), ("quat_xyzw", 4), …)``. It's
     the single declaration everything downstream derives from: :meth:`history_arrays`, the vectorized
     per-quantity readback, and the Rerun debug time-series dump/tab tree. ``source`` names the
-    registering implementation class, ``ImuSensor`` say: kind metadata for tools; the channel key stays
-    the flat instance name, so redundant future instances are siblings, as in ``sensors/imu_bosch``.
+    registering implementation class, ``ImuSensor`` say: kind metadata for tools; the channel key ends
+    in the flat instance name, so redundant future instances are siblings, as in ``vehicle/sensors/imu_bosch``.
     """
 
     def __init__(
@@ -193,9 +181,10 @@ class ChannelMap(Mapping):
     """A read-only, name-keyed view over a subset of a Recorder's channels: the host-facing surface.
 
     ``Sim.physics`` and ``Sim.sensors`` are ``ChannelMap``s over the flat ``Recorder.channels`` dict,
-    selected by component-kind key prefix and addressed by the bare entity name:
-    ``sim.physics["rotor_1_joint"]`` resolves ``channels["physics/joint/rotor_1_joint"]``, and
-    ``Sim.physics`` spans both ``physics/body/`` and ``physics/joint/``. A lookup returns the
+    selected by key prefix and addressed by the bare entity name. A channel's key is its instance's
+    path below the process root, the path its series take in a recording:
+    ``sim.physics["rotor_1_joint"]`` resolves ``channels["vehicle/joints/rotor_1_joint"]``, and
+    ``Sim.physics`` spans both ``vehicle/body/`` and ``vehicle/joints/``. A lookup returns the
     :class:`RecordChannel`, so the caller picks ``.latest()`` / ``.history()``.
     """
 

@@ -27,8 +27,8 @@ _LAZY_EXPORTS = {
     "Orchestrator": "nexus._src.core",
     "SimTime": "nexus._src.core",
     # The framework logger. Examples report results through it, with no bare prints: always the
-    # console on stderr, plus the recording's logs/sim panel when a Logger is active, through the
-    # teed handler.
+    # console on stderr, plus the recording's Logs pane, at sim/logs/<module>, when a Logger is active,
+    # through the teed handler.
     "logger": "nexus._src.core",
 }
 

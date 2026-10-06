@@ -40,7 +40,7 @@ class _FakeOrch:
 
     def attach_recorder(self, recorder):
         # mimic the orchestrator handing physics the Recorder: register the airframe body channel
-        self._rec = recorder.channel("physics/body/body_frd", width=BODY_WIDTH, decode=decode_body)
+        self._rec = recorder.channel("vehicle/body/body_frd", width=BODY_WIDTH, decode=decode_body)
 
     def step(self):
         self.threads.append(threading.current_thread())
@@ -152,9 +152,9 @@ def test_sim_passes_device_into_launch(monkeypatch):
         return _FakeOrch()
 
     monkeypatch.setattr(sim_mod, "build_from_launch", _cap)
-    with sim_mod.Sim("astro_max_base", scene="empty", device="cuda:0") as sim:
+    with sim_mod.Sim("astro_max_base", scene="empty", device="cuda") as sim:
         sim.start(timeout=30.0)
-    assert captured["device"] == "cuda:0"
+    assert captured["device"] == "cuda"
 
 
 class _FakeController:
@@ -181,11 +181,11 @@ class _InProcessOrch:
     def _close_logs(self):  # the orchestrator's logging-teardown seam, a no-op: this mock has no Logger
         pass
 
-    def add_loggable(self, component):  # the orchestrator's loggable-registration seam, a no-op in the mock
+    def add_loggable(self, component, path):  # the orchestrator's loggable-registration seam, a no-op in the mock
         pass
 
     def attach_recorder(self, recorder):  # the observation seam: register the airframe channel Sim caches
-        recorder.channel("physics/body/body_frd", width=BODY_WIDTH, decode=decode_body)
+        recorder.channel("vehicle/body/body_frd", width=BODY_WIDTH, decode=decode_body)
 
     def close(self):  # the step/run teardown seam, a no-op in this mock
         pass

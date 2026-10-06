@@ -89,9 +89,9 @@ def flight_paths(tmp_path_factory, rrd_entities):
 
 def test_run_records_the_flown_path(flight_paths):
     """The trail the viewer draws beside the vehicle is in the recording."""
-    assert "/physics/trajectory" in flight_paths, flight_paths
+    assert "/sim/vehicle/trajectory" in flight_paths, flight_paths
 
 
 def test_run_records_the_airframe_position_series(flight_paths):
     """The channel the flown path is drawn from is in the recording too."""
-    assert any(p.startswith("/recording/physics/body/") and p.endswith("/position") for p in flight_paths), flight_paths
+    assert "/sim/vehicle/body/body/series/position" in flight_paths, flight_paths

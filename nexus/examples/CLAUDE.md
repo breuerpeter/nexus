@@ -20,6 +20,9 @@ in the script, and it records its flight `.rrd`. The launcher map is `_EXAMPLES`
   idle and the rotor joints hang free. One on the core rotor chain, the acados example, passes the
   `commands` and `forces` that `rotor_chain(physics, vehicle_builder)` from
   `nexus._src.build.assembly` returns, and physics steps the Newton motors between them.
+- A controller that logs, as the MPC examples do, names itself with a `name` class attribute. It
+  logs only its own row's name, `horizon`, through the logger the loop hands it at `set_logger`,
+  so the row lands at `sim/vehicle/controllers/<name>/horizon`.
 - `_lib/` is the shared machinery. It holds the single-body `Rotors` actuator in `rotors.py` plus
   the mixers in `mixer.py`, and the Universal Scene Description (USD) to single-body collapse in
   `single_body.py`. It also holds the reference planners in `reference.py` and `min_snap.py`, the

@@ -10,6 +10,10 @@ pytest.importorskip("rerun")
 pytest.importorskip("newton")
 
 
+# A camera's entity, as the orchestrator scopes it for a sensor named `fpv`.
+FPV_ENTITY = "sim/vehicle/sensors/fpv"
+
+
 def _rrd_entities(path: str) -> list[str]:
     # rerun 0.34 dropped the local dataframe API, ``rerun.recording.load_recording``; reading an
     # rrd now needs the catalog server + the optional datafusion dep. The bundled, version-matched
@@ -72,23 +76,24 @@ def test_custom_blueprint_accepted(tmp_path):
     logger.info("event with a custom blueprint")
     rl.close()
 
-    assert any("logs/sim" in p for p in _rrd_entities(rrd))
+    assert "/sim/logs/test_rerun_logger" in _rrd_entities(rrd)
 
 
-def test_events_routed_to_logs_sim(tmp_path):
-    """Logger tees the ``newton`` logger into the recording's ``logs/sim`` panel: a
-    component just calls ``logger.info(...)`` and it lands in the same recording.
+def test_a_scoped_view_logs_a_named_row_under_its_path_and_an_unnamed_row_at_the_path(tmp_path):
+    """A scoped view of the Logger logs a named row under its path, and a row with an empty name at
+    the path itself.
     """
-    from nexus._src.core import logger
     from nexus._src.logging import Logger
 
-    rrd = str(tmp_path / "events.rrd")
+    rrd = str(tmp_path / "scoped.rrd")
     rl = Logger(model=None, serve=False, record_to_rrd=rrd)
-    logger.info("hello from a component")
+    scoped = rl.scoped("vehicle/controllers/standin")
+    scoped.log_strip("horizon", [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+    scoped.log_points("", [[0.0, 0.0, 0.0]])
     rl.close()
 
-    paths = _rrd_entities(rrd)
-    assert any("logs/sim" in p for p in paths), paths
+    rows = [p for p in _rrd_entities(rrd) if p.startswith("/sim/vehicle/")]
+    assert rows == ["/sim/vehicle/controllers/standin", "/sim/vehicle/controllers/standin/horizon"]
 
 
 def test_blueprint_layout_and_eye_tracking():
@@ -97,10 +102,10 @@ def test_blueprint_layout_and_eye_tracking():
     the bottom row is the debug tab tree at *full* viewer width. Cameras are ordinary Sensors instance
     tabs, no special panel.
     """
-    from nexus._src.logging import FPV_ENTITY
     from nexus._src.logging.rerun_logging import VEHICLE_SHAPE_ENTITY, _blueprint
 
-    bp = _blueprint(cameras={"fpvcam": "RtxCameraSensor", "lr1cam": None}, has_settings=True)
+    cameras = {"sim/vehicle/sensors/fpvcam": "RtxCameraSensor", "sim/vehicle/sensors/lr1cam": None}
+    bp = _blueprint(cameras=cameras, has_settings=True)
     rows = bp.root_container.contents
     assert len(rows) == 2  # [RTF+Scene | Logs|Settings] over the full-width debug tabs
     assert list(bp.root_container.row_shares) == [1.0, 1.0]
@@ -119,8 +124,8 @@ def test_blueprint_layout_and_eye_tracking():
     assert getattr(sensors_tab, "name", None) == "Sensors"
     assert [getattr(v, "name", None) for v in sensors_tab.contents] == ["fpvcam (RtxCameraSensor)", "lr1cam"]
     assert [str(getattr(v, "origin", None)) for v in sensors_tab.contents] == [
-        f"{FPV_ENTITY}/fpvcam",
-        f"{FPV_ENTITY}/lr1cam",
+        "sim/vehicle/sensors/fpvcam",
+        "sim/vehicle/sensors/lr1cam",
     ]
 
     # no cameras/recording → the First Person View (FPV) placeholder in the bottom row; no settings → no Settings tab
@@ -135,14 +140,14 @@ def test_blueprint_recording_tabs_mirror_channel_keys():
     mirrors the access surface, ``sim.physics["body_frd"]`` → Physics ▸ body_frd ▸ position …, with
     sensor instance tabs carrying the impl class.
     """
-    from nexus._src.logging.rerun_logging import RECORDING_ROOT, _blueprint
+    from nexus._src.logging.rerun_logging import _blueprint
 
     recording = {
-        "physics/body/body_frd": ("NewtonPhysics", ["position", "velocity"]),
-        "physics/joint/rotor_1_joint": ("NewtonPhysics", ["q", "qd"]),
-        "sensors/imu": ("ImuSensor", ["xacc", "ygyro"]),
+        "vehicle/body/body_frd": ("NewtonPhysics", ["position", "velocity"]),
+        "vehicle/joints/rotor_1_joint": ("NewtonPhysics", ["q", "qd"]),
+        "vehicle/sensors/imu": ("ImuSensor", ["xacc", "ygyro"]),
     }
-    bp = _blueprint(recording=recording, cameras={"fpvcam": "RtxCameraSensor"})
+    bp = _blueprint(recording=recording, cameras={"sim/vehicle/sensors/fpvcam": "RtxCameraSensor"})
     _top, bottom = bp.root_container.contents  # the debug tabs are the full-width bottom row
     groups = {getattr(g, "name", None): g for g in bottom.contents}
     assert list(groups) == ["Physics", "Sensors"]
@@ -150,8 +155,8 @@ def test_blueprint_recording_tabs_mirror_channel_keys():
     assert getattr(body, "name", None) == "body_frd"  # instance tab = the sim.physics[...] key
     assert [v.name for v in body.contents] == ["position", "velocity"]  # quantity tabs = the fields
     assert [str(v.origin) for v in body.contents] == [
-        f"{RECORDING_ROOT}/physics/body/body_frd/position",
-        f"{RECORDING_ROOT}/physics/body/body_frd/velocity",
+        "sim/vehicle/body/body_frd/series/position",
+        "sim/vehicle/body/body_frd/series/velocity",
     ]
     assert getattr(groups["Physics"].contents[1], "name", None) == "rotor_1_joint"
     # scalar sensors and the camera feed are SIBLING instance tabs under Sensors
@@ -218,16 +223,16 @@ def test_default_blueprint_with_fpv_accepted(tmp_path):
 
 
 def test_log_image_lands_in_recording(tmp_path):
-    """``log_image`` writes the frame to its entity, ``cameras/fpv``, in the recording."""
+    """``log_image`` writes the frame to its entity in the recording."""
     import numpy as np
 
-    from nexus._src.logging import FPV_ENTITY, Logger
+    from nexus._src.logging import Logger
 
     rrd = str(tmp_path / "img.rrd")
     rl = Logger(model=None, serve=False, record_to_rrd=rrd)
     rl.log_image(FPV_ENTITY, np.zeros((8, 8, 3), dtype=np.uint8))
     rl.close()
-    assert any(FPV_ENTITY in p for p in _rrd_entities(rrd))
+    assert f"/{FPV_ENTITY}" in _rrd_entities(rrd)
 
 
 def test_log_image_fault_isolated_and_warns_once(tmp_path, monkeypatch):
@@ -237,14 +242,14 @@ def test_log_image_fault_isolated_and_warns_once(tmp_path, monkeypatch):
     import numpy as np
     import rerun as rr
 
-    from nexus._src.logging import FPV_ENTITY, Logger
+    from nexus._src.logging import Logger
 
     rl = Logger(model=None, serve=False, record_to_rrd=str(tmp_path / "broken.rrd"))
 
     calls = {"n": 0}
 
     def boom(entity, *a, **k):
-        # Only break the FPV image path; the event-log handler also routes via rr.log, to logs/sim, and
+        # Only break the FPV image path; the event-log handler also routes via rr.log, to sim/logs, and
         # must keep working so close() doesn't trip on it.
         if entity == FPV_ENTITY:
             calls["n"] += 1
@@ -267,13 +272,13 @@ def test_log_image_no_logger_side_throttle(tmp_path, monkeypatch):
     import numpy as np
     import rerun as rr
 
-    from nexus._src.logging import FPV_ENTITY, Logger
+    from nexus._src.logging import Logger
 
     rl = Logger(model=None, serve=False, record_to_rrd=str(tmp_path / "dec.rrd"))
     n = {"c": 0}
 
     def count(entity, *a, **k):
-        if entity == FPV_ENTITY:  # ignore the event-log handler's own rr.log calls to logs/sim
+        if entity == FPV_ENTITY:  # ignore the event-log handler's own rr.log calls to sim/logs
             n["c"] += 1
 
     monkeypatch.setattr(rr, "log", count)
@@ -319,4 +324,4 @@ def test_scene_logged_via_log_state(tmp_path):
     rl.close()
 
     paths = _rrd_entities(rrd)
-    assert any(p.startswith("/model") or p.startswith("/geometry") for p in paths), paths
+    assert any(p.startswith(("/sim/model/", "/sim/geometry/")) for p in paths), paths

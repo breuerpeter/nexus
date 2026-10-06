@@ -46,10 +46,10 @@ Install the pinned version from the [releases page](https://github.com/vale-cli/
 
 ```bash
 vale sync
-vale $(git ls-files '*.md' '*.py')
+vale $(git ls-files '*.md' '*.py' ':!CHANGELOG.md')
 ```
 
-CI runs the same check on every pull request. One job judges only the lines the pull request adds and fails on any alert among them, so lines nobody touched don't block a merge. A nightly job checks the whole repo and fails on any alert, so a red night means something leaked past the gate. You can also start that job by hand from the Actions tab.
+The check leaves out `CHANGELOG.md`, which release-please writes from commit titles. CI runs the same check on every pull request. One job judges only the lines the pull request adds and fails on any alert among them, so lines nobody touched don't block a merge. A nightly job checks the whole repo and fails on any alert, so a red night means something leaked past the gate. You can also start that job by hand from the Actions tab.
 
 When the spelling rule flags a domain word on a line you add, add it to `.vale/styles/config/vocabularies/Names/accept.txt`, one pattern per line, case-insensitive. Put a file extension, an identifier, or a command in code font instead, which Vale skips. A British spelling isn't a domain word. The style is American.
 

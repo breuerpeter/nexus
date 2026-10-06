@@ -51,7 +51,7 @@ import warp as wp
 
 from nexus._src.core import logger
 from nexus._src.core.interfaces import Stage
-from nexus._src.recording.recorder import leaf_keys
+from nexus._src.core.labels import leaf_keys
 from nexus._src.recording.state import (
     BODY_FIELDS,
     BODY_WIDTH,
@@ -217,8 +217,8 @@ class NewtonPhysics:
 
     def set_recorder(self, recorder) -> None:
         """The orchestrator hands over the Recorder, gated by Sim's ``observe``. Physics owns the full
-        model state, so it registers one channel per body, ``physics/body/<label>``, and per joint,
-        ``physics/joint/<label>``, from the finalized model's labels: every body/joint addressable by
+        model state, so it registers one channel per body, ``vehicle/body/<label>``, and per joint,
+        ``vehicle/joints/<label>``, from the finalized model's labels: every body/joint addressable by
         name. Discovery finds the base body's label, ``base_body``, as the actuator joints' shared parent, else body 0,
         for Sim's default vehicle entity: nothing hardcoded; it works for whatever model loads. That body's
         channel is also the Recorder's ``base_body``, the source of the flown path.
@@ -235,7 +235,7 @@ class NewtonPhysics:
         self._body_taps = [
             (
                 recorder.channel(
-                    f"physics/body/{key}", width=BODY_WIDTH, decode=decode_body, fields=BODY_FIELDS, source=src
+                    f"vehicle/body/{key}", width=BODY_WIDTH, decode=decode_body, fields=BODY_FIELDS, source=src
                 ),
                 i,
             )
@@ -250,7 +250,7 @@ class NewtonPhysics:
             for j, key in enumerate(joint_keys):
                 nq, nqd = int(qs[j + 1] - qs[j]), int(qds[j + 1] - qds[j])
                 ch = recorder.channel(
-                    f"physics/joint/{key}",
+                    f"vehicle/joints/{key}",
                     width=1 + nq + nqd,
                     decode=make_decode_joint(nq, nqd),
                     fields=(("q", nq), ("qd", nqd)),

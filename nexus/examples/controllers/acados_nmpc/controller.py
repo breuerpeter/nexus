@@ -232,8 +232,12 @@ class AcadosNMPCController:
         """The ``read`` and ``exchange`` host stages: the per-tick solve runs on the host between replays."""
         return peer_stages(self)
 
+    name = "acados_nmpc"  # the instance name: its rows land at sim/vehicle/controllers/acados_nmpc
+
     def set_logger(self, logger) -> None:
-        """The orchestrator hands over the Logger, ``None`` when off: the gate for the horizon viz."""
+        """The orchestrator hands over the Logger scoped to this controller, ``None`` when off: the
+        gate for the horizon viz.
+        """
         self._logger = logger
 
     def close(self) -> None:  # lifecycle teardown: nothing to release, the horizon logs from exchange()
@@ -322,12 +326,12 @@ class AcadosNMPCController:
         throttle = np.sqrt(np.clip(u0, 0.0, self.t_max) / self.ct) / self.rpm_max
 
         # Component-owned horizon viz, event-driven: when recording, emit the predicted NMPC horizon to
-        # controller/mpc_horizon every snapshot_every ticks; the newest entry at each time means scrubbing
+        # its row ``horizon`` every snapshot_every ticks; the newest entry at each time means scrubbing
         # shows the active horizon. Gated on self._logger so the solver-state extraction never runs when
         # not recording. The orchestrator set the timeline at tick start, so this just hands the path to
         # the Logger.
         if self._logger is not None and self._step % self.snapshot_every == 0:
             pred = np.array([self._solver.get(k, "x")[:3] for k in range(self.N + 1)], dtype=np.float32)
-            self._logger.log_strip("controller/mpc_horizon", pred, color=(255, 140, 0))
+            self._logger.log_strip("horizon", pred, color=(255, 140, 0))
         self._step += 1
         return Controls(command=throttle.astype(np.float32))

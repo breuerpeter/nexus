@@ -43,6 +43,11 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
   `nexus/_src/config/registry.yaml`. The runtime resolver, `nexus._src.assets.resolver`,
   fetches `{url, sha256}` to a verified cache at `assets/cache/`, which `$NEXUS_ASSET_CACHE`
   overrides. Read `scripts/assets/CLAUDE.md` before adding or updating an asset.
+- **A recorded row's entity path names who wrote it**: the process, `sim` or a peer's folder name,
+  then the component's role folder, then the instance, as in `sim/vehicle/sensors/imu`.
+  `docs/reference/api/logging.md` states the rule. A component never spells its path: the
+  orchestrator hands it a `ScopedLogger` at `set_logger`, and the component logs only its own
+  row's name, such as `horizon`. The Recorder's channel keys are the same paths below the root.
 - `docs/guide/running.md` documents **the decoupled Software In The Loop (SITL) flight workflow**,
   nexus sim plus PX4 SITL plus QGroundControl, and its port map and gotchas.
 - **Lint and format:** `uvx pre-commit run -a`, which runs ruff. Config in
@@ -52,7 +57,7 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
   tree: the tests of `nexus/_src/<path>/` sit in `tests/<path>/`, and none sits at the root of
   `tests/`. A test that mirrors no source folder sits in a folder named for its kind, `ci`, `docs`,
   `examples`, `packaging` or `suite`. `tests/suite/test_layout.py` fails on any other folder.
-- **Prose:** `vale sync` once, then `vale $(git ls-files '*.md' '*.py')` checks the tracked Markdown, and the comments and docstrings in Python, against `.vale.ini`. The ini pins each style by release URL, and the sync fetches them into `.vale/styles/`, a directory git ignores. CI runs the same check on the lines a pull request adds and fails on any alert among them. A nightly `vale-all` run, which you can also start from the Actions tab, checks the whole repo and fails on any alert, so a red night means something leaked past the gate. A domain word or acronym that a rule flags on a line you add, and that has no plain rewrite, goes into `.vale/styles/config/vocabularies/Names/accept.txt`, one pattern per line. An entry there exempts the word from every rule that flags it. A Python file that starts with a shebang or a comment defines its acronyms in a `# Acronyms:` comment after that header, because Vale's text rules skip a module docstring behind one.
+- **Prose:** `vale sync` once, then `vale $(git ls-files '*.md' '*.py' ':!CHANGELOG.md')` checks the tracked Markdown, and the comments and docstrings in Python, against `.vale.ini`. The check leaves out `CHANGELOG.md`, which release-please writes, and so do both CI jobs. The ini pins each style by release URL, and the sync fetches them into `.vale/styles/`, a directory git ignores. CI runs the same check on the lines a pull request adds and fails on any alert among them. A nightly `vale-all` run, which you can also start from the Actions tab, checks the whole repo and fails on any alert, so a red night means something leaked past the gate. A domain word or acronym that a rule flags on a line you add, and that has no plain rewrite, goes into `.vale/styles/config/vocabularies/Names/accept.txt`, one pattern per line. An entry there exempts the word from every rule that flags it. A Python file that starts with a shebang or a comment defines its acronyms in a `# Acronyms:` comment after that header, because Vale's text rules skip a module docstring behind one.
 
 ## Commits
 

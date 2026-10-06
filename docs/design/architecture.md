@@ -142,20 +142,22 @@ motor lag of their own.
 Observability is cross-cutting, split into a **write** side and a **read** side:
 
 - **One central Rerun sink.** A single `Logger`, injected into every component, owns the one
-  Rerun recording, writing under namespaced entity paths such as `physics/…`, `sensors/…`,
-  `operator/…`, and `controller/…` on a shared `sim_time` timeline. It can serve a live viewer over
-  gRPC on port `9876` or write a durable `.rrd`. Out-of-process producers merge into the same view:
-  PX4's own logger, and the Kit render peer, whose frames the camera sensors log on the host. Logging is **output-only**: nothing reads it back
+  Rerun recording. Each row's entity path names its process, its component and its instance, such
+  as `sim/vehicle/sensors/imu` or `sim/guidance/reference`, on a shared `sim_time` timeline. The
+  [logging reference](../reference/api/logging.md#entity-paths) states the rule. It can serve a live
+  viewer over gRPC on port `9876` or write a durable `.rrd`. A peer writes under its own root, the
+  name of its folder, so one recording can hold more than one producer. Today the camera sensors log the
+  Kit render peer's frames on the host, under `sim/`. Logging is **output-only**: nothing reads it back
   into the loop, so it can't perturb determinism. It decimates to a configurable rate, 50 Hz by
   default, so it doesn't cap the real-time factor.
 - **The Recorder read-seam.** Components record typed samples into device-side ring buffers: body
   poses and velocities as `BodyState` and `JointState`, and sensor outputs as `SensorSample`. A
   caller reads them on demand through [`sim.physics`](../reference/api/simulation.md) and
-  `sim.sensors`. That component-kind access mirrors the channel keys `physics/body/…`,
-  `physics/joint/…`, and `sensors/…`. Those keys are the recorder's registry namespace, distinct
-  from the similarly worded Rerun entity paths in the preceding item. This is the capture-safe way
+  `sim.sensors`. A channel's key is its instance's path below the process root: `vehicle/body/…`,
+  `vehicle/joints/…` and `vehicle/sensors/…`. The instance has the same path in the recording, so
+  the recorder and the recording use one name for one thing. This is the capture-safe way
   to observe a run without a host round-trip each tick. At the end of a recorded run the Logger
-  dumps every channel's ring as time-series entities under `recording/…`. So you can inspect the
+  dumps every channel's ring as time-series entities at `sim/<key>/series/<field>`. So you can inspect the
   whole observation history in the viewer's debug tabs.
 
 Each PX4 run also produces PX4's native `.ulg` flight log alongside the `.rrd`, both surfaced as run
