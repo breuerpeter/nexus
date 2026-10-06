@@ -1,4 +1,4 @@
-"""newton-logging: the central Rerun recording, Logger: scene + events into one .rrd.
+"""The central Rerun recording, Logger: scene + events into one .rrd.
 
 Real end-to-end in file mode, serve=False, on the Warp CPU backend; skipped if rerun/newton/pxr
 are missing. File mode keeps the tests hermetic: no gRPC server/port, just an inspectable .rrd.

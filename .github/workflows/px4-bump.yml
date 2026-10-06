@@ -7,7 +7,7 @@ name: px4-bump
 # workflow — GPU spend is a manual call): label the PR to make the flight gate fly the new
 # PX4 before the bump merges; merging is what records the tested pin. The pin
 # file is data, not policy: this checkout tracks breuerpeter/newton, and upstream main once
-# that work merges — #17/#18. Dispatch after
+# that work merges, tracked in #88. Dispatch after
 # pushing PX4 changes for an immediate bump; otherwise weekly.
 
 on:

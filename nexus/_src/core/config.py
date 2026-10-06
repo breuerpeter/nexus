@@ -1,6 +1,4 @@
-"""Scenario/config loading, per architecture.md §7: a declarative YAML + a JSON env
-override, lifted from the bridge's ``get_cfg`` / ``_deep_merge``.
-"""
+"""Scenario/config loading: a declarative YAML + a JSON env override."""
 
 from __future__ import annotations
 

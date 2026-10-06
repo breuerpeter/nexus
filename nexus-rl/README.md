@@ -9,8 +9,8 @@ the training as a Rerun `.rrd` showing the swarm of agents learning. The exporte
 
 This is a **separate `uv` project** with its own virtual environment, so Isaac Lab, a heavy,
 prerelease-pinned stack, stays **out of the core `nexus` environment**. It depends on `nexus`
-via an editable path source, so training and the core's deploy share the same Newton 1.3.0, which gives
-FR-7 parity. It follows the Isaac Lab external-project layout: a registered task package under
+via an editable path source, so training and the core's deploy share the same Newton 1.3.0, so a trained
+policy flies the same dynamics it trained on. It follows the Isaac Lab external-project layout: a registered task package under
 `src/nexus_rl/tasks/direct/<task>/`, holding the env, the config, and `agents/`, and task-agnostic
 runner scripts under `scripts/`.
 
@@ -29,7 +29,7 @@ nexus-rl/
 │   ├── goto_env.py                        # GoToEnv/Cfg: the single-body per-rotor model (no vehicle)
 │   ├── agents/rsl_rl_ppo_cfg.py           # GoToPPORunnerCfg (entropy_coef reliability fix)
 │   └── config/astro_max.py                # the Astro Max vehicle config (robot USD + FRD frame) + gym.register
-│                                          #   ("Newton-AstroMax-GoTo-Direct-v0"); a new vehicle = a new config
+│                                          #   ("Nexus-AstroMax-GoTo-Direct-v0"); a new vehicle = a new config
 └── scripts/
     ├── rsl_rl/train.py                     # kitless PPO trainer; exports policy.pt + policy.onnx
     ├── rsl_rl/record_demo.py              # records the swarm-improving Rerun .rrd (the demo below)
@@ -45,7 +45,7 @@ CUDA GPU, and runs on Linux-x86_64 only.
 
 > Isaac Lab `3.0.0b2` *declares* older Newton and Warp pins, but its code runs on the framework's newer
 > versions. So this project's `[tool.uv]` override co-resolves the whole stack into **one** Newton, and
-> training and the standalone deploy then share the same Newton, for better FR-7 parity.
+> training and the standalone deploy then share the same Newton.
 
 The Astro Max Universal Scene Description (USD) file is a content-addressed registry asset. It
 **auto-resolves** on the host, since the framework's pydantic and registry dependencies are present,
@@ -117,7 +117,7 @@ the rotors the USD declares, the propeller schema on each rotor body and its mot
 source the core uses. A
 different vehicle is just another `config/<vehicle>.py`.
 
-## Deploy, the FR-7 round trip
+## Deploy, the train-to-flight round trip
 
 The `TrainedPolicyController` example loads the exported `policy.pt`, and
 [`nexus/examples/controllers/policy/goto/flight.py`](../nexus/examples/controllers/policy/goto/flight.py)

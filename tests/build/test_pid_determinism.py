@@ -1,8 +1,8 @@
-"""Complete-determinism gate, NFR-11, with the in-process
+"""Complete-determinism gate with the in-process
 Proportional Integral Derivative (PID) controller.
 
-S-1/S-3 established that Newton CPU physics is bit-exact, but real-PX4 *armed* flight isn't
-bit-reproducible, because of its multi-threaded work-queue interleaving. The FR-7 built-in PID is the
+Newton CPU physics is bit-exact, but real-PX4 *armed* flight isn't
+bit-reproducible, because of its multi-threaded work-queue interleaving. The built-in PID is the
 deterministic in-process controller that closes that gap: flown through the unchanged
 ``Orchestrator.run()`` over the bit-exact Newton CPU backend, two runs of the same setup produce
 **bit-for-bit the same** trajectories: the determinism CI gate that doesn't wait on PX4.
@@ -53,6 +53,6 @@ def test_pid_loop_is_bit_identical():
     q1, qd1 = _run(steps)
     q2, qd2 = _run(steps)
     assert q1.shape[0] == steps and qd1.shape[0] == steps
-    # bit-for-bit the same (max|Δ| == 0) on the Warp CPU backend: the NFR-11 gate
+    # bit-for-bit the same (max|Δ| == 0) on the Warp CPU backend: the determinism gate
     assert np.array_equal(q1, q2), f"body_q diverged: max|Δ|={np.abs(q1 - q2).max()}"
     assert np.array_equal(qd1, qd2), f"body_qd diverged: max|Δ|={np.abs(qd1 - qd2).max()}"

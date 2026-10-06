@@ -18,7 +18,7 @@ allocation + saturation/yaw limit, while being numerically stable; the motor-spe
 spinning-rotor visuals.
 
 Deploy parity: the core runtime flies the same unified ``Rotors`` actuator, the same ``rigid_body_wrench``
-kernel with ``dim = 1``, over the same mixer, so train and deploy are byte-shared, FR-7, the gate being the
+kernel with ``dim = 1``, over the same mixer, so train and deploy are byte-shared, the gate being the
 policy-level transfer in ``nexus/examples/controllers/policy/goto/flight.py``.
 """
 
@@ -120,7 +120,7 @@ class GoToEnv(QuadcopterNewtonEnv):
         # Apply the same two ops the deploy seam runs, over zero-copy wp.from_torch views: the CTBR mixer,
         # ctbr_to_cmd_batched: inner rate loop → B⁻¹ → per-rotor command, then the single-body motor model,
         # rigid_body_wrench_batched: per-rotor command → motor lag/saturation → forward B → world wrench.
-        # So the policy trains on the exact seam it deploys against, FR-7, byte-shared: the deploy policy
+        # So the policy trains on the exact seam it deploys against, byte-shared: the deploy policy
         # controller launches the same ctbr_to_cmd_batched mixer and the deploy actuator the same motor model,
         # with no torch reimplementation. substeps = NUM_SUBSTEPS carries the substep-dilution convention: the
         # base env's thrust_to_weight/rate_gain are the ×NUM_SUBSTEPS-baked twins, so the mixer's ÷substeps
@@ -185,7 +185,7 @@ class GoToEnv(QuadcopterNewtonEnv):
         # The base obs, 12-D kinematic, body-frame, plus the policy's last applied action, so it can
         # infer the lagged motor state. The stock _reset_idx clears self._actions to 0 on reset, so the
         # first obs of an episode carries a zero last action, matching the deploy controller, which
-        # appends its own last action the same way: FR-7 parity via the shared observation_from_state.
+        # appends its own last action the same way, via the shared observation_from_state.
         d = self._robot.data
         obs = observation_from_state(
             d.root_pos_w.torch,

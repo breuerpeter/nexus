@@ -29,7 +29,7 @@ work/
 # SITL flight-gate run artifacts (scripts/ci/run_sitl_example.sh output dir)
 .eval-artifacts/
 assets/local/
-# Content-addressed download cache (newton-assets resolver default in a source checkout).
+# Content-addressed download cache (the asset resolver's default in a source checkout).
 assets/cache/
 # console-upload staging (files named as their final S3 object keys)
 assets/upload/

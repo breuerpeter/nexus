@@ -1,6 +1,6 @@
-"""The one Rerun recording the whole sim logs to, per architecture.md §10.
+"""The one Rerun recording the whole sim logs to.
 
-`newton-logging` owns the entire Rerun stack so the rest of the framework stays
+This package owns the entire Rerun stack so the rest of the framework stays
 logging-agnostic:
 
 * **the scene**: NVIDIA Newton's ``ViewerRerun`` logs the physics ``Model``/``State``,
@@ -229,7 +229,7 @@ def scene_only_blueprint() -> rrb.Blueprint:
     leaving dangling transform-less entities. The viewer spams a "failed to query transformations:
     missing transform on entity '/geometry/{kind}_N'" warning. Scoping this view away from
     ``/geometry`` doesn't silence the warning, because it's emitted recording-wide, not per view, so
-    this view no longer scopes it away. The fix belongs upstream; see the post-refactor-followups plan.
+    this view no longer scopes it away. The fix belongs upstream, in NVIDIA Newton.
     """
     return rrb.Blueprint(
         rrb.Spatial3DView(origin="/", name="Scene"),

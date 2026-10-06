@@ -1,4 +1,4 @@
-# Newton sim stack: the ground services a decoupled PX4 flight uses BESIDES the sim and PX4. They
+# The nexus ground stack: the services a decoupled PX4 flight uses BESIDES the sim and PX4. They
 # share host networking so PX4 SITL dials into the simulator's HIL server on the host's :4560 (and the
 # GCS MAVLink on :18570) exactly as in a real decoupled flight — the simulator runs on the host:
 # `uv run nexus run …`.
@@ -34,7 +34,7 @@ services:
     command: ["--read-timeout=1h", "--hb-disable", "tcps:0.0.0.0:5790", "udpc:127.0.0.1:18570"]
 
   # WebRTC/WHEP video gateway the GCS frontend consumes (the companion's mediamtx stand-in).
-  # Fed by an RTSP publisher on cam1 (test pattern now; Isaac chase-cam in Plan 3).
+  # Fed by an RTSP publisher on cam1 (a test pattern).
   mediamtx:
     image: bluenviron/mediamtx:latest
     network_mode: host

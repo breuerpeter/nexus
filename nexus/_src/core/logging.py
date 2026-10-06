@@ -1,8 +1,7 @@
 """Plain stdlib logger for the framework: headless-safe, no Rerun dependency.
 
-The bridge's logger logged through a Rerun handler; observability is a
-cross-cutting concern owned by the Recorder/Renderer, so core keeps a plain
-stderr logger and the render-null package provides the null log sink.
+Observability is a cross-cutting concern owned by the Recorder/Renderer, so core keeps a
+plain stderr logger.
 """
 
 import logging

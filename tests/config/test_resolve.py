@@ -32,7 +32,7 @@ def test_resolve_no_fetch_builds_fully_specified_receipt():
 
 
 def test_resolve_fetches_and_verifies_file_asset(tmp_path):
-    # a real file:// asset, content-addressed by its true sha256, mirroring newton-assets' resolver test
+    # a real file:// asset, content-addressed by its true sha256, as the asset resolver's own tests do
     blob = tmp_path / "astro.usdz"
     blob.write_bytes(b"USD-PLACEHOLDER-BYTES")
     sha = hashlib.sha256(blob.read_bytes()).hexdigest()

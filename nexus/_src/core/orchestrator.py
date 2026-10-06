@@ -1,11 +1,11 @@
-"""The fixed-order, deterministic orchestrator of architecture.md §3, §4, §5.
+"""The fixed-order, deterministic orchestrator.
 
 A tick is an ordered ring of stages, per docs/design/execution.md. Every component states its
 per-tick work as a list of ``Stage``: a device stage joins a CUDA graph, a host stage runs between
 graph replays. The loop lays the stages out in the canonical order, sensors -> controller ->
 [clear -> the command stages -> the force stages -> step] per physics substep -> record, cuts the ring at its host stages and
 rotates it to start after the last cut, so each maximal run of device stages becomes one CUDA
-graph, the Real Time Factor (RTF) lever of architecture.md §5, and the host stages run between
+graph, the Real Time Factor (RTF) lever, and the host stages run between
 replays. One partition and one loop serve every arrangement: PX4, whose ``read`` and ``exchange``
 host stages block on its peer, a Model Predictive Control (MPC) solver that runs on the host, and a
 device-native Proportional Integral Derivative (PID) law whose whole ring is one graph. On a CPU device the same segments run stage by stage, the bit-exact
@@ -267,7 +267,7 @@ class Orchestrator:
         self.physics_substeps = int(physics_substeps)
         self.settings = settings
 
-    # -- component-owned logging seam, architecture.md §10 ------------------------
+    # -- component-owned logging seam ---------------------------------------------
     def _scoped(self, path: str):
         """The Logger's view for the component at ``path`` under the sim's root; None when off."""
         return self.logger.scoped(path) if self.logger is not None else None

@@ -1,4 +1,4 @@
-"""newton-config: the framework launch interface.
+"""The framework launch interface.
 
 A static, declarative ``LaunchConfig``, what the sim *is*, resolved by name against a
 checked-in, content-addressed ``Registry`` into a ``TestedConfig`` receipt, what the run

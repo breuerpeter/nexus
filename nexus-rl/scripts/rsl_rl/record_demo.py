@@ -41,7 +41,7 @@ from rsl_rl.runners import OnPolicyRunner
 
 from nexus._src.logging import Logger
 
-TASK = "Newton-AstroMax-GoTo-Direct-v0"
+TASK = "Nexus-AstroMax-GoTo-Direct-v0"
 
 # Fractions of the full training run to show in the montage: one early "chaos" frame, then dense
 # through the 30–90% band where this task's success actually rises, since entropy + init-state
