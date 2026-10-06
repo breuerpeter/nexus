@@ -116,21 +116,22 @@ class QuadcopterNewtonEnv(QuadcopterEnv):
 
     def __init__(self, cfg, render_mode=None, **kwargs):
         # Bypass QuadcopterEnv.__init__, whose root_view.get_masses() is PhysX-only and raises on
-        # Newton, by running the grandparent setup and replicating the rest with data.body_mass.
+        # Newton, by running the grandparent setup and building the state the parent's step, reward and
+        # reset read here, with data.body_mass for the mass.
         DirectRLEnv.__init__(self, cfg, render_mode, **kwargs)
-        self._actions = torch.zeros(self.num_envs, gym.spaces.flatdim(self.single_action_space), device=self.device)
-        self._thrust = torch.zeros(self.num_envs, 1, 3, device=self.device)
-        self._moment = torch.zeros(self.num_envs, 1, 3, device=self.device)
-        self._desired_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
-        self._success_step_count = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
-        self._episode_sums = {
-            key: torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
-            for key in ["lin_vel", "ang_vel", "distance_to_goal"]
-        }
+        n, dev = self.num_envs, self.device
+        n_actions = gym.spaces.flatdim(self.single_action_space)
+        self._actions = torch.zeros((n, n_actions), device=dev)
+        # The world-frame wrench on the base body, which the subclass's _pre_physics_step writes.
+        self._thrust = torch.zeros((n, 1, 3), device=dev)
+        self._moment = torch.zeros((n, 1, 3), device=dev)
+        self._desired_pos_w = torch.zeros((n, 3), device=dev)  # goal
+        self._success_step_count = torch.zeros(n, dtype=torch.int64, device=dev)
+        self._episode_sums = {name: torch.zeros(n, device=dev) for name in ("lin_vel", "ang_vel", "distance_to_goal")}
         self._body_id = self._robot.find_bodies(self.cfg.base_body)[0]
         self._robot_mass = self._robot.data.body_mass.torch[0].sum()  # backend-portable, unlike get_masses
-        self._gravity_magnitude = torch.tensor(self.sim.cfg.gravity, device=self.device).norm()
-        self._robot_weight = (self._robot_mass * self._gravity_magnitude).item()
+        self._gravity_magnitude = torch.linalg.vector_norm(torch.tensor(self.sim.cfg.gravity, device=dev))
+        self._robot_weight = float(self._robot_mass * self._gravity_magnitude)
         # Base-body principal inertia, the diag of the 3x3, for the CTBR inner rate loop, torque = I*accel.
         # Reading it from the model makes the rate-loop gain inertia-independent, so it transfers from
         # the 28 g Crazyflie to the 9.2 kg Astro Max unchanged.
