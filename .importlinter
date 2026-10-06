@@ -34,9 +34,10 @@ forbidden_modules =
     nexus.examples
 
 ; No generic part names PX4: the loop, the seams and Sim carry no PX4 class, port or verb, so the
-; script that commands PX4 is what names it, through the public namespace nexus.px4. Two imports
-; remain: the builder starts the PX4 peer from its runner and numbers the HIL link from its instance,
-; and the argument parser prints the HIL port in a help string. A new one fails here.
+; script that commands PX4 is what names it, through the public namespace nexus.px4. The imports that
+; remain are the builder's, which starts the PX4 peer from its runner, numbers the links from its
+; instance and tells the fake apart for the port map, and the argument parser's, which prints the
+; HIL port in a help string. A new one fails here.
 [importlinter:contract:no-px4-in-generic-code]
 name = no generic part names PX4
 type = forbidden
@@ -61,6 +62,7 @@ ignore_imports =
     ; the builder
     nexus._src.build.launch -> nexus._src.peers.px4_sitl
     nexus._src.build.launch -> nexus._src.peers.px4_sitl.runner
+    nexus._src.build.launch -> nexus._src.peers.px4_sitl.fake
     ; the argument parser
     nexus._src.api.args -> nexus._src.peers.px4_sitl
 

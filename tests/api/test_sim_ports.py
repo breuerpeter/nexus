@@ -76,7 +76,9 @@ def assembly(monkeypatch, tmp_path):
     """
 
     def assemble(label, cfg, **kw):
-        peers = {"peers": kw["peers"]} if "peers" in kw else {}
+        run = {
+            k: kw[k] for k in ("peers", "ports") if k in kw
+        }  # what the build made, handed through as the real assembly does
         return Orchestrator(
             clock=_Clock(),
             physics=_Physics(),
@@ -85,7 +87,7 @@ def assembly(monkeypatch, tmp_path):
             controller=kw["controller"],
             exchange_timeout=0.5,
             preroll_timeout=kw.get("preroll_timeout", 2.0),
-            **peers,
+            **run,
         )
 
     monkeypatch.setattr(launch_mod, "build_orchestrator", assemble)

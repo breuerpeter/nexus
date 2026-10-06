@@ -16,8 +16,9 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
   before adding or changing an example.
 - **No generic part names PX4.** PX4's folders are `nexus/_src/peers/px4_sitl/` and
   `nexus/_src/vehicle/controllers/px4/`. Nothing else under `nexus/_src/` imports them or
-  `nexus.px4`, an import-linter contract in `.importlinter`. Its `ignore_imports` lists the two
-  imports that remain: the builder and the argument parser. A script that commands PX4 names it.
+  `nexus.px4`, an import-linter contract in `.importlinter`. Its `ignore_imports` lists the
+  imports that remain: those of the builder and those of the argument parser. A script that
+  commands PX4 names it.
   It imports the offboard client from `nexus.px4` and reads the link's address from `sim.ports`.
 - **RTX sensors render in the Kit render peer**, a container the run starts on the host when the
   vehicle's Universal Scene Description (USD) file declares a sensor whose class requires it: a camera
