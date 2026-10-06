@@ -209,7 +209,7 @@ def test_sim_hands_the_flights_guidance_to_the_orchestrator_and_runs():
     from nexus._src.guidance import MissionGuidance
 
     fake = _InProcessOrch()
-    guidance = MissionGuidance(fake.controller)
+    guidance = MissionGuidance()
 
     # A self-assembled orchestrator enters via from_orchestrator, the examples' entry, with its guidance.
     with sim_mod.Sim.from_orchestrator(fake, guidance=guidance) as sim:
@@ -217,7 +217,8 @@ def test_sim_hands_the_flights_guidance_to_the_orchestrator_and_runs():
         assert sim.controller is fake.controller  # thin surface, which has accept_setpoint
         assert fake.on_tick is None  # the hook stays the caller's: the guidance rides a stage
         sim.guidance.set_mission([(0.0, 0.0, 4.0)])
-        assert fake.controller.setpoints  # accept_setpoint commanded the first goal
+        assert tuple(guidance.active_setpoint.pos) == (0.0, 0.0, 4.0)  # the loop hands it over, not Sim
+        assert fake.controller.setpoints == []
         sim.run()
         assert fake.ran  # ran synchronously, no thread
         assert sim.results() == {"control_steps": 1, "rtf": 1.0}

@@ -1,6 +1,7 @@
 """GeofenceGuidance, the guidance demonstrator of the goto policy flight: a mission guidance that
 ends the run when the vehicle leaves its box. Each test drives the guidance through its stages, the
-seam the loop calls, with a stand-in controller, state and recording sink.
+seam the loop calls, with a stand-in state and recording sink, and reads what the stage wrote to the
+tick: a changed setpoint, and whether the mission is over.
 """
 
 import numpy as np
@@ -19,16 +20,6 @@ INSIDE = (0.0, 0.0, 2.0)
 OUTSIDE = (4.0, 0.0, 2.0)
 MISSION = [(1.0, 0.0, 2.0), (2.0, 0.0, 2.0)]
 RED = (255, 0, 0)
-
-
-class _Controller:
-    """A controller that takes setpoints, and keeps each one it receives."""
-
-    def __init__(self):
-        self.setpoints = []
-
-    def accept_setpoint(self, sp):
-        self.setpoints.append(sp)
 
 
 class _State:
@@ -60,49 +51,50 @@ class _Sink:
         self._keep(entity, points, color)
 
 
-def _tick(guidance, pos, sim_time):
-    """Run the guidance's stages once, as the loop does on one tick."""
+def _tick(guidance, pos, sim_time) -> Tick:
+    """Run the guidance's stages once, as the loop does on one tick, and return that tick."""
     tick = Tick(state=_State(pos), t=SimTime(sim_time, 0), dt=0.004, meas=None)
     for stage in guidance.stages():
         stage.run(tick)
+    return tick
 
 
 def test_a_geofence_guidance_ends_the_run_when_the_vehicle_leaves_its_box():
-    """A geofence guidance ends the run when the vehicle leaves its box."""
-    stops = []
-    guidance = GeofenceGuidance(_Controller(), bounds=BOUNDS, stop=lambda: stops.append(1))
+    """A geofence guidance ends the run when the vehicle leaves its box: its stage marks that tick done,
+    which the loop ends the run on.
+    """
+    guidance = GeofenceGuidance(bounds=BOUNDS)
     guidance.set_mission(MISSION)
-    _tick(guidance, INSIDE, 0.25)
-    _tick(guidance, OUTSIDE, 0.5)
-    assert (len(stops), guidance.breached_at, tuple(guidance.breach_pos)) == (1, 0.5, OUTSIDE)
+    inside = _tick(guidance, INSIDE, 0.25)
+    outside = _tick(guidance, OUTSIDE, 0.5)
+    ended = (inside.done, outside.done, guidance.breached_at, tuple(guidance.breach_pos))
+    assert ended == (False, True, 0.5, OUTSIDE)
 
 
 def test_after_a_breach_the_mission_no_longer_advances():
     """After a breach the mission no longer advances."""
-    controller = _Controller()
-    guidance = GeofenceGuidance(controller, bounds=BOUNDS, reached_m=0.3)
+    guidance = GeofenceGuidance(bounds=BOUNDS, reached_m=0.3)
     guidance.set_mission(MISSION)
     _tick(guidance, OUTSIDE, 0.5)
-    _tick(guidance, MISSION[0], 0.75)  # within reach of the active goal
-    assert [tuple(sp.pos) for sp in controller.setpoints] == [MISSION[0]]
+    after = _tick(guidance, MISSION[0], 0.75)  # within reach of the active goal
+    assert (after.setpoint, guidance.reached) == (None, 0)
 
 
 def test_a_new_mission_clears_an_earlier_breach():
     """A new mission clears an earlier breach."""
-    controller = _Controller()
-    guidance = GeofenceGuidance(controller, bounds=BOUNDS)
+    guidance = GeofenceGuidance(bounds=BOUNDS)
     guidance.set_mission(MISSION)
     _tick(guidance, OUTSIDE, 0.5)
     guidance.set_mission([(0.0, 1.0, 2.0)])
-    _tick(guidance, INSIDE, 0.75)
-    cleared = (guidance.breached_at, guidance.breach_pos, tuple(controller.setpoints[-1].pos))
-    assert cleared == (None, None, (0.0, 1.0, 2.0))
+    tick = _tick(guidance, INSIDE, 0.75)
+    cleared = (guidance.breached_at, guidance.breach_pos, tuple(tick.setpoint.pos), tick.done)
+    assert cleared == (None, None, (0.0, 1.0, 2.0), False)
 
 
 def test_the_recording_shows_the_fence_and_a_breach_as_a_red_marker():
     """The recording shows the fence, and a breach as a red marker."""
     sink = _Sink()
-    guidance = GeofenceGuidance(_Controller(), bounds=BOUNDS)
+    guidance = GeofenceGuidance(bounds=BOUNDS)
     guidance.set_logger(sink)
     guidance.set_mission(MISSION)
     _tick(guidance, INSIDE, 0.25)

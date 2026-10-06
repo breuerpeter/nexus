@@ -37,7 +37,7 @@ def test_the_pid_example_flies_the_shipped_vehicle_to_its_first_waypoint():
         moment_scale=flight.MOMENT_SCALE,
         max_steps=3000,
     )
-    guidance = MissionGuidance(orch.controller, reached_m=0.3, final_hold_s=0.0, stop=orch.stop)
+    guidance = MissionGuidance(reached_m=0.3, final_hold_s=0.0)
     with na.Sim.from_orchestrator(orch, guidance=guidance) as sim:
         sim.guidance.set_mission(flight.WAYPOINTS[:1])
         sim.run()

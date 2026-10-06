@@ -18,11 +18,6 @@ from nexus._src.guidance import MissionGuidance, TrackingGuidance
 START = (0.0, 0.0, 2.0)
 
 
-class _Controller:
-    def accept_setpoint(self, sp):
-        pass
-
-
 class _State:
     """The physics state a guidance reads: one body at a set position."""
 
@@ -69,11 +64,11 @@ def _tick(guidance, pos, sim_time):
 def test_a_guidance_names_only_its_own_rows():
     """A guidance names only its own rows, its waypoints and its tracked reference, and no path."""
     sink = _Sink()
-    mission = MissionGuidance(_Controller())
+    mission = MissionGuidance()
     mission.set_logger(sink)
     mission.set_mission([(1.0, 0.0, 2.0), (2.0, 0.0, 2.0), (3.0, 0.0, 2.0)])
     _tick(mission, START, 0.004)
-    tracking = TrackingGuidance(_Controller(), planner=lambda waypoints: _Reference())
+    tracking = TrackingGuidance(planner=lambda waypoints: _Reference())
     tracking.set_logger(sink)
     tracking.set_mission([(2.0, 0.5, 3.5), (3.0, 2.0, 4.0)])
     _tick(tracking, START, 0.004)

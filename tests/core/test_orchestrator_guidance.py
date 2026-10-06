@@ -1,6 +1,8 @@
 """The loop runs a guidance's stage before the controller's, so the setpoint a guidance computes on a
-tick is the one the controller reads on that tick. Stand-in components at the loop's seams, on the
-Warp CPU device, where every stage runs as plain Python on each tick.
+tick is the one the controller reads on that tick. A guidance holds no controller and no stop: its
+stage writes a changed setpoint to the tick, which the loop hands to the controller, and marks the
+tick done when its mission is over, which the loop ends the run on. Stand-in components at the
+loop's seams, on the Warp CPU device, where every stage runs as plain Python on each tick.
 """
 
 import logging
@@ -123,10 +125,15 @@ class _ExchangeController:
 
 class _DeviceController:
     """A controller that takes setpoints and whose stages are all device stages, the shape of the
-    Proportional Integral Derivative (PID) example.
+    Proportional Integral Derivative (PID) example. It keeps the setpoint it holds each time its
+    stage runs.
     """
 
     capturable = True
+
+    def __init__(self):
+        self.setpoint = None
+        self.held = []
 
     def connect(self):
         pass
@@ -135,10 +142,23 @@ class _DeviceController:
         pass
 
     def accept_setpoint(self, sp):
+        self.setpoint = sp
+
+    def stages(self):
+        return [Stage("act", "device", lambda tick: self.held.append(self.setpoint))]
+
+
+class _NoSetpointController:
+    """A controller that takes no setpoint, the shape of PX4's: it has no ``accept_setpoint``."""
+
+    def connect(self):
+        pass
+
+    def close(self):
         pass
 
     def stages(self):
-        return [Stage("act", "device", lambda tick: None)]
+        return [Stage("read", "host", lambda tick: None), Stage("exchange", "host", lambda tick: True)]
 
 
 class _Reference:
@@ -202,40 +222,65 @@ def _orch(controller, physics, **kw):
 
 
 def test_a_controller_reads_the_next_goal_on_the_tick_the_vehicle_arrives():
-    """A controller reads the next goal on the tick the vehicle arrives."""
+    """A controller reads the next goal on the tick the vehicle arrives: the loop hands the tick's
+    setpoint to the controller before the controller's stages, and the guidance holds no controller.
+    """
     with wp.ScopedDevice("cpu"):
         physics = _Physics([(0.0, 0.0, 0.0), (0.0, 0.0, 0.0), GOALS[0], GOALS[0]])
         controller = _ExchangeController(physics.state)
-        guidance = MissionGuidance(controller, reached_m=0.3)
+        guidance = MissionGuidance(reached_m=0.3)
         guidance.set_mission(GOALS)
         orch = _orch(controller, physics, guidance=guidance)
         for _ in range(3):
             orch.step()
         orch.close()
     held = next(setpoint for _, pos, setpoint in controller.exchanges if pos == GOALS[0])
-    assert tuple(held.pos) == GOALS[1]
+    holds_the_controller = any(value is controller for value in vars(guidance).values())
+    assert (tuple(held.pos), holds_the_controller) == (GOALS[1], False)
+
+
+def test_a_controller_holds_the_first_goal_before_its_own_first_stage():
+    """A controller holds the first goal before its own first stage.
+
+    Given a run whose controller records the goal it holds each time its device stage runs and a
+    `MissionGuidance` whose mission was set before the run, when the run takes its first tick, then
+    every run of that stage, the warm pass included, held the first goal.
+    """
+    with wp.ScopedDevice("cpu"):
+        controller = _DeviceController()
+        guidance = MissionGuidance()
+        guidance.set_mission(GOALS)
+        orch = _orch(controller, _Physics([(0.0, 0.0, 0.0)]), guidance=guidance)
+        orch.step()
+        orch.close()
+    held = [None if sp is None else tuple(sp.pos) for sp in controller.held]
+    # The stage runs once in the warm pass and once on the first tick.
+    assert held == [GOALS[0], GOALS[0]]
 
 
 def test_a_tracking_controller_holds_its_planned_reference_from_its_first_exchange():
-    """A tracking controller holds its planned reference from its first exchange."""
+    """A tracking controller holds its planned reference from its first exchange, and the plan waits
+    for the run's first tick: the seed exchange, over the settled state, held no reference.
+    """
     reference = _Reference()
     with wp.ScopedDevice("cpu"):
         physics = _Physics([(0.0, 0.0, 2.0)])
         controller = _ExchangeController(physics.state)
-        guidance = TrackingGuidance(controller, planner=lambda waypoints: reference)
+        guidance = TrackingGuidance(planner=lambda waypoints: reference)
         guidance.set_mission([(2.0, 0.5, 3.5), (3.0, 2.0, 4.0)])
         orch = _orch(controller, physics, guidance=guidance)
         orch.step()  # the run's first tick; its exchange is the last one the controller kept
         orch.close()
+    _, _, seeded = controller.exchanges[0]  # the seed exchange, before any tick
     sim_time, _, setpoint = controller.exchanges[-1]
-    assert (setpoint.reference, guidance.reference_started_at) == (reference, sim_time)
+    assert (seeded, setpoint.reference, guidance.reference_started_at) == (None, reference, sim_time)
 
 
 def test_a_run_whose_stages_are_all_device_stages_stays_one_captured_segment_with_a_guidance(caplog):
     """A run whose stages are all device stages stays one captured segment with a guidance."""
     with wp.ScopedDevice("cpu"), caplog.at_level(logging.INFO, logger="nexus"):
         controller = _DeviceController()
-        guidance = MissionGuidance(controller)
+        guidance = MissionGuidance()
         guidance.set_mission(GOALS)
         orch = _orch(controller, _Physics([(0.0, 0.0, 0.0)]), guidance=guidance)
         orch.step()
@@ -251,7 +296,7 @@ def test_a_runs_on_tick_hook_and_its_guidance_both_run():
     with wp.ScopedDevice("cpu"):
         physics = _Physics([(0.0, 0.0, 0.0), (0.0, 0.0, 0.0), GOALS[0], GOALS[1]])
         controller = _ExchangeController(physics.state)
-        guidance = MissionGuidance(controller, reached_m=0.3)
+        guidance = MissionGuidance(reached_m=0.3)
         guidance.set_mission(GOALS)
         orch = _orch(
             controller, physics, guidance=guidance, on_tick=lambda state, t, steps: ticks.append(steps), max_steps=6
@@ -262,20 +307,57 @@ def test_a_runs_on_tick_hook_and_its_guidance_both_run():
     assert (len(ticks), guidance.reached) == (6, 2)
 
 
+def test_a_mission_that_is_over_ends_the_run():
+    """A mission that is over ends the run.
+
+    Given a run whose `max_steps` lies far beyond its mission and a `MissionGuidance` with one goal and
+    no final hold, when the vehicle reaches the goal, then `run()` returns, and the run took no tick
+    after the one on which the mission ended.
+    """
+    ticks = []
+    with wp.ScopedDevice("cpu"):
+        physics = _Physics([(0.0, 0.0, 0.0), (0.0, 0.0, 0.0), GOALS[0]])
+        controller = _ExchangeController(physics.state)
+        guidance = MissionGuidance(reached_m=0.3, final_hold_s=0.0)
+        guidance.set_mission(GOALS[:1])
+        orch = _orch(
+            controller, physics, guidance=guidance, on_tick=lambda state, t, steps: ticks.append(steps), max_steps=50
+        )
+        orch.run()
+        orch.close()
+    # The vehicle arrives on the second tick, and the stage ends the mission on the next one.
+    assert (ticks, guidance.reached) == ([1, 2, 3], 1)
+
+
+def test_a_run_whose_controller_takes_no_setpoint_refuses_a_guidance():
+    """A run whose controller takes no setpoint refuses a guidance.
+
+    Given an orchestrator whose controller has no `accept_setpoint` and a `MissionGuidance`, when the
+    run takes its first step, then it raises `TypeError` that names the controller's class.
+    """
+    with wp.ScopedDevice("cpu"):
+        guidance = MissionGuidance()
+        guidance.set_mission(GOALS)
+        orch = _orch(_NoSetpointController(), _Physics([(0.0, 0.0, 0.0)]), guidance=guidance)
+        with pytest.raises(TypeError, match="_NoSetpointController"):
+            orch.step()
+        orch.close()
+
+
 def test_the_mission_markers_and_the_tracked_reference_sit_under_guidance_in_the_recording():
     """The mission markers and the tracked reference sit under `guidance/` in the recording."""
     recording = _Recording()
     with wp.ScopedDevice("cpu"):
         physics = _Physics([(0.0, 0.0, 2.0)])
         controller = _ExchangeController(physics.state)
-        mission = MissionGuidance(controller)
+        mission = MissionGuidance()
         mission.set_mission([(1.0, 0.0, 2.0), (2.0, 0.0, 2.0), (3.0, 0.0, 2.0)])
         orch = _orch(controller, physics, guidance=mission, logger=recording)
         orch.step()
         orch.close()
         physics = _Physics([(0.0, 0.0, 2.0)])
         controller = _ExchangeController(physics.state)
-        tracking = TrackingGuidance(controller, planner=lambda waypoints: _Reference())
+        tracking = TrackingGuidance(planner=lambda waypoints: _Reference())
         tracking.set_mission([(2.0, 0.5, 3.5), (3.0, 2.0, 4.0)])
         orch = _orch(controller, physics, guidance=tracking, logger=recording)
         orch.step()

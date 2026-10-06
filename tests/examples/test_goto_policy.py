@@ -88,7 +88,7 @@ def _fly_tour(policy: str, steps: int) -> tuple[np.ndarray, np.ndarray]:
     cfg["physics"]["force_cpu"] = True
     vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
     orch = build_policy_orchestrator(cfg, policy_path=policy, vehicle_builder=vb, max_steps=steps)
-    guidance = GeofenceGuidance(orch.controller, bounds=flight.FENCE, stop=orch.stop)
+    guidance = GeofenceGuidance(bounds=flight.FENCE)
     with na.Sim.from_orchestrator(orch, guidance=guidance) as sim:
         sim.guidance.set_mission(flight.WAYPOINTS)
         sim.run()

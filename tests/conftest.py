@@ -341,7 +341,7 @@ def fly_recorded(tmp, vehicle: str, *, layer: str | None = None, ticks: int = FL
             if renderer_factory is not None:
                 renderer_factory.close()  # the loop never took the Kit peer over, so it stops here
             raise
-        guidance = TrackingGuidance(controller, planner=StandInReference)
+        guidance = TrackingGuidance(planner=StandInReference)
         with na.Sim.from_orchestrator(orch, guidance=guidance) as sim:
             sim.guidance.set_mission([(1.0, 0.0, 2.0), (2.0, 0.0, 2.0)])
             sim.run()
