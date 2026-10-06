@@ -26,7 +26,7 @@ def _frames(rrd: str, camera: str) -> list[tuple[int, int]]:
     sizes = []
     for chunk in RrdReader(rrd).stream():
         batch = chunk.to_record_batch()
-        if chunk.entity_path.endswith(f"/cameras/{camera}") and "EncodedImage:blob" in batch.schema.names:
+        if chunk.entity_path == f"/sim/vehicle/sensors/{camera}" and "EncodedImage:blob" in batch.schema.names:
             for cell in batch.column("EncodedImage:blob").to_pylist():
                 sizes.append(Image.open(io.BytesIO(bytes(cell[0]))).size)
     return sizes

@@ -105,15 +105,14 @@ class Sim:
         if geo is not None:  # override the scene's geodetic origin, for example to fly cesium over any lat/lon
             parts = [float(x) for x in geo.split(",")]
             self._launch.set_geodetic_origin(*parts)  # lat,lon[,alt]; alt is the WGS84 ellipsoidal surface height
-        # Resolve the device selector: 'auto'/'gpu' -> 'cuda' if a CUDA device is present, else 'cpu'. The
-        # command-line tool plus sim_argparser default to 'auto'; the launch path itself only distinguishes 'cpu'.
-        if device in ("auto", "gpu"):
+        # 'gpu' is an alias of 'cuda'. The launch takes 'auto', 'cpu' or 'cuda', and the resolve picks the
+        # device: CUDA when a CUDA device is present, else the CPU. The receipt records the pick.
+        if device == "gpu":
             import warp as wp
 
-            have_gpu = wp.is_cuda_available()
-            if device == "gpu" and not have_gpu:
+            if not wp.is_cuda_available():
                 logger.warning("device=gpu requested but no CUDA device found, falling back to CPU")
-            device = "cuda" if have_gpu else "cpu"
+            device = "cuda"
         self._launch.runtime.device = device
         self._reached_m = float(reached_m)  # operator advance threshold: mission waypoint arrival
         self._final_hold_s = float(final_hold_s)  # keep running this long, in sim-time, after the final goal
@@ -246,7 +245,7 @@ class Sim:
             self._recorder = Recorder(dt=dt, maxlen=maxlen)
             self._orch.attach_recorder(self._recorder)
             # Cache the base body channel, the discovered base, for the wait_until/sleep sim clock.
-            self._base_ch = self._recorder.channels[f"physics/body/{self._orch.physics.base_body}"]
+            self._base_ch = self._recorder.channels[f"vehicle/body/{self._orch.physics.base_body}"]
         if self._in_process:
             # In-process autopilot: wire the operator over the controller's thin setpoint surface at
             # the host seam, Orchestrator.on_tick, the post-step slot between graph replays. The
@@ -270,7 +269,8 @@ class Sim:
                 if hasattr(self._operator, "tick"):
                     self._orch.on_tick = self._operator.tick  # sequencing seam: advance the mission
                 if hasattr(self._operator, "set_logger"):
-                    self._orch.add_loggable(self._operator)  # logging seam: re-emit the mission viz
+                    # The logging seam: the mission viz lands under guidance/, the in-loop seam's name per #41.
+                    self._orch.add_loggable(self._operator, "guidance")
         # Host-boundary, PX4, wires nothing here: a script opens its own client on the offboard link,
         # from sim.ports, after start(), and the run is step-driven the same way as any other.
         return self
@@ -422,7 +422,7 @@ class Sim:
         """
         if self._recorder is None:
             raise RuntimeError("Sim(observe=False): no Recorder attached")
-        return ChannelMap(self._recorder.channels, ("physics/body/", "physics/joint/"))
+        return ChannelMap(self._recorder.channels, ("vehicle/body/", "vehicle/joints/"))
 
     @property
     def sensors(self) -> ChannelMap:
@@ -438,7 +438,7 @@ class Sim:
         """
         if self._recorder is None:
             raise RuntimeError("Sim(observe=False): no Recorder attached")
-        return ChannelMap(self._recorder.channels, ("sensors/",))
+        return ChannelMap(self._recorder.channels, ("vehicle/sensors/",))
 
     @property
     def base_body(self) -> str:

@@ -53,7 +53,7 @@ def build_sensors(specs: list[ComponentSpec], *, usd_path: str | Path, model, se
         link: The link a class that requires a peer takes; a class that requires none gets ``None``.
 
     Returns:
-        The sensors, in the order of `specs`.
+        The sensors, in the order of `specs`, each named after its prim, in lower case.
 
     Raises:
         ValueError: A sensor's prim doesn't sit under a rigid body of the model; the message names the prim.
@@ -82,5 +82,10 @@ def build_sensors(specs: list[ComponentSpec], *, usd_path: str | Path, model, se
             prim=prim,
             link=link if getattr(spec.cls, "requires", ()) else None,
         )
-        sensors.append(spec.cls(run, **spec.kwargs))
+        sensor = spec.cls(run, **spec.kwargs)
+        # The instance is the prim that declares it: its name, in lower case, ends a recorded row's path
+        # and keys the Recorder's channel, and its path is what a shared-name error names.
+        sensor.name = spec.prim.rsplit("/", 1)[-1].lower()
+        sensor.prim_path = spec.prim
+        sensors.append(sensor)
     return sensors

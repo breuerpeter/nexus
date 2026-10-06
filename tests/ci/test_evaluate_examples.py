@@ -502,3 +502,98 @@ def test_an_upload_run_still_writes_the_bench_feed_under_its_per_commit_key_and_
     puts = [line.split() for line in log.read_text().splitlines() if "put-object" in line]
     written = {call[call.index("--key") + 1] for call in puts}
     assert written == {"public/ci/bench/0123456789ab.json", "public/ci/bench/latest.json"}
+
+
+def test_an_upload_run_writes_no_docs_recording_for_a_flight_that_fails_a_gate(tmp_path, monkeypatch):
+    """An upload run writes no docs recording for a flight that completes and fails a gate: given a `pid`
+    flight that wrote an `.rrd` and regressed a correctness row, when the harness runs with `--upload`
+    against a stand-in `aws`, then it copies no `.rrd` to S3.
+    """
+    _fake_flights(monkeypatch, tmp_path / "rec", {"pid": ({**_HEALTHY["pid"], "reached": 3}, 0)})  # of 4
+    log = _stand_in_aws(monkeypatch, tmp_path)
+
+    _harness(monkeypatch, "--only", "pid", "--out", str(tmp_path / "out"), "--upload")
+
+    assert _recordings_copied(log) == set()
+
+
+def test_a_red_flight_holds_back_its_own_recording_only(tmp_path, monkeypatch):
+    """A red flight holds back its own recording only, and a green flight in the same run still uploads:
+    given a regressed `pid` flight and a green `gain_tuning` flight in one run, when the harness runs with
+    `--upload` against a stand-in `aws`, then the only `.rrd` it copies goes to
+    `public/ci/logs/gain_tuning.rrd`.
+    """
+    flights = {"pid": ({**_HEALTHY["pid"], "reached": 3}, 0), "gain_tuning": (_HEALTHY["gain_tuning"], 0)}  # of 4
+    _fake_flights(monkeypatch, tmp_path / "rec", flights)
+    log = _stand_in_aws(monkeypatch, tmp_path)
+
+    _harness(monkeypatch, "--only", "pid,gain_tuning", "--out", str(tmp_path / "out"), "--upload")
+
+    assert _recordings_copied(log) == {"s3://ci-bucket/public/ci/logs/gain_tuning.rrd"}
+
+
+def test_the_log_names_each_docs_recording_the_run_held_back(tmp_path, monkeypatch, capsys):
+    """The log names each docs recording the run held back: given a regressed `pid` flight, when the
+    harness runs with `--upload` against a stand-in `aws`, then its output has a line that names `pid`
+    and says its recording wasn't uploaded.
+    """
+    _fake_flights(monkeypatch, tmp_path / "rec", {"pid": ({**_HEALTHY["pid"], "reached": 3}, 0)})  # of 4
+    _stand_in_aws(monkeypatch, tmp_path)
+
+    _harness(monkeypatch, "--only", "pid", "--out", str(tmp_path / "out"), "--upload")
+
+    lines = capsys.readouterr().out.splitlines()
+    assert any("pid" in line and "not uploaded" in line for line in lines)
+
+
+def test_a_flight_whose_run_fails_uploads_no_docs_recording(tmp_path, monkeypatch):
+    """A flight whose run fails uploads no docs recording: given a `pid` flight that wrote an `.rrd` and
+    exited non-zero, when the harness runs with `--upload` against a stand-in `aws`, then it copies no
+    `.rrd` to S3.
+    """
+    _fake_flights(monkeypatch, tmp_path / "rec", {"pid": (_HEALTHY["pid"], 1)})
+    log = _stand_in_aws(monkeypatch, tmp_path)
+
+    _harness(monkeypatch, "--only", "pid", "--out", str(tmp_path / "out"), "--upload")
+
+    assert _recordings_copied(log) == set()
+
+
+def test_a_regressed_upload_run_still_writes_the_bench_feed_under_both_keys(tmp_path, monkeypatch):
+    """A regressed upload run still writes the bench feed under both keys: given a regressed `pid` flight
+    with scores, when the harness runs with `--upload` against a stand-in `aws`, then it writes
+    `public/ci/bench/<sha12>.json` and the fixed key beside it.
+    """
+    _fake_flights(monkeypatch, tmp_path / "rec", {"pid": ({**_HEALTHY["pid"], "reached": 3}, 0)})  # of 4
+    log = _stand_in_aws(monkeypatch, tmp_path)
+
+    _harness(monkeypatch, "--only", "pid", "--out", str(tmp_path / "out"), "--upload")
+
+    puts = [line.split() for line in log.read_text().splitlines() if "put-object" in line]
+    written = {call[call.index("--key") + 1] for call in puts}
+    assert written == {"public/ci/bench/0123456789ab.json", "public/ci/bench/latest.json"}
+
+
+def test_a_regressed_upload_run_still_exits_1(tmp_path, monkeypatch):
+    """A regressed upload run still exits 1: given a regressed `pid` flight, when the harness runs with
+    `--upload` against a stand-in `aws`, then the run exits 1.
+    """
+    _fake_flights(monkeypatch, tmp_path / "rec", {"pid": ({**_HEALTHY["pid"], "reached": 3}, 0)})  # of 4
+    _stand_in_aws(monkeypatch, tmp_path)
+
+    rc = _harness(monkeypatch, "--only", "pid", "--out", str(tmp_path / "out"), "--upload")
+
+    assert rc == 1
+
+
+def test_a_flight_whose_only_miss_is_an_ungated_rtf_still_uploads_its_recording(tmp_path, monkeypatch):
+    """A flight whose only miss is an ungated `rtf` still uploads its recording: given a `pid` flight at
+    half its recorded `rtf`, when the harness runs with `--shared --upload` against a stand-in `aws`, then
+    it copies the recording to `public/ci/logs/pid.rrd`.
+    """
+    _fake_flights(monkeypatch, tmp_path / "rec", {"pid": ({**_HEALTHY["pid"], "rtf": 3.37}, 0)})  # half of 6.749
+    log = _stand_in_aws(monkeypatch, tmp_path)
+
+    _harness(monkeypatch, "--only", "pid", "--shared", "--out", str(tmp_path / "out"), "--upload")
+
+    assert _recordings_copied(log) == {"s3://ci-bucket/public/ci/logs/pid.rrd"}

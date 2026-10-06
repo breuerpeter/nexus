@@ -14,8 +14,9 @@ name: gpu-examples
 # and loads the image). One PX4 flight per box: two collide on PX4's fixed ports. The merge job
 # joins the score files of the fan-out's parts into the one examples-eval artifact. On every event
 # only a red flight's .rrd rides an artifact, in its own part. With --upload each box refreshes
-# its example's docs .rrd embed + the bench trend feed (main / dispatch only); on main pushes a
-# data-refresh PR updates docs/data/examples_bench.json.
+# its example's docs .rrd embed + the bench trend feed (main / dispatch only). A red flight leaves
+# its embed as published and still feeds the trend. On main pushes a data-refresh PR updates
+# docs/data/examples_bench.json.
 # goto_policy flies the hosted policy here: given a policy the flight is bit-reproducible, so it is
 # the exact deploy gate, on the leg that already runs for the deploy-side paths. The rl leg's fresh
 # export flies as goto_policy_fresh on gpu-rl. Advisory; a labeled fork PR flies through

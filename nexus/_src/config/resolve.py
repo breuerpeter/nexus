@@ -93,7 +93,9 @@ def resolve(
     With ``fetch=True``, the default, the resolver downloads and sha-verifies every ``{url, sha256}``
     asset into the local cache and returns its path: the vehicle USD and the scene USD.
     ``fetch=False`` resolves the receipt only, with no network, which is useful for tests and dry runs. ``cache_dir=None`` uses the default
-    newton-assets cache.
+    newton-assets cache. The receipt carries the launch's device selector as given; the build stamps
+    the device the run picks, since that needs Warp, which a caller that only wants an asset path
+    never starts.
     """
     # A caller that hands over a Registry owns it; otherwise the run finds its own catalog and says
     # which one it flew, so a recording beside it answers what produced it.
@@ -155,7 +157,6 @@ def resolve(
         scene_start=scene.start,
         geodetic_origin=geodetic_origin,
         runtime=launch.runtime,
-        sensors=launch.sensors,
     )
     return ResolvedLaunch(
         tested_config=tested,
