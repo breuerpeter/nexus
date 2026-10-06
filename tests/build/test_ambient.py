@@ -1,7 +1,7 @@
 """The ambient values a run's sensors read resolve at build from the scene's geodetic origin.
 
 Beside the launch tests, since pytest skips a directory named ``build``. Real builds on the Warp CPU
-backend: the hosted ``astro_max_base`` vehicle, fetched through the catalog, a stand-in controller
+backend: the local fixture vehicle in ``tests/usd/sensor_vehicle.py`` with an analytic sensor of each kind, a stand-in controller
 that answers at once, and one tick at rest on the ground. Each build settles a Newton model, so the
 flights are module-scoped. Skipped without newton or pxr.
 """
@@ -16,10 +16,11 @@ pytest.importorskip("pxr")
 
 import warp as wp
 
-from nexus._src.config import LaunchConfig, resolve
+from nexus._src.config import LaunchConfig
 from nexus._src.config.registry import load_registry
 from nexus._src.core.schema import Controls
 from nexus._src.core.stages import peer_stages
+from tests.usd import sensor_vehicle as sv
 
 ZURICH = (47.3769, 8.5417, 408.0)
 WOODINVILLE = (47.747944, -122.163917)
@@ -29,6 +30,13 @@ WOODINVILLE = (47.747944, -122.163917)
 ZURICH_NED = (0.216, 0.010, 0.429)
 WOODINVILLE_NED = (0.182, 0.051, 0.504)
 FIELD_TOL = 0.015  # five sigma of the vehicle's authored magnetometer noise, 0.003 per axis
+# An analytic sensor of each kind on the base body, with the noise the shipped vehicle authors.
+SENSORS = (
+    sv.prim("Imu", "NexusImuAPI", "float nexus:accNoise = 0.02\nfloat nexus:gyroNoise = 0.02")
+    + sv.prim("Mag", "NexusMagAPI", "float3 nexus:noise = (0.003, 0.003, 0.003)")
+    + sv.prim("Baro", "NexusBaroAPI", "float nexus:noise = 0.02")
+    + sv.prim("Gps", "NexusGpsAPI", "int nexus:fixType = 3")
+)
 
 
 class _Controller:
@@ -91,39 +99,39 @@ def _field(meas):
 @pytest.fixture(scope="module")
 def zurich_scene(tmp_path_factory):
     tmp = tmp_path_factory.mktemp("zurich")
-    return _settled(LaunchConfig().set_vehicle("astro_max_base").set_scene("zurich"), _catalog(tmp))
+    return _settled(LaunchConfig().set_vehicle(sv.vehicle(tmp, SENSORS)).set_scene("zurich"), _catalog(tmp))
 
 
 @pytest.fixture(scope="module")
 def geo_override(tmp_path_factory):
     tmp = tmp_path_factory.mktemp("geo")
-    launch = LaunchConfig().set_vehicle("astro_max_base").set_scene("woodinville").set_geodetic_origin(*ZURICH)
+    launch = LaunchConfig().set_vehicle(sv.vehicle(tmp, SENSORS)).set_scene("woodinville").set_geodetic_origin(*ZURICH)
     return _settled(launch, _catalog(tmp))
 
 
 @pytest.fixture(scope="module")
 def empty_scene(tmp_path_factory):
     tmp = tmp_path_factory.mktemp("empty")
-    return _settled(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"), _catalog(tmp))
+    return _settled(LaunchConfig().set_vehicle(sv.vehicle(tmp, SENSORS)).set_scene("empty"), _catalog(tmp))
 
 
 @pytest.fixture(scope="module")
 def gravity_five_vehicle(tmp_path_factory):
-    """The hosted vehicle under a local layer whose ``PhysicsScene`` authors a gravity magnitude of 5."""
+    """The fixture vehicle under a local layer whose ``PhysicsScene`` sets gravity to 5."""
     from pxr import Usd, UsdPhysics
 
     tmp = tmp_path_factory.mktemp("grav5")
-    hosted = resolve(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty")).vehicle_usd_path
+    fixture = sv.vehicle(tmp, SENSORS)
     path = tmp / "grav5.usda"
     stage = Usd.Stage.CreateNew(str(path))
-    stage.GetRootLayer().subLayerPaths.append(hosted)
+    stage.GetRootLayer().subLayerPaths.append(fixture)
     UsdPhysics.Scene(stage.OverridePrim("/PhysicsScene")).CreateGravityMagnitudeAttr(5.0)
     stage.GetRootLayer().Save()
     reopened = Usd.Stage.Open(str(path))
     prim = reopened.GetPrimAtPath("/PhysicsScene")
-    assert prim, f"the hosted vehicle did not compose under the layer: {hosted!r} {reopened.GetUsedLayers()}"
+    assert prim, f"the fixture vehicle did not compose under the layer: {fixture!r} {reopened.GetUsedLayers()}"
     composed = UsdPhysics.Scene(prim).GetGravityMagnitudeAttr().Get()
-    assert composed == 5.0, f"the layer's gravity did not compose over the hosted vehicle: {composed}"
+    assert composed == 5.0, f"the layer's gravity did not compose over the fixture vehicle: {composed}"
     return _settled(LaunchConfig().set_vehicle(str(path)).set_scene("empty"), _catalog(tmp))
 
 

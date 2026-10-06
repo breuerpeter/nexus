@@ -18,6 +18,7 @@ from nexus._src.build.assembly import build_scenario
 from nexus._src.build.launch import resolve_to_vehicle_builder
 from nexus._src.config import LaunchConfig
 from nexus.examples.controllers.pid.assembly import build_pid_orchestrator
+from tests.usd import sensor_vehicle as sv
 
 # The Secure Hash Algorithm (SHA) 256 digest of main's 200-tick PID body poses, float32 (200, 5, 7),
 # per GPU model, flown through main's captured loop before the change: a CUDA trajectory repeats to the
@@ -30,10 +31,11 @@ _MAIN_TRAJECTORY = {
 }
 
 
-def _pid(*, cpu: bool, max_steps: int):
+def _pid(*, cpu: bool, max_steps: int, vehicle: str = "astro_max_base"):
+    """The PID example's orchestrator flying `vehicle`, a catalog name or a path, toward 1.5 m up."""
     cfg = build_scenario()
     cfg["physics"]["force_cpu"] = cpu
-    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
+    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle(vehicle).set_scene("empty"))
     return build_pid_orchestrator(cfg, goal_w=(0.0, 0.0, 1.5), max_steps=max_steps, vehicle_builder=vb)
 
 
@@ -57,14 +59,17 @@ def test_pid_on_cuda_flies_the_trajectory_main_recorded():
 
 
 @pytest.mark.parametrize("device", ["cpu", "cuda:0"])
-def test_start_returns_with_the_seed_row_and_the_first_tick_recorded(device):
+def test_start_returns_with_the_seed_row_and_the_first_tick_recorded(device, tmp_path):
     """``Sim.start()`` returns with one observation row recorded and the capture done, for every
     controller kind: the pid example's base body holds two rows after ``start()``, the settled seed row
-    and the first tick's.
+    and the first tick's. It flies the local fixture vehicle of ``tests/usd/sensor_vehicle.py``.
     """
     if device != "cpu" and not wp.is_cuda_available():
         pytest.skip("no CUDA device")
-    with wp.ScopedDevice(device), Sim.from_orchestrator(_pid(cpu=device == "cpu", max_steps=50)) as sim:
+    with (
+        wp.ScopedDevice(device),
+        Sim.from_orchestrator(_pid(cpu=device == "cpu", max_steps=50, vehicle=sv.vehicle(tmp_path))) as sim,
+    ):
         sim.start()
         rows = len(sim.physics[sim.base_body].history())
     assert rows == 2

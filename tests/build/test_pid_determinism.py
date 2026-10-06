@@ -7,7 +7,8 @@ deterministic in-process controller that closes that gap: flown through the unch
 ``Orchestrator.run()`` over the bit-exact Newton CPU backend, two runs of the same setup produce
 **bit-for-bit the same** trajectories: the determinism CI gate that doesn't wait on PX4.
 
-Heavy, since it builds + settles a Newton model twice; skipped if ``newton`` isn't importable.
+It flies the local fixture vehicle of ``tests/usd/sensor_vehicle.py``, built and settled twice; skipped
+if ``newton`` isn't importable.
 """
 
 import numpy as np
@@ -20,14 +21,15 @@ from nexus._src.build.assembly import build_scenario
 from nexus._src.build.launch import resolve_to_vehicle_builder
 from nexus._src.config import LaunchConfig
 from nexus.examples.controllers.pid.assembly import build_pid_orchestrator
+from tests.usd import sensor_vehicle as sv
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")  # the build's force_cpu sets the device; the scope puts it back
 
 
-def _run(steps: int):
+def _run(steps: int, vehicle: str):
     cfg = build_scenario()
     cfg["physics"]["force_cpu"] = True
-    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
+    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle(vehicle).set_scene("empty"))
     orch = build_pid_orchestrator(
         cfg,
         goal_w=(0.0, 0.0, 1.5),
@@ -48,10 +50,11 @@ def _run(steps: int):
     return np.array(q), np.array(qd)
 
 
-def test_pid_loop_is_bit_identical():
+def test_pid_loop_is_bit_identical(tmp_path):
     steps = 120
-    q1, qd1 = _run(steps)
-    q2, qd2 = _run(steps)
+    vehicle = sv.vehicle(tmp_path)
+    q1, qd1 = _run(steps, vehicle)
+    q2, qd2 = _run(steps, vehicle)
     assert q1.shape[0] == steps and qd1.shape[0] == steps
     # bit-for-bit the same (max|Δ| == 0) on the Warp CPU backend: the determinism gate
     assert np.array_equal(q1, q2), f"body_q diverged: max|Δ|={np.abs(q1 - q2).max()}"

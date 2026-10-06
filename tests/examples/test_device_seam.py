@@ -4,7 +4,7 @@ the in-process Proportional Integral Derivative (PID) loop has no per-tick host 
 the whole tick is one graph. A NumPy observation still takes the host path.
 
 The single-body motor model + the moment mixer need rotor geometry for the allocation, so the seam fixture
-builds a real rotored vehicle, the astro-max Universal Scene Description (USD).
+builds a real rotored vehicle, the local fixture vehicle of ``tests/usd/sensor_vehicle.py``.
 """
 
 import numpy as np
@@ -22,20 +22,21 @@ from nexus._src.core.schema import Measurement, SimTime
 from nexus.examples._lib import RigidBodyRotors, build_rotor_mixer_from_model
 from nexus.examples._lib.observation import WarpObservationSensor
 from nexus.examples.controllers.pid import PidController
+from tests.usd import sensor_vehicle as sv
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")
 
-_ACT_CFG = {"ct": 0.000003463, "cd": 0.05, "rpm_max": 3800.0}  # the astro-max thrust map its rotors declare
+_ACT_CFG = {"ct": 0.000003463, "cd": 0.05, "rpm_max": 3800.0}  # the thrust map the fixture's rotors declare
 
 
 def _is_warp_array(x) -> bool:
     return not isinstance(x, np.ndarray) and hasattr(x, "numpy")
 
 
-def _rotored_model():
-    """A real rotored vehicle, astro-max, + its settled rest pose: the geometry the allocation needs."""
+def _rotored_model(tmp_path):
+    """A real rotored vehicle, the fixture, + its settled rest pose: the geometry the allocation needs."""
     b = newton.ModelBuilder()
-    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
+    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle(sv.vehicle(tmp_path)).set_scene("empty"))
     vb.build(b)
     model = b.finalize()
     state = model.state()
@@ -44,8 +45,8 @@ def _rotored_model():
     return model, vb.rotor_joints(), state, mass
 
 
-def test_inprocess_seam_is_device_native():
-    model, joints, state, mass = _rotored_model()
+def test_inprocess_seam_is_device_native(tmp_path):
+    model, joints, state, mass = _rotored_model(tmp_path)
     mixer = build_rotor_mixer_from_model(model, joints, _ACT_CFG, state.body_q.numpy())
 
     # 1. obs sensor writes a Warp array into meas.observation, not numpy
