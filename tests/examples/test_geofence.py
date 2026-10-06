@@ -43,7 +43,7 @@ class _State:
 
 
 class _Sink:
-    """The recording sink a guidance logs through: it keeps each row's entity path, points and color."""
+    """The scoped logger a guidance logs through: it keeps each row's name, points and color."""
 
     def __init__(self):
         self.rows = []
@@ -58,20 +58,6 @@ class _Sink:
 
     def log_strip(self, entity, points, *, color=None, **style):
         self._keep(entity, points, color)
-
-
-class _Scoped:
-    """The view of the sink the loop hands a component: each row lands under the component's path."""
-
-    def __init__(self, sink, path):
-        self._sink = sink
-        self._path = path
-
-    def log_points(self, name, positions, **style):
-        self._sink.log_points(f"{self._path}/{name}", positions, **style)
-
-    def log_strip(self, name, points, **style):
-        self._sink.log_strip(f"{self._path}/{name}", points, **style)
 
 
 def _tick(guidance, pos, sim_time):
@@ -117,10 +103,10 @@ def test_the_recording_shows_the_fence_and_a_breach_as_a_red_marker():
     """The recording shows the fence, and a breach as a red marker."""
     sink = _Sink()
     guidance = GeofenceGuidance(_Controller(), bounds=BOUNDS)
-    guidance.set_logger(_Scoped(sink, "guidance"))
+    guidance.set_logger(sink)
     guidance.set_mission(MISSION)
     _tick(guidance, INSIDE, 0.25)
-    fence_at_start = any(entity.startswith("guidance/fence") for entity, _, _ in sink.rows)
+    fence_at_start = any(name.startswith("fence/") for name, _, _ in sink.rows)
     _tick(guidance, OUTSIDE, 0.5)
-    breach = [(points, color) for entity, points, color in sink.rows if entity == "guidance/breach"]
+    breach = [(points, color) for name, points, color in sink.rows if name == "breach"]
     assert (fence_at_start, breach) == (True, [([OUTSIDE], RED)])

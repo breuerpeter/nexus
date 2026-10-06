@@ -153,6 +153,48 @@ class _Reference:
         return []
 
 
+class _Recording:
+    """The recording sink, the shape the loop calls. It keeps the entity path of every row a component
+    logs through the view the loop scopes for it.
+    """
+
+    log_interval = 0.0
+
+    def __init__(self):
+        self.entities = []
+
+    def scoped(self, path):
+        return _View(self, path)
+
+    def set_time(self, t):
+        pass
+
+    def log_rtf(self, rtf):
+        pass
+
+    def log_profile(self, stats):
+        pass
+
+    def close(self):
+        pass
+
+
+class _View:
+    """A component's view of the recording, as the logger's ``scoped`` hands one: its rows land under
+    the path the loop asked for.
+    """
+
+    def __init__(self, recording, path):
+        self._recording = recording
+        self._path = path
+
+    def log_points(self, name, positions, **style):
+        self._recording.entities.append(f"{self._path}/{name}")
+
+    def log_strip(self, name, points, **style):
+        self._recording.entities.append(f"{self._path}/{name}")
+
+
 def _orch(controller, physics, **kw):
     return Orchestrator(
         clock=_Clock(), physics=physics, actuator=_Actuator(), sensors=[_Sensor()], controller=controller, **kw
@@ -218,3 +260,29 @@ def test_a_runs_on_tick_hook_and_its_guidance_both_run():
             pass
         orch.close()
     assert (len(ticks), guidance.reached) == (6, 2)
+
+
+def test_the_mission_markers_and_the_tracked_reference_sit_under_guidance_in_the_recording():
+    """The mission markers and the tracked reference sit under `guidance/` in the recording."""
+    recording = _Recording()
+    with wp.ScopedDevice("cpu"):
+        physics = _Physics([(0.0, 0.0, 2.0)])
+        controller = _ExchangeController(physics.state)
+        mission = MissionGuidance(controller)
+        mission.set_mission([(1.0, 0.0, 2.0), (2.0, 0.0, 2.0), (3.0, 0.0, 2.0)])
+        orch = _orch(controller, physics, guidance=mission, logger=recording)
+        orch.step()
+        orch.close()
+        physics = _Physics([(0.0, 0.0, 2.0)])
+        controller = _ExchangeController(physics.state)
+        tracking = TrackingGuidance(controller, planner=lambda waypoints: _Reference())
+        tracking.set_mission([(2.0, 0.5, 3.5), (3.0, 2.0, 4.0)])
+        orch = _orch(controller, physics, guidance=tracking, logger=recording)
+        orch.step()
+        orch.close()
+    assert sorted(set(recording.entities)) == [
+        "guidance/reference",
+        "guidance/waypoints/wp_0",
+        "guidance/waypoints/wp_1",
+        "guidance/waypoints/wp_2",
+    ]

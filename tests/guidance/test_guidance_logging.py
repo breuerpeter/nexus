@@ -1,6 +1,7 @@
-"""A guidance logs its mission markers and its tracked reference under ``guidance/``, the path the
-loop scopes its logger to. A stand-in sink takes the place of the recording, behind a scoped view as
-the loop hands one over, and each test drives the guidance through its stages, the seam the loop calls.
+"""A guidance names only its own rows: ``waypoints/wp_<i>`` and ``reference``. The loop scopes its
+logger to the guidance's path, which ``tests/core/test_orchestrator_guidance.py`` proves. A stand-in
+sink takes the place of that scoped logger, and each test drives the guidance through its stages, the
+seam the loop calls.
 """
 
 import numpy as np
@@ -46,30 +47,16 @@ class _Reference:
 
 
 class _Sink:
-    """The recording sink a guidance logs through: it keeps the entity path of every row."""
+    """The scoped logger a guidance logs through: it keeps the name of every row."""
 
     def __init__(self):
-        self.entities = []
-
-    def log_points(self, entity, positions, **style):
-        self.entities.append(entity)
-
-    def log_strip(self, entity, points, **style):
-        self.entities.append(entity)
-
-
-class _Scoped:
-    """The view of the sink the loop hands a component: each row lands under the component's path."""
-
-    def __init__(self, sink, path):
-        self._sink = sink
-        self._path = path
+        self.rows = []
 
     def log_points(self, name, positions, **style):
-        self._sink.log_points(f"{self._path}/{name}", positions, **style)
+        self.rows.append(name)
 
     def log_strip(self, name, points, **style):
-        self._sink.log_strip(f"{self._path}/{name}", points, **style)
+        self.rows.append(name)
 
 
 def _tick(guidance, pos, sim_time):
@@ -79,20 +66,15 @@ def _tick(guidance, pos, sim_time):
         stage.run(tick)
 
 
-def test_the_mission_markers_and_the_tracked_reference_sit_under_guidance_in_the_recording():
-    """The mission markers and the tracked reference sit under `guidance/` in the recording."""
+def test_a_guidance_names_only_its_own_rows():
+    """A guidance names only its own rows, its waypoints and its tracked reference, and no path."""
     sink = _Sink()
     mission = MissionGuidance(_Controller())
-    mission.set_logger(_Scoped(sink, "guidance"))
+    mission.set_logger(sink)
     mission.set_mission([(1.0, 0.0, 2.0), (2.0, 0.0, 2.0), (3.0, 0.0, 2.0)])
     _tick(mission, START, 0.004)
     tracking = TrackingGuidance(_Controller(), planner=lambda waypoints: _Reference())
-    tracking.set_logger(_Scoped(sink, "guidance"))
+    tracking.set_logger(sink)
     tracking.set_mission([(2.0, 0.5, 3.5), (3.0, 2.0, 4.0)])
     _tick(tracking, START, 0.004)
-    assert sorted(set(sink.entities)) == [
-        "guidance/reference",
-        "guidance/waypoints/wp_0",
-        "guidance/waypoints/wp_1",
-        "guidance/waypoints/wp_2",
-    ]
+    assert sorted(set(sink.rows)) == ["reference", "waypoints/wp_0", "waypoints/wp_1", "waypoints/wp_2"]
