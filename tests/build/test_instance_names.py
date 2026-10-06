@@ -29,7 +29,7 @@ def test_two_components_of_one_role_whose_prims_share_a_name_fail_the_build_and_
     """
     message = "the build did not fail"
     try:
-        fly_recorded(tmp_path, sv.vehicle(tmp_path, TWO_CAMERAS_NAMED_CAM), ticks=1)
+        fly_recorded(tmp_path, sv.vehicle(tmp_path, TWO_CAMERAS_NAMED_CAM), scene=sv.SCENE, ticks=1)
     except ValueError as exc:
         message = str(exc)
 

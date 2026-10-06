@@ -35,7 +35,7 @@ def _pid(*, cpu: bool, max_steps: int, vehicle: str = "astro_max_base"):
     """The PID example's orchestrator flying `vehicle`, a catalog name or a path, toward 1.5 m up."""
     cfg = build_scenario()
     cfg["physics"]["force_cpu"] = cpu
-    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle(vehicle).set_scene("empty"))
+    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle(vehicle).set_scene(sv.SCENE))
     return build_pid_orchestrator(cfg, goal_w=(0.0, 0.0, 1.5), max_steps=max_steps, vehicle_builder=vb)
 
 

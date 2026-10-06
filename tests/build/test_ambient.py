@@ -62,12 +62,13 @@ class _Controller:
 
 
 def _catalog(tmp_path):
-    """A project catalog over the bundled one: two scenes with an origin each, beside `empty` with none."""
+    """A project catalog over the bundled one: two scenes with an origin each, and `bare` with none. None names a scene file, so no build fetches one."""
     path = tmp_path / "nexus.registry.yaml"
     path.write_text(
         "scenes:\n"
         f"  zurich:\n    geodetic_origin: {{ lat: {ZURICH[0]}, lon: {ZURICH[1]}, alt: {ZURICH[2]} }}\n"
         f"  woodinville:\n    geodetic_origin: {{ lat: {WOODINVILLE[0]}, lon: {WOODINVILLE[1]}, alt: 5.02 }}\n"
+        "  bare: {}\n"
     )
     return load_registry(path)
 
@@ -112,7 +113,7 @@ def geo_override(tmp_path_factory):
 @pytest.fixture(scope="module")
 def empty_scene(tmp_path_factory):
     tmp = tmp_path_factory.mktemp("empty")
-    return _settled(LaunchConfig().set_vehicle(sv.vehicle(tmp, SENSORS)).set_scene("empty"), _catalog(tmp))
+    return _settled(LaunchConfig().set_vehicle(sv.vehicle(tmp, SENSORS)).set_scene("bare"), _catalog(tmp))
 
 
 @pytest.fixture(scope="module")
@@ -132,7 +133,7 @@ def gravity_five_vehicle(tmp_path_factory):
     assert prim, f"the fixture vehicle did not compose under the layer: {fixture!r} {reopened.GetUsedLayers()}"
     composed = UsdPhysics.Scene(prim).GetGravityMagnitudeAttr().Get()
     assert composed == 5.0, f"the layer's gravity did not compose over the fixture vehicle: {composed}"
-    return _settled(LaunchConfig().set_vehicle(str(path)).set_scene("empty"), _catalog(tmp))
+    return _settled(LaunchConfig().set_vehicle(str(path)).set_scene(sv.SCENE), _catalog(tmp))
 
 
 def test_the_magnetometer_reports_the_field_at_the_catalog_scenes_origin(zurich_scene):

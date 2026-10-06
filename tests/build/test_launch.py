@@ -358,7 +358,7 @@ def _handed_airframe(tmp_path, vehicle: str, layer: Path) -> list[str]:
     import nexus_sim._src.build.launch as L
 
     launch = LaunchConfig.from_dict(
-        {"vehicle": vehicle, "scene": "empty", "layer": str(layer), "runtime": {"device": "cpu"}}
+        {"vehicle": vehicle, "scene": sv.SCENE, "layer": str(layer), "runtime": {"device": "cpu"}}
     )
     loop = L.build_from_launch(launch, preroll_timeout=10.0, peers={"px4_sitl": _Handed})
     handed = [peer.airframe for peer in loop.peers]
@@ -422,7 +422,7 @@ def test_a_layer_that_deactivates_a_declaration_builds_nothing_for_it(tmp_path, 
         "    }\n}\n",
     )
     launch = LaunchConfig.from_dict(
-        {"vehicle": vehicle, "scene": "empty", "layer": str(layer), "runtime": {"device": "cpu"}}
+        {"vehicle": vehicle, "scene": sv.SCENE, "layer": str(layer), "runtime": {"device": "cpu"}}
     )
 
     loop = L.build_from_launch(launch, preroll_timeout=10.0, peers={"px4_sitl": Px4Fake})
@@ -491,13 +491,13 @@ def test_a_run_with_no_layer_builds_and_records_as_today(tmp_path, monkeypatch, 
 
 
 def _px4_run(tmp_path, device: str):
-    """Build the local fixture vehicle, which declares PX4 and its SITL peer, in `empty` on the PX4 fake,
+    """Build the local fixture vehicle, which declares PX4 and its SITL peer, in the fixture scene on the PX4 fake,
     and return the loop and the receipt it carries, the one the build handed it, as JSON.
     """
     import nexus_sim._src.build.launch as L
 
     launch = LaunchConfig.from_dict(
-        {"vehicle": sv.vehicle(tmp_path, px4=True), "scene": "empty", "runtime": {"device": device}}
+        {"vehicle": sv.vehicle(tmp_path, px4=True), "scene": sv.SCENE, "runtime": {"device": device}}
     )
     loop = L.build_from_launch(launch, preroll_timeout=10.0, peers={"px4_sitl": Px4Fake})
     return loop, loop.settings
@@ -506,7 +506,7 @@ def _px4_run(tmp_path, device: str):
 def test_a_px4_runs_receipt_carries_no_substeps_determinism_or_sensors(tmp_path, warp_cpu):
     """A PX4 run's receipt carries no `substeps`, no `determinism` and no `sensors`.
 
-    Given a launch of the fixture vehicle in `empty` on the PX4 fake, when the run builds and a caller reads
+    Given a launch of the fixture vehicle in the fixture scene on the PX4 fake, when the run builds and a caller reads
     its receipt as JSON, then `runtime` holds exactly `device`, `seed`, `dt`, `max_steps`, `rtf` and
     `solver`, and the receipt has no `sensors` key.
     """
@@ -552,7 +552,7 @@ def test_a_run_on_an_explicit_cpu_runs_on_the_cpu_and_records_cpu(tmp_path, warp
 def test_a_px4_run_steps_the_physics_once_per_control_tick(tmp_path, warp_cpu, caplog):
     """A PX4 run still steps the physics once per control tick.
 
-    Given a launch of the fixture vehicle in `empty` on the PX4 fake, when the run builds and ticks five
+    Given a launch of the fixture vehicle in the fixture scene on the PX4 fake, when the run builds and ticks five
     times, then every tick runs, and the stage plan the run logs at its first tick, the ring every tick
     runs, names the physics `step` stage once, so the five ticks step the physics five times.
     """

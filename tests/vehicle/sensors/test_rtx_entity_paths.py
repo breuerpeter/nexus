@@ -102,7 +102,7 @@ def test_a_camera_whose_frustum_fails_to_log_still_records_its_frames_at_its_own
 
     monkeypatch.setattr(rr, "log", fail_on_frustum)
     with caplog.at_level(logging.WARNING):
-        rrd = fly_recorded(tmp_path, sv.vehicle(tmp_path, FPVCAM), ticks=30)
+        rrd = fly_recorded(tmp_path, sv.vehicle(tmp_path, FPVCAM), scene=sv.SCENE, ticks=30)
     framed = sorted({entity for entity, _, columns in rrd_rows(rrd) if "EncodedImage:blob" in columns})
     warnings = [record.getMessage() for record in caplog.records if record.levelno == logging.WARNING]
 
@@ -122,7 +122,7 @@ def test_a_lidars_points_sit_at_sim_vehicle_sensors_in_the_world_frame_as_today_
     from nexus_sim._src.peers.kit.fake import KitFake
 
     kit = functools.partial(KitFake, points=[[1.0, 2.0, 3.0]])
-    rows = rrd_rows(fly_recorded(tmp_path, sv.vehicle(tmp_path, LIDAR), ticks=30, kit=kit))
+    rows = rrd_rows(fly_recorded(tmp_path, sv.vehicle(tmp_path, LIDAR), scene=sv.SCENE, ticks=30, kit=kit))
     at_lidar = [columns for entity, _, columns in rows if entity == "/sim/vehicle/sensors/scan"]
     points = {
         tuple(point)

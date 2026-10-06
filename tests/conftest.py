@@ -300,12 +300,21 @@ class StandInController:
         return [Stage("act", "host", self._act)]
 
 
-def fly_recorded(tmp, vehicle: str, *, layer: str | None = None, ticks: int = FLIGHT_TICKS, kit=None, debug=False):
+def fly_recorded(
+    tmp,
+    vehicle: str,
+    *,
+    scene: str = "empty",
+    layer: str | None = None,
+    ticks: int = FLIGHT_TICKS,
+    kit=None,
+    debug=False,
+):
     """Fly ``vehicle`` on the Warp CPU backend with recording on, and return the path of its ``.rrd``.
 
     The run flies a :class:`StandInController` under a guidance that plans a two-waypoint mission,
-    with a ``Recorder`` attached and the Kit peer sent to its fake, or to ``kit``. ``layer`` is an
-    override layer's text. The home folder is ``tmp`` for the run, so the recording lands there.
+    with a ``Recorder`` attached and the Kit peer sent to its fake, or to ``kit``, in ``scene``, a catalog
+    name or a path. ``layer`` is an override layer's text. The home folder is ``tmp`` for the run, so the recording lands there.
     """
     import nexus_sim as nx
     from nexus_sim._src.build.assembly import build_orchestrator
@@ -315,7 +324,7 @@ def fly_recorded(tmp, vehicle: str, *, layer: str | None = None, ticks: int = FL
     from nexus_sim._src.peers.kit.fake import KitFake
     from nexus_sim._src.rendering import rtx_renderer
 
-    spec = {"vehicle": vehicle, "scene": "empty", "runtime": {"device": "cpu"}}
+    spec = {"vehicle": vehicle, "scene": scene, "runtime": {"device": "cpu"}}
     if layer is not None:
         path = tmp / "layer.usda"
         path.write_text(f"#usda 1.0\n\n{layer}")

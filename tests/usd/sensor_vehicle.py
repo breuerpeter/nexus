@@ -2,7 +2,8 @@
 
 The fixture is a local layer over ``fixture_vehicle.usda`` beside this module: a base body with a box
 collider, four rotor bodies with propellers on revolute joints, and the PX4 controller declared, with
-no mesh and no sensor. A test adds its own sensor prims. A stand-in controller answers at once and keeps
+no mesh and no sensor. A test adds its own sensor prims. A run flies it in ``fixture_scene.usda``, an
+empty world, so a test reads no hosted asset. A stand-in controller answers at once and keeps
 every `Measurement` it receives, so a test reads what a controller reads.
 """
 
@@ -22,6 +23,8 @@ from nexus_sim._src.core.stages import peer_stages
 from nexus_sim._src.usd import ENTRY_POINT_GROUP
 
 BASE = Path(__file__).with_name("fixture_vehicle.usda")
+# The scene a fixture run flies in: an empty world, local, so a test fetches nothing.
+SCENE = str(Path(__file__).with_name("fixture_scene.usda"))
 ROOT = "/vehicle"
 # The base body, model body 0.
 BODY = f"{ROOT}/body"
@@ -153,7 +156,7 @@ def components(**entries) -> ComponentRegistry:
     return ComponentRegistry({**shipped, "NexusPx4API": Controller, **entries})
 
 
-def build(vehicle_path: str, *, seed: int = 42, scene: str = "empty", registry=None, **kw):
+def build(vehicle_path: str, *, seed: int = 42, scene: str = SCENE, registry=None, **kw):
     """Build a run of the vehicle at `vehicle_path` on the CPU, flown by the stand-in controller.
 
     `registry` is the catalog, for a scene of the test's own. The rest goes to the build: `components`
