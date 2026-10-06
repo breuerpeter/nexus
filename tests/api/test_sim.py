@@ -241,13 +241,14 @@ def test_sim_step_drives_px4_on_the_calling_thread(monkeypatch):
         assert fake.threads == [threading.main_thread(), threading.main_thread()]
 
 
-def test_a_px4_run_has_no_controller_surface_and_no_operator_and_the_error_names_the_offboard_link(monkeypatch):
-    """A PX4 run's `Sim` has no controller surface and no operator: PX4 owns its mission in its own
-    process, and a script commands it over the offboard link it opens itself.
+def test_a_run_whose_controller_takes_no_setpoint_has_no_operator_and_the_error_names_the_port_map(monkeypatch):
+    """A run whose controller takes no setpoint, as PX4's does, has no controller surface and no
+    operator: the autopilot owns its mission in its own process, and a script commands it over a
+    link it opens itself.
 
-    Given a `Sim` over a controller with no setpoint surface, PX4's, when a script reads
-    `sim.controller` and `sim.operator`, then the controller is `None` and the operator raises
-    `RuntimeError` naming `nexus.px4.Px4Offboard` and `sim.ports`.
+    Given a `Sim` over a controller with no setpoint surface, when a script reads `sim.controller`
+    and `sim.operator`, then the controller is `None` and the operator raises `RuntimeError` that
+    names `sim.ports`.
     """
     fake = _FakeOrch()
     monkeypatch.setattr(sim_mod, "build_from_launch", lambda launch, **kw: fake)
@@ -255,10 +256,10 @@ def test_a_px4_run_has_no_controller_surface_and_no_operator_and_the_error_names
     with sim_mod.Sim("astro_max_base", scene="empty", device="cpu") as sim:
         sim.start(timeout=30.0)
         controller = sim.controller
-        with pytest.raises(RuntimeError, match=r"nexus\.px4\.Px4Offboard.*sim\.ports") as raised:
+        with pytest.raises(RuntimeError, match=r"no operator.*sim\.ports"):
             _ = sim.operator
 
-    assert (controller, "PX4" in str(raised.value)) == (None, True)
+    assert controller is None
 
 
 def test_sim_takes_no_control_argument():

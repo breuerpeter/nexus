@@ -279,34 +279,36 @@ class Sim:
     @property
     def operator(self) -> InProcessOperator:
         """The Operator commanding this sim, Plane 5: in-process control, policy, pid, mpc or acados,
-        takes an :class:`InProcessOperator` over the controller's ``accept_setpoint``. PX4 takes none:
-        a script commands it over the offboard link it opens itself, :class:`nexus.px4.Px4Offboard`
-        on the address :attr:`ports` names.
+        takes an :class:`InProcessOperator` over the controller's ``accept_setpoint``. A controller
+        with no setpoint surface, an autopilot in a peer such as PX4, takes none: a script commands
+        that autopilot over a link it opens itself, on the address :attr:`ports` names.
 
         Returns:
             The :class:`InProcessOperator` driving this run.
 
         Raises:
-            RuntimeError: Accessed before entering the ``Sim`` context, or the run flies PX4, which
-                takes no operator.
+            RuntimeError: Accessed before entering the ``Sim`` context, or the run's controller
+                takes no setpoint, so the run has no operator.
         """
         if self._orch is None:
             raise RuntimeError("enter the Sim context first (`with na.Sim(...) as sim:`)")
         if not self._in_process:
             raise RuntimeError(
-                "this run flies PX4, which takes no operator: open nexus.px4.Px4Offboard on sim.ports['offboard']"
+                "this run's controller takes no setpoint, so the run has no operator: a script commands "
+                "its autopilot over a link it opens itself, on an address from sim.ports"
             )
         return self._operator
 
     @property
     def ports(self) -> Mapping[str, dict]:
         """The run's port map: each link that leaves the run, by name, to the address a script opens
-        its client on. The run owns every address and numbers them from the PX4 instance it claims,
-        and a run attached to a PX4 started elsewhere lists instance 0's. PX4's offboard link is
-        ``sim.ports["offboard"]``, ``{"protocol": "udp", "port": 14540 + instance, "system_id":
-        instance + 1}``, what :class:`nexus.px4.Px4Offboard` takes; open it after ``sim.start()``
-        and step the sim until its ``connected``, since PX4 runs on the sim's clock. A run against
-        the fake PX4 lists no offboard link, and the lookup raises naming the fake.
+        its client on. The run owns every address. The builder builds a link's end inside the run
+        from them, and names here each link whose other end a script holds. An entry is a plain
+        mapping of what that client takes, such as ``{"protocol": "udp", "port": 14540,
+        "system_id": 1}`` for the ``"offboard"`` link of a PX4 run, which the PX4 page of the
+        reference documents. Open a client after ``sim.start()``, and step the sim while it waits
+        for an autopilot that runs on the sim's clock. A link with nothing behind it stays out of
+        the map, and its lookup raises with the reason.
 
         Returns:
             The port map, link name to entry.
