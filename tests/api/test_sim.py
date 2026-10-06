@@ -166,7 +166,7 @@ class _FakeController:
 
 
 class _InProcessOrch:
-    """An in-process orchestrator, whose controller has accept_setpoint: run() is synchronous, fires on_tick."""
+    """An orchestrator whose controller has accept_setpoint: run() is synchronous, fires on_tick."""
 
     def __init__(self):
         self.sensors = []
@@ -205,18 +205,20 @@ class _InProcessOrch:
         self._stop = True
 
 
-def test_sim_in_process_wires_operator_controller_and_runs():
-    from nexus._src.operator import InProcessOperator
+def test_sim_hands_the_flights_guidance_to_the_orchestrator_and_runs():
+    from nexus._src.guidance import MissionGuidance
 
     fake = _InProcessOrch()
+    guidance = MissionGuidance()
 
-    # A self-assembled in-process orchestrator enters via from_orchestrator, the examples' entry.
-    with sim_mod.Sim.from_orchestrator(fake) as sim:
-        assert isinstance(sim.operator, InProcessOperator)  # operator constructed over the controller
+    # A self-assembled orchestrator enters via from_orchestrator, the examples' entry, with its guidance.
+    with sim_mod.Sim.from_orchestrator(fake, guidance=guidance) as sim:
+        assert sim.guidance is guidance and fake.guidance is guidance  # the guidance joins the loop
         assert sim.controller is fake.controller  # thin surface, which has accept_setpoint
-        assert fake.on_tick is not None  # operator wired to the host seam
-        sim.operator.set_mission([(0.0, 0.0, 4.0)])  # the fake view sits at z=4 → reached immediately
-        assert fake.controller.setpoints  # accept_setpoint commanded the first goal
+        assert fake.on_tick is None  # the hook stays the caller's: the guidance rides a stage
+        sim.guidance.set_mission([(0.0, 0.0, 4.0)])
+        assert tuple(guidance.active_setpoint.pos) == (0.0, 0.0, 4.0)  # the loop hands it over, not Sim
+        assert fake.controller.setpoints == []
         sim.run()
         assert fake.ran  # ran synchronously, no thread
         assert sim.results() == {"control_steps": 1, "rtf": 1.0}
@@ -289,3 +291,13 @@ def test_a_sim_that_names_no_scene_fails_at_construction():
     """
     with pytest.raises((TypeError, ValueError), match="scene"):
         sim_mod.Sim(vehicle="astro_max_base")
+
+
+def test_reading_the_guidance_of_a_run_that_has_none_fails_with_the_way_to_construct_one():
+    """Reading the guidance of a run that has none fails with the way to construct one.
+
+    Given a `Sim` over a setpoint controller and no guidance, when a caller reads `sim.guidance`, then it
+    raises `RuntimeError` whose message shows how a flight constructs one.
+    """
+    with sim_mod.Sim.from_orchestrator(_InProcessOrch()) as sim, pytest.raises(RuntimeError, match="MissionGuidance"):
+        _ = sim.guidance

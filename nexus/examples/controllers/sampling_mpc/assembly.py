@@ -34,7 +34,7 @@ def build_sampling_mpc_orchestrator(
 
     Needs a scene with obstacles threaded into ``cfg``: ``resolve_scenario`` with
     ``set_scene("slalom")``; the controller discovers the scene's shapes from the collapsed model.
-    The operator sequences the mission via ``accept_setpoint(PositionGoal)``.
+    The guidance sequences the mission, and the loop hands each goal to ``accept_setpoint(PositionGoal)``.
     """
     from nexus._src.vehicle.sensors import StateSensor
     from nexus.examples._lib import RigidBodyRotors, build_rotor_mixer_from_layout

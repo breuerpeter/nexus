@@ -26,9 +26,7 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-import numpy as np
-
-from nexus._src.core.schema import PositionGoal, Setpoint
+from nexus._src.core.schema import Setpoint, as_position_goal
 
 from . import OFFBOARD_PORT
 from .qgc_plan import NAV_WAYPOINT, MissionItem, Plan, read_plan
@@ -481,16 +479,6 @@ class OffboardClient:
         lon = lon0 + math.degrees(east / (_R_EARTH * math.cos(math.radians(lat0))))
         return lat, lon
 
-    # -- setpoint normalization: accept a PositionGoal or a bare position ---------
-    @staticmethod
-    def _as_position_goal(sp: Setpoint) -> PositionGoal:
-        if isinstance(sp, PositionGoal):
-            return sp
-        arr = np.asarray(sp, dtype=float).reshape(-1)
-        if arr.shape[0] != 3:
-            raise TypeError(f"expected a PositionGoal or an (x, y, z) position, got {sp!r}")
-        return PositionGoal(pos=(float(arr[0]), float(arr[1]), float(arr[2])))
-
     # ---- verbs: every one returns immediately; the caller waits on telemetry ----
     def set_mode(self, mode: str) -> None:
         """Request a flight mode. Returns at once; the pump commands it until telemetry confirms.
@@ -753,7 +741,7 @@ class OffboardClient:
             RuntimeError: No position has arrived on the offboard link yet.
             TypeError: ``setpoint`` isn't a ``PositionGoal`` or an ``(x, y, z)`` position.
         """
-        goal = self._as_position_goal(setpoint)
+        goal = as_position_goal(setpoint)
         x, y, z = goal.pos
         yaw_world = yaw if yaw is not None else goal.yaw
         yaw_px4 = None if yaw_world is None else _wrap_pi(-float(yaw_world))

@@ -112,7 +112,7 @@ def build_pid_orchestrator(
     # The one runtime seam, see the core assembly: an optional renderer plus its host-rate sensors.
     renderer, extra_sensors = renderer_factory(physics, builder, cfg) if renderer_factory else (None, [])
     sensors += extra_sensors
-    # Share the sensor's persistent device goal buffer with the controller, so the operator's
+    # Share the sensor's persistent device goal buffer with the controller, so the guidance's
     # accept_setpoint(.assign) reaches the captured obs kernel: the capture contract.
     controller.bind_goal_buffer(sensors[0].goal)
     if sink is None and rerun:  # central Rerun recording, §10: the .rrd of a standard PID run

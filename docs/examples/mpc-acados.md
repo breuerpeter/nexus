@@ -13,7 +13,8 @@ controller.
   rate, with the four single-rotor thrusts as inputs and an `N=20` horizon, re-solved every
   control tick.
 - **A min-snap reference, tracked as the full flat state:** the NMPC is a pure *tracking*
-  controller. The planner lives with the **operator**, in `sim.operator.set_mission(WAYPOINTS)`.
+  controller. The planner lives with the **guidance**, a `TrackingGuidance` the flight constructs, and
+  `sim.guidance.set_mission(WAYPOINTS)` hands it the waypoints.
   It fits a **min-snap polynomial** through the waypoints, in `examples/_lib/min_snap.py`.
   Differential flatness then lifts it
   to a full state reference of attitude and body rate plus thrust feed-forward. The

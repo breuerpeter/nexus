@@ -11,7 +11,7 @@ over the horizon, the optimisation replayed from a captured graph, the sampling 
 
 The controller is task-parameterized: the caller passes the **batched rollout model**, ``num_rollouts``
 differentiable drones + the cost-only obstacle pillars, the obstacle shape indices, the rotor geometry,
-and the initial ``goal_w``; the operator advances the active target via ``accept_setpoint(PositionGoal)``,
+and the initial ``goal_w``; the guidance advances the active target, which ``accept_setpoint(PositionGoal)`` takes,
 uniform with policy/pid. The per-rotor rollout dynamics is the shared single-body motor
 model :func:`~nexus.examples._lib.rigid_body_wrench_world`, so planner ≡ the real-sim
 :class:`~nexus.examples._lib.rotors.RigidBodyRotors` actuator: both consume per-rotor commands and
@@ -216,7 +216,7 @@ class SamplingMPCController:
         turning_dirs,
         ct,
         rpm_max,
-        goal_w=(0.0, 0.0, 1.0),  # initial target; the operator advances it via accept_setpoint(PositionGoal)
+        goal_w=(0.0, 0.0, 1.0),  # initial target; the guidance advances it, through accept_setpoint(PositionGoal)
         dt,
         num_rollouts=16,
         control_points=5,  # trajectory knots; interpolated over the horizon: low-dim → effective sampling
@@ -255,7 +255,7 @@ class SamplingMPCController:
         self.num_obstacles = len(obs_indices)
         # The ACTIVE target: a persistent (1,) vec3 buffer the rollout reads; accept_setpoint advances it
         # in place via .assign without invalidating the captured CUDA graph, because the rollout reads its
-        # current contents. The operator owns mission sequencing, advance on arrival, uniform with policy/pid.
+        # current contents. The guidance owns mission sequencing, advance on arrival, uniform with policy/pid.
         self.target = wp.array(np.asarray([goal_w], dtype=np.float32), dtype=wp.vec3)
 
         self.model = batch_model
@@ -457,7 +457,7 @@ class SamplingMPCController:
     def accept_setpoint(self, sp) -> None:
         """Write the active target **in place** from a :class:`PositionGoal` via ``.assign``: the captured
         rollout reads the buffer's current contents, so no graph re-capture. Uniform with policy/pid: the
-        operator sequences a mission, advance on arrival, and the planner always optimizes toward the
+        guidance sequences a mission, advance on arrival, and the planner always optimizes toward the
         current target. Raises on a non-``PositionGoal`` variant.
         """
         if not isinstance(sp, PositionGoal):

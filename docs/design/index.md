@@ -64,7 +64,7 @@ These stances shape everything else and are load-bearing across the codebase:
   **only ever builds models from USD** and never synthesizes one in code. See
   [Conventions](conventions.md).
 - **RL is a separate consumer.** `nexus-rl` depends on the framework, not the reverse. The
-  framework consumes a trained policy through the ordinary [Controller](architecture.md#controllers-and-the-operator-plane)
+  framework consumes a trained policy through the ordinary [Controller](architecture.md#controllers-and-guidance)
   interface and never depends on Isaac Lab.
 - **Determinism is foundational.** Given a scenario, seed, and pinned code, a run is
   bit-reproducible, the property that underpins CI testing and bug reproduction. See
