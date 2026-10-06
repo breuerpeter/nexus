@@ -738,7 +738,7 @@ def test_a_managed_run_takes_a_free_px4_instance_itself(daemon, assembly, tmp_pa
     from nexus_sim._src.peers import LABEL
 
     held = _Container(
-        daemon, "nexus-px4-held-0", {LABEL: "px4", "nexus_sim.px4.instance": "0", "nexus.owner": str(os.getpid())}
+        daemon, "nexus-px4-held-0", {LABEL: "px4", "nexus.px4.instance": "0", "nexus.owner": str(os.getpid())}
     )
     daemon.live[held.name] = held
 

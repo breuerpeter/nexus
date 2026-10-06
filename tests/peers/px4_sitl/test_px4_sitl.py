@@ -33,7 +33,7 @@ class _Held:
     def __init__(self, calls, name, *, instance, owner):
         self._calls = calls
         self.name = name
-        self.labels = {"nexus.peer": "px4", "nexus_sim.px4.instance": str(instance), "nexus.owner": str(owner)}
+        self.labels = {"nexus.peer": "px4", "nexus.px4.instance": str(instance), "nexus.owner": str(owner)}
 
     def remove(self, force=False):
         self._calls.append(("remove", self.name))
@@ -123,7 +123,7 @@ def test_start_runs_px4_with_the_runs_instance_and_airframe(daemon, tree, tmp_pa
         "volumes": {str(tree): {"bind": str(tree), "mode": "rw"}},
         "auto_remove": True,
         "network_mode": "host",
-        "labels": {"nexus.peer": "px4", "nexus_sim.px4.instance": "2", "nexus.owner": str(os.getpid())},
+        "labels": {"nexus.peer": "px4", "nexus.px4.instance": "2", "nexus.owner": str(os.getpid())},
     } and launch["image"].startswith(f"{IMAGE}:")
 
 

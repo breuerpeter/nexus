@@ -35,7 +35,7 @@ from . import checkout
 from .instance import claim as _claim
 
 IMAGE = "nexus-px4-sitl"
-_INSTANCE = "nexus_sim.px4.instance"  # the label that carries the container's PX4 instance
+_INSTANCE = "nexus.px4.instance"  # the label that carries the container's PX4 instance
 _OWNER = "nexus.owner"  # the label that carries the process that started the container
 IMAGE_DIR = Path(__file__).with_name("image")
 PX4_LOG_DIR = os.path.expanduser("~/.cache/nexus/logs")  # beside the run's .rrd and the Kit console tee
