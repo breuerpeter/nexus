@@ -3,7 +3,7 @@
 A tick is an ordered ring of stages, per docs/design/execution.md. Every component states its
 per-tick work as a list of ``Stage``: a device stage joins a CUDA graph, a host stage runs between
 graph replays. The loop lays the stages out in the canonical order, sensors -> controller ->
-[clear -> actuator -> step] per physics substep -> record, cuts the ring at its host stages and
+[clear -> the command stages -> the force stages -> step] per physics substep -> record, cuts the ring at its host stages and
 rotates it to start after the last cut, so each maximal run of device stages becomes one CUDA
 graph, the Real Time Factor (RTF) lever of architecture.md §5, and the host stages run between
 replays. One partition and one loop serve every arrangement: PX4, whose ``read`` and ``exchange``
@@ -86,9 +86,11 @@ class Orchestrator:
         *,
         clock: Clock,
         physics: Physics,
-        actuator: Actuator,
         sensors: Iterable[Sensor],
         controller: Controller,
+        commands: Iterable[object] = (),
+        forces: Iterable[object] = (),
+        actuator: Actuator | None = None,
         renderer: Renderer | None = None,
         peers: Iterable[Peer] = (),
         logger: Logger | None = None,
@@ -108,8 +110,6 @@ class Orchestrator:
                 the North East Down (NED) origin and returns the initial state; its ``clear``
                 and ``step`` stages zero the shared ``body_f`` and integrate: collide + solver step
                 + double-buffer.
-            actuator: The actuator: one device stage that writes the shared body forces from the
-                controller's command buffer.
             sensors: Iterable of sensors producing the Forward Right Down (FRD) ``Measurement``,
                 each a device stage into its own buffer plus ``read(meas)``, or a host stage for a
                 sensor whose work leaves the process. Stored as a list.
@@ -117,6 +117,13 @@ class Orchestrator:
                 seed pass waits for it; its stages set the command buffer; ``close()`` tears down.
                 A controller with a peer exposes ``attached``, false until the peer dials in,
                 which holds the seed pass's clock.
+            commands: The command stages: each turns the controller's command buffer into Newton's
+                control inputs, the rotors' speed targets and feedforward, in its device stages.
+            forces: The force elements: each adds its body wrenches to the shared ``state.body_f``
+                from the current state, the propellers' thrust and drag, in its device stages.
+            actuator: The old actuator seam, the examples' single-body ``Rotors``: one device stage
+                that writes the shared body forces from the controller's command buffer. ``None``
+                for a run on the command and force seams.
             renderer: Optional render-lifecycle object, for example the Kit render peer's
                 :class:`~nexus._src.rendering.KitRenderer`: the loop calls only
                 ``on_physics_ready()``/``close()``; the host-rate RTX camera *sensors* drive
@@ -145,9 +152,12 @@ class Orchestrator:
         """
         self.clock = clock
         self.physics = physics
+        self.commands = list(commands)
+        self.forces = list(forces)
         self.actuator = actuator
         self.sensors = list(sensors)
         self.controller = controller
+        chain = [*self.commands, *self.forces, *([actuator] if actuator is not None else [])]
         self.renderer = renderer
         self.peers = list(peers)
         # The single logging switch: a `Logger`, the recording sink + the shared log_state/log_image
@@ -159,7 +169,7 @@ class Orchestrator:
         # graph. The operator + MPC controllers log their overlays event-driven in their own methods, at a
         # mission event / when the horizon refreshes, gated on the handed-over logger; they just need it
         # set, the operator via `add_loggable`, as it's wired on_tick, not a core component.
-        self._loggables = [c for c in (physics, actuator, controller, *self.sensors) if hasattr(c, "set_logger")]
+        self._loggables = [c for c in (physics, *chain, controller, *self.sensors) if hasattr(c, "set_logger")]
         for c in self._loggables:
             c.set_logger(logger)
         # The per-tick log fan-out decimates to the Logger's log_hz; people scrub an .rrd at human rates, and
@@ -175,7 +185,7 @@ class Orchestrator:
         # a device-only `record_wp()` that snapshots its quantities into a Recorder channel. Sim's `observe`
         # attaches the Recorder post-build, via `attach_recorder`, since observation is a
         # control-surface concern. The taps are device stages, so observing never adds a host stage.
-        self._recordables = [c for c in (physics, actuator, controller, *self.sensors) if hasattr(c, "record_wp")]
+        self._recordables = [c for c in (physics, *chain, controller, *self.sensors) if hasattr(c, "record_wp")]
         self._recorder = None
         # Hosting hooks; the control surface, Sim, drives these. on_tick is the per-tick observer,
         # post-step, fired as on_tick(state, t, steps) after recording: a demo/test seam to read the
@@ -375,6 +385,8 @@ class Orchestrator:
                 sensors=self.sensors,
                 controller=self.controller,
                 physics=self.physics,
+                commands=self.commands,
+                forces=self.forces,
                 actuator=self.actuator,
                 record=record,
                 substeps=self.physics_substeps,
