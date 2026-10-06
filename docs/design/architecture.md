@@ -130,7 +130,7 @@ Observability is cross-cutting, split into a **write** side and a **read** side:
 
 - **One central Rerun sink.** A single `Logger`, injected into every component, owns the one
   Rerun recording. Each row's entity path names its process, its component and its instance, such
-  as `sim/vehicle/sensors/imu` or `sim/operator/reference`, on a shared `sim_time` timeline. The
+  as `sim/vehicle/sensors/imu` or `sim/guidance/reference`, on a shared `sim_time` timeline. The
   [logging reference](../reference/api/logging.md#entity-paths) states the rule. It can serve a live
   viewer over gRPC on port `9876` or write a durable `.rrd`. A peer writes under its own root, the
   name of its folder, so one recording can hold more than one producer. Today the camera sensors log the

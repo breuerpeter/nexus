@@ -20,7 +20,7 @@ in the terminal, including in headless CI where no recording exists, *and* in th
 No bare `print` needed.
 
 The framework itself logs the same way, so example output sits alongside the framework's own
-`[sim/…]` lines. Components log their own *quantities*: the scene, the flown path, the operator's
+`[sim/…]` lines. Components log their own *quantities*: the scene, the flown path, the guidance's
 reference and waypoints, and a controller's horizon. Each logs through its own component log step,
 which the central `Logger` fans out only when recording.
 
@@ -30,7 +30,7 @@ A row's entity path names who wrote it. It has three parts, in this order:
 
 1. The process: `sim`, or the name of a peer's folder under `nexus/_src/peers/`.
 2. The component's role folder, as the source tree names it: `vehicle/sensors`,
-   `vehicle/controllers` or `operator`.
+   `vehicle/controllers` or `guidance`.
 3. The instance: the name of the prim that declares it.
 
 For example, `sim/vehicle/sensors/imu` says that the sim wrote the row, that a sensor produced it,
@@ -56,6 +56,6 @@ path.
 | `sim/vehicle/sensors/<name>` | A camera's frames and frustum, or a lidar's points |
 | `sim/vehicle/controllers/<name>/<row>` | A controller's own rows, such as its `horizon` |
 | `sim/vehicle/trajectory` | The flown path |
-| `sim/operator/waypoints/wp_<i>`, `sim/operator/reference` | The operator's mission |
+| `sim/guidance/waypoints/wp_<i>`, `sim/guidance/reference` | The guidance's mission: its waypoints and its tracked reference |
 | `sim/model/…`, `sim/geometry/…` | The scene that NVIDIA Newton's viewer logs |
 | `<peer>/logs` | A peer's log rows, under the name of its folder |

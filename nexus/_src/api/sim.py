@@ -276,7 +276,8 @@ class Sim:
                 if hasattr(self._operator, "tick"):
                     self._orch.on_tick = self._operator.tick  # sequencing seam: advance the mission
                 if hasattr(self._operator, "set_logger"):
-                    self._orch.add_loggable(self._operator, "operator")  # logging seam: re-emit the mission viz
+                    # The logging seam: the mission viz lands under guidance/, the in-loop seam's name per #41.
+                    self._orch.add_loggable(self._operator, "guidance")
         # Host-boundary, PX4, wires nothing here: its operator is a remote Ground Control Station (GCS),
         # Px4Offboard, built lazily on first access after start(), and the run is step-driven the same
         # way as any other.

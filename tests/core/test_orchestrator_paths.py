@@ -72,12 +72,12 @@ def test_the_loop_hands_each_component_a_logger_scoped_to_its_role_folder_and_it
 
 
 def test_a_component_added_after_the_build_gets_a_logger_scoped_to_the_path_it_is_added_at():
-    """A component added after the build, the operator, gets a logger scoped to the path it's added at."""
+    """A component added after the build, the guidance, gets a logger scoped to the path it's added at."""
     loop, *_ = _loop(_Sink())
-    operator = _Component()
-    loop.add_loggable(operator, "operator")
+    guidance = _Component()
+    loop.add_loggable(guidance, "guidance")
 
-    assert operator.handed == "operator"
+    assert guidance.handed == "guidance"
 
 
 def test_with_no_logger_the_loop_hands_each_component_none():
