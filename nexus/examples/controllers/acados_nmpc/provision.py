@@ -5,8 +5,9 @@ acados can't come from pip: it's a C library the machine compiles, and its Pytho
 example provisions one tree and finds everything in it. The example ships the pin, ``acados.ref``
 beside this module: line one is ``repo@sha``. :func:`provision` fetches that commit into
 :func:`acados_dir`, builds the library there with CMake, and downloads the Tera renderer acados
-needs to generate a solver's C code. :func:`require` then puts the tree's interface on ``sys.path``,
-or says what this machine still lacks.
+needs to generate a solver's C code. :func:`require` then makes that tree usable in the process: it
+puts the tree's interface on ``sys.path`` and loads the tree's C libraries, or says what this machine
+still lacks.
 
 The Python packages the interface imports are on PyPI, and the ``acados`` extra names them.
 
@@ -16,6 +17,7 @@ before the example's own imports.
 
 from __future__ import annotations
 
+import ctypes
 import hashlib
 import importlib.util
 import os
@@ -32,6 +34,9 @@ TERA_SHA256 = "64a0a0f8d85be0b92234231fd1a9ff50c9d8f13d6208063707e56c9354a976d3"
 _PIN = Path(__file__).with_name("acados.ref")
 # What the example and the interface import at import time, all from the `acados` extra.
 _EXTRA_MODULES = ("casadi", "ruckig", "matplotlib", "deprecated")
+# The tree's C libraries, each after the ones it needs, and the handles this process holds on them.
+_LIBRARIES = ("libblasfeo.so", "libhpipm.so", "libacados.so")
+_loaded: list[ctypes.CDLL] = []
 
 
 def pin() -> tuple[str, str]:
@@ -68,7 +73,8 @@ def _missing() -> list[str]:
 
 
 def require() -> None:
-    """Make ``acados_template`` importable from the provisioned tree.
+    """Make acados usable in this process from the provisioned tree: ``acados_template`` importable and
+    the tree's C libraries loaded, so the caller sets no ``LD_LIBRARY_PATH``.
 
     Raises:
         RuntimeError: The ``acados`` extra or the acados build is missing. The message
@@ -76,9 +82,17 @@ def require() -> None:
     """
     if missing := _missing():
         raise RuntimeError("acados_nmpc can't fly on this machine:\n" + "\n".join(f"  - {m}" for m in missing))
-    interface = str(_interface(acados_dir()))
+    tree = acados_dir()
+    os.environ.setdefault("ACADOS_SOURCE_DIR", str(tree))  # where the interface looks for the tree
+    interface = str(_interface(tree))
     if interface not in sys.path:
         sys.path.insert(0, interface)
+    if not _loaded:
+        # libacados.so names libhpipm.so and libblasfeo.so with no path, and a generated solver names
+        # libacados.so the same way. The loader resolves such a name among the libraries the process
+        # already holds, so loading the three by path here does what LD_LIBRARY_PATH would, and the
+        # loader reads that variable only when a process starts.
+        _loaded.extend(ctypes.CDLL(str(tree / "lib" / name), mode=ctypes.RTLD_GLOBAL) for name in _LIBRARIES)
 
 
 def _run(*cmd: str | Path) -> None:

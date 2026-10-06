@@ -25,9 +25,9 @@ The formulation:
 
 acados / casadi are **lazy-imported**, inside the methods, so importing this module never requires the
 optional ``acados`` extra; only constructing the controller does. Building the solver finds the
-``acados_template`` interface in the provisioned acados tree, :func:`provision.require`, and raises with
-the command to run when the extra or the tree is missing. The caller must set ``LD_LIBRARY_PATH`` before
-building the solver; the run-script re-execs to do this.
+``acados_template`` interface and acados' C libraries in the provisioned acados tree,
+:func:`provision.require`, and raises with the command to run when the extra or the tree is missing. So
+the caller sets no ``LD_LIBRARY_PATH``, whichever way it builds the controller.
 """
 
 from __future__ import annotations
@@ -187,7 +187,7 @@ class AcadosNMPCController:
     def _build_solver(self, *, mass, inertia, rotor_offsets, turning_dirs, reaction_k, tf, weights):
         from nexus.examples.controllers.acados_nmpc.provision import require
 
-        require()  # the interface lives in the provisioned acados tree, not in the environment
+        require()  # the interface and the C libraries live in the provisioned acados tree
         from acados_template import AcadosOcp, AcadosOcpSolver
 
         model, att_err = build_acados_model(
