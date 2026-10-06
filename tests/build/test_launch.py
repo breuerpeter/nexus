@@ -482,14 +482,16 @@ def test_a_run_with_no_layer_builds_and_records_as_today(tmp_path, monkeypatch, 
 
 
 def _shipped_px4_run(monkeypatch, tmp_path, device: str):
-    """Build `astro_max_base` in `empty` on the PX4 fake, and return the loop and the run's receipt as JSON."""
+    """Build `astro_max_base` in `empty` on the PX4 fake, and return the loop and the receipt it carries,
+    the one the build handed it, as JSON.
+    """
     import nexus._src.build.launch as L
 
     monkeypatch.delenv("NEXUS_ASSET_CACHE", raising=False)  # the shipped vehicle comes from the checkout's own cache
     monkeypatch.chdir(tmp_path)  # no project catalog: only the bundled one
     launch = LaunchConfig.from_dict({"vehicle": "astro_max_base", "scene": "empty", "runtime": {"device": device}})
     loop = L.build_from_launch(launch, preroll_timeout=10.0, peers={"px4_sitl": Px4Fake})
-    return loop, L.resolve_to_vehicle_builder(launch)[1].tested_config.model_dump(mode="json")
+    return loop, loop.settings
 
 
 def test_a_px4_runs_receipt_carries_no_substeps_determinism_or_sensors(tmp_path, monkeypatch, warp_cpu):

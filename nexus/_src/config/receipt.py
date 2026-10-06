@@ -18,7 +18,7 @@ class TestedConfig(_Base):
 
     Must contain **every input that affects the simulation** so re-running it reproduces the run, and
     nothing a run leaves unapplied. ``resolve`` fills it from the launch and the catalog, and the build
-    stamps what only a build knows: the PX4 airframe the vehicle USD declares, and in ``runtime.device``
+    stamps what only a build knows: the airframe the vehicle Universal Scene Description (USD) file declares for PX4, and in ``runtime.device``
     the device the run picked, ``cpu`` or ``cuda``, never ``auto``. A receipt a run flew comes from the
     build; a bare ``resolve`` still carries the launch's device selector.
     """

@@ -187,6 +187,8 @@ def build_orchestrator(
     rendering seam: called after the physics build, since the render poses stage prims from the
     model's bodies; ``None`` renders nothing.
     ``peers`` are the processes the build started for this run, which the loop stops when the run ends.
+    ``settings`` is the run's effective configuration, which the loop keeps for a caller to read back
+    and the logger shows in the viewer's Settings tab; the launch glue passes the tested-config receipt.
     ``preroll_timeout`` covers a host-boundary controller's boot, since an autopilot in a container
     needs a generous window.
     """
@@ -211,4 +213,5 @@ def build_orchestrator(
         peers=peers,
         preroll_timeout=preroll_timeout,
         max_steps=max_steps,
+        settings=settings,
     )
