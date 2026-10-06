@@ -114,9 +114,11 @@ runs each tick after the sensors' and before the controller's, so the setpoint i
 arrival. `TrackingGuidance` hands a tracking controller one reference, which a `ruckig` or min-snap
 planner plans. A flight constructs its guidance and hands it to `Sim.from_orchestrator`.
 
-PX4 takes no guidance, because its own navigator sequences its missions. A script commands PX4 from
-the ground side, over a separate MAVLink link, with
-[`Px4Offboard`](../reference/api/operator.md), reached through `sim.operator`.
+PX4 takes no guidance, because its own navigator sequences its missions, and no setpoint from the
+loop. A script commands it over its offboard link, a MAVLink link of its own beside the lockstep
+link. The run owns that link's address and names it in its port map, and the script opens its own
+client there: [`nexus.px4.OffboardClient`](../reference/api/px4.md) on `sim.ports["offboard"]`.
+[Conventions](conventions.md#who-owns-an-address) states the rule.
 
 ## Actuators
 

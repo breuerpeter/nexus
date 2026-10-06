@@ -22,14 +22,14 @@ import os
 import sys
 
 import nexus as na
-from nexus._src.operator.qgc_plan import FRAME_GLOBAL_RELATIVE_ALT, NAV_TAKEOFF, NAV_WAYPOINT, MissionItem
+from nexus.px4 import FRAME_GLOBAL_RELATIVE_ALT, NAV_TAKEOFF, NAV_WAYPOINT, MissionItem, OffboardClient
 
 READY_S = float(os.environ.get("NEWTON_CELL_READY_S", "300"))  # PX4-lockstep wait budget
 FLY_S = float(os.environ.get("NEWTON_CELL_FLY_S", "600"))  # arm + climb budget [sim s]
 
 # The benchmark mission: 4 waypoints in world axes, Newton FLU, Z-up, relative to the takeoff
 # point. North is +x, so east is -y. These are the same four points the matrix has always flown;
-# tests/operator/test_px4_offboard.py pins that equivalence, because the baselines are only
+# tests/peers/px4_sitl/test_px4_offboard.py pins that equivalence, because the baselines are only
 # comparable across runs if the flown path is the same.
 MISSION = ((20.0, 0.0, 5.0), (20.0, -20.0, 8.0), (0.0, -20.0, 5.0), (0.0, 0.0, 5.0))
 ALT = 5.0  # takeoff altitude [m]; the mission flies relative to the takeoff point
@@ -64,27 +64,29 @@ _R_EARTH = 6378137.0
 INSPECTION_S = 300.0  # budget [sim s] for the whole inspection, upload to landing
 
 
-def _fly_mission(sim) -> bool:
-    """Fly the benchmark mission over the operator link on :14540 and report whether it completed.
+def _fly_mission(sim, op) -> bool:
+    """Fly the benchmark mission over PX4's offboard link and report whether it completed.
 
-    A plain script against ``sim.operator``: take off, then each waypoint in turn, waiting on PX4's
-    own telemetry for arrival. The waits are ``sim.wait_until``, so the budgets are in sim seconds
-    and a slow cell isn't a failed one.
+    A plain script against the offboard client: open it, wait for PX4's heartbeat, take off, then
+    each waypoint in turn, waiting on PX4's own telemetry for arrival. The waits are
+    ``sim.wait_until``, so the budgets are in sim seconds and a slow cell isn't a failed one.
 
     Args:
         sim: The running :class:`~nexus.Sim`, already at lockstep.
+        op: The offboard client on the address the run's port map names, not yet open.
 
     Returns:
         ``True`` if the takeoff and every waypoint completed.
     """
     try:
-        op = sim.operator  # built lazily on first access; must come after start()
-        op.takeoff(ALT)
-        sim.wait_until(op.at_target, sim_timeout=FLY_S)
-        for i, wp in enumerate(MISSION, 1):
-            op.goto(wp)
-            sim.wait_until(op.at_target, sim_timeout=WP_TIMEOUT_S)
-            print(f"[bench] wp {i}/{len(MISSION)} reached {wp}", flush=True)
+        with op:  # opens the link and returns at once; closes it at the end
+            sim.wait_until(lambda: op.connected, sim_timeout=FLY_S)  # PX4's heartbeat comes as the sim steps
+            op.takeoff(ALT)
+            sim.wait_until(op.at_target, sim_timeout=FLY_S)
+            for i, wp in enumerate(MISSION, 1):
+                op.goto(wp)
+                sim.wait_until(op.at_target, sim_timeout=WP_TIMEOUT_S)
+                print(f"[bench] wp {i}/{len(MISSION)} reached {wp}", flush=True)
         return True
     except (TimeoutError, RuntimeError, OSError) as e:
         print(f"[bench] mission FAILED: {e}", flush=True)
@@ -116,17 +118,20 @@ def _inspection_items() -> list[MissionItem]:
     ]
 
 
-def _fly_inspection(sim) -> bool:
-    """Upload the inspection, fly it in Mission mode and report whether it landed at its end."""
+def _fly_inspection(sim, op) -> bool:
+    """Open the offboard client ``op``, upload the inspection, fly it in Mission mode and report
+    whether it landed at its end.
+    """
     try:
-        op = sim.operator
-        op.upload_mission(_inspection_items())
-        sim.wait_until(op.mission_uploaded, sim_timeout=60.0)
-        op.start_mission()
-        sim.wait_until(op.mission_complete, sim_timeout=INSPECTION_S)
-        print("[bench] inspection: flew the line", flush=True)
-        sim.wait_until(lambda: op.landed_state() == "ON_GROUND", sim_timeout=INSPECTION_S)
-        print("[bench] inspection: landed", flush=True)
+        with op:  # opens the link and returns at once; closes it at the end
+            sim.wait_until(lambda: op.connected, sim_timeout=60.0)  # PX4's heartbeat comes as the sim steps
+            op.upload_mission(_inspection_items())
+            sim.wait_until(op.mission_uploaded, sim_timeout=60.0)
+            op.start_mission()
+            sim.wait_until(op.mission_complete, sim_timeout=INSPECTION_S)
+            print("[bench] inspection: flew the line", flush=True)
+            sim.wait_until(lambda: op.landed_state() == "ON_GROUND", sim_timeout=INSPECTION_S)
+            print("[bench] inspection: landed", flush=True)
         return True
     except (TimeoutError, RuntimeError, OSError) as e:
         print(f"[bench] mission FAILED: {e}", flush=True)
@@ -141,7 +146,11 @@ def main() -> int:
         args.geo = f"{INSPECTION_GEO[0]},{INSPECTION_GEO[1]}"
     with na.Sim.from_args(args) as sim:
         sim.start(timeout=READY_S)
-        mission_ok = _fly_inspection(sim) if args.mission == "inspection" else _fly_mission(sim)
+        # The run owns the address of the offboard link; the cell's flight opens its own client on
+        # it and closes it before the sim stops.
+        link = sim.ports["offboard"]
+        op = OffboardClient(f"udpin:0.0.0.0:{link['port']}", system_id=link["system_id"])
+        mission_ok = _fly_inspection(sim, op) if args.mission == "inspection" else _fly_mission(sim, op)
     # Leaving the `with` stops the sim and kills PX4, so the run is over and the stats are final.
     results = sim.results()
     stats = {

@@ -159,8 +159,8 @@ class Controller(Protocol):
 
         **PX4 has no setpoint surface**, since its mission lives in its peer, so the
         ``Px4MavlinkController`` does *not* offer this, and its control surface is ``None``; instead,
-        ``sim.operator``, a ``Px4Offboard``, commands PX4 over MAVLink. Optional on the
-        protocol for exactly that reason.
+        a script commands PX4 over its offboard link, with a client it opens itself. Optional on
+        the protocol for exactly that reason.
         """
 
 

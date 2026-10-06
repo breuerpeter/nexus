@@ -5,11 +5,12 @@ off, yaws and flies a long east-west leg, with no PX4 warnings and no sim-speed 
 
 **The shape.** The sim owns the autopilot: ``na.Sim`` builds PX4 SITL, serves the HIL link on :4560,
 starts the PX4 container against it, and kills it again on the way out. What is left here is THE one
-PX4 flight profile, written as a plain script against ``sim.operator`` (takeoff to ``TAKEOFF_ALT``,
-then yaw sweeps at the hold position, then ``EAST_LEG_M`` east and back, over MAVLink :14540), plus
-the sim-side gates and the evaluation dump. This script drives the sim: every operator verb returns
-immediately and every wait is a ``sim.wait_until``, which steps the sim until PX4's own telemetry
-says the verb landed.
+PX4 flight profile, written as a plain script against ``nexus.px4.OffboardClient`` (takeoff to
+``TAKEOFF_ALT``, then yaw sweeps at the hold position, then ``EAST_LEG_M`` east and back, over
+MAVLink :14540), plus the sim-side gates and the evaluation dump. The script opens the client itself
+on the address the run's port map names, ``sim.ports["offboard"]``, and closes it at the end. This
+script drives the sim: every client verb returns immediately and every wait is a
+``sim.wait_until``, which steps the sim until PX4's own telemetry says the verb landed.
 
 The east-west leg is a regression guard (GH #61). The world to geodetic axis map was a reflection,
 so long east legs diverged, and no profile here flew far enough east to notice; the yaw sweeps do
@@ -37,6 +38,7 @@ import numpy as np
 import nexus as na
 from nexus.examples._lib import dump_run
 from nexus.examples.controllers.px4.log_warnings import px4_warnings
+from nexus.px4 import OffboardClient
 
 VEHICLE = "astro_max_base"  # the registry vehicle flown, which declares PX4
 SCENE = "empty"  # flat ground
@@ -80,48 +82,52 @@ def main() -> int:
         na.logger.info("[sitl] Newton starting in-process (actuator from USD); serving :4560 …")
         with na.Sim(VEHICLE, scene=SCENE, device="cuda", log=True) as sim:
             sim.start(timeout=timeout)  # drive setup as far as PX4 lockstep
-            na.logger.info("[sitl] PX4 lockstep established: flying the profile over :14540")
+            link = sim.ports["offboard"]  # the run owns the address of the link this script opens
+            na.logger.info(f"[sitl] PX4 lockstep established: flying the profile over :{link['port']}")
 
-            # 2. The one PX4 flight profile, as a plain script: Takeoff mode, then yaw sweeps.
-            #    sim.operator builds lazily on first access, so this must come after start().
+            # 2. The one PX4 flight profile, as a plain script: Takeoff mode, then yaw sweeps. The
+            #    script opens the offboard client itself, after start(), and closes it on the way
+            #    out. Entering it returns at once: PX4 runs on the sim's clock, so the wait for its
+            #    heartbeat steps the sim.
             t_gcs = time.time()
             spawn_alt = sim.physics[sim.base_body].latest().altitude_m
-            op = sim.operator
-            op.takeoff(TAKEOFF_ALT)  # returns at once; the operator's pump arms once armable
-            sim.wait_until(op.at_target, sim_timeout=timeout)
-            na.logger.info(f"[sitl] climbed to {op.relative_altitude():.2f} m: yaw sweeps {list(YAW_SWEEP)}")
+            with OffboardClient(f"udpin:0.0.0.0:{link['port']}", system_id=link["system_id"]) as op:
+                sim.wait_until(lambda: op.connected, sim_timeout=timeout)
+                op.takeoff(TAKEOFF_ALT)  # returns at once; the client's pump arms once armable
+                sim.wait_until(op.at_target, sim_timeout=timeout)
+                na.logger.info(f"[sitl] climbed to {op.relative_altitude():.2f} m: yaw sweeps {list(YAW_SWEEP)}")
 
-            # The yaw phase: hold the arrival position and altitude, sweeping the heading. The first
-            # goto anchors the local frame here, so (0, 0, alt) IS the hold position, and the
-            # world position right now IS that anchor, which every goto below is relative to.
-            anchor_x, anchor_y, _ = sim.physics[sim.base_body].latest().position
-            for heading in YAW_SWEEP:
-                # YAW_SWEEP is compass, PX4/NED, clockwise from north; goto takes world yaw, which
-                # runs the other way, so negate here and PX4 receives exactly the old headings.
-                op.goto((0.0, 0.0, TAKEOFF_ALT), yaw=-math.radians(heading))
-                sim.wait_until(op.at_target, sim_timeout=YAW_TIMEOUT_S)
-                sim.sleep(YAW_DWELL_S)
-                na.logger.info(f"[sitl] yaw → {heading:.0f}°")
+                # The yaw phase: hold the arrival position and altitude, sweeping the heading. The
+                # first goto anchors the local frame here, so (0, 0, alt) IS the hold position, and
+                # the world position right now IS that anchor, which every goto below is relative to.
+                anchor_x, anchor_y, _ = sim.physics[sim.base_body].latest().position
+                for heading in YAW_SWEEP:
+                    # YAW_SWEEP is compass, PX4/NED, clockwise from north; goto takes world yaw, which
+                    # runs the other way, so negate here and PX4 receives exactly the old headings.
+                    op.goto((0.0, 0.0, TAKEOFF_ALT), yaw=-math.radians(heading))
+                    sim.wait_until(op.at_target, sim_timeout=YAW_TIMEOUT_S)
+                    sim.sleep(YAW_DWELL_S)
+                    na.logger.info(f"[sitl] yaw → {heading:.0f}°")
 
-            # The translation phase: 200 m east and back. World +y is west, so east is -y. This
-            # is the #61 regression guard: under a mirrored east axis PX4's guidance and its GPS
-            # disagree in sign, so the vehicle either runs away or "arrives" hundreds of metres
-            # the other way. Measured against ground truth, because a mirrored map lets PX4
-            # believe it got there.
-            for leg in ((0.0, -EAST_LEG_M, TAKEOFF_ALT), (0.0, 0.0, TAKEOFF_ALT)):
-                op.goto(leg)
-                try:
-                    sim.wait_until(op.at_target, sim_timeout=LEG_TIMEOUT_S)
-                finally:
-                    # In the finally, so a leg that times out still records how far it got. Under
-                    # a mirrored map that miss IS the diagnostic, and reporting 0.0 there would
-                    # read as a clean flight on the one metric whose job is to catch it.
-                    x, y, _ = sim.physics[sim.base_body].latest().position
-                    err = math.hypot(x - (anchor_x + leg[0]), y - (anchor_y + leg[1]))
-                    stats["east_err_m"] = round(max(stats["east_err_m"], err), 2)
-                    na.logger.info(f"[sitl] leg {leg}: world miss {err:.2f} m")
-            stats["east_leg_reached"] = True
-            flight_ok = True
+                # The translation phase: 200 m east and back. World +y is west, so east is -y. This
+                # is the #61 regression guard: under a mirrored east axis PX4's guidance and its GPS
+                # disagree in sign, so the vehicle either runs away or "arrives" hundreds of metres
+                # the other way. Measured against ground truth, because a mirrored map lets PX4
+                # believe it got there.
+                for leg in ((0.0, -EAST_LEG_M, TAKEOFF_ALT), (0.0, 0.0, TAKEOFF_ALT)):
+                    op.goto(leg)
+                    try:
+                        sim.wait_until(op.at_target, sim_timeout=LEG_TIMEOUT_S)
+                    finally:
+                        # In the finally, so a leg that times out still records how far it got. Under
+                        # a mirrored map that miss IS the diagnostic, and reporting 0.0 there would
+                        # read as a clean flight on the one metric whose job is to catch it.
+                        x, y, _ = sim.physics[sim.base_body].latest().position
+                        err = math.hypot(x - (anchor_x + leg[0]), y - (anchor_y + leg[1]))
+                        stats["east_err_m"] = round(max(stats["east_err_m"], err), 2)
+                        na.logger.info(f"[sitl] leg {leg}: world miss {err:.2f} m")
+                stats["east_leg_reached"] = True
+                flight_ok = True
     except (TimeoutError, RuntimeError) as e:
         na.logger.info(f"[sitl] takeoff FAIL: {e}")
     finally:

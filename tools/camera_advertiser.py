@@ -57,7 +57,7 @@ import time
 from dataclasses import dataclass
 
 # Pin the MAVLink dialect before importing mavutil, the same contract as Px4MavlinkController /
-# Px4Offboard; VIDEO_STREAM_INFORMATION ids >255 need MAVLink 2 on the wire.
+# nexus.px4.OffboardClient; VIDEO_STREAM_INFORMATION ids >255 need MAVLink 2 on the wire.
 os.environ.setdefault("MAVLINK20", "1")
 os.environ.setdefault("MAVLINK_DIALECT", "common")
 

@@ -186,12 +186,14 @@ when the Dockerfile changes.
 **Ports.** PX4 SITL numbers every link from its **instance** N. It dials the sim's HIL server on
 4560 + N, streams its offboard link to 14540 + N, and takes N + 1 as its MAVLink system id. The run
 picks the lowest instance free on this machine and derives its own addresses from the same number,
-so two runs on one machine take two instances and never collide.
+so two runs on one machine take two instances and never collide. A script reads the address of a
+link it opens itself from the run's port map: `sim.ports["offboard"]` holds the offboard link's
+port and PX4's system id, which [`nexus.px4.OffboardClient`](../reference/api/px4.md) takes.
 
 | Port      | Protocol | Link |
 |-----------|----------|------|
 | 4560 + N  | TCP      | PX4 → nexus, lockstep HIL: sensors in, actuators back |
-| 14540 + N | UDP      | PX4 → the run's operator, the offboard link `sim.operator` commands over |
+| 14540 + N | UDP      | PX4 → a script's `nexus.px4.OffboardClient`, the offboard link `sim.ports["offboard"]` names |
 | 14550     | UDP      | MAVLink telemetry and commands from PX4 to QGroundControl, every instance |
 | 9876      | gRPC     | Rerun recording, which nexus **serves** and the viewer **connects** to |
 

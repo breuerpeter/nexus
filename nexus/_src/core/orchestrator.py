@@ -22,12 +22,13 @@ from nexus._src.diagnostics import diagnostics
 
 from .interfaces import Stage, Tick
 from .logging import logger
+from .ports import PortMap
 from .profiling import LoopProfiler
 from .schema import Measurement
 from .stages import build_ring, device_sensors, partition, plan_line, seed_stages, warm_stages
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable
+    from collections.abc import Callable, Iterable, Mapping
 
     import newton
 
@@ -118,6 +119,7 @@ class Orchestrator:
         actuator: Actuator | None = None,
         renderer: Renderer | None = None,
         peers: Iterable[Peer] = (),
+        ports: Mapping[str, dict] | None = None,
         logger: Logger | None = None,
         on_tick: Callable[[newton.State, float, int], None] | None = None,
         preroll_timeout: float = 2.0,
@@ -163,6 +165,9 @@ class Orchestrator:
                 Loop (SITL) container. The loop stops each when the run ends, whether it ran out,
                 stopped early or never stepped; it starts none, since a peer boots while the build
                 goes on.
+            ports: The run's port map, a :class:`~nexus._src.core.ports.PortMap`: each link that
+                leaves the run, by name, to the address a script opens its client on. The run
+                owns every address, and the build names them here; ``None`` names no link.
             logger: Optional :class:`~nexus._src.logging.Logger`: the recording
                 sink + shared log calls. ``None`` ⇒ no recording and no per-tick log
                 fan-out, for max speed. When present, each loggable component's
@@ -194,6 +199,7 @@ class Orchestrator:
         self.guidance = guidance  # the loop reads it when it builds the ring, at the first step
         self.renderer = renderer
         self.peers = list(peers)
+        self.ports = PortMap() if ports is None else ports
         # The single logging switch: a `Logger`, the recording sink + the shared log_state/log_image
         # calls, or None. None ⇒ no recording and no per-tick log fan-out → max benchmark/CI speed.
         self.logger = logger

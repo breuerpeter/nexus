@@ -4,7 +4,8 @@
 
 **The shape.** The sim owns the autopilot: ``na.Sim`` builds PX4 SITL, serves the HIL link on
 :4560, starts the PX4 container against it, and kills it again on the way out. What is left here is
-the mission profile as a plain script against ``sim.operator``: upload the plan over MAVLink
+the mission profile as a plain script against ``nexus.px4.OffboardClient``, which it opens itself on
+the address the run's port map names, ``sim.ports["offboard"]``: upload the plan over MAVLink
 :14540, engage AUTO.MISSION, and wait for PX4 to fly it.
 
 **The plan is the source of truth.** ``box.plan`` beside this file is a real QGC plan, openable and
@@ -31,9 +32,9 @@ import sys
 import time
 
 import nexus as na
-from nexus._src.operator.qgc_plan import NAV_WAYPOINT, read_plan
 from nexus.examples._lib import dump_run
 from nexus.examples.controllers.px4.log_warnings import px4_warnings
+from nexus.px4 import NAV_WAYPOINT, OffboardClient, read_plan
 
 PLAN = pathlib.Path(__file__).with_name("box.plan")  # the mission flown; swap the file, fly another
 VEHICLE = "astro_max_base"  # the registry vehicle flown, which declares PX4
@@ -77,25 +78,29 @@ def main() -> int:
         na.logger.info(f"[mission] {PLAN.name}: {len(plan.items)} items, home {lat:.6f},{lon:.6f}")
         with na.Sim(VEHICLE, scene=SCENE, geo=f"{lat},{lon}", device="cuda", log=True) as sim:
             sim.start(timeout=args.timeout)  # drive setup as far as PX4 lockstep
-            na.logger.info("[mission] PX4 lockstep established: uploading the plan over :14540")
+            link = sim.ports["offboard"]  # the run owns the address of the link this script opens
+            na.logger.info(f"[mission] PX4 lockstep established: uploading the plan over :{link['port']}")
 
-            # sim.operator builds lazily on first access, so this must come after start().
+            # The script opens the offboard client itself, after start(), and closes it on the way
+            # out. Entering it returns at once: PX4 runs on the sim's clock, so the wait for its
+            # heartbeat steps the sim.
             t_gcs = time.time()
-            op = sim.operator
-            op.upload_mission(plan)
-            sim.wait_until(op.mission_uploaded, sim_timeout=UPLOAD_TIMEOUT_S)
-            na.logger.info(f"[mission] PX4 accepted {op.mission_count()} items: engaging AUTO.MISSION")
+            with OffboardClient(f"udpin:0.0.0.0:{link['port']}", system_id=link["system_id"]) as op:
+                sim.wait_until(lambda: op.connected, sim_timeout=UPLOAD_TIMEOUT_S)
+                op.upload_mission(plan)
+                sim.wait_until(op.mission_uploaded, sim_timeout=UPLOAD_TIMEOUT_S)
+                na.logger.info(f"[mission] PX4 accepted {op.mission_count()} items: engaging AUTO.MISSION")
 
-            # Mission mode only after the ack: PX4 refuses the mode while it has no valid mission.
-            # start_mission owns the mode-before-arm ordering; PX4 climbs on the plan's NAV_TAKEOFF.
-            op.start_mission()
-            sim.wait_until(op.mission_complete, sim_timeout=MISSION_TIMEOUT_S)
-            na.logger.info(f"[mission] flew {len(waypoints)} waypoints: waiting out the plan's RTL")
+                # Mission mode only after the ack: PX4 refuses the mode while it has no valid mission.
+                # start_mission owns the mode-before-arm ordering; PX4 climbs on the plan's NAV_TAKEOFF.
+                op.start_mission()
+                sim.wait_until(op.mission_complete, sim_timeout=MISSION_TIMEOUT_S)
+                na.logger.info(f"[mission] flew {len(waypoints)} waypoints: waiting out the plan's RTL")
 
-            # mission_complete reports the last WAYPOINT; the plan's final RTL item hands over to
-            # RTL rather than reporting an arrival, so the landing is what closes the flight.
-            sim.wait_until(lambda: op.landed_state() == "ON_GROUND", sim_timeout=RTL_TIMEOUT_S)
-            flight_ok = True
+                # mission_complete reports the last WAYPOINT; the plan's final RTL item hands over to
+                # RTL rather than reporting an arrival, so the landing is what closes the flight.
+                sim.wait_until(lambda: op.landed_state() == "ON_GROUND", sim_timeout=RTL_TIMEOUT_S)
+                flight_ok = True
     except (TimeoutError, RuntimeError) as e:
         na.logger.info(f"[mission] FAIL: {e}")
     finally:

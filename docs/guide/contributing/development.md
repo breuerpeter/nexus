@@ -67,7 +67,7 @@ from nexus._src.peers.px4_sitl.fake import Px4Fake
 loop = build_from_launch(launch, peers={"px4_sitl": Px4Fake, "kit": KitFake})
 ```
 
-The controller, the renderer and the loop then run as they do against the real process. So a fake proves the loop's side of the link, its encoding, its stage order and its error paths, and nothing about the process behind it. A run against `Px4Fake` has no operator link, so `sim.operator` raises.
+The controller, the renderer and the loop then run as they do against the real process. So a fake proves the loop's side of the link, its encoding, its stage order and its error paths, and nothing about the process behind it. A run against `Px4Fake` has no offboard link, so `sim.ports["offboard"]` raises and names the fake.
 
 ## What CI flies
 
