@@ -6,15 +6,16 @@ and assert the climb. The manual counterpart to :mod:`flight` (which flies the a
 
 **Same shape as flight.py.** The sim owns the autopilot: ``na.Sim`` builds PX4 SITL, serves the HIL
 link on :4560, starts the PX4 container against it, and kills it again on the way out. What is left
-here is a plain script against ``sim.operator``, whose sticks are streamed by the operator's own pump
+here is a plain script against ``nexus.px4.Px4Offboard``, which it opens itself on the address the
+run's port map names, ``sim.ports["offboard"]``, and whose sticks are streamed by the client's own pump
 over MAVLink :14540, the *same* #69 bytes the Ground Control Station (GCS) emits from decoded Pilot Pro sticks
 (freeflycontroller ``PILOT_PRO_OUTPUTS_MAVLINK_MANUAL_CONTROL`` msg 52537 -> x/y/z/r). So this
 verifies the gap-2 manual path end-to-end in SITL without a physical Pilot Pro or an emulated companion.
 The decoder half is unit-tested; this exercises the *flight* half (does a #69 gesture arm + fly
-this PX4). This script drives the sim: every operator verb returns immediately and every wait is a
+this PX4). This script drives the sim: every client verb returns immediately and every wait is a
 ``sim.wait_until``, which steps the sim until PX4's own telemetry says the verb landed.
 
-Only the operator steps differ from flight.py: it flies in Altitude mode (ALTCTL), where
+Only the client steps differ from flight.py: it flies in Altitude mode (ALTCTL), where
 throttle-centre holds altitude and throttle-up climbs, and it arms with the stick gesture rather
 than an arm command.
 
@@ -29,12 +30,14 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from contextlib import closing
 
 import numpy as np
 
 import nexus as na
 from nexus.examples._lib import dump_run
 from nexus.examples.controllers.px4.log_warnings import px4_warnings
+from nexus.px4 import Px4Offboard
 
 VEHICLE = "astro_max_base"  # the registry vehicle flown, which declares PX4
 SCENE = "empty"  # flat ground
@@ -61,30 +64,34 @@ def main() -> int:
         na.logger.info("[manual] Newton starting in-process (actuator from USD); serving :4560 …")
         with na.Sim(VEHICLE, scene=SCENE, device="cuda", log=True) as sim:
             sim.start(timeout=args.timeout)  # drive setup as far as PX4 lockstep
-            na.logger.info("[manual] PX4 lockstep established: flying via MANUAL_CONTROL (:14540)")
+            link = sim.ports["offboard"]  # the run owns the address of the link this script opens
+            na.logger.info(f"[manual] PX4 lockstep established: flying via MANUAL_CONTROL (:{link['port']})")
 
-            # sim.operator builds lazily on first access, so this must come after start().
+            # The script opens the offboard client itself, after start(), and closes it on the way
+            # out. PX4 runs on the sim's clock, so the wait for its heartbeat steps the sim.
             spawn_alt = sim.physics[sim.base_body].latest().altitude_m
-            op = sim.operator
-            # SITL's rcS already sets this, but it's a runtime default rather than a compiled-in
-            # one: an upstream bump could flip it, and the only symptom would be a gesture that
-            # never arms. Say it out loud. MAN_ARM_GESTURE has a compiled-in value of 1 and stays
-            # alone.
-            op.param_set_int("COM_RC_IN_MODE", 1)  # 1 = MAVLink only
-            op.set_mode("Altitude")  # a manual mode: the operator auto-starts the neutral stick stream
-            op.arm(gesture=True)  # the pump holds neutral until armable, then gestures
-            na.logger.info("[manual] Altitude requested, arm gesture lodged: waiting for the motors")
-            sim.wait_until(op.is_armed, sim_timeout=args.timeout)
+            with closing(Px4Offboard(f"udpin:0.0.0.0:{link['port']}", system_id=link["system_id"])) as op:
+                op.open()  # binds the link and starts the pump; returns at once
+                sim.wait_until(lambda: op.connected, sim_timeout=args.timeout)
+                # SITL's rcS already sets this, but it's a runtime default rather than a compiled-in
+                # one: an upstream bump could flip it, and the only symptom would be a gesture that
+                # never arms. Say it out loud. MAN_ARM_GESTURE has a compiled-in value of 1 and stays
+                # alone.
+                op.param_set_int("COM_RC_IN_MODE", 1)  # 1 = MAVLink only
+                op.set_mode("Altitude")  # a manual mode: the client auto-starts the neutral stick stream
+                op.arm(gesture=True)  # the pump holds neutral until armable, then gestures
+                na.logger.info("[manual] Altitude requested, arm gesture lodged: waiting for the motors")
+                sim.wait_until(op.is_armed, sim_timeout=args.timeout)
 
-            alt0 = op.relative_altitude() or 0.0
-            na.logger.info(f"[manual] ARMED (by stick gesture): throttle to {args.throttle:.2f}")
-            op.set_rc(throttle=args.throttle)  # throttle up in ALTCTL
-            sim.wait_until(
-                lambda: (op.relative_altitude() or alt0) - alt0 >= args.climb_target, sim_timeout=args.timeout
-            )
-            op.set_rc(throttle=0.5)  # ease back to altitude hold
-            flight_ok = True
-            na.logger.info(f"[manual] TAKEOFF via MANUAL_CONTROL: PX4 reports {op.relative_altitude():.2f} m")
+                alt0 = op.relative_altitude() or 0.0
+                na.logger.info(f"[manual] ARMED (by stick gesture): throttle to {args.throttle:.2f}")
+                op.set_rc(throttle=args.throttle)  # throttle up in ALTCTL
+                sim.wait_until(
+                    lambda: (op.relative_altitude() or alt0) - alt0 >= args.climb_target, sim_timeout=args.timeout
+                )
+                op.set_rc(throttle=0.5)  # ease back to altitude hold
+                flight_ok = True
+                na.logger.info(f"[manual] TAKEOFF via MANUAL_CONTROL: PX4 reports {op.relative_altitude():.2f} m")
     except (TimeoutError, RuntimeError) as e:
         na.logger.info(f"[manual] FAIL: {e}")
     finally:
