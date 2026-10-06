@@ -242,10 +242,11 @@ def test_the_ground_truth_px4_receives_is_the_base_bodys_whatever_the_imus_mount
         n += 1
     state = fake.last.get("HIL_STATE_QUATERNION")
     loop.close()
-    w = abs(state.attitude_quaternion[0]) if state else 0.0
+    q = list(state.attitude_quaternion) if state else [0.0] * 4
+    q = [-x for x in q] if q[0] < 0 else q  # q and -q are one attitude
     rate = max(abs(state.rollspeed), abs(state.pitchspeed), abs(state.yawspeed)) if state else 1.0
 
-    assert (n, w == pytest.approx(1.0, abs=1e-3), rate < 1e-3) == (100, True, True), (w, rate)
+    assert (n, q == pytest.approx([1.0, 0.0, 0.0, 0.0], abs=1e-3), rate < 1e-3) == (100, True, True), (q, rate)
 
 
 def test_a_vehicle_that_declares_no_sensor_builds(tmp_path):
