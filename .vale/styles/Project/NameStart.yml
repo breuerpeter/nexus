@@ -1,0 +1,11 @@
+# No sentence starts with the project's name, in either case. A sentence starts at the start of a
+# block, after `.`, `!` or `?`, or on the first line of an admonition body, which Markdown folds into
+# the `!!! note` line's paragraph. A heading that is only the name, as in `# nexus`, is exempt, and
+# so is `nexus-rl` or `nexus_sim`, which name other things. docs/design/conventions.md states the rule.
+extends: existence
+message: "Reword so the sentence doesn't start with '%s'."
+link: https://breuerpeter.github.io/nexus/design/conventions/#names
+level: error
+nonword: true
+tokens:
+  - '(?:\A|(?<=[.!?]\s+)|(?<=\A[!?]{3}\+? [^\n]*\n\s*))[Nn]exus\b(?![-_])(?!\s*\z)'

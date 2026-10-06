@@ -4,7 +4,7 @@ description: "How nexus works: a fixed-order deterministic sim loop of typed, re
 
 # Architecture
 
-nexus is an **imperative, fixed-order, deterministic simulation loop** in which every concern is
+The framework is an **imperative, fixed-order, deterministic simulation loop** in which every concern is
 a replaceable component behind a typed interface. A central
 [`Orchestrator`](../reference/api/core.md) steps the components in a fixed order each tick. The
 [`Sim`](../reference/api/simulation.md) façade builds and drives it.
@@ -32,7 +32,7 @@ them as constructor arguments, the same way every other sensor parameter arrives
 reaches both the physics and the IMU. A **camera is a sensor**: it produces an image measurement through the renderer, so vision
 controllers simply read frames.
 
-nexus uses a fixed-order loop. It doesn't use a message bus in the style of ProjectAirSim or
+The framework uses a fixed-order loop. It doesn't use a message bus in the style of ProjectAirSim or
 Robot Operating System (ROS), nor a data-flow or Entity Component System (ECS) scheduler in the
 style of Isaac. The loop gives replaceable typed interfaces and *easy* determinism at the lowest
 complexity, and the typed boundaries don't prevent publishing onto a bus later for distributed

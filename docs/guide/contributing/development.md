@@ -1,6 +1,6 @@
 # Development
 
-nexus is a [`uv`](https://docs.astral.sh/uv/) project with a single `nexus_sim`
+The repo is a [`uv`](https://docs.astral.sh/uv/) project with a single `nexus_sim`
 framework package. Install it and run the command-line tool:
 
 ```bash

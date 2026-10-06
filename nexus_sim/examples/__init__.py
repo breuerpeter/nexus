@@ -1,4 +1,4 @@
-"""nexus examples: runnable demos that exercise the framework, controllers and design-opt.
+"""The nexus examples: runnable demos that exercise the framework, controllers and design-opt.
 
 Run one straight from the installed package, with no checkout needed, mirroring NVIDIA Newton's
 ``python -m newton.examples`` launcher::

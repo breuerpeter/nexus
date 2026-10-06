@@ -1,4 +1,4 @@
-<img alt="nexus: GPU-accelerated drone simulation" src="https://breuerpeter.github.io/nexus/assets/lockup-banner.svg" width="100%">
+<img alt="The nexus logo: GPU-accelerated drone simulation" src="https://breuerpeter.github.io/nexus/assets/lockup-banner.svg" width="100%">
 
 <br />
 <br />
@@ -36,7 +36,7 @@ flight-stack development cycles.
 
 ## Installation
 
-nexus requires **Python 3.12**, **Linux**, and a **CUDA-capable GPU**. It ships
+The framework requires **Python 3.12**, **Linux**, and a **CUDA-capable GPU**. It ships
 on PyPI:
 
 ```bash

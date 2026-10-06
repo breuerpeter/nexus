@@ -1,12 +1,17 @@
 # nexus
 
-nexus is a GPU-accelerated drone simulation framework: a `uv` **project** with the
+This repo holds a GPU-accelerated drone simulation framework: a `uv` **project** with the
 framework as a single `nexus_sim` package and the docs site at the repo root. The Isaac Lab RL
 training app lives under `nexus-rl/` as a **separate `uv` project** with its own virtual
 environment, which depends on `nexus-sim` via an editable path source. That keeps the heavy,
 prerelease-pinned Isaac Lab stack out of the core environment. Run it with
 `uv run --project nexus-rl python nexus-rl/scripts/rsl_rl/train.py`.
 
+- **The name takes three forms.** `nexus-sim` is the PyPI distribution. `nexus_sim` is the import
+  package and every name Python resolves. `nexus` is the project and every other name, such as the
+  command, the `nexus:` schema attributes and the logger. Prose writes `nexus` in lowercase and
+  starts no sentence with it. `docs/design/conventions.md` states the rule, and the `Project` Vale
+  style in `.vale/styles/Project/` checks the prose.
 - **PX4 is the one first-class controller**, living in `nexus_sim/_src/`. Every other controller,
   `pid`, `policy`, `sampling_mpc`, and `acados_nmpc`, is a self-contained, **zero-arg** example
   under `nexus_sim/examples/controllers/<name>/`. Shared example machinery lives in

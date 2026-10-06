@@ -8,7 +8,7 @@ Install nexus and run your first simulation in a couple of minutes.
 
 ## Requirements
 
-nexus requires **Python 3.12**, **Linux**, and a **CUDA-capable GPU**.
+The framework requires **Python 3.12**, **Linux**, and a **CUDA-capable GPU**.
 
 ## Install
 

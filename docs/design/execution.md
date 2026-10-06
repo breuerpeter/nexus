@@ -1,5 +1,5 @@
 ---
-description: "nexus's execution model, a ring of device and host stages that CUDA graphs replay where they can, and its determinism model: where runs are bit-reproducible, where they're only tolerance-bounded, and why."
+description: "The execution model of nexus, a ring of device and host stages that CUDA graphs replay where they can, and its determinism model: where runs are bit-reproducible, where they're only tolerance-bounded, and why."
 ---
 
 # Execution & determinism
