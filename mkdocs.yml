@@ -169,7 +169,7 @@ nav:
       - Simulation: reference/api/simulation.md
       - Core types: reference/api/core.md
       - Configuration: reference/api/configuration.md
-      - Operator: reference/api/operator.md
+      - Guidance: reference/api/guidance.md
       - PX4: reference/api/px4.md
       - Logging: reference/api/logging.md
     - Assets:

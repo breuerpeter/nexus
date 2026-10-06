@@ -4,9 +4,8 @@ Nonlinear Model Predictive Control (NMPC).
 This example-owned assembly, moved out of core because PX4 is the one first-class control path,
 wires the **registry vehicle** Universal Scene Description (USD), the full articulated model, and
 the core rotor chain. The NMPC is a pure *tracking* controller, and the min-snap/flatness
-planner lives with the **operator**: this attaches the planner factory to the orchestrator as
-``reference_planner`` so ``Sim`` hands it to the ``InProcessOperator``, which plans the whole-path
-``ReferenceTrajectory`` and feeds ``accept_setpoint``. The NMPC's per-tick Sequential Quadratic
+planner lives with the **guidance**: the flight file hands it to a ``TrackingGuidance``, which plans
+the whole-path ``ReferenceTrajectory`` and feeds ``accept_setpoint``. The NMPC's per-tick Sequential Quadratic
 Programming (SQP) Real-Time Iteration (RTI) solve runs at the host seam; everything else captures,
 the captured-host-exchange strategy. acados needs provisioning first: ``python -m nexus.examples acados_nmpc --provision``.
 """
@@ -37,8 +36,6 @@ def build_acados_orchestrator(
 
     from nexus._src.vehicle.rotors import find_rotor_joints
     from nexus._src.vehicle.sensors import StateSensor
-    from nexus.examples._lib.min_snap import MinSnapReference
-    from nexus.examples._lib.reference import FlatnessReference  # noqa: F401 the ruckig fallback planner
     from nexus.examples.controllers.acados_nmpc.controller import AcadosNMPCController
 
     logger.info(f"device: {resolve_device(cfg)}")
@@ -103,10 +100,4 @@ def build_acados_orchestrator(
         max_steps=max_steps,
         physics_substeps=1,
     )
-    # The operator owns the planner: expose a factory the Sim hands to the
-    # InProcessOperator, which plans the whole-path reference and feeds accept_setpoint(ReferenceTrajectory).
-    # MinSnapReference, the polynomial planner, is a smooth min-snap path plus a smooth yaw
-    # polynomial, so nose-first flight tracks cleanly; swap in the ruckig FlatnessReference for the
-    # jerk-limited fallback.
-    orch.reference_planner = lambda waypoints: MinSnapReference(waypoints, mass=mass)
     return orch

@@ -16,7 +16,7 @@ Conventions, which the harness relies on:
   construction, so the harness computes the Absolute Pose Error (APE) directly, with no association
   step.
 - Waypoint mission: ``waypoints`` (K,3) + ``arrival_t``, with as many entries as goals reached,
-  from ``InProcessOperator.arrival_times``; the harness builds the piecewise-linear position
+  from ``MissionGuidance.arrival_times``; the harness builds the piecewise-linear position
   reference.
 - ``<name>.json``: ``{"name", "stats", "results", "rrd"}``, the example's stats dict, the
   orchestrator's ``run_stats`` with the steady ``rtf`` and so on, and the ``.rrd`` path, ``null``
@@ -79,10 +79,10 @@ def dump_run(
     - ``reference`` + ``reference_t0``: a continuous planned reference, an object such as
       ``MinSnapReference`` or ``FlatnessReference`` that exposes
       ``flat_state_at(t) -> (pos, quat_wxyz, ...)`` and ``duration``, anchored at sim time
-      ``reference_t0``, which is ``InProcessOperator.reference_started_at``. Sampled at the
+      ``reference_t0``, which is ``TrackingGuidance.reference_started_at``. Sampled at the
       recorded timestamps.
     - ``waypoints`` + ``arrival_times``: a goal-sequencing mission, from
-      ``InProcessOperator.arrival_times``; the harness interpolates the position reference.
+      ``MissionGuidance.arrival_times``; the harness interpolates the position reference.
 
     Args:
         sim: The ``na.Sim`` handle after its context exited.
@@ -108,7 +108,7 @@ def dump_run(
     }
     if reference is not None:
         if reference_t0 is None:
-            raise ValueError("dump_run(reference=...) needs reference_t0 (InProcessOperator.reference_started_at)")
+            raise ValueError("dump_run(reference=...) needs reference_t0 (TrackingGuidance.reference_started_at)")
         dur = float(reference.duration)
         t = arrays["est_t"]
         sel = t >= float(reference_t0)

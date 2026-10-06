@@ -1,8 +1,8 @@
 """The driver-script public surface: a test script imports these from nexus.
 
-Operators/controllers are *internal* now, see control-surface-api.md: everything reaches the operator
-via ``sim.operator`` and the controller via ``sim.controller``; the old ``Pilot``, ``Px4Pilot`` and
-``wait_until`` exports on ``na`` no longer exist.
+Guidance and controllers are *internal*: a flight reaches its guidance via ``sim.guidance`` and its
+controller via ``sim.controller``, and a PX4 script imports its client from ``nexus.px4``. The old
+``Pilot``, ``Px4Pilot`` and ``wait_until`` exports on ``na`` no longer exist.
 """
 
 import re

@@ -11,10 +11,10 @@ port of NVIDIA's ``example_diffsim_drone``, and the counterpart to ``waypoint_tr
 
 **The shape.** A zero-arg, self-contained script: it assembles its own orchestrator, the
 example-owned :mod:`assembly` that wraps controller + actuator + physics around the core components,
-and hosts it via ``Sim.from_orchestrator`` + ``sim.operator``. The vehicle is the registry
+and hosts it via ``Sim.from_orchestrator`` + ``sim.guidance``. The vehicle is the registry
 ``astro-max`` and the obstacle pillars ride in the registry ``slalom`` scene, a
-Universal Scene Description (USD) file of cost-only capsules. The operator sequences the waypoints:
-``set_mission`` → advance on arrival → ``accept_setpoint``; the controller logs its MPC horizon to
+Universal Scene Description (USD) file of cost-only capsules. The guidance sequences the waypoints:
+``set_mission`` → advance on arrival → the next goal on the tick; the controller logs its MPC horizon to
 ``/controller``; the central recorder, always on, logs the physics trajectory + pillars, and the
 .rrd is the demo's artifact.
 
@@ -33,6 +33,7 @@ import numpy as np
 import nexus as na
 from nexus._src.build.launch import resolve_scenario
 from nexus._src.config import LaunchConfig
+from nexus._src.guidance import MissionGuidance
 from nexus._src.rendering import rtx_renderer
 from nexus.examples._lib import dump_run
 from nexus.examples.controllers.sampling_mpc.assembly import build_sampling_mpc_orchestrator
@@ -40,7 +41,7 @@ from nexus.examples.controllers.sampling_mpc.assembly import build_sampling_mpc_
 # Everything this demo is, in one place: zero args by design, the configuration IS the example.
 VEHICLE = "astro_max_base"
 SCENE = "slalom"  # the registry obstacle scene, cost-only pillar capsules
-MAX_STEPS = 4000  # safety cap; the operator ends the run on mission completion
+MAX_STEPS = 4000  # safety cap; the guidance ends the run on mission completion
 # A slalom: three waypoints staggered into a zigzag, not a straight row, each leg a gentle hop. A pillar
 # sits mid-way along every leg in the registry 'slalom' scene, so the drone must detour around it.
 SPAWN = (0.0, 0.0, 2.0)
@@ -59,16 +60,17 @@ def main() -> None:
         rerun=True,  # the .rrd is the demo's artifact
         renderer_factory=rtx_renderer(builder, cfg),  # the Kit peer, when the vehicle authors RTX sensors
     )
-    # reached_m=0.5 matches the demo's leg spacing: the operator advances to the next waypoint this close;
-    # final_hold_s lets the stochastic MPC settle on the final waypoint before the operator ends the run.
-    with na.Sim.from_orchestrator(orch, reached_m=0.5, final_hold_s=4.0) as sim:
-        sim.operator.set_mission(WAYPOINTS)  # the operator sequences these; the planner avoids the pillars
+    # reached_m=0.5 matches the demo's leg spacing: the guidance advances to the next waypoint this close;
+    # final_hold_s lets the stochastic MPC settle on the final waypoint before the guidance ends the run.
+    guidance = MissionGuidance(reached_m=0.5, final_hold_s=4.0)
+    with na.Sim.from_orchestrator(orch, guidance=guidance) as sim:
+        sim.guidance.set_mission(WAYPOINTS)  # the guidance sequences these; the planner avoids the pillars
         sim.run()
 
     traj = sim.physics[sim.base_body].history()
     q = np.array([s.position for s in traj])
     quats = np.array([s.quat_xyzw for s in traj])  # xyzw order
-    reached = sim.operator.reached
+    reached = guidance.reached
 
     # Clearance to the nearest pillar axis in xy → must exceed the pillar radius, so it cleared every pillar.
     # Pillars sit at the mid-point of each mission leg, the same geometry the scene USD authors.
@@ -122,7 +124,7 @@ def main() -> None:
     # harness interpolates the position reference. NB the flight legitimately detours around the
     # pillars, so the harness monitors the position Absolute Pose Error (APE) rather than gating on
     # it; the gates below are the behavior authority.
-    dump_run(sim, "sampling_mpc", stats=stats, waypoints=WAYPOINTS, arrival_times=sim.operator.arrival_times)
+    dump_run(sim, "sampling_mpc", stats=stats, waypoints=WAYPOINTS, arrival_times=guidance.arrival_times)
     assert np.isfinite(q).all(), "trajectory diverged"
     assert reached == len(WAYPOINTS), f"did not reach all waypoints (got {reached}/{len(WAYPOINTS)})"
     # Convergence: tightened from 0.5. The well-tuned flight settles to ~0.22 m; an under-damped one that

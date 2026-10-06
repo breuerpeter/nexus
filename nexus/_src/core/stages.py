@@ -1,8 +1,9 @@
 """The ring of stages one control tick runs, and its partition into captured segments.
 
 A tick is an ordered ring of stages, per docs/design/execution.md. :func:`build_ring` lays every
-component's stages out in the canonical order, sensors, controller, ``clear`` -> the command stages ->
-the force stages -> ``step`` per physics substep, record. :func:`partition` cuts the ring at its host stages and rotates it to
+component's stages out in the canonical order, sensors, guidance, controller, ``clear`` -> the command
+stages -> the force stages -> ``step`` per physics substep, record. :func:`partition` cuts the ring at
+its host stages and rotates it to
 start after the last cut, so the ring's tail folds into the first run and each maximal run of
 device stages becomes one CUDA graph; with no host stage the whole ring is one segment in canonical
 order. :func:`peer_stages` is the one shape for a controller that blocks on a peer or solves on the
@@ -31,7 +32,7 @@ class Bound:
 
     stage: Stage
     component: object
-    role: str  # sensor, controller, physics, command, force, actuator or record
+    role: str  # sensor, guidance, controller, physics, command, force, actuator or record
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,12 +72,14 @@ def device_sensors(ring: list[Bound]) -> list:
 
 
 def build_ring(
-    *, sensors, controller, physics, commands=(), forces=(), actuator=None, record: Stage, substeps: int
+    *, sensors, controller, physics, commands=(), forces=(), actuator=None, record: Stage, substeps: int, guidance=None
 ) -> list[Bound]:
-    """Every component's stages in the canonical order the domain fixes: sensors, controller, then
-    ``clear`` -> the command stages -> the force stages -> ``step`` unrolled ``substeps`` times, then
-    ``record``. The old actuator seam's one stage, the examples' single-body ``Rotors``, runs with the
-    force stages, since it writes the body forces too.
+    """Every component's stages in the canonical order the domain fixes: sensors, the guidance when the
+    run has one, controller, then ``clear`` -> the command stages -> the force stages -> ``step`` unrolled
+    ``substeps`` times, then ``record``. The guidance sits before the controller, so the setpoint it writes
+    to the tick, which the loop hands to the controller after the guidance's stage, is the one the
+    controller reads on that tick. The old actuator seam's one stage, the
+    examples' single-body ``Rotors``, runs with the force stages, since it writes the body forces too.
 
     Raises:
         ValueError: A component states no stages, a stage of an unknown kind, or physics states no
@@ -85,6 +88,8 @@ def build_ring(
     ring = []
     for s in sensors:
         ring += stages_of(s, "sensor")
+    if guidance is not None:
+        ring += stages_of(guidance, "guidance")
     ring += stages_of(controller, "controller")
     phys = {b.stage.name: b for b in stages_of(physics, "physics")}
     if "clear" not in phys or "step" not in phys:
@@ -143,10 +148,19 @@ def seed_stages(ring: list[Bound]) -> list[Stage]:
 
 
 def warm_stages(ring: list[Bound]) -> list[Stage]:
-    """The device stages of the seed pass: the warm pass that runs once before any capture, so every
-    device buffer exists and every kernel has loaded first, with no peer involved.
+    """The stages of the warm pass, which runs once over the settled state before any capture, in ring
+    order and with no peer involved: the device stages of the seed pass, so every device buffer exists
+    and every kernel has loaded first, and a guidance's warm stage between the sensors' and the
+    controller's, so the controller holds the guidance's first setpoint before its own first stage.
     """
-    return [st for st in seed_stages(ring) if st.kind == "device"]
+    out = []
+    for b in ring:
+        if b.role == "guidance":
+            if b.stage.warm:
+                out.append(b.stage)
+        elif b.role in ("sensor", "controller") and b.stage.kind == "device" and b.stage.warm:
+            out.append(b.stage)
+    return out
 
 
 def plan_line(segments: list[Segment], captured: bool) -> str:
