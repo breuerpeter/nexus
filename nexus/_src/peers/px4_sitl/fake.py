@@ -50,6 +50,10 @@ class Px4Fake:
         self._claim = claim
         self.received: collections.Counter[str] = collections.Counter()
         """How many of each MAVLink message the fake received, by type."""
+        self.hil_sensor: list[tuple[int, int]] = []
+        """The time, in microseconds, and the ``fields_updated`` mask of each ``HIL_SENSOR``, in order."""
+        self.hil_gps: list[int] = []
+        """The time, in microseconds, of each ``HIL_GPS``, in order."""
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -105,7 +109,10 @@ class Px4Fake:
                     kind = msg.get_type()
                     self.received[kind] += 1
                     if kind == "HIL_SENSOR":
+                        self.hil_sensor.append((msg.time_usec, msg.fields_updated))
                         mav.hil_actuator_controls_send(msg.time_usec, [HOVER] * 16, 0, 0)
+                    elif kind == "HIL_GPS":
+                        self.hil_gps.append(msg.time_usec)
         except OSError:
             pass
         finally:

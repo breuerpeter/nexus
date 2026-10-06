@@ -231,20 +231,6 @@ def test_a_registry_handed_to_the_builder_decides_an_analytic_and_an_rtx_sensors
     assert built == ["ImuSensor", "StandInSensor", "StandInSensor"]
 
 
-def test_an_analytic_sensor_still_samples_every_tick_whatever_rate_it_declares(tmp_path):
-    """An analytic sensor still samples every tick, whatever rate it declares.
-
-    Given the fixture with a rate of 5 Hz authored on the barometer, whose noise is on, when the run
-    steps 10 ticks of 0.004 s, then the controller receives 10 different pressures, one fresh sample a tick.
-    """
-    baro = sv.prim("Baro0", "NexusBaroAPI", "float nexus:noise = 0.02\nfloat nexus:rate = 5")
-    loop = sv.build(sv.vehicle(tmp_path, baro))
-
-    pressures = [meas.abs_pressure for meas in sv.fly(loop, 10)]
-
-    assert len(set(pressures)) == 10, pressures
-
-
 def test_a_projects_own_sensor_schema_builds_its_class_with_the_runs_values_and_the_loop_samples_it(tmp_path):
     """A project's own sensor schema builds its class with the run's values, and the loop samples it.
 

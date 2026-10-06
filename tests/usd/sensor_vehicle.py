@@ -1,7 +1,7 @@
 """The fixture vehicle of the sensor tests, and the stand-ins a run of it needs.
 
 The fixture is a local layer over the shipped `astro_max_base`, so it flies real bodies and rotors. It
-deactivates the shipped sensor prims and drops the PX4 Software In The Loop (SITL) peer, and a test adds
+deactivates the shipped sensor prims and drops the PX4 Software In The Loop (SITL) peer unless a test keeps it, and a test adds
 its own sensor prims, under names the shipped vehicle leaves free. A stand-in controller answers at once and keeps every `Measurement` it
 receives, so a test reads what a controller reads.
 """
@@ -75,15 +75,17 @@ def prim(name: str, schema: str | None, attrs: str = "", *, kind: str = "Xform",
     return f'def {kind} "{name}"{metadata}\n{{\n{body}}}\n'
 
 
-def vehicle(tmp_path: Path, body: str = "", *, mast: str | None = None) -> str:
+def vehicle(tmp_path: Path, body: str = "", *, mast: str | None = None, px4_sitl: bool = False) -> str:
     """Write the fixture vehicle under `tmp_path` and return its path.
 
     `body` is the text of the prims under the base body. `mast`, when given, adds the second body and
-    is the text of the prims under it.
+    is the text of the prims under it. `px4_sitl` keeps the PX4 SITL peer the shipped vehicle declares,
+    for a run that sends it to its fake.
     """
     shipped = resolve(LaunchConfig.from_dict({"vehicle": "astro_max_base", "scene": "empty"})).vehicle_usd_path
     geometry = "" if mast is None else _MAST.replace("__MAST_PRIMS__", mast)
     joint = "" if mast is None else _MAST_JOINT
+    peer = "" if px4_sitl else ' (\n    delete apiSchemas = ["NexusPx4SitlAPI"]\n)'
     path = tmp_path / "sensor_vehicle.usda"
     path.write_text(
         f"""#usda 1.0
@@ -96,9 +98,7 @@ def vehicle(tmp_path: Path, body: str = "", *, mast: str | None = None) -> str:
     ]
 )
 
-over "astro_max" (
-    delete apiSchemas = ["NexusPx4SitlAPI"]
-)
+over "astro_max"{peer}
 {{
     over "Geometry"
     {{
@@ -159,6 +159,21 @@ class Controller:
         return Controls(command=np.zeros(4))
 
 
+class Climb(Controller):
+    """A stand-in controller that commands full throttle on every rotor, so the vehicle climbs.
+
+    `burn` is how many ticks the throttle stays on; after them the command is zero, and the vehicle is
+    in free fall once its rotors stop. ``None`` keeps the throttle on.
+    """
+
+    burn: int | None = None
+
+    def exchange(self, meas, t, timeout=None):
+        self.received.append(dataclasses.replace(meas))
+        on = self.burn is None or t.step_index < self.burn
+        return Controls(command=np.full(4, 1.0 if on else 0.0))
+
+
 class StandInSensor:
     """A stand-in sensor: it keeps the run's values and its keyword arguments, and its one host stage does nothing."""
 
@@ -176,16 +191,17 @@ def components(**entries) -> ComponentRegistry:
     return ComponentRegistry({**shipped, "NexusPx4API": Controller, **entries})
 
 
-def build(vehicle_path: str, *, seed: int = 42, scene: str = "empty", registry=None, **kw):
-    """Build a run of the vehicle at `vehicle_path` on the CPU, flown by the stand-in controller.
+def build(vehicle_path: str, *, seed: int = 42, scene: str = "empty", device: str = "cpu", registry=None, **kw):
+    """Build a run of the vehicle at `vehicle_path` on `device`, flown by the stand-in controller.
 
     `registry` is the catalog, for a scene of the test's own. The rest goes to the build: `components`
-    replaces the registry of :func:`components`, and `peers` is the peer mapping.
+    replaces the registry of :func:`components`, ``None`` for the shipped one and so the PX4 controller,
+    and `peers` is the peer mapping.
     """
     import nexus._src.build.launch as launch_mod
 
     launch = LaunchConfig.from_dict(
-        {"vehicle": vehicle_path, "scene": scene, "runtime": {"device": "cpu", "seed": seed}}
+        {"vehicle": vehicle_path, "scene": scene, "runtime": {"device": device, "seed": seed}}
     )
     kw.setdefault("components", components())
     return launch_mod.build_from_launch(launch, registry=registry, preroll_timeout=10.0, **kw)
