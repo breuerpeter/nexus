@@ -22,7 +22,7 @@ stages, and each stage states its kind:
 | **Host stage** | Work that leaves the device or the process: PX4's `read` and `exchange`, a Model Predictive Control (MPC) solve, a torch policy's inference, an RTX sensor's frame exchange with the Kit peer | On the host, between graph replays |
 | **Differentiable rollout** | Design optimization | A Warp tape records the whole loop, including the PID law. A loss back-propagates through it |
 
-The loop lays the stages out in one canonical order: sensors, controller, then `clear`, actuator
+The loop lays the stages out in one canonical order: sensors, the guidance when the run has one, controller, then `clear`, actuator
 and `step` once per physics substep, then record. It cuts the ring at its host stages. It rotates
 the ring to start after the last cut, so the ring's tail folds into the first run. **Each maximal
 run of device stages becomes one CUDA graph.** The host stages run between the replays. With no

@@ -20,5 +20,5 @@ exists, *and* in the `.rrd` for review. No bare `print` needed.
 
 The framework itself logs the same way, so example output sits alongside the framework's own
 `[newton/…]` lines. Components log their own *quantities*: the scene, the flown-path
-`physics/trajectory`, the operator's `operator/reference`/waypoints, the `controller/mpc_horizon`, each
+`physics/trajectory`, the guidance's `guidance/reference` and `guidance/waypoints`, the `controller/mpc_horizon`, each
 through its own component log step, which the central `Logger` fans out only when recording.

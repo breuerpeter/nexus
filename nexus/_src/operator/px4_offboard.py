@@ -1,5 +1,5 @@
-"""Px4Offboard: a thin, non-blocking pymavlink operator, the PX4 implementation of the Operator
-role. A background daemon thread keeps the MAVLink link alive: it sends the Ground Control
+"""Px4Offboard: a thin, non-blocking pymavlink client that commands PX4 as a ground station
+does. A background daemon thread keeps the MAVLink link alive: it sends the Ground Control
 Station (GCS) heartbeat plus the current MANUAL_CONTROL setpoint, services the outstanding mode and
 arm requests, and caches telemetry. Every public verb is a **request**: it returns immediately and
 the pump commands PX4 until telemetry confirms it, so no verb ever blocks the thread that drives the
@@ -23,10 +23,9 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from nexus._src.core.schema import Setpoint
+from nexus._src.core.schema import Setpoint, as_position_goal
 from nexus._src.peers.px4_sitl import OFFBOARD_PORT
 
-from .operator import BaseOperator
 from .qgc_plan import NAV_WAYPOINT, MissionItem, Plan, read_plan
 
 # Pin the MAVLink dialect before importing mavutil; this matches Px4MavlinkController. Because the
@@ -122,7 +121,7 @@ class _GotoTarget:
     yaw: float | None
 
 
-class Px4Offboard(BaseOperator):
+class Px4Offboard:
     def __init__(
         self,
         conn: str = f"udpin:0.0.0.0:{OFFBOARD_PORT}",
@@ -147,7 +146,6 @@ class Px4Offboard(BaseOperator):
             wait_clear_s: Seconds the vehicle must be failure-free, and the initial settle
                 period, before the pump sends an arm command.
         """
-        super().__init__()  # BaseOperator, for _as_position_goal; nothing uses the mission and logging members
         self._conn_str = conn
         self._system_id = system_id
         self._arrive_m = arrive_m
@@ -733,7 +731,7 @@ class Px4Offboard(BaseOperator):
 
         Commanded as ``DO_REPOSITION``: the same guidance PX4 runs for a GCS "fly here" request, and
         what it latches until the next command, so this goes out once rather than streamed. The
-        position is in **world axes**, Newton FLU and Z-up, the same tuples ``InProcessOperator``
+        position is in **world axes**, Newton FLU and Z-up, the same tuples ``MissionGuidance``
         takes, resolved against an anchor captured on the first call; see :meth:`_anchor_now`.
 
         Yaw is in world axes too, and this reflects it on the way out for the same reason it
@@ -752,7 +750,7 @@ class Px4Offboard(BaseOperator):
             RuntimeError: No position has arrived on the operator link yet.
             TypeError: ``setpoint`` isn't a ``PositionGoal`` or an ``(x, y, z)`` position.
         """
-        goal = self._as_position_goal(setpoint)
+        goal = as_position_goal(setpoint)
         x, y, z = goal.pos
         yaw_world = yaw if yaw is not None else goal.yaw
         yaw_px4 = None if yaw_world is None else _wrap_pi(-float(yaw_world))

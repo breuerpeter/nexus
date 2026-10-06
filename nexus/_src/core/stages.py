@@ -1,8 +1,8 @@
 """The ring of stages one control tick runs, and its partition into captured segments.
 
 A tick is an ordered ring of stages, per docs/design/execution.md. :func:`build_ring` lays every
-component's stages out in the canonical order, sensors, controller, ``clear`` -> actuator -> ``step``
-per physics substep, record. :func:`partition` cuts the ring at its host stages and rotates it to
+component's stages out in the canonical order, sensors, guidance, controller, ``clear`` -> actuator ->
+``step`` per physics substep, record. :func:`partition` cuts the ring at its host stages and rotates it to
 start after the last cut, so the ring's tail folds into the first run and each maximal run of
 device stages becomes one CUDA graph; with no host stage the whole ring is one segment in canonical
 order. :func:`peer_stages` is the one shape for a controller that blocks on a peer or solves on the
@@ -31,7 +31,7 @@ class Bound:
 
     stage: Stage
     component: object
-    role: str  # sensor, controller, physics, actuator or record
+    role: str  # sensor, guidance, controller, physics, actuator or record
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,9 +70,11 @@ def device_sensors(ring: list[Bound]) -> list:
     return out
 
 
-def build_ring(*, sensors, controller, physics, actuator, record: Stage, substeps: int) -> list[Bound]:
-    """Every component's stages in the canonical order the domain fixes: sensors, controller, then
-    ``clear`` -> actuator -> ``step`` unrolled ``substeps`` times, then ``record``.
+def build_ring(*, sensors, controller, physics, actuator, record: Stage, substeps: int, guidance=None) -> list[Bound]:
+    """Every component's stages in the canonical order the domain fixes: sensors, the guidance when the
+    run has one, controller, then ``clear`` -> actuator -> ``step`` unrolled ``substeps`` times, then
+    ``record``. The guidance sits before the controller, so the setpoint it writes on a tick is the one
+    the controller reads on that tick.
 
     Raises:
         ValueError: A component states no stages, a stage of an unknown kind, or physics states no
@@ -81,6 +83,8 @@ def build_ring(*, sensors, controller, physics, actuator, record: Stage, substep
     ring = []
     for s in sensors:
         ring += stages_of(s, "sensor")
+    if guidance is not None:
+        ring += stages_of(guidance, "guidance")
     ring += stages_of(controller, "controller")
     phys = {b.stage.name: b for b in stages_of(physics, "physics")}
     if "clear" not in phys or "step" not in phys:

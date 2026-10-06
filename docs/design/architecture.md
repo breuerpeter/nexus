@@ -1,5 +1,5 @@
 ---
-description: "How nexus works: a fixed-order deterministic sim loop of typed, replaceable components. The data model, interfaces, controller and operator plane, actuators, observability, configuration, and packaging."
+description: "How nexus works: a fixed-order deterministic sim loop of typed, replaceable components. The data model, interfaces, controllers and guidance, actuators, observability, configuration, and packaging."
 ---
 
 # Architecture
@@ -85,7 +85,7 @@ Directed Acyclic Graph (DAG) with the core at the root, and `import-linter` enfo
 module imports Kit: the Kit render peer's program ships as package data that nothing imports, and
 the contract forbids `omni`, `usdrt`, `isaacsim` and `carb` in every tier.
 
-## Controllers and the operator plane
+## Controllers and guidance
 
 Every controller states its stages, and a peer's autopilot and a device-native law fly through the
 same loop:
@@ -102,11 +102,18 @@ same loop:
 - **`TrainedPolicyController`**: loads a policy exported from `nexus-rl` and drives the
   vehicle from the ground-truth observation.
 
-**What to fly is separate from how it flies.** The **operator plane**, reached through
-[`sim.operator`](../reference/api/operator.md), issues typed setpoints, `PositionGoal`, `Waypoints`,
-or `ReferenceTrajectory`, that a controller narrows via `accept_setpoint`. `InProcessOperator` flips
-the active setpoint between graph replays. `Px4Offboard` streams offboard setpoints to PX4 over a
-separate MAVLink link. A `ruckig` or min-snap planner plans jerk-limited references.
+**What to fly is separate from how it flies.** A controller that takes setpoints flies the mission
+of its **guidance**, the outer loop of the control cascade, reached through
+[`sim.guidance`](../reference/api/guidance.md). The guidance is a component of the loop. Its stage
+runs each tick after the sensors' and before the controller's, so the setpoint it writes, a
+`PositionGoal`, `Waypoints` or `ReferenceTrajectory`, is the one the controller narrows via
+`accept_setpoint` on that same tick. `MissionGuidance` sequences position goals and advances on
+arrival. `TrackingGuidance` hands a tracking controller one reference, which a `ruckig` or min-snap
+planner plans. A flight constructs its guidance and hands it to `Sim.from_orchestrator`.
+
+PX4 takes no guidance, because its own navigator sequences its missions. A script commands PX4 from
+the ground side, over a separate MAVLink link, with
+[`Px4Offboard`](../reference/api/operator.md), reached through `sim.operator`.
 
 ## Actuators
 
@@ -130,7 +137,7 @@ Observability is cross-cutting, split into a **write** side and a **read** side:
 
 - **One central Rerun sink.** A single `Logger`, injected into every component, owns the one
   Rerun recording, writing under namespaced entity paths such as `physics/…`, `sensors/…`,
-  `operator/…`, and `controller/…` on a shared `sim_time` timeline. It can serve a live viewer over
+  `guidance/…`, and `controller/…` on a shared `sim_time` timeline. It can serve a live viewer over
   gRPC on port `9876` or write a durable `.rrd`. Out-of-process producers merge into the same view:
   PX4's own logger, and the Kit render peer, whose frames the camera sensors log on the host. Logging is **output-only**: nothing reads it back
   into the loop, so it can't perturb determinism. It decimates to a configurable rate, 50 Hz by

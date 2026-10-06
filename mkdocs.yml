@@ -166,6 +166,7 @@ nav:
       - Simulation: reference/api/simulation.md
       - Core types: reference/api/core.md
       - Configuration: reference/api/configuration.md
+      - Guidance: reference/api/guidance.md
       - Operator: reference/api/operator.md
       - Logging: reference/api/logging.md
     - Assets:

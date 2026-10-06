@@ -9,11 +9,12 @@ same per-rotor model the policy trained against, closing the loop: train on Isaa
 deploy on the core.
 
 **The shape.** A zero-arg, self-contained script: it assembles its own orchestrator, the
-example-owned :mod:`assembly`, and hosts it via ``Sim.from_orchestrator`` + ``sim.operator``. The
+example-owned :mod:`assembly`, and hosts it via ``Sim.from_orchestrator`` + ``sim.guidance``. The
 controller builds its observation from the ground-truth ``meas.state``, the single train↔deploy obs
 source, and runs its TorchScript inference at the host seam; everything else runs CUDA-graph
-captured. The in-process operator sequences the waypoints, advancing on arrival, since the policy is
-goal-relative, so each arrival hands it a fresh single-goal problem, and owns the run's end.
+captured. A geofence guidance sequences the waypoints, advancing on arrival, since the policy is
+goal-relative, so each arrival hands it a fresh single-goal problem. It owns the run's end, and ends
+the run at once if the vehicle leaves the fence.
 
 The policy is the hosted, content-addressed :data:`POLICY_ASSET`, sha-verified into the asset
 cache as the vehicle Universal Scene Description (USD) files are; pass ``--policy`` to fly a fresh local
@@ -38,13 +39,15 @@ from nexus._src.config import LaunchConfig
 from nexus._src.rendering import rtx_renderer
 from nexus.examples._lib import dump_run
 from nexus.examples.controllers.policy.assembly import build_policy_orchestrator
+from nexus.examples.controllers.policy.goto.geofence import GeofenceGuidance
 
 # Everything this demo is, in one place: zero required args, the configuration IS the example;
 # --policy optionally deploys a fresh local export instead of the hosted checkpoint.
 VEHICLE = "astro_max_base"
 SCENE = "empty"  # flat ground
-MAX_STEPS = 6000  # safety cap; the operator ends the run on mission completion
+MAX_STEPS = 6000  # safety cap; the guidance ends the run on mission completion
 WAYPOINTS = [(1.5, 1.0, 1.5), (-1.5, 1.0, 2.0), (-0.5, -0.5, 1.8)]  # a small tour
+FENCE = ((-3.0, -3.0, 0.2), (3.0, 3.0, 4.0))  # the box the flight stays inside [m]; leaving it ends the run
 # The hosted default policy, content-addressed and sha-verified, trained by nexus-rl on this
 # vehicle's USD-authored thrust map; see docs/examples/isaac-lab-rl.md for the training recipe.
 POLICY_ASSET = {"name": "goto_policy", "sha256": "6b3edb018f540934bb0aa2c0a23be357684d3a911c9fd986978041a4473902d0"}
@@ -96,15 +99,16 @@ def main() -> None:
         rerun=True,  # the .rrd is the demo's artifact
         renderer_factory=rtx_renderer(builder, cfg),  # the Kit peer, when the vehicle authors RTX sensors
     )
-    with na.Sim.from_orchestrator(orch) as sim:
-        sim.operator.set_mission(WAYPOINTS)  # the operator sequences these, advances on arrival, owns the stop
+    guidance = GeofenceGuidance(orch.controller, bounds=FENCE, stop=orch.stop)
+    with na.Sim.from_orchestrator(orch, guidance=guidance) as sim:
+        sim.guidance.set_mission(WAYPOINTS)  # the guidance sequences these, advances on arrival, owns the stop
         t0 = time.time()
         sim.run()  # blocks until the mission completes, or the safety cap
         wall = time.time() - t0
 
     traj = sim.physics[sim.base_body].history()
     final_pos = np.asarray(traj[-1].position) if traj else np.full(3, np.nan)
-    reached = sim.operator.reached
+    reached = guidance.reached
     # Measure to the goal the policy is actively tracking, clamped to the last waypoint on completion,
     # not the last one already passed, so a steps-truncated run reports the live tracking error.
     target = np.asarray(WAYPOINTS[min(reached, len(WAYPOINTS) - 1)])
@@ -114,6 +118,7 @@ def main() -> None:
     stats = {
         "waypoints": len(WAYPOINTS),
         "reached": reached,
+        "geofence_breached": guidance.breached_at is not None,  # monitored only: a breach already fails `reached`
         "control_steps": control_steps,
         "deploy_steps_per_sec": throughput,  # control-loop throughput: sensors→policy→actuator→physics
         "final_tracking_error_m": round(final_err, 4),
@@ -125,7 +130,7 @@ def main() -> None:
     na.logger.info(f"[policy] {json.dumps(stats)}")
     # Evaluation artifacts: flown trajectory + the waypoint mission, with arrival times. The CI
     # harness interpolates the position reference and scores Absolute Pose Error (APE) + the preceding stats.
-    dump_run(sim, "goto_policy", stats=stats, waypoints=WAYPOINTS, arrival_times=sim.operator.arrival_times)
+    dump_run(sim, "goto_policy", stats=stats, waypoints=WAYPOINTS, arrival_times=guidance.arrival_times)
 
 
 if __name__ == "__main__":

@@ -149,7 +149,7 @@ class Measurement:
 # *intent* value, such as `Controls`/`Measurement`; the **controller** owns its own typed persistent
 # buffer and writes it in place from the setpoint in ``Controller.accept_setpoint(sp)``, a §6
 # value-mutation, so the next CUDA-graph replay picks it up with zero re-capture, per the capture contract.
-# The operator, `InProcessOperator`, only flips that buffer, between graph replays, never inside the
+# The guidance, `MissionGuidance`, only flips that buffer, between graph replays, never inside the
 # captured region. Each controller narrows the union to the variant it supports and raises on the rest.
 
 
@@ -191,3 +191,20 @@ class ReferenceTrajectory:
 # ``from __future__`` import only stringifies *annotations*, not this assignment, so it stays a usable
 # runtime value: ``isinstance(sp, Setpoint)`` / ``typing.get_args(Setpoint)``.
 Setpoint = PositionGoal | Waypoints | ReferenceTrajectory
+
+
+def as_position_goal(sp) -> PositionGoal:
+    """A :class:`PositionGoal` from what a caller passed: the goal itself, or a bare ``(x, y, z)``
+    position, so a script can pass plain waypoints.
+
+    Raises:
+        TypeError: ``sp`` is neither a ``PositionGoal`` nor three numbers.
+    """
+    if isinstance(sp, PositionGoal):
+        return sp
+    import numpy as np
+
+    arr = np.asarray(sp, dtype=float).reshape(-1)
+    if arr.shape[0] != 3:
+        raise TypeError(f"expected a PositionGoal or an (x, y, z) position, got {sp!r}")
+    return PositionGoal(pos=(float(arr[0]), float(arr[1]), float(arr[2])))

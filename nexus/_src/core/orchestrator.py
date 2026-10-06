@@ -89,6 +89,7 @@ class Orchestrator:
         actuator: Actuator,
         sensors: Iterable[Sensor],
         controller: Controller,
+        guidance: object | None = None,
         renderer: Renderer | None = None,
         peers: Iterable[Peer] = (),
         logger: Logger | None = None,
@@ -117,6 +118,11 @@ class Orchestrator:
                 seed pass waits for it; its stages set the command buffer; ``close()`` tears down.
                 A controller with a peer exposes ``attached``, false until the peer dials in,
                 which holds the seed pass's clock.
+            guidance: Optional guidance, for a controller that takes setpoints: its stages run each
+                tick after the sensors' and before the controller's, so the setpoint it writes on a
+                tick is the one the controller reads on that tick. A flight can also set the
+                ``guidance`` attribute before the first step. ``None`` for PX4, which flies its own
+                missions.
             renderer: Optional render-lifecycle object, for example the Kit render peer's
                 :class:`~nexus._src.rendering.KitRenderer`: the loop calls only
                 ``on_physics_ready()``/``close()``; the host-rate RTX camera *sensors* drive
@@ -130,8 +136,8 @@ class Orchestrator:
                 fan-out, for max speed. When present, each loggable component's
                 ``log(t, logger)`` / ``flush(logger)`` runs at the host seam, §10.
             on_tick: Optional post-step observer called as ``on_tick(state, t, steps)``
-                after recording: an output-only seam to read the live state and
-                react, for example advance a waypoint goal.
+                after recording: an output-only demo and test seam to read the live state,
+                for example to capture a trajectory.
             preroll_timeout: Seconds to wait for the controller to establish lockstep
                 during preroll before raising ``ConnectionError``.
             exchange_timeout: Per-tick timeout in seconds for the blocking
@@ -148,6 +154,7 @@ class Orchestrator:
         self.actuator = actuator
         self.sensors = list(sensors)
         self.controller = controller
+        self.guidance = guidance  # the loop reads it when it builds the ring, at the first step
         self.renderer = renderer
         self.peers = list(peers)
         # The single logging switch: a `Logger`, the recording sink + the shared log_state/log_image
@@ -156,9 +163,10 @@ class Orchestrator:
         # Logging components expose `set_logger(logger)`. The orchestrator hands each the one Logger, the
         # single switch, None when off. Physics has a per-tick `log(t)` + a teardown `flush()`; its
         # scene/trail change every tick and it's captured, so the orchestrator must call it from outside the
-        # graph. The operator + MPC controllers log their overlays event-driven in their own methods, at a
+        # graph. The guidance + MPC controllers log their overlays event-driven in their own methods, at a
         # mission event / when the horizon refreshes, gated on the handed-over logger; they just need it
-        # set, the operator via `add_loggable`, as it's wired on_tick, not a core component.
+        # set, the guidance via `add_loggable` when the loop builds its ring, since a flight can hand it over
+        # after construction.
         self._loggables = [c for c in (physics, actuator, controller, *self.sensors) if hasattr(c, "set_logger")]
         for c in self._loggables:
             c.set_logger(logger)
@@ -179,8 +187,7 @@ class Orchestrator:
         self._recorder = None
         # Hosting hooks; the control surface, Sim, drives these. on_tick is the per-tick observer,
         # post-step, fired as on_tick(state, t, steps) after recording: a demo/test seam to read the
-        # live state and react, for example advance a waypoint goal, output-only. _stop is the cooperative
-        # teardown the host sets to end the steady loop.
+        # live state, output-only. _stop is the cooperative teardown the host sets to end the steady loop.
         self.on_tick = on_tick
         self._stop = False
         # The tick generator backing run()/step(), the in-process driving seam, lazily created on the
@@ -200,9 +207,8 @@ class Orchestrator:
 
     # -- component-owned logging seam, architecture.md §10 ------------------------
     def add_loggable(self, component) -> None:
-        """Register a logging component that isn't a core component, the operator, wired as ``on_tick``,
-        and hand it the Logger: ``_logger``, None when off, the gate for its event-driven logging.
-        Idempotent.
+        """Register a logging component handed over after construction, the guidance, and hand it the
+        Logger: ``_logger``, None when off, the gate for its event-driven logging. Idempotent.
         """
         if component not in self._loggables:
             self._loggables.append(component)
@@ -233,7 +239,7 @@ class Orchestrator:
     def _begin_log(self, t) -> None:
         """Set the shared ``time`` timeline once at the start of each tick, right after the clock advances
         and BEFORE ``exchange``, so every component's overlay this tick, the controller's horizon in
-        ``exchange``, the operator's markers in ``on_tick``, physics' scene, lands at the same timestamp,
+        ``exchange``, the guidance's markers in its stage, physics' scene, lands at the same timestamp,
         and no component touches ``set_time`` itself. A no-op when not recording.
         """
         if self.logger is not None:
@@ -243,7 +249,7 @@ class Orchestrator:
         """Host-seam per-tick log fan-out, outside any captured graph: call each loggable that has a
         per-tick ``log(t)``, physics' scene + trail. Decimated to the Logger's ``log_hz`` here, so every
         per-tick logger rides one clock. The single off-switch: a no-op when ``logger is None``. The
-        operator + controllers log event-driven in their own methods, not here.
+        guidance + controllers log event-driven in their own methods, not here.
         """
         if self.logger is None:
             return
@@ -371,8 +377,11 @@ class Orchestrator:
             if self.renderer is not None and hasattr(self.renderer, "on_physics_ready"):
                 self.renderer.on_physics_ready()
             record = Stage("record", "device", lambda tick: self._record_tick())
+            if self.guidance is not None and hasattr(self.guidance, "set_logger"):
+                self.add_loggable(self.guidance)  # here, since a flight can hand it over after construction
             ring = build_ring(
                 sensors=self.sensors,
+                guidance=self.guidance,
                 controller=self.controller,
                 physics=self.physics,
                 actuator=self.actuator,
@@ -545,7 +554,7 @@ class Orchestrator:
                         prof.mark("stages")
                 self._log_tick(tick.t)  # host-seam log fan-out: scene+trail, …; no-op if logging off
                 if self.on_tick is not None:
-                    self.on_tick(tick.state, tick.t, count)  # post-step observer, for example waypoint advance
+                    self.on_tick(tick.state, tick.t, count)  # post-step observer, a demo and test seam
                 self.clock.throttle()  # no-op unless rtf>0, the interactive real-time throttle
                 prof.mark("log")
                 prof.tick_end()

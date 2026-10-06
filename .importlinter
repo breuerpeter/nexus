@@ -13,7 +13,7 @@ layers =
     nexus._src.api
     nexus._src.build
     nexus._src.rendering
-    nexus._src.physics : nexus._src.operator
+    nexus._src.physics : nexus._src.operator : nexus._src.guidance
     nexus._src.scene
     nexus._src.vehicle
     nexus._src.recording
