@@ -180,13 +180,28 @@ CI-measured on the pinned runner, see [Benchmarking](../reference/benchmarking.m
 
 ## Run it
 
-acados isn't a plain pip dependency, because it code-generates and compiles a C solver, so
-provision it once:
+acados isn't a plain pip dependency. It's a C library your machine compiles, and it generates and
+compiles a C solver. Provision it once, then fly:
 
 ```bash
-bash scripts/setup_acados.sh
+uv run --extra acados -m nexus.examples acados_nmpc --provision   # fetches + builds acados
 uv run --extra acados -m nexus.examples acados_nmpc   # flies + asserts + writes the .rrd
 ```
 
-Needs a CUDA device for the Newton sim and a C compiler for the acados code generation. The first
-run compiles the generated solver, which takes a few seconds. Later runs reuse it.
+The first command fetches the acados commit the example pins into `~/.cache/nexus/acados/`, builds
+it with `cmake`, and downloads the Tera renderer that acados generates code with. `ACADOS_SOURCE_DIR`
+names another folder. A second run of it changes nothing. The `acados` extra installs the Python
+packages the example imports, and the example finds acados' own Python interface in the tree it
+built.
+
+From an installed package, no checkout needed:
+
+```bash
+pip install 'nexus-sim[acados]'
+python -m nexus.examples acados_nmpc --provision
+python -m nexus.examples acados_nmpc
+```
+
+Needs a CUDA device for the Newton sim, and `cmake` and a C compiler for acados and its code
+generation. The first flight compiles the generated solver, which takes a few seconds. Later
+flights reuse it.

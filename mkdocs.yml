@@ -54,6 +54,9 @@ extra_javascript:
     type: module
   - path: javascripts/model-viewer-config.js
     type: module
+  # Draws the benchmark trend panels (benchmark-trends marker) from the CI bucket's bench feed.
+  - path: javascripts/bench-trends.js
+    type: module
 
 markdown_extensions:
   - admonition

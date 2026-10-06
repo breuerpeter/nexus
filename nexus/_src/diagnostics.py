@@ -65,10 +65,8 @@ def add_diagnostics_args(p):
 
 def configure_from_argv(argv: list[str] | None = None) -> None:
     """Configure the process diagnostics from raw ``argv``, default ``sys.argv[1:]``, ignoring
-    everything else. For entry points without a full parser: the examples launcher, which passes
-    argv through untouched so an example's own parser still receives it, and a script that re-execs
-    itself, such as the acados ``LD_LIBRARY_PATH`` bootstrap, where exec replaces the process and
-    drops the launcher's configuration, so the flags ride ``argv`` across.
+    everything else. For an entry point without a full parser: the examples launcher, which passes
+    argv through untouched so an example's own parser still receives it.
     """
     import argparse
     import sys

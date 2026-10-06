@@ -1,0 +1,4 @@
+acados/acados@f22001ac39773eb9988b9f04b4d38378818d10d6
+# Line 1: the acados pin (repo@sha) that provision.py fetches and builds. The casadi bound of the
+# `acados` extra in pyproject.toml is this commit's, from interfaces/acados_template/setup.py: move
+# the two together.

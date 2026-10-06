@@ -49,7 +49,10 @@ dependencies = [
 [project.optional-dependencies]
 policy   = ["torch"]
 examples = ["ruckig>=0.14"]  # jerk-limited reference trajectory the MPC examples track
-acados   = ["casadi>=3.6", "ruckig>=0.14", "acados_template"]  # waypoint_tracking.py: NMPC codegen
+# The acados_nmpc example: casadi and ruckig are its own, and matplotlib and Deprecated are what
+# acados' Python interface imports. The interface itself is not on PyPI: it ships inside the acados
+# tree the example provisions, and the example finds it there. The casadi bound is that interface's.
+acados   = ["casadi>=3.6,<=3.8.1", "ruckig>=0.14", "matplotlib", "Deprecated"]
 # Isaac Lab RL training is NOT an extra of the core — it lives in the separate `nexus-rl` uv
 # project (own venv), so the heavy, prerelease-pinned Isaac Lab stack stays out of this environment.
 all      = ["nexus-sim[policy,examples]"]
@@ -93,21 +96,6 @@ module-root = ""
 
 [tool.uv.sources]
 warp-lang = { index = "nvidia" }
-# acados_template is NOT on PyPI — acados ships its Python interface only inside the C source tree,
-# version-locked to the libacados.so you compile. So it's an editable path source: scripts/setup_acados.sh
-# builds the C library + this interface into the repo-relative .acados/ (gitignored), then
-# `uv sync --extra acados` installs it like any other dep — no imperative `pip install`. The path must
-# exist before syncing the acados extra (run setup_acados.sh first); it's optional, so the base sync is
-# unaffected.
-acados_template = { path = ".acados/interfaces/acados_template", editable = true }
-
-# Declare acados_template's metadata statically so uv can lock it WITHOUT building it from the path — the
-# path (.acados/, built by scripts/setup_acados.sh) only has to exist when the `acados` extra is actually
-# installed, so the base `uv sync` works on a fresh checkout that hasn't provisioned acados.
-[[tool.uv.dependency-metadata]]
-name = "acados-template"
-version = "0.5.1"
-requires-dist = ["numpy", "scipy", "casadi", "matplotlib", "cython", "Deprecated"]
 
 [[tool.uv.index]]
 name = "nvidia"

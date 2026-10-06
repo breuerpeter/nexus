@@ -8,8 +8,10 @@ import importlib.util
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
+import time
 
 import numpy as np
 import pytest
@@ -416,6 +418,32 @@ def test_on_main_a_flight_that_fails_a_gate_carries_its_recording(tmp_path, monk
     assert (out / "pid.rrd").is_file()
 
 
+def test_with_skip_missing_the_harness_skips_an_example_whose_acados_is_not_provisioned(tmp_path, monkeypatch, capsys):
+    """The harness still skips or fails the example when acados isn't provisioned: given
+    `ACADOS_SOURCE_DIR` set to an empty directory, when `evaluate_examples.py --only acados_nmpc` runs
+    with `--skip-missing`, then it skips the example and exits 0.
+    """
+    monkeypatch.setenv("ACADOS_SOURCE_DIR", str(tmp_path / "acados"))
+
+    rc = _harness(monkeypatch, "--only", "acados_nmpc", "--skip-missing", "--out", str(tmp_path / "out"))
+
+    assert (rc, "acados_nmpc (skipped: acados not provisioned" in capsys.readouterr().out) == (0, True)
+
+
+def test_without_skip_missing_the_harness_fails_an_example_whose_acados_is_not_provisioned(
+    tmp_path, monkeypatch, capsys
+):
+    """The harness still skips or fails the example when acados isn't provisioned: given
+    `ACADOS_SOURCE_DIR` set to an empty directory, when `evaluate_examples.py --only acados_nmpc` runs
+    without `--skip-missing`, then it exits non-zero and names the provisioning.
+    """
+    monkeypatch.setenv("ACADOS_SOURCE_DIR", str(tmp_path / "acados"))
+
+    rc = _harness(monkeypatch, "--only", "acados_nmpc", "--out", str(tmp_path / "out"))
+
+    assert (rc, "acados_nmpc: requirement unmet: acados not provisioned" in capsys.readouterr().out) == (1, True)
+
+
 def test_on_main_a_flight_whose_run_fails_carries_its_recording(tmp_path, monkeypatch):
     """On main a flight whose run fails carries its recording: given a `pid` flight that wrote an `.rrd`
     and exited non-zero, when the harness runs it as a main run, then the output holds `pid.rrd`.
@@ -502,6 +530,138 @@ def test_an_upload_run_still_writes_the_bench_feed_under_its_per_commit_key_and_
     puts = [line.split() for line in log.read_text().splitlines() if "put-object" in line]
     written = {call[call.index("--key") + 1] for call in puts}
     assert written == {"public/ci/bench/0123456789ab.json", "public/ci/bench/latest.json"}
+
+
+_INDEX = "public/ci/bench/latest.json"
+_THIS_COMMIT = "public/ci/bench/0123456789ab.json"  # the key of the commit `_stand_in_s3` uploads at
+_OTHER_COMMIT = "public/ci/bench/aaaaaaaaaaaa.json"
+_A_DATE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
+
+# A stand-in `aws` that holds its objects in a folder, one file per key. A key with a `.raced` file
+# beside it refuses its next write as S3 does when another box wrote since the read, and that file
+# becomes the object.
+_S3 = """#!PYTHON
+import hashlib, json, pathlib, shutil, sys
+
+store, args = pathlib.Path("STORE"), sys.argv[1:]
+if args[:2] == ["s3api", "get-object"]:
+    held = store / args[args.index("--key") + 1]
+    if not held.is_file():
+        sys.exit("An error occurred (NoSuchKey) when calling the GetObject operation")
+    shutil.copy(held, args[-1])
+    print(json.dumps({"ETag": hashlib.md5(held.read_bytes()).hexdigest()}))
+elif args[:2] == ["s3api", "put-object"]:
+    held = store / args[args.index("--key") + 1]
+    raced = held.with_name(held.name + ".raced")
+    if raced.is_file():
+        raced.replace(held)
+        sys.exit("An error occurred (PreconditionFailed) when calling the PutObject operation")
+    held.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(args[args.index("--body") + 1], held)
+"""
+
+
+def _stand_in_s3(monkeypatch, tmp_path: pathlib.Path, held: dict, raced: dict | None = None) -> pathlib.Path:
+    """Put a stand-in `aws` on `PATH` for an `--upload` run at commit `0123456789ab` and return the
+    folder it holds its objects in. It starts with the objects of *held*, each key with its JSON
+    content, and reads and writes them as S3 would. Each key of *raced* refuses its next write with
+    `PreconditionFailed` and then holds that content, as when another box wrote first. Call it after
+    faking the flights: they stay faked, and the harness's `aws` calls reach the stand-in.
+    """
+    store = tmp_path / "s3"
+    for key, content in held.items():
+        (store / key).parent.mkdir(parents=True, exist_ok=True)
+        (store / key).write_text(json.dumps(content))
+    for key, content in (raced or {}).items():
+        (store / key).parent.mkdir(parents=True, exist_ok=True)
+        (store / f"{key}.raced").write_text(json.dumps(content))
+    aws = tmp_path / "bin" / "aws"
+    aws.parent.mkdir()
+    aws.write_text(_S3.replace("PYTHON", sys.executable).replace("STORE", str(store)))
+    aws.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{aws.parent}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("NEXUS_BUCKET", "ci-bucket")
+    monkeypatch.setenv("GITHUB_SHA", "0123456789abcdef0123456789abcdef01234567")
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)  # the wait before a refused write's retry
+    real_run, flight = _REAL_RUN, subprocess.run
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: (real_run if cmd[0] == "aws" else flight)(cmd, **kw))
+    return store
+
+
+def _upload_a_green_pid_flight(monkeypatch, tmp_path: pathlib.Path, held: dict, raced: dict | None = None):
+    """Run the harness with `--upload` on one green `pid` flight against a stand-in S3 that holds *held*,
+    and return the harness's exit code and the content of the fixed key, `_INDEX`, after it.
+    """
+    _fake_flights(monkeypatch, tmp_path / "rec", {"pid": (_HEALTHY["pid"], 0)})
+    store = _stand_in_s3(monkeypatch, tmp_path, held, raced)
+    code = _harness(monkeypatch, "--only", "pid", "--out", str(tmp_path / "out"), "--upload")
+    return code, json.loads((store / _INDEX).read_text())
+
+
+def _listed(index) -> list:
+    """The per-commit keys *index* lists, in its order, with `None` for an entry that names no key."""
+    return [entry.get("key") if isinstance(entry, dict) else None for entry in index]
+
+
+def test_an_upload_run_adds_its_commit_to_the_index_with_its_key_and_its_date(tmp_path, monkeypatch):
+    """An `--upload` run adds its commit to the index at the fixed key: the key of its
+    `bench/<sha12>.json` and its date. Given a stand-in S3 whose index lists one commit, when a harness
+    run with `--upload` ends at a new commit, then the index lists both commits, each with its key and
+    its date.
+    """
+    held = {_INDEX: [{"key": _OTHER_COMMIT, "date": "2026-10-01T08:00:00Z"}]}
+
+    _, index = _upload_a_green_pid_flight(monkeypatch, tmp_path, held)
+
+    dated = {e.get("key"): bool(_A_DATE.fullmatch(str(e.get("date")))) for e in index if isinstance(e, dict)}
+    assert dated == {_OTHER_COMMIT: True, _THIS_COMMIT: True}
+
+
+def test_the_first_upload_run_against_a_bucket_with_no_index_creates_it(tmp_path, monkeypatch):
+    """The first `--upload` run against a bucket with no index creates it: given a stand-in S3 with no
+    object at the fixed key, when a harness run with `--upload` ends, then the index exists and lists that
+    one commit.
+    """
+    _, index = _upload_a_green_pid_flight(monkeypatch, tmp_path, held={})
+
+    assert _listed(index) == [_THIS_COMMIT]
+
+
+def test_an_upload_run_that_finds_the_old_snapshot_replaces_it_with_the_index(tmp_path, monkeypatch):
+    """An `--upload` run that finds the old snapshot at the fixed key, a bare list of entries,
+    replaces it with the index: given a stand-in S3 whose fixed key holds a list of entries, when
+    a harness run with `--upload` ends, then the key holds an index that lists the commit, and the run
+    exits as it would have.
+    """
+    snapshot = [{"name": "rtf[px4_sitl]", "unit": "x realtime", "value": 2.2, "biggerIsBetter": True}]
+
+    code, index = _upload_a_green_pid_flight(monkeypatch, tmp_path, held={_INDEX: snapshot})
+
+    assert (code, _listed(index)) == (0, [_THIS_COMMIT])
+
+
+def test_a_second_upload_at_a_commit_the_index_lists_leaves_it_listed_once(tmp_path, monkeypatch):
+    """A second upload at a commit the index already lists leaves that commit listed once: given a
+    stand-in S3 whose index lists the commit, when a harness run with `--upload` ends at that commit,
+    then the index lists it once.
+    """
+    held = {_INDEX: [{"key": _THIS_COMMIT, "date": "2026-10-01T08:00:00Z"}]}
+
+    _, index = _upload_a_green_pid_flight(monkeypatch, tmp_path, held)
+
+    assert _listed(index) == [_THIS_COMMIT]
+
+
+def test_two_boxes_that_upload_at_once_both_land_in_the_index(tmp_path, monkeypatch):
+    """Two boxes that upload at once both land in the index: given a stand-in S3 that refuses the first
+    conditional write with `PreconditionFailed` after another box wrote a commit, when the upload runs,
+    then the index lists both commits.
+    """
+    raced = {_INDEX: [{"key": _OTHER_COMMIT, "date": "2026-10-01T08:00:00Z"}]}
+
+    _, index = _upload_a_green_pid_flight(monkeypatch, tmp_path, held={}, raced=raced)
+
+    assert sorted(_listed(index), key=str) == [_THIS_COMMIT, _OTHER_COMMIT]
 
 
 def test_an_upload_run_writes_no_docs_recording_for_a_flight_that_fails_a_gate(tmp_path, monkeypatch):

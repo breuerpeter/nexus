@@ -68,16 +68,14 @@ def main() -> None:
     # launcher, not the example. Configuring them here gives every example the flags without
     # carrying its own, spelled exactly as `nexus run` spells them. argv passes through
     # untouched: an example's own parser, such as px4's --timeout and policy's --policy, uses
-    # parse_known_args, and the acados bootstrap re-exec needs the flags to survive in argv because
-    # it re-configures after the exec.
+    # parse_known_args.
     from nexus._src.diagnostics import configure_from_argv
 
     configure_from_argv(argv[1:])
 
     # The example gets itself as argv[0] with its own args after, then runs as __main__.
-    # alter_sys=True makes runpy set argv[0] to the path of the module's file, not the dotted name,
-    # which the examples that re-exec themselves via sys.argv, the acados LD_LIBRARY_PATH
-    # bootstrap, require.
+    # alter_sys=True makes runpy run it as `python <file>` would: the example's module is
+    # sys.modules["__main__"], and argv[0] is the path of its file, not the dotted name.
     target = examples[name]
     sys.argv = [target, *argv[1:]]
     runpy.run_module(target, run_name="__main__", alter_sys=True)

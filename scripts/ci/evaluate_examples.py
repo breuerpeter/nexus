@@ -82,7 +82,7 @@ EXAMPLES: dict[str, dict] = {
     "px4_sitl": {"uv": [], "requires": "px4"},
 }
 # The default set = everything the consolidated gpu-examples leg runs. The workflow provides acados
-# via scripts/setup_acados.sh; main() below fetches and builds PX4 the way a run's first use does,
+# via the example's --provision; main() below fetches and builds PX4 the way a run's first use does,
 # from the one container definition in nexus._src.peers.px4_sitl.runner.
 # goto_policy_fresh rides the gpu-rl workflow: --only goto_policy_fresh --policy <the fresh export>.
 # Local runs without the PX4/acados prerequisites: add --skip-missing.
@@ -95,17 +95,15 @@ _UNITS = {"_m": "m", "_deg": "deg", "_s": "s", "rtf": "x realtime", "_per_sec": 
 
 def _available(requires: str | None, args: argparse.Namespace) -> tuple[bool, str]:
     # External tool locations come from the one definition of the env-overridable defaults the
-    # examples themselves resolve, acados' from nexus.examples._external. PX4 needs only docker: the
-    # run fetches its pinned tree itself, or flies $PX4_DIR.
-    from nexus.examples._external import acados_dir
+    # examples themselves resolve, acados' from the example's provision module. PX4 needs only docker:
+    # the run fetches its pinned tree itself, or flies $PX4_DIR.
+    from nexus.examples.controllers.acados_nmpc.provision import PROVISION_COMMAND, acados_dir
 
     if requires is None:
         return True, ""
     if requires == "acados":
         if not (acados_dir() / "lib" / "libacados.so").exists():
-            return False, "acados not provisioned (scripts/setup_acados.sh)"
-        if not (ROOT / ".acados").exists():
-            return False, ".acados/ path source missing (scripts/setup_acados.sh)"
+            return False, f"acados not provisioned ({PROVISION_COMMAND})"
         return True, ""
     if requires == "policy":
         p = args.policy or ""
@@ -333,18 +331,29 @@ def _bench_feed(key: str, into: pathlib.Path) -> tuple[list, str | None]:
     return prior, json.loads(got.stdout)["ETag"]
 
 
-def _publish_bench(fresh: list[dict], key: str, out: pathlib.Path) -> None:
-    """Merge ``fresh`` over the feed at ``key`` and write it back, as one step.
+def _indexed(prior: list, key: str, date: str) -> list[dict]:
+    """List ``key`` with ``date`` in the index ``prior``, once by key, as ``{key, date}`` records.
 
-    The examples, RL and matrix CI legs publish disjoint metric sets at the same fixed keys, and
-    the examples leg uploads from one box per example at once, so a plain read-merge-write would
-    drop what another box wrote meanwhile. The write holds only while the key still carries the
-    ETag the read saw, or still doesn't exist; a 412 or 409 reads and merges again.
+    The index, at the feed's fixed key, is what the docs trend chart reads to find the per-commit
+    files. A record with no key, as the entries of the snapshot the index replaced, goes.
+    """
+    listed = {r["key"]: r for r in prior if isinstance(r, dict) and "key" in r}
+    listed.setdefault(key, {"key": key, "date": date})
+    return list(listed.values())
+
+
+def _publish(key: str, merge, out: pathlib.Path) -> None:
+    """Pass the feed at ``key`` through ``merge`` and write the result back, as one step.
+
+    The examples and RL CI legs publish disjoint metric sets at the same fixed keys, and the
+    examples leg uploads from one box per example at once, so a plain read-merge-write would drop
+    what another box wrote meanwhile. The write holds only while the key still carries the ETag the
+    read saw, or still doesn't exist; a 412 or 409 reads and merges again.
     """
     scratch = out / f"merged-{pathlib.Path(key).name}"
     for attempt in range(1, 21):
         prior, etag = _bench_feed(key, scratch)
-        scratch.write_text(json.dumps(merge_entries(prior, fresh), indent=2))
+        scratch.write_text(json.dumps(merge(prior), indent=2))
         condition = ["--if-match", etag] if etag else ["--if-none-match", "*"]
         print(f"uploading {scratch.name} -> s3://{bucket()}/{key} (try {attempt})", flush=True)
         # Fixed keys, for stable docs URLs; max-age=300 so a re-upload propagates within ~5 min.
@@ -366,7 +375,7 @@ def _merged_local(path: pathlib.Path, fresh: list[dict]) -> list[dict]:
     """Merge fresh entries over ``path``'s current entries, by entry name.
 
     Split CI invocations sharing one --out dir, as the flight gate runs the eval once per PX4
-    pin, would otherwise clobber the earlier invocation's entries; this is _publish_bench's local twin.
+    pin, would otherwise clobber the earlier invocation's entries; this is the per-commit publish's local twin.
     """
     try:
         data = json.loads(path.read_text())
@@ -376,7 +385,11 @@ def _merged_local(path: pathlib.Path, fresh: list[dict]) -> list[dict]:
     return merge_entries(prior, fresh)
 
 
-def _upload(out: pathlib.Path, metas: dict[str, dict], red: set[str]) -> None:
+def _upload(out: pathlib.Path, metas: dict[str, dict], red: set[str], fresh: list[dict]) -> None:
+    """Publish the docs recordings and the bench feed. ``fresh`` is what this run scored: the feed's
+    per-commit file takes only numbers measured at this commit, never the entries an earlier run
+    left in a reused ``--out``; split invocations at one commit join by name in the bucket.
+    """
     sha = _sha()
 
     def cp(src: pathlib.Path, key: str, ctype: str) -> None:
@@ -398,13 +411,13 @@ def _upload(out: pathlib.Path, metas: dict[str, dict], red: set[str]) -> None:
             print(f"{name}.rrd not uploaded: the flight is red, so the docs keep the published recording", flush=True)
             continue
         cp(pathlib.Path(rrd), f"public/ci/logs/{name}.rrd", "application/octet-stream")
-    bench = out / "benchmark.json"
-    fresh = json.loads(bench.read_text()) if bench.exists() else []
     if not fresh:
         print("no scored metrics, skipping bench feed upload", flush=True)
         return
-    for key in (f"public/ci/bench/{sha[:12]}.json", "public/ci/bench/latest.json"):
-        _publish_bench(fresh, key, out)
+    key = f"public/ci/bench/{sha[:12]}.json"
+    _publish(key, lambda prior: merge_entries(prior, fresh), out)
+    recorded = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    _publish("public/ci/bench/latest.json", lambda prior: _indexed(prior, key, recorded), out)
 
 
 def main() -> int:
@@ -504,7 +517,7 @@ def main() -> int:
         print(f"\nbaselines updated: {args.baselines}")
 
     if args.upload:
-        _upload(out, metas, red)
+        _upload(out, metas, red, entries)
 
     if failed_runs:
         print(f"\nFAILED examples: {', '.join(failed_runs)}", flush=True)
