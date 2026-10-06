@@ -1,4 +1,3 @@
-# Copyright 2026, Freefly Systems. SPDX-License-Identifier: BSD-3-Clause
 # Acronyms: Universal Scene Description (USD), Collective Thrust and Body Rates (CTBR).
 """GoTo task: fly a quadrotor to a sampled goal position and hold it, on the **single-body
 per-rotor model**. Vehicle-agnostic: the robot + frame come from the cfg, and a concrete vehicle config lives
