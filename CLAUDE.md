@@ -41,6 +41,11 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
   `nexus/_src/config/registry.yaml`. The runtime resolver, `nexus._src.assets.resolver`,
   fetches `{url, sha256}` to a verified cache at `assets/cache/`, which `$NEXUS_ASSET_CACHE`
   overrides. Read `scripts/assets/CLAUDE.md` before adding or updating an asset.
+- **A recorded row's entity path names who wrote it**: the process, `sim` or a peer's folder name,
+  then the component's role folder, then the instance, as in `sim/vehicle/sensors/imu`.
+  `docs/reference/api/logging.md` states the rule. A component never spells its path: the
+  orchestrator hands it a `ScopedLogger` at `set_logger`, and the component logs only its own
+  row's name, such as `horizon`. The Recorder's channel keys are the same paths below the root.
 - `docs/guide/running.md` documents **the decoupled Software In The Loop (SITL) flight workflow**,
   nexus sim plus PX4 SITL plus QGroundControl, and its port map and gotchas.
 - **Lint and format:** `uvx pre-commit run -a`, which runs ruff. Config in

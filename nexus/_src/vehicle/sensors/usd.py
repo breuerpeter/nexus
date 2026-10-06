@@ -42,11 +42,14 @@ def vehicle_rtx_sensor_prims(usd_path: str | Path) -> list[str]:
 
 @dataclass(frozen=True)
 class SensorSpec:
-    """One authored sensor: its kind, body-frame mount translation, and constructor kwargs."""
+    """One authored sensor: its kind, body-frame mount translation, constructor kwargs, and the
+    path of the prim that declares it.
+    """
 
     kind: str  # imu | mag | baro | gps
     mount: tuple[float, float, float] = (0.0, 0.0, 0.0)
     params: dict = field(default_factory=dict)
+    prim: str = ""
 
 
 def _plain(value):
@@ -79,7 +82,8 @@ def parse_sensor_prims(usd_path: str | Path) -> list[SensorSpec]:
             if attr.GetName().startswith(_PREFIX) and attr.GetName() != SENSOR_TYPE_ATTR and attr.HasAuthoredValue()
         }
         t = UsdGeom.Xformable(prim).GetLocalTransformation().ExtractTranslation()
-        specs.append(SensorSpec(str(type_attr.Get()), (float(t[0]), float(t[1]), float(t[2])), params))
+        mount = (float(t[0]), float(t[1]), float(t[2]))
+        specs.append(SensorSpec(str(type_attr.Get()), mount, params, str(prim.GetPath())))
     return specs
 
 
@@ -130,5 +134,7 @@ def build_sensors(specs: list[SensorSpec], *, seedtree, dt: float, site) -> list
         make = registry.get(spec.kind)
         if make is None:
             raise ValueError(f"unknown sensor:type {spec.kind!r} (expected one of {sorted(registry)})")
-        sensors.append(make(spec, seedtree, dt, site))
+        sensor = make(spec, seedtree, dt, site)
+        sensor.prim_path = spec.prim  # the prim that declares it: a shared-name error names it
+        sensors.append(sensor)
     return sensors

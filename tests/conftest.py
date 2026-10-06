@@ -319,17 +319,23 @@ def fly_recorded(tmp, vehicle: str, *, layer: str | None = None, ticks: int = FL
         patch.setenv("HOME", str(tmp))
         builder, _, cfg = resolve_scenario(LaunchConfig.from_dict(spec))
         controller = StandInController()
-        orch = build_orchestrator(
-            "fixture",
-            cfg,
-            vehicle_builder=builder,
-            controller=controller,
-            rerun=True,
-            viewer=False,
-            debug=debug,
-            renderer_factory=rtx_renderer(builder, cfg, peer=kit or KitFake),
-            max_steps=ticks,
-        )
+        renderer_factory = rtx_renderer(builder, cfg, peer=kit or KitFake)
+        try:
+            orch = build_orchestrator(
+                "fixture",
+                cfg,
+                vehicle_builder=builder,
+                controller=controller,
+                rerun=True,
+                viewer=False,
+                debug=debug,
+                renderer_factory=renderer_factory,
+                max_steps=ticks,
+            )
+        except BaseException:
+            if renderer_factory is not None:
+                renderer_factory.close()  # the loop never took the Kit peer over, so it stops here
+            raise
         operator = InProcessOperator(controller, planner=StandInReference)
         with na.Sim.from_orchestrator(orch, operator=operator) as sim:
             sim.operator.set_mission([(1.0, 0.0, 2.0), (2.0, 0.0, 2.0)])

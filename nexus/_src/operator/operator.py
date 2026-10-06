@@ -184,17 +184,15 @@ class BaseOperator:
         """
         for i, g in enumerate(self._mission):
             color = _GREEN if i < self._active else (_GOLD if i == self._active else _PENDING)
-            self._logger.log_points(
-                f"operator/waypoints/wp_{i}", [list(map(float, g.pos))], colors=color, radii=_RADIUS
-            )
+            self._logger.log_points(f"waypoints/wp_{i}", [list(map(float, g.pos))], colors=color, radii=_RADIUS)
 
     def _log_reference(self, ref) -> None:
         """Emit the planned reference path, the ruckig/flatness trajectory a TRACKING controller follows, as
-        a LineStrip under ``operator/reference``. ``ref`` exposes ``reference_path()``, sampled only here, so
+        a LineStrip at the operator's row ``reference``. ``ref`` exposes ``reference_path()``, sampled only here, so
         a non-recording run never touches it.
         """
         pts = [[float(p[0]), float(p[1]), float(p[2])] for p in ref.reference_path()]
-        self._logger.log_strip("operator/reference", pts, color=(90, 160, 255), radius=0.025)
+        self._logger.log_strip("reference", pts, color=(90, 160, 255), radius=0.025)
 
 
 def wait_until(predicate: Callable[[], bool], timeout: float, poll: float = 0.05) -> None:

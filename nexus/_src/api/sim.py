@@ -252,7 +252,7 @@ class Sim:
             self._recorder = Recorder(dt=dt, maxlen=maxlen)
             self._orch.attach_recorder(self._recorder)
             # Cache the base body channel, the discovered base, for the wait_until/sleep sim clock.
-            self._base_ch = self._recorder.channels[f"physics/body/{self._orch.physics.base_body}"]
+            self._base_ch = self._recorder.channels[f"vehicle/body/{self._orch.physics.base_body}"]
         if self._in_process:
             # In-process autopilot: wire the operator over the controller's thin setpoint surface at
             # the host seam, Orchestrator.on_tick, the post-step slot between graph replays. The
@@ -276,7 +276,7 @@ class Sim:
                 if hasattr(self._operator, "tick"):
                     self._orch.on_tick = self._operator.tick  # sequencing seam: advance the mission
                 if hasattr(self._operator, "set_logger"):
-                    self._orch.add_loggable(self._operator)  # logging seam: re-emit the mission viz
+                    self._orch.add_loggable(self._operator, "operator")  # logging seam: re-emit the mission viz
         # Host-boundary, PX4, wires nothing here: its operator is a remote Ground Control Station (GCS),
         # Px4Offboard, built lazily on first access after start(), and the run is step-driven the same
         # way as any other.
@@ -439,7 +439,7 @@ class Sim:
         """
         if self._recorder is None:
             raise RuntimeError("Sim(observe=False): no Recorder attached")
-        return ChannelMap(self._recorder.channels, ("physics/body/", "physics/joint/"))
+        return ChannelMap(self._recorder.channels, ("vehicle/body/", "vehicle/joints/"))
 
     @property
     def sensors(self) -> ChannelMap:
@@ -455,7 +455,7 @@ class Sim:
         """
         if self._recorder is None:
             raise RuntimeError("Sim(observe=False): no Recorder attached")
-        return ChannelMap(self._recorder.channels, ("sensors/",))
+        return ChannelMap(self._recorder.channels, ("vehicle/sensors/",))
 
     @property
     def base_body(self) -> str:

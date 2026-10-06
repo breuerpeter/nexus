@@ -63,6 +63,30 @@ def _replay():
     return wp.capture_launch
 
 
+def _instance(component) -> str:
+    """A component's instance name, the leaf of its path: its ``name``, else its class's name."""
+    return str(getattr(component, "name", None) or type(component).__name__)
+
+
+def _sensor_names(sensors: list) -> list[str]:
+    """Each sensor's instance name, in order.
+
+    Raises:
+        ValueError: Two sensors share a name; the message names the prim that declares each.
+    """
+    first: dict[str, object] = {}
+    for sensor in sensors:
+        name = _instance(sensor)
+        if name in first:
+            declared = [getattr(s, "prim_path", None) or type(s).__name__ for s in (first[name], sensor)]
+            raise ValueError(
+                f"sensors {declared[0]} and {declared[1]} share the name {name!r}: a recorded row's path "
+                "ends in its sensor's name, so rename one prim"
+            )
+        first[name] = sensor
+    return [_instance(sensor) for sensor in sensors]
+
+
 class Orchestrator:
     """Fixed-order, deterministic per-tick driver over typed component boundaries.
 
@@ -153,15 +177,29 @@ class Orchestrator:
         # The single logging switch: a `Logger`, the recording sink + the shared log_state/log_image
         # calls, or None. None ⇒ no recording and no per-tick log fan-out → max benchmark/CI speed.
         self.logger = logger
-        # Logging components expose `set_logger(logger)`. The orchestrator hands each the one Logger, the
-        # single switch, None when off. Physics has a per-tick `log(t)` + a teardown `flush()`; its
+        # Each component's path under the sim's root, resolved once, here, where the loop wires it:
+        # its role folder, then its instance name. A recorded row's path ends in that name, so two
+        # sensors that share one fail the build.
+        wired = [
+            (physics, "vehicle"),
+            (actuator, f"vehicle/actuators/{_instance(actuator)}"),
+            (controller, f"vehicle/controllers/{_instance(controller)}"),
+            *(
+                (s, f"vehicle/sensors/{name}")
+                for s, name in zip(self.sensors, _sensor_names(self.sensors), strict=True)
+            ),
+        ]
+        # Logging components expose `set_logger(logger)`. The orchestrator hands each a view of the one
+        # Logger scoped to the component's path, so no call site names an entity; None when off, the
+        # single switch. Physics has a per-tick `log(t)` + a teardown `flush()`; its
         # scene/trail change every tick and it's captured, so the orchestrator must call it from outside the
         # graph. The operator + MPC controllers log their overlays event-driven in their own methods, at a
         # mission event / when the horizon refreshes, gated on the handed-over logger; they just need it
         # set, the operator via `add_loggable`, as it's wired on_tick, not a core component.
-        self._loggables = [c for c in (physics, actuator, controller, *self.sensors) if hasattr(c, "set_logger")]
-        for c in self._loggables:
-            c.set_logger(logger)
+        self._loggables = [c for c, _ in wired if hasattr(c, "set_logger")]
+        for c, path in wired:
+            if hasattr(c, "set_logger"):
+                c.set_logger(self._scoped(path))
         # The per-tick log fan-out decimates to the Logger's log_hz; people scrub an .rrd at human rates, and
         # full-rate scene logging tanks recorded-run RTF, esp. PX4 lockstep. The clock lives here: one
         # throttle for every per-tick logger, not per-component. Event-driven overlays self-rate, untouched.
@@ -199,14 +237,18 @@ class Orchestrator:
         self.physics_substeps = int(physics_substeps)
 
     # -- component-owned logging seam, architecture.md §10 ------------------------
-    def add_loggable(self, component) -> None:
+    def _scoped(self, path: str):
+        """The Logger's view for the component at ``path`` under the sim's root; None when off."""
+        return self.logger.scoped(path) if self.logger is not None else None
+
+    def add_loggable(self, component, path: str) -> None:
         """Register a logging component that isn't a core component, the operator, wired as ``on_tick``,
-        and hand it the Logger: ``_logger``, None when off, the gate for its event-driven logging.
-        Idempotent.
+        and hand it the Logger scoped to ``path``, the component's path under the sim's root: ``_logger``,
+        None when off, the gate for its event-driven logging. Idempotent.
         """
         if component not in self._loggables:
             self._loggables.append(component)
-        component.set_logger(self.logger)
+        component.set_logger(self._scoped(path))
 
     # -- component-owned observation seam, the read-side twin of logging -----------
     def attach_recorder(self, recorder) -> None:

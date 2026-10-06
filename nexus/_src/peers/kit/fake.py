@@ -22,14 +22,16 @@ from .runner import KIT_DIR
 _wire = runpy.run_path(str(KIT_DIR / "link.py"))
 
 
-def _outputs(sensor: dict) -> list[tuple[str, np.ndarray]]:
-    """A synthetic frame for one sensor: each array the real peer returns for its output, blank."""
+def _outputs(sensor: dict, points: np.ndarray) -> list[tuple[str, np.ndarray]]:
+    """A synthetic frame for one sensor: each array the real peer returns for its output, blank, and
+    ``points`` for a lidar's scan.
+    """
     h, w = int(sensor["height"]), int(sensor["width"])
     if sensor["output"] == "color":
         return [("color", np.zeros((h, w, 3), dtype=np.uint8))]
     if sensor["output"] == "radiance_depth":
         return [("radiance", np.zeros((h, w), dtype=np.float32)), ("depth", np.ones((h, w), dtype=np.float32))]
-    return [("points", np.zeros((0, 3), dtype=np.float32))]
+    return [("points", points)]
 
 
 class KitFake:
@@ -41,6 +43,7 @@ class KitFake:
         error_after: Answer the frame request after this many frames with ``error``, as a peer whose
             render failed; ``None`` never does.
         error: The message the ``error`` carries.
+        points: The world points every lidar scan returns, one ``(x, y, z)`` each; none by default.
     """
 
     def __init__(
@@ -50,9 +53,11 @@ class KitFake:
         cache_dir=None,
         error_after: int | None = None,
         error: str = "the fake Kit peer failed",
+        points=(),
     ) -> None:
         self.error_after = error_after
         self.error = error
+        self.points = np.asarray(points, dtype=np.float32).reshape(-1, 3)
         self.port: int | None = None
         self.log_path = None  # no console: the fake runs in this process
         self._listener: socket.socket | None = None
@@ -86,7 +91,7 @@ class KitFake:
         return ""
 
     def _reply(self, conn, op: str, t, due: list, sensors: list) -> None:
-        outputs = [(i, name, arr) for i in due for name, arr in _outputs(sensors[i])]
+        outputs = [(i, name, arr) for i in due for name, arr in _outputs(sensors[i], self.points)]
         arrays = [
             {"sensor": i, "name": name, "dtype": str(arr.dtype), "shape": list(arr.shape)} for i, name, arr in outputs
         ]

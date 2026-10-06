@@ -65,7 +65,7 @@ class RtxThermalSensor(RtxMountedSensor):
         self._bitrate = cfg.bitrate
         self._stream_url = stream_url
         self._publisher = None  # also first-frame: the encoder needs the emitted size, not the authored one
-        self._entity = None
+        self._frustum_logged = False
         self._rng = np.random.default_rng(0)
         super().__init__(link, prim, path=path, body=body, rate_hz=rate_hz)
 
@@ -74,19 +74,19 @@ class RtxThermalSensor(RtxMountedSensor):
         has rendered yet when the orchestrator hands the Logger over.
         """
         super().set_logger(logger_)
-        self._entity = None
+        self._frustum_logged = False
 
     def _emit_size(self, shape) -> None:
         """First-frame binding of everything that needs the EMITTED size, the AOV's own grid, not
         the authored render-product size: the Rerun pinhole and the RTSP encoder. Idempotent.
         """
         h, w = int(shape[0]), int(shape[1])
-        if self._entity is None and self._logger is not None:
+        if not self._frustum_logged and self._logger is not None:
+            self._frustum_logged = True  # once, whether it lands or not: the images log at this entity anyway
             try:
                 loc = self._local
                 q = loc.ExtractRotationQuat()
-                self._entity = self._logger.log_camera(
-                    f"cameras/{self.name}",
+                self._logger.log_camera(
                     width=w,
                     height=h,
                     focal_length_mm=self._focal_mm,
@@ -96,8 +96,7 @@ class RtxThermalSensor(RtxMountedSensor):
                     local_quat_xyzw=[*q.GetImaginary(), q.GetReal()],
                     source=type(self).__name__,
                 )
-            except Exception as exc:
-                self._entity = f"cameras/{self.name}"  # log images anyway; only the frustum goes missing
+            except Exception as exc:  # only the frustum goes missing
                 logger.warning(f"RtxThermalSensor {self.name}: pinhole logging unavailable: {exc!r}")
         if self._publisher is None and self._stream_url:
             self._publisher = RtspPublisher(
@@ -115,7 +114,7 @@ class RtxThermalSensor(RtxMountedSensor):
         self._emit_size(rad.shape)
         img = self._post(rad, self._sky_mask(rad.shape, arrays.get("depth")))
         if self._logger is not None:
-            self._logger.log_image(self._entity or f"cameras/{self.name}", img, sim_time=t_shown)
+            self._logger.log_image("", img, sim_time=t_shown)
         if self._publisher is not None:
             self._publisher.push(img)
 

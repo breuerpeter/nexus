@@ -1,16 +1,16 @@
 """The sensor-measurement observation channels: each sensor's device buffer → ``SensorSample``.
 
 A sensor already fills a persistent device buffer, ``_out``, each tick. :class:`SensorRecorder` is a
-mixin that gives it the recordable seam: ``set_recorder`` registers a ``sensors/<name>`` channel and
+mixin that gives it the recordable seam: ``set_recorder`` registers a ``vehicle/sensors/<name>`` channel and
 ``record_wp`` copies ``_out`` into it inside the captured graph, device-only, no D2H. The host reads it
 via ``sim.sensors["imu"]`` → a :class:`SensorSample` whose ``fields`` map the sensor's documented
 layout, for example the Inertial Measurement Unit (IMU) ``xacc``/…/``zgyro``/quat. The Global
 Positioning System (GPS) sensor uses a ``float64`` channel so lat/lon survive.
 
-The channel key is the flat instance name, ``sensors/imu``, and the registering class rides along as
-``source`` metadata: a future redundant setup registers sibling instances, ``sensors/imu_bosch`` /
-``sensors/imu_murata``, never a nested kind level; the Recorder's duplicate guard makes a name
-collision loud instead of silently sharing one ring.
+The channel key ends in the flat instance name, ``vehicle/sensors/imu``, and the registering class
+rides along as ``source`` metadata: a future redundant setup registers sibling instances,
+``vehicle/sensors/imu_bosch`` / ``vehicle/sensors/imu_murata``, never a nested kind level; the
+Recorder's duplicate guard makes a name collision loud instead of silently sharing one ring.
 """
 
 from __future__ import annotations
@@ -91,7 +91,7 @@ class SensorRecorder:
     def set_recorder(self, recorder) -> None:
         f64 = self._out.dtype == wp.float64
         self._sensor_ch = recorder.channel(
-            f"sensors/{self.name}",
+            f"vehicle/sensors/{self.name}",
             width=1 + len(self.fields),
             decode=make_decode_sensor(self.fields),
             dtype=wp.float64 if f64 else float,

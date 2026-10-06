@@ -13,7 +13,8 @@ from .rtx_sensor import RtxMountedSensor, _prim_sensor_attr
 
 class RtxLidarSensor(RtxMountedSensor):
     """RTX lidar over the authored ``OmniLidar`` prim: the peer's world-frame points -> ``Points3D``
-    via ``Logger.log_points``, at ``lidar/<name>``.
+    via ``Logger.log_points``, at the sensor's own entity, ``sim/vehicle/sensors/<name>``, which carries
+    no transform, since the points are in world coordinates.
 
     Full-scan accumulation is renderer-native: ``omni:sensor:Core:accumulateOutputs``, with
     ``tickRate == scanRateBaseHz`` baked at authoring; the scan advances on the
@@ -44,5 +45,5 @@ class RtxLidarSensor(RtxMountedSensor):
             pts = pts[:: len(pts) // 20000 + 1]
         # Stamped at the time the scan shows, a frame or two before this tick, then the tick's own
         # time back for the rest of its logging.
-        self._logger.log_points(f"lidar/{self.name}", np.asarray(pts, dtype=np.float32), radii=0.02, sim_time=t_shown)
+        self._logger.log_points("", np.asarray(pts, dtype=np.float32), radii=0.02, sim_time=t_shown)
         self._logger.set_time(self._now)
