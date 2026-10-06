@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 # The files `uv lock` reads for the two projects. Neither holds `.acados/`, as on a CI runner.
 _PROJECT_FILES = ("pyproject.toml", "uv.lock", "nexus-rl/pyproject.toml", "nexus-rl/uv.lock")
