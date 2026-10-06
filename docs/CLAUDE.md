@@ -11,9 +11,9 @@
   CloudFront. When a local copy exists under `assets/local/` at the repo root, the site serves
   that copy instead: a preview before publishing, injected into the site without writing into
   `docs/`.
-- **Benchmark trends.** The Benchmarking page's trend panels are drawn in the browser by
-  `javascripts/bench-trends.js` from the CI bucket's bench feed, which the bucket serves to the
-  deployed origin only. `hooks/benchmarks.py` only states which metrics to plot and their gates, from
+- **Benchmark trends.** `javascripts/bench-trends.js` draws the Benchmarking page's trend panels
+  in the browser from the CI bucket's bench feed, which the bucket serves to the deployed origin
+  only. `hooks/benchmarks.py` only states which metrics to plot and their gates, from
   `scripts/ci/examples_baselines.json`, at the `<!-- benchmark-trends -->` marker. A local
   `mkdocs serve` shows a note in place of the panels, which isn't a fault.
 - Headings are sentence case. `scripts/check_heading_case.py`, a pre-commit hook, checks them.
