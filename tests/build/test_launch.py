@@ -7,6 +7,8 @@ the real newton-assets resolver.
 """
 
 import hashlib
+import logging
+import re
 from pathlib import Path
 
 import pytest
@@ -540,17 +542,21 @@ def test_a_run_on_an_explicit_cpu_runs_on_the_cpu_and_records_cpu(tmp_path, monk
     assert (ran_on, receipt["runtime"]["device"]) == ("cpu", "cpu")
 
 
-def test_a_px4_run_steps_the_physics_once_per_control_tick(tmp_path, monkeypatch, warp_cpu):
+def test_a_px4_run_steps_the_physics_once_per_control_tick(tmp_path, monkeypatch, warp_cpu, caplog):
     """A PX4 run still steps the physics once per control tick.
 
-    Given a launch of `astro_max_base` in `empty` on the PX4 fake, when the run builds, then its loop
-    steps the physics once per control tick.
+    Given a launch of `astro_max_base` in `empty` on the PX4 fake, when the run builds and ticks five
+    times, then every tick runs, and the stage plan the run logs at its first tick, the ring every tick
+    runs, names the physics `step` stage once, so the five ticks step the physics five times.
     """
     loop, _ = _shipped_px4_run(monkeypatch, tmp_path, "cpu")
-    per_tick = loop.physics_substeps
+    with caplog.at_level(logging.INFO, logger="nexus"):
+        ticked = [loop.step() for _ in range(5)]
     loop.close()
 
-    assert per_tick == 1
+    plans = [r.getMessage() for r in caplog.records if r.getMessage().startswith("stage plan:")]
+    steps_per_tick = [len(re.findall(r"\bstep\b", plan)) for plan in plans]
+    assert (ticked, steps_per_tick) == ([True] * 5, [1])
 
 
 def test_a_layer_path_that_does_not_exist_fails_before_any_peer_starts(tmp_path, daemon):
