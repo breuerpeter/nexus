@@ -41,6 +41,7 @@ from nexus_sim._src.core.orchestrator import Orchestrator
 from nexus_sim._src.core.schema import SimTime
 from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
 from nexus_sim._src.vehicle.controllers.px4 import controller as ctrl
+from tests.usd import sensor_vehicle as sv
 
 # --- the stand-in docker daemon -------------------------------------------------------------------
 
@@ -499,16 +500,25 @@ def test_a_run_whose_peer_mapping_sends_the_px4_sitl_peer_to_its_fake_starts_no_
     assert (daemon.runs, daemon.builds, fetched, stepped.count(True)) == ([], [], False, 500)
 
 
-def test_the_fake_px4_receives_each_tick_and_the_gps_at_its_sub_rate(daemon, monkeypatch, warp_cpu):
+def test_the_fake_px4_receives_each_tick_and_the_gps_at_its_sub_rate(daemon, warp_cpu, tmp_path):
     """The fake PX4 answers each `HIL_SENSOR` over the same lockstep.
 
-    Given a run of `astro_max_base` with the fake PX4, when it steps 500 ticks, then the fake receives
-    a `HIL_SENSOR` each tick, and `HIL_GPS` and `HIL_STATE_QUATERNION` at the 10 Hz sub-rate of the Global
-    Positioning System (GPS): 2 s of sim time at 0.004 s a tick, so 20 of each, or 19 where the float
-    clock lands a GPS tick one late.
+    Given a run of the local fixture vehicle with an analytic sensor of each kind and the fake PX4, when
+    it steps 500 ticks, then the fake receives a `HIL_SENSOR` each tick, and `HIL_GPS` and
+    `HIL_STATE_QUATERNION` at the 10 Hz sub-rate of the Global Positioning System (GPS): 2 s of sim time
+    at 0.004 s a tick, so 20 of each, or 19 where the float clock lands a GPS tick one late.
     """
-    monkeypatch.delenv("NEXUS_ASSET_CACHE")  # the shipped vehicle comes from the checkout's own cache
-    launch = LaunchConfig.from_dict({"vehicle": "astro_max_base", "scene": "empty", "runtime": {"device": "cpu"}})
+    sensors = "".join(
+        sv.prim(name, schema)
+        for name, schema in (
+            ("Imu", "NexusImuAPI"),
+            ("Mag", "NexusMagAPI"),
+            ("Baro", "NexusBaroAPI"),
+            ("Gps", "NexusGpsAPI"),
+        )
+    )
+    vehicle = sv.vehicle(tmp_path, sensors, px4=True)
+    launch = LaunchConfig.from_dict({"vehicle": vehicle, "scene": sv.SCENE, "runtime": {"device": "cpu"}})
     loop = launch_mod.build_from_launch(launch, preroll_timeout=10.0, peers=_FAKE_PX4)
 
     _step(loop, 500)
