@@ -4,7 +4,7 @@ description: "The real drone system organized into six subsystem planes, and the
 
 # Real system ↔ simulation
 
-nexus's primary job is to reproduce as much of the **real drone system** as possible in CI,
+The primary job of nexus is to reproduce as much of the **real drone system** as possible in CI,
 substituting only what it has to simulate. The real system and the sim are both organized into the
 **same six subsystem planes**, so the two line up box-for-box and their difference *is* the
 substitution boundary.

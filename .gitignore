@@ -37,9 +37,10 @@ assets/cache/
 # Claude Code per-checkout instructions; never committed
 CLAUDE.local.md
 
-# Vale fetches the prose styles that .vale.ini pins; only the vocabulary is ours.
+# Vale fetches the prose styles that .vale.ini pins; only the vocabulary and the Project style are ours.
 .vale/styles/*
 !.vale/styles/config/
+!.vale/styles/Project/
 
 # coverage.py data, written by the pytest --cov run CI uses
 .coverage

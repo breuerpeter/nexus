@@ -7,7 +7,7 @@ description: "Fly the simulated vehicle from QGroundControl over PX4 Software In
 The first end-to-end nexus workflow: fly the simulated vehicle from a ground
 station, QGroundControl with virtual joysticks, over PX4 Software In The Loop (SITL).
 
-Everything runs on `127.0.0.1`. **nexus** runs the physics, hosts the Rerun
+Everything runs on `127.0.0.1`. The **nexus** sim runs the physics, hosts the Rerun
 recording, and starts **PX4 SITL** as a container that connects back over **TCP
 4560** for lockstep Hardware In The Loop (HIL). PX4 talks MAVLink over the User Datagram
 Protocol (UDP) to **QGroundControl** on **UDP 14550**. An optional **Rerun viewer** watches
@@ -30,7 +30,7 @@ and hands it its ports, see [PX4 as a peer](#px4-as-a-peer).
 **1. QGroundControl.** Launch it. It listens on UDP 14550 and auto-connects once
 PX4 sends a heartbeat.
 
-**2. nexus sim:**
+**2. The nexus sim:**
 
 ```bash
 uv run nexus run --vehicle astro_max_base --scene empty
