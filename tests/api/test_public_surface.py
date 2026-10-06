@@ -37,6 +37,7 @@ def test_a_script_imports_the_px4_client_and_the_mission_plan_types_from_nexus_p
     its definition in the PX4 Software In The Loop (SITL) peer's folder, and `nexus.__all__` holds no
     PX4 name.
     """
+    import nexus as na
     from nexus.px4 import (
         FRAME_GLOBAL_RELATIVE_ALT,
         NAV_TAKEOFF,
@@ -46,8 +47,6 @@ def test_a_script_imports_the_px4_client_and_the_mission_plan_types_from_nexus_p
         Px4Offboard,
         read_plan,
     )
-
-    import nexus as na
 
     in_peer_folder = all(
         obj.__module__.startswith("nexus._src.peers.px4_sitl.") for obj in (Px4Offboard, MissionItem, Plan, read_plan)
