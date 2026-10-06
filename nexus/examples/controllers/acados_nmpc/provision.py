@@ -16,6 +16,7 @@ before the example's own imports.
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import os
 import shutil
@@ -26,6 +27,8 @@ from pathlib import Path
 
 PROVISION_COMMAND = "python -m nexus.examples acados_nmpc --provision"
 TERA_VERSION = "0.2.1"
+# The sha256 of the release binary, read from two separate downloads on 2026-10-05. Move it with the version.
+TERA_SHA256 = "64a0a0f8d85be0b92234231fd1a9ff50c9d8f13d6208063707e56c9354a976d3"
 _PIN = Path(__file__).with_name("acados.ref")
 # What the example and the interface import at import time, all from the `acados` extra.
 _EXTRA_MODULES = ("casadi", "ruckig", "matplotlib", "deprecated")
@@ -90,7 +93,8 @@ def provision() -> Path:
         The acados tree.
 
     Raises:
-        RuntimeError: This machine has no CMake.
+        RuntimeError: This machine has no CMake, or the renderer download doesn't match the pinned
+            digest.
         subprocess.CalledProcessError: A git or CMake command failed.
     """
     tree = acados_dir()
@@ -114,13 +118,17 @@ def provision() -> Path:
         _run("cmake", "--build", tree / "build", "--target", "install", "-j")
     renderer = tree / "bin" / "t_renderer"
     if not os.access(renderer, os.X_OK):
-        # The C build doesn't include the renderer: acados publishes it as a binary of its own.
+        # The C build doesn't include the renderer: acados publishes it as a binary of its own. This
+        # module pins its bytes, as it pins everything else it fetches, so a changed release never runs.
+        url = f"https://github.com/acados/tera_renderer/releases/download/v{TERA_VERSION}/t_renderer-v{TERA_VERSION}-linux-amd64"
         renderer.parent.mkdir(parents=True, exist_ok=True)
-        urllib.request.urlretrieve(
-            "https://github.com/acados/tera_renderer/releases/download/"
-            f"v{TERA_VERSION}/t_renderer-v{TERA_VERSION}-linux-amd64",
-            renderer,
-        )
-        renderer.chmod(0o755)
+        download = renderer.with_suffix(".part")
+        urllib.request.urlretrieve(url, download)
+        digest = hashlib.sha256(download.read_bytes()).hexdigest()
+        if digest != TERA_SHA256:
+            download.unlink()
+            raise RuntimeError(f"{url} has sha256 {digest}, not the pinned {TERA_SHA256}: the renderer isn't installed")
+        download.chmod(0o755)
+        download.replace(renderer)
     print(f"acados ready at {tree}", flush=True)
     return tree

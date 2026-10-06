@@ -7,13 +7,18 @@ import subprocess
 import urllib.request
 from pathlib import Path
 
+import pytest
+
 from nexus.examples.controllers.acados_nmpc import provision
 
 PINNED = "f22001ac39773eb9988b9f04b4d38378818d10d6"
 
 
 def _fake_machine(monkeypatch) -> list[list[str]]:
-    """Stand in for git, CMake and the network at the process boundary, and record each command."""
+    """Stand in for git, CMake and the network at the process boundary, and record each command. The
+    network serves bytes that aren't the pinned renderer: the real one is 8 MB, and the digest check
+    is what a test can observe.
+    """
     ran: list[list[str]] = []
 
     def run(cmd, **kwargs):
@@ -26,7 +31,7 @@ def _fake_machine(monkeypatch) -> list[list[str]]:
 
     monkeypatch.setattr(subprocess, "run", run)
     monkeypatch.setattr("shutil.which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr(urllib.request, "urlretrieve", lambda url, dest: Path(dest).write_bytes(b"renderer"))
+    monkeypatch.setattr(urllib.request, "urlretrieve", lambda url, dest: Path(dest).write_bytes(b"not the renderer"))
     return ran
 
 
@@ -39,24 +44,30 @@ def test_the_default_acados_folder_is_named_for_the_pinned_commit(monkeypatch, t
 
 
 def test_provisioning_an_empty_folder_fetches_the_pinned_commit(monkeypatch, tmp_path):
-    """Given an empty `ACADOS_SOURCE_DIR`, provisioning fetches the commit `acados.ref` pins."""
+    """Given an empty `ACADOS_SOURCE_DIR`, provisioning fetches the commit `acados.ref` pins, before
+    the renderer download that the stand-in network fails.
+    """
     monkeypatch.setenv("ACADOS_SOURCE_DIR", str(tmp_path))
     ran = _fake_machine(monkeypatch)
 
-    provision.provision()
+    with pytest.raises(RuntimeError):
+        provision.provision()
 
     fetch = ["git", "-C", str(tmp_path), "fetch", "-q", "--depth", "1", "https://github.com/acados/acados.git", PINNED]
     assert fetch in ran
 
 
-def test_provisioning_leaves_an_executable_renderer_in_the_tree(monkeypatch, tmp_path):
-    """Given an empty `ACADOS_SOURCE_DIR`, provisioning leaves the Tera renderer executable in `bin/`."""
+def test_a_renderer_download_with_the_wrong_bytes_is_rejected_and_never_executable(monkeypatch, tmp_path):
+    """Given a renderer download whose bytes don't match the pinned digest, provisioning raises naming
+    the digest and leaves no executable in `bin/`.
+    """
     monkeypatch.setenv("ACADOS_SOURCE_DIR", str(tmp_path))
     _fake_machine(monkeypatch)
 
-    provision.provision()
+    with pytest.raises(RuntimeError, match=provision.TERA_SHA256):
+        provision.provision()
 
-    assert os.access(tmp_path / "bin" / "t_renderer", os.X_OK)
+    assert not os.access(tmp_path / "bin" / "t_renderer", os.X_OK)
 
 
 def test_provisioning_a_built_tree_runs_no_command(monkeypatch, tmp_path):
