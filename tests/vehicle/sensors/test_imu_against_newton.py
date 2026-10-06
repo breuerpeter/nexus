@@ -130,15 +130,16 @@ def Xform "rig" (
     return str(path)
 
 
-def _gaps(usd_path: str, *, spin=(0.0, 0.0, 0.0), hinge_rate: float = 0.0) -> tuple[float, float, float]:
+def _gaps(usd_path: str, *, spin=(0.0, 0.0, 0.0), hinge_rate: float = 0.0) -> tuple[float, list, list]:
     """Step the rig at `usd_path` for 250 ticks with both sensors on it, and compare their readings.
 
     `spin` is the base body's angular velocity at the start, rad/s, and `hinge_rate` the arm's, when the rig
     has one. A wrench that varies over time acts on the base body.
 
     Returns:
-        The largest difference between the gyros, rad/s, the largest between the accelerometers, m/s^2, and
-        the accelerometers' bound: half a tick of the reference's peak rate of change, over `ACC_FLOOR`.
+        The largest difference between the gyros, rad/s; for each accelerometer axis, the largest difference,
+        m/s^2; and each axis's bound: half a tick of that axis's peak rate of change in the reference, over
+        `ACC_FLOOR`.
     """
     builder = newton.ModelBuilder()
     builder.add_usd(usd_path, floating=True)
@@ -178,14 +179,14 @@ def _gaps(usd_path: str, *, spin=(0.0, 0.0, 0.0), hinge_rate: float = 0.0) -> tu
         theirs.append((*reference.gyroscope.numpy()[0], *reference.accelerometer.numpy()[0]))
     ours, theirs = np.array(ours), np.array(theirs)
     gap = np.abs(ours - theirs)
-    bound = 0.5 * np.abs(np.diff(theirs[:, 3:], axis=0)).max() + ACC_FLOOR
-    return float(gap[:, :3].max()), float(gap[:, 3:].max()), float(bound)
+    bound = 0.5 * np.abs(np.diff(theirs[:, 3:], axis=0)).max(axis=0) + ACC_FLOOR
+    return float(gap[:, :3].max()), gap[:, 3:].max(axis=0).tolist(), bound.tolist()
 
 
-def _agrees(gaps: tuple[float, float, float]) -> tuple[bool, bool]:
-    """Whether the gyros agree to `GYRO_TOL`, and whether the accelerometers agree to their bound."""
+def _agrees(gaps: tuple[float, list, list]) -> dict[str, bool]:
+    """Whether the gyros agree to `GYRO_TOL`, and whether each accelerometer axis agrees to its own bound."""
     gyro, acc, bound = gaps
-    return (gyro <= GYRO_TOL, acc <= bound)
+    return {"gyro": gyro <= GYRO_TOL, "accelerometer": all(a <= b for a, b in zip(acc, bound, strict=True))}
 
 
 def test_an_imu_at_its_bodys_origin_with_no_rotation_reads_what_newtons_sensor_reads(tmp_path):
@@ -198,7 +199,7 @@ def test_an_imu_at_its_bodys_origin_with_no_rotation_reads_what_newtons_sensor_r
     """
     gaps = _gaps(_rig(tmp_path))
 
-    assert _agrees(gaps) == (True, True), gaps
+    assert _agrees(gaps) == {"gyro": True, "accelerometer": True}, gaps
 
 
 def test_an_imu_on_a_rotated_mount_reports_in_the_mounts_axes(tmp_path):
@@ -210,7 +211,7 @@ def test_an_imu_on_a_rotated_mount_reports_in_the_mounts_axes(tmp_path):
     """
     gaps = _gaps(_rig(tmp_path, mount=TURNED), spin=(0.4, -0.3, 0.5))
 
-    assert _agrees(gaps) == (True, True), gaps
+    assert _agrees(gaps) == {"gyro": True, "accelerometer": True}, gaps
 
 
 def test_an_imu_off_its_bodys_origin_feels_the_lever_arm_from_the_center_of_mass(tmp_path):
@@ -222,7 +223,7 @@ def test_an_imu_off_its_bodys_origin_feels_the_lever_arm_from_the_center_of_mass
     """
     gaps = _gaps(_rig(tmp_path, mount=MOVED, com=(0.03, 0.0, 0.04)), spin=(3.0, 0.0, 4.0))
 
-    assert _agrees(gaps) == (True, True), gaps
+    assert _agrees(gaps) == {"gyro": True, "accelerometer": True}, gaps
 
 
 def test_an_imu_reads_the_body_its_prim_sits_under_not_the_first_body(tmp_path):
@@ -234,4 +235,4 @@ def test_an_imu_reads_the_body_its_prim_sits_under_not_the_first_body(tmp_path):
     """
     gaps = _gaps(_rig(tmp_path, on_arm=True), hinge_rate=3.0)
 
-    assert _agrees(gaps) == (True, True), gaps
+    assert _agrees(gaps) == {"gyro": True, "accelerometer": True}, gaps
