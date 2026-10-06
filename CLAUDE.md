@@ -15,7 +15,9 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
   example with `uv run -m nexus.examples <name>`. Read `nexus/examples/CLAUDE.md`
   before adding or changing an example.
 - **RTX sensors render in the Kit render peer**, a container the run starts on the host when the
-  vehicle's Universal Scene Description (USD) file authors a `Camera` or `OmniLidar` prim. The loop
+  vehicle's Universal Scene Description (USD) file declares a sensor whose class requires it: a camera
+  or lidar schema on a `Camera` or `OmniLidar` prim. Kit is a required peer, so no vehicle names it,
+  and `docs/design/conventions.md` states the rule. The loop
   never runs inside Kit, and no module imports Kit, an import-linter contract. Read
   `nexus/_src/peers/kit/CLAUDE.md` before changing the peer, its program, or the render link.
 - **Each peer lives in one folder**, `nexus/_src/peers/<name>/`, with its runner, its pin, its
@@ -45,8 +47,11 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
   nexus sim plus PX4 SITL plus QGroundControl, and its port map and gotchas.
 - **Lint and format:** `uvx pre-commit run -a`, which runs ruff. Config in
   `.pre-commit-config.yaml` and `[tool.ruff]` in `pyproject.toml`. The `extend-exclude` entry
-  keeps `docs/` out of lint.
-- **Tests:** `uv run --extra policy --with pytest pytest tests -q`.
+  keeps `docs/` out of lint. `uv run lint-imports` checks the import contracts in `.importlinter`.
+- **Tests:** `uv run --extra policy pytest -q`. The test tree mirrors the source
+  tree: the tests of `nexus/_src/<path>/` sit in `tests/<path>/`, and none sits at the root of
+  `tests/`. A test that mirrors no source folder sits in a folder named for its kind, `ci`, `docs`,
+  `examples`, `packaging` or `suite`. `tests/suite/test_layout.py` fails on any other folder.
 - **Prose:** `vale sync` once, then `vale $(git ls-files '*.md' '*.py' ':!CHANGELOG.md')` checks the tracked Markdown, and the comments and docstrings in Python, against `.vale.ini`. The check leaves out `CHANGELOG.md`, which release-please writes, and so do both CI jobs. The ini pins each style by release URL, and the sync fetches them into `.vale/styles/`, a directory git ignores. CI runs the same check on the lines a pull request adds and fails on any alert among them. A nightly `vale-all` run, which you can also start from the Actions tab, checks the whole repo and fails on any alert, so a red night means something leaked past the gate. A domain word or acronym that a rule flags on a line you add, and that has no plain rewrite, goes into `.vale/styles/config/vocabularies/Names/accept.txt`, one pattern per line. An entry there exempts the word from every rule that flags it. A Python file that starts with a shebang or a comment defines its acronyms in a `# Acronyms:` comment after that header, because Vale's text rules skip a module docstring behind one.
 
 ## Commits

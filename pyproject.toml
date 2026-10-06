@@ -61,6 +61,13 @@ nexus = "nexus._src.cli.main:main"
 # beside nexus declares its own classes in the same group.
 [project.entry-points."nexus.components"]
 NexusImuAPI = "nexus._src.vehicle.sensors:ImuSensor"
+NexusMagAPI = "nexus._src.vehicle.sensors:MagSensor"
+NexusBaroAPI = "nexus._src.vehicle.sensors:BaroSensor"
+NexusGpsAPI = "nexus._src.vehicle.sensors:GpsSensor"
+NexusCameraAPI = "nexus._src.vehicle.sensors.rtx_camera:RtxCameraSensor"
+NexusThermalCameraAPI = "nexus._src.vehicle.sensors.rtx_thermal:RtxThermalSensor"
+NexusLidarAPI = "nexus._src.vehicle.sensors.rtx_lidar:RtxLidarSensor"
+NexusPropellerAPI = "nexus._src.vehicle.actuators.propeller:Propeller"
 NexusPx4API = "nexus._src.vehicle.controllers.px4:Px4MavlinkController"
 
 [project.urls]
@@ -112,6 +119,12 @@ explicit = true  # only the warp-lang source references it (isaaclab's transitiv
 # pandas), so it must NEVER become a [project] dependency — examples dump plain numpy/JSON and the
 # harness alone imports evo to score them.
 ci = ["evo>=1.36"]
+# The test and lint tools. uv installs this group on every plain `uv sync`, and the lock pins each one.
+dev = [
+    "import-linter>=2.15",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+]
 docs = [
     "mkdocs-awesome-pages-plugin>=2.10.1",
     "mkdocs-material[imaging]>=9.7.6",  # [imaging] = pillow + cairosvg for the social-card plugin
@@ -120,6 +133,11 @@ docs = [
     "mkdocstrings[python]>=0.27",  # API reference auto-generated from Google-style docstrings (griffe, static)
     "ruff",  # lets mkdocstrings format rendered signatures (separate_signature)
 ]
+
+[tool.pytest.ini_options]
+# pytest's default list also skips `build`, the name of the folder that mirrors `nexus/_src/build/`.
+norecursedirs = [".*", "dist", "node_modules", "venv"]
+testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 120

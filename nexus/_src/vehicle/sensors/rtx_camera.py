@@ -10,7 +10,7 @@ from __future__ import annotations
 from nexus._src.core import logger
 
 from .rtsp import RtspPublisher
-from .rtx_sensor import RtxMountedSensor, _prim_sensor_attr
+from .rtx_sensor import RtxMountedSensor
 
 
 class RtxCameraSensor(RtxMountedSensor):
@@ -18,31 +18,28 @@ class RtxCameraSensor(RtxMountedSensor):
     when streaming, the :class:`RtspPublisher`.
 
     Args:
-        link: The render link.
-        prim: The ``Camera`` prim on the vehicle's own stage.
-        path: The prim's path on the render stage.
-        body: The model body index the camera rides.
-        cfg: The RTX settings: resolution and rate fallbacks for a prim that authors none, and the
-            stream bitrate.
-        stream_url: Where to publish the feed, or ``None`` for the recording only.
+        run: The run's values: the ``Camera`` prim, the model body it rides and the render link, which
+            says where to publish the feed when the run streams.
+        width: Width of the image, pixels.
+        height: Height of the image, pixels.
+        rate: How often the camera gives a frame, hertz.
     """
 
     KIND = "cameras"
     output = "color"
 
-    def __init__(self, link, prim, *, path: str, body: int, cfg, stream_url: str | None = None):
-        # Render params from the AUTHORED prim, sensor:width/height/rate_hz; the vehicle USD is
-        # the single authority, and the RTX settings only cover legacy assets / explicit rtx: overrides.
-        self.width = int(_prim_sensor_attr(prim, "width", cfg.width, "RtxCameraSensor"))
-        self.height = int(_prim_sensor_attr(prim, "height", cfg.height, "RtxCameraSensor"))
-        rate_hz = float(_prim_sensor_attr(prim, "rate_hz", cfg.render_hz, "RtxCameraSensor"))
+    def __init__(self, run, width: int = 1280, height: int = 720, rate: float = 24.0):
+        prim = run.prim
+        self.width = int(width)
+        self.height = int(height)
         # The --stream consumer is per camera at the CAMERA's resolution/rate.
+        stream_url = run.link.streams.url("cam")
         self._publisher = (
             RtspPublisher(
                 width=self.width,
                 height=self.height,
-                fps=max(1, round(rate_hz)),
-                bitrate=cfg.bitrate,
+                fps=max(1, round(rate)),
+                bitrate=run.link.streams.bitrate,
                 rtsp_url=stream_url,
             )
             if stream_url
@@ -53,7 +50,7 @@ class RtxCameraSensor(RtxMountedSensor):
         self._h_aperture_mm = float(prim.GetAttribute("horizontalAperture").Get() or 36.0)
         self._v_aperture_mm = float(prim.GetAttribute("verticalAperture").Get() or 0.0) or None
         self._entity = None
-        super().__init__(link, prim, path=path, body=body, rate_hz=rate_hz)
+        super().__init__(run, rate=rate)
 
     def set_logger(self, logger_) -> None:
         super().set_logger(logger_)

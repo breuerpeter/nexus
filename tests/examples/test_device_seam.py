@@ -25,7 +25,7 @@ from nexus.examples.controllers.pid import PidController
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")
 
-_ACT_CFG = {"ct": 0.000003463, "cd": 0.05, "rpm_max": 3800.0}  # astro-max thrust map, from motor:* and propeller:*
+_ACT_CFG = {"ct": 0.000003463, "cd": 0.05, "rpm_max": 3800.0}  # the astro-max thrust map its rotors declare
 
 
 def _is_warp_array(x) -> bool:
@@ -41,12 +41,12 @@ def _rotored_model():
     state = model.state()
     newton.eval_fk(model, model.joint_q, model.joint_qd, state)  # populate body_q, the rotor offsets
     mass = float(np.sum(model.body_mass.numpy()))
-    return model, state, mass
+    return model, vb.rotor_joints(), state, mass
 
 
 def test_inprocess_seam_is_device_native():
-    model, state, mass = _rotored_model()
-    mixer = build_rotor_mixer_from_model(model, _ACT_CFG, state.body_q.numpy())
+    model, joints, state, mass = _rotored_model()
+    mixer = build_rotor_mixer_from_model(model, joints, _ACT_CFG, state.body_q.numpy())
 
     # 1. obs sensor writes a Warp array into meas.observation, not numpy
     meas = Measurement()

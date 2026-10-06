@@ -152,8 +152,12 @@ def plan_line(segments: list[Segment], captured: bool) -> str:
 
 
 def read_sensors(tick: Tick) -> None:
-    """The sensor fan-in: one D2H per sensor with a device stage into the shared ``Measurement``."""
-    for s in tick.sensors:
+    """The sensor fan-in: one D2H per sensor with a device stage into the shared ``Measurement``.
+
+    The ``Measurement`` holds one slot per kind of sensor. The sensors read in reverse order, so of two
+    sensors of one kind the first declared writes last and fills the slot.
+    """
+    for s in reversed(tick.sensors):
         s.read(tick.meas)
 
 

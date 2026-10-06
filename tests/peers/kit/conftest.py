@@ -1,0 +1,121 @@
+"""A stand-in docker daemon for the Kit peer's tests: the daemon is the system boundary here."""
+
+import threading
+from pathlib import Path
+
+import pytest
+from docker.errors import APIError, ImageNotFound, NotFound
+
+import nexus._src.peers.containers as containers
+import nexus._src.peers.kit.runner as peer
+
+
+class _Container:
+    def __init__(self, daemon, name):
+        self._daemon = daemon
+        self.name = name
+        self.status = "running"
+
+    def reload(self):
+        pass
+
+    def logs(self, **kwargs):
+        yield from ()
+
+    def wait(self):
+        return {"StatusCode": 0}
+
+    def remove(self, force=False):
+        self.status = "removed"
+        self._daemon.removed.append(self.name)
+
+
+def _ref(repository, tag=None):
+    return f"{repository}:{tag}" if tag else repository
+
+
+class Daemon:
+    """Every image exists unless ``held`` names the ones that do; a started container records its
+    spec, and ``serve`` runs in its place.
+
+    ``serve(port)`` stands in for the program the container runs: the peer's tests pass one that
+    speaks the render link on the port the host chose. A pull records its image in ``pulls`` and a
+    build its tag in ``builds``, and each leaves the image held. With ``pull_error`` set, a pull
+    fails with that registry error instead.
+    """
+
+    def __init__(self):
+        self.runs: list[dict] = []
+        self.removed: list[str] = []
+        self.pulls: list[str] = []
+        self.builds: list[str] = []
+        self.held: set[str] | None = None
+        self.pull_error: str | None = None
+        self.serve = None
+        daemon = self
+
+        def pull(ref):
+            if daemon.pull_error:
+                raise APIError(f"pull of {ref} failed", explanation=daemon.pull_error)
+            daemon.pulls.append(ref)
+            if daemon.held is not None:
+                daemon.held.add(ref)
+
+        def stream_pull(ref):
+            yield {"status": f"Pulling from {ref}"}
+            if daemon.pull_error:
+                yield {"error": daemon.pull_error, "errorDetail": {"message": daemon.pull_error}}
+                return
+            pull(ref)
+            yield {"status": f"Downloaded newer image for {ref}"}
+
+        class Images:
+            def get(self, tag):
+                if daemon.held is not None and tag not in daemon.held:
+                    raise ImageNotFound(f"no image {tag}")
+                return object()
+
+            def pull(self, repository, tag=None, **kwargs):
+                pull(_ref(repository, tag))
+                return object()
+
+        class Api:
+            def pull(self, repository, tag=None, stream=False, **kwargs):
+                if stream:
+                    return stream_pull(_ref(repository, tag))
+                pull(_ref(repository, tag))
+                return ""
+
+            def build(self, tag=None, **kwargs):
+                daemon.builds.append(tag)
+                if daemon.held is not None:
+                    daemon.held.add(tag)
+                yield {"stream": "Step 1/1\n"}
+
+        class Containers:
+            def run(self, image, **kwargs):
+                seen = {src: (Path(src).is_dir(), Path(src).stat().st_uid) for src in kwargs.get("volumes", {})}
+                daemon.runs.append({"image": image, **kwargs, "seen": seen})
+                container = _Container(daemon, kwargs.get("name"))
+                if daemon.serve is not None:
+                    port = int(kwargs["command"][kwargs["command"].index("--port") + 1])
+                    threading.Thread(target=daemon.serve, args=(port,), daemon=True).start()
+                daemon.last = container
+                return container
+
+            def get(self, name):
+                raise NotFound(f"no container {name}")
+
+        self.images = Images()
+        self.api = Api()
+        self.containers = Containers()
+
+
+@pytest.fixture
+def daemon(monkeypatch, tmp_path):
+    """The stand-in daemon, with the home folder in the test's folder so the peer's caches land there."""
+    d = Daemon()
+    monkeypatch.setattr(containers, "client", lambda: d)
+    monkeypatch.setattr(peer, "client", lambda: d)  # the peer module holds the name it imported
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    return d

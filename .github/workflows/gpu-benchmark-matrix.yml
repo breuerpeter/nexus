@@ -113,6 +113,7 @@ jobs:
           name: benchmark-matrix
           path: .eval-artifacts
           include-hidden-files: true
+          retention-days: 14
 
   data-refresh:
     needs: merge

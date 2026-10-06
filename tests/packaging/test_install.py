@@ -4,7 +4,7 @@ import re
 import subprocess
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_an_installed_package_resolves_a_warp_below_the_first_broken_one(tmp_path):

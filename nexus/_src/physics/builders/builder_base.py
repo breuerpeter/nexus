@@ -17,17 +17,18 @@ class BuilderBase(ABC):
 
     def actuator_params(self) -> dict:
         """Per-vehicle actuator aero/thrust-map params such as ``ct``, ``cd``, ``rpm_max`` and ``tau``, the
-        canonical single source for the actuator. Universal Scene Description (USD) vehicles author them as
-        ``motor:*`` / ``propeller:*`` custom attributes on the actuator joint prims; see
+        canonical single source for the actuator. Universal Scene Description (USD) vehicles declare them
+        per rotor: the propeller's with the ``NexusPropellerAPI`` schema on the rotor's rigid body, and the
+        speed at full command on its ``NewtonActuator`` motor; see
         :class:`~nexus._src.physics.builders.usd.USDBuilder`. A builder with no authored params returns
         ``{}`` and the consumer falls back to its cfg/defaults.
         """
         return {}
 
-    def sensor_specs(self) -> list:
-        """Per-vehicle analytic sensor suite, a list of :class:`~nexus._src.vehicle.sensors.usd.SensorSpec`,
-        the canonical single source for the sensors. USD vehicles author them as ``sensor:*`` prims; see
-        :mod:`nexus._src.vehicle.sensors.usd`. A builder with no authored sensors returns ``[]``.
+    def rotor_joints(self) -> list[str]:
+        """The joint path of each rotor the vehicle declares, which
+        :func:`~nexus._src.vehicle.actuators.layout.find_rotor_joints` maps onto the built model. A builder
+        that declares no rotor returns ``[]``.
         """
         return []
 

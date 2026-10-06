@@ -7,8 +7,8 @@ reads the artifacts every example dumps via ``nexus.examples._lib.eval_dump``, w
 a reference attitude, rotation, the example's own stats, and the orchestrator's steady RTF, then
 gates everything against the committed ``scripts/ci/examples_baselines.json`` and writes
 ``benchmark.json``, github-action-benchmark-style ``{name, unit, value}`` entries plus a
-``biggerIsBetter`` direction, for the trend record. With ``--upload`` it publishes each flight's
-``.rrd`` and the benchmark data to the CI artifacts bucket.
+``biggerIsBetter`` direction, for the trend record. With ``--upload`` it publishes the ``.rrd`` of each
+flight the docs serve and the benchmark data to the CI artifacts bucket.
 
 evo is under the General Public License (GPL) and heavy, so it lives only here, in the ``ci``
 dependency-group, never a shipped dependency; the examples dump plain numpy/JSON.
@@ -59,7 +59,8 @@ def bucket() -> str:
 
 
 # name, the harness key, -> how to run it: "uv" the extras, "launcher" the example when the key is a
-# second flight of one example, "requires" gates availability: --skip-missing skips, else fails.
+# second flight of one example, "requires" gates availability: --skip-missing skips, else fails,
+# "docs" false when no docs page serves the flight's recording, so --upload leaves it out.
 EXAMPLES: dict[str, dict] = {
     "pid": {"uv": []},
     "gain_tuning": {"uv": ["--extra", "examples"]},
@@ -71,7 +72,12 @@ EXAMPLES: dict[str, dict] = {
     # rl leg just trained, one draw from a training that's not reproducible, so its baselines block
     # is empty: it gates on completing only, and the harness reports its numbers.
     "goto_policy": {"uv": ["--extra", "policy"]},
-    "goto_policy_fresh": {"uv": ["--extra", "policy"], "launcher": "goto_policy", "requires": "policy"},
+    "goto_policy_fresh": {
+        "uv": ["--extra", "policy"],
+        "launcher": "goto_policy",
+        "requires": "policy",
+        "docs": False,
+    },
     "px4_sitl": {"uv": [], "requires": "px4"},
 }
 # The default set = everything the consolidated gpu-examples leg runs. The workflow provides acados
@@ -374,18 +380,18 @@ def _upload(out: pathlib.Path, metas: dict[str, dict]) -> None:
 
     def cp(src: pathlib.Path, key: str, ctype: str) -> None:
         print(f"uploading {src.name} -> s3://{bucket()}/{key}", flush=True)
-        # Fixed keys, for stable docs URLs; max-age=300 so a re-upload propagates within ~5 min.
+        # A fixed key, for a stable docs URL; max-age=300 so a re-upload propagates within ~5 min.
         subprocess.run(
             ["aws", "s3", "cp", str(src), f"s3://{bucket()}/{key}",
              "--content-type", ctype, "--cache-control", "max-age=300"],
             check=True,
         )  # fmt: skip
 
+    # The bucket holds a recording only under the key a docs page serves: nothing reads a copy per commit.
     for name, meta in metas.items():
         rrd = meta.get("rrd")
-        if rrd and pathlib.Path(rrd).is_file():
+        if EXAMPLES[name].get("docs", True) and rrd and pathlib.Path(rrd).is_file():
             cp(pathlib.Path(rrd), f"public/ci/logs/{name}.rrd", "application/octet-stream")
-            cp(pathlib.Path(rrd), f"public/ci/logs/{sha[:12]}/{name}.rrd", "application/octet-stream")
     bench = out / "benchmark.json"
     fresh = json.loads(bench.read_text()) if bench.exists() else []
     if not fresh:
@@ -399,7 +405,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--only", default=None, help="comma-separated example names (default: the standalone set)")
     ap.add_argument("--skip-missing", action="store_true", help="skip examples whose requirement is unmet")
-    ap.add_argument("--upload", action="store_true", help="publish .rrds + benchmark data to the CI bucket")
+    ap.add_argument("--upload", action="store_true", help="publish the docs .rrds + benchmark data to the CI bucket")
     ap.add_argument("--update-baselines", action="store_true", help="record fresh metric values into the baselines")
     ap.add_argument("--out", default=str(ROOT / ".eval-artifacts"), help="artifact dir (also $NEXUS_EVAL_OUT)")
     ap.add_argument("--timeout", type=float, default=1800.0, help="per-example subprocess budget [s]")
@@ -408,7 +414,7 @@ def main() -> int:
     ap.add_argument(
         "--shared",
         action="store_true",
-        help="fly the examples at once on one box, as a pull request does: no rtf gate, a red flight's .rrd only",
+        help="fly the examples at once on one box, as a pull request does: no rtf gate",
     )
     args = ap.parse_args()
 
@@ -466,9 +472,9 @@ def main() -> int:
         red |= {name} if failed else set()
 
     # Recordings otherwise live only in the cache under the home directory and die with the ephemeral runner
-    # unless --upload runs; a copy here rides the GitHub artifact too. A shared run keeps a red flight's
-    # alone: nothing reads a green one, and the seven would dominate the artifact.
-    for name in red if args.shared else flown:
+    # unless --upload runs. A red flight's copy here rides the GitHub artifact, on every event: nothing
+    # reads a green one there, and the green ones would dominate the artifact.
+    for name in red:
         rrd = (metas.get(name) or _dumped_meta(name, out)).get("rrd")
         if rrd and pathlib.Path(rrd).is_file():
             shutil.copy2(rrd, out / f"{name}.rrd")

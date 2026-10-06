@@ -60,8 +60,9 @@ def build_acados_orchestrator(
     # The core articulated actuator, the same one PX4 flies: USD-authored newton.actuators rotor
     # motors plus the framework's airflow-aware aero from the solver-integrated Ω. Real motor lag,
     # spinning props.
+    joints = builder.rotor_joints()  # the joint of each rotor the vehicle USD declares
     actuator = ArticulatedRotors(
-        model=physics.model, control=physics.control,
+        model=physics.model, control=physics.control, joints=joints,
         ct=m["ct"], cd=m["cd"], rpm_max=m["rpm_max"], dt=dt,
         aero_h=m.get("aero_h", 0.0), aero_hforce=m.get("aero_hforce", 0.0),
     )  # fmt: skip
@@ -70,7 +71,7 @@ def build_acados_orchestrator(
     # NMPC rigid-body params, read from the real model in the NMPC's upright frame. Spawned at FRD, the NMPC
     # frame coincides with world, q_nmpc = identity, so the body-frame moment arms = the world-frame rotor
     # offsets at the authored rest pose; the yaw reaction sign matches the aero kernel's drag, ∝ −rotor_z·z.
-    _vel, _pos, bodies, base = find_rotor_joints(physics.model)
+    _vel, _pos, bodies, base = find_rotor_joints(physics.model, joints)
     rest = physics.model.state()
     newton.eval_fk(physics.model, physics.model.joint_q, physics.model.joint_qd, rest)
     bq = rest.body_q.numpy()

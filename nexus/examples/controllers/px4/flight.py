@@ -15,7 +15,7 @@ The east-west leg is a regression guard (GH #61). The world to geodetic axis map
 so long east legs diverged, and no profile here flew far enough east to notice; the yaw sweeps do
 not translate at all, and the CI benchmark mission's east legs are 20 m.
 
-The actuator model comes from the vehicle USD (authored on the rotor joints); there is no actuator
+The actuator model comes from the vehicle USD (each rotor declares its motor and propeller); there is no actuator
 knob; whatever the vehicle authors is what flies.
 
 A ZERO-arg script (the flight configuration lives here), plus an optional ``--timeout`` flag

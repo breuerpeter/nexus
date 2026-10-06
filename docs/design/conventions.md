@@ -21,11 +21,30 @@ Three tiers. A vehicle or a scene **declares** a component in its Universal Scen
 when the component is a property of the machine or of the site. `Controller`, `Actuator`, `Sensor`
 and `Companion` are the vehicle's. What a scene contributes is the scene's. The `Operator` is a
 property of the run, not of either, so it stays an **argument**. The `Renderer` follows from the
-vehicle: a sensor that needs Kit starts the Kit render peer. `Clock`, `Physics`, `Recorder` and `Logger` are the
+vehicle: a sensor whose class requires the Kit render peer starts it. `Clock`, `Physics`, `Recorder` and `Logger` are the
 framework's own architecture, **fixed**: one implementation each, configured by settings rather than
 swapped, so none gets a resolver or a published Protocol. Fixed is about publishing no resolver, not
 about which directory the implementation sits in: `_src/physics/` imports `newton`, which
 `.importlinter` keeps out of `core/`, and no module imports Kit, which runs only in the Kit peer.
+
+## How a peer enters a run
+
+A peer is a process outside the loop's process. It enters a run in one of two ways, and one question
+separates them: does the peer have a counterpart on the real vehicle?
+
+- A **declared peer** stands in for a part of the vehicle, so the vehicle's USD declares it with a
+  schema. PX4 Software In The Loop (SITL) stands in for the flight controller, and
+  `NexusPx4SitlAPI` on the vehicle's root prim declares it. The run starts it, and a run's override
+  layer drops the declaration to attach to a process started elsewhere.
+- A **required peer** is part of the model that replaces a real component, so the component's class
+  requires it, and no asset names it. The real camera is the component, and the Kit render peer is how
+  its model computes an image. A camera's schema says what the camera is: its resolution and its
+  rate. The class the registry maps that schema to states `requires = ("kit",)`, and the build
+  starts the peer once for all the sensors that require it.
+
+The split is a design choice. A Kit schema on the vehicle would put a renderer into the description
+of a vehicle, and a second renderer would then need a layer on every run to drop it. With a required
+peer, another renderer is another class for the same camera schema, one registry entry.
 
 ## The vehicle model
 
@@ -55,6 +74,10 @@ four rotor **revolute** joints, because:
         - **Rotor 1**, `rotor_1`: a link on a revolute joint, positive rotation along the $z$ axis
         - **Rotor 2** and **Rotor 3**: the same
         - **Rotor 4**, `rotor_4`: a link on a revolute joint, positive rotation along the $z$ axis
+
+Each rotor link applies `NexusPropellerAPI`, which declares its propeller, and a `NewtonActuator`
+prim drives each rotor joint as its motor. A revolute joint whose link declares no propeller is no
+rotor. The [schema reference](../reference/schemas.md) lists the propeller's attributes.
 
 ## Frames
 

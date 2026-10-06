@@ -67,4 +67,9 @@ if [ "${UPLOAD:-0}" = 1 ]; then
     --content-type application/octet-stream --cache-control max-age=300
 fi
 
-echo "artifacts in $OUT: astromax_rl.rrd, train_stats.json, goto_policy_fresh/goto_policy.{json,npz}, goto_policy_fresh.rrd, benchmark.json"
+# Every check passed, so the swarm recording leaves the GitHub artifact: nothing reads a green run's
+# there. A failed step exits above and keeps it, and the harness keeps goto_policy_fresh.rrd when
+# that flight is red.
+rm -f "$OUT/astromax_rl.rrd"
+
+echo "artifacts in $OUT: train_stats.json, goto_policy_fresh/goto_policy.{json,npz}, benchmark.json"
