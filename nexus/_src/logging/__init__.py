@@ -1,4 +1,5 @@
-"""newton-logging: the one Rerun recording the whole sim logs to, as architecture.md §10 describes.
+"""The one Rerun recording the whole sim logs to, as the Architecture page's "Observability and
+recording" section describes.
 
 `Logger` owns NVIDIA Newton's ``ViewerRerun``, which is the in-process scene logging, the
 gRPC server on :9876 and the ``.rrd``, and routes the ``newton`` logger's events into

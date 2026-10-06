@@ -137,7 +137,7 @@ def assemble(
     )
 
 
-# Default scenario: mirrors the bridge config.yaml; GPS origin = Seattle.
+# Default scenario; its Global Positioning System (GPS) origin is Seattle.
 DEFAULT_SCENARIO = {
     "physics": {"enabled": True, "dt": 0.004, "force_cpu": False, "rtf": 0, "solver": "mujoco"},
     # sensors.gps.init is the scene's geodetic origin, a world property, so it stays config. The
@@ -160,7 +160,7 @@ def build_scenario() -> dict:
 def resolve_device(cfg: dict) -> str:
     """Select + activate the Warp device for this build, returning its name. ``physics.force_cpu``
     forces CPU, the bit-exact determinism authority; otherwise prefer CUDA when available so
-    the live sim runs on the GPU and the captured strategy, architecture.md §5, can engage, falling
+    the live sim runs on the GPU and the captured strategy can engage, falling
     back to CPU when there is no CUDA device. Must run *before* ``NewtonPhysics`` builds the model, as
     the model + state live on the active device. Newton's own default device is CPU, so a non-CPU
     run must set CUDA explicitly here, not rely on the Warp default.
@@ -190,7 +190,7 @@ def build_orchestrator(
     components=None,
 ) -> Orchestrator:
     """The core orchestrator: the one ``NewtonPhysics`` + the one shared assembly around the
-    caller-supplied ``controller``; a run differs only in its renderer, architecture.md §12.
+    caller-supplied ``controller``; a run differs only in its renderer.
 
     ``renderer_factory`` is the one rendering seam, from :func:`~nexus._src.rendering.rtx_renderer`:
     used after the physics build, since the render poses stage prims from the model's bodies;

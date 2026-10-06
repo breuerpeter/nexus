@@ -27,7 +27,7 @@ def main() -> None:
     parser.add_argument(
         "--stream",
         action="store_true",
-        help="publish each RTX camera's feed: NVENC → RTSP → MediaMTX → WHEP (architecture.md §11); "
+        help="publish each RTX camera's feed: NVENC → RTSP → MediaMTX → WHEP; "
         "without it, frames go to the Rerun recording only",
     )
     args = parser.parse_args()

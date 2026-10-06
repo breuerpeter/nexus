@@ -1,4 +1,4 @@
-"""PidController + the shared Proportional Integral Derivative (PID) law, the FR-7 built-in simple controller.
+"""PidController + the shared Proportional Integral Derivative (PID) law, the built-in simple controller.
 
 Covers the controller plumbing, on CPU with no Newton needed, and the load-bearing invariant that the
 Warp ``pid_law`` kernel and the NumPy ``pid_action_np`` mirror compute the same action: they

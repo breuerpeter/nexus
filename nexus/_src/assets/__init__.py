@@ -1,4 +1,4 @@
-"""newton-assets: content-addressed asset hosting/resolution, with an S3 + CloudFront backend.
+"""Content-addressed asset hosting/resolution, with an S3 + CloudFront backend.
 
 The runtime resolver is stdlib-only, with no Amazon Web Services (AWS) deps. The only thing in this
 package is fetching a ``{name, sha256}`` asset to a verified local cache. Publishing, meaning the sha,

@@ -9,8 +9,8 @@ captured once, with zero per-tick host op; a multi-waypoint mission advances bet
 ever mutates inside the captured region, so capture/determinism hold, per the capture contract.
 
 This relocates the old example ``on_tick``, waypoint advance + stop + sphere logging, into the
-operator, so the example becomes ``set_mission`` + ``run`` + an assertion, per architecture.md §10:
-component-owned logging; the example carries none.
+operator, so the example becomes ``set_mission`` + ``run`` + an assertion. Logging is
+component-owned: the example carries none.
 """
 
 from __future__ import annotations

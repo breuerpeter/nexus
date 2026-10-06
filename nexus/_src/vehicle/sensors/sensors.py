@@ -1,16 +1,15 @@
 """Sensor plugins: Inertial Measurement Unit (IMU), magnetometer, barometer and Global Positioning
-System (GPS), per architecture.md §2, all **Warp-native**.
+System (GPS), all **Warp-native**.
 
 Each sensor's math is a ``@wp.kernel`` over the live ``newton.State``'s device arrays,
 ``body_q`` / ``body_qd``, the zero-copy Warp accessors, and its noise is the Warp Random Number
 Generator (RNG), ``wp.rand``, so the sensor stages join a CUDA graph and uniform with
 the rest of the device step: no host NumPy / ``math`` in the per-tick path. The kernels replicate the
-canonical frame math from :mod:`nexus._src.transform` **verbatim**, including the bridge's known
-North East Down (NED) axis inconsistency, preserved for PX4 parity; see that module's warning.
+canonical frame math from :mod:`nexus._src.transform` **verbatim**.
 
 Each tick reads the result back once into the host :class:`Measurement` dataclass, which the PX4
 ``Controller`` serialises to MAVLink: the one host boundary, an external process, exactly the
-"captured region = device step minus the controller" split of architecture.md §5. Each sensor splits
+"captured region = device step minus the controller" split. Each sensor splits
 that into :meth:`sample_wp`, which launches the kernel into its device buffer, the "Warp Measurement
 buffer" with no readback, so it joins a CUDA graph, and :meth:`read`, the single D2H into the host
 ``Measurement`` after replay; ``sample`` = both, the eager path.
@@ -18,8 +17,8 @@ buffer" with no readback, so it joins a CUDA graph, and :meth:`read`, the single
 **Determinism, re-baselined onto the Warp RNG.** Noise comes from ``wp.rand_init(seed, step*16 + axis)``
 with a per-sensor seed, which the builder derives from the run's seed and the sensor's prim, and the
 per-tick ``step`` index: an
-independent, reproducible noise field per sensor, the same bits run to run. This intentionally
-replaces the bridge's single shared ``random.Random`` sequence, the SeedTree forward design.
+independent, reproducible noise field per sensor, the same bits run to run. Each sensor draws
+its own sequence, not one shared ``random.Random`` stream.
 """
 
 from __future__ import annotations

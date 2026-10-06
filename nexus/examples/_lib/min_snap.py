@@ -1,4 +1,4 @@
-"""MinSnapReference: a min-snap polynomial trajectory planner for the operator, Plane 5.
+"""MinSnapReference: a min-snap polynomial trajectory planner for the operator.
 
 This is the higher-fidelity sibling of the ruckig :class:`~nexus.examples._lib.reference.FlatnessReference`.
 Where ruckig chains per-axis, jerk-limited legs, so the velocity *direction* swings sharply at each

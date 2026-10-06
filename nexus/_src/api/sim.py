@@ -275,10 +275,10 @@ class Sim:
         # from sim.ports, after start(), and the run is step-driven the same way as any other.
         return self
 
-    # -- the operator, Plane 5, the run's port map, plus the controller's thin surface --
+    # -- the operator, the run's port map, plus the controller's thin surface --
     @property
     def operator(self) -> InProcessOperator:
-        """The Operator commanding this sim, Plane 5: in-process control, policy, pid, mpc or acados,
+        """The Operator commanding this sim: in-process control, policy, pid, mpc or acados,
         takes an :class:`InProcessOperator` over the controller's ``accept_setpoint``. A controller
         with no setpoint surface, an autopilot in a peer such as PX4, takes none: a script commands
         that autopilot over a link it opens itself, on the address :attr:`ports` names.

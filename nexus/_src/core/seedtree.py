@@ -3,11 +3,11 @@
 Two consumer APIs off one root seed:
 
 * :meth:`stream`: a Python ``random.Random``, the legacy host path; v1 handed every consumer the
-  *same* stream for bridge parity.
+  *same* stream.
 * :meth:`seed_for`: a deterministic per-consumer **integer** seed for the Warp RNG, ``wp.rand_init``.
   This is the "independent named sub-stream per consumer" the v1 docstring deferred: it
   intentionally gives each Warp sensor its own reproducible noise field, a seed plus a per-tick counter,
-  re-baselining determinism off the bridge's single shared sequence onto the device RNG, the
+  basing determinism on the device RNG, not one shared host sequence, the
   prerequisite for graph-safe / tape-able sensors.
 """
 
@@ -23,7 +23,7 @@ class SeedTree:
         self._root = random.Random(seed)
 
     def stream(self, name: str) -> random.Random:
-        # Legacy host path: shared stream -> the same draw order as the bridge.
+        # Legacy host path: every consumer shares one stream.
         return self._root
 
     def seed_for(self, name: str) -> int:

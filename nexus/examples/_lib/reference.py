@@ -1,4 +1,4 @@
-"""FlatnessReference: the operator's trajectory planner, Plane 5.
+"""FlatnessReference: the operator's trajectory planner.
 
 This lives in the **operator** plane, not the controller: the operator turns mission intent, waypoints,
 into a smooth, jerk-limited tracking reference and hands it to a tracking controller, the acados

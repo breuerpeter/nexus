@@ -1,4 +1,4 @@
-"""Newton framework core: schema, interfaces, capabilities, the eager
+"""The nexus core: schema, interfaces, capabilities, the eager
 orchestrator, SeedTree, Scenario loader, component registry.
 
 The transform between the world frame and the North East Down (NED) and Forward Right Down (FRD)

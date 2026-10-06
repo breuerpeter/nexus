@@ -3,8 +3,7 @@
 Cross-cutting instrumentation toggles, not run *configuration*: they never change what the sim
 computes, only what gets measured and reported, so they don't belong in ``LaunchConfig``, which the
 tested-config receipt reproduces byte-for-byte. They're process-scoped by nature, one loop, one
-profiler, and used to ride env vars: ``NEWTON_PROFILE`` / ``NEWTON_TRACE`` / ``NEWTON_BENCHMARK``.
-This module keeps that process-global scope but gives it a typed, documented surface the entry
+profiler. This module gives that process-global scope a typed, documented surface the entry
 points fill from parsed args, ``Sim.from_args`` and the examples launcher call :meth:`configure`,
 and the instrumented seams read: the orchestrator's profiler, the Kit render peer's benchmark.
 

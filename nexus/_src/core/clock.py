@@ -1,4 +1,4 @@
-"""Clock: fixed-step sim time + optional real-time scaling, per architecture.md §2."""
+"""Clock: fixed-step sim time + optional real-time scaling."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from .schema import SimTime
 class Clock:
     """Owns sim_time + step index and the rtf wall-clock throttle.
 
-    Lifted from the bridge's ``Simulator.step``: sim_time += dt before the step,
+    sim_time += dt before the step,
     then throttle to ``sim_dt / rtf`` after. When PX4's blocking lockstep paces the
     loop, ``rtf`` stays at 0, which means no throttle, and PX4 drives the cadence.
     """
@@ -25,7 +25,7 @@ class Clock:
         return self._t
 
     def advance(self) -> SimTime:
-        """Increment by dt, as the bridge did with sim_time += dt *before* the step, and return it."""
+        """Increment by dt *before* the step, and return the new time."""
         self._t = SimTime(self._t.sim_time + self.dt, self._t.step_index + 1)
         return self._t
 

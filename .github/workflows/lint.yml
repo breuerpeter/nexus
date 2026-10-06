@@ -2,7 +2,7 @@ name: lint
 
 # Static checks — ruff (lint + format), typos, the freshness of both uv locks (the pre-commit
 # hooks), and the import-linter architecture contract. Free + fast; runs on every PR with no path
-# filter (so it's a clean required merge gate — see plan §4). No GPU.
+# filter (so it's a clean required merge gate). No GPU.
 
 on:
   push:

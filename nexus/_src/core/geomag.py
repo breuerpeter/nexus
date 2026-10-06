@@ -1,4 +1,4 @@
-"""World Magnetic Model (WMM) lookup matching PX4's own coarse table, architecture.md §11.
+"""World Magnetic Model (WMM) lookup matching PX4's own coarse table.
 
 PX4's strict mag arming check, ``EKF2_MAG_CHK_STR`` and ``EKF2_MAG_CHK_INC``, compares the measured field
 against the expected field from PX4's *internal* world magnetic model: a 10°-resolution WMM2018 table

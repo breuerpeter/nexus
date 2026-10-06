@@ -8,7 +8,7 @@ can't easily handle.
 
 **The shape.** A zero-arg, self-contained script: it assembles its own orchestrator, the example-owned
 :mod:`assembly`, and hosts it via ``Sim.from_orchestrator`` + ``sim.operator``. The min-snap +
-differential-flatness planner lives with the **operator**, Plane 5: ``sim.operator.set_mission(WAYPOINTS)``
+differential-flatness planner lives with the **operator**: ``sim.operator.set_mission(WAYPOINTS)``
 plans the whole-path flat-state reference and hands it to the NMPC as a ``ReferenceTrajectory``; the
 controller just *tracks* it. The flat-state reference, position + attitude +
 body-rate + thrust feedforward, is the quadrotor differential-flatness map with a velocity-aligned,
