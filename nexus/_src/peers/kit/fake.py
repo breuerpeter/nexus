@@ -80,6 +80,11 @@ class KitFake:
         """Close the link and end the fake. Idempotent."""
         self._stopped = True
         if self._listener is not None:
+            # A close alone doesn't wake a thread blocked in accept(); the shutdown does.
+            try:
+                self._listener.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass  # not connected
             self._listener.close()
             self._listener = None
         if self._thread is not None:
