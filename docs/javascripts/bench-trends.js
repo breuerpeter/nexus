@@ -66,15 +66,15 @@ function panel(name, bound, commits, repo) {
     svg.append(el("line", { x1: PAD.left, x2: WIDTH - PAD.right, y1: gy, y2: gy, class: "bench-gate" }));
     svg.append(el("text", { x: PAD.left - 4, y: gy + 3, class: "bench-label", "text-anchor": "end" }, fmt(bound[edge])));
   }
-  let path = "";
+  // One `M … L …` run per stretch of consecutive measured commits; a missing one ends the run.
+  const runs = [];
   measured.forEach((entry, i) => {
-    if (!entry) {
-      path = path && path + " M";
-      return;
-    }
-    path += (path === "" || path.endsWith("M") ? (path ? " " : "M ") : " L ") + `${x(i)} ${y(entry.value)}`;
+    if (!entry) return runs.push([]);
+    if (!runs.length) runs.push([]);
+    runs.at(-1).push(`${x(i)} ${y(entry.value)}`);
   });
-  svg.append(el("path", { d: path.replace(/ M$/, ""), class: "bench-line" }));
+  const path = runs.filter((run) => run.length).map((run) => "M " + run.join(" L ")).join(" ");
+  svg.append(el("path", { d: path, class: "bench-line" }));
   measured.forEach((entry, i) => {
     if (!entry) return;
     const commit = commits[i];

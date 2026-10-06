@@ -387,7 +387,11 @@ def _merged_local(path: pathlib.Path, fresh: list[dict]) -> list[dict]:
     return merge_entries(prior, fresh)
 
 
-def _upload(out: pathlib.Path, metas: dict[str, dict], red: set[str]) -> None:
+def _upload(out: pathlib.Path, metas: dict[str, dict], red: set[str], fresh: list[dict]) -> None:
+    """Publish the docs recordings and the bench feed. ``fresh`` is what this run scored: the feed's
+    per-commit file takes only numbers measured at this commit, never the entries an earlier run
+    left in a reused ``--out``; split invocations at one commit join by name in the bucket.
+    """
     sha = _sha()
 
     def cp(src: pathlib.Path, key: str, ctype: str) -> None:
@@ -409,8 +413,6 @@ def _upload(out: pathlib.Path, metas: dict[str, dict], red: set[str]) -> None:
             print(f"{name}.rrd not uploaded: the flight is red, so the docs keep the published recording", flush=True)
             continue
         cp(pathlib.Path(rrd), f"public/ci/logs/{name}.rrd", "application/octet-stream")
-    bench = out / "benchmark.json"
-    fresh = json.loads(bench.read_text()) if bench.exists() else []
     if not fresh:
         print("no scored metrics, skipping bench feed upload", flush=True)
         return
@@ -517,7 +519,7 @@ def main() -> int:
         print(f"\nbaselines updated: {args.baselines}")
 
     if args.upload:
-        _upload(out, metas, red)
+        _upload(out, metas, red, entries)
 
     if failed_runs:
         print(f"\nFAILED examples: {', '.join(failed_runs)}", flush=True)
