@@ -7,8 +7,8 @@ counterpart: a differentiable-simulation sampling MPC for the obstacle-avoidance
 can't easily handle.
 
 **The shape.** A zero-arg, self-contained script: it assembles its own orchestrator, the example-owned
-:mod:`assembly`, and hosts it via ``Sim.from_orchestrator`` + ``sim.operator``. The min-snap +
-differential-flatness planner lives with the **operator**: ``sim.operator.set_mission(WAYPOINTS)``
+:mod:`assembly`, and hosts it via ``Sim.from_orchestrator`` + ``sim.guidance``. The min-snap +
+differential-flatness planner lives with the **guidance**: ``sim.guidance.set_mission(WAYPOINTS)``
 plans the whole-path flat-state reference and hands it to the NMPC as a ``ReferenceTrajectory``; the
 controller just *tracks* it. The flat-state reference, position + attitude +
 body-rate + thrust feedforward, is the quadrotor differential-flatness map with a velocity-aligned,
@@ -52,14 +52,16 @@ import numpy as np
 import nexus as na
 from nexus._src.build.launch import resolve_scenario
 from nexus._src.config import LaunchConfig
+from nexus._src.guidance import TrackingGuidance
 from nexus._src.rendering import rtx_renderer
 from nexus.examples._lib import dump_run
+from nexus.examples._lib.min_snap import MinSnapReference
 from nexus.examples.controllers.acados_nmpc.assembly import build_acados_orchestrator
 
 # Everything this demo is, in one place: zero args by design, the configuration IS the example.
 VEHICLE = "astro_max_base"
 SCENE = "empty"  # flat ground
-MAX_STEPS = 4500  # safety cap; the operator ends the run after the reference duration, ~12.6 s, + hold
+MAX_STEPS = 4500  # safety cap; the guidance ends the run after the reference duration, ~12.6 s, + hold
 
 # A curving course, not straight segments: the waypoints trace a climbing left-hand arc that hooks back
 # past the start. The horizontal velocity direction sweeps ~250° smoothly over the ~13 s flight, ≲1.1 rad/s
@@ -89,8 +91,13 @@ def main() -> None:
         rerun=True,  # the .rrd is the demo's artifact
         renderer_factory=rtx_renderer(builder, cfg),  # the Kit peer, when the vehicle authors RTX sensors
     )
-    with na.Sim.from_orchestrator(orch, final_hold_s=3.0) as sim:
-        sim.operator.set_mission(WAYPOINTS)  # the operator plans the min-snap reference; the NMPC tracks it
+    # The guidance owns the planner. MinSnapReference, the polynomial planner, is a smooth min-snap path
+    # plus a smooth yaw polynomial, so nose-first flight tracks cleanly; swap in the ruckig
+    # FlatnessReference for the jerk-limited fallback.
+    mass = float(orch.physics.model.body_mass.numpy().sum())
+    guidance = TrackingGuidance(planner=lambda waypoints: MinSnapReference(waypoints, mass=mass), final_hold_s=3.0)
+    with na.Sim.from_orchestrator(orch, guidance=guidance) as sim:
+        sim.guidance.set_mission(WAYPOINTS)  # the guidance plans the min-snap reference; the NMPC tracks it
         sim.run()
 
     states = sim.physics[sim.base_body].history()
@@ -104,7 +111,7 @@ def main() -> None:
     final = float(np.linalg.norm(traj[-1] - np.array(WAYPOINTS[-1])))
     max_tilt = float(tilt.max())
     # Nose-first: while cruising, the body +x axis should track the horizontal velocity direction, the
-    # operator's velocity-aligned yaw reference. Body +x in world (x,y) compared to the horizontal velocity,
+    # guidance's velocity-aligned yaw reference. Body +x in world (x,y) compared to the horizontal velocity,
     # over the moving steps; the check skips near-hover steps, where nothing constrains the heading.
     vel = np.array([s.velocity for s in states])  # world linear velocity
     bx = np.stack([1.0 - 2.0 * (qy * qy + qz * qz), 2.0 * (qx * qy + qw * qz)], axis=1)  # body +x, world (x, y)
@@ -134,13 +141,13 @@ def main() -> None:
     }
     # Evaluation artifacts first, before any gate can raise, since a failed run must still leave its
     # trajectory for diagnosis: flown trajectory + the planned flat-state reference, pos + attitude,
-    # time-aligned via the operator's reference anchor. The CI harness scores pose APE, trans + rot.
+    # time-aligned via the guidance's reference anchor. The CI harness scores pose APE, trans + rot.
     dump_run(
         sim,
         "acados_nmpc",
         stats=stats,
         reference=sim.controller.reference,
-        reference_t0=sim.operator.reference_started_at,
+        reference_t0=guidance.reference_started_at,
     )
     assert np.isfinite(traj).all(), "trajectory diverged"
     assert final < 0.2, f"did not reach the final waypoint (final dist {final:.3f} m)"

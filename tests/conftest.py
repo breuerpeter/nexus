@@ -303,7 +303,7 @@ class StandInController:
 def fly_recorded(tmp, vehicle: str, *, layer: str | None = None, ticks: int = FLIGHT_TICKS, kit=None, debug=False):
     """Fly ``vehicle`` on the Warp CPU backend with recording on, and return the path of its ``.rrd``.
 
-    The run flies a :class:`StandInController` under an operator that plans a two-waypoint mission,
+    The run flies a :class:`StandInController` under a guidance that plans a two-waypoint mission,
     with a ``Recorder`` attached and the Kit peer sent to its fake, or to ``kit``. ``layer`` is an
     override layer's text. The home folder is ``tmp`` for the run, so the recording lands there.
     """
@@ -311,7 +311,7 @@ def fly_recorded(tmp, vehicle: str, *, layer: str | None = None, ticks: int = FL
     from nexus._src.build.assembly import build_orchestrator
     from nexus._src.build.launch import resolve_scenario
     from nexus._src.config import LaunchConfig
-    from nexus._src.operator import InProcessOperator
+    from nexus._src.guidance import TrackingGuidance
     from nexus._src.peers.kit.fake import KitFake
     from nexus._src.rendering import rtx_renderer
 
@@ -341,9 +341,9 @@ def fly_recorded(tmp, vehicle: str, *, layer: str | None = None, ticks: int = FL
             if renderer_factory is not None:
                 renderer_factory.close()  # the loop never took the Kit peer over, so it stops here
             raise
-        operator = InProcessOperator(controller, planner=StandInReference)
-        with na.Sim.from_orchestrator(orch, operator=operator) as sim:
-            sim.operator.set_mission([(1.0, 0.0, 2.0), (2.0, 0.0, 2.0)])
+        guidance = TrackingGuidance(planner=StandInReference)
+        with na.Sim.from_orchestrator(orch, guidance=guidance) as sim:
+            sim.guidance.set_mission([(1.0, 0.0, 2.0), (2.0, 0.0, 2.0)])
             sim.run()
         return orch.logger.rrd_path
 

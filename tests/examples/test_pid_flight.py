@@ -12,6 +12,7 @@ pytest.importorskip("warp")
 import nexus as na
 from nexus._src.build.launch import resolve_scenario
 from nexus._src.config import LaunchConfig
+from nexus._src.guidance import MissionGuidance
 from nexus.examples.controllers.pid import flight
 from nexus.examples.controllers.pid.assembly import build_pid_orchestrator
 
@@ -22,7 +23,7 @@ def test_the_pid_example_flies_the_shipped_vehicle_to_its_first_waypoint():
     """The example controllers fly the re-authored vehicles as before.
 
     Given the shipped `astro_max_base`, when the example flies its tuned gains on CPU toward the first
-    waypoint of its tour, then the operator reports that waypoint reached.
+    waypoint of its tour, then the guidance reports that waypoint reached.
     """
     launch = LaunchConfig().set_vehicle(flight.VEHICLE).set_scene(flight.SCENE)
     launch.runtime.device = "cpu"
@@ -36,8 +37,9 @@ def test_the_pid_example_flies_the_shipped_vehicle_to_its_first_waypoint():
         moment_scale=flight.MOMENT_SCALE,
         max_steps=3000,
     )
-    with na.Sim.from_orchestrator(orch, reached_m=0.3, final_hold_s=0.0) as sim:
-        sim.operator.set_mission(flight.WAYPOINTS[:1])
+    guidance = MissionGuidance(reached_m=0.3, final_hold_s=0.0)
+    with na.Sim.from_orchestrator(orch, guidance=guidance) as sim:
+        sim.guidance.set_mission(flight.WAYPOINTS[:1])
         sim.run()
 
-    assert sim.operator.reached == 1
+    assert guidance.reached == 1

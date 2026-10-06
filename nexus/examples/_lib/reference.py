@@ -1,13 +1,13 @@
-"""FlatnessReference: the operator's trajectory planner.
+"""FlatnessReference: the guidance's trajectory planner.
 
-This lives in the **operator** plane, not the controller: the operator turns mission intent, waypoints,
+This lives with the **guidance**, not the controller: the guidance turns mission intent, waypoints,
 into a smooth, jerk-limited tracking reference and hands it to a tracking controller, the acados
 Nonlinear Model Predictive Control (NMPC), as a ``ReferenceTrajectory`` setpoint. ruckig plans a
 C²-continuous position trajectory through the waypoints, as chained legs, and differential flatness lifts it to the full quad state, attitude and body rate, + the
 collective-thrust feedforward the NMPC tracks. The planner sits apart from the Model Predictive
-Control (MPC), on the operator side of the seam.
+Control (MPC), on the guidance side of the seam.
 
-Pure host Python, ruckig + numpy; no casadi or acados, so the operator stays solver-agnostic.
+Pure host Python, ruckig + numpy; no casadi or acados, so the guidance stays solver-agnostic.
 """
 
 from __future__ import annotations
@@ -53,7 +53,7 @@ def _quat_from_z_yaw(z_body: np.ndarray, yaw: float) -> np.ndarray:
 class FlatnessReference:
     """The ruckig reference: ruckig plans a jerk-limited position trajectory through the waypoints,
     chained C2-continuous legs, and differential flatness lifts it to a full state reference, attitude and
-    body rate, plus the collective-thrust feedforward the NMPC tracks. Built by the **operator** and fed
+    body rate, plus the collective-thrust feedforward the NMPC tracks. Built by the **guidance** and fed
     to the controller via ``accept_setpoint(ReferenceTrajectory(reference=ref))``.
     """
 
@@ -104,7 +104,7 @@ class FlatnessReference:
 
     @property
     def duration(self) -> float:
-        """Total trajectory duration [s]; builds the plan on first access. The operator uses it to end
+        """Total trajectory duration [s]; builds the plan on first access. The guidance uses it to end
         the run after the trajectory completes, + a settle hold.
         """
         if self._segments is None:

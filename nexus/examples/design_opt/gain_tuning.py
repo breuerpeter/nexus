@@ -388,6 +388,7 @@ def main():
         # the tuning ran on: the example-owned PID assembly with solver=semi_implicit.
         from nexus._src.build.launch import resolve_scenario
         from nexus._src.config import LaunchConfig
+        from nexus._src.guidance import MissionGuidance
         from nexus._src.rendering import rtx_renderer
         from nexus.examples.controllers.pid.assembly import build_pid_orchestrator
 
@@ -404,8 +405,9 @@ def main():
             rerun=True,
             renderer_factory=rtx_renderer(vb2, cfg),  # the Kit peer, when the vehicle authors RTX sensors
         )
-        with na.Sim.from_orchestrator(orch, reached_m=0.15, final_hold_s=3.0) as sim:
-            sim.operator.set_mission([GOAL])
+        guidance = MissionGuidance(reached_m=0.15, final_hold_s=3.0)
+        with na.Sim.from_orchestrator(orch, guidance=guidance) as sim:
+            sim.guidance.set_mission([GOAL])
             sim.run()
             q = np.array([s.position for s in sim.physics[sim.base_body].history()])
             rrd = sim.artifacts().get("rrd")
@@ -430,7 +432,7 @@ def main():
         "opt_final_m": round(float(_opt_final), 4),
         "base_final_m": round(float(base_final), 4),
     }
-    dump_run(opt_sim, "gain_tuning", stats=stats, waypoints=[GOAL], arrival_times=opt_sim.operator.arrival_times)
+    dump_run(opt_sim, "gain_tuning", stats=stats, waypoints=[GOAL], arrival_times=opt_sim.guidance.arrival_times)
     # The win is HOLDING the waypoint: the tuned controller reaches and stays, hold-error small with no
     # flying through, where the mistuned baseline never gets there.
     assert opt_reached and opt_hold < 0.3, f"tuned controller flew through / didn't hold (hold-error {opt_hold:.3f} m)"

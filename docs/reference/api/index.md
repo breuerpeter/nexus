@@ -14,7 +14,7 @@ of the public surface. Import from `nexus`, never from `nexus._src`.
 -   **[Simulation](simulation.md)**: `Sim` and `SimState`, the top-level entry point for building and running a simulation.
 -   **[Core types](core.md)**: `Orchestrator`, `Controls`, `Measurement`, and `SimTime`, the runtime-agnostic state, control, and observation surfaces.
 -   **[Configuration](configuration.md)**: `LaunchConfig` for the launch configuration and `Registry` for the vehicle and scene catalog.
--   **[Operator](operator.md)**: `Operator`, `InProcessOperator`, and `wait_until`, the operator plane, reached via `sim.operator`.
+-   **[Guidance](guidance.md)**: `MissionGuidance` and `TrackingGuidance`, the in-loop seam that turns a mission into a controller's setpoint, reached via `sim.guidance`.
 -   **[PX4](px4.md)**: `OffboardClient`, the client a script opens on PX4's offboard link, and the mission plan types, imported from `nexus.px4`.
 -   **[Logging](logging.md)**: `log_event`, structured event logging into the Rerun recording.
 

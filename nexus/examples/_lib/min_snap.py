@@ -1,4 +1,4 @@
-"""MinSnapReference: a min-snap polynomial trajectory planner for the operator.
+"""MinSnapReference: a min-snap polynomial trajectory planner for the guidance.
 
 This is the higher-fidelity sibling of the ruckig :class:`~nexus.examples._lib.reference.FlatnessReference`.
 Where ruckig chains per-axis, jerk-limited legs, so the velocity *direction* swings sharply at each
@@ -10,8 +10,8 @@ both bounded by construction, so the Nonlinear Model Predictive Control (NMPC) t
 the path without a spiky rate reference fighting position tracking.
 
 Same public interface as ``FlatnessReference``: ``set_start``, ``duration``, ``reference_path``, and
-``flat_state_at``, so the operator + the acados NMPC use either planner interchangeably. Pure host
-numpy, with no ruckig, casadi or acados; the operator stays solver-agnostic.
+``flat_state_at``, so the guidance + the acados NMPC use either planner interchangeably. Pure host
+numpy, with no ruckig, casadi or acados; the guidance stays solver-agnostic.
 """
 
 from __future__ import annotations
@@ -93,8 +93,8 @@ class _Polynomial:
 class MinSnapReference:
     """The polynomial reference: a per-axis min-snap position polynomial through the waypoints
     + a smooth, nose-first, min-jerk yaw polynomial, lifted to the full flat quad state via differential
-    flatness. The operator builds it and feeds it to the NMPC via ``accept_setpoint``, wrapped in a
-    ``ReferenceTrajectory``.
+    flatness. The guidance builds it and writes it to the tick, wrapped in a ``ReferenceTrajectory``,
+    and the loop hands it to the NMPC's ``accept_setpoint``.
     """
 
     def __init__(

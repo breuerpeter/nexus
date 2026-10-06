@@ -1,11 +1,8 @@
-"""The Operator plane, Plane 5: *who commands the vehicle*. A peer to controllers/, who *flies*
-it. The ``Operator`` protocol is synchronous/transport-agnostic; ``InProcessOperator`` commands an
-in-process autopilot through ``controller.accept_setpoint``. A script's own client commands PX4
-over its offboard link, and that client lives in the PX4 peer's folder, ``peers/px4_sitl/``. This
-replaces the old ``_src/pilots/``.
+"""The wall-clock wait a script uses on a link's telemetry, ``wait_until``. No operator type lives
+here. A controller that takes setpoints flies its guidance, :mod:`nexus._src.guidance`, in the loop.
+A script commands PX4 with its own client, which lives in the PX4 peer's folder, ``peers/px4_sitl/``.
 """
 
-from .in_process import InProcessOperator
-from .operator import BaseOperator, Operator, wait_until
+from .operator import wait_until
 
-__all__ = ["BaseOperator", "InProcessOperator", "Operator", "wait_until"]
+__all__ = ["wait_until"]

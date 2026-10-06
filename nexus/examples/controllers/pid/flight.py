@@ -8,7 +8,7 @@ the bit-exact Newton CPU physics, the bit-reproducible CI gate real PX4 can't gi
 ``design_opt/gain_tuning.py`` tunes, and this flight deploys that example's proven configuration,
 the collapsed single-body plant + stable gains. This flight is the smallest end-to-end demo of
 the in-process shape: assemble the orchestrator, the example-owned :mod:`assembly`, host it via
-``Sim.from_orchestrator``, command it through ``sim.operator``.
+``Sim.from_orchestrator``, fly its mission through ``sim.guidance``.
 
 **The shape.** A zero-arg, self-contained script. On CUDA the whole tick captures into one CUDA
 graph, controller + actuator + physics + sensors, the captured-inprocess strategy; on CPU it runs
@@ -24,6 +24,7 @@ import numpy as np
 import nexus as na
 from nexus._src.build.launch import resolve_scenario
 from nexus._src.config import LaunchConfig
+from nexus._src.guidance import MissionGuidance
 from nexus._src.rendering import rtx_renderer
 from nexus.examples._lib import dump_run
 from nexus.examples.controllers.pid.assembly import build_pid_orchestrator
@@ -31,7 +32,7 @@ from nexus.examples.controllers.pid.assembly import build_pid_orchestrator
 # Everything this demo is, in one place: zero args by design, the configuration IS the example.
 VEHICLE = "astro_max_base"
 SCENE = "empty"  # flat ground
-MAX_STEPS = 8000  # safety cap; the operator ends the run on mission completion
+MAX_STEPS = 8000  # safety cap; the guidance ends the run on mission completion
 # The proven single-body PID configuration: the collapsed semi_implicit plant + the gains
 # design_opt/gain_tuning.py's optimizer converges to; its deploy gate verifies they reach a far
 # waypoint and hold it, while the stable-but-undamped hand gains ring around a goal instead of settling.
@@ -39,7 +40,7 @@ GAINS = [0.483, 0.464, 0.062, 0.099, 9.961, 3.103, 1.521]
 MOMENT_SCALE = 0.12
 # A square tour at altitude, from the free-flight start point at (0, 0, 2): four corners, back to start.
 # Leg length ~3-4 m, the goal scale the gain tuning targets; short hops excite under-damped ringing
-# when the operator switches goals at arrival speed.
+# when the guidance switches goals at arrival speed.
 WAYPOINTS = [(3.0, 0.0, 2.0), (3.0, 3.0, 2.5), (0.0, 3.0, 2.0), (0.0, 0.0, 2.0)]
 
 
@@ -58,13 +59,14 @@ def main() -> None:
         rerun=True,  # the .rrd is the demo's artifact
         renderer_factory=rtx_renderer(builder, cfg),  # the Kit peer, when the vehicle authors RTX sensors
     )
-    with na.Sim.from_orchestrator(orch, reached_m=0.3, final_hold_s=2.0) as sim:
-        sim.operator.set_mission(WAYPOINTS)  # the operator sequences these, advances on arrival, owns the stop
+    guidance = MissionGuidance(reached_m=0.3, final_hold_s=2.0)
+    with na.Sim.from_orchestrator(orch, guidance=guidance) as sim:
+        sim.guidance.set_mission(WAYPOINTS)  # the guidance sequences these, advances on arrival, ends the run
         sim.run()
 
     states = sim.physics[sim.base_body].history()
     q = np.array([s.position for s in states])
-    reached = sim.operator.reached
+    reached = guidance.reached
     final = float(np.linalg.norm(q[-1] - np.array(WAYPOINTS[-1])))
     stats = {
         "reached": reached,
@@ -74,7 +76,7 @@ def main() -> None:
         f"pid flight: {len(q)} steps, reached {reached}/{len(WAYPOINTS)} waypoints, final dist {final:.3f} m"
     )
     # Evaluation artifacts first: a failed run must still leave its trajectory for diagnosis.
-    dump_run(sim, "pid", stats=stats, waypoints=WAYPOINTS, arrival_times=sim.operator.arrival_times)
+    dump_run(sim, "pid", stats=stats, waypoints=WAYPOINTS, arrival_times=guidance.arrival_times)
     assert np.isfinite(q).all(), "trajectory diverged"
     assert reached == len(WAYPOINTS), f"did not reach all waypoints (got {reached}/{len(WAYPOINTS)})"
     assert final < 0.35, f"did not settle on the final waypoint (final dist {final:.3f} m)"

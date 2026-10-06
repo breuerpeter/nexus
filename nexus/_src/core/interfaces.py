@@ -29,6 +29,11 @@ class Tick:
     graph reads the same buffer every replay. ``dt`` is one physics step, the control timestep over
     ``physics_substeps``. ``sensors`` are the sensors with device stages, whose ``read`` fills ``meas``
     at a controller's ``read`` host stage. ``timeout`` bounds a host stage's wait on its peer.
+
+    ``setpoint`` and ``done`` are a guidance's two outputs. Its stage sets ``setpoint`` on the tick
+    its setpoint changes, and the loop hands it to the controller's ``accept_setpoint`` and clears it,
+    before the controller's stages run. A stage sets ``done`` to end the run, a guidance's when its
+    mission is over: the loop completes the tick and takes no further one.
     """
 
     state: Any
@@ -38,6 +43,8 @@ class Tick:
     controls: Any = None
     sensors: list = field(default_factory=list)
     timeout: float | None = None
+    setpoint: Setpoint | None = None
+    done: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,7 +54,8 @@ class Stage:
     ``run(tick)`` does the work; a host stage returns ``False`` when it produced nothing because its
     peer didn't answer, which the preroll retries and the steady loop ends the run on. A ``warm``
     sensor or controller stage runs in the seed pass over the settled state, before any capture, so
-    every device buffer it allocates exists first.
+    every device buffer it allocates exists first. A ``warm`` guidance stage runs in that pass too,
+    so the controller holds the guidance's first setpoint before its own first stage.
     """
 
     name: str
@@ -150,9 +158,10 @@ class Controller(Protocol):
     def accept_setpoint(self, sp: Setpoint) -> None:
         """Write the controller's own setpoint buffer **in place** from a ``Setpoint``.
 
-        The thin control surface: the operator commands an
-        autopilot by flipping its persistent setpoint buffer, a §6 value-mutation with a static address
-        and zero re-capture on the next replay, then the in-loop ``exchange`` reads it. Each controller
+        The thin control surface: the loop hands a controller the setpoint its guidance wrote to the
+        tick, and a script without a guidance calls it itself. The call flips the controller's
+        persistent setpoint buffer, a §6 value-mutation with a static address and zero re-capture on
+        the next replay, then the controller's stages read it. Each controller
         narrows the ``Setpoint`` union to the variant it supports, PositionGoal for policy/pid,
         Waypoints for sampling Model Predictive Control (MPC), ReferenceTrajectory for acados, and raises
         on the rest.
