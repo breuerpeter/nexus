@@ -1,7 +1,7 @@
 """A vehicle declares each RTX sensor with one applied schema on its prim, and the Kit peer is a required peer.
 
-Real builds on the Warp CPU backend of the fixture vehicle in ``tests/usd/sensor_vehicle.py``, a layer
-over the hosted ``astro_max_base``, with the peer mapping sending the Kit peer to its fake. The docker
+Real builds on the Warp CPU backend of the local fixture vehicle in ``tests/usd/sensor_vehicle.py``,
+with the peer mapping sending the Kit peer to its fake. The docker
 daemon is the system boundary, and the stand-in daemon keeps any container a run would start from
 reaching a real one. Skipped without newton or pxr.
 """
@@ -15,8 +15,6 @@ pytest.importorskip("pxr")
 
 from pxr import Usd
 
-import nexus_sim._src.build.launch as launch_mod
-from nexus_sim._src.config import LaunchConfig
 from nexus_sim._src.core.registry import default_registry
 from nexus_sim._src.peers.kit.fake import KitFake
 from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
@@ -152,20 +150,26 @@ def test_a_vehicle_with_rtx_sensors_starts_the_kit_peer_once_and_stops_it_with_t
     assert [peer.alive() for peer in started] == [False]
 
 
-def test_a_vehicle_with_no_rtx_sensor_schema_starts_no_kit_peer(monkeypatch):
+def test_a_vehicle_with_no_rtx_sensor_schema_starts_no_kit_peer(tmp_path):
     """A vehicle with no RTX sensor schema starts no Kit peer.
 
-    Given the shipped `astro_max_base`, which declares analytic sensors only, when built with the PX4
+    Given a fixture that declares analytic sensors only, an Inertial Measurement Unit (IMU), a
+    magnetometer, a barometer and a Global Positioning System (GPS) receiver, when built with the PX4
     peer and the Kit peer each sent to its fake, then the Kit peer never starts.
     """
-    # The network is a boundary: a PX4 fetch this run must not make fails at once on an unreachable proxy.
-    for var in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"):
-        monkeypatch.setenv(var, "http://127.0.0.1:9")
+    analytic = "".join(
+        sv.prim(name, schema)
+        for name, schema in (
+            ("Imu", "NexusImuAPI"),
+            ("Mag", "NexusMagAPI"),
+            ("Baro", "NexusBaroAPI"),
+            ("Gps", "NexusGpsAPI"),
+        )
+    )
     kit, started = _kit()
-    launch = LaunchConfig.from_dict({"vehicle": "astro_max_base", "scene": "empty", "runtime": {"device": "cpu"}})
 
-    loop = launch_mod.build_from_launch(launch, preroll_timeout=10.0, peers={"px4_sitl": Px4Fake, "kit": kit})
-    loop.close()
+    path = sv.vehicle(tmp_path, analytic, px4=True)
+    sv.build(path, components=default_registry(), peers={"px4_sitl": Px4Fake, "kit": kit}).close()
 
     assert started == []
 

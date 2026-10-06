@@ -14,6 +14,7 @@ pytest.importorskip("rerun")
 pytest.importorskip("newton")
 
 from tests.conftest import fly_recorded
+from tests.usd import sensor_vehicle as sv
 
 # Rerun's kind number for the EntityPath column of a log view.
 ENTITY_PATH_COLUMN = 1
@@ -91,17 +92,17 @@ def test_the_vehicle_bodys_pose_sits_at_sim_vehicle_body(recorded_flight, rrd_ro
 def test_a_debug_run_writes_one_frame_per_body_at_sim_vehicle_body_label(tmp_path, rrd_rows):
     """A debug run writes one frame per body at `sim/vehicle/body/<label>`.
 
-    Given a debug recorded run of `astro_max_base`, whose bodies are `body_frd` and four rotors, when
+    Given a debug recorded run of the local fixture vehicle, whose bodies are `body` and four rotors, when
     it ends, then the `.rrd` holds a frame at `/sim/vehicle/body/<label>` for each body and no entity
     at a Universal Scene Description (USD) prim path.
     """
-    rows = rrd_rows(fly_recorded(tmp_path, "astro_max_base", ticks=20, debug=True))
+    rows = rrd_rows(fly_recorded(tmp_path, sv.vehicle(tmp_path), scene=sv.SCENE, ticks=20, debug=True))
     frames = sorted({entity for entity, _, columns in rows if "TransformAxes3D:axis_length" in columns})
-    at_prim_paths = sorted({entity for entity, _, _ in rows if entity.startswith("/astro_max")})
+    at_prim_paths = sorted({entity for entity, _, _ in rows if entity.startswith(sv.ROOT)})
 
     assert (frames, at_prim_paths) == (
         [
-            "/sim/vehicle/body/body_frd",
+            "/sim/vehicle/body/body",
             "/sim/vehicle/body/rotor_1",
             "/sim/vehicle/body/rotor_2",
             "/sim/vehicle/body/rotor_3",

@@ -15,6 +15,7 @@ import pytest
 
 from nexus_sim._src.config import LaunchConfig, Registry
 from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
+from tests.usd import sensor_vehicle as sv
 
 
 @pytest.fixture(autouse=True)
@@ -336,17 +337,16 @@ class _Handed(Px4Fake):
         self.airframe = airframe
 
 
-def _shipped_referenced(tmp_path, metadata: str = "", contents: str = "") -> str:
-    """A local fixture vehicle whose root prim `/vehicle` references the shipped `astro_max_base`, which
-    flies airframe `astro_max`, with `metadata` and `contents` of the root prim's own.
+def _referenced(tmp_path, metadata: str = "", contents: str = "") -> str:
+    """A local vehicle whose root prim `/vehicle` references the local fixture vehicle of
+    ``tests/usd/sensor_vehicle.py``, which flies airframe `astro_max`, and declares the PX4 SITL peer,
+    with `metadata` and `contents` of the root prim's own.
     """
-    from nexus_sim._src.config import resolve
-
-    shipped = resolve(LaunchConfig.from_dict({"vehicle": "astro_max_base", "scene": "empty"})).vehicle_usd_path
-    path = tmp_path / "fixture_vehicle.usda"
+    path = tmp_path / "referencing_vehicle.usda"
     path.write_text(
         f'#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n\n'
-        f'def Xform "vehicle" (\n    references = @{shipped}@\n{metadata})\n{{\n{contents}}}\n'
+        f'def Xform "vehicle" (\n    references = @{sv.BASE}@\n'
+        f'    prepend apiSchemas = ["NexusPx4SitlAPI"]\n{metadata})\n{{\n{contents}}}\n'
     )
     return str(path)
 
@@ -358,7 +358,7 @@ def _handed_airframe(tmp_path, vehicle: str, layer: Path) -> list[str]:
     import nexus_sim._src.build.launch as L
 
     launch = LaunchConfig.from_dict(
-        {"vehicle": vehicle, "scene": "empty", "layer": str(layer), "runtime": {"device": "cpu"}}
+        {"vehicle": vehicle, "scene": sv.SCENE, "layer": str(layer), "runtime": {"device": "cpu"}}
     )
     loop = L.build_from_launch(launch, preroll_timeout=10.0, peers={"px4_sitl": _Handed})
     handed = [peer.airframe for peer in loop.peers]
@@ -366,27 +366,25 @@ def _handed_airframe(tmp_path, vehicle: str, layer: Path) -> list[str]:
     return handed
 
 
-def test_a_layer_that_changes_a_declared_value_changes_what_the_run_builds(tmp_path, monkeypatch, warp_cpu):
+def test_a_layer_that_changes_a_declared_value_changes_what_the_run_builds(tmp_path, warp_cpu):
     """A layer that changes a declared value changes what the run builds.
 
-    Given a fixture vehicle that references `astro_max_base`, whose PX4 schema declares airframe
+    Given a vehicle that references the local fixture vehicle, whose PX4 schema declares airframe
     `astro_max`, and a layer that sets `nexus:airframe` to `bar` on its root prim, when the run builds
     with the PX4 SITL peer sent to a fake, then the build hands the fake airframe `bar`.
     """
-    monkeypatch.delenv("NEXUS_ASSET_CACHE", raising=False)  # the shipped vehicle comes from the checkout's own cache
     layer = _layer(tmp_path, 'over "vehicle"\n{\n    string nexus:airframe = "bar"\n}\n')
 
-    assert _handed_airframe(tmp_path, _shipped_referenced(tmp_path), layer) == ["bar"]
+    assert _handed_airframe(tmp_path, _referenced(tmp_path), layer) == ["bar"]
 
 
-def test_a_layer_that_selects_a_variant_builds_that_variant(tmp_path, monkeypatch, warp_cpu):
+def test_a_layer_that_selects_a_variant_builds_that_variant(tmp_path, warp_cpu):
     """A layer that selects a variant builds that variant.
 
-    Given a fixture vehicle that references `astro_max_base` and adds an `airframe` variant set whose
+    Given a vehicle that references the local fixture vehicle and adds an `airframe` variant set whose
     selection is `a`, and a layer that selects its second variant, `b`, when the run builds with the
     PX4 SITL peer sent to a fake, then the build hands the fake variant `b`'s airframe, `b`.
     """
-    monkeypatch.delenv("NEXUS_ASSET_CACHE", raising=False)  # the shipped vehicle comes from the checkout's own cache
     metadata = '    variants = {\n        string airframe = "a"\n    }\n    prepend variantSets = "airframe"\n'
     contents = (
         '    variantSet "airframe" = {\n        "a" {\n            string nexus:airframe = "a"\n        }\n'
@@ -394,28 +392,37 @@ def test_a_layer_that_selects_a_variant_builds_that_variant(tmp_path, monkeypatc
     )
     layer = _layer(tmp_path, 'over "vehicle" (\n    variants = {\n        string airframe = "b"\n    }\n)\n{\n}\n')
 
-    assert _handed_airframe(tmp_path, _shipped_referenced(tmp_path, metadata, contents), layer) == ["b"]
+    assert _handed_airframe(tmp_path, _referenced(tmp_path, metadata, contents), layer) == ["b"]
 
 
-def test_a_layer_that_deactivates_a_declaration_builds_nothing_for_it(tmp_path, monkeypatch, warp_cpu):
+def test_a_layer_that_deactivates_a_declaration_builds_nothing_for_it(tmp_path, warp_cpu):
     """A layer that deactivates a declaration builds nothing for it.
 
-    Given `astro_max_base`, which declares an Inertial Measurement Unit (IMU), a magnetometer, a barometer and a Global
-    Positioning System (GPS) receiver, and a layer that deactivates the magnetometer's prim, when the
-    run builds with the PX4 SITL peer sent to its fake, then it builds the IMU, the barometer and the
-    GPS receiver, and no magnetometer.
+    Given the local fixture vehicle with an Inertial Measurement Unit (IMU), a magnetometer, a barometer
+    and a Global Positioning System (GPS) receiver, and a layer that deactivates the magnetometer's
+    prim, when the run builds with the PX4 SITL peer sent to its fake, then it builds the IMU, the
+    barometer and the GPS receiver, and no magnetometer.
     """
     import nexus_sim._src.build.launch as L
 
-    monkeypatch.delenv("NEXUS_ASSET_CACHE", raising=False)  # the shipped vehicle comes from the checkout's own cache
+    sensors = "".join(
+        sv.prim(name, schema)
+        for name, schema in (
+            ("Imu", "NexusImuAPI"),
+            ("Mag", "NexusMagAPI"),
+            ("Baro", "NexusBaroAPI"),
+            ("Gps", "NexusGpsAPI"),
+        )
+    )
+    vehicle = sv.vehicle(tmp_path, sensors, px4=True)
     layer = _layer(
         tmp_path,
-        'over "astro_max"\n{\n    over "Geometry"\n    {\n        over "body_frd"\n        {\n'
-        '            over "Mag" (\n                active = false\n            )\n            {\n            }\n'
-        "        }\n    }\n}\n",
+        'over "vehicle"\n{\n    over "body"\n    {\n'
+        '        over "Mag" (\n            active = false\n        )\n        {\n        }\n'
+        "    }\n}\n",
     )
     launch = LaunchConfig.from_dict(
-        {"vehicle": "astro_max_base", "scene": "empty", "layer": str(layer), "runtime": {"device": "cpu"}}
+        {"vehicle": vehicle, "scene": sv.SCENE, "layer": str(layer), "runtime": {"device": "cpu"}}
     )
 
     loop = L.build_from_launch(launch, preroll_timeout=10.0, peers={"px4_sitl": Px4Fake})
@@ -483,27 +490,27 @@ def test_a_run_with_no_layer_builds_and_records_as_today(tmp_path, monkeypatch, 
     )
 
 
-def _shipped_px4_run(monkeypatch, tmp_path, device: str):
-    """Build `astro_max_base` in `empty` on the PX4 fake, and return the loop and the receipt it carries,
-    the one the build handed it, as JSON.
+def _px4_run(tmp_path, device: str):
+    """Build the local fixture vehicle, which declares PX4 and its SITL peer, in the fixture scene on the PX4 fake,
+    and return the loop and the receipt it carries, the one the build handed it, as JSON.
     """
     import nexus_sim._src.build.launch as L
 
-    monkeypatch.delenv("NEXUS_ASSET_CACHE", raising=False)  # the shipped vehicle comes from the checkout's own cache
-    monkeypatch.chdir(tmp_path)  # no project catalog: only the bundled one
-    launch = LaunchConfig.from_dict({"vehicle": "astro_max_base", "scene": "empty", "runtime": {"device": device}})
+    launch = LaunchConfig.from_dict(
+        {"vehicle": sv.vehicle(tmp_path, px4=True), "scene": sv.SCENE, "runtime": {"device": device}}
+    )
     loop = L.build_from_launch(launch, preroll_timeout=10.0, peers={"px4_sitl": Px4Fake})
     return loop, loop.settings
 
 
-def test_a_px4_runs_receipt_carries_no_substeps_determinism_or_sensors(tmp_path, monkeypatch, warp_cpu):
+def test_a_px4_runs_receipt_carries_no_substeps_determinism_or_sensors(tmp_path, warp_cpu):
     """A PX4 run's receipt carries no `substeps`, no `determinism` and no `sensors`.
 
-    Given a launch of `astro_max_base` in `empty` on the PX4 fake, when the run builds and a caller reads
+    Given a launch of the fixture vehicle in the fixture scene on the PX4 fake, when the run builds and a caller reads
     its receipt as JSON, then `runtime` holds exactly `device`, `seed`, `dt`, `max_steps`, `rtf` and
     `solver`, and the receipt has no `sensors` key.
     """
-    loop, receipt = _shipped_px4_run(monkeypatch, tmp_path, "cpu")
+    loop, receipt = _px4_run(tmp_path, "cpu")
     loop.close()
 
     assert (sorted(receipt["runtime"]), "sensors" in receipt) == (
@@ -512,7 +519,7 @@ def test_a_px4_runs_receipt_carries_no_substeps_determinism_or_sensors(tmp_path,
     )
 
 
-def test_the_receipt_of_a_run_on_auto_records_the_device_the_run_picked(tmp_path, monkeypatch, warp_cpu):
+def test_the_receipt_of_a_run_on_auto_records_the_device_the_run_picked(tmp_path, warp_cpu):
     """The receipt of a run on `auto` records the device the run picked, never `auto`.
 
     Given a launch on `runtime.device: auto` on the PX4 fake, when the run builds, then its receipt's
@@ -521,7 +528,7 @@ def test_the_receipt_of_a_run_on_auto_records_the_device_the_run_picked(tmp_path
     """
     import warp as wp
 
-    loop, receipt = _shipped_px4_run(monkeypatch, tmp_path, "auto")
+    loop, receipt = _px4_run(tmp_path, "auto")
     ran_on = "cuda" if loop.physics.model.device.is_cuda else "cpu"
     loop.close()
 
@@ -529,27 +536,27 @@ def test_the_receipt_of_a_run_on_auto_records_the_device_the_run_picked(tmp_path
     assert (receipt["runtime"]["device"], ran_on) == (box, box)
 
 
-def test_a_run_on_an_explicit_cpu_runs_on_the_cpu_and_records_cpu(tmp_path, monkeypatch, warp_cpu):
+def test_a_run_on_an_explicit_cpu_runs_on_the_cpu_and_records_cpu(tmp_path, warp_cpu):
     """A run on an explicit `cpu` still runs on the CPU and records `cpu`.
 
     Given a launch on `runtime.device: cpu` on the PX4 fake, on a box with or without CUDA, when the run
     builds, then the loop's Warp device is `cpu` and the receipt's `runtime.device` is `cpu`.
     """
-    loop, receipt = _shipped_px4_run(monkeypatch, tmp_path, "cpu")
+    loop, receipt = _px4_run(tmp_path, "cpu")
     ran_on = str(loop.physics.model.device)
     loop.close()
 
     assert (ran_on, receipt["runtime"]["device"]) == ("cpu", "cpu")
 
 
-def test_a_px4_run_steps_the_physics_once_per_control_tick(tmp_path, monkeypatch, warp_cpu, caplog):
+def test_a_px4_run_steps_the_physics_once_per_control_tick(tmp_path, warp_cpu, caplog):
     """A PX4 run still steps the physics once per control tick.
 
-    Given a launch of `astro_max_base` in `empty` on the PX4 fake, when the run builds and ticks five
+    Given a launch of the fixture vehicle in the fixture scene on the PX4 fake, when the run builds and ticks five
     times, then every tick runs, and the stage plan the run logs at its first tick, the ring every tick
     runs, names the physics `step` stage once, so the five ticks step the physics five times.
     """
-    loop, _ = _shipped_px4_run(monkeypatch, tmp_path, "cpu")
+    loop, _ = _px4_run(tmp_path, "cpu")
     with caplog.at_level(logging.INFO, logger="nexus"):
         ticked = [loop.step() for _ in range(5)]
     loop.close()

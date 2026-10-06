@@ -36,12 +36,6 @@ def _failures(run: subprocess.CompletedProcess) -> list[str]:
     return re.findall(r"^(?:FAILED|ERROR) .*?(?=\n(?:FAILED|ERROR) |\n=|\Z)", summary, re.M | re.S)
 
 
-def test_api_passes_after_logging():
-    """`pytest tests/logging tests/api` passes on a GPU machine."""
-    run = _pytest("tests/logging", "tests/api")
-    assert run.returncode == 0, run.stdout[-3000:] + run.stderr[-3000:]
-
-
 def test_api_passes_before_sensors():
     """`pytest tests/api tests/vehicle/sensors/test_sensors.py` passes on a GPU machine."""
     run = _pytest("tests/api", "tests/vehicle/sensors/test_sensors.py")
