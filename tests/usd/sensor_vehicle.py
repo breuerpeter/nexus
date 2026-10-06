@@ -75,14 +75,16 @@ def prim(name: str, schema: str | None, attrs: str = "", *, kind: str = "Xform",
     return f'def {kind} "{name}"{metadata}\n{{\n{body}}}\n'
 
 
-def vehicle(tmp_path: Path, body: str = "", *, mast: str | None = None) -> str:
+def vehicle(tmp_path: Path, body: str = "", *, mast: str | None = None, px4: bool = False) -> str:
     """Write the fixture vehicle under `tmp_path` and return its path.
 
     `body` is the text of the prims under the base body. `mast`, when given, adds the second body and
-    is the text of the prims under it.
+    is the text of the prims under it. `px4` keeps the PX4 SITL peer declared, for a run that maps it to
+    its fake.
     """
     shipped = resolve(LaunchConfig.from_dict({"vehicle": "astro_max_base", "scene": "empty"})).vehicle_usd_path
     geometry = "" if mast is None else _MAST.replace("__MAST_PRIMS__", mast)
+    peer = "" if px4 else ' (\n    delete apiSchemas = ["NexusPx4SitlAPI"]\n)'
     joint = "" if mast is None else _MAST_JOINT
     path = tmp_path / "sensor_vehicle.usda"
     path.write_text(
@@ -96,9 +98,7 @@ def vehicle(tmp_path: Path, body: str = "", *, mast: str | None = None) -> str:
     ]
 )
 
-over "astro_max" (
-    delete apiSchemas = ["NexusPx4SitlAPI"]
-)
+over "astro_max"{peer}
 {{
     over "Geometry"
     {{

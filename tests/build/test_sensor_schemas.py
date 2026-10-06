@@ -18,7 +18,9 @@ pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
 from nexus._src.config.registry import load_registry
+from nexus._src.core.registry import default_registry
 from nexus._src.core.schema import Measurement
+from nexus._src.peers.px4_sitl.fake import Px4Fake
 from tests.usd import sensor_vehicle as sv
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")
@@ -217,29 +219,33 @@ def test_an_imu_prim_whose_transform_scales_fails_the_build_and_names_the_prim(t
     assert f"{sv.BODY}/Imu0" in str(err.value)
 
 
-def test_the_ground_truth_attitude_and_rates_are_the_base_bodys_whatever_the_imus_mount_and_body(tmp_path):
-    """The ground-truth attitude and rates in `Measurement` are the base body's, whatever the Inertial Measurement Unit's (IMU) mount and body.
+def test_the_ground_truth_px4_receives_is_the_base_bodys_whatever_the_imus_mount_and_body(tmp_path):
+    """The ground truth PX4 receives is the base body's attitude and rates in PX4's frames, whatever the Inertial Measurement Unit's (IMU) mount and body.
 
-    Given the fixture with the IMU's prim turned 90 degrees about z under the second body, rolled 180
-    degrees against the base, and a gyro noise of 0.5 rad/s, when the run steps 20 ticks at rest, then
-    `quat_wxyz` is the base body's attitude, a half turn about its forward axis, and `rollspeed`,
-    `pitchspeed` and `yawspeed` stay under 1e-3 rad/s, the rates of a body at rest.
+    Given the fixture vehicle level and nose north, the IMU's prim turned 90 degrees about z under the
+    second body with a gyro noise of 0.5 rad/s, a Global Positioning System (GPS) receiver on the base body
+    and the PX4 Software In The Loop (SITL) peer mapped to its fake, when the run steps 100 ticks, then the last
+    `HIL_STATE_QUATERNION` the fake receives carries the identity attitude, the base body's Forward Right
+    Down (FRD) axes on North East Down (NED), and body rates under 1e-3 rad/s.
     """
     turned = sv.prim(
         "Imu0",
         "NexusImuAPI",
         'float nexus:gyroNoise = 0.5\nfloat xformOp:rotateZ = 90\nuniform token[] xformOpOrder = ["xformOp:rotateZ"]',
     )
-    loop = sv.build(sv.vehicle(tmp_path, mast=turned))
+    path = sv.vehicle(tmp_path, sv.prim("Gps0", "NexusGpsAPI"), mast=turned, px4=True)
+    loop = sv.build(path, components=default_registry(), peers={"px4_sitl": Px4Fake})
+    fake = loop.peers[0]
 
-    received = sv.fly(loop, 20)
-    half_turn = min((abs(meas.quat_wxyz[1]) for meas in received), default=0.0)
-    rate = max((abs(r) for meas in received for r in (meas.rollspeed, meas.pitchspeed, meas.yawspeed)), default=1.0)
+    n = 0
+    while n < 100 and loop.step():
+        n += 1
+    state = fake.last.get("HIL_STATE_QUATERNION")
+    loop.close()
+    w = abs(state.attitude_quaternion[0]) if state else 0.0
+    rate = max(abs(state.rollspeed), abs(state.pitchspeed), abs(state.yawspeed)) if state else 1.0
 
-    assert (len(received), half_turn == pytest.approx(1.0, abs=1e-3), rate < 1e-3) == (20, True, True), (
-        half_turn,
-        rate,
-    )
+    assert (n, w == pytest.approx(1.0, abs=1e-3), rate < 1e-3) == (100, True, True), (w, rate)
 
 
 def test_a_vehicle_that_declares_no_sensor_builds(tmp_path):
