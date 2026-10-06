@@ -51,13 +51,6 @@ def test_receipt_round_trips_json():
     assert again == rl.tested_config
 
 
-def test_receipt_carries_sensors():
-    reg = _reg({"url": "https://x/astro.usdz", "sha256": "deadbeef"})
-    lc = LaunchConfig.from_dict({"vehicle": "black", "scene": "empty", "sensors": {"imu": {"rate": 250}}})
-    tc = resolve(lc, reg, fetch=False).tested_config
-    assert tc.sensors == {"imu": {"rate": 250}}
-
-
 def _fpv_reg(vehicle_usd, scene_usd, **scene_extra):
     """A registry with a synthetic 'fpv' scene, a Universal Scene Description (USD) file plus a geo
     origin, which a launch names.

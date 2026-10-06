@@ -9,9 +9,6 @@ this module owns the *what*.
 from __future__ import annotations
 
 import pathlib
-from typing import Any
-
-from pydantic import Field
 
 from .models import AssetRef, GeodeticOrigin, Px4Spec, Runtime, _Base
 
@@ -19,8 +16,11 @@ from .models import AssetRef, GeodeticOrigin, Px4Spec, Runtime, _Base
 class TestedConfig(_Base):
     """The fully specified, sha-pinned config the run simulated.
 
-    Must contain **every input that affects the simulation** so re-running it reproduces the run.
-    Hence it carries the sensor overrides too, not just the vehicle/scene/runtime.
+    Must contain **every input that affects the simulation** so re-running it reproduces the run, and
+    nothing a run leaves unapplied. ``resolve`` fills it from the launch and the catalog, and the build
+    stamps what only a build knows: the airframe the vehicle Universal Scene Description (USD) file declares for PX4, and in ``runtime.device``
+    the device the run picked, ``cpu`` or ``cuda``, never ``auto``. A receipt a run flew comes from the
+    build; a bare ``resolve`` still carries the launch's device selector.
     """
 
     __test__ = False  # not a pytest test class despite the name
@@ -35,7 +35,6 @@ class TestedConfig(_Base):
     scene_start: tuple[float, float, float] | None = None  # scene-frame point placed at the world origin
     geodetic_origin: GeodeticOrigin | None = None
     runtime: Runtime
-    sensors: dict[str, Any] = Field(default_factory=dict)
 
     def to_json(self) -> str:
         return self.model_dump_json(indent=2)
