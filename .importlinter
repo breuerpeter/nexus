@@ -33,6 +33,37 @@ source_modules =
 forbidden_modules =
     nexus.examples
 
+; No generic part names PX4: the loop, the seams and Sim carry no PX4 class, port or verb, so the
+; script that commands PX4 is what names it, through the public namespace nexus.px4. Two imports
+; remain: the builder starts the PX4 peer from its runner and numbers the HIL link from its instance,
+; and the argument parser prints the HIL port in a help string. A new one fails here.
+[importlinter:contract:no-px4-in-generic-code]
+name = no generic part names PX4
+type = forbidden
+; module by module: a forbidden package inside a source package is skipped as a package, not checked
+as_packages = False
+; a failure names the one import to remove, not every chain that runs through it
+allow_indirect_imports = True
+source_modules =
+    nexus._src.**
+forbidden_modules =
+    nexus._src.peers.px4_sitl
+    nexus._src.peers.px4_sitl.**
+    nexus._src.vehicle.controllers.px4
+    nexus._src.vehicle.controllers.px4.**
+    nexus.px4
+ignore_imports =
+    ; PX4's own folders speak to each other
+    nexus._src.peers.px4_sitl.** -> nexus._src.peers.px4_sitl
+    nexus._src.peers.px4_sitl.** -> nexus._src.peers.px4_sitl.**
+    nexus._src.vehicle.controllers.px4 -> nexus._src.vehicle.controllers.px4.**
+    nexus._src.vehicle.controllers.px4.** -> nexus._src.peers.px4_sitl
+    ; the builder
+    nexus._src.build.launch -> nexus._src.peers.px4_sitl
+    nexus._src.build.launch -> nexus._src.peers.px4_sitl.runner
+    ; the argument parser
+    nexus._src.api.args -> nexus._src.peers.px4_sitl
+
 ; Every Kit call lives in the Kit render peer's program, peers/kit/peer-src/, package data that no module
 ; imports, so Kit stays out of every tier with no exception.
 [importlinter:contract:no-kit]
