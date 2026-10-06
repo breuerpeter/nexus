@@ -20,6 +20,7 @@ import time
 from pathlib import Path
 
 import pytest
+import warp as wp
 import yaml
 from docker.errors import ImageNotFound, NotFound
 
@@ -143,11 +144,21 @@ class _Clock:
         pass
 
 
+class _State:
+    """One body at rest, level and nose north: the rows a stage that reads the vehicle's true state reads."""
+
+    def __init__(self):
+        self.body_q = wp.array(
+            [[0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]], dtype=wp.transform
+        )  # forward-right-down body, up world
+        self.body_qd = wp.zeros(1, dtype=wp.spatial_vector)
+
+
 class _Physics:
     base_body = "body_frd"
 
     def reset(self):
-        return {"q": 0}
+        return _State()
 
     def clear_forces(self, state):
         pass

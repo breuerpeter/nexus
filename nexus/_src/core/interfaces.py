@@ -28,7 +28,9 @@ class Tick:
     per-actuator commands, which its stage sets and the command stages read, so a captured
     graph reads the same buffer every replay. ``dt`` is one physics step, the control timestep over
     ``physics_substeps``. ``sensors`` are the sensors with device stages, whose ``read`` fills ``meas``
-    at a controller's ``read`` host stage. ``timeout`` bounds a host stage's wait on its peer.
+    at a controller's ``read`` host stage. ``timeout`` bounds a host stage's wait on its peer. ``base`` is the
+    index of the vehicle's base body, its airframe, in ``state``: a stage that reads the vehicle's true
+    state reads that row.
 
     ``setpoint`` and ``done`` are a guidance's two outputs. Its stage sets ``setpoint`` on the tick
     its setpoint changes, and the loop hands it to the controller's ``accept_setpoint`` and clears it,
@@ -43,6 +45,7 @@ class Tick:
     controls: Any = None
     sensors: list = field(default_factory=list)
     timeout: float | None = None
+    base: int = 0
     setpoint: Setpoint | None = None
     done: bool = False
 
@@ -76,6 +79,9 @@ class SensorRun:
         site: Where the run flies and its ambient values, a :class:`~nexus._src.scene.site.Site`.
         body: The index of the model body the sensor rides: the parent of its prim.
         mount: The translation of the sensor's prim from its body's origin, metres, in the body's axes.
+        rotation: The rotation of the sensor's prim in its body's axes, a quaternion ``(x, y, z, w)``: it
+            turns a vector in the sensor's axes into the body's.
+        com: The center of mass of the body the sensor rides, metres from the body's origin, in its axes.
         path: The path of the prim that declares the sensor.
         prim: That prim on the vehicle's stage, for a sensor that reads what it authors, such as a
             camera's optics.
@@ -87,6 +93,8 @@ class SensorRun:
     site: Any = None
     body: int = 0
     mount: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    rotation: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0)
+    com: tuple[float, float, float] = (0.0, 0.0, 0.0)
     path: str = ""
     prim: Any = None
     link: Any = None

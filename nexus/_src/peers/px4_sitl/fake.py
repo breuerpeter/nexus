@@ -50,6 +50,8 @@ class Px4Fake:
         self._claim = claim
         self.received: collections.Counter[str] = collections.Counter()
         """How many of each MAVLink message the fake received, by type."""
+        self.last: dict[str, object] = {}
+        """The last MAVLink message of each type the fake received, by type."""
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -104,6 +106,7 @@ class Px4Fake:
                 for msg in mav.parse_buffer(data) or []:
                     kind = msg.get_type()
                     self.received[kind] += 1
+                    self.last[kind] = msg
                     if kind == "HIL_SENSOR":
                         mav.hil_actuator_controls_send(msg.time_usec, [HOVER] * 16, 0, 0)
         except OSError:

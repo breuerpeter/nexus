@@ -18,7 +18,9 @@ pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
 from nexus._src.config.registry import load_registry
+from nexus._src.core.registry import default_registry
 from nexus._src.core.schema import Measurement
+from nexus._src.peers.px4_sitl.fake import Px4Fake
 from tests.usd import sensor_vehicle as sv
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")
@@ -199,6 +201,52 @@ def test_a_sensor_schema_on_a_prim_whose_parent_is_not_a_rigid_body_fails_the_bu
         sv.build(sv.vehicle(tmp_path, bracket)).close()
 
     assert f"{sv.BODY}/Bracket/Gps" in str(err.value)
+
+
+def test_an_imu_prim_whose_transform_scales_fails_the_build_and_names_the_prim(tmp_path):
+    """An Inertial Measurement Unit (IMU) prim whose transform scales or shears fails the build and names the prim.
+
+    Given the fixture with a scale of 2 on the IMU's prim, when built, then the build fails naming the prim
+    path.
+    """
+    scaled = sv.prim(
+        "Imu0", "NexusImuAPI", 'float3 xformOp:scale = (2, 2, 2)\nuniform token[] xformOpOrder = ["xformOp:scale"]'
+    )
+
+    with pytest.raises(ValueError) as err:
+        sv.build(sv.vehicle(tmp_path, scaled)).close()
+
+    assert f"{sv.BODY}/Imu0" in str(err.value)
+
+
+def test_the_ground_truth_px4_receives_is_the_base_bodys_whatever_the_imus_mount_and_body(tmp_path):
+    """The ground truth PX4 receives is the base body's attitude and rates in PX4's frames, whatever the Inertial Measurement Unit's (IMU) mount and body.
+
+    Given the fixture vehicle level and nose north, the IMU's prim turned 90 degrees about z under the
+    second body with a gyro noise of 0.5 rad/s, a Global Positioning System (GPS) receiver on the base body
+    and the PX4 Software In The Loop (SITL) peer mapped to its fake, when the run steps 100 ticks, then the last
+    `HIL_STATE_QUATERNION` the fake receives carries the identity attitude, the base body's Forward Right
+    Down (FRD) axes on North East Down (NED), and body rates under 1e-3 rad/s.
+    """
+    turned = sv.prim(
+        "Imu0",
+        "NexusImuAPI",
+        'float nexus:gyroNoise = 0.5\nfloat xformOp:rotateZ = 90\nuniform token[] xformOpOrder = ["xformOp:rotateZ"]',
+    )
+    path = sv.vehicle(tmp_path, sv.prim("Gps0", "NexusGpsAPI"), mast=turned, px4=True)
+    loop = sv.build(path, components=default_registry(), peers={"px4_sitl": Px4Fake})
+    fake = loop.peers[0]
+
+    n = 0
+    while n < 100 and loop.step():
+        n += 1
+    state = fake.last.get("HIL_STATE_QUATERNION")
+    loop.close()
+    q = list(state.attitude_quaternion) if state else [0.0] * 4
+    q = [-x for x in q] if q[0] < 0 else q  # q and -q are one attitude
+    rate = max(abs(state.rollspeed), abs(state.pitchspeed), abs(state.yawspeed)) if state else 1.0
+
+    assert (n, q == pytest.approx([1.0, 0.0, 0.0, 0.0], abs=1e-3), rate < 1e-3) == (100, True, True), (q, rate)
 
 
 def test_a_vehicle_that_declares_no_sensor_builds(tmp_path):

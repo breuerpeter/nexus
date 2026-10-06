@@ -45,7 +45,7 @@ def _run(mag_ned=_MAG_NED, body: int = 0) -> SensorRun:
     return SensorRun(seed=SeedTree(42).seed_for("sensor"), dt=0.004, site=site, body=body)
 
 
-def test_imu_gyro_and_quat_parity():
+def test_imu_gyro_parity():
     view = _WarpView((0.0, 0.0, 1.0), _Q, (0.0, 0.0, 0.0), (0.3, -0.4, 0.5))
     s = ImuSensor(_run(), acc_noise=0.0, gyro_noise=0.0)
     meas = Measurement()
@@ -54,8 +54,6 @@ def test_imu_gyro_and_quat_parity():
     q = transform.quat_from_xyzw(_Q)
     gyro_ref = transform.world_to_body(q, (0.3, -0.4, 0.5))
     np.testing.assert_allclose([meas.xgyro, meas.ygyro, meas.zgyro], gyro_ref, atol=1e-5)
-    np.testing.assert_allclose(meas.quat_wxyz, transform.quat_wxyz(q), atol=1e-6)
-    assert (meas.rollspeed, meas.pitchspeed, meas.yawspeed) == (meas.xgyro, meas.ygyro, meas.zgyro)
 
 
 def test_imu_accel_finite_diff_parity():

@@ -51,7 +51,7 @@ Predictive Control (NMPC) example **halved** when it switched to the same actuat
 The sim speed is the **real-time factor of the flight itself**: sim-time advanced divided by wall-time,
 with PX4 in the lockstep loop. The orchestrator reports it on exit. The loop runs on the
 **GPU**, which `--device auto` takes when one is present: one CUDA graph replays the device stages,
-and PX4's `read` and `exchange` host stages run between replays. The per-tick
+and PX4's `read`, `truth` and `exchange` host stages run between replays. The per-tick
 budget is roughly **53% GPU step**, **20% PX4 MAVLink exchange**, and **27% `.rrd` logging**. The GPU
 step is mujoco-warp at `batch=1`: a single drone is latency-bound, not throughput-bound, so this is the
 floor for one env on this solver. Logging decimates to 50 Hz. Logging the full scene at the 250 Hz sim
