@@ -15,8 +15,8 @@ Two roles, one control law, ``law.pid_action_np`` and ``law.pid_law``:
 It's a state-feedback controller, as :class:`TrainedPolicyController` is: it reads the 12-D observation a
 :class:`PolicyObservationSensor` writes to ``meas.observation``. The control law emits a
 direct-moment action ``[thrust, m_x, m_y, m_z]``; the controller's **moment mixer**, ``B⁻¹`` allocation
-with no rate loop, :class:`~nexus._src.vehicle.actuators.mixer.MomentMixer`, then turns it into the ``nr``
-per-rotor commands the single-body :class:`~nexus._src.vehicle.actuators.Rotors`
+with no rate loop, :class:`~nexus.examples._lib.mixer.MomentMixer`, then turns it into the ``nr``
+per-rotor commands the single-body :class:`~nexus.examples._lib.rotors.Rotors`
 motor model consumes. So PID, policy, and PX4 all fly through the same orchestrator tick, all emitting
 ``Controls.command`` = per-rotor commands; only the host boundary differs.
 
@@ -45,7 +45,7 @@ class PidController:
             Description (USD) via ``RotorMixer.thrust_to_weight``. Sets the hover thrust bias so
             ``action[0]`` holds altitude at the gravity-balancing thrust. Must match the paired actuator +
             the mixer.
-        mixer: the airframe :class:`~nexus._src.vehicle.actuators.mixer.RotorMixer`, ``B⁻¹`` + thrust map.
+        mixer: the airframe :class:`~nexus.examples._lib.mixer.RotorMixer`, ``B⁻¹`` + thrust map.
             When given, the deploy path, the controller emits ``nr`` per-rotor commands; when ``None``, the
             differentiable design-opt rollout, it emits the raw moment action and the caller mixes.
         weight: vehicle weight ``m·g`` [N] for the moment mixer's collective scale; required iff ``mixer``.

@@ -4,14 +4,14 @@ base-body wrench, ``state.body_f[base]``, applied on both the collapsed single b
 multibody model. On the articulated model the rotor bodies hang force-free. For a rigid quad the summed
 base wrench moves the rigid body exactly as the per-rotor wrenches would, and it's what the policy and
 Proportional Integral Derivative (PID) deploy already do today. A multibody model's props spin for real
-under the core ArticulatedRotors, through driven joints.
+under the core rotor chain, through the Newton motors physics drives.
 
-One ``@wp.func``, :func:`_summed_wrench`, composes the motor lag, :mod:`~nexus._src.vehicle.actuators.motor`,
-+ the propeller, :mod:`~nexus._src.vehicle.actuators.propeller`, + the forward allocation ``B`` into the world
+One ``@wp.func``, :func:`_summed_wrench`, composes the motor lag, :mod:`~nexus.examples._lib.motor`,
++ the propeller, :mod:`~nexus._src.vehicle.forces.propellers`, + the forward allocation ``B`` into the world
 wrench. **Every** caller shares it through two thin kernels, and there is no per-consumer copy:
 
 * :func:`rigid_body_wrench_world` writes ``body_f[base + n]``: the standalone deploy, the
-  :class:`~nexus._src.vehicle.actuators.rotors.Rotors` actuator, ``dim = 1``; the differentiable
+  :class:`~nexus.examples._lib.rotors.Rotors` actuator, ``dim = 1``; the differentiable
   design-opt rollout, ``dim = 1``, with distinct per-step Ω arrays for a clean tape; and the sampling
   Model Predictive Control (MPC) batched planner and real sim, ``dim = rollouts``.
 * :func:`rigid_body_wrench_batched` writes separate ``out_force_w`` and ``out_torque_w`` outputs: the RL
@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import warp as wp
 
-from nexus._src.vehicle.actuators.propeller import propeller_force
+from nexus._src.vehicle.forces.propellers import propeller_force
 from nexus.examples._lib.motor import lag_step
 
 

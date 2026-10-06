@@ -17,9 +17,9 @@ form or the legacy 12-D form is a property **of the policy**, its input width, s
 trained policy.
 
 The controller is **airframe-aware**, as a real flight controller is: its CTBR **mixer**,
-:class:`~nexus._src.vehicle.actuators.mixer.CtbrMixer`, an inner rate loop → ``B⁻¹`` allocation,
+:class:`~nexus.examples._lib.mixer.CtbrMixer`, an inner rate loop → ``B⁻¹`` allocation,
 turns the policy's CTBR action into the ``nr`` per-rotor commands ``Controls.command`` carries, which
-the single-body :class:`~nexus._src.vehicle.actuators.Rotors` motor model then realizes. The mixer
+the single-body :class:`~nexus.examples._lib.rotors.Rotors` motor model then realizes. The mixer
 is the same ``ctbr_to_cmd_batched`` op the training env launches with ``dim = N``, the byte-shared
 train↔deploy parity surface. The rate loop needs only the body-frame rate ``ω_b``, which is exactly
 ``obs[3:6]``, which equals ``Rᵀ·ω_w``, so the controller needs no extra state plumbing.
@@ -42,10 +42,10 @@ class TrainedPolicyController:
         goal_w: target world position [m], the hover/move-to-position goal.
         action_clip: clamp applied to policy outputs; Isaac Lab clamps actions to [-1, 1].
         device: torch device for inference; ``"cpu"`` keeps the host boundary CPU-only.
-        mixer: the airframe :class:`~nexus._src.vehicle.actuators.mixer.RotorMixer`, ``B⁻¹`` plus the thrust
+        mixer: the airframe :class:`~nexus.examples._lib.mixer.RotorMixer`, ``B⁻¹`` plus the thrust
             map. With it the controller emits ``nr`` per-rotor commands; ``None`` emits the raw CTBR action,
             the legacy form.
-        ctbr_params: the :class:`~nexus._src.vehicle.actuators.CtbrParams` for the inner rate loop, required iff
+        ctbr_params: the :class:`~nexus.examples._lib.mixer.CtbrParams` for the inner rate loop, required iff
             ``mixer``. Must match the training env's CTBR params diluted to the deploy step: T/W and rate gain.
         body_index: articulation body whose state drives the observation; 0 = base.
     """

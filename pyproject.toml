@@ -67,7 +67,7 @@ NexusGpsAPI = "nexus._src.vehicle.sensors:GpsSensor"
 NexusCameraAPI = "nexus._src.vehicle.sensors.rtx_camera:RtxCameraSensor"
 NexusThermalCameraAPI = "nexus._src.vehicle.sensors.rtx_thermal:RtxThermalSensor"
 NexusLidarAPI = "nexus._src.vehicle.sensors.rtx_lidar:RtxLidarSensor"
-NexusPropellerAPI = "nexus._src.vehicle.actuators.propeller:Propeller"
+NexusPropellerAPI = "nexus._src.vehicle.forces.propellers:Propeller"
 NexusPx4API = "nexus._src.vehicle.controllers.px4:Px4MavlinkController"
 
 [project.urls]

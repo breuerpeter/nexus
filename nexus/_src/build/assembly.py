@@ -1,7 +1,8 @@
 """The core orchestrator assembly, shared by every run, per §12.
 
 Controller-agnostic by construction: the assembly wires the plant, ``NewtonPhysics`` from nexus's
-own ModelBuilder + solvers, the shipped ``ArticulatedRotors`` actuator, the sensor suite authored in
+own ModelBuilder + solvers, the shipped rotor chain, the rotors' command stage and the propellers' force
+element around the Newton motors physics steps, the sensor suite authored in
 Universal Scene Description (USD) with the site's ambient values, and the Rerun sink around a
 **caller-supplied controller**. Which controller flies is a decision one layer up: the launch glue
 builds the controller the vehicle USD declares, and the example controllers self-assemble beside their flight
@@ -26,7 +27,6 @@ import warp as wp
 from nexus._src.core import Clock, Orchestrator, SeedTree, logger
 from nexus._src.physics import NewtonPhysics
 from nexus._src.scene import Site
-from nexus._src.vehicle.actuators import check_actuator_model_pairing
 
 
 @dataclass(slots=True)
@@ -35,10 +35,36 @@ class Assembly:
 
     clock: Any
     physics: Any
-    actuator: Any
+    commands: list  # the command stages: the rotors'
+    forces: list  # the force elements: the propellers'
     sensors: list
     controller: Any
     logger: Any  # the Rerun sink, or None for no recording
+
+
+def rotor_chain(physics, vehicle_builder) -> tuple[list, list]:
+    """The shipped rotor chain from the rotors the vehicle USD declares, the single, hash-pinned source:
+    the rotors' command stage and the propellers' force element, as the command stages and force elements
+    a loop takes. The motors between them are Newton's, ``NewtonActuator`` prims the USD authors on the
+    rotor joints, a ControllerPID velocity servo + the ClampingDCMotor envelope each, which physics steps
+    before its solver, so the rotor speed is a physical joint state: real motor lag + saturation, and
+    spinning props at no extra cost.
+    """
+    from nexus._src.vehicle.commands import RotorCommand
+    from nexus._src.vehicle.forces import Propellers
+
+    values = vehicle_builder.actuator_params()
+    joints = vehicle_builder.rotor_joints()
+    command = RotorCommand(
+        model=physics.model, control=physics.control, joints=joints, ct=values["ct"], cd=values["cd"],
+        rpm_max=values["rpm_max"],
+    )  # fmt: skip
+    propellers = Propellers(
+        model=physics.model, joints=joints, ct=values["ct"], cd=values["cd"],
+        aero_h=values.get("aero_h", 0.0),  # forward-flight thrust loss; 0 = quasi-static kf·Ω²
+        aero_hforce=values.get("aero_hforce", 0.0),  # in-plane H-force, drag
+    )  # fmt: skip
+    return [command], [propellers]
 
 
 def assemble(
@@ -61,7 +87,6 @@ def assemble(
     ``settings`` is the run's effective configuration for the viewer's Settings tab; the launch
     glue passes the tested-config receipt.
     """
-    from nexus._src.vehicle.actuators import ArticulatedRotors
     from nexus._src.vehicle.sensors.declared import build_sensors, sensor_specs
 
     dt = cfg["physics"]["dt"]
@@ -70,30 +95,11 @@ def assemble(
     # ambient values resolved from it once, here, for the sensors that read them.
     gps = cfg["sensors"]["gps"]["init"]
     site = Site.at(gps["lat"], gps["lon"], gps["alt"])
-    # Actuator aero/thrust map: read straight from the rotors the vehicle USD declares, the single,
-    # hash-pinned source. Not in cfg.
-    act = vehicle_builder.actuator_params()
-    # The shipped actuator: motors as USD-authored ``newton.actuators``, NewtonActuator prims,
-    # a ControllerPID velocity servo + the ClampingDCMotor envelope on each real actuator joint, and aero,
-    # thrust/H-force from the solver-integrated Ω via each rotor body's propeller schema, as nexus's
-    # body_f kernel. Ω is a physical joint state: real motor lag + saturation, and spinning props at no
-    # extra cost.
-    actuator = ArticulatedRotors(
-        model=physics.model,
-        control=physics.control,
-        joints=vehicle_builder.rotor_joints(),
-        ct=act["ct"],
-        cd=act["cd"],
-        rpm_max=act["rpm_max"],
-        dt=dt,
-        aero_h=act.get("aero_h", 0.0),  # forward-flight thrust loss; 0 = quasi-static kf·Ω²
-        aero_hforce=act.get("aero_hforce", 0.0),  # in-plane H-force, drag
-    )
-    check_actuator_model_pairing(actuator, physics.model)  # requires the USD-authored motors
+    commands, forces = rotor_chain(physics, vehicle_builder)  # from the vehicle USD's rotors, not cfg
 
     seedtree = SeedTree(cfg.get("seed", 42))  # launch glue threads runtime.seed; string-name path keeps 42
     # The sensors come from the schemas the vehicle USD applies, the single, hash-pinned source, the
-    # same as the preceding actuator params; only the site stays config, since it's a world property,
+    # same as the preceding rotor chain; only the site stays config, since it's a world property,
     # not a vehicle one. A vehicle that declares no sensor builds: which sensors a flight needs is its
     # controller's matter.
     usd_path = vehicle_builder.cfg["usd_path"]
@@ -123,7 +129,8 @@ def assemble(
     return Assembly(
         clock=Clock(dt, rtf=rtf),
         physics=physics,
-        actuator=actuator,
+        commands=commands,
+        forces=forces,
         sensors=sensors,
         controller=controller,
         logger=sink,
@@ -139,10 +146,10 @@ DEFAULT_SCENARIO = {
     "sensors": {
         "gps": {"init": {"lat": 47.747944, "lon": -122.163917, "alt": 5.02}},
     },
-    # No actuator entry, by design. The aero/thrust map (rpm_max, ct, cd, tau, aero_h, aero_hforce)
+    # No rotor entry, by design. The aero/thrust map (rpm_max, ct, cd, tau, aero_h, aero_hforce)
     # lives in the vehicle USD, declared per rotor on its body, its motor and its joint, and
     # USDBuilder.actuator_params() reads it; since the USD is content-hashed, the vehicle hash pins the
-    # actuator model, not any config. Every build reads those params directly from the builder.
+    # rotor chain, not any config. Every build reads those params directly from the builder.
 }
 
 
@@ -207,7 +214,8 @@ def build_orchestrator(
     return Orchestrator(
         clock=a.clock,
         physics=a.physics,
-        actuator=a.actuator,
+        commands=a.commands,
+        forces=a.forces,
         sensors=a.sensors,
         controller=a.controller,
         logger=a.logger,

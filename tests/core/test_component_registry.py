@@ -154,7 +154,7 @@ def test_the_default_registry_builds_a_propeller_from_its_schemas_keywords():
     import pytest
 
     from nexus._src.build.components import resolve_components
-    from nexus._src.vehicle.actuators.propeller import Propeller
+    from nexus._src.vehicle.forces.propellers import Propeller
 
     (rotor,) = [spec for spec in resolve_components(FIXTURE) if spec.schema == "NexusPropellerAPI"]
     built = rotor.cls(**rotor.kwargs)

@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 import warp as wp
 
-from nexus._src.vehicle.actuators import RPM_PER_RADS, propeller_force
+from nexus._src.vehicle.forces.propellers import RPM_PER_RADS, propeller_force
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")
 

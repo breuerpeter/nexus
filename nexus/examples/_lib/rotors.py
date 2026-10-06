@@ -1,11 +1,12 @@
-"""``Rotors``: the **one** actuator: ``N`` MotorModels, from :mod:`~nexus.examples._lib.motor`, + ``N``
-PropellerModels, from :mod:`~nexus._src.vehicle.actuators.propeller`, + the summed-wrench **coupling** from
-:mod:`~nexus.examples._lib.coupling`. It replaces the old two-class split of ``RigidBodyRotors`` +
-``ArticulatedRotors``: there is no body-coupling axis baked into the class. Every consumer, RL train +
-deploy, Proportional Integral Derivative (PID), policy, sampling Model Predictive Control (MPC),
-design-opt, and the PX4 flight path, runs this actuator at the highest fidelity that
-runs everywhere, airflow propeller + motor lag, summing the per-rotor wrench into one base-body wrench,
-``state.body_f[base]``.
+"""``Rotors``: the examples' single-body actuator, the old actuator seam: ``N`` MotorModels, from
+:mod:`~nexus.examples._lib.motor`, + ``N`` PropellerModels, from :mod:`~nexus._src.vehicle.forces.propellers`,
++ the summed-wrench **coupling** from :mod:`~nexus.examples._lib.coupling`. Every consumer of the
+single-body plant, RL train + deploy, Proportional Integral Derivative (PID), policy, sampling Model
+Predictive Control (MPC) and design-opt, runs this actuator at the highest fidelity that runs everywhere,
+airflow propeller + motor lag, summing the per-rotor wrench into one base-body wrench,
+``state.body_f[base]``. It stays on the old seam, the loop's ``actuator``, until the single-body plant's
+motor lag finds a home: it needs the controller's command, so it's neither a command stage, which writes
+Newton's control inputs, nor a force element, which reads the state alone.
 
     per-rotor command u ∈ [0, 1]  →  Ω_cmd = clamp(u, 0, 1)·Ω_max  →  motor lag (Ω state)
     →  propeller f = kf·Ω² − airflow  →  forward ``B`` (Σ per-rotor → base-body wrench)  →  rotate to world
@@ -14,9 +15,9 @@ One input convention, the per-rotor command, and no modes; the mixer, rate loop 
 controller. Built from a :class:`~nexus.examples._lib.mixer.RotorMixer`, the shared airframe ``B`` +
 thrust map + rotor offsets, so the controller's ``B⁻¹`` and the actuator's forward ``B`` can't drift.
 
-No cosmetic prop spin here: an articulated model that should render spinning props runs the core
-:class:`~nexus._src.vehicle.actuators.articulated.ArticulatedRotors`; its rotor joints really turn. A
-collapsed single body has no rotor joints to spin.
+No cosmetic prop spin here: an articulated model that should render spinning props runs the core rotor
+chain, the rotors' command stage, the Newton motors physics steps and the propellers' force element; its
+rotor joints really turn. A collapsed single body has no rotor joints to spin.
 """
 
 from __future__ import annotations
@@ -29,13 +30,8 @@ from nexus.examples._lib.coupling import rigid_body_wrench_world
 from nexus.examples._lib.mixer import RotorMixer
 from nexus.examples._lib.motor import motor_alpha
 
-# Single-body wrench actuator: pairs with any model; the pairing guard is a no-op for it.
-requires_articulated = False
-
 
 class Rotors:
-    requires_articulated = False  # single base-body summed wrench: pairs with any model
-
     def __init__(
         self,
         *,

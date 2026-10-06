@@ -1,9 +1,9 @@
 """Physics plugin backed by NVIDIA Newton, per architecture.md §2 and §5.
 
 Lifts the bridge's model build + solver + double-buffered step + the settle after
-placing the vehicle. Consumes a per-body Wrench at the shared ``state.body_f`` buffer, which
-newton-actuators writes before ``step``, and doesn't launch the actuator kernels:
-that split is the only structural change from the bridge's fused ``_simulate_physics``.
+placing the vehicle. Consumes a per-body Wrench at the shared ``state.body_f`` buffer, which the force
+elements add to before ``step``, and the control inputs the command stages write into the model's
+``newton.Control``; ``step`` steps every Newton actuator the vehicle declares, then the solver.
 
 **The solver is configurable** via ``cfg["physics"]["solver"]``: ``mujoco``, the default, is the
 high-fidelity contact solver the Software In The Loop (SITL) path uses and the determinism authority
@@ -37,8 +37,10 @@ joint update, so ``update_body_f`` reads the earlier step's joint pose, a
 one-step lag in thrust direction: exactly the bridge's behavior.
 
 Two device stages, ``clear`` and ``step``: the collide + solver.step + double-buffer ping-pong
-is a static launch over persistent buffers, so it joins a CUDA graph with the actuator's stage
-between them.
+is a static launch over persistent buffers, so it joins a CUDA graph with the command and force stages
+between them. ``step`` first zeroes ``control.joint_f`` and steps the Newton actuators, where Newton's docs
+place the call, each over double-buffered state copied back in place after the step: the graph-safe twin
+of the state swap, since a Python swap would freeze at a CUDA graph's capture-time binding.
 """
 
 from __future__ import annotations
@@ -58,7 +60,7 @@ from nexus._src.recording.state import (
     record_body,
     record_joint,
 )
-from nexus._src.vehicle.actuators.layout import RPM_PER_RADS, find_rotor_joints
+from nexus._src.vehicle.rotors import RPM_PER_RADS, find_rotor_joints
 
 from ..scene.ingest import add_scene  # ingestion only: the handlers are the renderer's side
 from ..scene.site import GRAVITY
@@ -66,6 +68,23 @@ from ..scene.site import GRAVITY
 STABILIZE_VEL_THRESHOLD = 0.01  # m/s
 STABILIZE_MIN_STEPS = 10
 STABILIZE_MAX_STEPS = 10000
+
+
+def _state_arrays(act_state) -> list[wp.array]:
+    """The Warp arrays inside a composed ``newton.actuators`` Actuator.State, the delay + controller
+    sub-states, in a construction-stable order, so two states built by the same ``actuator.state()``
+    pair up positionally for the in-place copy-back.
+    """
+    out: list[wp.array] = []
+    if act_state is None:
+        return out
+    for sub in (getattr(act_state, "delay_state", None), getattr(act_state, "controller_state", None)):
+        if sub is None:
+            continue
+        for v in vars(sub).values():
+            if isinstance(v, wp.array):
+                out.append(v)
+    return out
 
 
 def make_solver(name: str, model, *, njmax: int = 224):
@@ -86,7 +105,7 @@ def make_solver(name: str, model, *, njmax: int = 224):
 
 
 class NewtonPhysics:
-    def __init__(self, *, vehicle_builder=None, model=None, cfg: dict, njmax: int = 224):
+    def __init__(self, *, vehicle_builder=None, model=None, cfg: dict, njmax: int = 224, step_actuators: bool = True):
         self.cfg = cfg
         # Component-owned groundtruth logging, since physics owns the true state: log() draws the generic
         # scene via the shared logger. The orchestrator hands over the Logger, self._logger, None when off,
@@ -122,8 +141,8 @@ class NewtonPhysics:
             # from any PhysicsScene the USD holds, authored or not, so it is set after the last add.
             builder.gravity = -GRAVITY
             # The vehicle USD authors the motors as NewtonActuator prims on the actuator joints, and add_usd
-            # parses them onto model.actuators; the pairing guard refuses a model with none. A collapsed
-            # single body has no joints, so no motors.
+            # parses them onto model.actuators, which step() steps before the solver. A collapsed single
+            # body has no joints, so no motors.
             self.model = builder.finalize()
             if vehicle_builder is not None:
                 vehicle_builder.model_debug_print(self.model)
@@ -139,6 +158,17 @@ class NewtonPhysics:
         newton.eval_fk(self.model, self.model.joint_q, self.model.joint_qd, self.state0)
         self.state1 = self.model.state()
         self.control = self.model.control() if self.articulated else None
+        # Every Newton actuator the vehicle declares, rotor motor or not, stepped before the solver. Each
+        # keeps two copies of its state, because ControllerPID is stateful and a Python swap would freeze at
+        # the binding a CUDA graph captured: step() copies next → current in place after each step.
+        # ``step_actuators=False`` leaves them idle, for a run on the old actuator seam: the examples'
+        # ``Rotors`` holds its own motor model and sums its wrench on the base body, so the rotor joints
+        # hang free there, as they did before physics stepped the motors.
+        self._actuators = list(getattr(self.model, "actuators", None) or []) if step_actuators else []
+        self._actuator_states = [(a.state(), a.state()) for a in self._actuators]
+        self._actuator_copies = [
+            list(zip(_state_arrays(cur), _state_arrays(nxt), strict=True)) for cur, nxt in self._actuator_states
+        ]
         self.contacts = self.model.collide(self.state0) if self.contacts_on else None
         logger.info(f"control dim {self.model.joint_dof_count}")
 
@@ -248,13 +278,24 @@ class NewtonPhysics:
         state.clear_forces()
 
     def step(self, state, dt):
+        """Step the Newton actuators into ``control.joint_f``, zeroed first, then the solver, which
+        consumes ``joint_f`` and the force elements' ``body_f`` in one solve.
+        """
+        if self._actuators:
+            self.control.joint_f.zero_()
+            for actuator, (cur, nxt), copies in zip(
+                self._actuators, self._actuator_states, self._actuator_copies, strict=True
+            ):
+                actuator.step(state, self.control, cur, nxt, dt)
+                for dst, src in copies:  # current ← next, in place: the graph-safe double-buffer
+                    wp.copy(dst, src)
         contacts = self.model.collide(state) if self.contacts_on else None
         self.solver.step(state, self.state1, self.control, contacts, dt)
         state.assign(self.state1)
         return state
 
     def stages(self) -> list[Stage]:
-        """The ``clear`` and ``step`` device stages; the loop runs the actuator between them."""
+        """The ``clear`` and ``step`` device stages; the loop runs the command and force stages between them."""
         return [
             Stage("clear", "device", lambda tick: self.clear_forces(tick.state)),
             Stage("step", "device", lambda tick: self.step(tick.state, tick.dt)),
