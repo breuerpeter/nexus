@@ -39,7 +39,7 @@ extra:
       name: Peter Breuer on LinkedIn
 
 watch:
-  - nexus
+  - nexus_sim
 
 extra_css:
   - stylesheets/extra.css
@@ -104,7 +104,7 @@ plugins:
         background_color: "#0b1622"
         color: "#ffffff"
   # API reference from Google-style docstrings. griffe analyzes the source statically (no import),
-  # so it never executes the warp/Newton stack. We document the curated public API (nexus.*),
+  # so it never executes the warp/Newton stack. We document the curated public API (nexus_sim.*),
   # not the private _src layout.
   - mkdocstrings:
       handlers:

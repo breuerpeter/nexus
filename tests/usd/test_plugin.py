@@ -10,9 +10,9 @@ FIXTURE = Path(__file__).with_name("conformance.usda")
 
 
 def test_the_plugin_ships_in_the_wheel_and_import_nexus_registers_it(tmp_path):
-    """The plugin ships in the wheel and `import nexus` registers it, so the Inertial Measurement Unit (IMU) schema needs no other call.
+    """The plugin ships in the wheel and `import nexus_sim` registers it, so the Inertial Measurement Unit (IMU) schema needs no other call.
 
-    Given the wheel built from the checkout installed into a folder of its own, when `import nexus` runs
+    Given the wheel built from the checkout installed into a folder of its own, when `import nexus_sim` runs
     from there, then `Usd.SchemaRegistry` returns the IMU schema's applied API definition with each
     attribute and its fallback. The folder stands in for a fresh venv: the wheel's own files answer the
     import, and only its dependencies come from this environment.
@@ -27,8 +27,8 @@ def test_the_plugin_ships_in_the_wheel_and_import_nexus_registers_it(tmp_path):
         capture_output=True,
     )
     code = (
-        "import nexus\n"
-        f"assert nexus.__file__.startswith({str(site)!r}), nexus.__file__\n"
+        "import nexus_sim\n"
+        f"assert nexus_sim.__file__.startswith({str(site)!r}), nexus_sim.__file__\n"
         "from pxr import Usd\n"
         "d = Usd.SchemaRegistry().FindAppliedAPIPrimDefinition('NexusImuAPI')\n"
         "names = sorted(d.GetPropertyNames())\n"
@@ -50,7 +50,7 @@ def test_the_imu_schema_defines_its_two_noise_attributes_and_the_rate():
     """The Inertial Measurement Unit (IMU) schema defines `nexus:accNoise`, `nexus:gyroNoise` and the shared `nexus:rate`."""
     from pxr import Usd
 
-    import nexus  # noqa: F401  # registers the plugin
+    import nexus_sim  # noqa: F401  # registers the plugin
 
     definition = Usd.SchemaRegistry().FindAppliedAPIPrimDefinition("NexusImuAPI")
     assert sorted(definition.GetPropertyNames()) == ["nexus:accNoise", "nexus:gyroNoise", "nexus:rate"]
@@ -64,7 +64,7 @@ def test_every_sensor_schema_shares_one_rate_attribute():
     """
     from pxr import Usd
 
-    import nexus  # noqa: F401  # registers the plugin
+    import nexus_sim  # noqa: F401  # registers the plugin
 
     sensors = ("Imu", "Mag", "Baro", "Gps", "Camera", "ThermalCamera", "Lidar")
     rates = set()
@@ -85,8 +85,8 @@ def test_the_conformance_fixture_applies_every_schema_the_plugin_defines():
     """
     from pxr import Usd
 
-    import nexus  # noqa: F401  # registers the plugin
-    from nexus._src.usd import schema_names
+    import nexus_sim  # noqa: F401  # registers the plugin
+    from nexus_sim._src.usd import schema_names
 
     stage = Usd.Stage.Open(str(FIXTURE))
     applied = {name for prim in stage.Traverse() for name in prim.GetAppliedSchemas()}

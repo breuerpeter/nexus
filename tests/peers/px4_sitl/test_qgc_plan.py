@@ -10,10 +10,10 @@ import pathlib
 
 import pytest
 
-import nexus
-from nexus._src.peers.px4_sitl.qgc_plan import read_plan
+import nexus_sim
+from nexus_sim._src.peers.px4_sitl.qgc_plan import read_plan
 
-BOX_PLAN = pathlib.Path(nexus.__file__).parent / "examples" / "controllers" / "px4" / "box.plan"
+BOX_PLAN = pathlib.Path(nexus_sim.__file__).parent / "examples" / "controllers" / "px4" / "box.plan"
 
 
 def _item(command, *, lat=None, lon=None, alt=0.0, params=None, frame=3, auto=True):

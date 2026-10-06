@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-import nexus
-from nexus._src.config import LaunchConfig, NoMatchError, Registry, TestedConfig, resolve
+import nexus_sim
+from nexus_sim._src.config import LaunchConfig, NoMatchError, Registry, TestedConfig, resolve
 
 
 def _reg(vehicle_usd):
@@ -191,7 +191,7 @@ def test_a_launch_that_names_a_dropped_variant_fails_before_it_flies(tmp_path, m
     """
     monkeypatch.chdir(tmp_path)  # no nexus.registry.yaml beside the run
     with pytest.raises(NoMatchError, match="no vehicle named 'astro_max_fpv_lr1'"):
-        with nexus.Sim(vehicle="astro_max_fpv_lr1", scene="empty"):
+        with nexus_sim.Sim(vehicle="astro_max_fpv_lr1", scene="empty"):
             pass
 
 

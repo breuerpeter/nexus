@@ -132,7 +132,7 @@ def test_a_lidars_points_sit_at_sim_vehicle_sensors_in_the_world_frame_as_today_
     `/sim/vehicle/sensors/scan` holds that world point, the entity holds no transform row, and the
     `.rrd` holds no entity under `/lidar/`.
     """
-    from nexus._src.peers.kit.fake import KitFake
+    from nexus_sim._src.peers.kit.fake import KitFake
 
     kit = functools.partial(KitFake, points=[[1.0, 2.0, 3.0]])
     rows = rrd_rows(fly_recorded(tmp_path, "astro_max_base", layer=LIDAR, ticks=30, kit=kit))

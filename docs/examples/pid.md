@@ -19,7 +19,7 @@ recording isn't uploaded yet. Run `scripts/ci/evaluate_examples.py --upload`.*
 ## Run it
 
 ```bash
-uv run -m nexus.examples pid                # flies + asserts + writes the .rrd
+uv run -m nexus_sim.examples pid                # flies + asserts + writes the .rrd
 ```
 
 Zero-arg by design: the configuration, vehicle, waypoints, and the proven gains, lives in the

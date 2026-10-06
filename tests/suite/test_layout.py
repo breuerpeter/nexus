@@ -1,6 +1,6 @@
 """The test tree mirrors the source tree: a module's tests sit at the path of the module.
 
-A folder of tests under ``tests/`` sits at the path of a folder under ``nexus/_src/``. A test that
+A folder of tests under ``tests/`` sits at the path of a folder under ``nexus_sim/_src/``. A test that
 mirrors no source folder sits in a folder named for its kind, one of ``UNMIRRORED``. The tests check
 the rule over the tracked tree, so they need no GPU and no container.
 """
@@ -10,7 +10,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 
-# The test folders that mirror no folder under ``nexus/_src/``, each named for the kind of its tests.
+# The test folders that mirror no folder under ``nexus_sim/_src/``, each named for the kind of its tests.
 UNMIRRORED = ("ci", "docs", "examples", "packaging", "suite")
 
 
@@ -25,12 +25,14 @@ def _tracked_test_modules() -> list[Path]:
 def _unmirrored(folders: list[str]) -> list[str]:
     """The test folders, as repo-relative paths, that match no source folder and no name in ``UNMIRRORED``."""
     paths = [(f, Path(f).relative_to("tests")) for f in folders]
-    return [f for f, rel in paths if rel.as_posix() not in UNMIRRORED and not (REPO / "nexus" / "_src" / rel).is_dir()]
+    return [
+        f for f, rel in paths if rel.as_posix() not in UNMIRRORED and not (REPO / "nexus_sim" / "_src" / rel).is_dir()
+    ]
 
 
 def test_every_test_folder_mirrors_a_source_folder() -> None:
     """Every folder under `tests/` that holds a test module sits at the path of a folder under
-    `nexus/_src/`, or is one of a stated set that mirrors no source folder: `ci`, `docs`, `examples`,
+    `nexus_sim/_src/`, or is one of a stated set that mirrors no source folder: `ci`, `docs`, `examples`,
     `packaging`, `suite`.
     """
     folders = sorted({f.parent.as_posix() for f in _tracked_test_modules() if f.parent != Path("tests")})

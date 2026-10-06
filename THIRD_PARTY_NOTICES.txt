@@ -1,7 +1,7 @@
 Third-party notices
 ===================
 
-nexus/_src/core/geomag.py
+nexus_sim/_src/core/geomag.py
 ------------------------------
 
 The World Magnetic Model tables and the lookup scheme come from PX4's geo_mag_declination.cpp

@@ -6,8 +6,8 @@ obs kernel picks up the new goal on the next captured replay, see control-surfac
 import numpy as np
 import pytest
 
-from nexus._src.core.schema import PositionGoal, Waypoints
-from nexus.examples.controllers.pid import PidController
+from nexus_sim._src.core.schema import PositionGoal, Waypoints
+from nexus_sim.examples.controllers.pid import PidController
 
 
 def test_accept_setpoint_mutates_host_goal_in_place():
@@ -26,7 +26,7 @@ def test_accept_setpoint_rejects_unsupported_variant():
 @pytest.mark.usefixtures("warp_cpu")
 def test_accept_setpoint_assigns_the_bound_device_goal_buffer():
     pytest.importorskip("warp")
-    from nexus.examples._lib.observation import WarpObservationSensor
+    from nexus_sim.examples._lib.observation import WarpObservationSensor
 
     sensor = WarpObservationSensor(goal_w=(0.0, 0.0, 1.0))
     c = PidController(goal_w=(0.0, 0.0, 1.0), thrust_to_weight=1.9)

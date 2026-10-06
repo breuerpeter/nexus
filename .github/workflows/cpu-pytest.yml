@@ -25,7 +25,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - run: uv run --locked --extra policy pytest --cov=nexus --cov-report=xml -q
+      - run: uv run --locked --extra policy pytest --cov=nexus_sim --cov-report=xml -q
       - uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}

@@ -6,8 +6,8 @@ controller owns the goal + action-history buffers and folds them into the obs it
 import numpy as np
 import pytest
 
-from nexus._src.core.schema import PositionGoal, Waypoints
-from nexus.examples.controllers.policy.controller import TrainedPolicyController
+from nexus_sim._src.core.schema import PositionGoal, Waypoints
+from nexus_sim.examples.controllers.policy.controller import TrainedPolicyController
 
 torch = pytest.importorskip("torch")  # the obs builder is the torch single source
 

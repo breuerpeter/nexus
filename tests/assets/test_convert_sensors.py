@@ -5,7 +5,7 @@ import pathlib
 
 from pxr import Usd, UsdGeom, UsdPhysics
 
-import nexus  # noqa: F401  # registers the nexus schema plugin
+import nexus_sim  # noqa: F401  # registers the nexus schema plugin
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 

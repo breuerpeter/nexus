@@ -11,9 +11,9 @@ pytest.importorskip("warp")
 
 import warp as wp
 
-from nexus._src.core.interfaces import Tick
-from nexus._src.core.schema import SimTime
-from nexus.examples.controllers.policy.goto.geofence import GeofenceGuidance
+from nexus_sim._src.core.interfaces import Tick
+from nexus_sim._src.core.schema import SimTime
+from nexus_sim.examples.controllers.policy.goto.geofence import GeofenceGuidance
 
 BOUNDS = ((-3.0, -3.0, 0.2), (3.0, 3.0, 4.0))
 INSIDE = (0.0, 0.0, 2.0)

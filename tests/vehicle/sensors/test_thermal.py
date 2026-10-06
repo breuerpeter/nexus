@@ -9,13 +9,13 @@ color step at the fire threshold.
 import numpy as np
 import pytest
 
-from nexus._src.vehicle.sensors.lwir import (
+from nexus_sim._src.vehicle.sensors.lwir import (
     intensity_from_temperature,
     lwir_display,
     temperature_from_intensity,
 )
 
-# The shipped stops, mirrored from RtxThermalSensor in nexus/_src/vehicle/sensors/rtx_thermal.py.
+# The shipped stops, mirrored from RtxThermalSensor in nexus_sim/_src/vehicle/sensors/rtx_thermal.py.
 DISPLAY = {
     "t_lo": 300.0,
     "t_hi": 340.0,

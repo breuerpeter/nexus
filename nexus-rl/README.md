@@ -4,8 +4,8 @@ Trains a **multi-rotor RL hover policy** for the Freefly **Astro Max** on **Isaa
 Newton physics backend**. It runs without Kit and headless, with *no Isaac Sim and no PhysX*, and records
 the training as a Rerun `.rrd` showing the swarm of agents learning. The exported policy, `policy.pt` or
 `policy.onnx`, is what the `TrainedPolicyController` example in
-`nexus/examples/controllers/policy/controller.py` loads. Deploy it with
-[`nexus/examples/controllers/policy/goto/flight.py`](../nexus/examples/controllers/policy/goto/flight.py).
+`nexus_sim/examples/controllers/policy/controller.py` loads. Deploy it with
+[`nexus_sim/examples/controllers/policy/goto/flight.py`](../nexus_sim/examples/controllers/policy/goto/flight.py).
 
 This is a **separate `uv` project** with its own virtual environment, so Isaac Lab, a heavy,
 prerelease-pinned stack, stays **out of the core `nexus` environment**. It depends on `nexus`
@@ -120,18 +120,18 @@ different vehicle is just another `config/<vehicle>.py`.
 ## Deploy, the train-to-flight round trip
 
 The `TrainedPolicyController` example loads the exported `policy.pt`, and
-[`nexus/examples/controllers/policy/goto/flight.py`](../nexus/examples/controllers/policy/goto/flight.py)
+[`nexus_sim/examples/controllers/policy/goto/flight.py`](../nexus_sim/examples/controllers/policy/goto/flight.py)
 flies it in the **standalone** runtime. That closes the loop: train on Isaac-Lab-on-Newton → deploy on
 the core. Two shared "single source of truth" pieces make it transfer with no convention change:
 
-- **Observation**: the same `observation_from_state`, in `nexus.examples._lib.observation`, builds
+- **Observation**: the same `observation_from_state`, in `nexus_sim.examples._lib.observation`, builds
   the 12-D kinematic obs plus the last action, and training and deploy both call it.
 - **Action**: the policy's action is **CTBR**, collective thrust plus commanded body rates, and the
   deploy actuator applies it. That actuator mirrors the `_pre_physics_step` of the training env: thrust
   along ±body-z and an inner P rate loop `τ = I·gain·(ω_des − ω)`.
 
 ```bash
-uv run --extra policy python nexus/examples/controllers/policy/goto/flight.py \
+uv run --extra policy python nexus_sim/examples/controllers/policy/goto/flight.py \
   --policy .rl-artifacts/rl/exported/policy.pt   # the waypoint tour is WAYPOINTS in the script
 # -> ~/.cache/nexus/logs/nexus-<timestamp>.rrd  (open with `rerun <path>`)
 ```

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from pxr import Gf, Usd, UsdGeom
 
-import nexus  # noqa: F401  # registers the nexus schema plugin
+import nexus_sim  # noqa: F401  # registers the nexus schema plugin
 
 
 def author(out: Path) -> None:

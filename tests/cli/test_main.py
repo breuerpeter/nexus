@@ -5,7 +5,7 @@ import importlib
 
 import pytest
 
-cli = importlib.import_module("nexus._src.cli.main")
+cli = importlib.import_module("nexus_sim._src.cli.main")
 
 # A vehicle that declares PX4 and authors no camera.
 PLAIN_USD = (
@@ -175,8 +175,8 @@ def test_the_command_line_takes_the_layer(monkeypatch, tmp_path, warp_cpu):
     stand-in docker daemon, when `nexus run --vehicle … --scene empty --layer <layer>` runs, then PX4 Software
     In The Loop (SITL) starts on the layer's airframe, `PX4_SIM_MODEL=none_bar`, as the same run through `Sim` does.
     """
-    import nexus._src.peers.containers as containers
-    from nexus._src.api.sim import Sim
+    import nexus_sim._src.peers.containers as containers
+    from nexus_sim._src.api.sim import Sim
 
     daemon = _Daemon()
     monkeypatch.setattr(containers, "client", lambda: daemon)
@@ -223,7 +223,7 @@ def test_the_px4_flags_are_gone(monkeypatch, tmp_path, capsys):
     `TypeError`. The vehicle names a file that doesn't exist and `DOCKER_HOST` points nowhere, so no
     run can start if the tool still takes a flag.
     """
-    from nexus._src.api.sim import Sim
+    from nexus_sim._src.api.sim import Sim
 
     monkeypatch.setenv("DOCKER_HOST", f"unix://{tmp_path / 'no-daemon.sock'}")
     missing = str(tmp_path / "missing.usda")

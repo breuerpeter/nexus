@@ -1,7 +1,7 @@
 """The component Protocols of ``core/interfaces.py``: the old actuator contract stays for the examples' ``Rotors``."""
 
-from nexus._src.core import interfaces
-from nexus.examples._lib.rotors import Rotors
+from nexus_sim._src.core import interfaces
+from nexus_sim.examples._lib.rotors import Rotors
 
 MARKERS = ("forces_wp", "stages")
 
@@ -13,7 +13,7 @@ def _declares(protocol: type, name: str) -> bool:
 
 def test_the_old_actuator_contract_stays_in_core_for_the_examples_rotors():
     """The old actuator contract, `Actuator` in `core/interfaces.py`, stays for the examples' single-body
-    `Rotors`: given the tree, when a caller imports `Actuator` from `nexus._src.core.interfaces`, then it
+    `Rotors`: given the tree, when a caller imports `Actuator` from `nexus_sim._src.core.interfaces`, then it
     declares `forces_wp` and `stages`, `Rotors` satisfies it, and it carries no pairing marker, since the
     guard that read one went with the articulated actuator.
     """

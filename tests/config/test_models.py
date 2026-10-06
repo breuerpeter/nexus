@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from nexus._src.config import LaunchConfig
+from nexus_sim._src.config import LaunchConfig
 
 
 def test_empty_launch_config_defaults():

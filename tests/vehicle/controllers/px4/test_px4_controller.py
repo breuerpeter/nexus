@@ -4,7 +4,7 @@ gives it, addresses the system id the run gives it, carries the ULog artifact, a
 
 import pytest
 
-from nexus._src.vehicle.controllers.px4 import controller as ctrl
+from nexus_sim._src.vehicle.controllers.px4 import controller as ctrl
 
 
 class _FakeMav:

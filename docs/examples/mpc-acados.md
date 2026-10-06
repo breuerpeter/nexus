@@ -4,7 +4,7 @@ description: "A real-time Nonlinear Model Predictive Control (NMPC) controller o
 
 # Nonlinear model predictive control with acados
 
-`nexus/examples/controllers/acados_nmpc/waypoint_tracking.py` flies the astro-max through a
+`nexus_sim/examples/controllers/acados_nmpc/waypoint_tracking.py` flies the astro-max through a
 **curving seven-waypoint course** with a **real-time nonlinear Model Predictive Control (MPC)**
 controller.
 
@@ -44,7 +44,7 @@ yet: run `scripts/ci/evaluate_examples.py --upload`.*
 
 ## How it works
 
-The controller, `nexus/examples/controllers/acados_nmpc/controller.py`, never plans: the
+The controller, `nexus_sim/examples/controllers/acados_nmpc/controller.py`, never plans: the
 operator hands it the whole-path reference once through `accept_setpoint(ReferenceTrajectory)`,
 and every control tick it solves a short optimal-control problem to stay on it.
 
@@ -184,8 +184,8 @@ acados isn't a plain pip dependency. It's a C library your machine compiles, and
 compiles a C solver. Provision it once, then fly:
 
 ```bash
-uv run --extra acados -m nexus.examples acados_nmpc --provision   # fetches + builds acados
-uv run --extra acados -m nexus.examples acados_nmpc   # flies + asserts + writes the .rrd
+uv run --extra acados -m nexus_sim.examples acados_nmpc --provision   # fetches + builds acados
+uv run --extra acados -m nexus_sim.examples acados_nmpc   # flies + asserts + writes the .rrd
 ```
 
 The first command fetches the acados commit the example pins into `~/.cache/nexus/acados/`, builds
@@ -198,8 +198,8 @@ From an installed package, no checkout needed:
 
 ```bash
 pip install 'nexus-sim[acados]'
-python -m nexus.examples acados_nmpc --provision
-python -m nexus.examples acados_nmpc
+python -m nexus_sim.examples acados_nmpc --provision
+python -m nexus_sim.examples acados_nmpc
 ```
 
 Needs a CUDA device for the Newton sim, and `cmake` and a C compiler for acados and its code

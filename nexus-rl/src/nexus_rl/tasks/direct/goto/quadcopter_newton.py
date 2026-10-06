@@ -42,8 +42,8 @@ from isaaclab_newton.physics import MJWarpSolverCfg, NewtonCfg
 from isaaclab_tasks.direct.quadcopter.quadcopter_env import QuadcopterEnv
 from isaaclab_tasks.direct.quadcopter.quadcopter_env_cfg import QuadcopterEnvCfg
 
-from nexus.examples._lib import CtbrParams  # CTBR params struct for the per-rotor subclass's kernel
-from nexus.examples._lib.observation import (  # shared single source for train+deploy
+from nexus_sim.examples._lib import CtbrParams  # CTBR params struct for the per-rotor subclass's kernel
+from nexus_sim.examples._lib.observation import (  # shared single source for train+deploy
     observation_from_state,  # shared obs-from-state, the single source
 )
 
@@ -165,7 +165,7 @@ class QuadcopterNewtonEnv(QuadcopterEnv):
     # This Newton base only carries the backend-portable setup + CTBR params + NaN/reset robustness below.
 
     def _get_observations(self) -> dict:
-        # Reuse the single shared obs-from-state builder, nexus.examples._lib.observation, the same
+        # Reuse the single shared obs-from-state builder, nexus_sim.examples._lib.observation, the same
         # code the deploy controller/sensor calls, so the policy trains on observations that match those
         # it gets in the standalone runtime, bit for bit.
         # root_quat_w is native Newton, in x, y, z, w order, the convention observation_from_state expects.

@@ -31,7 +31,7 @@ def _author_min_usd(path: str) -> None:
 def test_usd_builder_loads_body_and_mass(tmp_path):
     import newton
 
-    from nexus._src.physics.builders.usd import USDBuilder
+    from nexus_sim._src.physics.builders.usd import USDBuilder
 
     usd = str(tmp_path / "mini.usda")
     _author_min_usd(usd)
@@ -54,7 +54,7 @@ def test_usd_builder_spawns_frd_init_attitude(tmp_path):
     import newton
     import numpy as np
 
-    from nexus._src.physics.builders.usd import USDBuilder
+    from nexus_sim._src.physics.builders.usd import USDBuilder
 
     usd = str(tmp_path / "mini.usda")
     _author_min_usd(usd)
@@ -79,7 +79,7 @@ def test_usd_builder_spawn_att_override(tmp_path):
     import numpy as np
     import warp as wp
 
-    from nexus._src.physics.builders.usd import USDBuilder
+    from nexus_sim._src.physics.builders.usd import USDBuilder
 
     usd = str(tmp_path / "mini.usda")
     _author_min_usd(usd)
@@ -114,7 +114,7 @@ def test_usd_builder_fixed_base_raises(tmp_path):
     joint.GetBody1Rel().SetTargets([body.GetPrim().GetPath()])
     stage.GetRootLayer().Save()
 
-    from nexus._src.physics.builders.usd import USDBuilder
+    from nexus_sim._src.physics.builders.usd import USDBuilder
 
     with pytest.raises(ValueError, match="floating base"):
         USDBuilder({"usd_path": usd}, None).build(newton.ModelBuilder())
@@ -123,7 +123,7 @@ def test_usd_builder_fixed_base_raises(tmp_path):
 def test_usd_builder_missing_path_raises():
     import newton
 
-    from nexus._src.physics.builders.usd import USDBuilder
+    from nexus_sim._src.physics.builders.usd import USDBuilder
 
     with pytest.raises(FileNotFoundError):
         USDBuilder({}, None).build(newton.ModelBuilder())
@@ -132,7 +132,7 @@ def test_usd_builder_missing_path_raises():
 def test_usd_builder_nonexistent_file_raises(tmp_path):
     import newton
 
-    from nexus._src.physics.builders.usd import USDBuilder
+    from nexus_sim._src.physics.builders.usd import USDBuilder
 
     with pytest.raises(FileNotFoundError):
         USDBuilder({"usd_path": str(tmp_path / "nope.usda")}, None).build(newton.ModelBuilder())

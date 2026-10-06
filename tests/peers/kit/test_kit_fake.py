@@ -11,11 +11,11 @@ import io
 from PIL import Image
 from rerun.experimental import RrdReader
 
-import nexus._src.build.launch as launch_mod
-from nexus._src.config import LaunchConfig
-from nexus._src.peers.kit.fake import KitFake
-from nexus._src.peers.kit.runner import KitPeerError
-from nexus._src.peers.px4_sitl.fake import Px4Fake
+import nexus_sim._src.build.launch as launch_mod
+from nexus_sim._src.config import LaunchConfig
+from nexus_sim._src.peers.kit.fake import KitFake
+from nexus_sim._src.peers.kit.runner import KitPeerError
+from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
 
 
 def _frames(rrd: str, camera: str) -> list[tuple[int, int]]:

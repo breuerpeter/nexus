@@ -76,11 +76,11 @@ uv run --project nexus-rl python nexus-rl/scripts/rsl_rl/record_demo.py \
   --log_dir .rl-artifacts/rl --out astromax_rl.rrd
 
 # --- 3) DEPLOY: flies the policy on the framework + records the waypoint tour ---
-uv run --extra policy -m nexus.examples goto_policy \
+uv run --extra policy -m nexus_sim.examples goto_policy \
   --policy .rl-artifacts/rl/exported/policy.pt
 ```
 
-Without `--policy`, `uv run --extra policy -m nexus.examples goto_policy` flies the hosted policy
+Without `--policy`, `uv run --extra policy -m nexus_sim.examples goto_policy` flies the hosted policy
 the example pins: a content-addressed `.pt` fetched from the catalog's `assets.base` into the asset
 cache, sha-verified, and offline after the first fetch.
 

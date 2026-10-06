@@ -7,8 +7,8 @@ import os
 
 import pytest
 
-from nexus._src.assets import fetch, sha256_file
-from nexus._src.assets.resolver import hosted_url
+from nexus_sim._src.assets import fetch, sha256_file
+from nexus_sim._src.assets.resolver import hosted_url
 
 
 def _make(tmp_path, data=b"astro_max usd bytes"):

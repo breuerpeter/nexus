@@ -38,7 +38,7 @@ forgives the line whatever topic it names. The gate caught a real fidelity bug. 
 fed the magnetometer a *Zurich* World Magnetic Model (WMM) field while the
 Global Positioning System (GPS) origin is *Seattle*, so PX4's strict mag check, `EKF2_MAG_CHK_STR`,
 intermittently failed with `Strong magnetic interference`. The fix computes the field at the GPS
-origin from PX4's own coarse WMM table, `nexus._src.core.geomag`, ported from PX4's
+origin from PX4's own coarse WMM table, `nexus_sim._src.core.geomag`, ported from PX4's
 `geo_mag_declination.cpp` as PegasusSimulator and `PX4-SITL_gazebo` do, plus a realistic
 magnetometer σ. The warning is now gone and arming is faster.
 
@@ -75,10 +75,10 @@ This is the decoupled workflow, headless and end-to-end. [Running a SITL flight]
 QGroundControl version:
 
 ```bash
-# closed-loop flight, one na.Sim run: nexus serves the HIL :4560 itself + records the .rrd +
+# closed-loop flight, one nx.Sim run: nexus serves the HIL :4560 itself + records the .rrd +
 # reports the with-PX4 RTF; PX4 SITL connects; the harness flies THE one PX4 flight profile
-# (a script against nexus.px4.OffboardClient over MAVLink :14540: arm + AUTO.TAKEOFF + yaw sweeps). Zero-arg.
-uv run -m nexus.examples px4_sitl
+# (a script against nexus_sim.px4.OffboardClient over MAVLink :14540: arm + AUTO.TAKEOFF + yaw sweeps). Zero-arg.
+uv run -m nexus_sim.examples px4_sitl
 
 # or the example + the evaluation/regression gates at once
 uv run --group ci python scripts/ci/evaluate_examples.py --only px4_sitl
@@ -91,7 +91,7 @@ run fetches and builds the PX4 tree the controller pins, and `PX4_DIR` names a c
 
 `scripts/ci/evaluate_examples.py` runs this example on a GPU box of its own, one box per example,
 in the `gpu-examples` workflow via the shared `gpu-runner.yml`. The box fetches and builds the PX4
-tree from the pin the controller ships, `nexus/_src/peers/px4_sitl/px4.ref`, the way a
+tree from the pin the controller ships, `nexus_sim/_src/peers/px4_sitl/px4.ref`, the way a
 user's first run does, and caches the tree and the `px4-sitl` image under that pin. The script then
 gates the fresh run against `scripts/ci/examples_baselines.json`. It fails if the closed-loop
 takeoff stops working,

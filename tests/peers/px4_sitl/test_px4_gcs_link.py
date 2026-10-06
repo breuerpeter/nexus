@@ -1,7 +1,7 @@
 """What PX4 concludes about a Ground Control Station (GCS) in a recording run, now that nothing in
 the sim heartbeats to it.
 
-Each module fixture flies one recording run through ``na.Sim``, which builds and launches PX4 from
+Each module fixture flies one recording run through ``nx.Sim``, which builds and launches PX4 from
 the tree on this machine, so the tests need docker and a PX4 tree carrying the airframe the sim
 flies; they skip without one. The runs pace at real time, ``rtf=1.0``, so a heartbeat sent once a wall-clock
 second also arrives once a second of PX4's lockstep time, as it does when a person flies.
@@ -26,8 +26,8 @@ os.environ.setdefault("MAVLINK_DIALECT", "common")
 
 from pymavlink import mavutil
 
-import nexus as na
-from nexus._src.peers.px4_sitl import checkout
+import nexus_sim as nx
+from nexus_sim._src.peers.px4_sitl import checkout
 
 # The tree the run would fly, with no fetch: $PX4_DIR, or the pinned tree once a run fetched it.
 _TREE = checkout.tree(fetch_missing=False)
@@ -151,7 +151,7 @@ def run_with_no_gcs():
     without sticks, and waits until PX4 reports it could arm and has been up past the datalink timeout. Then
     it makes a GCS required, ``NAV_DLL_ACT`` 2, asks PX4 to arm, and puts the parameter back.
     """
-    with na.Sim("astro_max_base", scene="empty", log=True, rtf=1.0) as sim:
+    with nx.Sim("astro_max_base", scene="empty", log=True, rtf=1.0) as sim:
         sim.start(timeout=120.0)
         link = _Peer(_OPERATOR_LINK, heartbeat=False)
         try:
@@ -183,7 +183,7 @@ def run_where_the_gcs_leaves():
     request that names no mode, which PX4 answers with a status message. Then it goes quiet for longer than
     the datalink timeout, the way a GCS device does when it drops off the network.
     """
-    with na.Sim("astro_max_base", scene="empty", log=True, rtf=1.0) as sim:
+    with nx.Sim("astro_max_base", scene="empty", log=True, rtf=1.0) as sim:
         sim.start(timeout=120.0)
         gcs = _Peer(_GCS_LINK, heartbeat=True)
         try:

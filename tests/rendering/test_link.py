@@ -12,8 +12,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from nexus._src.peers.kit.runner import KIT_DIR, KitPeer, KitPeerError
-from nexus._src.rendering.link import KitRenderer
+from nexus_sim._src.peers.kit.runner import KIT_DIR, KitPeer, KitPeerError
+from nexus_sim._src.rendering.link import KitRenderer
 
 wire = runpy.run_path(str(KIT_DIR / "link.py"))
 

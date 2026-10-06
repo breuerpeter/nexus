@@ -1,7 +1,7 @@
 """Where PX4 Software In The Loop (SITL) starts its clock when it dials in late to the sim's
 Hardware In The Loop (HIL) server, as it can on a slow CI runner.
 
-The module fixture flies one run through ``na.Sim``, which builds and launches PX4 from the tree
+The module fixture flies one run through ``nx.Sim``, which builds and launches PX4 from the tree
 on this machine, so the test needs docker and a PX4 tree carrying the airframe the sim flies; it
 skips without one.
 """
@@ -21,8 +21,8 @@ os.environ.setdefault("MAVLINK_DIALECT", "common")
 
 from pymavlink import mavutil
 
-import nexus as na
-from nexus._src.peers.px4_sitl import checkout
+import nexus_sim as nx
+from nexus_sim._src.peers.px4_sitl import checkout
 
 # The tree the run would fly, with no fetch: $PX4_DIR, or the pinned tree once a run fetched it.
 _TREE = checkout.tree(fetch_missing=False)
@@ -66,7 +66,7 @@ def first_sensor_stamp_of_a_late_dial_in():
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(mavutil.mavtcpin, "recv", recv_once_px4_dialed_in)
         mp.setattr(mavutil.mavtcpin, "write", write_and_read_stamps)
-        with na.Sim("astro_max_base", scene="empty") as sim:
+        with nx.Sim("astro_max_base", scene="empty") as sim:
             sim.start(timeout=120.0)
     return stamps[0]
 

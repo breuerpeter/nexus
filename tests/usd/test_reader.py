@@ -9,9 +9,9 @@ from pathlib import Path
 import pytest
 from pxr import Sdf, Usd, UsdGeom
 
-from nexus._src.build.components import resolve_components
-from nexus._src.core.registry import ComponentRegistry
-from nexus._src.usd import schema_names
+from nexus_sim._src.build.components import resolve_components
+from nexus_sim._src.core.registry import ComponentRegistry
+from nexus_sim._src.usd import schema_names
 
 FIXTURE = Path(__file__).with_name("conformance.usda")
 IMU = "/Vehicle/body/Imu"
@@ -34,7 +34,7 @@ def _fixture_copy(tmp_path) -> Path:
 
 def test_the_reader_names_each_schema_attribute_in_snake_case_without_its_namespace():
     """The reader names each `nexus:` attribute of a prim's schema in snake case, without the namespace."""
-    from nexus._src.usd.reader import read_declarations
+    from nexus_sim._src.usd.reader import read_declarations
 
     kwargs = {prim: kwargs for prim, _, kwargs in read_declarations(FIXTURE)}[IMU]
     assert sorted(kwargs) == ["acc_noise", "gyro_noise", "rate"]
@@ -42,7 +42,7 @@ def test_the_reader_names_each_schema_attribute_in_snake_case_without_its_namesp
 
 def test_the_reader_fails_on_an_asset_path_that_resolves_to_no_file_and_names_the_prim(tmp_path):
     """The reader fails on an authored asset path that resolves to no file, and names the prim."""
-    from nexus._src.usd.reader import read_declarations
+    from nexus_sim._src.usd.reader import read_declarations
 
     vehicle = tmp_path / "vehicle.usda"
     stage = Usd.Stage.CreateNew(str(vehicle))
@@ -57,7 +57,7 @@ def test_the_reader_fails_on_an_asset_path_that_resolves_to_no_file_and_names_th
 
 def test_the_reader_fails_on_a_nexus_attribute_on_a_prim_with_no_nexus_schema_and_names_the_prim(tmp_path):
     """The reader fails on an authored `nexus:` attribute on a prim that applies no nexus schema."""
-    from nexus._src.usd.reader import read_declarations
+    from nexus_sim._src.usd.reader import read_declarations
 
     vehicle = tmp_path / "vehicle.usda"
     stage = Usd.Stage.CreateNew(str(vehicle))
