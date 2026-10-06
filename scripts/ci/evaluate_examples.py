@@ -335,7 +335,7 @@ def _bench_feed(key: str, into: pathlib.Path) -> tuple[list, str | None]:
 def _indexed(prior: list, key: str, date: str) -> list[dict]:
     """List ``key`` with ``date`` in the index ``prior``, once by key, as ``{key, date}`` records.
 
-    The index at ``bench/latest.json`` is what the docs trend chart reads to find the per-commit
+    The index, at the feed's fixed key, is what the docs trend chart reads to find the per-commit
     files. A record with no key, as the entries of the snapshot the index replaced, goes.
     """
     listed = {r["key"]: r for r in prior if isinstance(r, dict) and "key" in r}
