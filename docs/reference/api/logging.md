@@ -4,13 +4,13 @@ description: "How to log from examples and user code: the framework logger, whic
 
 # Logging
 
-Log from examples and user code through the framework logger, `na.logger`, which is the standard-library logger named `nexus`:
+Log from examples and user code through the framework logger, `nx.logger`, which is the standard-library logger named `nexus`:
 
 ```python
-import nexus as na
+import nexus_sim as nx
 
-na.logger.info("reached the waypoint")
-na.logger.warning("flight degraded")
+nx.logger.info("reached the waypoint")
+nx.logger.warning("flight degraded")
 ```
 
 It always writes to the **console**, on stderr. When a recording is active, through `--log` or `--view`,
@@ -28,7 +28,7 @@ which the central `Logger` fans out only when recording.
 
 A row's entity path names who wrote it. It has three parts, in this order:
 
-1. The process: `sim`, or the name of a peer's folder under `nexus/_src/peers/`.
+1. The process: `sim`, or the name of a peer's folder under `nexus_sim/_src/peers/`.
 2. The component's role folder, as the source tree names it: `vehicle/sensors`,
    `vehicle/controllers` or `guidance`.
 3. The instance: the name of the prim that declares it.

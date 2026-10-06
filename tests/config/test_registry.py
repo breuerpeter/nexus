@@ -4,8 +4,8 @@ import logging
 
 import pytest
 
-import nexus
-from nexus._src.config import Registry, RegistryError, load_registry
+import nexus_sim
+from nexus_sim._src.config import Registry, RegistryError, load_registry
 
 
 def _veh(name):
@@ -81,14 +81,14 @@ def test_the_shipped_catalog_names_two_vehicles():
     """The shipped catalog names two vehicles, `astro_max_base` and `astro_max_fpv`: the payload
     variants leave the tree, and a project that wants one brings it in its own catalog.
     """
-    assert list(nexus.Registry.from_yaml().vehicles) == ["astro_max_base", "astro_max_fpv"]
+    assert list(nexus_sim.Registry.from_yaml().vehicles) == ["astro_max_base", "astro_max_fpv"]
 
 
 def test_the_shipped_catalog_lists_a_hosted_scene_with_static_geometry():
     """The shipped catalog lists a photoreal scene with static geometry, hosted under the content delivery network's
     `public/` prefix: `powerline`, served from the scenes folder under its own name.
     """
-    url = nexus.Registry.from_yaml().scenes["powerline"].usd.url
+    url = nexus_sim.Registry.from_yaml().scenes["powerline"].usd.url
     assert url.startswith("https://d2837jz4fvtxko.cloudfront.net/public/assets/usd/scenes/powerline-")
 
 
@@ -99,7 +99,7 @@ def test_the_two_astro_max_vehicles_keep_the_usds_they_fly_today():
     """`astro_max_base` and `astro_max_fpv` keep the USDs they fly today: the published USDs, pinned
     by hash, stay the source of record once the scripts that authored them leave the tree.
     """
-    reg = nexus.Registry.from_yaml()
+    reg = nexus_sim.Registry.from_yaml()
     assert [reg.vehicles[name].usd.url for name in ("astro_max_base", "astro_max_fpv")] == [
         f"{HOSTED}/astro_max_base-0055c7851d3efe08306f7dcdb9d19e2e634701ca01a5221ded1dabffc9cadb8a.usdz",
         f"{HOSTED}/astro_max_fpv-3a6953cbba38210d904126d0e769ae301a8f05c4891d88359ba3b42ea5bd1e89.usdz",
@@ -189,7 +189,7 @@ def test_a_catalog_entry_that_still_carries_px4_fails_to_load(tmp_path):
     """A catalog entry that still carries `px4:` fails to load: the airframe lives in the vehicle's Universal Scene Description (USD) file.
 
     Given a project catalog whose vehicle entry has `px4: { airframe: astro_max }`, when
-    `nexus.Registry.from_yaml(path)` loads it, then it raises and names the `px4` field.
+    `nexus_sim.Registry.from_yaml(path)` loads it, then it raises and names the `px4` field.
     """
     catalog = tmp_path / "catalog.yaml"
     catalog.write_text(
@@ -200,7 +200,7 @@ def test_a_catalog_entry_that_still_carries_px4_fails_to_load(tmp_path):
         "scenes:\n  empty: {}\n"
     )
     with pytest.raises(ValueError, match=r"vehicles\.project_vehicle\.px4"):
-        nexus.Registry.from_yaml(catalog)
+        nexus_sim.Registry.from_yaml(catalog)
 
 
 MY_QUAD = """\
@@ -214,14 +214,14 @@ def test_a_catalog_with_a_defaults_block_fails_to_load_and_says_to_name_the_vehi
     """A project catalog with a `defaults` block fails to load, and the error names the removal and
     says to name the vehicle and scene on the run.
 
-    Given a catalog with `defaults: { vehicle: my_quad }`, when `nexus.Registry.from_yaml(path)` reads
+    Given a catalog with `defaults: { vehicle: my_quad }`, when `nexus_sim.Registry.from_yaml(path)` reads
     it, then it raises an error that names `defaults` as removed and points at `--vehicle` and `--scene`.
     """
     catalog = tmp_path / "catalog.yaml"
     catalog.write_text(MY_QUAD + "defaults: { vehicle: my_quad }\n")
 
     with pytest.raises((RegistryError, ValueError)) as e:
-        nexus.Registry.from_yaml(catalog)
+        nexus_sim.Registry.from_yaml(catalog)
 
     assert [w in str(e.value) for w in ("defaults", "remov", "--vehicle", "--scene")] == [True] * 4
 
@@ -229,13 +229,13 @@ def test_a_catalog_with_a_defaults_block_fails_to_load_and_says_to_name_the_vehi
 def test_a_project_catalog_that_lists_only_what_it_adds_loads_on_its_own(tmp_path):
     """A project catalog that lists only what it adds loads on its own.
 
-    Given a file with one vehicle, `scenes: {}` and no `defaults`, when `nexus.Registry.from_yaml(path)`
+    Given a file with one vehicle, `scenes: {}` and no `defaults`, when `nexus_sim.Registry.from_yaml(path)`
     reads it, then it returns a catalog with that one vehicle and no error.
     """
     catalog = tmp_path / "catalog.yaml"
     catalog.write_text(MY_QUAD + "scenes: {}\n")
 
-    assert list(nexus.Registry.from_yaml(catalog).vehicles) == ["my_quad"]
+    assert list(nexus_sim.Registry.from_yaml(catalog).vehicles) == ["my_quad"]
 
 
 BUNDLED_ASTRO_SHA = "0055c7851d3efe08306f7dcdb9d19e2e634701ca01a5221ded1dabffc9cadb8a"

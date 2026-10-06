@@ -16,12 +16,12 @@ pytest.importorskip("warp")
 import newton
 import warp as wp
 
-from nexus._src.build.launch import resolve_to_vehicle_builder
-from nexus._src.config import LaunchConfig
-from nexus._src.core.schema import Measurement, SimTime
-from nexus.examples._lib import RigidBodyRotors, build_rotor_mixer_from_model
-from nexus.examples._lib.observation import WarpObservationSensor
-from nexus.examples.controllers.pid import PidController
+from nexus_sim._src.build.launch import resolve_to_vehicle_builder
+from nexus_sim._src.config import LaunchConfig
+from nexus_sim._src.core.schema import Measurement, SimTime
+from nexus_sim.examples._lib import RigidBodyRotors, build_rotor_mixer_from_model
+from nexus_sim.examples._lib.observation import WarpObservationSensor
+from nexus_sim.examples.controllers.pid import PidController
 from tests.usd import sensor_vehicle as sv
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")

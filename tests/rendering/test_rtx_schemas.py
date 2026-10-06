@@ -15,9 +15,9 @@ pytest.importorskip("pxr")
 
 from pxr import Usd
 
-from nexus._src.core.registry import default_registry
-from nexus._src.peers.kit.fake import KitFake
-from nexus._src.peers.px4_sitl.fake import Px4Fake
+from nexus_sim._src.core.registry import default_registry
+from nexus_sim._src.peers.kit.fake import KitFake
+from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
 from tests.usd import sensor_vehicle as sv
 
 pytestmark = pytest.mark.usefixtures("warp_cpu", "daemon")

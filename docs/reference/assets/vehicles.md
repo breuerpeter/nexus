@@ -8,7 +8,7 @@ The registry resolves vehicles by name, with `nexus run --vehicle <name>`, to a 
 one in code. See [Conventions](../../design/conventions.md).
 
 !!! warning
-    nexus supports quadrotor vehicles only.
+    Only quadrotor vehicles fly in nexus.
 
 ## Freefly Systems Astro Max
 

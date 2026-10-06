@@ -9,7 +9,7 @@ import importlib.resources
 import subprocess
 from pathlib import Path
 
-from nexus._src.peers.px4_sitl import checkout
+from nexus_sim._src.peers.px4_sitl import checkout
 
 AIRFRAME = Path("ROMFS/px4fmu_common/init.d-posix/airframes/80000_none_astro_max")
 MAG_PATCH = "param set-default EKF2_MAG_TYPE 6"
@@ -84,7 +84,7 @@ def test_a_projects_pin_file_beside_its_catalog_overrides_the_controllers_pin(tm
     catalog = tmp_path / "nexus.registry.yaml"
     catalog.write_text("vehicles: {}\n")
     (tmp_path / "nexus.px4.ref").write_text("example/px4@" + "a" * 40 + "\n")
-    shipped = importlib.resources.files("nexus._src.peers.px4_sitl").joinpath("px4.ref").read_text()
+    shipped = importlib.resources.files("nexus_sim._src.peers.px4_sitl").joinpath("px4.ref").read_text()
     shipped_sha = shipped.splitlines()[0].split("@", 1)[1]
 
     assert (checkout.pin(catalog).sha, checkout.pin(None).sha) == ("a" * 40, shipped_sha)

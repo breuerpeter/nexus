@@ -6,7 +6,7 @@ default scenario, and the from_gps wiring.
 
 import math
 
-from nexus._src.core import geomag
+from nexus_sim._src.core import geomag
 
 # Seattle GPS origin from the default scenario, sensors.gps.init.
 SEATTLE = (47.747944, -122.163917)

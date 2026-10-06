@@ -5,10 +5,10 @@ description: "API reference for Sim and its observation read types, BodyState, J
 # Simulation
 
 ```python
-from nexus import Sim, BodyState, JointState, SensorSample
+from nexus_sim import Sim, BodyState, JointState, SensorSample
 ```
 
-::: nexus.Sim
-::: nexus.BodyState
-::: nexus.JointState
-::: nexus.SensorSample
+::: nexus_sim.Sim
+::: nexus_sim.BodyState
+::: nexus_sim.JointState
+::: nexus_sim.SensorSample

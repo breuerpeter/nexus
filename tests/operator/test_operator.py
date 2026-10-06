@@ -2,7 +2,7 @@
 
 import pytest
 
-from nexus._src.operator import wait_until
+from nexus_sim._src.operator import wait_until
 
 
 def test_wait_until_returns_when_predicate_true():

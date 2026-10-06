@@ -4,7 +4,7 @@ description: "A sampling-plus-gradient differentiable-simulation Model Predictiv
 
 # Sampling model predictive control slalom
 
-`nexus/examples/controllers/sampling_mpc/obstacle_slalom.py` flies the astro-max through an
+`nexus_sim/examples/controllers/sampling_mpc/obstacle_slalom.py` flies the astro-max through an
 **obstacle slalom** with a **sampling + gradient differentiable-simulation MPC**, the framework port of
 NVIDIA's `example_diffsim_drone`.
 
@@ -45,8 +45,8 @@ CI-measured on the pinned runner, see [Benchmarking](../reference/benchmarking.m
 ## Run it
 
 ```bash
-uv run -m nexus.examples sampling_mpc            # run + assert it flies the slalom
-uv run -m nexus.examples sampling_mpc   # flies + asserts + writes the .rrd
+uv run -m nexus_sim.examples sampling_mpc            # run + assert it flies the slalom
+uv run -m nexus_sim.examples sampling_mpc   # flies + asserts + writes the .rrd
 ```
 
 Needs a CUDA device for the batched rollout and the graph-captured optimization.

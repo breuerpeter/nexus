@@ -29,7 +29,7 @@ _REPO = Path(__file__).resolve().parents[2]
 _MATRIX = _REPO / "docs/data/rtf_matrix.json"
 _EXAMPLES = _REPO / "docs/data/examples_bench.json"
 _BASELINES = _REPO / "scripts/ci/examples_baselines.json"
-_REGISTRY = _REPO / "nexus/_src/config/registry.yaml"  # names the bucket's base, which the feed sits under
+_REGISTRY = _REPO / "nexus_sim/_src/config/registry.yaml"  # names the bucket's base, which the feed sits under
 _MARKER = re.compile(
     r"<!--\s*(?P<kind>benchmark-matrix|benchmark-examples|benchmark-trends|example-stats:\s*(?P<name>[\w.-]+))\s*-->"
 )

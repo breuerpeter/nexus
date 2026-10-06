@@ -101,7 +101,7 @@ def test_an_rtx_run_without_docker_names_docker_and_no_missing_file(tmp_path):
         [
             sys.executable,
             "-c",
-            "from nexus._src.cli.main import main; main()",
+            "from nexus_sim._src.cli.main import main; main()",
             "run",
             "--vehicle",
             str(vehicle),

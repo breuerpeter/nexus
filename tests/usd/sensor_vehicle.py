@@ -14,12 +14,12 @@ from pathlib import Path
 
 import numpy as np
 
-from nexus._src.config import LaunchConfig
-from nexus._src.core.interfaces import Stage
-from nexus._src.core.registry import ComponentRegistry
-from nexus._src.core.schema import Controls
-from nexus._src.core.stages import peer_stages
-from nexus._src.usd import ENTRY_POINT_GROUP
+from nexus_sim._src.config import LaunchConfig
+from nexus_sim._src.core.interfaces import Stage
+from nexus_sim._src.core.registry import ComponentRegistry
+from nexus_sim._src.core.schema import Controls
+from nexus_sim._src.core.stages import peer_stages
+from nexus_sim._src.usd import ENTRY_POINT_GROUP
 
 BASE = Path(__file__).with_name("fixture_vehicle.usda")
 ROOT = "/vehicle"
@@ -159,7 +159,7 @@ def build(vehicle_path: str, *, seed: int = 42, scene: str = "empty", registry=N
     `registry` is the catalog, for a scene of the test's own. The rest goes to the build: `components`
     replaces the registry of :func:`components`, and `peers` is the peer mapping.
     """
-    import nexus._src.build.launch as launch_mod
+    import nexus_sim._src.build.launch as launch_mod
 
     launch = LaunchConfig.from_dict(
         {"vehicle": vehicle_path, "scene": scene, "runtime": {"device": "cpu", "seed": seed}}

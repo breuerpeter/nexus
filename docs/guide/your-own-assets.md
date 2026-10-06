@@ -4,7 +4,7 @@ description: "Fly your own vehicles and scenes: what the shipped catalog holds, 
 
 # Bringing your own assets
 
-nexus installs with one catalog: the [Astro Max variants](../reference/assets/vehicles.md) and the
+The framework installs with one catalog: the [Astro Max variants](../reference/assets/vehicles.md) and the
 [scenes](../reference/assets/scenes.md) the project hosts and serves. That catalog is a starting
 point, not the boundary. A project of your own flies your vehicles in your scenes by keeping a
 registry beside it, with no fork of this one and no patch on top of it.

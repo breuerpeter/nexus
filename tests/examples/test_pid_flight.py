@@ -9,12 +9,12 @@ import pytest
 pytest.importorskip("newton")
 pytest.importorskip("warp")
 
-import nexus as na
-from nexus._src.build.launch import resolve_scenario
-from nexus._src.config import LaunchConfig
-from nexus._src.guidance import MissionGuidance
-from nexus.examples.controllers.pid import flight
-from nexus.examples.controllers.pid.assembly import build_pid_orchestrator
+import nexus_sim as nx
+from nexus_sim._src.build.launch import resolve_scenario
+from nexus_sim._src.config import LaunchConfig
+from nexus_sim._src.guidance import MissionGuidance
+from nexus_sim.examples.controllers.pid import flight
+from nexus_sim.examples.controllers.pid.assembly import build_pid_orchestrator
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")  # the build's force_cpu sets the device; the scope puts it back
 
@@ -38,7 +38,7 @@ def test_the_pid_example_flies_the_shipped_vehicle_to_its_first_waypoint():
         max_steps=3000,
     )
     guidance = MissionGuidance(reached_m=0.3, final_hold_s=0.0)
-    with na.Sim.from_orchestrator(orch, guidance=guidance) as sim:
+    with nx.Sim.from_orchestrator(orch, guidance=guidance) as sim:
         sim.guidance.set_mission(flight.WAYPOINTS[:1])
         sim.run()
 

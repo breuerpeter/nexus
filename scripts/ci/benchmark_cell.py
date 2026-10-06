@@ -21,8 +21,8 @@ import math
 import os
 import sys
 
-import nexus as na
-from nexus.px4 import FRAME_GLOBAL_RELATIVE_ALT, NAV_TAKEOFF, NAV_WAYPOINT, MissionItem, OffboardClient
+import nexus_sim as nx
+from nexus_sim.px4 import FRAME_GLOBAL_RELATIVE_ALT, NAV_TAKEOFF, NAV_WAYPOINT, MissionItem, OffboardClient
 
 READY_S = float(os.environ.get("NEWTON_CELL_READY_S", "300"))  # PX4-lockstep wait budget
 FLY_S = float(os.environ.get("NEWTON_CELL_FLY_S", "600"))  # arm + climb budget [sim s]
@@ -72,7 +72,7 @@ def _fly_mission(sim, op) -> bool:
     ``sim.wait_until``, so the budgets are in sim seconds and a slow cell isn't a failed one.
 
     Args:
-        sim: The running :class:`~nexus.Sim`, already at lockstep.
+        sim: The running :class:`~nexus_sim.Sim`, already at lockstep.
         op: The offboard client on the address the run's port map names, not yet open.
 
     Returns:
@@ -139,12 +139,12 @@ def _fly_inspection(sim, op) -> bool:
 
 
 def main() -> int:
-    parser = na.sim_argparser(description="benchmark-matrix cell (one whole PX4 flight)")
+    parser = nx.sim_argparser(description="benchmark-matrix cell (one whole PX4 flight)")
     parser.add_argument("--mission", choices=("square", "inspection"), default="square", help="the flight to fly")
     args = parser.parse_args()
     if args.mission == "inspection" and args.geo is None:
         args.geo = f"{INSPECTION_GEO[0]},{INSPECTION_GEO[1]}"
-    with na.Sim.from_args(args) as sim:
+    with nx.Sim.from_args(args) as sim:
         sim.start(timeout=READY_S)
         # The run owns the address of the offboard link; the cell's flight opens its own client on
         # it and closes it before the sim stops.
@@ -160,7 +160,7 @@ def main() -> int:
         "control_steps": results.get("control_steps"),
         "rtf_win": (results.get("profile") or {}).get("rtf_win"),
     }
-    na.save_run_artifacts(sim, args, stats)
+    nx.save_run_artifacts(sim, args, stats)
     return 0
 
 

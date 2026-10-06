@@ -86,8 +86,8 @@ def _kill_kit() -> None:
     process and would hold the GPU the next cell renders on, misattributing its numbers.
     """
     # Imported here, not at the top: --list and --merge run with no nexus install.
-    from nexus._src.peers.containers import client
-    from nexus._src.peers.kit.runner import LABEL
+    from nexus_sim._src.peers.containers import client
+    from nexus_sim._src.peers.kit.runner import LABEL
 
     for c in client().containers.list(all=True, filters={"label": f"{LABEL}=kit"}):
         c.remove(force=True)

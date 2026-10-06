@@ -16,10 +16,10 @@ import pytest
 pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
-from nexus._src.config.registry import load_registry
-from nexus._src.core.registry import default_registry
-from nexus._src.core.schema import Measurement
-from nexus._src.peers.px4_sitl.fake import Px4Fake
+from nexus_sim._src.config.registry import load_registry
+from nexus_sim._src.core.registry import default_registry
+from nexus_sim._src.core.schema import Measurement
+from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
 from tests.usd import sensor_vehicle as sv
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")
@@ -310,7 +310,7 @@ def test_a_projects_own_sensor_schema_builds_its_class_with_the_runs_values_and_
     code = f"""
 import pathlib
 import warp as wp
-import nexus
+import nexus_sim
 from tests.usd import sensor_vehicle as sv
 
 prims = sv.prim("Own", "StandInSensorAPI", "float nexus:gain = 2.5")

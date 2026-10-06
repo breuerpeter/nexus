@@ -27,10 +27,10 @@ import yaml
 from mkdocs.structure.files import File
 from mkdocs.utils import get_relative_url
 
-from nexus._src.assets.resolver import hosted_url
+from nexus_sim._src.assets.resolver import hosted_url
 
 _REPO = Path(__file__).resolve().parents[2]
-_REGISTRY = _REPO / "nexus/_src/config/registry.yaml"
+_REGISTRY = _REPO / "nexus_sim/_src/config/registry.yaml"
 _LOCAL_ASSETS = _REPO / "assets/local"  # where prepare_asset_upload.py drops preview glbs
 _SITE_MODELS = "assets/models"  # where the built site serves a local glb
 _MARKER = re.compile(r"(?P<indent>[ \t]*)<!--\s*model-preview:\s*(?P<name>[\w.-]+)\s*-->")

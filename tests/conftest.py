@@ -295,7 +295,7 @@ class StandInController:
             self._logger.log_strip("horizon", [[0.0, 0.0, 1.0], [1.0, 0.0, 1.0]], color=(255, 140, 0))
 
     def stages(self):
-        from nexus._src.core.interfaces import Stage
+        from nexus_sim._src.core.interfaces import Stage
 
         return [Stage("act", "host", self._act)]
 
@@ -307,13 +307,13 @@ def fly_recorded(tmp, vehicle: str, *, layer: str | None = None, ticks: int = FL
     with a ``Recorder`` attached and the Kit peer sent to its fake, or to ``kit``. ``layer`` is an
     override layer's text. The home folder is ``tmp`` for the run, so the recording lands there.
     """
-    import nexus as na
-    from nexus._src.build.assembly import build_orchestrator
-    from nexus._src.build.launch import resolve_scenario
-    from nexus._src.config import LaunchConfig
-    from nexus._src.guidance import TrackingGuidance
-    from nexus._src.peers.kit.fake import KitFake
-    from nexus._src.rendering import rtx_renderer
+    import nexus_sim as nx
+    from nexus_sim._src.build.assembly import build_orchestrator
+    from nexus_sim._src.build.launch import resolve_scenario
+    from nexus_sim._src.config import LaunchConfig
+    from nexus_sim._src.guidance import TrackingGuidance
+    from nexus_sim._src.peers.kit.fake import KitFake
+    from nexus_sim._src.rendering import rtx_renderer
 
     spec = {"vehicle": vehicle, "scene": "empty", "runtime": {"device": "cpu"}}
     if layer is not None:
@@ -342,7 +342,7 @@ def fly_recorded(tmp, vehicle: str, *, layer: str | None = None, ticks: int = FL
                 renderer_factory.close()  # the loop never took the Kit peer over, so it stops here
             raise
         guidance = TrackingGuidance(planner=StandInReference)
-        with na.Sim.from_orchestrator(orch, guidance=guidance) as sim:
+        with nx.Sim.from_orchestrator(orch, guidance=guidance) as sim:
             sim.guidance.set_mission([(1.0, 0.0, 2.0), (2.0, 0.0, 2.0)])
             sim.run()
         return orch.logger.rrd_path

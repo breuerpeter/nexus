@@ -1,4 +1,4 @@
-<img alt="nexus: GPU-accelerated drone simulation" src="https://breuerpeter.github.io/nexus/assets/lockup-banner.svg" width="100%">
+<img alt="The nexus logo: GPU-accelerated drone simulation" src="https://breuerpeter.github.io/nexus/assets/lockup-banner.svg" width="100%">
 
 <br />
 <br />
@@ -36,7 +36,7 @@ flight-stack development cycles.
 
 ## Installation
 
-nexus requires **Python 3.12**, **Linux**, and a **CUDA-capable GPU**. It ships
+The framework requires **Python 3.12**, **Linux**, and a **CUDA-capable GPU**. It ships
 on PyPI:
 
 ```bash
@@ -67,7 +67,7 @@ uv run nexus run --vehicle astro_max_base --scene empty
 Run a self-contained example. Every example records a Rerun `.rrd`, and `--list` names them:
 
 ```bash
-uv run -m nexus.examples sampling_mpc
+uv run -m nexus_sim.examples sampling_mpc
 ```
 
 The decoupled SITL flight workflow, Newton plus PX4 SITL plus QGroundControl, with the

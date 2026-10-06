@@ -8,8 +8,8 @@ are the single source of truth shared by the eager controller and the differenti
 import numpy as np
 import pytest
 
-from nexus._src.core.schema import Controls, Measurement
-from nexus.examples.controllers.pid import (
+from nexus_sim._src.core.schema import Controls, Measurement
+from nexus_sim.examples.controllers.pid import (
     DEFAULT_GAINS,
     NUM_GAINS,
     PidController,
@@ -79,7 +79,7 @@ def test_default_gains_shape():
 def test_law_warp_matches_numpy():
     """The Warp kernel and the NumPy mirror *must* agree: single source of truth."""
     wp = pytest.importorskip("warp")
-    from nexus.examples.controllers.pid import pid_law
+    from nexus_sim.examples.controllers.pid import pid_law
 
     rng = np.random.default_rng(0)
     hover = hover_action(1.9)

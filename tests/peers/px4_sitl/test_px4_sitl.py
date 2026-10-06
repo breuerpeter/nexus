@@ -13,8 +13,8 @@ import pytest
 import yaml
 from docker.errors import ImageNotFound, NotFound
 
-import nexus._src.peers.containers as containers
-from nexus._src.peers.px4_sitl.runner import IMAGE, Px4Sitl, build
+import nexus_sim._src.peers.containers as containers
+from nexus_sim._src.peers.px4_sitl.runner import IMAGE, Px4Sitl, build
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 

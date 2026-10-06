@@ -20,13 +20,13 @@ uv run nexus run --vehicle astro_max_base
 ```
 
 On the machine's first PX4 run that builds the image from
-[`nexus/_src/peers/px4_sitl/image/`](../nexus/_src/peers/px4_sitl/image/),
+[`nexus_sim/_src/peers/px4_sitl/image/`](../nexus_sim/_src/peers/px4_sitl/image/),
 which ships in the package, tagged with a hash of that folder. It fetches and builds the PX4 tree
 the controller pins, or `$PX4_DIR`. Then it starts this container, serves the
 Hardware In The Loop (HIL) link PX4 dials, and removes the container on the way out.
-[`nexus/_src/peers/px4_sitl/runner.py`](../nexus/_src/peers/px4_sitl/runner.py) defines the
+[`nexus_sim/_src/peers/px4_sitl/runner.py`](../nexus_sim/_src/peers/px4_sitl/runner.py) defines the
 container **once** and is also what runs it, through the docker daemon's Python SDK in
-[`nexus/_src/peers/containers.py`](../nexus/_src/peers/containers.py). PX4's console goes to
+[`nexus_sim/_src/peers/containers.py`](../nexus_sim/_src/peers/containers.py). PX4's console goes to
 `~/.cache/nexus/logs/px4-*.log`, next to the run's recording.
 
 PX4 uses host networking, so it reaches the sim's HIL port and exposes its ground-station MAVLink
@@ -40,8 +40,8 @@ A vehicle whose Universal Scene Description (USD) file declares a camera or a li
 on a `Camera` or `OmniLidar` prim, renders it in the **Kit render peer**. The sim starts that container beside PX4 and stops it at the
 end of the run. The loop stays on the host, and the peer takes poses over a socket and returns each
 frame. The program Kit runs lives in
-[`nexus/_src/peers/kit/peer-src/`](../nexus/_src/peers/kit/peer-src/) and ships in the package, and
-[`nexus/_src/peers/kit/runner.py`](../nexus/_src/peers/kit/runner.py) runs it through the docker SDK.
+[`nexus_sim/_src/peers/kit/peer-src/`](../nexus_sim/_src/peers/kit/peer-src/) and ships in the package, and
+[`nexus_sim/_src/peers/kit/runner.py`](../nexus_sim/_src/peers/kit/runner.py) runs it through the docker SDK.
 No compose service starts it.
 
 This repository builds no Kit image. The container runs NVIDIA's
@@ -66,7 +66,7 @@ working folder and `$NEXUS_DATA` at their host paths.
 The **RL training app** in [`nexus-rl/`](../nexus-rl/) no longer needs a container. It runs
 **on the host without Kit** as a **separate `uv` project**. `uv run --project nexus-rl` installs
 Isaac Lab on the Newton backend on demand, in its own virtual environment, and trains on the
-framework's own Newton and Warp. That works via an editable path dependency on `nexus`, so
+framework's own Newton and Warp. That works via an editable path dependency on `nexus-sim`, so
 training + the standalone deploy share one Newton, so a trained policy flies the same dynamics it trained on. See that app's README.
 [`scripts/ci/run_rl_example.sh`](../scripts/ci/run_rl_example.sh) runs the full train → record →
 deploy → regression pipeline host-side. Historically this used NVIDIA's `nvcr.io/nvidia/isaac-lab`

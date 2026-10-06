@@ -2,8 +2,8 @@
 state-feedback seam a privileged controller reads. A pure passthrough: no device work.
 """
 
-from nexus._src.core.schema import Measurement, SimTime
-from nexus._src.vehicle.sensors import StateSensor
+from nexus_sim._src.core.schema import Measurement, SimTime
+from nexus_sim._src.vehicle.sensors import StateSensor
 
 
 def test_state_sensor_passes_view_through():

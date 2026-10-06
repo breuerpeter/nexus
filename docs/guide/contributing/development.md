@@ -1,6 +1,6 @@
 # Development
 
-nexus is a [`uv`](https://docs.astral.sh/uv/) project with a single `nexus`
+The repo is a [`uv`](https://docs.astral.sh/uv/) project with a single `nexus_sim`
 framework package. Install it and run the command-line tool:
 
 ```bash
@@ -57,14 +57,14 @@ uv run --extra policy pytest -q
 
 ### Peer fakes
 
-Each peer the framework ships comes with a fake, a stand-in in this process that speaks the peer's link and starts no process. `Px4Fake`, in `nexus/_src/peers/px4_sitl/fake.py`, answers each `HIL_SENSOR` with one fixed `HIL_ACTUATOR_CONTROLS` over the Hardware In The Loop (HIL) lockstep. `KitFake`, in `nexus/_src/peers/kit/fake.py`, answers each `frame` request one frame behind, with a blank frame at the size each sensor declares.
+Each peer the framework ships comes with a fake, a stand-in in this process that speaks the peer's link and starts no process. `Px4Fake`, in `nexus_sim/_src/peers/px4_sitl/fake.py`, answers each `HIL_SENSOR` with one fixed `HIL_ACTUATOR_CONTROLS` over the Hardware In The Loop (HIL) lockstep. `KitFake`, in `nexus_sim/_src/peers/kit/fake.py`, answers each `frame` request one frame behind, with a blank frame at the size each sensor declares.
 
 A test sends a peer to its fake through the builder's peer mapping, by the peer's name:
 
 ```python
-from nexus._src.build.launch import build_from_launch
-from nexus._src.peers.kit.fake import KitFake
-from nexus._src.peers.px4_sitl.fake import Px4Fake
+from nexus_sim._src.build.launch import build_from_launch
+from nexus_sim._src.peers.kit.fake import KitFake
+from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
 
 loop = build_from_launch(launch, peers={"px4_sitl": Px4Fake, "kit": KitFake})
 ```

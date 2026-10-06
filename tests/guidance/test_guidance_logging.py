@@ -11,9 +11,9 @@ pytest.importorskip("warp")
 
 import warp as wp
 
-from nexus._src.core.interfaces import Tick
-from nexus._src.core.schema import SimTime
-from nexus._src.guidance import MissionGuidance, TrackingGuidance
+from nexus_sim._src.core.interfaces import Tick
+from nexus_sim._src.core.schema import SimTime
+from nexus_sim._src.guidance import MissionGuidance, TrackingGuidance
 
 START = (0.0, 0.0, 2.0)
 

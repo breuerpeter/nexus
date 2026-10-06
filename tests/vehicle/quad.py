@@ -11,11 +11,11 @@ import pytest
 import warp as wp
 from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics
 
-from nexus._src.api.sim import Sim
-from nexus._src.build.assembly import build_orchestrator, build_scenario
-from nexus._src.core.schema import Controls
-from nexus._src.core.stages import peer_stages
-from nexus._src.physics.builders.usd import USDBuilder
+from nexus_sim._src.api.sim import Sim
+from nexus_sim._src.build.assembly import build_orchestrator, build_scenario
+from nexus_sim._src.core.schema import Controls
+from nexus_sim._src.core.stages import peer_stages
+from nexus_sim._src.physics.builders.usd import USDBuilder
 
 ROOT = "/Vehicle"
 ARM = 0.2  # rotor offset from the airframe's center on each axis [m]

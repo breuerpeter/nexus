@@ -1,10 +1,11 @@
 ---
-description: "nexus's conventions: where a seam lives, which seams a vehicle or a scene declares, and the vehicle model's frames, rotor indexing and structure."
+description: "The conventions of nexus: where a seam lives, which seams a vehicle or a scene declares, which form of the name a thing takes, and the vehicle model's frames, rotor indexing and structure."
 ---
 
 # Conventions
 
-Two rules for the component seams, then the structure of every shipped vehicle.
+The rules for the component seams and for the project's names, then the structure of every shipped
+vehicle.
 
 ## Where a seam lives
 
@@ -61,7 +62,7 @@ Where an address goes depends on which side of the run the link's end sits:
 - **An end inside the run**: the builder builds it from the run's addresses. The PX4 controller's
   Hardware In The Loop (HIL) server is one, and the builder hands the controller its port.
 - **An end outside the run**: it reads its address from the run's port map, `sim.ports`. PX4's
-  offboard link is one. A script opens its own client, `nexus.px4.OffboardClient`, on
+  offboard link is one. A script opens its own client, `nexus_sim.px4.OffboardClient`, on
   `sim.ports["offboard"]`, which holds the port and PX4's MAVLink system id.
 
 The split is a design choice, and it follows from a second rule: no generic part names PX4. The
@@ -73,6 +74,26 @@ script that commands PX4 names it, and the port map serves every link that leave
 
 A link with nothing behind it stays out of the map. A run against the fake PX4 lists no offboard
 link, so the lookup fails at once and names the fake, and no client waits on a link nothing answers.
+
+## Names
+
+The project's name takes three forms, each for one kind of thing:
+
+| Form | What takes it | Example |
+|---|---|---|
+| `nexus-sim` | The distribution on PyPI | `pip install nexus-sim` |
+| `nexus_sim` | The Python import package and its folder: every name Python resolves | `import nexus_sim as nx`, `nexus_sim/_src/` |
+| `nexus` | The project, and every name outside Python's import system | the `nexus` command, the `nexus:` USD attributes, the `nexus.components` entry-point group, the `nexus` logger, the `nexus.peer` Docker label, `nexus.registry.yaml`, `~/.cache/nexus` |
+
+The reinforcement learning project follows the same split: `nexus-rl` is its folder and project, and
+`nexus_rl` is its import package.
+
+Prose writes the name `nexus`, in lowercase, as the logo does, and no sentence starts with it:
+reword the sentence instead, so that it starts with "The framework" or "With nexus," for example. A
+heading that's only the name, such as `# nexus`, is exempt. Only an identifier whose own case rule
+needs a capital carries one, such as the `NexusImuAPI` schema or the `Nexus-AstroMax-GoTo-Direct-v0`
+task.
+The `Project` Vale style in `.vale/styles/Project/` checks both rules.
 
 ## The vehicle model
 

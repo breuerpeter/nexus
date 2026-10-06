@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-nexus is pre-1.0 and under active development. Security fixes go to
+The project is pre-1.0 and under active development. Security fixes go to
 the newest release on PyPI and the `main` branch only.
 
 ## Reporting a vulnerability

@@ -7,7 +7,7 @@ import pytest
 
 pytest.importorskip("ruckig")
 
-from nexus.examples._lib.reference import FlatnessReference
+from nexus_sim.examples._lib.reference import FlatnessReference
 
 
 def _ref():

@@ -1,6 +1,6 @@
 """The stand-in project's sensor class, which `StandInSensorAPI` builds."""
 
-from nexus._src.core.interfaces import Stage
+from nexus_sim._src.core.interfaces import Stage
 
 
 class StandInSensor:

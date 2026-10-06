@@ -14,7 +14,7 @@ on:
     branches: [main]
     paths:
       - "nexus-rl/**"
-      - "nexus/examples/controllers/policy/**"
+      - "nexus_sim/examples/controllers/policy/**"
       - "scripts/ci/run_rl_example.sh"
       - "scripts/ci/check_rl_stats.py"
   pull_request:
