@@ -78,7 +78,7 @@ Universal Scene Description (USD). A single `USDBuilder` reads the vehicle model
 `newton.State`, `body_q` as a transform and `body_qd` as a spatial vector, through Warp kernels.
 Those kernels pin one canonical convention: **`XYZW` quaternions, world-frame velocity taken at the
 center of mass, Z-up in sim**. Because every run is tensors-over-Newton-over-USD, the same sensor,
-actuator, or controller runs verbatim in a CI test and in a rendered flight. The only place that
+rotor chain, or controller runs verbatim in a CI test and in a rendered flight. The only place that
 reorders a quaternion is the PX4 IMU wire, which expects scalar-first `WXYZ`.
 
 **Dependency injection.** The **core injects** the cross-cutting handles a component needs: its
