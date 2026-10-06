@@ -93,6 +93,9 @@ build-constraint-dependencies = ["scikit-build-core<0.10"]
 [tool.uv.build-backend]
 module-name = "nexus_sim"
 module-root = ""
+# Agent instruction files stay in the repo; neither artifact ships them.
+wheel-exclude = ["**/CLAUDE.md"]
+source-exclude = ["**/CLAUDE.md"]
 
 [tool.uv.sources]
 warp-lang = { index = "nvidia" }
