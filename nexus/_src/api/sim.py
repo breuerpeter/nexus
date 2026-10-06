@@ -12,8 +12,7 @@ ground truth.
 from __future__ import annotations
 
 import argparse
-import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING
 
 from nexus._src.api.args import save_run_artifacts, sim_argparser  # noqa: F401  # re-export; defs are import-light
@@ -26,11 +25,6 @@ from nexus._src.recording import ChannelMap, Recorder
 if TYPE_CHECKING:
     from nexus._src.core import Orchestrator
     from nexus._src.core.interfaces import Controller
-    from nexus._src.operator import Px4Offboard
-
-# Wall-clock budget for PX4 to answer on the operator link once the sim starts stepping
-# for it: the same 30 s Px4Offboard's own blocking connect allows.
-_PX4_LINK_TIMEOUT_S = 30.0
 
 
 class Sim:
@@ -231,8 +225,8 @@ class Sim:
         else:
             # A vehicle that authors RTX sensors starts the Kit render peer here, from the host.
             self._orch = build_from_launch(self._launch, cache_dir=self._cache_dir, stream=self._stream)
-            # The controller picks the operator: one with a setpoint surface takes an operator in this
-            # process, and PX4, which has none, takes Px4Offboard over its offboard link.
+            # A controller with a setpoint surface takes an operator in this process. PX4 has none: a
+            # script commands it over the offboard link it opens itself, on the address in sim.ports.
             self._in_process = hasattr(getattr(self._orch, "controller", None), "accept_setpoint")
         if self._observe:
             # Attach the observation sink: each recordable component registers its device-only channels;
@@ -277,69 +271,60 @@ class Sim:
                 if hasattr(self._operator, "set_logger"):
                     # The logging seam: the mission viz lands under guidance/, the in-loop seam's name per #41.
                     self._orch.add_loggable(self._operator, "guidance")
-        # Host-boundary, PX4, wires nothing here: its operator is a remote Ground Control Station (GCS),
-        # Px4Offboard, built lazily on first access after start(), and the run is step-driven the same
-        # way as any other.
+        # Host-boundary, PX4, wires nothing here: a script opens its own client on the offboard link,
+        # from sim.ports, after start(), and the run is step-driven the same way as any other.
         return self
 
-    # -- the operator, Plane 5, plus the controller's thin surface --
+    # -- the operator, Plane 5, the run's port map, plus the controller's thin surface --
     @property
-    def operator(self) -> InProcessOperator | Px4Offboard:
-        """The Operator commanding this sim, Plane 5. In-process control, policy, pid, mpc or acados, →
-        an :class:`InProcessOperator` over the controller's ``accept_setpoint``. PX4 → a
-        :class:`Px4Offboard` over PX4's offboard and onboard MAVLink link, separate from the
-        controller's HIL link, constructed plus connected lazily on first access, so access it
-        *after* PX4 is up, for example after ``sim.start()``; cached, and closed on ``sim.stop()``.
-
-        Connecting the PX4 link **steps the sim**, because PX4's clock is the sim's under lockstep:
-        a caller that merely slept here would stop the sim, and PX4 would never send the heartbeat
-        the caller waits for. The budget stays wall-clock: peer liveness is a property of the PX4
-        process, and this must work under ``observe=False`` too, where there is no sim clock.
+    def operator(self) -> InProcessOperator:
+        """The Operator commanding this sim, Plane 5: in-process control, policy, pid, mpc or acados,
+        takes an :class:`InProcessOperator` over the controller's ``accept_setpoint``. A controller
+        with no setpoint surface, an autopilot in a peer such as PX4, takes none: a script commands
+        that autopilot over a link it opens itself, on the address :attr:`ports` names.
 
         Returns:
-            The :class:`InProcessOperator`, in-process, or :class:`Px4Offboard`, PX4, driving this run.
+            The :class:`InProcessOperator` driving this run.
 
         Raises:
-            RuntimeError: Accessed before entering the ``Sim`` context, in the in-process case, the
-                run flies the fake PX4, which answers no operator link, or the run ended while the
-                PX4 link was connecting.
-            TimeoutError: PX4 didn't answer on the operator link within ``_PX4_LINK_TIMEOUT_S``.
+            RuntimeError: Accessed before entering the ``Sim`` context, or the run's controller
+                takes no setpoint, so the run has no operator.
         """
-        if self._in_process:
-            if self._operator is None:
-                raise RuntimeError("enter the Sim context first (`with na.Sim(...) as sim:`)")
-            return self._operator
-        if self._operator is None:
-            from nexus._src.operator import Px4Offboard
-            from nexus._src.peers.px4_sitl import OFFBOARD_PORT
-            from nexus._src.peers.px4_sitl.fake import Px4Fake
-
-            if any(isinstance(peer, Px4Fake) for peer in getattr(self._orch, "peers", ())):
-                raise RuntimeError(
-                    "this run flies the fake PX4, which answers only the HIL link: it has no operator link"
-                )
-
-            # The link's port and PX4's system id follow the PX4 instance the build handed the controller;
-            # a controller that names none takes PX4's defaults, instance 0.
-            system_id = getattr(getattr(self._orch, "controller", None), "target_system", 1)
-            offboard_port = OFFBOARD_PORT + system_id - 1
-            op = Px4Offboard(f"udpin:0.0.0.0:{offboard_port}", system_id=system_id)
-            op.open()  # bind the MAVLink link + start the pump; returns at once
-            self._operator = op  # cache BEFORE the wait, so a failed connect is still closed by stop()
-            deadline = time.monotonic() + _PX4_LINK_TIMEOUT_S
-            while not op.connected:
-                if not self.step():  # keep PX4's clock moving, or its heartbeat never comes
-                    raise RuntimeError(f"the run ended before PX4 answered on the operator link (:{offboard_port})")
-                if time.monotonic() > deadline:
-                    raise TimeoutError(
-                        f"no PX4 heartbeat on the operator link (:{offboard_port}) within {_PX4_LINK_TIMEOUT_S:.0f}s"
-                    )
+        if self._orch is None:
+            raise RuntimeError("enter the Sim context first (`with na.Sim(...) as sim:`)")
+        if not self._in_process:
+            raise RuntimeError(
+                "this run's controller takes no setpoint, so the run has no operator: a script commands "
+                "its autopilot over a link it opens itself, on an address from sim.ports"
+            )
         return self._operator
+
+    @property
+    def ports(self) -> Mapping[str, dict]:
+        """The run's port map: each link that leaves the run, by name, to the address a script opens
+        its client on. The run owns every address. The builder builds a link's end inside the run
+        from them, and names here each link whose other end a script holds. An entry is a plain
+        mapping of what that client takes, such as ``{"protocol": "udp", "port": 14540,
+        "system_id": 1}`` for the ``"offboard"`` link of a PX4 run, which the PX4 page of the
+        reference documents. Open a client after ``sim.start()``, and step the sim while it waits
+        for an autopilot that runs on the sim's clock. A link with nothing behind it stays out of
+        the map, and its lookup raises with the reason.
+
+        Returns:
+            The port map, link name to entry.
+
+        Raises:
+            RuntimeError: Accessed before entering the ``Sim`` context.
+        """
+        if self._orch is None:
+            raise RuntimeError("enter the Sim context first (`with na.Sim(...) as sim:`)")
+        return self._orch.ports
 
     @property
     def controller(self) -> Controller | None:
         """The autopilot's thin control surface, ``accept_setpoint`` plus config, or ``None`` for PX4,
-        which owns its mission in the external process and takes commands via ``sim.operator``.
+        which owns its mission in the external process and takes commands over its offboard link,
+        which a script opens on :attr:`ports`.
 
         Returns:
             The in-process controller, which exposes ``accept_setpoint``, or ``None`` for a PX4 run.
@@ -569,11 +554,6 @@ class Sim:
         if self._stopped:
             return
         self._stopped = True
-        # Close a connected PX4 operator first, since Px4Offboard holds a MAVLink link plus pump thread;
-        # the in-process operator holds no resources and has no close().
-        op = self._operator
-        if op is not None and hasattr(op, "close"):
-            op.close()
         if self._orch is None:
             return
         self._orch.stop()

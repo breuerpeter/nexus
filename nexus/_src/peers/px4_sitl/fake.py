@@ -5,7 +5,8 @@ It dials the run's HIL port as PX4 does and answers each ``HIL_SENSOR`` with one
 ``HIL_ACTUATOR_CONTROLS``, over the same MAVLink lockstep. So the controller and the loop run
 exactly as they do against PX4, and a test proves their side of the link, its encoding, its stage
 order and its error paths, with no PX4 tree, no image and no container. It proves nothing about PX4
-itself, and it answers no other link: a run against it has no operator link.
+itself, and it answers no other link: a run against it has no offboard link, and its port map lists
+none.
 
 A test sends the PX4 SITL peer to this class through the builder's peer mapping.
 """

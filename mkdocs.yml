@@ -170,6 +170,7 @@ nav:
       - Core types: reference/api/core.md
       - Configuration: reference/api/configuration.md
       - Operator: reference/api/operator.md
+      - PX4: reference/api/px4.md
       - Logging: reference/api/logging.md
     - Assets:
       - reference/assets/index.md

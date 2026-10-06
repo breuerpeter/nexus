@@ -10,7 +10,9 @@ attach to a process started elsewhere, and the build makes the component the sam
 The contract is narrow on purpose: start, stop, and whether it's alive. No watchdog, no restart
 policy and no ordering beyond what a peer's own start does. A peer's death reaches the loop through
 its link, so the loop needs nothing more from the peer itself. The run owns every address a peer
-uses and hands the peer its ports, so two runs on one machine don't collide.
+uses and hands the peer its ports, so two runs on one machine don't collide. The builder builds a
+link's end inside the run from those addresses. A link's end outside the run, such as the client a
+script opens on PX4's offboard link, reads its address from the run's port map, ``sim.ports``.
 
 Each peer lives in one folder, ``peers/<name>/``, with everything that belongs to its process.
 Its host-side modules sit at the top of the folder, and what crosses into the process sits in a

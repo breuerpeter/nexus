@@ -5,7 +5,7 @@ description: "A PX4 Software In The Loop (SITL) flight on the newton.actuators r
 # PX4 software-in-the-loop flight on `newton.actuators` rotor motors
 
 The Astro Max flown **closed-loop by PX4** over the decoupled SITL link, on the core
-**`ArticulatedRotors`** actuator. Each rotor motor is a USD-authored `newton.actuators` composition:
+rotor chain. Each rotor motor is a USD-authored `newton.actuators` composition:
 a `NewtonActuator` prim on the real rotor joint, made of a `ControllerPID` velocity servo and the
 `ClampingDCMotor` four-quadrant envelope. So the rotor speed Ω is a solver-integrated joint state
 with physical lag and saturation, and the props spin for real. The aerodynamics stay a Warp `body_f`
@@ -22,7 +22,7 @@ Hardware In The Loop (HIL) link on `:4560`.
 | Flight | PX4 closed-loop: `AUTO.TAKEOFF` → arm → climb → 4 yaw sweeps, the one flight profile |
 | Takeoff | **confirmed**, climbed **+5.0 m**, yawed 90/180/270/0° |
 | PX4 warnings | **0**, gated: the run fails on any `WARN` or `ERROR` line about the sim |
-| Actuator | `ArticulatedRotors`, with USD-authored `newton.actuators` DC-motor servos on the real rotor joints, one `NewtonActuator` prim each, plus the aero of each rotor body's `NexusPropellerAPI` |
+| Rotor chain | The rotors' command stage, USD-authored `newton.actuators` DC-motor servos on the real rotor joints, one `NewtonActuator` prim each, and the propellers' force element from each rotor body's `NexusPropellerAPI` |
 | **Sim speed with PX4** | **~3.7×** real-time on the GPU with the captured strategy, RTX 5080, for the full takeoff+yaw profile with recording on |
 
 **Clean log gate.** The flight asserts **zero PX4 warnings**, the `px4_warnings` metric gated to 0.
@@ -77,7 +77,7 @@ QGroundControl version:
 ```bash
 # closed-loop flight, one na.Sim run: nexus serves the HIL :4560 itself + records the .rrd +
 # reports the with-PX4 RTF; PX4 SITL connects; the harness flies THE one PX4 flight profile
-# (a script against sim.operator over MAVLink :14540: arm + AUTO.TAKEOFF + yaw sweeps). Zero-arg.
+# (a script against nexus.px4.OffboardClient over MAVLink :14540: arm + AUTO.TAKEOFF + yaw sweeps). Zero-arg.
 uv run -m nexus.examples px4_sitl
 
 # or the example + the evaluation/regression gates at once
