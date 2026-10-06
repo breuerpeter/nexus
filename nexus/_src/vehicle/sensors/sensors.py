@@ -24,6 +24,7 @@ replaces the bridge's single shared ``random.Random`` sequence, the SeedTree for
 
 from __future__ import annotations
 
+import numpy as np
 import warp as wp
 
 from nexus._src.core.interfaces import Stage
@@ -50,6 +51,24 @@ def _at_body_origin(run, kind: str) -> None:
         )
 
 
+def _rigid_mount(run, kind: str) -> None:
+    """Fail a sensor whose prim's transform scales, shears or mirrors it: a mount only moves and turns.
+
+    Raises:
+        ValueError: The prim's transform isn't rigid; the message names the prim.
+    """
+    if run.prim is None:
+        return
+    from pxr import UsdGeom
+
+    m = np.array(UsdGeom.Xformable(run.prim).GetLocalTransformation())[:3, :3]
+    if not np.allclose(m @ m.T, np.eye(3), atol=1e-6) or np.linalg.det(m) < 0.0:
+        raise ValueError(
+            f"{run.path}: a {kind} mount only moves and turns, and this prim's transform scales, shears or "
+            "mirrors it; author a translation and a rotation alone"
+        )
+
+
 @wp.func
 def _noise(seed: int, step: int, axis: int, sigma: float) -> float:
     """Reproducible Gaussian noise for one (sensor seed, tick, axis): ``sigma * N(0,1)``."""
@@ -72,7 +91,9 @@ def imu_kernel(
     body_q: wp.array(dtype=wp.transform),
     body_qd: wp.array(dtype=wp.spatial_vector),
     gravity_world: wp.vec3,
-    r_com_to_mount: wp.vec3,  # Center Of Mass (COM)->mount offset, body frame; zero = COM-mounted
+    body: int,  # the model body the sensor rides
+    r_com_to_mount: wp.vec3,  # Center Of Mass (COM) to mount, in the body's axes
+    q_mount: wp.quat,  # the mount's rotation in the body's axes
     dt: float,
     first: int,
     seed: int,
@@ -81,12 +102,12 @@ def imu_kernel(
     sigma_gyro: float,
     prev_lin: wp.array(dtype=wp.vec3),
     prev_ang: wp.array(dtype=wp.vec3),
-    out: wp.array(dtype=float),  # [xacc,yacc,zacc, xgyro,ygyro,zgyro, qw,qx,qy,qz]
+    out: wp.array(dtype=float),  # [xacc,yacc,zacc, xgyro,ygyro,zgyro], in the mount's axes
 ):
     st = step[0]
-    q = wp.transform_get_rotation(body_q[0])
-    vlin = wp.spatial_top(body_qd[0])  # world, at COM
-    vang = wp.spatial_bottom(body_qd[0])  # world
+    q = wp.transform_get_rotation(body_q[body])
+    vlin = wp.spatial_top(body_qd[body])  # world, at COM
+    vang = wp.spatial_bottom(body_qd[body])  # world
     if first == 1:  # first tick: seed the finite-diff so acceleration starts at zero
         prev_lin[0] = vlin
         prev_ang[0] = vang
@@ -97,19 +118,15 @@ def imu_kernel(
     # lever arm: a_mount = a_com + alpha x r + omega x (omega x r), r = R(q)*r_body
     r_w = wp.quat_rotate(q, r_com_to_mount)
     acc_mount = acc_com + wp.cross(alpha, r_w) + wp.cross(vang, wp.cross(vang, r_w))
-    grav_b = wp.quat_rotate_inv(q, gravity_world)
-    acc_b = wp.quat_rotate_inv(q, acc_mount)
-    gyro_b = wp.quat_rotate_inv(q, vang)
-    out[0] = acc_b[0] - grav_b[0] + _noise(seed, st, 0, sigma_acc)  # specific force, body Forward Right Down (FRD)
-    out[1] = acc_b[1] - grav_b[1] + _noise(seed, st, 1, sigma_acc)
-    out[2] = acc_b[2] - grav_b[2] + _noise(seed, st, 2, sigma_acc)
-    out[3] = gyro_b[0] + _noise(seed, st, 3, sigma_gyro)
-    out[4] = gyro_b[1] + _noise(seed, st, 4, sigma_gyro)
-    out[5] = gyro_b[2] + _noise(seed, st, 5, sigma_gyro)
-    out[6] = q[3]  # quat wire order [w, x, y, z] from [x, y, z, w]
-    out[7] = q[0]
-    out[8] = q[1]
-    out[9] = q[2]
+    q_sensor = q * q_mount  # the mount's axes in the world
+    acc_s = wp.quat_rotate_inv(q_sensor, acc_mount - gravity_world)  # specific force
+    gyro_s = wp.quat_rotate_inv(q_sensor, vang)
+    out[0] = acc_s[0] + _noise(seed, st, 0, sigma_acc)
+    out[1] = acc_s[1] + _noise(seed, st, 1, sigma_acc)
+    out[2] = acc_s[2] + _noise(seed, st, 2, sigma_acc)
+    out[3] = gyro_s[0] + _noise(seed, st, 3, sigma_gyro)
+    out[4] = gyro_s[1] + _noise(seed, st, 4, sigma_gyro)
+    out[5] = gyro_s[2] + _noise(seed, st, 5, sigma_gyro)
 
 
 @wp.kernel
@@ -178,34 +195,49 @@ def gps_kernel(
 
 
 class ImuSensor(DeviceSensor):
-    """Accelerometer, which reads specific force, + gyro, body FRD: Warp kernel + Warp RNG. Owns
-    the earlier-tick velocities, persistent device arrays, for the finite-difference
-    acceleration / angular acceleration, and supports a mount off the body's origin, the
-    ``alpha x r + omega x (omega x r)`` lever-arm term. It reads body 0.
+    """Accelerometer, which reads specific force, and gyroscope, in the axes of the sensor's mount:
+    Warp kernel + Warp RNG.
+
+    The mount is the sensor's prim under the body it rides: its translation and its rotation. The
+    accelerometer adds the lever arm ``alpha x r + omega x (omega x r)``, where ``r`` runs from the body's
+    center of mass to the mount, as Newton's ``SensorIMU`` does.
+
+    The accelerometer finite-differences the body's velocity over the control tick, so it reports the
+    mean acceleration over the tick before, half a tick late, on purpose: PX4's estimator
+    integrates delta velocity over each sample interval, and a tick mean is that interval's average.
+    Newton's ``SensorIMU`` reads the solver's acceleration at the tick's end instead.
+
+    The sensor reports no attitude: the vehicle's true state isn't a sensor reading.
 
     Args:
-        run: The run's values: its seed, the tick, the site's gravity and the mount.
+        run: The run's values: its seed, the tick, the site's gravity, the body and the mount.
         acc_noise: Standard deviation of the accelerometer's white noise, m/s^2.
         gyro_noise: Standard deviation of the gyroscope's white noise, rad/s.
         rate: The declared sample rate, hertz. The sensor samples every tick whatever it says.
+
+    Raises:
+        ValueError: The prim's transform scales, shears or mirrors the mount; the message names the prim.
     """
 
     name = "imu"  # sim.sensors key, the flat instance name
-    fields = ("xacc", "yacc", "zacc", "xgyro", "ygyro", "zgyro", "qw", "qx", "qy", "qz")  # _out layout
+    fields = ("xacc", "yacc", "zacc", "xgyro", "ygyro", "zgyro")  # _out layout
 
     def __init__(self, run, acc_noise: float = 0.02, gyro_noise: float = 0.02, rate: float = 0.0):
+        _rigid_mount(run, "inertial measurement unit")
         self.seed = run.seed
         self.dt = float(run.dt)
+        self.body = int(run.body)
         self.rate = float(rate)
         # The site's gravity, along world -Z, the same value the physics applies; the accelerometer
         # reports specific force, so at rest it reads minus this.
         self.gravity_world = wp.vec3(0.0, 0.0, -float(run.site.gravity))
-        self.r_com_to_mount = wp.vec3(*[float(x) for x in run.mount])
+        self.r_com_to_mount = wp.vec3(*[float(m) - float(c) for m, c in zip(run.mount, run.com, strict=True)])
+        self.q_mount = wp.quat(*[float(x) for x in run.rotation])
         self.acc_noise = float(acc_noise)
         self.gyro_noise = float(gyro_noise)
         self._prev_lin = wp.zeros(1, dtype=wp.vec3)
         self._prev_ang = wp.zeros(1, dtype=wp.vec3)
-        self._out = wp.zeros(10, dtype=float)
+        self._out = wp.zeros(6, dtype=float)
         self._step = wp.zeros(1, dtype=int)  # per-tick counter, incremented in-graph so the noise varies
         self._first = True
 
@@ -223,7 +255,9 @@ class ImuSensor(DeviceSensor):
                 state.body_q,
                 state.body_qd,
                 self.gravity_world,
+                self.body,
                 self.r_com_to_mount,
+                self.q_mount,
                 self.dt,
                 1 if self._first else 0,
                 self.seed,
@@ -242,8 +276,6 @@ class ImuSensor(DeviceSensor):
         r = self._out.numpy()
         out.xacc, out.yacc, out.zacc = float(r[0]), float(r[1]), float(r[2])
         out.xgyro, out.ygyro, out.zgyro = float(r[3]), float(r[4]), float(r[5])
-        out.quat_wxyz = (float(r[6]), float(r[7]), float(r[8]), float(r[9]))
-        out.rollspeed, out.pitchspeed, out.yawspeed = out.xgyro, out.ygyro, out.zgyro
 
     def sample(self, state, t, out) -> None:
         self.sample_wp(state, t)

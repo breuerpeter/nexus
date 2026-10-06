@@ -94,10 +94,10 @@ Every controller states its stages, and a peer's autopilot and a device-native l
 same loop:
 
 - **`Px4MavlinkController`**: runs the MAVLink lockstep handshake against a real PX4 Software In
-  The Loop (SITL) instance, its peer. It encodes `HIL_SENSOR`, `HIL_GPS`, and
-  `HIL_STATE_QUATERNION`, then **blocks** for the returned actuator commands. Its work is two
-  **host stages**, `read` and `exchange`, outside graph capture and not differentiable, and a lost
-  connection ends the run.
+  The Loop (SITL) instance, its peer. It encodes the sensors' readings in `HIL_SENSOR` and `HIL_GPS`,
+  and the base body's true state in `HIL_STATE_QUATERNION`, then **blocks** for the returned actuator
+  commands. Its work is three **host stages**, `read`, `truth` and `exchange`, outside graph capture
+  and not differentiable, and a lost connection ends the run.
 - **`PidController`**: the device-native, differentiable built-in, a
   Proportional Integral Derivative (PID) controller whose gains are Warp arrays with gradients, so
   it doubles as the [design-optimization](../examples/design-optimization.md) parameter set and the

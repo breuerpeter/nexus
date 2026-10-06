@@ -448,6 +448,7 @@ class Orchestrator:
                 dt=self.clock.dt / self.physics_substeps,
                 meas=Measurement(),
                 sensors=device_sensors(ring),
+                base=getattr(self.physics, "base_index", 0),  # a physics that finds none has body 0 as base
             )
             # A controller without a peer connects first, which reserves its device buffers before the
             # warm pass. One with a peer connects after the capture, so every kernel the loop launches has

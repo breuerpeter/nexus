@@ -71,6 +71,15 @@ def quat_wxyz(q: wp.quat) -> tuple[float, float, float, float]:
     return (float(q[3]), float(q[0]), float(q[1]), float(q[2]))
 
 
+def body_quat_ned(q: wp.quat) -> tuple[float, float, float, float]:
+    """A body's attitude on North East Down (NED), in MAVLink wire order ``[w, x, y, z]``, from its
+    world-frame quaternion ``q``, Newton's ``body_q`` rotation.
+
+    World to NED is a half turn about x, so a level FRD body, nose north, is the identity.
+    """
+    return quat_wxyz(wp.quat(1.0, 0.0, 0.0, 0.0) * q)
+
+
 def world_vel_to_ned(v_world) -> tuple[float, float, float]:
     """Newton world linear velocity -> NED [m/s]: ``(vx, -vy, -vz)``, because world +y is West."""
     return (float(v_world[0]), -float(v_world[1]), -float(v_world[2]))

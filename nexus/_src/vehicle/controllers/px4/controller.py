@@ -1,11 +1,11 @@
 """Px4MavlinkController: the loop face of the PX4 peer, architecture.md §2 and §6.
 
-Its work is two host stages, ``read`` and ``exchange``: ``exchange(measurement, t)`` is the blocking
-lockstep that paces the loop: opens a tcpin TCP server on :4560, which PX4 dials into as client with no HEARTBEAT,
-serializes the typed Measurement into HIL_SENSOR, HIL_GPS and HIL_STATE_QUATERNION with the
-encoders lifted verbatim from the bridge, then blocks on HIL_ACTUATOR_CONTROLS with a run-ending
-timeout. newton-sensors already derives the Measurement in
-the Forward-Right-Down (FRD) body frame; this layer only encodes wire units and moves bytes.
+Its work is three host stages, ``read``, ``truth`` and ``exchange``: ``exchange(measurement, t)`` is the
+blocking lockstep that paces the loop: opens a tcpin TCP server on :4560, which PX4 dials into as client with no
+HEARTBEAT, serializes the typed Measurement into HIL_SENSOR and HIL_GPS with the encoders lifted verbatim from
+the bridge, and the base body's true state, which ``truth`` reads, into HIL_STATE_QUATERNION, then blocks on
+HIL_ACTUATOR_CONTROLS with a run-ending timeout. The sensors already derive the Measurement in their own axes;
+this layer only encodes wire units and moves bytes.
 
 The autopilot itself is a peer of the run, not of this controller: the build starts the PX4
 Software In The Loop (SITL) container, :class:`~nexus._src.peers.px4_sitl.runner.Px4Sitl`,
@@ -28,7 +28,9 @@ os.environ["MAVLINK_DIALECT"] = "common"
 
 from pymavlink import mavutil
 
+from nexus._src import transform
 from nexus._src.core import logger
+from nexus._src.core.interfaces import Stage
 from nexus._src.core.schema import Controls
 from nexus._src.core.stages import peer_stages
 from nexus._src.peers.px4_sitl import HIL_PORT
@@ -99,6 +101,8 @@ class Px4MavlinkController:
         self.gps_interval = 1.0 / gps_rate_hz
         self._last_gps = 0.0
         self.gps_fix_type = 3
+        self._attitude = (1.0, 0.0, 0.0, 0.0)  # the base body's true attitude on North East Down (NED), [w, x, y, z]
+        self._rates = (0.0, 0.0, 0.0)  # its true body rates, Forward Right Down (FRD), rad/s
         self.mav = None
         self.proto = None
         self._ulog_dir = ulog_dir if ulog_dir is not None else PX4_ULOG_DIR
@@ -159,10 +163,23 @@ class Px4MavlinkController:
         # connect forever, so the only real constraint is that it comes up inside the sim's preroll window.
 
     def stages(self):
-        """The ``read`` and ``exchange`` host stages: the MAVLink lockstep round-trip blocks on the
-        peer, so it runs between graph replays.
+        """The ``read``, ``truth`` and ``exchange`` host stages: the MAVLink lockstep round-trip blocks on
+        the peer, so it runs between graph replays.
         """
-        return peer_stages(self)
+        bind, read, exchange = peer_stages(self)
+        return [bind, read, Stage("truth", "host", self._truth), exchange]
+
+    def _truth(self, tick) -> None:
+        """Copy the base body's true attitude and rates to the host, in PX4's frames, for the ground truth
+        ``exchange`` sends: the vehicle's state, not a sensor reading, so no sensor's mount changes it.
+        """
+        i = tick.base
+        q = transform.quat_xyzw(tick.state.body_q[i : i + 1].numpy()[0])
+        omega_world = tick.state.body_qd[i : i + 1].numpy()[0][3:6]
+        self._attitude = transform.body_quat_ned(q)
+        self._rates = tuple(
+            float(x) for x in transform.world_to_body(q, omega_world)
+        )  # the body's axes point forward, right and down
 
     def exchange(self, meas, t, timeout):
         time_usec = t.time_usec
@@ -208,10 +225,8 @@ class Px4MavlinkController:
             zacc_mg = int(meas.zacc * 1000 / 9.81)
             self.proto.hil_state_quaternion_send(
                 time_usec,
-                list(meas.quat_wxyz),
-                meas.rollspeed,
-                meas.pitchspeed,
-                meas.yawspeed,
+                list(self._attitude),
+                *self._rates,
                 lat,
                 lon,
                 alt,
