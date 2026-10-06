@@ -81,7 +81,7 @@ jobs:
       cache-scope: ${{ matrix.cell.tag }}
       command: >-
         bash scripts/ci/px4_image_cache.sh load &&
-        uv run python scripts/ci/benchmark_matrix.py --cell ${{ matrix.cell.tag }} --work .eval-artifacts/matrix &&
+        uv run --locked python scripts/ci/benchmark_matrix.py --cell ${{ matrix.cell.tag }} --work .eval-artifacts/matrix &&
         bash scripts/ci/px4_image_cache.sh save
       artifact-name: benchmark-cell-${{ matrix.cell.tag }}
       artifact-path: .eval-artifacts
