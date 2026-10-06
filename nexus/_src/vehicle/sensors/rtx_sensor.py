@@ -46,29 +46,31 @@ class RtxMountedSensor:
         self._link = run.link
         self._logger = None
         self.path = path  # on the render stage, where the peer renders the prim
-        self.name = path.rsplit("/", 1)[-1].lower()  # for example 'fpvcam' -> cameras/fpvcam
+        self.name = path.rsplit("/", 1)[-1].lower()  # for example 'fpvcam' -> sim/vehicle/sensors/fpvcam
         self.rate = float(rate)
         self.body = int(body)
         self._local = UsdGeom.Xformable(prim).GetLocalTransformation()  # authored mount, a row-vector Gf.Matrix4d
         self.mount = np.array(self._local, dtype=np.float64)
         self._next_due: float | None = None
         self._now = 0.0  # the tick in progress: an emit logs at the time its frame shows, then restores it
-        logger.info(f"{type(self).__name__}: {path} @{self.rate:.0f}Hz -> {self.KIND}/{self.name} (body[{body}])")
+        logger.info(f"{type(self).__name__}: {path} @{self.rate:.0f}Hz -> sensors/{self.name} (body[{body}])")
 
     def set_logger(self, logger_) -> None:
-        """Component-owned logging seam; the orchestrator hands the Logger over, and None = off.
+        """Component-owned logging seam; the orchestrator hands over the Logger scoped to this sensor,
+        and None = off.
 
-        In debug mode, non-camera sensors log their coordinate frame once, statically, under their USD
-        prim path, a child of the body prim, with the fixed local mount transform: the debug scene logs
-        a per-tick ``Transform3D`` on each body entity, so the child frame inherits the body pose and
-        nothing re-logs per sample. Cameras carry their own Pinhole frustum instead.
+        In debug mode, non-camera sensors log their coordinate frame once, statically, at their own row
+        ``frame``, with the fixed local mount transform and the body's frame as its parent: the body's
+        entity gets a ``Transform3D`` every logged tick, so the frame rides the body pose and nothing
+        re-logs per sample. The frame has a row of its own because a lidar's points sit at the sensor's
+        entity in world coordinates. Cameras carry their own Pinhole frustum instead.
         """
         self._logger = logger_
         if logger_ is not None and getattr(logger_, "debug", False) and self.KIND != "cameras":
             try:
                 loc = self._local  # row-vector Gf: the fixed mount transform relative to the body
                 logger_.log_static_frame(
-                    self.path,
+                    "frame",
                     [loc[3][0], loc[3][1], loc[3][2]],
                     [[loc[i][j] for j in range(3)] for i in range(3)],
                     label=self.name,

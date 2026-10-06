@@ -74,10 +74,10 @@ def test_channel_latest_before_any_row_raises():
 
 def test_recorder_registers_named_channels_idempotently():
     rec = Recorder(dt=0.004)
-    a = rec.channel("physics/body/body_frd", width=BODY_WIDTH, decode=decode_body)
-    b = rec.channel("physics/body/body_frd", width=BODY_WIDTH, decode=decode_body)
+    a = rec.channel("vehicle/body/body_frd", width=BODY_WIDTH, decode=decode_body)
+    b = rec.channel("vehicle/body/body_frd", width=BODY_WIDTH, decode=decode_body)
     assert a is b  # idempotent registration → one buffer per name
-    assert set(rec.channels) == {"physics/body/body_frd"}
+    assert set(rec.channels) == {"vehicle/body/body_frd"}
 
 
 def test_history_arrays_vectorizes_declared_fields():
@@ -117,23 +117,23 @@ def test_fields_schema_must_cover_width():
 
 def test_duplicate_name_with_different_shape_raises():
     rec = Recorder(dt=0.004)
-    rec.channel("sensors/imu", width=11, decode=lambda r: r, source="ImuBosch")
+    rec.channel("vehicle/sensors/imu", width=11, decode=lambda r: r, source="ImuBosch")
     with pytest.raises(ValueError, match="distinct instance names"):
-        rec.channel("sensors/imu", width=11, decode=lambda r: r, source="ImuMurata")
+        rec.channel("vehicle/sensors/imu", width=11, decode=lambda r: r, source="ImuMurata")
     with pytest.raises(ValueError, match="distinct instance names"):
-        rec.channel("sensors/imu", width=4, decode=lambda r: r, source="ImuBosch")
+        rec.channel("vehicle/sensors/imu", width=4, decode=lambda r: r, source="ImuBosch")
 
 
 def test_channel_map_resolves_bare_names_across_namespaces():
     rec = Recorder(dt=0.004)
-    rec.channel("physics/body/body_frd", width=BODY_WIDTH, decode=decode_body)
-    rec.channel("physics/joint/rotor_1_joint", width=3, decode=make_decode_joint(1, 1))
-    rec.channel("sensors/imu", width=11, decode=lambda r: r)
-    state = ChannelMap(rec.channels, ("physics/body/", "physics/joint/"))
-    meas = ChannelMap(rec.channels, ("sensors/",))
+    rec.channel("vehicle/body/body_frd", width=BODY_WIDTH, decode=decode_body)
+    rec.channel("vehicle/joints/rotor_1_joint", width=3, decode=make_decode_joint(1, 1))
+    rec.channel("vehicle/sensors/imu", width=11, decode=lambda r: r)
+    state = ChannelMap(rec.channels, ("vehicle/body/", "vehicle/joints/"))
+    meas = ChannelMap(rec.channels, ("vehicle/sensors/",))
 
-    assert rec.channels["physics/body/body_frd"] is state["body_frd"]
-    assert rec.channels["physics/joint/rotor_1_joint"] is state["rotor_1_joint"]
+    assert rec.channels["vehicle/body/body_frd"] is state["body_frd"]
+    assert rec.channels["vehicle/joints/rotor_1_joint"] is state["rotor_1_joint"]
     assert set(state) == {"body_frd", "rotor_1_joint"}  # spans both prefixes; sensors excluded
     assert set(meas) == {"imu"}
     with pytest.raises(KeyError):

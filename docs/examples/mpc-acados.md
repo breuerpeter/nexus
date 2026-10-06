@@ -155,7 +155,7 @@ operation. It runs at the host-exchange seam between graph replays, the captured
 strategy. See [Execution](../design/execution.md). Two side channels feed the artifacts.
 `track_err` records the per-tick realized-versus-reference position error at node 0, the APE the
 example gates on. When recording, every sixth tick logs the predicted horizon positions as the
-orange `controller/mpc_horizon` strip in the preceding viewer.
+orange `sim/vehicle/controllers/acados_nmpc/horizon` strip in the preceding viewer.
 
 ## Key stats
 
