@@ -1,0 +1,190 @@
+#usda 1.0
+(
+    defaultPrim = "vehicle"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "vehicle" (
+    prepend apiSchemas = ["NexusPx4API"]
+)
+{
+    string nexus:airframe = "astro_max"
+
+    def Xform "body" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsArticulationRootAPI", "PhysicsMassAPI"]
+    )
+    {
+        float physics:mass = 8.18
+        float3 physics:diagonalInertia = (0.143, 0.143, 0.259)
+
+        def Cube "collider" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            double size = 1
+            uniform token purpose = "guide"
+            float3 xformOp:scale = (0.5, 0.5, 0.15)
+            uniform token[] xformOpOrder = ["xformOp:scale"]
+        }
+
+        def Xform "rotor_1" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI", "NexusPropellerAPI"]
+        )
+        {
+            float nexus:cd = 0.05
+            float nexus:ct = 0.000003463
+            float physics:mass = 0.25
+            float3 physics:diagonalInertia = (0.000152, 0.000152, 0.000201)
+            quatf xformOp:orient = (0.021589605, 0.99953336, -0.0004666456, 0.021604279)
+            double3 xformOp:translate = (0.30272, 0.3008, -0.067498)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Xform "rotor_2" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI", "NexusPropellerAPI"]
+        )
+        {
+            float nexus:cd = 0.05
+            float nexus:ct = 0.000003463
+            float physics:mass = 0.25
+            float3 physics:diagonalInertia = (0.000152, 0.000152, 0.000201)
+            quatf xformOp:orient = (0.9995335, -0.021583911, 0.021604411, 0.00046652256)
+            double3 xformOp:translate = (-0.30272, 0.3008, -0.067498)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Xform "rotor_3" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI", "NexusPropellerAPI"]
+        )
+        {
+            float nexus:cd = 0.05
+            float nexus:ct = 0.000003463
+            float physics:mass = 0.25
+            float3 physics:diagonalInertia = (0.000152, 0.000152, 0.000201)
+            quatf xformOp:orient = (-0.021589605, 0.99953336, -0.0004666456, -0.021604279)
+            double3 xformOp:translate = (-0.30272, -0.3008, -0.067498)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Xform "rotor_4" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI", "NexusPropellerAPI"]
+        )
+        {
+            float nexus:cd = 0.05
+            float nexus:ct = 0.000003463
+            float physics:mass = 0.25
+            float3 physics:diagonalInertia = (0.000152, 0.000152, 0.000201)
+            quatf xformOp:orient = (0.9995335, 0.021583911, -0.021604411, 0.00046652256)
+            double3 xformOp:translate = (0.30272, -0.3008, -0.067498)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+    }
+
+    def Scope "Physics"
+    {
+        def PhysicsRevoluteJoint "rotor_1_joint"
+        {
+            float motor:tau = 0.033
+            uniform token physics:axis = "Z"
+            rel physics:body0 = </vehicle/body>
+            rel physics:body1 = </vehicle/body/rotor_1>
+            point3f physics:localPos0 = (0.30272, 0.3008, -0.067498)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (0.021589605, 0.99953336, -0.0004666456, 0.021604279)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+        }
+
+        def PhysicsRevoluteJoint "rotor_2_joint"
+        {
+            float motor:tau = 0.033
+            uniform token physics:axis = "Z"
+            rel physics:body0 = </vehicle/body>
+            rel physics:body1 = </vehicle/body/rotor_2>
+            point3f physics:localPos0 = (-0.30272, 0.3008, -0.067498)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (0.9995335, -0.021583911, 0.021604411, 0.00046652256)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+        }
+
+        def PhysicsRevoluteJoint "rotor_3_joint"
+        {
+            float motor:tau = 0.033
+            uniform token physics:axis = "Z"
+            rel physics:body0 = </vehicle/body>
+            rel physics:body1 = </vehicle/body/rotor_3>
+            point3f physics:localPos0 = (-0.30272, -0.3008, -0.067498)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (-0.021589605, 0.99953336, -0.0004666456, -0.021604279)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+        }
+
+        def PhysicsRevoluteJoint "rotor_4_joint"
+        {
+            float motor:tau = 0.033
+            uniform token physics:axis = "Z"
+            rel physics:body0 = </vehicle/body>
+            rel physics:body1 = </vehicle/body/rotor_4>
+            point3f physics:localPos0 = (0.30272, -0.3008, -0.067498)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (0.9995335, 0.021583911, -0.021604411, 0.00046652256)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+        }
+
+        def NewtonActuator "rotor_1_motor" (
+            prepend apiSchemas = ["NewtonPIDControlAPI", "NewtonDCMotorClampingAPI"]
+        )
+        {
+            float newton:kp = 0
+            float newton:ki = 0
+            float newton:kd = 0.025
+            float newton:maxMotorEffort = 8
+            float newton:saturationEffort = 8
+            float newton:velocityLimit = 397.93506
+            rel newton:targets = </vehicle/Physics/rotor_1_joint>
+        }
+
+        def NewtonActuator "rotor_2_motor" (
+            prepend apiSchemas = ["NewtonPIDControlAPI", "NewtonDCMotorClampingAPI"]
+        )
+        {
+            float newton:kp = 0
+            float newton:ki = 0
+            float newton:kd = 0.025
+            float newton:maxMotorEffort = 8
+            float newton:saturationEffort = 8
+            float newton:velocityLimit = 397.93506
+            rel newton:targets = </vehicle/Physics/rotor_2_joint>
+        }
+
+        def NewtonActuator "rotor_3_motor" (
+            prepend apiSchemas = ["NewtonPIDControlAPI", "NewtonDCMotorClampingAPI"]
+        )
+        {
+            float newton:kp = 0
+            float newton:ki = 0
+            float newton:kd = 0.025
+            float newton:maxMotorEffort = 8
+            float newton:saturationEffort = 8
+            float newton:velocityLimit = 397.93506
+            rel newton:targets = </vehicle/Physics/rotor_3_joint>
+        }
+
+        def NewtonActuator "rotor_4_motor" (
+            prepend apiSchemas = ["NewtonPIDControlAPI", "NewtonDCMotorClampingAPI"]
+        )
+        {
+            float newton:kp = 0
+            float newton:ki = 0
+            float newton:kd = 0.025
+            float newton:maxMotorEffort = 8
+            float newton:saturationEffort = 8
+            float newton:velocityLimit = 397.93506
+            rel newton:targets = </vehicle/Physics/rotor_4_joint>
+        }
+    }
+}
+
+def PhysicsScene "PhysicsScene"
+{
+}

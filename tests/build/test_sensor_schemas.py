@@ -1,9 +1,8 @@
 """A vehicle declares each analytic sensor with one applied schema on its mount prim, and the build makes it.
 
-Real builds on the Warp CPU
-backend of the fixture vehicle in ``tests/usd/sensor_vehicle.py``: a layer over the hosted
-``astro_max_base`` with the sensor prims a test adds, flown by a stand-in controller that keeps every
-``Measurement`` it receives. Skipped without newton or pxr.
+Real builds on the Warp CPU backend of the local fixture vehicle in ``tests/usd/sensor_vehicle.py``,
+with the sensor prims a test adds, flown by a stand-in controller that keeps every ``Measurement`` it
+receives. Skipped without newton or pxr.
 """
 
 import dataclasses
