@@ -17,7 +17,10 @@ class TestedConfig(_Base):
     """The fully specified, sha-pinned config the run simulated.
 
     Must contain **every input that affects the simulation** so re-running it reproduces the run, and
-    nothing a run leaves unapplied. Its ``runtime.device`` is the device the run picked, never ``auto``.
+    nothing a run leaves unapplied. ``resolve`` fills it from the launch and the catalog, and the build
+    stamps what only a build knows: the PX4 airframe the vehicle USD declares, and in ``runtime.device``
+    the device the run picked, ``cpu`` or ``cuda``, never ``auto``. A receipt a run flew comes from the
+    build; a bare ``resolve`` still carries the launch's device selector.
     """
 
     __test__ = False  # not a pytest test class despite the name
