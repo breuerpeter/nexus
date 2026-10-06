@@ -170,6 +170,7 @@ class NewtonPhysics:
             list(zip(_state_arrays(cur), _state_arrays(nxt), strict=True)) for cur, nxt in self._actuator_states
         ]
         self.contacts = self.model.collide(self.state0) if self.contacts_on else None
+        self.base_index = self._find_base()
         logger.info(f"control dim {self.model.joint_dof_count}")
 
         # Free-placement rotor pre-spin: start the articulated vehicle at the hover rotor speed so it's in
@@ -215,21 +216,25 @@ class NewtonPhysics:
         """
         self._logger.log_state(self.state0, float(t.sim_time))
 
+    def _find_base(self) -> int:
+        """The index of the base body, the vehicle's airframe: the declared rotor joints' shared parent, else body 0."""
+        try:  # articulated: the declared rotor joints' shared parent
+            joints = self.vehicle_builder.rotor_joints() if self.vehicle_builder is not None else []
+            return find_rotor_joints(self.model, joints)[3]
+        except ValueError:
+            return 0  # single body, no rotor joints: body 0 is the base body
+
     def set_recorder(self, recorder) -> None:
         """The orchestrator hands over the Recorder, gated by Sim's ``observe``. Physics owns the full
         model state, so it registers one channel per body, ``vehicle/body/<label>``, and per joint,
         ``vehicle/joints/<label>``, from the finalized model's labels: every body/joint addressable by
-        name. Discovery finds the base body's label, ``base_body``, as the actuator joints' shared parent, else body 0,
+        name. The base body's label, ``base_body``, is the label of ``base_index``, found at build,
         for Sim's default vehicle entity: nothing hardcoded; it works for whatever model loads. That body's
         channel is also the Recorder's ``base_body``, the source of the flown path.
         """
         m = self.model
         src = type(self).__name__
-        try:  # articulated: the declared rotor joints' shared parent
-            joints = self.vehicle_builder.rotor_joints() if self.vehicle_builder is not None else []
-            _vel, _pos, _bodies, base = find_rotor_joints(m, joints)
-        except ValueError:
-            base = 0  # single body, no rotor joints: body 0 is the base body
+        base = self.base_index
         body_keys = leaf_keys(list(m.body_label))  # friendly names: leaf when unique, else the full path
         self.base_body = body_keys[base]
         self._body_taps = [

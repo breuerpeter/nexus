@@ -32,7 +32,7 @@ run of device stages becomes one CUDA graph.** The host stages run between the r
 host stage the whole ring is one graph. A component that states no stages fails the build with an
 error that names it, and so does a stage of a kind the loop doesn't know. Nothing falls back to a
 slower path in silence. A run logs its plan once at start, for example
-`stage plan: graph(clear -> rotors -> propellers -> step -> record -> imu -> mag -> baro -> gps -> bind) host(read) host(exchange)`.
+`stage plan: graph(clear -> rotors -> propellers -> step -> record -> imu -> mag -> baro -> gps -> bind) host(read) host(truth) host(exchange)`.
 
 **A guidance passes its output through the tick.** Its stage is a host stage, and it holds no
 controller. It writes a changed setpoint to the tick, and the loop hands that to the controller's
@@ -43,10 +43,11 @@ that marks the tick done ends the run once the tick completes, which is how a gu
 mission.
 
 **Captured execution benefits online Software In The Loop (SITL) runs, not just batch.** The PX4
-controller states two host stages. Its `read` stage is the sensor fan-in into the `Measurement`.
-Its `exchange` stage is the blocking MAVLink lockstep. The graph captures the command and force stages,
-physics, record and sensors *around* them. The only host↔device traffic per tick is then the small controls and measurements
-vectors the lockstep already moves. A **host solver** states the same two stages. Examples are the
+controller states three host stages. Its `read` stage is the sensor fan-in into the `Measurement`.
+Its `truth` stage copies the base body's true state, the ground truth PX4 logs. Its `exchange` stage is
+the blocking MAVLink lockstep. The graph captures the command and force stages,
+physics, record and sensors *around* them. The only host↔device traffic per tick is then the small controls, measurements
+and base body vectors the lockstep already moves. A **host solver** states the `read` and `exchange` stages. Examples are the
 per-tick optimization of an MPC controller and a torch policy. Its solve runs between replays while
 everything else stays captured. The PID law is a device stage, so there is no host stage and the
 **whole** tick is one graph.
@@ -78,7 +79,7 @@ region** all components share one device representation, Warp by default, and an
 CUDA-array-interface or DLPack framework can join zero-copy. **At a host stage** a component can
 be any language, process, or device, at the cost of a per-tick copy and no capture or automatic
 differentiation across that stage. For the current stack there are **two** kinds: the PX4
-controller's `read` and `exchange`, every tick, and the RTX sensors' frame exchange, at their render
+controller's `read`, `truth` and `exchange`, every tick, and the RTX sensors' frame exchange, at their render
 rate. Each talks to a peer: a process the run starts, and speaks to over a link. The Kit render peer runs in a
 process of its own. At a frame's due tick the host copies the body poses and sends them, a few
 hundred bytes. It takes the frame on a later tick, so the loop waits only when the peer falls a full

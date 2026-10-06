@@ -62,6 +62,7 @@ def build_sensors(specs: list[ComponentSpec], *, usd_path: str | Path, model, se
 
     stage = Usd.Stage.Open(str(usd_path), Usd.Stage.LoadAll)
     bodies = [str(label) for label in model.body_label]
+    coms = model.body_com.numpy()
     sensors = []
     for spec in specs:
         prim = stage.GetPrimAtPath(spec.prim)
@@ -71,13 +72,18 @@ def build_sensors(specs: list[ComponentSpec], *, usd_path: str | Path, model, se
                 f"{spec.prim}: {spec.schema} declares a sensor, and its parent {parent} isn't a rigid body "
                 "of the vehicle; put the sensor's prim under the body it rides"
             )
-        t = UsdGeom.Xformable(prim).GetLocalTransformation().ExtractTranslation()
+        local = UsdGeom.Xformable(prim).GetLocalTransformation()
+        t = local.ExtractTranslation()
+        q = local.ExtractRotationQuat()  # a rigid mount's rotation; a class that needs one checks the prim
+        body = bodies.index(parent)
         run = SensorRun(
             seed=seedtree.seed_for(spec.prim),
             dt=dt,
             site=site,
-            body=bodies.index(parent),
+            body=body,
             mount=(float(t[0]), float(t[1]), float(t[2])),
+            rotation=(*(float(x) for x in q.GetImaginary()), float(q.GetReal())),
+            com=tuple(float(x) for x in coms[body]),
             path=spec.prim,
             prim=prim,
             link=link if getattr(spec.cls, "requires", ()) else None,

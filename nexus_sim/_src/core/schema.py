@@ -59,19 +59,19 @@ class Measurement:
     A field left at its default is simply one no sensor overrode this tick.
     """
 
-    # --- Inertial Measurement Unit (IMU), HIL_SENSOR, body FRD ---
+    # --- Inertial Measurement Unit (IMU), HIL_SENSOR, in the axes of its mount: body FRD on an unturned one ---
     xacc: float = 0.0
-    """Specific force (accelerometer) along body FRD X (forward), m/s^2."""
+    """Specific force (accelerometer) along the mount's X, forward on an unturned mount, m/s^2."""
     yacc: float = 0.0
-    """Specific force (accelerometer) along body FRD Y (right), m/s^2."""
+    """Specific force (accelerometer) along the mount's Y, right on an unturned mount, m/s^2."""
     zacc: float = 0.0  # specific force [m/s^2]
-    """Specific force (accelerometer) along body FRD Z (down), m/s^2."""
+    """Specific force (accelerometer) along the mount's Z, down on an unturned mount, m/s^2."""
     xgyro: float = 0.0
-    """Angular rate about body FRD X (roll axis), rad/s."""
+    """Angular rate about the mount's X, the roll axis on an unturned mount, rad/s."""
     ygyro: float = 0.0
-    """Angular rate about body FRD Y (pitch axis), rad/s."""
+    """Angular rate about the mount's Y, the pitch axis on an unturned mount, rad/s."""
     zgyro: float = 0.0  # [rad/s]
-    """Angular rate about body FRD Z (yaw axis), rad/s."""
+    """Angular rate about the mount's Z, the yaw axis on an unturned mount, rad/s."""
     # --- Magnetometer, HIL_SENSOR, body FRD [gauss] ---
     xmag: float = 0.0
     """Magnetic field along body FRD X (forward), gauss."""
@@ -111,20 +111,6 @@ class Measurement:
     """Vertical position dilution of precision (dimensionless)."""
     satellites: int = 10
     """Number of satellites visible/used in the solution."""
-    # --- Attitude: HIL_STATE_QUATERNION, ground-truth visualization ---
-    quat_wxyz: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)
-    """Ground-truth body attitude quaternion in **WXYZ** order (MAVLink convention).
-
-    Body-to-world (NED) rotation as carried in ``HIL_STATE_QUATERNION``, used for
-    visualization. Note the WXYZ order here, distinct from the XYZW order pinned on
-    the device-native state path.
-    """
-    rollspeed: float = 0.0
-    """Ground-truth roll rate about the body X axis, rad/s."""
-    pitchspeed: float = 0.0
-    """Ground-truth pitch rate about the body Y axis, rad/s."""
-    yawspeed: float = 0.0
-    """Ground-truth yaw rate about the body Z axis, rad/s."""
     # --- Perfect ground-truth kinematics for state-feedback consumers, cat-2 ---
     # An optional slot a ground-truth Sensor fills, for example the RL policy observation, so a
     # trained-policy Controller consumes it through the same exchange(meas) path as PX4.
