@@ -105,8 +105,12 @@ same loop:
 **What to fly is separate from how it flies.** The **operator plane**, reached through
 [`sim.operator`](../reference/api/operator.md), issues typed setpoints, `PositionGoal`, `Waypoints`,
 or `ReferenceTrajectory`, that a controller narrows via `accept_setpoint`. `InProcessOperator` flips
-the active setpoint between graph replays. `Px4Offboard` streams offboard setpoints to PX4 over a
-separate MAVLink link. A `ruckig` or min-snap planner plans jerk-limited references.
+the active setpoint between graph replays. A `ruckig` or min-snap planner plans jerk-limited references.
+
+PX4 takes no setpoint from the loop. A script commands it over its offboard link, a MAVLink link
+of its own beside the lockstep link. The run owns that link's address and names it in its port map,
+and the script opens its own client there: [`nexus.px4.Px4Offboard`](../reference/api/px4.md) on
+`sim.ports["offboard"]`. [Conventions](conventions.md#who-owns-an-address) states the rule.
 
 ## Actuators
 

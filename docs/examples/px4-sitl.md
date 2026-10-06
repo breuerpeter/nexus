@@ -77,7 +77,7 @@ QGroundControl version:
 ```bash
 # closed-loop flight, one na.Sim run: nexus serves the HIL :4560 itself + records the .rrd +
 # reports the with-PX4 RTF; PX4 SITL connects; the harness flies THE one PX4 flight profile
-# (a script against sim.operator over MAVLink :14540: arm + AUTO.TAKEOFF + yaw sweeps). Zero-arg.
+# (a script against nexus.px4.Px4Offboard over MAVLink :14540: arm + AUTO.TAKEOFF + yaw sweeps). Zero-arg.
 uv run -m nexus.examples px4_sitl
 
 # or the example + the evaluation/regression gates at once

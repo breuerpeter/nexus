@@ -653,9 +653,9 @@ class Px4Offboard:
         so a second mission never reports the first one's arrivals.
 
         Args:
-            plan: A :class:`~nexus._src.peers.px4_sitl.qgc_plan.Plan`, a bare sequence of
-                :class:`~nexus._src.peers.px4_sitl.qgc_plan.MissionItem`, or a path to a ``.plan``
-                file, read with :func:`~nexus._src.peers.px4_sitl.qgc_plan.read_plan`.
+            plan: A :class:`~nexus.px4.Plan`, a bare sequence of
+                :class:`~nexus.px4.MissionItem`, or a path to a ``.plan``
+                file, read with :func:`~nexus.px4.read_plan`.
         """
         if isinstance(plan, (str, os.PathLike)):
             plan = read_plan(plan)
@@ -756,7 +756,7 @@ class Px4Offboard:
         **east**. Leaving the position in one frame and the heading in the other is the trap #61 was.
 
         Args:
-            setpoint: The target: a :class:`~nexus._src.core.schema.PositionGoal` or a bare
+            setpoint: The target: a ``PositionGoal`` or a bare
                 ``(x, y, z)`` world-frame position in meters, with ``z`` over the launch point.
             yaw: Optional world heading in radians, right-handed about +z, so +90° faces +y =
                 west; overrides a ``PositionGoal``'s own ``yaw``. ``None`` leaves the heading
