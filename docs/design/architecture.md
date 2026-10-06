@@ -186,7 +186,7 @@ exactly what it simulated. Vehicle assets are content-addressed. The
 
 ## Packaging
 
-The framework ships as a single **`nexus`** package in a `uv` workspace. All source lives under
+The framework ships as a single **`nexus`** package in one `uv` project. All source lives under
 `nexus/_src/<area>/` and the public API is re-exported from `nexus`. Never import from
 `_src`. Extras isolate the heavy optional dependencies, such as `policy` for Torch and `acados` for
 the Nonlinear Model Predictive Control (NMPC) example, rather than separate packages. Neither peer is an extra. The Kit render peer's program

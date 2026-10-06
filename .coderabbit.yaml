@@ -15,10 +15,6 @@ reviews:
     github-checks:
       timeout_ms: 900000
   path_instructions:
-    - path: "packages/**"
-      instructions: |
-        If a change modifies user-facing behavior (new feature, changed API,
-        new config option), check that the docs/ are updated accordingly.
     - path: "docs/**"
       instructions: |
         Verify all code examples are correct and runnable.

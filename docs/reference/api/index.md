@@ -11,11 +11,11 @@ of the public surface. Import from `nexus`, never from `nexus._src`.
 
 <div class="grid cards" markdown>
 
--   **[Simulation](simulation.md)**: `Sim` and `SimState`, the top-level entry point for building and running a simulation.
+-   **[Simulation](simulation.md)**: `Sim`, the top-level entry point for building and running a simulation, and the `BodyState`, `JointState` and `SensorSample` values it reports.
 -   **[Core types](core.md)**: `Orchestrator`, `Controls`, `Measurement`, and `SimTime`, the runtime-agnostic state, control, and observation surfaces.
 -   **[Configuration](configuration.md)**: `LaunchConfig` for the launch configuration and `Registry` for the vehicle and scene catalog.
--   **[Guidance](guidance.md)**: `MissionGuidance` and `TrackingGuidance`, the in-loop seam that turns a mission into a controller's setpoint, reached via `sim.guidance`.
+-   **[Guidance](guidance.md)**: the in-loop seam that turns a mission into a controller's setpoint, reached via `sim.guidance`. Its classes are internal, so the page is the one exception to importing from `nexus`.
 -   **[PX4](px4.md)**: `OffboardClient`, the client a script opens on PX4's offboard link, and the mission plan types, imported from `nexus.px4`.
--   **[Logging](logging.md)**: `log_event`, structured event logging into the Rerun recording.
+-   **[Logging](logging.md)**: `logger`, the framework logger, which writes to the console and tees into the Rerun recording.
 
 </div>

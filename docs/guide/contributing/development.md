@@ -1,6 +1,6 @@
 # Development
 
-nexus is a [`uv`](https://docs.astral.sh/uv/) workspace with a single `nexus`
+nexus is a [`uv`](https://docs.astral.sh/uv/) project with a single `nexus`
 framework package. Install it and run the command-line tool:
 
 ```bash
