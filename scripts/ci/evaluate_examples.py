@@ -332,18 +332,29 @@ def _bench_feed(key: str, into: pathlib.Path) -> tuple[list, str | None]:
     return prior, json.loads(got.stdout)["ETag"]
 
 
-def _publish_bench(fresh: list[dict], key: str, out: pathlib.Path) -> None:
-    """Merge ``fresh`` over the feed at ``key`` and write it back, as one step.
+def _indexed(prior: list, key: str, date: str) -> list[dict]:
+    """List ``key`` with ``date`` in the index ``prior``, once by key, as ``{key, date}`` records.
 
-    The examples, RL and matrix CI legs publish disjoint metric sets at the same fixed keys, and
-    the examples leg uploads from one box per example at once, so a plain read-merge-write would
-    drop what another box wrote meanwhile. The write holds only while the key still carries the
-    ETag the read saw, or still doesn't exist; a 412 or 409 reads and merges again.
+    The index at ``bench/latest.json`` is what the docs trend chart reads to find the per-commit
+    files. A record with no key, as the entries of the snapshot the index replaced, goes.
+    """
+    listed = {r["key"]: r for r in prior if isinstance(r, dict) and "key" in r}
+    listed.setdefault(key, {"key": key, "date": date})
+    return list(listed.values())
+
+
+def _publish(key: str, merge, out: pathlib.Path) -> None:
+    """Pass the feed at ``key`` through ``merge`` and write the result back, as one step.
+
+    The examples and RL CI legs publish disjoint metric sets at the same fixed keys, and the
+    examples leg uploads from one box per example at once, so a plain read-merge-write would drop
+    what another box wrote meanwhile. The write holds only while the key still carries the ETag the
+    read saw, or still doesn't exist; a 412 or 409 reads and merges again.
     """
     scratch = out / f"merged-{pathlib.Path(key).name}"
     for attempt in range(1, 21):
         prior, etag = _bench_feed(key, scratch)
-        scratch.write_text(json.dumps(merge_entries(prior, fresh), indent=2))
+        scratch.write_text(json.dumps(merge(prior), indent=2))
         condition = ["--if-match", etag] if etag else ["--if-none-match", "*"]
         print(f"uploading {scratch.name} -> s3://{bucket()}/{key} (try {attempt})", flush=True)
         # Fixed keys, for stable docs URLs; max-age=300 so a re-upload propagates within ~5 min.
@@ -365,7 +376,7 @@ def _merged_local(path: pathlib.Path, fresh: list[dict]) -> list[dict]:
     """Merge fresh entries over ``path``'s current entries, by entry name.
 
     Split CI invocations sharing one --out dir, as the flight gate runs the eval once per PX4
-    pin, would otherwise clobber the earlier invocation's entries; this is _publish_bench's local twin.
+    pin, would otherwise clobber the earlier invocation's entries; this is the per-commit publish's local twin.
     """
     try:
         data = json.loads(path.read_text())
@@ -397,8 +408,10 @@ def _upload(out: pathlib.Path, metas: dict[str, dict]) -> None:
     if not fresh:
         print("no scored metrics, skipping bench feed upload", flush=True)
         return
-    for key in (f"public/ci/bench/{sha[:12]}.json", "public/ci/bench/latest.json"):
-        _publish_bench(fresh, key, out)
+    key = f"public/ci/bench/{sha[:12]}.json"
+    _publish(key, lambda prior: merge_entries(prior, fresh), out)
+    recorded = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    _publish("public/ci/bench/latest.json", lambda prior: _indexed(prior, key, recorded), out)
 
 
 def main() -> int:
