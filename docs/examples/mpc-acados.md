@@ -141,7 +141,7 @@ Each `exchange()` tick:
 4. **Solve once, apply the first input**: take $u_0$, four thrusts in N, and invert the thrust map
    into the actuator's normalized command,
    $\mathrm{throttle}_i = \sqrt{T_i / c_T}\, /\, \mathrm{rpm}_{\max}$. That command drives
-   `ArticulatedRotors`, the same DC-motor-servo actuator PX4 flies, whose near-instant thrust
+   the core rotor chain, the same DC-motor servos PX4 flies, whose near-instant thrust
    response is what the Optimal Control Problem (OCP) assumes. The old lumped first-order lag
    bloated tracking to ~0.07 m RMSE.
 

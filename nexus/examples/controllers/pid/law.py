@@ -5,7 +5,7 @@ authority and built-in simple controller, and the differentiable design-optimiza
 
 It's a hand-coded "policy": it consumes the **same 12-D body-frame observation** the trained
 policy does, see ``examples/_lib/observation.py``, and emits a **4-D direct-moment action**
-``[thrust, m_x, m_y, m_z]`` the single-body :class:`~nexus._src.vehicle.actuators.Rotors`
+``[thrust, m_x, m_y, m_z]`` the single-body :class:`~nexus.examples._lib.rotors.Rotors`
 consumes in moment-input mode, allocation + motor lag with no rate loop, so the PID and a trained policy
 are interchangeable at the controller seam, and the PID's gains are the differentiable *design parameters*
 the rollout optimizes for the least overshoot + time-to-waypoint.

@@ -56,7 +56,6 @@ def build_policy_orchestrator(
     import numpy as np
     import warp as wp
 
-    from nexus._src.vehicle.actuators import check_actuator_model_pairing
     from nexus._src.vehicle.sensors import StateSensor
     from nexus.examples._lib import CtbrParams, RigidBodyRotors, build_rotor_mixer_from_model
     from nexus.examples.controllers.policy.controller import TrainedPolicyController
@@ -69,7 +68,8 @@ def build_policy_orchestrator(
         raise ValueError("vehicle_builder is required (resolve it via build.launch.resolve_scenario)")
     builder = vehicle_builder
     act = builder.actuator_params()  # aero/thrust map from the vehicle USD; hash-pinned, not in cfg
-    physics = NewtonPhysics(vehicle_builder=builder, cfg=cfg)
+    # The articulated plant, its Newton motors idle: Rotors holds the motor model and the rotors hang free.
+    physics = NewtonPhysics(vehicle_builder=builder, cfg=cfg, step_actuators=False)
     robot_mass = float(np.sum(physics.model.body_mass.numpy()))
     # Base-body principal inertia diag for the CTBR inner rate loop, τ = I·gain·Δω, read from the
     # model so the loop is inertia-correct, exactly as training reads it, in goto_env.__init__.
@@ -87,7 +87,6 @@ def build_policy_orchestrator(
     actuator = RigidBodyRotors(
         mixer=mixer, dt=dt, thrust_sign=thrust_sign, motor_tau=act["tau"]
     )  # τ from the vehicle USD, the single authority
-    check_actuator_model_pairing(actuator, physics.model)  # single-body wrench; a no-op guard
     # CTBR rate-loop params for the controller's mixer: the deploy effective values, substeps=1; the policy
     # trained on the ×NUM_SUBSTEPS-baked twins, diluted back here. Inertia read from the model so the loop
     # is inertia-correct, exactly as training reads it. The controller owns the mixer, airframe-aware.

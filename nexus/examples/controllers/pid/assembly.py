@@ -50,7 +50,6 @@ def build_pid_orchestrator(
     """
     import numpy as np
 
-    from nexus._src.vehicle.actuators import check_actuator_model_pairing
     from nexus.examples._lib import RigidBodyRotors, build_rotor_mixer_from_model
     from nexus.examples._lib.observation import WarpObservationSensor
     from nexus.examples.controllers.pid.controller import PidController
@@ -79,7 +78,8 @@ def build_pid_orchestrator(
         # Layout mixer: the collapsed body has no rotor joints for build_rotor_mixer_from_model to read.
         mixer = build_rotor_mixer_from_layout(sb.offsets, sb.dirs, {"ct": act["ct"], "cd": act["cd"], "rpm_max": act["rpm_max"]})  # fmt: skip
     else:
-        physics = NewtonPhysics(vehicle_builder=builder, cfg=cfg)  # articulated plant
+        # The articulated plant, its Newton motors idle: Rotors holds the motor model and the rotors hang free.
+        physics = NewtonPhysics(vehicle_builder=builder, cfg=cfg, step_actuators=False)
         robot_mass = float(np.sum(physics.model.body_mass.numpy()))
         # The airframe mixer built from the model rotor geometry + the settled rest pose.
         mixer = build_rotor_mixer_from_model(physics.model, builder.rotor_joints(), act, physics.state0.body_q.numpy())
@@ -96,9 +96,8 @@ def build_pid_orchestrator(
     # The PID law emits direct moments [thrust, m_x, m_y, m_z]; the controller's moment mixer, B⁻¹ with no
     # Collective Thrust and Body Rate (CTBR) rate loop, turns them into per-rotor commands, and the
     # single-body Rotors motor model realizes them: the same seam for the articulated model, with
-    # force-free rotors, and for the collapsed one, see actuators/coupling.py.
+    # force-free rotors, and for the collapsed one, see _lib/coupling.py.
     actuator = RigidBodyRotors(mixer=mixer, dt=dt, thrust_sign=-1.0, motor_tau=act["tau"])
-    check_actuator_model_pairing(actuator, physics.model)  # single-body wrench, a no-op guard
     controller = PidController(
         gains=DEFAULT_GAINS if gains is None else gains,
         goal_w=goal_w,

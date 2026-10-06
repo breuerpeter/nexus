@@ -3,7 +3,7 @@ Nonlinear Model Predictive Control (NMPC).
 
 This example-owned assembly, moved out of core because PX4 is the one first-class control path,
 wires the **registry vehicle** Universal Scene Description (USD), the full articulated model, and
-the unified per-rotor actuator. The NMPC is a pure *tracking* controller, and the min-snap/flatness
+the core rotor chain. The NMPC is a pure *tracking* controller, and the min-snap/flatness
 planner lives with the **operator**: this attaches the planner factory to the orchestrator as
 ``reference_planner`` so ``Sim`` hands it to the ``InProcessOperator``, which plans the whole-path
 ``ReferenceTrajectory`` and feeds ``accept_setpoint``. The NMPC's per-tick Sequential Quadratic
@@ -13,7 +13,7 @@ the captured-host-exchange strategy. acados needs provisioning first: ``python -
 
 from __future__ import annotations
 
-from nexus._src.build.assembly import resolve_device
+from nexus._src.build.assembly import resolve_device, rotor_chain
 from nexus._src.core import Clock, Orchestrator, logger
 from nexus._src.physics import NewtonPhysics
 
@@ -35,7 +35,7 @@ def build_acados_orchestrator(
     import newton
     import numpy as np
 
-    from nexus._src.vehicle.actuators import ArticulatedRotors, check_actuator_model_pairing, find_rotor_joints
+    from nexus._src.vehicle.rotors import find_rotor_joints
     from nexus._src.vehicle.sensors import StateSensor
     from nexus.examples._lib.min_snap import MinSnapReference
     from nexus.examples._lib.reference import FlatnessReference  # noqa: F401 the ruckig fallback planner
@@ -57,16 +57,11 @@ def build_acados_orchestrator(
         cfg={"physics": {"dt": dt, "solver": "mujoco", "contacts": True,
                          "spawn": {"pos": tuple(spawn), "attitude": "native", "prespin": "hover"}}},
     )  # the hover pre-spin reads ct from vehicle_builder's USD params, not cfg  # fmt: skip
-    # The core articulated actuator, the same one PX4 flies: USD-authored newton.actuators rotor
-    # motors plus the framework's airflow-aware aero from the solver-integrated Ω. Real motor lag,
-    # spinning props.
+    # The core rotor chain, the same one PX4 flies: the rotors' command stage, the USD-authored
+    # newton.actuators rotor motors physics steps, and the propellers' airflow-aware force element from
+    # the solver-integrated Ω. Real motor lag, spinning props.
     joints = builder.rotor_joints()  # the joint of each rotor the vehicle USD declares
-    actuator = ArticulatedRotors(
-        model=physics.model, control=physics.control, joints=joints,
-        ct=m["ct"], cd=m["cd"], rpm_max=m["rpm_max"], dt=dt,
-        aero_h=m.get("aero_h", 0.0), aero_hforce=m.get("aero_hforce", 0.0),
-    )  # fmt: skip
-    check_actuator_model_pairing(actuator, physics.model)  # requires the USD-authored rotor motors
+    commands, forces = rotor_chain(physics, builder)
 
     # NMPC rigid-body params, read from the real model in the NMPC's upright frame. Spawned at FRD, the NMPC
     # frame coincides with world, q_nmpc = identity, so the body-frame moment arms = the world-frame rotor
@@ -99,7 +94,8 @@ def build_acados_orchestrator(
     orch = Orchestrator(
         clock=Clock(dt),
         physics=physics,
-        actuator=actuator,
+        commands=commands,
+        forces=forces,
         sensors=[StateSensor(), *extra_sensors],
         controller=controller,
         renderer=renderer,

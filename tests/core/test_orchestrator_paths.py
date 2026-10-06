@@ -71,6 +71,24 @@ def test_the_loop_hands_each_component_a_logger_scoped_to_its_role_folder_and_it
     )
 
 
+def test_the_loop_hands_a_command_stage_and_a_force_element_a_logger_scoped_to_their_role_folders():
+    """The loop hands a command stage and a force element a logger scoped to `vehicle/commands/<name>`
+    and `vehicle/forces/<name>`, their role folders.
+    """
+    command, force = _Component("rotors"), _Component("propellers")
+    Orchestrator(
+        clock=_Clock(),
+        physics=_Component(),
+        commands=[command],
+        forces=[force],
+        sensors=[],
+        controller=_Component("pid"),
+        logger=_Sink(),
+    )
+
+    assert (command.handed, force.handed) == ("vehicle/commands/rotors", "vehicle/forces/propellers")
+
+
 def test_a_component_added_after_the_build_gets_a_logger_scoped_to_the_path_it_is_added_at():
     """A component added after the build, the guidance, gets a logger scoped to the path it's added at."""
     loop, *_ = _loop(_Sink())

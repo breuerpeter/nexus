@@ -13,6 +13,13 @@ in the script, and it records its flight `.rrd`. The launcher map is `_EXAMPLES`
   `exchange` itself. A controller with a peer, one with an `attached` flag, connects after the
   capture, so its device buffers exist from construction. One without a peer connects before the
   warm pass.
+- An example hands the loop its rotor chain in one of two ways. One that sums the rotor wrench on
+  the base body, the PID, policy and sampling MPC examples, passes `_lib`'s `Rotors` as the loop's
+  `actuator`, the old seam the loop keeps for it. Where such an example keeps the articulated
+  model, it builds its physics with `step_actuators=False`, so the vehicle's Newton motors stay
+  idle and the rotor joints hang free. One on the core rotor chain, the acados example, passes the
+  `commands` and `forces` that `rotor_chain(physics, vehicle_builder)` from
+  `nexus._src.build.assembly` returns, and physics steps the Newton motors between them.
 - A controller that logs, as the MPC examples do, names itself with a `name` class attribute. It
   logs only its own row's name, `horizon`, through the logger the loop hands it at `set_logger`,
   so the row lands at `sim/vehicle/controllers/<name>/horizon`.
