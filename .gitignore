@@ -33,3 +33,13 @@ assets/cache/
 # Claude Code local state — keep only the checked-in project skills
 /.claude/*
 !/.claude/skills/
+
+# Claude Code per-checkout instructions; never committed
+CLAUDE.local.md
+
+# Vale fetches the prose styles that .vale.ini pins; only the vocabulary is ours.
+.vale/styles/*
+!.vale/styles/config/
+
+# coverage.py data, written by the pytest --cov run CI uses
+.coverage
