@@ -3,7 +3,7 @@
 A ``.plan`` is JSON, and its mission items are already in MAVLink's own vocabulary: each carries a
 ``command``, a ``frame`` and seven ``params``, where params 5, 6 and 7 are latitude, longitude and
 altitude. So a plan needs translating, not interpreting: :class:`MissionItem` is a
-``MISSION_ITEM_INT`` with its fields named, and the upload in ``Px4Offboard`` puts them on the wire
+``MISSION_ITEM_INT`` with its fields named, and the upload in ``OffboardClient`` puts them on the wire
 verbatim. Nothing here converts through the sim's world frame: the plan is geodetic and stays
 geodetic, which is the whole point of flying a real file rather than scripted gotos.
 

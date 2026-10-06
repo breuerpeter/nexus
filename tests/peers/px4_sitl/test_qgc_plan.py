@@ -11,7 +11,7 @@ import pathlib
 import pytest
 
 import nexus
-from nexus._src.operator.qgc_plan import read_plan
+from nexus._src.peers.px4_sitl.qgc_plan import read_plan
 
 BOX_PLAN = pathlib.Path(nexus.__file__).parent / "examples" / "controllers" / "px4" / "box.plan"
 

@@ -17,7 +17,7 @@ This module is the one definition of the PX4 SITL container. It used to be one o
 service and a CI shell script held their own copies, which drifted, see GH #86. So a change to the
 mounts, the user or the environment belongs here and nowhere else.
 
-No flight logic lives here: the flight is always a script against ``sim.operator``; see
+No flight logic lives here: the flight is always a script against ``nexus.px4.OffboardClient``; see
 :mod:`nexus.examples.controllers.px4.flight`.
 """
 

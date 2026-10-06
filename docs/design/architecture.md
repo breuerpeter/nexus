@@ -1,5 +1,5 @@
 ---
-description: "How nexus works: a fixed-order deterministic sim loop of typed, replaceable components. The data model, interfaces, controller and operator plane, actuators, observability, configuration, and packaging."
+description: "How nexus works: a fixed-order deterministic sim loop of typed, replaceable components. The data model, interfaces, controllers and guidance, actuators, observability, configuration, and packaging."
 ---
 
 # Architecture
@@ -88,7 +88,7 @@ Directed Acyclic Graph (DAG) with the core at the root, and `import-linter` enfo
 module imports Kit: the Kit render peer's program ships as package data that nothing imports, and
 the contract forbids `omni`, `usdrt`, `isaacsim` and `carb` in every tier.
 
-## Controllers and the operator plane
+## Controllers and guidance
 
 Every controller states its stages, and a peer's autopilot and a device-native law fly through the
 same loop:
@@ -105,11 +105,23 @@ same loop:
 - **`TrainedPolicyController`**: loads a policy exported from `nexus-rl` and drives the
   vehicle from the ground-truth observation.
 
-**What to fly is separate from how it flies.** The **operator plane**, reached through
-[`sim.operator`](../reference/api/operator.md), issues typed setpoints, `PositionGoal`, `Waypoints`,
-or `ReferenceTrajectory`, that a controller narrows via `accept_setpoint`. `InProcessOperator` flips
-the active setpoint between graph replays. `Px4Offboard` streams offboard setpoints to PX4 over a
-separate MAVLink link. A `ruckig` or min-snap planner plans jerk-limited references.
+**What to fly is separate from how it flies.** A controller that takes setpoints flies the mission
+of its **guidance**, the outer loop of the control cascade, reached through
+[`sim.guidance`](../reference/api/guidance.md). The guidance is a component of the loop, and it
+holds no other component: it passes its output through the tick, as every stage does. Its stage
+runs each tick after the sensors' and before the controller's. It writes a changed setpoint, a
+`PositionGoal`, `Waypoints` or `ReferenceTrajectory`, to the tick, and the loop hands that to the
+controller's `accept_setpoint`, so the controller narrows it on that same tick. When the mission
+is over, the stage marks the tick done, and the loop ends the run. `MissionGuidance` sequences
+position goals and advances on arrival. `TrackingGuidance` plans one reference for a tracking
+controller, with a `ruckig` or min-snap planner. A flight constructs its guidance from the
+guidance's own parameters and hands it to `Sim.from_orchestrator`.
+
+PX4 takes no guidance, because its own navigator sequences its missions, and no setpoint from the
+loop. A script commands it over its offboard link, a MAVLink link of its own beside the lockstep
+link. The run owns that link's address and names it in its port map, and the script opens its own
+client there: [`nexus.px4.OffboardClient`](../reference/api/px4.md) on `sim.ports["offboard"]`.
+[Conventions](conventions.md#who-owns-an-address) states the rule.
 
 ## Actuators
 

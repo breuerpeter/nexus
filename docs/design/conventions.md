@@ -19,8 +19,11 @@ implementations. That's how the actuator seam came to exist in two files before 
 
 Three tiers. A vehicle or a scene **declares** a component in its Universal Scene Description (USD)
 when the component is a property of the machine or of the site. `Controller`, `Sensor`, `Companion`
-and the rotor chain, its command stage and its force element, are the vehicle's. What a scene contributes is the scene's. The `Operator` is a
-property of the run, not of either, so it stays an **argument**. The `Renderer` follows from the
+and the rotor chain, its command stage and its force element, are the vehicle's. What a scene contributes is the scene's. The guidance turns
+a mission into the setpoint a controller tracks. It's a property of the run, not of either, so it
+stays an **argument**: a flight constructs it and hands it to `Sim`. Its stage runs before the
+controller's, and it holds no controller: the loop hands the setpoint it writes to the tick to the
+controller. PX4 takes none, because its own navigator is its guidance. The `Renderer` follows from the
 vehicle: a sensor whose class requires the Kit render peer starts it. `Clock`, `Physics`, `Recorder` and `Logger` are the
 framework's own architecture, **fixed**: one implementation each, configured by settings rather than
 swapped, so none gets a resolver or a published Protocol. Fixed is about publishing no resolver, not
@@ -45,6 +48,31 @@ separates them: does the peer have a counterpart on the real vehicle?
 The split is a design choice. A Kit schema on the vehicle would put a renderer into the description
 of a vehicle, and a second renderer would then need a layer on every run to drop it. With a required
 peer, another renderer is another class for the same camera schema, one registry entry.
+
+## Who owns an address
+
+The run owns every address. A link is a socket between two processes, and one side has to pick the
+port. The run picks, because only the run knows what else flies on the machine. It claims the
+lowest PX4 instance free there and numbers every link from it, so two runs on one machine never
+collide.
+
+Where an address goes depends on which side of the run the link's end sits:
+
+- **An end inside the run**: the builder builds it from the run's addresses. The PX4 controller's
+  Hardware In The Loop (HIL) server is one, and the builder hands the controller its port.
+- **An end outside the run**: it reads its address from the run's port map, `sim.ports`. PX4's
+  offboard link is one. A script opens its own client, `nexus.px4.OffboardClient`, on
+  `sim.ports["offboard"]`, which holds the port and PX4's MAVLink system id.
+
+The split is a design choice, and it follows from a second rule: no generic part names PX4. The
+loop, the seams and `Sim` carry no PX4 class, port or verb, and an import contract in
+`.importlinter` holds that. A client that `Sim` built for the script would put a PX4 class into
+`Sim`. A method on the peer object would ask the peer for a port the run owns. It would also miss a
+run attached to a PX4 started elsewhere, which holds no peer object while the link is live. So the
+script that commands PX4 names it, and the port map serves every link that leaves the run alike.
+
+A link with nothing behind it stays out of the map. A run against the fake PX4 lists no offboard
+link, so the lookup fails at once and names the fake, and no client waits on a link nothing answers.
 
 ## The vehicle model
 

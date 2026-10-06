@@ -23,7 +23,7 @@ jobs:
 
       - name: Build the MkDocs site
         # --strict fails the build on broken links / nav warnings.
-        run: uv run --group docs mkdocs build --strict
+        run: uv run --locked --group docs mkdocs build --strict
 
       - name: Upload Pages artifact
         if: github.ref == 'refs/heads/main'

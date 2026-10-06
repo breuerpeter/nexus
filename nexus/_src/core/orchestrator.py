@@ -22,12 +22,13 @@ from nexus._src.diagnostics import diagnostics
 
 from .interfaces import Stage, Tick
 from .logging import logger
+from .ports import PortMap
 from .profiling import LoopProfiler
 from .schema import Measurement
 from .stages import build_ring, device_sensors, partition, plan_line, seed_stages, warm_stages
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable
+    from collections.abc import Callable, Iterable, Mapping
 
     import newton
 
@@ -112,11 +113,13 @@ class Orchestrator:
         physics: Physics,
         sensors: Iterable[Sensor],
         controller: Controller,
+        guidance: object | None = None,
         commands: Iterable[object] = (),
         forces: Iterable[object] = (),
         actuator: Actuator | None = None,
         renderer: Renderer | None = None,
         peers: Iterable[Peer] = (),
+        ports: Mapping[str, dict] | None = None,
         logger: Logger | None = None,
         on_tick: Callable[[newton.State, float, int], None] | None = None,
         preroll_timeout: float = 2.0,
@@ -142,6 +145,13 @@ class Orchestrator:
                 seed pass waits for it; its stages set the command buffer; ``close()`` tears down.
                 A controller with a peer exposes ``attached``, false until the peer dials in,
                 which holds the seed pass's clock.
+            guidance: Optional guidance, for a controller that takes setpoints: its stages run each
+                tick after the sensors' and before the controller's. It holds no controller: its
+                stage writes a changed setpoint to the tick, and the loop hands that to the
+                controller's ``accept_setpoint``, so the controller reads it on that tick. Its stage
+                marks the tick done when its mission is over, which ends the run. A flight can also
+                set the ``guidance`` attribute before the first step. ``None`` for PX4, which flies
+                its own missions.
             commands: The command stages: each turns the controller's command buffer into Newton's
                 control inputs, the rotors' speed targets and feedforward, in its device stages.
             forces: The force elements: each adds its body wrenches to the shared ``state.body_f``
@@ -157,20 +167,23 @@ class Orchestrator:
                 Loop (SITL) container. The loop stops each when the run ends, whether it ran out,
                 stopped early or never stepped; it starts none, since a peer boots while the build
                 goes on.
+            ports: The run's port map, a :class:`~nexus._src.core.ports.PortMap`: each link that
+                leaves the run, by name, to the address a script opens its client on. The run
+                owns every address, and the build names them here; ``None`` names no link.
             logger: Optional :class:`~nexus._src.logging.Logger`: the recording
                 sink + shared log calls. ``None`` ⇒ no recording and no per-tick log
                 fan-out, for max speed. When present, each loggable component's
                 ``log(t, logger)`` / ``flush(logger)`` runs at the host seam, §10.
             on_tick: Optional post-step observer called as ``on_tick(state, t, steps)``
-                after recording: an output-only seam to read the live state and
-                react, for example advance a waypoint goal.
+                after recording: an output-only demo and test seam to read the live state,
+                for example to capture a trajectory.
             preroll_timeout: Seconds to wait for the controller to establish lockstep
                 during preroll before raising ``ConnectionError``.
             exchange_timeout: Per-tick timeout in seconds for the blocking
                 ``controller.exchange`` in the steady loop.
             max_steps: Bound on control steps for the steady loop. ``None`` runs until
-                the controller ends the run, the PX4 default; a finite run,
-                test/demo/episode, sets it.
+                the controller ends the run, the PX4 default, or a guidance's mission is over; a
+                finite run, test/demo/episode, sets it.
             physics_substeps: Physics steps per control exchange, zero-order-hold over
                 finer physics, cf. multi-rate. ``1`` is lockstep, the PX4 default;
                 ``>1`` lets a policy control at a coarse rate over finer integration.
@@ -185,8 +198,10 @@ class Orchestrator:
         self.actuator = actuator
         self.sensors = list(sensors)
         self.controller = controller
+        self.guidance = guidance  # the loop reads it when it builds the ring, at the first step
         self.renderer = renderer
         self.peers = list(peers)
+        self.ports = PortMap() if ports is None else ports
         # The single logging switch: a `Logger`, the recording sink + the shared log_state/log_image
         # calls, or None. None ⇒ no recording and no per-tick log fan-out → max benchmark/CI speed.
         self.logger = logger
@@ -208,9 +223,10 @@ class Orchestrator:
         # Logger scoped to the component's path, so no call site names an entity; None when off, the
         # single switch. Physics has a per-tick `log(t)` + a teardown `flush()`; its
         # scene/trail change every tick and it's captured, so the orchestrator must call it from outside the
-        # graph. The operator + MPC controllers log their overlays event-driven in their own methods, at a
+        # graph. The guidance + MPC controllers log their overlays event-driven in their own methods, at a
         # mission event / when the horizon refreshes, gated on the handed-over logger; they just need it
-        # set, the operator via `add_loggable`, as it's wired on_tick, not a core component.
+        # set, the guidance via `add_loggable` when the loop builds its ring, since a flight can hand it over
+        # after construction.
         self._loggables = [c for c, _ in wired if hasattr(c, "set_logger")]
         for c, path in wired:
             if hasattr(c, "set_logger"):
@@ -232,8 +248,7 @@ class Orchestrator:
         self._recorder = None
         # Hosting hooks; the control surface, Sim, drives these. on_tick is the per-tick observer,
         # post-step, fired as on_tick(state, t, steps) after recording: a demo/test seam to read the
-        # live state and react, for example advance a waypoint goal, output-only. _stop is the cooperative
-        # teardown the host sets to end the steady loop.
+        # live state, output-only. _stop is the cooperative teardown the host sets to end the steady loop.
         self.on_tick = on_tick
         self._stop = False
         # The tick generator backing run()/step(), the in-process driving seam, lazily created on the
@@ -258,13 +273,23 @@ class Orchestrator:
         return self.logger.scoped(path) if self.logger is not None else None
 
     def add_loggable(self, component, path: str) -> None:
-        """Register a logging component that isn't a core component, the operator, wired as ``on_tick``,
-        and hand it the Logger scoped to ``path``, the component's path under the sim's root: ``_logger``,
-        None when off, the gate for its event-driven logging. Idempotent.
+        """Register a logging component handed over after construction, the guidance, and hand it the
+        Logger scoped to ``path``, the component's path under the sim's root: ``_logger``, None when off,
+        the gate for its event-driven logging. Idempotent.
         """
         if component not in self._loggables:
             self._loggables.append(component)
         component.set_logger(self._scoped(path))
+
+    # -- the guidance's setpoint, from the tick to the controller -------------------
+    def _hand_over(self, tick) -> None:
+        """Hand the setpoint a guidance's stage wrote to the tick to the controller, and clear it. The
+        loop calls this after a host stage, between graph replays, so the controller's in-place write
+        reaches the next replay with no new capture. A no-op on a tick that carries none.
+        """
+        if tick.setpoint is not None:
+            self.controller.accept_setpoint(tick.setpoint)
+            tick.setpoint = None
 
     # -- component-owned observation seam, the read-side twin of logging -----------
     def attach_recorder(self, recorder) -> None:
@@ -291,7 +316,7 @@ class Orchestrator:
     def _begin_log(self, t) -> None:
         """Set the shared ``time`` timeline once at the start of each tick, right after the clock advances
         and BEFORE ``exchange``, so every component's overlay this tick, the controller's horizon in
-        ``exchange``, the operator's markers in ``on_tick``, physics' scene, lands at the same timestamp,
+        ``exchange``, the guidance's markers in its stage, physics' scene, lands at the same timestamp,
         and no component touches ``set_time`` itself. A no-op when not recording.
         """
         if self.logger is not None:
@@ -301,7 +326,7 @@ class Orchestrator:
         """Host-seam per-tick log fan-out, outside any captured graph: call each loggable that has a
         per-tick ``log(t)``, physics' scene + trail. Decimated to the Logger's ``log_hz`` here, so every
         per-tick logger rides one clock. The single off-switch: a no-op when ``logger is None``. The
-        operator + controllers log event-driven in their own methods, not here.
+        guidance + controllers log event-driven in their own methods, not here.
         """
         if self.logger is None:
             return
@@ -429,8 +454,18 @@ class Orchestrator:
             if self.renderer is not None and hasattr(self.renderer, "on_physics_ready"):
                 self.renderer.on_physics_ready()
             record = Stage("record", "device", lambda tick: self._record_tick())
+            if self.guidance is not None:
+                # Checked here, since a flight can hand the guidance over after construction.
+                if not hasattr(self.controller, "accept_setpoint"):
+                    raise TypeError(
+                        f"{self._controller_name()} takes no setpoint, so this run takes no guidance: a "
+                        "guidance commands a controller that takes setpoints, and PX4 flies its own missions"
+                    )
+                if hasattr(self.guidance, "set_logger"):
+                    self.add_loggable(self.guidance, "guidance")
             ring = build_ring(
                 sensors=self.sensors,
+                guidance=self.guidance,
                 controller=self.controller,
                 physics=self.physics,
                 commands=self.commands,
@@ -458,8 +493,14 @@ class Orchestrator:
             peer = hasattr(self.controller, "attached")
             if not peer:
                 self.controller.connect()
+            # The warm pass, over the settled state. A guidance's warm stage runs between the sensors'
+            # and the controller's, and the loop hands its setpoint over at once, so the controller
+            # holds the first goal before its own first stage. The log opens at the settled state's
+            # time, so the markers a guidance logs here sit on the timeline.
+            self._begin_log(tick.t)
             for st in warm_stages(ring):
                 st.run(tick)
+                self._hand_over(tick)
             self._record_tick()  # the settled pre-flight row, the datum every climb measures against
             graphs = self._capture(segments, tick) if captured else None
             if peer:
@@ -560,7 +601,9 @@ class Orchestrator:
         """The steady loop as a generator: one control tick per ``yield``, the step() driving seam.
         Each tick advances the clock, opens its log, then runs the segments in ring order: a device
         segment replays its graph, or runs stage by stage without one, and a host stage runs on the
-        host between replays. A host stage that reports its peer gone ends the run. The ``finally``
+        host between replays. After a host stage the loop hands a setpoint the stage wrote to the tick
+        to the controller. A host stage that reports its peer gone ends the run, and so does a tick a
+        stage marked done, once it completes. The ``finally``
         stamps the RTF, so it runs whether the generator runs out or closes early on stop.
         """
         count = 0
@@ -574,7 +617,7 @@ class Orchestrator:
         replay = _replay() if graphs is not None else None
         prof = self._make_profiler("graph" if graphs is not None else "eager")
         try:
-            while not self._stop and (self.max_steps is None or count < self.max_steps):
+            while not self._stop and not tick.done and (self.max_steps is None or count < self.max_steps):
                 count += 1
                 prof.tick_begin()
                 if count == warmup_steps:
@@ -590,6 +633,7 @@ class Orchestrator:
                             raise ConnectionError(
                                 f"{self._controller_name()} disconnected (no actuator controls received)"
                             )
+                        self._hand_over(tick)  # a guidance's changed setpoint, before the controller's stages
                         prof.mark(st.name)
                     elif replay is not None:
                         prof.gpu_begin()
@@ -606,7 +650,7 @@ class Orchestrator:
                         prof.mark("stages")
                 self._log_tick(tick.t)  # host-seam log fan-out: scene+trail, …; no-op if logging off
                 if self.on_tick is not None:
-                    self.on_tick(tick.state, tick.t, count)  # post-step observer, for example waypoint advance
+                    self.on_tick(tick.state, tick.t, count)  # post-step observer, a demo and test seam
                 self.clock.throttle()  # no-op unless rtf>0, the interactive real-time throttle
                 prof.mark("log")
                 prof.tick_end()

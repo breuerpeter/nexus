@@ -2,7 +2,12 @@ Every example here is a self-contained, **zero-arg** script: its vehicle, scene,
 in the script, and it records its flight `.rrd`. The launcher map is `_EXAMPLES` in `__init__.py`.
 
 - A non-PX4 controller example, `controllers/<name>/`, self-assembles its orchestrator in its own
-  `assembly.py` and enters via `Sim.from_orchestrator`.
+  `assembly.py` and enters via `Sim.from_orchestrator`. Its flight file constructs its guidance,
+  a `MissionGuidance` or a `TrackingGuidance` from `nexus._src.guidance`, from the guidance's own
+  parameters, and hands it over as `guidance=`. A guidance holds no controller and no stop: its
+  stage writes a changed setpoint to `tick.setpoint`, which the loop hands to the controller's
+  `accept_setpoint`, and sets `tick.done` when its mission is over, which ends the run. The policy
+  example's `GeofenceGuidance` is the worked example of a guidance an example specialises.
 - Every component states its per-tick work as `stages()`, a list of `Stage` from
   `nexus._src.core.interfaces`. A controller that solves on the host returns `peer_stages(self)`
   from `nexus._src.core.stages`: the Model Predictive Control (MPC), acados, and policy examples.
@@ -36,8 +41,9 @@ in the script, and it records its flight `.rrd`. The launcher map is `_EXAMPLES`
   `LD_LIBRARY_PATH`. The extra's `casadi` bound comes from the pinned commit, so the two move
   together.
 - The PX4 examples, `controllers/px4/flight.py`, `flight_manual.py`, and `mission.py`, are plain
-  scripts against `sim.operator`. There is no separate flight driver. CI flies `flight.py`
-  as `px4_sitl`.
+  scripts against `nexus.px4.OffboardClient`. Each opens the client itself on the address in
+  `sim.ports["offboard"]`, waits for PX4's heartbeat with `sim.wait_until`, and closes it at the
+  end. There is no separate flight driver. CI flies `flight.py` as `px4_sitl`.
 - **Examples CI**: `scripts/ci/evaluate_examples.py` runs each example in its `DEFAULT_SET`,
   scores it on `evo` pose Absolute Pose Error (APE), the example's stats, and the steady
   Real Time Factor (RTF), and gates against `scripts/ci/examples_baselines.json`. An example dumps

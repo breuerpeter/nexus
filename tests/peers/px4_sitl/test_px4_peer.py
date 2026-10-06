@@ -407,39 +407,21 @@ def _started_models(daemon) -> list[str]:
     return [r["environment"].get("PX4_SIM_MODEL") for r in daemon.runs if r.get("detach", True)]
 
 
-class _Offboard:
-    """The operator link's far end stands in for PX4: it answers at once, so the run needs no MAVLink peer."""
-
-    connected = True
-
-    def __init__(self, *args, **kwargs):
-        pass
-
-    def open(self):
-        return self
-
-    def close(self):
-        pass
-
-
 def test_a_shipped_vehicle_flies_px4_sitl_on_its_own_airframe_with_no_control_flag(
     daemon, assembly, monkeypatch, tmp_path
 ):
     """A shipped vehicle flies PX4 SITL on its own airframe with no control flag.
 
     Given `astro_max_base` and a stand-in docker daemon, when the run builds, then PX4 SITL starts with
-    `PX4_SIM_MODEL=none_astro_max` and the operator is `Px4Offboard`, here its stand-in.
+    `PX4_SIM_MODEL=none_astro_max`.
     """
-    import nexus._src.operator as op_mod
-
     monkeypatch.delenv("NEXUS_ASSET_CACHE")  # the shipped vehicle comes from the checkout's own cache
     monkeypatch.chdir(tmp_path)  # no project catalog: only the bundled one
-    monkeypatch.setattr(op_mod, "Px4Offboard", _Offboard)
 
-    with Sim("astro_max_base", scene="empty", device="cpu", observe=False) as sim:
-        operator = sim.operator
+    with Sim("astro_max_base", scene="empty", device="cpu", observe=False):
+        pass
 
-    assert (_started_models(daemon), type(operator)) == (["none_astro_max"], _Offboard)
+    assert _started_models(daemon) == ["none_astro_max"]
 
 
 def test_a_local_vehicle_usd_flies_the_airframe_its_px4_schema_declares(daemon, assembly, catalog, tmp_path):
@@ -616,24 +598,6 @@ def test_a_fake_px4_whose_link_dies_ends_the_run_as_a_real_peers_death_does(
     assert (answered, ended, after, "Px4MavlinkController disconnected" in caplog.text) == (100, True, False, True), (
         caplog.text
     )
-
-
-def test_the_operator_on_a_fake_px4_run_fails_at_once_with_a_clear_error(daemon, assembly, catalog, tmp_path):
-    """The operator on a fake PX4 run fails at once with a clear error.
-
-    Given a run with the fake PX4, when a caller takes `sim.operator`, then it raises an error that names
-    the fake PX4, and nothing waits on the offboard port.
-    """
-    with Sim.from_orchestrator(_faked(catalog, tmp_path), observe=False) as sim:
-        sim.start(timeout=5.0)
-        t0 = time.monotonic()
-        try:
-            message = f"no error: {sim.operator!r}"
-        except RuntimeError as exc:
-            message = str(exc)
-        waited = time.monotonic() - t0
-
-    assert ("fake" in message, waited < 5.0) == (True, True), (message, waited)
 
 
 def test_a_peer_mapping_with_an_unknown_key_fails_the_build_before_any_peer_starts(daemon, assembly, catalog, tmp_path):

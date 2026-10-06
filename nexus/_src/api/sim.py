@@ -1,9 +1,9 @@
-"""Sim: the in-process control-surface handle, the program-driving API.
+"""Sim: the control-surface handle, the program-driving API.
 
 Owns the sim: builds it from a ``LaunchConfig`` via ``build_from_launch`` and drives the
 ``Orchestrator`` loop on the *caller's* thread, one driving model for every controller. A
-script steps the sim, with ``step``, ``run``, ``wait_until`` or ``sleep``, whether the autopilot
-is in-process or a host boundary such as PX4: the orchestrator's tick generator yields once per
+script steps the sim, with ``step``, ``run``, ``wait_until`` or ``sleep``, whether the controller
+takes setpoints or is PX4: the orchestrator's tick generator yields once per
 control tick either way, so a PX4 run is something you drive, not something you watch. Tears down
 cooperatively. ``observe=True`` attaches a ``Recorder`` so ``physics`` and ``sensors`` read sim
 ground truth.
@@ -12,33 +12,27 @@ ground truth.
 from __future__ import annotations
 
 import argparse
-import time
-from collections.abc import Callable
-from typing import TYPE_CHECKING
+from collections.abc import Callable, Mapping
+from typing import TYPE_CHECKING, NoReturn
 
 from nexus._src.api.args import save_run_artifacts, sim_argparser  # noqa: F401  # re-export; defs are import-light
 from nexus._src.build.launch import build_from_launch
 from nexus._src.config import LaunchConfig
 from nexus._src.core import logger
-from nexus._src.operator import InProcessOperator
 from nexus._src.recording import ChannelMap, Recorder
 
 if TYPE_CHECKING:
     from nexus._src.core import Orchestrator
     from nexus._src.core.interfaces import Controller
-    from nexus._src.operator import Px4Offboard
-
-# Wall-clock budget for PX4 to answer on the operator link once the sim starts stepping
-# for it: the same 30 s Px4Offboard's own blocking connect allows.
-_PX4_LINK_TIMEOUT_S = 30.0
+    from nexus._src.guidance import Guidance
 
 
 class Sim:
-    """In-process control-surface handle for a Newton sim run.
+    """Control-surface handle for a Newton sim run.
 
     Builds an ``Orchestrator`` from a ``LaunchConfig`` and drives its loop on the *caller's*
-    thread, one control tick per :meth:`step`, the same for an in-process autopilot and for
-    a host-boundary one, the PX4 HIL lockstep. :meth:`start` drives setup as far as lockstep;
+    thread, one control tick per :meth:`step`, the same for a controller that takes setpoints
+    and for PX4 on its Hardware In The Loop (HIL) lockstep. :meth:`start` drives setup as far as lockstep;
     :meth:`run` drives the whole run; :meth:`wait_until` and :meth:`sleep` step until a
     predicate or a sim-time budget. Use it as a context manager: ``__enter__`` builds,
     ``__exit__`` calls :meth:`stop` to tear the run down cooperatively.
@@ -71,8 +65,6 @@ class Sim:
             composes over the vehicle: it changes a declared value, selects a variant, or drops a
             declaration. A layer that drops the PX4 Software In The Loop (SITL) peer's,
             ``NexusPx4SitlAPI``, flies an autopilot started elsewhere, which dials port 4560.
-        reached_m: Mission-waypoint arrival threshold [m] for the in-process operator.
-        final_hold_s: Keep running this long, in sim-time, after the final goal before stopping.
 
     Example:
         >>> with Sim("astro_max_base", scene="empty") as sim:
@@ -98,8 +90,6 @@ class Sim:
         max_steps: int | None = None,
         rtf: float = 0.0,
         layer: str | None = None,
-        reached_m: float = 0.3,
-        final_hold_s: float = 2.0,
     ):
         self._launch = LaunchConfig()
         self._launch.set_vehicle(vehicle)  # a registry *name* or a local .usd path
@@ -120,8 +110,6 @@ class Sim:
                 logger.warning("device=gpu requested but no CUDA device found, falling back to CPU")
             device = "cuda"
         self._launch.runtime.device = device
-        self._reached_m = float(reached_m)  # operator advance threshold: mission waypoint arrival
-        self._final_hold_s = float(final_hold_s)  # keep running this long, in sim-time, after the final goal
         if max_steps is not None:
             self._launch.runtime.max_steps = int(max_steps)
         self._launch.runtime.rtf = float(rtf)  # 0 = unthrottled; 1.0 = wall-clock pacing
@@ -135,24 +123,21 @@ class Sim:
         self._stream = stream
         self._cache_dir = cache_dir
         self._observe = observe
-        self._in_process = False  # set at build, from the controller the vehicle declares
+        self._takes_setpoints = False  # set at build, from the controller the vehicle declares
         self._orch = None
-        self._operator = None
+        self._guidance = None  # a launch-built run has none: a flight hands one to from_orchestrator
         self._recorder: Recorder | None = None
         self._base_ch = None  # cached base body channel: the default "vehicle" entity, for wait_until/sleep
         self._ran = False
         self._stopped = False
         self._prebuilt_orch = None  # set by from_orchestrator, the self-assembled-example entry
-        self._ext_operator = None
 
     @classmethod
     def from_orchestrator(
         cls,
         orch: Orchestrator,
         *,
-        operator: object | None = None,
-        reached_m: float = 0.3,
-        final_hold_s: float = 2.0,
+        guidance: object | None = None,
         observe: bool = True,
     ) -> Sim:
         """Host a self-assembled :class:`~nexus._src.core.Orchestrator`: the examples' entry.
@@ -160,35 +145,29 @@ class Sim:
         An example builds its own orchestrator, its controller plus actuator plus sensors around
         the core components, see ``nexus/examples/controllers/*/assembly.py``, and hands it
         over; the ``Sim`` adds the control surface: the observation ``Recorder``, ``sim.physics``
-        and ``sim.sensors``; the operator plane, where by default a core
-        :class:`~nexus._src.operator.InProcessOperator` over the controller's
-        ``accept_setpoint`` gets wired, with the orchestrator's ``reference_planner`` passed through
-        for a tracking controller; and the run lifecycle,
-        ``run``, ``step``, ``stop``, ``results`` and ``artifacts``.
+        and ``sim.sensors``; the guidance the flight constructed, which joins the loop; and the run
+        lifecycle, ``run``, ``step``, ``stop``, ``results`` and ``artifacts``.
 
         Args:
             orch: The built orchestrator; its components already carry the renderer and logger.
-            operator: Override the operator commanding this run; ``None`` wires the default
-                ``InProcessOperator`` when the controller exposes ``accept_setpoint``.
-            reached_m: The default operator's waypoint-arrival threshold [m].
-            final_hold_s: Keep running this long, in sim-time, after the final goal.
+            guidance: The guidance the flight constructed, for example
+                ``MissionGuidance(reached_m=0.3)``. Its stage runs each tick before the controller's,
+                and the loop hands the setpoint it writes to the controller. ``None`` flies with
+                whatever setpoint the controller holds.
             observe: Attach the ``Recorder`` behind ``sim.physics`` and ``sim.sensors``.
 
         Returns:
-            The ``Sim`` handle: use as a context manager, then ``sim.operator.set_mission`` plus
+            The ``Sim`` handle: use as a context manager, then ``sim.guidance.set_mission`` plus
             ``sim.run()``.
         """
         sim = cls.__new__(cls)
         sim._launch = None
         sim._cache_dir = None
-        sim._reached_m = float(reached_m)
-        sim._final_hold_s = float(final_hold_s)
         sim._observe = observe
-        sim._in_process = hasattr(orch.controller, "accept_setpoint")  # a setpoint surface: an operator in this process
+        sim._takes_setpoints = hasattr(orch.controller, "accept_setpoint")
         sim._orch = None
         sim._prebuilt_orch = orch
-        sim._ext_operator = operator
-        sim._operator = None
+        sim._guidance = guidance
         sim._recorder = None
         sim._base_ch = None
         sim._ran = False
@@ -199,9 +178,8 @@ class Sim:
     def from_args(cls, args: argparse.Namespace, **overrides) -> Sim:
         """Construct a ``Sim`` from a :func:`sim_argparser` namespace, ignoring script-specific extras.
 
-        ``overrides`` win over the namespace, for the ``Sim`` kwargs the shared parser doesn't cover:
-        ``reached_m``, ``final_hold_s`` and ``gains``. So a script does
-        ``Sim.from_args(args, final_hold_s=3.0)``.
+        ``overrides`` win over the namespace, for the ``Sim`` kwargs the shared parser doesn't cover.
+        So a script does ``Sim.from_args(args, observe=False)``.
         """
         from nexus._src.diagnostics import diagnostics
 
@@ -228,12 +206,16 @@ class Sim:
     def __enter__(self) -> Sim:
         if self._prebuilt_orch is not None:
             self._orch = self._prebuilt_orch  # a self-assembled example's orchestrator, via from_orchestrator
+            if self._guidance is not None:
+                # The flight's guidance joins the loop's ring: its stage runs before the controller's.
+                # The loop builds its ring at the first step, so handing it over here is in time.
+                self._orch.guidance = self._guidance
         else:
             # A vehicle that authors RTX sensors starts the Kit render peer here, from the host.
             self._orch = build_from_launch(self._launch, cache_dir=self._cache_dir, stream=self._stream)
-            # The controller picks the operator: one with a setpoint surface takes an operator in this
-            # process, and PX4, which has none, takes Px4Offboard over its offboard link.
-            self._in_process = hasattr(getattr(self._orch, "controller", None), "accept_setpoint")
+            # A controller with a setpoint surface takes a guidance. PX4's has none: a script commands
+            # PX4 over the offboard link it opens itself, on the address in sim.ports.
+            self._takes_setpoints = hasattr(getattr(self._orch, "controller", None), "accept_setpoint")
         if self._observe:
             # Attach the observation sink: each recordable component registers its device-only channels;
             # physics → one per body plus per joint. dt → the per-row snapshot time, counter × dt.
@@ -252,97 +234,84 @@ class Sim:
             self._orch.attach_recorder(self._recorder)
             # Cache the base body channel, the discovered base, for the wait_until/sleep sim clock.
             self._base_ch = self._recorder.channels[f"vehicle/body/{self._orch.physics.base_body}"]
-        if self._in_process:
-            # In-process autopilot: wire the operator over the controller's thin setpoint surface at
-            # the host seam, Orchestrator.on_tick, the post-step slot between graph replays. The
-            # run itself is synchronous, sim.run(); the operator advances the mission and ends the
-            # run. Nothing mutates inside the captured region, per the capture contract. An example can
-            # pass its own operator, from_orchestrator(operator=...); the default is the core
-            # InProcessOperator whenever the controller exposes accept_setpoint.
-            if self._ext_operator is not None:
-                self._operator = self._ext_operator
-            elif hasattr(self._orch.controller, "accept_setpoint"):
-                self._operator = InProcessOperator(
-                    self._orch.controller,
-                    stop=self._orch.stop,
-                    reached_m=self._reached_m,
-                    final_hold_s=self._final_hold_s,
-                    # a tracking controller, acados, exposes a reference planner; the operator plans
-                    # the whole-path ReferenceTrajectory and hands it over instead of sequencing goals.
-                    planner=getattr(self._orch, "reference_planner", None),
-                )
-            if self._operator is not None:
-                if hasattr(self._operator, "tick"):
-                    self._orch.on_tick = self._operator.tick  # sequencing seam: advance the mission
-                if hasattr(self._operator, "set_logger"):
-                    # The logging seam: the mission viz lands under guidance/, the in-loop seam's name per #41.
-                    self._orch.add_loggable(self._operator, "guidance")
-        # Host-boundary, PX4, wires nothing here: its operator is a remote Ground Control Station (GCS),
-        # Px4Offboard, built lazily on first access after start(), and the run is step-driven the same
-        # way as any other.
+        # A run whose controller takes no setpoint, as PX4's does, wires nothing here: a script opens
+        # its own client on the offboard link, from sim.ports, after start(), and the run is
+        # step-driven the same way as any other.
         return self
 
-    # -- the operator, Plane 5, plus the controller's thin surface --
+    # -- the guidance of a setpoint controller, the run's port map, and the controller's thin surface --
     @property
-    def operator(self) -> InProcessOperator | Px4Offboard:
-        """The Operator commanding this sim, Plane 5. In-process control, policy, pid, mpc or acados, →
-        an :class:`InProcessOperator` over the controller's ``accept_setpoint``. PX4 → a
-        :class:`Px4Offboard` over PX4's offboard and onboard MAVLink link, separate from the
-        controller's HIL link, constructed plus connected lazily on first access, so access it
-        *after* PX4 is up, for example after ``sim.start()``; cached, and closed on ``sim.stop()``.
-
-        Connecting the PX4 link **steps the sim**, because PX4's clock is the sim's under lockstep:
-        a caller that merely slept here would stop the sim, and PX4 would never send the heartbeat
-        the caller waits for. The budget stays wall-clock: peer liveness is a property of the PX4
-        process, and this must work under ``observe=False`` too, where there is no sim clock.
+    def guidance(self) -> Guidance:
+        """The guidance of this run: the component a flight constructed and handed to
+        :meth:`from_orchestrator`, whose stage turns the mission into the controller's setpoint each
+        tick. Set the mission on it before ``run()``, and read its telemetry after.
 
         Returns:
-            The :class:`InProcessOperator`, in-process, or :class:`Px4Offboard`, PX4, driving this run.
+            The run's guidance, for example a ``MissionGuidance``.
 
         Raises:
-            RuntimeError: Accessed before entering the ``Sim`` context, in the in-process case, the
-                run flies the fake PX4, which answers no operator link, or the run ended while the
-                PX4 link was connecting.
-            TimeoutError: PX4 didn't answer on the operator link within ``_PX4_LINK_TIMEOUT_S``.
+            RuntimeError: The run has no guidance: the flight handed none over, or the vehicle
+                flies PX4, whose own navigator is its guidance. The message shows how a flight
+                constructs one.
         """
-        if self._in_process:
-            if self._operator is None:
-                raise RuntimeError("enter the Sim context first (`with na.Sim(...) as sim:`)")
-            return self._operator
-        if self._operator is None:
-            from nexus._src.operator import Px4Offboard
-            from nexus._src.peers.px4_sitl import OFFBOARD_PORT
-            from nexus._src.peers.px4_sitl.fake import Px4Fake
+        if self._guidance is None:
+            raise RuntimeError(
+                "this run has no guidance: a flight constructs one and hands it over, "
+                "`guidance = MissionGuidance(reached_m=0.3)` then "
+                "`Sim.from_orchestrator(orch, guidance=guidance)`; a PX4 run takes none"
+            )
+        return self._guidance
 
-            if any(isinstance(peer, Px4Fake) for peer in getattr(self._orch, "peers", ())):
-                raise RuntimeError(
-                    "this run flies the fake PX4, which answers only the HIL link: it has no operator link"
-                )
+    @property
+    def operator(self) -> NoReturn:
+        """No run has an operator, so this raises on every run and names what commands the run. A
+        controller that takes setpoints flies its :attr:`guidance`, which runs in the loop. A
+        controller that takes none, an autopilot in a peer such as PX4, takes its commands from a
+        script, over a link the script opens itself on the address :attr:`ports` names.
 
-            # The link's port and PX4's system id follow the PX4 instance the build handed the controller;
-            # a controller that names none takes PX4's defaults, instance 0.
-            system_id = getattr(getattr(self._orch, "controller", None), "target_system", 1)
-            offboard_port = OFFBOARD_PORT + system_id - 1
-            op = Px4Offboard(f"udpin:0.0.0.0:{offboard_port}", system_id=system_id)
-            op.open()  # bind the MAVLink link + start the pump; returns at once
-            self._operator = op  # cache BEFORE the wait, so a failed connect is still closed by stop()
-            deadline = time.monotonic() + _PX4_LINK_TIMEOUT_S
-            while not op.connected:
-                if not self.step():  # keep PX4's clock moving, or its heartbeat never comes
-                    raise RuntimeError(f"the run ended before PX4 answered on the operator link (:{offboard_port})")
-                if time.monotonic() > deadline:
-                    raise TimeoutError(
-                        f"no PX4 heartbeat on the operator link (:{offboard_port}) within {_PX4_LINK_TIMEOUT_S:.0f}s"
-                    )
-        return self._operator
+        Raises:
+            RuntimeError: On every access. Before the ``Sim`` context, the message says to enter it.
+                On a run whose controller takes setpoints, it names :attr:`guidance`. On any other
+                run, it names :attr:`ports`.
+        """
+        if self._orch is None:
+            raise RuntimeError("enter the Sim context first (`with na.Sim(...) as sim:`)")
+        if self._takes_setpoints:
+            raise RuntimeError("this run's controller takes setpoints: command it through `sim.guidance`")
+        raise RuntimeError(
+            "this run's controller takes no setpoint, so the run has no operator: a script commands "
+            "its autopilot over a link it opens itself, on an address from sim.ports"
+        )
+
+    @property
+    def ports(self) -> Mapping[str, dict]:
+        """The run's port map: each link that leaves the run, by name, to the address a script opens
+        its client on. The run owns every address. The builder builds a link's end inside the run
+        from them, and names here each link whose other end a script holds. An entry is a plain
+        mapping of what that client takes, such as ``{"protocol": "udp", "port": 14540,
+        "system_id": 1}`` for the ``"offboard"`` link of a PX4 run, which the PX4 page of the
+        reference documents. Open a client after ``sim.start()``, and step the sim while it waits
+        for an autopilot that runs on the sim's clock. A link with nothing behind it stays out of
+        the map, and its lookup raises with the reason.
+
+        Returns:
+            The port map, link name to entry.
+
+        Raises:
+            RuntimeError: Accessed before entering the ``Sim`` context.
+        """
+        if self._orch is None:
+            raise RuntimeError("enter the Sim context first (`with na.Sim(...) as sim:`)")
+        return self._orch.ports
 
     @property
     def controller(self) -> Controller | None:
-        """The autopilot's thin control surface, ``accept_setpoint`` plus config, or ``None`` for PX4,
-        which owns its mission in the external process and takes commands via ``sim.operator``.
+        """The controller's thin control surface, ``accept_setpoint`` plus config, or ``None`` for PX4,
+        which owns its mission in the external process and takes commands over its offboard link,
+        which a script opens on :attr:`ports`.
 
         Returns:
-            The in-process controller, which exposes ``accept_setpoint``, or ``None`` for a PX4 run.
+            The controller that takes setpoints, or ``None`` for a PX4 run.
         """
         ctrl = getattr(self._orch, "controller", None) if self._orch is not None else None
         return ctrl if (ctrl is not None and hasattr(ctrl, "accept_setpoint")) else None
@@ -357,8 +326,8 @@ class Sim:
         So for a PX4 sim this is the "lockstep is up" verb, and it returns with one observation
         row already recorded and the captured graph replayed once.
 
-        Idempotent: a second call is a no-op once the run has started. Optional for an
-        in-process sim, where :meth:`run` and :meth:`step` drive the same setup.
+        Idempotent: a second call is a no-op once the run has started. Optional for a run with
+        a setpoint controller, where :meth:`run` and :meth:`step` drive the same setup.
 
         Args:
             timeout: Override the assembly's ``preroll_timeout``: seconds to wait for the peer
@@ -381,10 +350,10 @@ class Sim:
 
     def run(self) -> None:
         """Run the sim **synchronously** to completion on the calling thread: exhaust the tick
-        generator, setup, loop and teardown. Bounded by ``max_steps``, the operator's mission end, or,
+        generator, setup, loop and teardown. Bounded by ``max_steps``, the guidance's mission end, or,
         for PX4, the peer disconnecting; ``stop()`` ends it early.
 
-        Set the mission via ``sim.operator`` first, then read ``sim.physics[name]`` or
+        Set the mission via ``sim.guidance`` first, then read ``sim.physics[name]`` or
         ``sim.sensors[name]``, with ``.latest()`` or ``.history()``, after it returns. A script that
         wants to observe or command mid-flight uses :meth:`step` or :meth:`wait_until` instead.
 
@@ -396,15 +365,15 @@ class Sim:
         if self._orch is None:
             raise RuntimeError("Sim.run() called outside the context manager (use `with na.Sim(...) as sim:`)")
         self._ran = True
-        # Blocks: fires on_tick, operator.tick, each step; closes the recorder plus controller in its finally.
+        # Blocks: runs every stage, the guidance's among them, each step; closes the recorder plus controller in its finally.
         self._orch.run()
 
     def step(self) -> bool:
         """Advance the sim one control tick on the calling thread. Deterministic: the predicate or state
         you read between steps lands at exact tick boundaries, with no wall-clock.
 
-        The one driving verb for every controller: an in-process autopilot and a host-boundary one,
-        PX4, alike advance one tick per call. Set the mission via ``sim.operator`` first; then step and
+        The one driving verb for every controller: one that takes setpoints and PX4 alike advance
+        one tick per call. Set the mission via ``sim.guidance`` first; then step and
         read ``sim.physics[...]`` between steps. Returns ``False`` when the run has ended: mission
         complete, ``max_steps``, stopped, or the peer disconnected.
 
@@ -527,7 +496,7 @@ class Sim:
                 break
 
     def results(self) -> dict:
-        """Run stats from the last in-process ``run()``: the orchestrator's ``run_stats``, which are
+        """Run stats from the last ``run()``: the orchestrator's ``run_stats``, which are
         ``control_steps``, steady ``rtf`` and ``full_rtf``. Empty before a run completes.
 
         Returns:
@@ -569,11 +538,6 @@ class Sim:
         if self._stopped:
             return
         self._stopped = True
-        # Close a connected PX4 operator first, since Px4Offboard holds a MAVLink link plus pump thread;
-        # the in-process operator holds no resources and has no close().
-        op = self._operator
-        if op is not None and hasattr(op, "close"):
-            op.close()
         if self._orch is None:
             return
         self._orch.stop()

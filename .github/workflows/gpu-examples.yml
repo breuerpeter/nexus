@@ -85,7 +85,7 @@ jobs:
               nexus/examples/controllers/acados_nmpc/provision.py
             setup: >-
               (command -v cmake >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq cmake)) &&
-              uv run --extra acados -m nexus.examples acados_nmpc --provision
+              uv run --locked --extra acados -m nexus.examples acados_nmpc --provision
           - example: px4_sitl
             cache-path: |
               ~/.cache/nexus/px4
@@ -105,7 +105,7 @@ jobs:
       cache-files: ${{ matrix.cache-files || '' }}
       command: >-
         ${{ matrix.setup || 'true' }} &&
-        uv run --group ci --extra examples python scripts/ci/evaluate_examples.py
+        uv run --locked --group ci --extra examples python scripts/ci/evaluate_examples.py
         --only ${{ matrix.example }}
         ${{ inputs.update-baselines && '--update-baselines' || '' }}
         ${{ (github.event_name == 'push' || inputs.upload) && '--upload' || '' }} &&
@@ -136,7 +136,7 @@ jobs:
       command: >-
         (command -v cmake >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq cmake)) &&
         bash scripts/ci/px4_image_cache.sh load &&
-        uv sync --group ci --extra examples --extra acados --extra policy &&
+        uv sync --locked --group ci --extra examples --extra acados --extra policy &&
         uv run --no-sync -m nexus.examples acados_nmpc --provision &&
         uv run --no-sync python scripts/ci/evaluate_examples.py --shared &&
         bash scripts/ci/px4_image_cache.sh save

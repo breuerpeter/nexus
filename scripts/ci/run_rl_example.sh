@@ -2,7 +2,7 @@
 # Run the full Astro Max RL example end-to-end and emit the recordings + regression stats.
 # Runner-agnostic (like evaluate_examples.py): needs a CUDA host with `uv` — no Docker, no Isaac Sim. Train +
 # record run **kitless on the host** in the separate `nexus-rl` uv project (Isaac Lab on the Newton
-# backend, its own venv, resolved on demand by `uv run --project nexus-rl`); the fresh export deploys
+# backend, its own venv, installed from its lock by `uv run --locked --project nexus-rl`); the fresh export deploys
 # on standalone Newton in the core venv, concurrently with the recording. The gpu-rl workflow calls
 # this via gpu-runner.yml; it runs check_rl_stats.py at the end.
 #
@@ -20,14 +20,14 @@ mkdir -p "$OUT"
 # Resolve the Astro Max USD into the asset cache if not supplied (so the GPU caller is a one-liner);
 # passed to the RL scripts as --vehicle_usd (VEHICLE_USD pre-seeds it, e.g. a local unpublished asset).
 if [ -z "${VEHICLE_USD:-}" ]; then
-  VEHICLE_USD="$(cd "$REPO" && uv run --extra policy python -c \
+  VEHICLE_USD="$(cd "$REPO" && uv run --locked --extra policy python -c \
     "from nexus._src.config import LaunchConfig, resolve; print(resolve(LaunchConfig().set_vehicle('astro_max_base').set_scene('empty')).vehicle_usd_path)")"
 fi
 
 echo "===== TRAIN (host, kitless, nexus-rl project) ====="
-# `uv run --project nexus-rl` resolves + installs Isaac Lab on the Newton backend on demand (own
-# venv, no container), then runs. The trained checkpoints land under --log_dir; record_demo replays them.
-( cd "$REPO" && uv run --project nexus-rl python nexus-rl/scripts/rsl_rl/train.py \
+# `uv run --locked --project nexus-rl` installs Isaac Lab on the Newton backend from nexus-rl/uv.lock
+# (own venv, no container), then runs; a stale lock fails here instead of being re-locked. The trained checkpoints land under --log_dir; record_demo replays them.
+( cd "$REPO" && uv run --locked --project nexus-rl python nexus-rl/scripts/rsl_rl/train.py \
     --num_envs "$ENVS" --max_iterations "$ITERS" --seed "$SEED" --save_interval 10 \
     --vehicle_usd "$VEHICLE_USD" \
     --log_dir "$OUT/rl" --stats_json "$OUT/train_stats.json" )
@@ -40,10 +40,10 @@ echo "===== RECORD THE SWARM + DEPLOY THE FRESH POLICY (concurrent, host) ====="
 # gated: the flight is one draw from a training that is not reproducible, so it fails only when the
 # export does not fly. The hosted policy's flight, the exact deploy gate, rides the gpu-examples
 # leg. --upload publishes the .rrd and the bench entries.
-( cd "$REPO" && uv run --project nexus-rl python nexus-rl/scripts/rsl_rl/record_demo.py \
+( cd "$REPO" && uv run --locked --project nexus-rl python nexus-rl/scripts/rsl_rl/record_demo.py \
     --log_dir "$OUT/rl" --out "$OUT/astromax_rl.rrd" --vehicle_usd "$VEHICLE_USD" ) &
 record=$!
-uv run --group ci --extra policy \
+uv run --locked --group ci --extra policy \
   python "$REPO/scripts/ci/evaluate_examples.py" --only goto_policy_fresh --out "$OUT" \
   --policy "$OUT/rl/exported/policy.pt" \
   $([ "${UPLOAD:-0}" = 1 ] && echo --upload) &

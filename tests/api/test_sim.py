@@ -166,7 +166,7 @@ class _FakeController:
 
 
 class _InProcessOrch:
-    """An in-process orchestrator, whose controller has accept_setpoint: run() is synchronous, fires on_tick."""
+    """An orchestrator whose controller has accept_setpoint: run() is synchronous, fires on_tick."""
 
     def __init__(self):
         self.sensors = []
@@ -205,18 +205,20 @@ class _InProcessOrch:
         self._stop = True
 
 
-def test_sim_in_process_wires_operator_controller_and_runs():
-    from nexus._src.operator import InProcessOperator
+def test_sim_hands_the_flights_guidance_to_the_orchestrator_and_runs():
+    from nexus._src.guidance import MissionGuidance
 
     fake = _InProcessOrch()
+    guidance = MissionGuidance()
 
-    # A self-assembled in-process orchestrator enters via from_orchestrator, the examples' entry.
-    with sim_mod.Sim.from_orchestrator(fake) as sim:
-        assert isinstance(sim.operator, InProcessOperator)  # operator constructed over the controller
+    # A self-assembled orchestrator enters via from_orchestrator, the examples' entry, with its guidance.
+    with sim_mod.Sim.from_orchestrator(fake, guidance=guidance) as sim:
+        assert sim.guidance is guidance and fake.guidance is guidance  # the guidance joins the loop
         assert sim.controller is fake.controller  # thin surface, which has accept_setpoint
-        assert fake.on_tick is not None  # operator wired to the host seam
-        sim.operator.set_mission([(0.0, 0.0, 4.0)])  # the fake view sits at z=4 → reached immediately
-        assert fake.controller.setpoints  # accept_setpoint commanded the first goal
+        assert fake.on_tick is None  # the hook stays the caller's: the guidance rides a stage
+        sim.guidance.set_mission([(0.0, 0.0, 4.0)])
+        assert tuple(guidance.active_setpoint.pos) == (0.0, 0.0, 4.0)  # the loop hands it over, not Sim
+        assert fake.controller.setpoints == []
         sim.run()
         assert fake.ran  # ran synchronously, no thread
         assert sim.results() == {"control_steps": 1, "rtf": 1.0}
@@ -241,82 +243,25 @@ def test_sim_step_drives_px4_on_the_calling_thread(monkeypatch):
         assert fake.threads == [threading.main_thread(), threading.main_thread()]
 
 
-class _FakeOffboard:
-    """Px4Offboard stand-in: `open()` is non-blocking and `connected` only turns True after the sim
-    has stepped `CONNECT_STEPS` times, standing in for PX4, whose clock is the sim's under lockstep.
-    """
+def test_a_run_whose_controller_takes_no_setpoint_has_no_operator_and_the_error_names_the_port_map(monkeypatch):
+    """A run whose controller takes no setpoint, as PX4's does, has no controller surface and no
+    operator: the autopilot owns its mission in its own process, and a script commands it over a
+    link it opens itself.
 
-    CONNECT_STEPS = 3
-
-    def __init__(self, orch):
-        self.orch = orch  # the fake orchestrator whose step count gates `connected`
-        self.opened = self.closed = False
-
-    def open(self):
-        self.opened = True
-        return self
-
-    @property
-    def connected(self):
-        return self.orch.steps >= self.CONNECT_STEPS
-
-    def close(self):
-        self.closed = True
-
-
-def test_sim_px4_controller_is_none_and_operator_is_px4offboard(monkeypatch):
-    fake = _FakeOrch()
-    fake.STEPS = 99  # let it keep stepping while the link connects
-    monkeypatch.setattr(sim_mod, "build_from_launch", lambda launch, **kw: fake)
-
-    import nexus._src.operator as op_mod
-
-    # The stub needs no live PX4 on :14540, see _FakeOffboard.
-    monkeypatch.setattr(op_mod, "Px4Offboard", lambda *a, **k: _FakeOffboard(fake), raising=False)
-    with sim_mod.Sim("astro_max_base", scene="empty") as sim:
-        sim.start(timeout=30.0)
-        assert sim.controller is None  # PX4 owns its mission externally, so the thin surface is None
-        op = sim.operator  # PX4: lazily constructs + connects a Px4Offboard on :14540
-        assert isinstance(op, _FakeOffboard) and op.opened
-        assert sim.operator is op  # cached
-    assert op.closed  # closed on sim teardown
-
-
-def test_sim_operator_steps_the_sim_while_the_px4_link_connects(monkeypatch):
-    """*The* regression the isaacsim cell caught: PX4's clock is the sim's under lockstep, so the
-    operator's connect has to step the sim. A caller that merely slept here would stop the sim and
-    PX4 would never send the heartbeat the caller waits for.
+    Given a `Sim` over a controller with no setpoint surface, when a script reads `sim.controller`
+    and `sim.operator`, then the controller is `None` and the operator raises `RuntimeError` that
+    names `sim.ports`.
     """
     fake = _FakeOrch()
-    fake.STEPS = 99
     monkeypatch.setattr(sim_mod, "build_from_launch", lambda launch, **kw: fake)
 
-    import nexus._src.operator as op_mod
-
-    monkeypatch.setattr(op_mod, "Px4Offboard", lambda *a, **k: _FakeOffboard(fake), raising=False)
     with sim_mod.Sim("astro_max_base", scene="empty", device="cpu") as sim:
         sim.start(timeout=30.0)
-        assert fake.steps == 1  # start() flew exactly one tick; the link isn't up yet
-        op = sim.operator
-        assert op.connected
-        assert fake.steps == _FakeOffboard.CONNECT_STEPS  # the property stepped until PX4 answered
-        assert fake.threads[-1] is threading.main_thread()  # …on the caller's thread, no daemon
-
-
-def test_sim_operator_raises_if_the_run_ends_before_px4_answers(monkeypatch):
-    fake = _FakeOrch()  # the default of 3 steps, and the stub never connects
-    monkeypatch.setattr(sim_mod, "build_from_launch", lambda launch, **kw: fake)
-
-    class _NeverConnects(_FakeOffboard):
-        CONNECT_STEPS = 10_000
-
-    import nexus._src.operator as op_mod
-
-    monkeypatch.setattr(op_mod, "Px4Offboard", lambda *a, **k: _NeverConnects(fake), raising=False)
-    with sim_mod.Sim("astro_max_base", scene="empty", device="cpu") as sim:
-        sim.start(timeout=30.0)
-        with pytest.raises(RuntimeError, match="operator link"):
+        controller = sim.controller
+        with pytest.raises(RuntimeError, match=r"no operator.*sim\.ports"):
             _ = sim.operator
+
+    assert controller is None
 
 
 def test_sim_takes_no_control_argument():
@@ -346,3 +291,13 @@ def test_a_sim_that_names_no_scene_fails_at_construction():
     """
     with pytest.raises((TypeError, ValueError), match="scene"):
         sim_mod.Sim(vehicle="astro_max_base")
+
+
+def test_reading_the_guidance_of_a_run_that_has_none_fails_with_the_way_to_construct_one():
+    """Reading the guidance of a run that has none fails with the way to construct one.
+
+    Given a `Sim` over a setpoint controller and no guidance, when a caller reads `sim.guidance`, then it
+    raises `RuntimeError` whose message shows how a flight constructs one.
+    """
+    with sim_mod.Sim.from_orchestrator(_InProcessOrch()) as sim, pytest.raises(RuntimeError, match="MissionGuidance"):
+        _ = sim.guidance
