@@ -8,6 +8,9 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 
+# The ground-station scripts get no page: #42 and #43 delete them.
+UNDOCUMENTED = "scripts/ground/"
+
 
 def _tracked(*pathspecs: str) -> list[str]:
     """The tracked files that match the pathspecs, as repo-relative paths."""
@@ -26,12 +29,12 @@ def _is_entry_point(path: str) -> bool:
 
 def test_every_tracked_script_has_a_docs_page() -> None:
     """Every tracked script a reader runs has a page under `docs/` that says what the script does
-    and how to run it.
+    and how to run it, except those in `scripts/ground/`, which #42 and #43 delete.
     """
     pages = "\n".join(
         (REPO / p).read_text() for p in _tracked("docs/*.md") if Path(p).name != "CLAUDE.md"
     )
-    scripts = [p for p in _tracked("scripts") if _is_entry_point(p)]
+    scripts = [p for p in _tracked("scripts") if _is_entry_point(p) and not p.startswith(UNDOCUMENTED)]
     assert [p for p in scripts if p not in pages] == []
 
 
