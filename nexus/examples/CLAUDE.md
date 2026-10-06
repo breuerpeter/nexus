@@ -22,7 +22,7 @@ in the script, and it records its flight `.rrd`. The launcher map is `_EXAMPLES`
   commit `acados.ref` pins and builds it under `~/.cache/nexus/acados/<sha>`, on
   `python -m nexus.examples acados_nmpc --provision`. The `acados` extra holds PyPI packages only.
   acados' Python interface, `acados_template`, isn't on PyPI: `provision.require()` puts it on
-  `sys.path` from the built tree. The extra's `casadi` bound is the pinned commit's, so the two
+  `sys.path` from the built tree. The extra's `casadi` bound comes from the pinned commit, so the two
   move together.
 - The PX4 examples, `controllers/px4/flight.py`, `flight_manual.py`, and `mission.py`, are plain
   scripts against `sim.operator`. There is no separate flight driver. CI flies `flight.py`
