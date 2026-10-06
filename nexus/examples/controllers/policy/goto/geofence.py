@@ -22,8 +22,8 @@ _KILL_RADIUS = 0.3  # [m]
 class GeofenceGuidance(MissionGuidance):
     """A mission guidance that ends the run when the vehicle leaves its box.
 
-    The stage reads the vehicle's position once per tick, as the mission guidance does, and checks it
-    against the box first. On a breach it sets ``breached_at`` and ``breach_pos``, freezes the mission
+    It overrides ``_tick``: the stage reads the vehicle's position once per tick, as the mission
+    guidance does, and this class checks it against the box first. On a breach it sets ``breached_at`` and ``breach_pos``, freezes the mission
     through ``_done``, logs the breach marker and calls ``stop``. A new mission clears the breach, so the
     fence fires once per mission rather than once per instance.
 
@@ -63,7 +63,8 @@ class GeofenceGuidance(MissionGuidance):
             self._done = True
             if self._logger is not None:
                 self._logger.log_points("breach", [list(self.breach_pos)], colors=_KILL, radii=_KILL_RADIUS)
-            self._end()
+            if self._stop is not None:
+                self._stop()
             return
         super()._tick(pos, ts)
 

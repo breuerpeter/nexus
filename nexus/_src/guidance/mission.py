@@ -23,9 +23,10 @@ class MissionGuidance(Guidance):
     goal has held for ``final_hold_s``. The guidance writes a single goal once, before the run; a
     multi-goal mission advances between graph replays.
 
-    A subclass, such as the policy example's geofence, can read and set ``_done``, which freezes the
-    sequencing, call ``_stop``, log through ``_logger``, and read ``_body_index``. The rest is this
-    class's own.
+    A subclass, such as the policy example's geofence, overrides ``_tick``, the stage's work over the
+    vehicle's position and the sim time. It can read and set ``_done``, which freezes the sequencing,
+    call ``_stop`` when the flight handed one over, log through ``_logger``, and read ``_body_index``.
+    The rest is this class's own.
 
     Args:
         controller: The controller that takes setpoints; it must expose ``accept_setpoint(Setpoint)``.
