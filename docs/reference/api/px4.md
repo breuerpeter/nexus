@@ -7,19 +7,17 @@ description: "API reference for nexus.px4: Px4Offboard, the client a script open
 `nexus.px4` holds PX4's own names: what a script that commands PX4 imports. `Px4Offboard` is the
 host end of the offboard link of PX4 Software In The Loop (SITL). The run owns that link's address
 and names it in its port map, [`sim.ports`](simulation.md), so the script opens the client itself
-once the sim has started. PX4 runs on the sim's clock, so the wait for its heartbeat steps the sim.
+once the sim has started. Entering the client returns at once. PX4 runs on the sim's clock, so the
+wait for its heartbeat steps the sim.
 
 ```python
-from contextlib import closing
-
 import nexus as na
 from nexus.px4 import Px4Offboard
 
 with na.Sim("astro_max_base", scene="empty") as sim:
     sim.start()
     link = sim.ports["offboard"]  # {"protocol": "udp", "port": 14540, "system_id": 1} on instance 0
-    with closing(Px4Offboard(f"udpin:0.0.0.0:{link['port']}", system_id=link["system_id"])) as op:
-        op.open()
+    with Px4Offboard(f"udpin:0.0.0.0:{link['port']}", system_id=link["system_id"]) as op:
         sim.wait_until(lambda: op.connected, sim_timeout=10.0)
         op.takeoff(2.0)
         sim.wait_until(op.at_target, sim_timeout=60.0)

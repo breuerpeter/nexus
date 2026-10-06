@@ -803,3 +803,19 @@ def test_start_mission_sets_the_mode_before_arming():
     p._on_msg(_FakeMsg("MISSION_CURRENT", seq=0))  # PX4 is at the first item, which the arm also needs
     _service(p, now=t0 + 20.0, state=st)
     assert len(_sent(p, arm_cmd)) == 1
+
+
+def test_entering_the_client_opens_the_link_and_returns_before_px4_answers():
+    """Entering the client opens the link and returns at once, before PX4 answers.
+
+    PX4 runs on the sim's clock, so its heartbeat comes only while the caller steps the sim: a
+    `with` that slept for it would stop the sim and never see one. Given a client on a port nothing
+    sends to, when a script enters it, then the entry returns within 5 s, well under the 30 s a
+    wait for the heartbeat took, and the client reports no connection yet.
+    """
+    t0 = time.monotonic()
+    with px4mod.Px4Offboard("udpin:127.0.0.1:0") as client:
+        entered_in = time.monotonic() - t0
+        connected = client.connected
+
+    assert (entered_in < 5.0, connected) == (True, False)

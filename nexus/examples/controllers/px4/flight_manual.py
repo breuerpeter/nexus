@@ -30,7 +30,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from contextlib import closing
 
 import numpy as np
 
@@ -68,10 +67,10 @@ def main() -> int:
             na.logger.info(f"[manual] PX4 lockstep established: flying via MANUAL_CONTROL (:{link['port']})")
 
             # The script opens the offboard client itself, after start(), and closes it on the way
-            # out. PX4 runs on the sim's clock, so the wait for its heartbeat steps the sim.
+            # out. Entering it returns at once: PX4 runs on the sim's clock, so the wait for its
+            # heartbeat steps the sim.
             spawn_alt = sim.physics[sim.base_body].latest().altitude_m
-            with closing(Px4Offboard(f"udpin:0.0.0.0:{link['port']}", system_id=link["system_id"])) as op:
-                op.open()  # binds the link and starts the pump; returns at once
+            with Px4Offboard(f"udpin:0.0.0.0:{link['port']}", system_id=link["system_id"]) as op:
                 sim.wait_until(lambda: op.connected, sim_timeout=args.timeout)
                 # SITL's rcS already sets this, but it's a runtime default rather than a compiled-in
                 # one: an upstream bump could flip it, and the only symptom would be a gesture that

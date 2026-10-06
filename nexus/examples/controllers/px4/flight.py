@@ -32,7 +32,6 @@ import json
 import math
 import sys
 import time
-from contextlib import closing
 
 import numpy as np
 
@@ -88,11 +87,11 @@ def main() -> int:
 
             # 2. The one PX4 flight profile, as a plain script: Takeoff mode, then yaw sweeps. The
             #    script opens the offboard client itself, after start(), and closes it on the way
-            #    out. PX4 runs on the sim's clock, so the wait for its heartbeat steps the sim.
+            #    out. Entering it returns at once: PX4 runs on the sim's clock, so the wait for its
+            #    heartbeat steps the sim.
             t_gcs = time.time()
             spawn_alt = sim.physics[sim.base_body].latest().altitude_m
-            with closing(Px4Offboard(f"udpin:0.0.0.0:{link['port']}", system_id=link["system_id"])) as op:
-                op.open()  # binds the link and starts the pump; returns at once
+            with Px4Offboard(f"udpin:0.0.0.0:{link['port']}", system_id=link["system_id"]) as op:
                 sim.wait_until(lambda: op.connected, sim_timeout=timeout)
                 op.takeoff(TAKEOFF_ALT)  # returns at once; the client's pump arms once armable
                 sim.wait_until(op.at_target, sim_timeout=timeout)

@@ -30,7 +30,6 @@ import json
 import pathlib
 import sys
 import time
-from contextlib import closing
 
 import nexus as na
 from nexus.examples._lib import dump_run
@@ -83,10 +82,10 @@ def main() -> int:
             na.logger.info(f"[mission] PX4 lockstep established: uploading the plan over :{link['port']}")
 
             # The script opens the offboard client itself, after start(), and closes it on the way
-            # out. PX4 runs on the sim's clock, so the wait for its heartbeat steps the sim.
+            # out. Entering it returns at once: PX4 runs on the sim's clock, so the wait for its
+            # heartbeat steps the sim.
             t_gcs = time.time()
-            with closing(Px4Offboard(f"udpin:0.0.0.0:{link['port']}", system_id=link["system_id"])) as op:
-                op.open()  # binds the link and starts the pump; returns at once
+            with Px4Offboard(f"udpin:0.0.0.0:{link['port']}", system_id=link["system_id"]) as op:
                 sim.wait_until(lambda: op.connected, sim_timeout=UPLOAD_TIMEOUT_S)
                 op.upload_mission(plan)
                 sim.wait_until(op.mission_uploaded, sim_timeout=UPLOAD_TIMEOUT_S)

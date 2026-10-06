@@ -203,14 +203,14 @@ class Px4Offboard:
     def open(self) -> Px4Offboard:
         """Open the MAVLink link and start the pump, returning at once, with no wait for PX4.
 
-        The non-blocking half of :meth:`__enter__`, for a caller that owns the waiting. A script
-        that steps the sim uses it, because PX4's clock is the sim's under lockstep: the sim has to
-        keep stepping or no heartbeat ever arrives, so the wait has to be a stepping loop rather
+        The caller owns the waiting, because PX4's clock is the sim's under lockstep: the sim has
+        to keep stepping or no heartbeat ever arrives, so the wait has to be a stepping loop rather
         than a sleep, ``sim.wait_until(lambda: op.connected, sim_timeout=…)``. Poll
-        :attr:`connected` to know when PX4 has answered.
+        :attr:`connected` to know when PX4 has answered. Entering the client as a context manager
+        calls this, and leaving it calls :meth:`close`.
 
         Returns:
-            ``self``, so it chains the same way as ``__enter__``.
+            ``self``, so it chains.
         """
         self._stop.clear()
         self._mav = mavutil.mavlink_connection(self._conn_str, source_system=255, source_component=240)
@@ -229,9 +229,10 @@ class Px4Offboard:
         return self._sysid is not None
 
     def __enter__(self) -> Px4Offboard:
-        self.open()
-        self._await_heartbeat(timeout=30.0)
-        return self
+        """Open the link and start the pump, returning at once; see ``open``. The wait for PX4's
+        heartbeat is the caller's, who steps the sim meanwhile.
+        """
+        return self.open()
 
     def __exit__(self, *exc) -> None:
         """Stop the pump and close the link on exit; see ``close``."""
@@ -426,20 +427,6 @@ class Px4Offboard:
             if _PX4_MAIN[m] == main and (s == 0 or s == sub):
                 return name
         return f"main={main},sub={sub}"
-
-    def _await_heartbeat(self, timeout: float) -> None:
-        """Sleep-poll until PX4 answers, for a caller with nothing else to drive.
-
-        A sim-driving caller must *not* use this: under lockstep the sim owns PX4's clock, so a
-        caller that sleeps here stops the sim and PX4 never sends the heartbeat it's waiting for.
-        Such a caller opens the link with :meth:`open` and steps the sim until :attr:`connected`.
-        """
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            if self.connected:
-                return
-            time.sleep(0.1)
-        raise TimeoutError("no PX4 heartbeat on the offboard link")
 
     def _cmd(self, command, *params) -> None:
         with self._lock:
