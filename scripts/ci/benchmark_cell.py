@@ -22,7 +22,7 @@ import os
 import sys
 
 import nexus as na
-from nexus.px4 import FRAME_GLOBAL_RELATIVE_ALT, NAV_TAKEOFF, NAV_WAYPOINT, MissionItem, Px4Offboard
+from nexus.px4 import FRAME_GLOBAL_RELATIVE_ALT, NAV_TAKEOFF, NAV_WAYPOINT, MissionItem, OffboardClient
 
 READY_S = float(os.environ.get("NEWTON_CELL_READY_S", "300"))  # PX4-lockstep wait budget
 FLY_S = float(os.environ.get("NEWTON_CELL_FLY_S", "600"))  # arm + climb budget [sim s]
@@ -149,7 +149,7 @@ def main() -> int:
         # The run owns the address of the offboard link; the cell's flight opens its own client on
         # it and closes it before the sim stops.
         link = sim.ports["offboard"]
-        op = Px4Offboard(f"udpin:0.0.0.0:{link['port']}", system_id=link["system_id"])
+        op = OffboardClient(f"udpin:0.0.0.0:{link['port']}", system_id=link["system_id"])
         mission_ok = _fly_inspection(sim, op) if args.mission == "inspection" else _fly_mission(sim, op)
     # Leaving the `with` stops the sim and kills PX4, so the run is over and the stats are final.
     results = sim.results()

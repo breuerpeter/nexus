@@ -240,7 +240,7 @@ def build_from_launch(
 def _ports(instance: int, peers: list) -> PortMap:
     """The run's port map on PX4 instance ``instance``: the links that leave the run, which a script
     opens its own client on. The run owns every address: the build made the HIL link's end inside
-    the run from the same instance, and names here the offboard link for ``nexus.px4.Px4Offboard``:
+    the run from the same instance, and names here the offboard link for ``nexus.px4.OffboardClient``:
     the port ``OFFBOARD_PORT + instance``, over the User Datagram Protocol (UDP), and the MAVLink
     system id ``instance + 1``. The fake PX4 answers the HIL link alone, so a run against it names
     no offboard link, and a lookup of it says why.

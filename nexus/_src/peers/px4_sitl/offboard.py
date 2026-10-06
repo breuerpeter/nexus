@@ -1,4 +1,4 @@
-"""Px4Offboard: the host end of the PX4 Software In The Loop (SITL) peer's offboard link, a thin,
+"""OffboardClient: the host end of the PX4 Software In The Loop (SITL) peer's offboard link, a thin,
 non-blocking pymavlink client. A background daemon thread keeps the MAVLink link alive: it sends
 the Ground Control Station (GCS) heartbeat plus the current MANUAL_CONTROL setpoint, services the
 outstanding mode and arm requests, and caches telemetry. Every public verb is a **request**: it
@@ -34,7 +34,7 @@ from . import OFFBOARD_PORT
 from .qgc_plan import NAV_WAYPOINT, MissionItem, Plan, read_plan
 
 # Pin the MAVLink dialect before importing mavutil; this matches Px4MavlinkController. Because the
-# package might eagerly import Px4Offboard, this can be the *first* pymavlink import in the process;
+# package might eagerly import OffboardClient, this can be the *first* pymavlink import in the process;
 # the HIL controller's HIL_GPS uses the common-dialect `id`/`yaw` fields, so this file must set the
 # dialect too or that later import is a cached no-op and HIL_GPS loses those fields.
 os.environ.setdefault("MAVLINK20", "1")
@@ -107,14 +107,14 @@ def _wrap_pi(angle: float) -> float:
 
 @dataclass
 class _ClimbTarget:
-    """What a :meth:`Px4Offboard.takeoff` is heading for: an altitude over the launch point [m]."""
+    """What a :meth:`OffboardClient.takeoff` is heading for: an altitude over the launch point [m]."""
 
     rel_alt: float
 
 
 @dataclass
 class _GotoTarget:
-    """What a :meth:`Px4Offboard.goto` is heading for, in the frame PX4 reports: the commanded fix,
+    """What a :meth:`OffboardClient.goto` is heading for, in the frame PX4 reports: the commanded fix,
     the altitude over the launch point, and the commanded heading, where ``None`` means the caller
     commanded no yaw. ``yaw`` is the PX4-frame value that went on the wire, not the caller's world
     yaw, so arrival checks compare PX4 frame with PX4 frame against ``ATTITUDE``.
@@ -126,7 +126,7 @@ class _GotoTarget:
     yaw: float | None
 
 
-class Px4Offboard:
+class OffboardClient:
     def __init__(
         self,
         conn: str = f"udpin:0.0.0.0:{OFFBOARD_PORT}",
@@ -200,7 +200,7 @@ class Px4Offboard:
         self._want_restart = False
 
     # ---- lifecycle ----
-    def open(self) -> Px4Offboard:
+    def open(self) -> OffboardClient:
         """Open the MAVLink link and start the pump, returning at once, with no wait for PX4.
 
         The caller owns the waiting, because PX4's clock is the sim's under lockstep: the sim has
@@ -228,7 +228,7 @@ class Px4Offboard:
         """
         return self._sysid is not None
 
-    def __enter__(self) -> Px4Offboard:
+    def __enter__(self) -> OffboardClient:
         """Open the link and start the pump, returning at once; see ``open``. The wait for PX4's
         heartbeat is the caller's, who steps the sim meanwhile.
         """

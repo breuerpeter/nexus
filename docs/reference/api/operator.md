@@ -8,7 +8,7 @@ The **Operator** plane, Plane 5, commands the vehicle. It reads input and conver
 commands. The input comes from a script or API call now, and from a joystick or Ground Control
 Station (GCS) later. Operators are **internal**: reach the one driving a run through
 [`sim.operator`](simulation.md), not a top-level import. PX4 takes no operator: a script commands
-it over its offboard link with [`nexus.px4.Px4Offboard`](px4.md).
+it over its offboard link with [`nexus.px4.OffboardClient`](px4.md).
 
 ```python
 with na.Sim.from_orchestrator(orch) as sim:  # a setpoint controller, so the operator is InProcessOperator

@@ -4,7 +4,7 @@
 
 **The shape.** The sim owns the autopilot: ``na.Sim`` builds PX4 SITL, serves the HIL link on
 :4560, starts the PX4 container against it, and kills it again on the way out. What is left here is
-the mission profile as a plain script against ``nexus.px4.Px4Offboard``, which it opens itself on
+the mission profile as a plain script against ``nexus.px4.OffboardClient``, which it opens itself on
 the address the run's port map names, ``sim.ports["offboard"]``: upload the plan over MAVLink
 :14540, engage AUTO.MISSION, and wait for PX4 to fly it.
 
@@ -34,7 +34,7 @@ import time
 import nexus as na
 from nexus.examples._lib import dump_run
 from nexus.examples.controllers.px4.log_warnings import px4_warnings
-from nexus.px4 import NAV_WAYPOINT, Px4Offboard, read_plan
+from nexus.px4 import NAV_WAYPOINT, OffboardClient, read_plan
 
 PLAN = pathlib.Path(__file__).with_name("box.plan")  # the mission flown; swap the file, fly another
 VEHICLE = "astro_max_base"  # the registry vehicle flown, which declares PX4
@@ -85,7 +85,7 @@ def main() -> int:
             # out. Entering it returns at once: PX4 runs on the sim's clock, so the wait for its
             # heartbeat steps the sim.
             t_gcs = time.time()
-            with Px4Offboard(f"udpin:0.0.0.0:{link['port']}", system_id=link["system_id"]) as op:
+            with OffboardClient(f"udpin:0.0.0.0:{link['port']}", system_id=link["system_id"]) as op:
                 sim.wait_until(lambda: op.connected, sim_timeout=UPLOAD_TIMEOUT_S)
                 op.upload_mission(plan)
                 sim.wait_until(op.mission_uploaded, sim_timeout=UPLOAD_TIMEOUT_S)

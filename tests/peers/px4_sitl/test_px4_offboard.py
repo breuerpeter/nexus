@@ -1,4 +1,4 @@
-"""Px4Offboard command encoding against a fake mavutil connection, with no real PX4.
+"""OffboardClient command encoding against a fake mavutil connection, with no real PX4.
 
 The tests bypass the background pump thread, setting _mav/_sysid/_compid directly, and assert the
 MAVLink messages the client's verbs emit; the flight itself is the integration proof.
@@ -53,7 +53,7 @@ class _FakeConn:
 
 
 def _pilot():
-    p = px4mod.Px4Offboard()
+    p = px4mod.OffboardClient()
     p._mav = _FakeConn()
     p._sysid, p._compid = 1, 1
     return p
@@ -290,10 +290,10 @@ def test_decode_mode_roundtrip():
 
     # POSCTL custom_mode: main=3 in byte 2
     custom = 3 << 16
-    assert px4mod.Px4Offboard._decode_mode(custom) == "Position"
+    assert px4mod.OffboardClient._decode_mode(custom) == "Position"
     # Land mode: main=4, sub=6
     custom = (4 << 16) | (6 << 24)
-    assert px4mod.Px4Offboard._decode_mode(custom) == "Land"
+    assert px4mod.OffboardClient._decode_mode(custom) == "Land"
     _ = mavutil  # keep import used
 
 
@@ -312,7 +312,7 @@ def test_takeoff_forwards_mis_takeoff_alt_and_sets_mode():
 
 
 def test_import_nexus_pins_common_mavlink_dialect():
-    # Regression, caught only by a live flight: `import nexus` eagerly imports Px4Offboard,
+    # Regression, caught only by a live flight: `import nexus` eagerly imports OffboardClient,
     # which can be the *first* pymavlink import. If it doesn't pin the common dialect, the
     # Hardware In The Loop (HIL) controller's later dialect setting is a cached no-op and HIL_GPS
     # loses its `id`/`yaw` fields, crashing the lockstep loop. Run in a fresh process so import order
@@ -814,7 +814,7 @@ def test_entering_the_client_opens_the_link_and_returns_before_px4_answers():
     wait for the heartbeat took, and the client reports no connection yet.
     """
     t0 = time.monotonic()
-    with px4mod.Px4Offboard("udpin:127.0.0.1:0") as client:
+    with px4mod.OffboardClient("udpin:127.0.0.1:0") as client:
         entered_in = time.monotonic() - t0
         connected = client.connected
 

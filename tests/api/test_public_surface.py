@@ -32,7 +32,7 @@ def test_a_script_imports_the_px4_client_and_the_mission_plan_types_from_nexus_p
     """A script imports the PX4 client and the mission plan types from `nexus.px4`, and the top level
     names nothing of PX4.
 
-    Given the package, when a script runs `from nexus.px4 import Px4Offboard, MissionItem, Plan,
+    Given the package, when a script runs `from nexus.px4 import OffboardClient, MissionItem, Plan,
     read_plan` and imports the mission item constants the PX4 scripts use, then each name resolves to
     its definition in the PX4 Software In The Loop (SITL) peer's folder, and `nexus.__all__` holds no
     PX4 name.
@@ -43,13 +43,14 @@ def test_a_script_imports_the_px4_client_and_the_mission_plan_types_from_nexus_p
         NAV_TAKEOFF,
         NAV_WAYPOINT,
         MissionItem,
+        OffboardClient,
         Plan,
-        Px4Offboard,
         read_plan,
     )
 
     in_peer_folder = all(
-        obj.__module__.startswith("nexus._src.peers.px4_sitl.") for obj in (Px4Offboard, MissionItem, Plan, read_plan)
+        obj.__module__.startswith("nexus._src.peers.px4_sitl.")
+        for obj in (OffboardClient, MissionItem, Plan, read_plan)
     )
     # The MAVLink values of the three constants, which PX4 reads in a mission item.
     constants = (NAV_WAYPOINT, NAV_TAKEOFF, FRAME_GLOBAL_RELATIVE_ALT)

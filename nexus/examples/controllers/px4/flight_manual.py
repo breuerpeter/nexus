@@ -6,7 +6,7 @@ and assert the climb. The manual counterpart to :mod:`flight` (which flies the a
 
 **Same shape as flight.py.** The sim owns the autopilot: ``na.Sim`` builds PX4 SITL, serves the HIL
 link on :4560, starts the PX4 container against it, and kills it again on the way out. What is left
-here is a plain script against ``nexus.px4.Px4Offboard``, which it opens itself on the address the
+here is a plain script against ``nexus.px4.OffboardClient``, which it opens itself on the address the
 run's port map names, ``sim.ports["offboard"]``, and whose sticks are streamed by the client's own pump
 over MAVLink :14540, the *same* #69 bytes the Ground Control Station (GCS) emits from decoded Pilot Pro sticks
 (freeflycontroller ``PILOT_PRO_OUTPUTS_MAVLINK_MANUAL_CONTROL`` msg 52537 -> x/y/z/r). So this
@@ -36,7 +36,7 @@ import numpy as np
 import nexus as na
 from nexus.examples._lib import dump_run
 from nexus.examples.controllers.px4.log_warnings import px4_warnings
-from nexus.px4 import Px4Offboard
+from nexus.px4 import OffboardClient
 
 VEHICLE = "astro_max_base"  # the registry vehicle flown, which declares PX4
 SCENE = "empty"  # flat ground
@@ -70,7 +70,7 @@ def main() -> int:
             # out. Entering it returns at once: PX4 runs on the sim's clock, so the wait for its
             # heartbeat steps the sim.
             spawn_alt = sim.physics[sim.base_body].latest().altitude_m
-            with Px4Offboard(f"udpin:0.0.0.0:{link['port']}", system_id=link["system_id"]) as op:
+            with OffboardClient(f"udpin:0.0.0.0:{link['port']}", system_id=link["system_id"]) as op:
                 sim.wait_until(lambda: op.connected, sim_timeout=args.timeout)
                 # SITL's rcS already sets this, but it's a runtime default rather than a compiled-in
                 # one: an upstream bump could flip it, and the only symptom would be a gesture that

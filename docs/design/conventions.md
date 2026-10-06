@@ -58,7 +58,7 @@ Where an address goes depends on which side of the run the link's end sits:
 - **An end inside the run**: the builder builds it from the run's addresses. The PX4 controller's
   Hardware In The Loop (HIL) server is one, and the builder hands the controller its port.
 - **An end outside the run**: it reads its address from the run's port map, `sim.ports`. PX4's
-  offboard link is one. A script opens its own client, `nexus.px4.Px4Offboard`, on
+  offboard link is one. A script opens its own client, `nexus.px4.OffboardClient`, on
   `sim.ports["offboard"]`, which holds the port and PX4's MAVLink system id.
 
 The split is a design choice, and it follows from a second rule: no generic part names PX4. The

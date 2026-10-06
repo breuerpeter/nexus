@@ -22,7 +22,7 @@ in the script, and it records its flight `.rrd`. The launcher map is `_EXAMPLES`
   train↔deploy observation source in `observation.py`, which `nexus-rl` also imports, and the
   evaluation dump in `eval_dump.py`.
 - The PX4 examples, `controllers/px4/flight.py`, `flight_manual.py`, and `mission.py`, are plain
-  scripts against `nexus.px4.Px4Offboard`. Each opens the client itself on the address in
+  scripts against `nexus.px4.OffboardClient`. Each opens the client itself on the address in
   `sim.ports["offboard"]`, waits for PX4's heartbeat with `sim.wait_until`, and closes it at the
   end. There is no separate flight driver. CI flies `flight.py` as `px4_sitl`.
 - **Examples CI**: `scripts/ci/evaluate_examples.py` runs each example in its `DEFAULT_SET`,

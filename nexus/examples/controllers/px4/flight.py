@@ -5,7 +5,7 @@ off, yaws and flies a long east-west leg, with no PX4 warnings and no sim-speed 
 
 **The shape.** The sim owns the autopilot: ``na.Sim`` builds PX4 SITL, serves the HIL link on :4560,
 starts the PX4 container against it, and kills it again on the way out. What is left here is THE one
-PX4 flight profile, written as a plain script against ``nexus.px4.Px4Offboard`` (takeoff to
+PX4 flight profile, written as a plain script against ``nexus.px4.OffboardClient`` (takeoff to
 ``TAKEOFF_ALT``, then yaw sweeps at the hold position, then ``EAST_LEG_M`` east and back, over
 MAVLink :14540), plus the sim-side gates and the evaluation dump. The script opens the client itself
 on the address the run's port map names, ``sim.ports["offboard"]``, and closes it at the end. This
@@ -38,7 +38,7 @@ import numpy as np
 import nexus as na
 from nexus.examples._lib import dump_run
 from nexus.examples.controllers.px4.log_warnings import px4_warnings
-from nexus.px4 import Px4Offboard
+from nexus.px4 import OffboardClient
 
 VEHICLE = "astro_max_base"  # the registry vehicle flown, which declares PX4
 SCENE = "empty"  # flat ground
@@ -91,7 +91,7 @@ def main() -> int:
             #    heartbeat steps the sim.
             t_gcs = time.time()
             spawn_alt = sim.physics[sim.base_body].latest().altitude_m
-            with Px4Offboard(f"udpin:0.0.0.0:{link['port']}", system_id=link["system_id"]) as op:
+            with OffboardClient(f"udpin:0.0.0.0:{link['port']}", system_id=link["system_id"]) as op:
                 sim.wait_until(lambda: op.connected, sim_timeout=timeout)
                 op.takeoff(TAKEOFF_ALT)  # returns at once; the client's pump arms once armable
                 sim.wait_until(op.at_target, sim_timeout=timeout)
