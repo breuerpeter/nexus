@@ -47,6 +47,16 @@ reference, plus the example's own stats:
 `sampling_mpc` is exempt from the RTF ≥ 1 doctrine by design, since it runs 16 parallel rollouts
 of an 80-step horizon per control tick. Its gate is its recorded value instead.
 
+## Trends
+
+Every gated metric over the last commits on `main`, one panel per metric under its example, with
+the gate as a dashed line. The page draws them in the browser from the per-commit bench feed every
+`gpu-examples` run on `main` uploads, so they're as fresh as the last merge. A metric with no gate
+has no panel: a metric whose drift matters takes a gate. The bucket serves the feed to the deployed
+site only, so a local `mkdocs serve` shows a note in their place.
+
+<!-- benchmark-trends -->
+
 ## The regression gates
 
 The same harness that produces these numbers gates them.
@@ -58,8 +68,9 @@ are **hardware-pinned to the A10G runner**, and only a deliberate `--update-base
 re-records them. A metric without a baseline entry is report-only: the harness shows it and never
 gates on it.
 
-Beyond the gates, every upload also appends to a per-commit trend feed, `bench/<sha>.json` in the
-CI artifacts bucket in github-action-benchmark custom JSON. The feed is raw, with no dashboard.
+Beyond the gates, every upload also writes a per-commit trend feed, `bench/<sha>.json` in the
+CI artifacts bucket in github-action-benchmark custom JSON. It lists the file in `bench/latest.json`,
+the index the [trends](#trends) read.
 
 ## Reading numbers elsewhere
 

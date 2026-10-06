@@ -89,3 +89,49 @@ body .md-typeset:has(a.diagram-link) h4 {
   border-bottom: none;
   padding-bottom: 0;
 }
+
+/* Benchmark trend panels (docs/reference/benchmarking.md), which javascripts/bench-trends.js
+   draws from the per-commit bench feed: one small SVG per gated metric under its example,
+   in the text colour so both themes read. */
+.md-typeset .bench-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.md-typeset .bench-figure {
+  margin: 0;
+  width: 240px;
+  max-width: 100%;
+}
+.md-typeset .bench-figure figcaption {
+  font-size: 0.65rem;
+  font-family: var(--md-code-font-family);
+  text-align: left;
+}
+.bench-panel {
+  width: 100%;
+  height: auto;
+  display: block;
+  color: var(--md-default-fg-color);
+}
+.bench-line {
+  fill: none;
+  stroke: var(--md-accent-fg-color);
+  stroke-width: 1.5;
+}
+.bench-point {
+  fill: var(--md-accent-fg-color);
+}
+.bench-point:hover {
+  r: 5;
+}
+.bench-gate {
+  stroke: currentColor;
+  stroke-dasharray: 4 3;
+  opacity: 0.6;
+}
+.bench-label {
+  fill: currentColor;
+  font-size: 9px;
+  opacity: 0.8;
+}

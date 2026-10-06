@@ -10,6 +10,9 @@ data-refresh PRs, and the site never fetches anything at build or view time:
   ``docs/data/examples_bench.json``, produced by ``scripts/ci/evaluate_examples.py``.
 * ``<!-- example-stats: <name> -->``: one example's measured metrics as a small table
   from the same data file; renders a "no CI data yet" note for examples not yet in the feed.
+* ``<!-- benchmark-trends -->``: the trend panels, which ``javascripts/bench-trends.js`` draws in
+  the browser from the per-commit bench feed on the CI bucket. The build only states which metrics
+  to plot and the bound each one's gate enforces, from ``scripts/ci/examples_baselines.json``.
 
 As with ``vehicle_previews.py``, this lives under ``docs/hooks`` as a build tool, not content.
 """
@@ -20,10 +23,16 @@ import json
 import re
 from pathlib import Path
 
+import yaml
+
 _REPO = Path(__file__).resolve().parents[2]
 _MATRIX = _REPO / "docs/data/rtf_matrix.json"
 _EXAMPLES = _REPO / "docs/data/examples_bench.json"
-_MARKER = re.compile(r"<!--\s*(?P<kind>benchmark-matrix|benchmark-examples|example-stats:\s*(?P<name>[\w.-]+))\s*-->")
+_BASELINES = _REPO / "scripts/ci/examples_baselines.json"
+_REGISTRY = _REPO / "nexus/_src/config/registry.yaml"  # names the bucket's base, which the feed sits under
+_MARKER = re.compile(
+    r"<!--\s*(?P<kind>benchmark-matrix|benchmark-examples|benchmark-trends|example-stats:\s*(?P<name>[\w.-]+))\s*-->"
+)
 _ENTRY = re.compile(r"(?P<metric>[\w.-]+)\[(?P<example>[\w.-]+)\]")
 
 
@@ -136,6 +145,54 @@ def _example_stats(name: str) -> str:
     return "\n".join(out)
 
 
+def _bound(rule) -> dict | None:
+    """The bound a baseline rule enforces, as ``min`` and ``max`` of what passes, the way the
+    harness's ``_check`` reads the rule: a bare value is an exact match, ``min``/``max`` are absolute,
+    ``min_frac``/``max_frac`` are relative to the recorded value and idle while it's null. A rule
+    on a non-number, such as a flag, has no panel.
+    """
+    if isinstance(rule, bool):
+        return None
+    if not isinstance(rule, dict):
+        return {"min": rule, "max": rule}
+    bound = {}
+    value = rule.get("value")
+    lows = [rule["min"]] if "min" in rule else []
+    highs = [rule["max"]] if "max" in rule else []
+    if value is not None:
+        lows += [value * rule["min_frac"]] if "min_frac" in rule else []
+        highs += [value * rule["max_frac"]] if "max_frac" in rule else []
+    if lows:
+        bound["min"] = max(lows)
+    if highs:
+        bound["max"] = min(highs)
+    return bound
+
+
+def trends(baselines: dict, repo: str = "") -> str:
+    """The trend section for ``baselines``: the gated metrics, each with its bound, as one JSON block
+    the page's script reads, the feed's URL and ``repo``, whose commit pages a point links to. The
+    metrics carry the feed's names, ``metric[example]``, in the baselines' order.
+    """
+    gates = {}
+    for example, rules in baselines.items():
+        if example == "_meta":
+            continue
+        for metric, rule in rules.items():
+            bound = _bound(rule)
+            if bound is not None:
+                gates[f"{metric}[{example}]"] = bound
+    base = (yaml.safe_load(_REGISTRY.read_text()).get("assets") or {}).get("base", "")
+    return "\n".join(
+        [
+            f'<div class="bench-trends" data-feed="{base}/ci/bench/latest.json" data-repo="{repo}" markdown="0">',
+            f'<script type="application/json" id="bench-gates">{json.dumps(gates)}</script>',
+            '<p class="bench-trends-status">Loading the trend feed…</p>',
+            "</div>",
+        ]
+    )
+
+
 def on_page_markdown(markdown: str, *, page, config, files) -> str:
     if not _MARKER.search(markdown):
         return markdown
@@ -146,6 +203,8 @@ def on_page_markdown(markdown: str, *, page, config, files) -> str:
             return _matrix_tables()
         if kind == "benchmark-examples":
             return _examples_table()
+        if kind == "benchmark-trends":
+            return trends(json.loads(_BASELINES.read_text()), config["repo_url"])
         return _example_stats(match.group("name"))
 
     return _MARKER.sub(replace, markdown)
