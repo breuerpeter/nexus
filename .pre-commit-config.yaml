@@ -6,7 +6,7 @@ ci:
   submodules: false
   # pre-commit.ci has no network access, but uv-lock needs to resolve
   # dependencies from remote indexes (PyPI, nvidia).
-  # Lockfile freshness is checked by a separate CI workflow instead.
+  # Both lockfiles' freshness is checked by a separate CI workflow instead.
   skip:
     - uv-lock
 
@@ -28,6 +28,11 @@ repos:
     hooks:
       # Update the uv lockfile
       - id: uv-lock
+      # Update the nexus-rl lockfile. It records the root project's metadata, so a root change
+      # stales it too.
+      - id: uv-lock
+        name: uv-lock (nexus-rl)
+        args: [--project, nexus-rl]
   - repo: https://github.com/crate-ci/typos
     rev: v1.42.0
     hooks:

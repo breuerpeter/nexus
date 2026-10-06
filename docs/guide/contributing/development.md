@@ -14,7 +14,9 @@ This project uses [pre-commit](https://pre-commit.com/) to run code quality chec
 before each commit. The hooks enforce:
 
 - **ruff**: lints and formats Python
-- **uv-lock**: keeps `uv.lock` in sync with `pyproject.toml`
+- **uv-lock**: keeps `uv.lock` and `nexus-rl/uv.lock` in sync with the root `pyproject.toml`.
+  A commit that touches only `nexus-rl/` skips it, so the pull request's `lint` check catches a
+  stale lock there
 - **typos**: catches common misspellings
 - **conventional-pre-commit**: enforces [conventional commit](https://www.conventionalcommits.org/) messages
 
