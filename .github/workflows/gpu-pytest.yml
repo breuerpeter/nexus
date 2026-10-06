@@ -51,7 +51,7 @@ jobs:
       command: >-
         bash scripts/ci/px4_image_cache.sh load &&
         uv run python -c "from nexus._src.peers.px4_sitl.runner import prepare; prepare()" &&
-        uv run --extra policy --with pytest --with pytest-cov pytest tests --cov=nexus --cov-report=xml -q --durations=25 &&
+        uv run --extra policy pytest --cov=nexus --cov-report=xml -q --durations=25 &&
         bash scripts/ci/px4_image_cache.sh save
       coverage-flags: gpu
     secrets: inherit

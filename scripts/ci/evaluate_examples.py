@@ -8,7 +8,8 @@ a reference attitude, rotation, the example's own stats, and the orchestrator's 
 gates everything against the committed ``scripts/ci/examples_baselines.json`` and writes
 ``benchmark.json``, github-action-benchmark-style ``{name, unit, value}`` entries plus a
 ``biggerIsBetter`` direction, for the trend record. With ``--upload`` it publishes the ``.rrd`` of each
-flight the docs serve and the benchmark data to the CI artifacts bucket.
+green flight the docs serve and the benchmark data to the CI artifacts bucket. A red flight's ``.rrd``
+stays off the bucket, so a docs page keeps the recording it serves.
 
 evo is under the General Public License (GPL) and heavy, so it lives only here, in the ``ci``
 dependency-group, never a shipped dependency; the examples dump plain numpy/JSON.
@@ -386,7 +387,7 @@ def _merged_local(path: pathlib.Path, fresh: list[dict]) -> list[dict]:
     return merge_entries(prior, fresh)
 
 
-def _upload(out: pathlib.Path, metas: dict[str, dict]) -> None:
+def _upload(out: pathlib.Path, metas: dict[str, dict], red: set[str]) -> None:
     sha = _sha()
 
     def cp(src: pathlib.Path, key: str, ctype: str) -> None:
@@ -399,10 +400,15 @@ def _upload(out: pathlib.Path, metas: dict[str, dict]) -> None:
         )  # fmt: skip
 
     # The bucket holds a recording only under the key a docs page serves: nothing reads a copy per commit.
+    # A red flight keeps its recording off that key, so the docs page keeps the published one.
     for name, meta in metas.items():
         rrd = meta.get("rrd")
-        if EXAMPLES[name].get("docs", True) and rrd and pathlib.Path(rrd).is_file():
-            cp(pathlib.Path(rrd), f"public/ci/logs/{name}.rrd", "application/octet-stream")
+        if not (EXAMPLES[name].get("docs", True) and rrd and pathlib.Path(rrd).is_file()):
+            continue
+        if name in red:
+            print(f"{name}.rrd not uploaded: the flight is red, so the docs keep the published recording", flush=True)
+            continue
+        cp(pathlib.Path(rrd), f"public/ci/logs/{name}.rrd", "application/octet-stream")
     bench = out / "benchmark.json"
     fresh = json.loads(bench.read_text()) if bench.exists() else []
     if not fresh:
@@ -511,7 +517,7 @@ def main() -> int:
         print(f"\nbaselines updated: {args.baselines}")
 
     if args.upload:
-        _upload(out, metas)
+        _upload(out, metas, red)
 
     if failed_runs:
         print(f"\nFAILED examples: {', '.join(failed_runs)}", flush=True)

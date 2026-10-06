@@ -7,6 +7,8 @@ the real newton-assets resolver.
 """
 
 import hashlib
+import logging
+import re
 from pathlib import Path
 
 import pytest
@@ -93,16 +95,16 @@ def test_resolve_to_vehicle_builder_uses_resolved_usd(tmp_path):
     assert resolved.tested_config.px4.airframe == "80001"
 
 
-def test_scenario_from_launch_honors_dt_seed_device(tmp_path):
-    from nexus._src.build.launch import _scenario_from_launch
+def test_scenario_from_receipt_honors_dt_seed_device(tmp_path):
+    from nexus._src.build.launch import _scenario_from_receipt
+    from nexus._src.config import Runtime
 
-    lc = LaunchConfig.from_dict({"vehicle": "astro", "runtime": {"dt": 0.01, "seed": 7, "device": "cpu"}})
-    cfg = _scenario_from_launch(lc)
+    cfg = _scenario_from_receipt(Runtime(dt=0.01, seed=7, device="cpu"))
     assert cfg["physics"]["dt"] == 0.01
     assert cfg["physics"]["force_cpu"] is True
     assert cfg["seed"] == 7
 
-    cfg_gpu = _scenario_from_launch(LaunchConfig.from_dict({"runtime": {"device": "cuda:0"}}))
+    cfg_gpu = _scenario_from_receipt(Runtime(device="cuda"))
     assert cfg_gpu["physics"]["force_cpu"] is False
 
 
@@ -449,7 +451,7 @@ def test_a_run_with_no_layer_builds_and_records_as_today(tmp_path, monkeypatch, 
     Given the catalog vehicle `astro_max_base` and no layer, when the run builds with the PX4 SITL peer
     sent to its fake, then it builds the PX4 controller on airframe `astro_max`, its IMU, magnetometer,
     barometer and Global Positioning System (GPS) sensors, and one PX4 peer; and its receipt names the
-    vehicle, the airframe and the scene, and no layer, sensor override or geodetic origin.
+    vehicle, the airframe and the scene, and no layer or geodetic origin.
     """
     import nexus._src.build.launch as L
 
@@ -466,9 +468,7 @@ def test_a_run_with_no_layer_builds_and_records_as_today(tmp_path, monkeypatch, 
     )
     loop.close()
     receipt = L.resolve_to_vehicle_builder(launch)[1].tested_config.model_dump(mode="json")
-    recorded = {
-        k: receipt[k] for k in ("vehicle", "layer", "px4", "scene", "scene_start", "geodetic_origin", "sensors")
-    }
+    recorded = {k: receipt[k] for k in ("vehicle", "layer", "px4", "scene", "scene_start", "geodetic_origin")}
 
     assert (built, recorded) == (
         ("Px4MavlinkController", "astro_max", ["ImuSensor", "MagSensor", "BaroSensor", "GpsSensor"], ["Px4Fake"]),
@@ -479,9 +479,84 @@ def test_a_run_with_no_layer_builds_and_records_as_today(tmp_path, monkeypatch, 
             "scene": "empty",
             "scene_start": None,
             "geodetic_origin": None,
-            "sensors": {},
         },
     )
+
+
+def _shipped_px4_run(monkeypatch, tmp_path, device: str):
+    """Build `astro_max_base` in `empty` on the PX4 fake, and return the loop and the receipt it carries,
+    the one the build handed it, as JSON.
+    """
+    import nexus._src.build.launch as L
+
+    monkeypatch.delenv("NEXUS_ASSET_CACHE", raising=False)  # the shipped vehicle comes from the checkout's own cache
+    monkeypatch.chdir(tmp_path)  # no project catalog: only the bundled one
+    launch = LaunchConfig.from_dict({"vehicle": "astro_max_base", "scene": "empty", "runtime": {"device": device}})
+    loop = L.build_from_launch(launch, preroll_timeout=10.0, peers={"px4_sitl": Px4Fake})
+    return loop, loop.settings
+
+
+def test_a_px4_runs_receipt_carries_no_substeps_determinism_or_sensors(tmp_path, monkeypatch, warp_cpu):
+    """A PX4 run's receipt carries no `substeps`, no `determinism` and no `sensors`.
+
+    Given a launch of `astro_max_base` in `empty` on the PX4 fake, when the run builds and a caller reads
+    its receipt as JSON, then `runtime` holds exactly `device`, `seed`, `dt`, `max_steps`, `rtf` and
+    `solver`, and the receipt has no `sensors` key.
+    """
+    loop, receipt = _shipped_px4_run(monkeypatch, tmp_path, "cpu")
+    loop.close()
+
+    assert (sorted(receipt["runtime"]), "sensors" in receipt) == (
+        ["device", "dt", "max_steps", "rtf", "seed", "solver"],
+        False,
+    )
+
+
+def test_the_receipt_of_a_run_on_auto_records_the_device_the_run_picked(tmp_path, monkeypatch, warp_cpu):
+    """The receipt of a run on `auto` records the device the run picked, never `auto`.
+
+    Given a launch on `runtime.device: auto` on the PX4 fake, when the run builds, then its receipt's
+    `runtime.device` is `cuda` on a box with CUDA and `cpu` on a box without, the same kind as the Warp
+    device the loop runs on.
+    """
+    import warp as wp
+
+    loop, receipt = _shipped_px4_run(monkeypatch, tmp_path, "auto")
+    ran_on = "cuda" if loop.physics.model.device.is_cuda else "cpu"
+    loop.close()
+
+    box = "cuda" if wp.is_cuda_available() else "cpu"
+    assert (receipt["runtime"]["device"], ran_on) == (box, box)
+
+
+def test_a_run_on_an_explicit_cpu_runs_on_the_cpu_and_records_cpu(tmp_path, monkeypatch, warp_cpu):
+    """A run on an explicit `cpu` still runs on the CPU and records `cpu`.
+
+    Given a launch on `runtime.device: cpu` on the PX4 fake, on a box with or without CUDA, when the run
+    builds, then the loop's Warp device is `cpu` and the receipt's `runtime.device` is `cpu`.
+    """
+    loop, receipt = _shipped_px4_run(monkeypatch, tmp_path, "cpu")
+    ran_on = str(loop.physics.model.device)
+    loop.close()
+
+    assert (ran_on, receipt["runtime"]["device"]) == ("cpu", "cpu")
+
+
+def test_a_px4_run_steps_the_physics_once_per_control_tick(tmp_path, monkeypatch, warp_cpu, caplog):
+    """A PX4 run still steps the physics once per control tick.
+
+    Given a launch of `astro_max_base` in `empty` on the PX4 fake, when the run builds and ticks five
+    times, then every tick runs, and the stage plan the run logs at its first tick, the ring every tick
+    runs, names the physics `step` stage once, so the five ticks step the physics five times.
+    """
+    loop, _ = _shipped_px4_run(monkeypatch, tmp_path, "cpu")
+    with caplog.at_level(logging.INFO, logger="nexus"):
+        ticked = [loop.step() for _ in range(5)]
+    loop.close()
+
+    plans = [r.getMessage() for r in caplog.records if r.getMessage().startswith("stage plan:")]
+    steps_per_tick = [len(re.findall(r"\bstep\b", plan)) for plan in plans]
+    assert (ticked, steps_per_tick) == ([True] * 5, [1])
 
 
 def test_a_layer_path_that_does_not_exist_fails_before_any_peer_starts(tmp_path, daemon):

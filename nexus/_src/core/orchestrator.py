@@ -97,6 +97,7 @@ class Orchestrator:
         exchange_timeout: float = 2.0,
         max_steps: int | None = None,
         physics_substeps: int = 1,
+        settings: dict | None = None,
     ):
         """Wire the components and run options into a single tick driver.
 
@@ -142,6 +143,9 @@ class Orchestrator:
             physics_substeps: Physics steps per control exchange, zero-order-hold over
                 finer physics, cf. multi-rate. ``1`` is lockstep, the PX4 default;
                 ``>1`` lets a policy control at a coarse rate over finer integration.
+            settings: The run's effective configuration as plain data, what a caller reads
+                back to know what flew and what the viewer's Settings tab shows: the build
+                passes the tested-config receipt. ``None`` records nothing.
         """
         self.clock = clock
         self.physics = physics
@@ -197,6 +201,7 @@ class Orchestrator:
         # cf. multi-rate: 1 = lockstep, the PX4 default. >1 lets a policy control at a
         # coarse rate, for example 50 Hz, over finer physics integration, matching its training.
         self.physics_substeps = int(physics_substeps)
+        self.settings = settings
 
     # -- component-owned logging seam, architecture.md §10 ------------------------
     def add_loggable(self, component) -> None:

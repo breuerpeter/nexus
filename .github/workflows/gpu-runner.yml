@@ -19,6 +19,10 @@ name: gpu-runner
 # THROUGH CLOUDFRONT (docs .rrd embeds + the bench feed), so treat everything uploaded there as
 # public. A CI output that is not published rides a GitHub artifact.
 #
+# "Re-run failed jobs" hangs on a leg whose `run` failed: start-runner passed, so it does not run
+# again, and `run` queues on the label of the box the earlier attempt stopped. Use "Re-run all
+# jobs", which starts a new box (#63).
+#
 # Provisioning (one-time): secrets AWS_GPU_INSTANCE_PROFILE, the instance profile a main-push run
 # attaches so its uploads need no keys, NEXUS_BUCKET, the artifacts bucket those uploads write to,
 # AWS_RUNNER_RESOURCE_TAG where tagged subnets opt in, and AWS_GPU_ROLE_ARN (OIDC). Optional:
