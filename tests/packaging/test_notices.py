@@ -1,8 +1,10 @@
-"""A file header that names another owner or license points at an entry in the notices.
+"""A file that names another owner or license points at an entry in the notices.
 
-The project is Apache-2.0 by Peter Breuer. A tracked file whose header names another copyright holder,
-or a license other than Apache-2.0, came from another project, and ``THIRD_PARTY_NOTICES.txt`` names it.
-The test reads the tracked tree, so it needs no GPU and no container.
+The project is Apache-2.0 by Peter Breuer. A tracked file with a ``Copyright`` or ``SPDX-License-Identifier``
+line that names another copyright holder, or a license other than Apache-2.0, came from another project, and
+``THIRD_PARTY_NOTICES.txt`` names it. The test reads every line, not a header of fixed length, since a header
+can run long and a bundled file repeats its notices through its body. It reads the tracked tree, so it needs
+no GPU and no container.
 """
 
 import re
@@ -12,15 +14,13 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 NOTICES = REPO / "THIRD_PARTY_NOTICES.txt"
 
-# The lines a header reads; a license line further down is part of the file's text, not its header.
-HEADER_LINES = 10
 OWNER = "Peter Breuer"
 LICENSE = "Apache-2.0"
 # The license texts themselves name owners and licenses by design.
 LICENSE_FILES = {"LICENSE", "THIRD_PARTY_NOTICES.txt"}
 
 COPYRIGHT = re.compile(r"Copyright\s+(?:\(c\)\s*|©\s*)?\d{4}")
-SPDX = re.compile(r"SPDX-License-Identifier:\s*(\S+)")
+SPDX = re.compile(r"SPDX-License-Identifier:\s*([\w.+-]+)")
 
 
 def _tracked_text_files() -> list[str]:
@@ -38,10 +38,8 @@ def _tracked_text_files() -> list[str]:
 
 
 def _claims_another_owner_or_license(path: Path) -> bool:
-    """Whether the file's header names a copyright holder other than the project's, or another license."""
-    with path.open(encoding="utf-8", errors="replace") as fh:
-        header = [fh.readline() for _ in range(HEADER_LINES)]
-    for line in header:
+    """Whether a line of the file names a copyright holder other than the project's, or another license."""
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         if COPYRIGHT.search(line) and OWNER not in line:
             return True
         spdx = SPDX.search(line)
