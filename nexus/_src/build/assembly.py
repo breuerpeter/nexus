@@ -8,14 +8,11 @@ builds the controller the vehicle USD declares, and the example controllers self
 scripts in ``nexus/examples/controllers/*/assembly.py``, reusing the helpers here,
 ``build_scenario`` / ``resolve_device``.
 
-Rendering enters through one seam, injected per build::
-
-    renderer_factory(physics, vehicle_builder, cfg) -> (renderer, extra_sensors)
-
-``None`` renders nothing; :func:`~nexus._src.rendering.rtx_renderer` returns a factory that maps the
-model's bodies onto the Kit peer's render stage and builds the vehicle USD's authored RTX
-camera/lidar sensors over the render link. Called after the physics build, since the render poses
-the stage prims from the model's bodies.
+Rendering enters through one seam, injected per build: ``renderer_factory``, from
+:func:`~nexus._src.rendering.rtx_renderer`, or ``None``, which renders nothing. After the physics
+build, since the render poses the stage prims from the model's bodies, its ``link`` gives the render
+link, the sensors build in one pass, each RTX sensor over that link, and its ``finish`` hands the link
+those sensors.
 """
 
 from __future__ import annotations
@@ -53,16 +50,19 @@ def assemble(
     rerun: bool = False,
     viewer: bool = True,
     debug: bool = False,
-    extra_sensors: list | None = None,
+    link=None,
+    components=None,
     settings: dict | None = None,
 ) -> Assembly:
     """Assemble the shared core components around the constructed ``physics`` and the
     caller-supplied ``controller``; which controller flies is the launch layer's decision.
+    ``link`` is the render link a sensor whose class requires the Kit peer takes, and ``components``
+    the registry that resolves each sensor's schema, ``None`` for the default one.
     ``settings`` is the run's effective configuration for the viewer's Settings tab; the launch
     glue passes the tested-config receipt.
     """
     from nexus._src.vehicle.actuators import ArticulatedRotors
-    from nexus._src.vehicle.sensors.usd import build_sensors
+    from nexus._src.vehicle.sensors.declared import build_sensors, sensor_specs
 
     dt = cfg["physics"]["dt"]
     rtf = cfg["physics"].get("rtf", 0)
@@ -92,20 +92,20 @@ def assemble(
     check_actuator_model_pairing(actuator, physics.model)  # requires the USD-authored motors
 
     seedtree = SeedTree(cfg.get("seed", 42))  # launch glue threads runtime.seed; string-name path keeps 42
-    # The analytic sensor suite comes from the sensor:* prims of the vehicle USD, the single, hash-pinned
-    # source, the same as the preceding actuator params; only the site stays config, since it is a
-    # world property, not a vehicle one. A controller flying Hardware In The Loop (HIL) is dead
-    # without sensors, so an unauthored USD fails loudly here.
-    specs = vehicle_builder.sensor_specs()
-    if not specs:
-        raise ValueError(
-            "no sensor:* prims authored in the vehicle USD: this assembly builds the USD-authored "
-            "analytic sensor suite, so author it as sensor:* prims under the base body"
-        )
-    sensors = [
-        *build_sensors(specs, seedtree=seedtree, dt=dt, site=site),
-        *(extra_sensors or []),  # the renderer's sensors, for example USD-discovered RTX cameras, host-rate
-    ]
+    # The sensors come from the schemas the vehicle USD applies, the single, hash-pinned source, the
+    # same as the preceding actuator params; only the site stays config, since it's a world property,
+    # not a vehicle one. A vehicle that declares no sensor builds: which sensors a flight needs is its
+    # controller's matter.
+    usd_path = vehicle_builder.cfg["usd_path"]
+    sensors = build_sensors(
+        sensor_specs(usd_path, components),
+        usd_path=usd_path,
+        model=physics.model,
+        seedtree=seedtree,
+        dt=dt,
+        site=site,
+        link=link,
+    )
     # The central Rerun recording, §10: built here because it needs the physics Model; the import is
     # lazy so rerun is only pulled in when logging is on. Resilient: a logging stack that fails to
     # build must never block the flight; warn and fly without the sink.
@@ -135,7 +135,7 @@ DEFAULT_SCENARIO = {
     "physics": {"enabled": True, "dt": 0.004, "force_cpu": False, "rtf": 0, "solver": "mujoco"},
     # sensors.gps.init is the scene's geodetic origin, a world property, so it stays config. The
     # sensor suite itself, which sensors exist + their noise/mount params, lives in the vehicle
-    # USD as sensor:* prims, and USDBuilder.sensor_specs() reads it, the same as the actuator entry below.
+    # USD as applied sensor schemas, the same as the actuator entry below.
     "sensors": {
         "gps": {"init": {"lat": 47.747944, "lon": -122.163917, "alt": 5.02}},
     },
@@ -179,13 +179,14 @@ def build_orchestrator(
     preroll_timeout: float = 30.0,
     max_steps: int | None = None,
     settings: dict | None = None,
+    components=None,
 ) -> Orchestrator:
     """The core orchestrator: the one ``NewtonPhysics`` + the one shared assembly around the
     caller-supplied ``controller``; a run differs only in its renderer, architecture.md §12.
 
-    ``renderer_factory(physics, vehicle_builder, cfg) -> (renderer, extra_sensors)`` is the one
-    rendering seam: called after the physics build, since the render poses stage prims from the
-    model's bodies; ``None`` renders nothing.
+    ``renderer_factory`` is the one rendering seam, from :func:`~nexus._src.rendering.rtx_renderer`:
+    used after the physics build, since the render poses stage prims from the model's bodies;
+    ``None`` renders nothing. ``components`` resolves each sensor's schema to its class.
     ``peers`` are the processes the build started for this run, which the loop stops when the run ends.
     ``preroll_timeout`` covers a host-boundary controller's boot, since an autopilot in a container
     needs a generous window.
@@ -194,12 +195,15 @@ def build_orchestrator(
     if vehicle_builder is None:
         raise ValueError(f"vehicle_builder is required for {vehicle!r} (resolve it via the launch glue)")
     physics = NewtonPhysics(vehicle_builder=vehicle_builder, cfg=cfg)
-    renderer, extra_sensors = renderer_factory(physics, vehicle_builder, cfg) if renderer_factory else (None, [])
+    renderer = renderer_factory.link(physics, vehicle_builder, cfg) if renderer_factory else None
     a = assemble(
         physics, vehicle_builder, cfg,
-        controller=controller, rerun=rerun, viewer=viewer, debug=debug, extra_sensors=extra_sensors,
+        controller=controller, rerun=rerun, viewer=viewer, debug=debug, link=renderer, components=components,
         settings=settings,
     )  # fmt: skip
+    if renderer_factory:
+        rtx = [s for s in a.sensors if getattr(s, "requires", ())]
+        renderer_factory.finish(renderer, rtx, vehicle_builder, cfg)
     return Orchestrator(
         clock=a.clock,
         physics=a.physics,

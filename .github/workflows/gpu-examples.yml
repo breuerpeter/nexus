@@ -4,8 +4,7 @@ name: gpu-examples
 # scripts/ci/evaluate_examples.py runs each one, scores it (evo pose APE + the example's own stats
 # + the steady RTF), and gates against scripts/ci/examples_baselines.json. The event picks the shape.
 # A pull request flies every example at once on one box, `shared`, gated on the correctness rows
-# alone: sharing the box's vCPUs lowers each flight's RTF, so its rtf rows are skipped, and only a
-# red flight's .rrd rides the artifact. A push or a dispatch flies one box per example, `gpu`,
+# alone: sharing the box's vCPUs lowers each flight's RTF, so its rtf rows are skipped. A push or a dispatch flies one box per example, `gpu`,
 # through a matrix over gpu-runner.yml, with the rtf gates: a measured flight cannot share a GPU,
 # so a speed regression is caught on the merge commit. Each box provisions what its examples need,
 # in-command: acados via scripts/setup_acados.sh (cached) — no --skip-missing, so a broken
@@ -13,7 +12,8 @@ name: gpu-examples
 # controller pins and builds it before the examples fly, the way a user's first run does, and the
 # box caches that tree and the px4-sitl image under the pin (scripts/ci/px4_image_cache.sh saves
 # and loads the image). One PX4 flight per box: two collide on PX4's fixed ports. The merge job
-# joins the fan-out's parts into the one examples-eval artifact. With --upload each box refreshes
+# joins the score files of the fan-out's parts into the one examples-eval artifact. On every event
+# only a red flight's .rrd rides an artifact, in its own part. With --upload each box refreshes
 # its example's docs .rrd embed + the bench trend feed (main / dispatch only); on main pushes a
 # data-refresh PR updates docs/data/examples_bench.json.
 # goto_policy flies the hosted policy here: given a policy the flight is bit-reproducible, so it is
@@ -161,6 +161,7 @@ jobs:
           name: examples-eval
           path: .eval-artifacts
           include-hidden-files: true
+          retention-days: 14
 
   # The branch-protection context. A job that calls a reusable workflow reports its checks as
   # "<job> / <inner job>", never under its own name, so the protected name has to come from a

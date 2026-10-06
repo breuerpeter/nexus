@@ -216,26 +216,31 @@ over "astro_max"
     {
         over "body_frd"
         {
-            def Camera "A"
+            def Camera "A" (
+                prepend apiSchemas = ["NexusCameraAPI"]
+            )
             {
-                int sensor:width = 64
-                int sensor:height = 48
-                double sensor:rate_hz = 25
+                int nexus:width = 64
+                int nexus:height = 48
+                float nexus:rate = 25
             }
 
-            def Camera "B"
+            def Camera "B" (
+                prepend apiSchemas = ["NexusCameraAPI"]
+            )
             {
-                int sensor:width = 64
-                int sensor:height = 48
-                double sensor:rate_hz = 25
+                int nexus:width = 64
+                int nexus:height = 48
+                float nexus:rate = 25
             }
 
-            def Camera "Ir"
+            def Camera "Ir" (
+                prepend apiSchemas = ["NexusThermalCameraAPI"]
+            )
             {
-                string sensor:modality = "ir"
-                int sensor:width = 64
-                int sensor:height = 48
-                double sensor:rate_hz = 25
+                int nexus:width = 64
+                int nexus:height = 48
+                float nexus:rate = 25
             }
         }
     }

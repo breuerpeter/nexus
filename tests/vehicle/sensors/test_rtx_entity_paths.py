@@ -24,9 +24,11 @@ over "astro_max"
     {
         over "body_frd"
         {
-            def OmniLidar "Scan"
+            def OmniLidar "Scan" (
+                prepend apiSchemas = ["NexusLidarAPI"]
+            )
             {
-                double sensor:rate_hz = 25
+                float nexus:rate = 25
             }
         }
     }

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .rtx_sensor import RtxMountedSensor, _prim_sensor_attr
+from .rtx_sensor import RtxMountedSensor
 
 
 class RtxLidarSensor(RtxMountedSensor):
@@ -21,21 +21,16 @@ class RtxLidarSensor(RtxMountedSensor):
     ``/ExternalSimulationTime`` clock the peer drives from the host's sim time.
 
     Args:
-        link: The render link.
-        prim: The ``OmniLidar`` prim on the vehicle's own stage.
-        path: The prim's path on the render stage.
-        body: The model body index the lidar rides.
+        run: The run's values: the ``OmniLidar`` prim, the model body it rides and the render link.
+        rate: How often the lidar gives a full scan, hertz; authoring bakes the scan's own tick rate.
     """
 
     KIND = "lidar"
     output = "points"
     width = height = 128  # the render product the annotator reads; the scan pattern is the prim's own
 
-    def __init__(self, link, prim, *, path: str, body: int):
-        # Sample rate from the AUTHORED prim, sensor:rate_hz, one sample per full scan; authoring
-        # bakes the scan's own tickRate. 10 Hz fallback for legacy assets.
-        rate_hz = float(_prim_sensor_attr(prim, "rate_hz", 10.0, "RtxLidarSensor"))
-        super().__init__(link, prim, path=path, body=body, rate_hz=rate_hz)
+    def __init__(self, run, rate: float = 10.0):
+        super().__init__(run, rate=rate)
 
     def emit(self, arrays: dict, t_shown: float) -> None:
         pts = arrays.get("points")

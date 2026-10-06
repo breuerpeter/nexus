@@ -15,7 +15,9 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
   example with `uv run -m nexus.examples <name>`. Read `nexus/examples/CLAUDE.md`
   before adding or changing an example.
 - **RTX sensors render in the Kit render peer**, a container the run starts on the host when the
-  vehicle's Universal Scene Description (USD) file authors a `Camera` or `OmniLidar` prim. The loop
+  vehicle's Universal Scene Description (USD) file declares a sensor whose class requires it: a camera
+  or lidar schema on a `Camera` or `OmniLidar` prim. Kit is a required peer, so no vehicle names it,
+  and `docs/design/conventions.md` states the rule. The loop
   never runs inside Kit, and no module imports Kit, an import-linter contract. Read
   `nexus/_src/peers/kit/CLAUDE.md` before changing the peer, its program, or the render link.
 - **Each peer lives in one folder**, `nexus/_src/peers/<name>/`, with its runner, its pin, its
@@ -50,8 +52,8 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
   nexus sim plus PX4 SITL plus QGroundControl, and its port map and gotchas.
 - **Lint and format:** `uvx pre-commit run -a`, which runs ruff. Config in
   `.pre-commit-config.yaml` and `[tool.ruff]` in `pyproject.toml`. The `extend-exclude` entry
-  keeps `docs/` out of lint.
-- **Tests:** `uv run --extra policy --with pytest pytest tests -q`. The test tree mirrors the source
+  keeps `docs/` out of lint. `uv run lint-imports` checks the import contracts in `.importlinter`.
+- **Tests:** `uv run --extra policy pytest -q`. The test tree mirrors the source
   tree: the tests of `nexus/_src/<path>/` sit in `tests/<path>/`, and none sits at the root of
   `tests/`. A test that mirrors no source folder sits in a folder named for its kind, `ci`, `docs`,
   `examples`, `packaging` or `suite`. `tests/suite/test_layout.py` fails on any other folder.

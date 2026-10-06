@@ -1,4 +1,4 @@
-"""The RTX thermal camera: the Long Wave Infrared (LWIR) feed over a camera prim marked ``ir``.
+"""The RTX thermal camera: the Long Wave Infrared (LWIR) feed over a camera prim that applies the thermal camera schema.
 
 The Kit peer renders the same kind of render product as the electro-optical camera and returns its
 radiance and depth; here on the host the radiance turns into kelvin, then into the operator's 8-bit
@@ -12,7 +12,7 @@ import numpy as np
 from nexus._src.core import logger
 
 from .rtsp import RtspPublisher
-from .rtx_sensor import RtxMountedSensor, _prim_sensor_attr
+from .rtx_sensor import RtxMountedSensor
 
 
 class RtxThermalSensor(RtxMountedSensor):
@@ -27,13 +27,20 @@ class RtxThermalSensor(RtxMountedSensor):
     law to kelvin and displays it against fixed radiometric stops, so the same authored temperature
     always draws the same pixel and two runs of one flight compare directly.
 
-    Selected by ``sensor:modality = "ir"`` on the camera prim; with none authored, EO -> RtxCameraSensor.
+    Declared by ``NexusThermalCameraAPI`` on the camera prim; ``NexusCameraAPI`` declares the EO camera.
     Two constraints the authoring and the construction order have to respect:
 
-    * the Pt AOV returns at the DLSS INTERNAL resolution, so author ``sensor:width/height`` at
-      twice the wanted IR core: 1280x1024 -> 640x512 under the pinned Performance mode, measured;
+    * the Pt AOV returns at the INTERNAL resolution of Deep Learning Super Sampling (DLSS), so author
+      ``nexus:width`` and ``nexus:height`` at twice the wanted IR core: 1280x1024 -> 640x512 under the pinned Performance mode, measured;
     * the render product must exist before the first rendered frame, created with the EO cameras;
       a Pt-annotated product created after frames have rendered stays permanently empty, measured.
+
+    Args:
+        run: The run's values: the ``Camera`` prim, the model body it rides and the render link, which
+            says where to publish the feed when the run streams.
+        width: Width of the render, pixels: twice the width of the image.
+        height: Height of the render, pixels: twice the height of the image.
+        rate: How often the camera gives a frame, hertz.
     """
 
     KIND = "cameras"
@@ -51,23 +58,22 @@ class RtxThermalSensor(RtxMountedSensor):
     AMBIENT_SIGMA = 0.02
     NOISE_SIGMA = 0.008  # NETD-style grain
 
-    def __init__(self, link, prim, *, path: str, body: int, cfg, stream_url: str | None = None):
-        # Render params from the AUTHORED prim, exactly as RtxCameraSensor does; the vehicle USD is
-        # the single authority. What comes back is smaller, the DLSS-internal grid, so nothing
+    def __init__(self, run, width: int = 1280, height: int = 1024, rate: float = 24.0):
+        # What comes back is smaller than the declared size, the renderer's internal grid, so nothing
         # downstream of the render can assume these numbers; see _emit_size.
-        self.width = int(_prim_sensor_attr(prim, "width", 1280, "RtxThermalSensor"))
-        self.height = int(_prim_sensor_attr(prim, "height", 1024, "RtxThermalSensor"))
-        rate_hz = float(_prim_sensor_attr(prim, "rate_hz", cfg.render_hz, "RtxThermalSensor"))
+        prim = run.prim
+        self.width = int(width)
+        self.height = int(height)
         # authored intrinsics -> the Rerun Pinhole; logged on the first frame, at the EMITTED size
         self._focal_mm = float(prim.GetAttribute("focalLength").Get() or 12.0)
         self._h_aperture_mm = float(prim.GetAttribute("horizontalAperture").Get() or 36.0)
         self._v_aperture_mm = float(prim.GetAttribute("verticalAperture").Get() or 0.0) or None
-        self._bitrate = cfg.bitrate
-        self._stream_url = stream_url
+        self._bitrate = run.link.streams.bitrate
+        self._stream_url = run.link.streams.url("ir")
         self._publisher = None  # also first-frame: the encoder needs the emitted size, not the authored one
         self._frustum_logged = False
         self._rng = np.random.default_rng(0)
-        super().__init__(link, prim, path=path, body=body, rate_hz=rate_hz)
+        super().__init__(run, rate=rate)
 
     def set_logger(self, logger_) -> None:
         """Take the Logger, but defer the pinhole: it needs the emitted image size, and no frame
@@ -102,7 +108,7 @@ class RtxThermalSensor(RtxMountedSensor):
             self._publisher = RtspPublisher(
                 width=w,
                 height=h,
-                fps=max(1, round(self.rate_hz)),
+                fps=max(1, round(self.rate)),
                 bitrate=self._bitrate,
                 rtsp_url=self._stream_url,
             )

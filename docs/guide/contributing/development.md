@@ -44,13 +44,13 @@ commit. Stage the changes and commit again.
 the contracts in `.importlinter`, and CI runs it too:
 
 ```bash
-uvx --from import-linter lint-imports
+uv run lint-imports
 ```
 
 ## Tests
 
 ```bash
-uv run --extra policy --with pytest pytest tests -q
+uv run --extra policy pytest -q
 ```
 
 ### Peer fakes

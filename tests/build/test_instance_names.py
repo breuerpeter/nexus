@@ -19,20 +19,24 @@ over "astro_max"
     {
         over "body_frd"
         {
-            def Camera "cam"
+            def Camera "cam" (
+                prepend apiSchemas = ["NexusCameraAPI"]
+            )
             {
-                int sensor:width = 64
-                int sensor:height = 48
-                double sensor:rate_hz = 25
+                int nexus:width = 64
+                int nexus:height = 48
+                float nexus:rate = 25
             }
 
             over "rotor_1"
             {
-                def Camera "cam"
+                def Camera "cam" (
+                    prepend apiSchemas = ["NexusCameraAPI"]
+                )
                 {
-                    int sensor:width = 64
-                    int sensor:height = 48
-                    double sensor:rate_hz = 25
+                    int nexus:width = 64
+                    int nexus:height = 48
+                    float nexus:rate = 25
                 }
             }
         }
