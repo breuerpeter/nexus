@@ -262,7 +262,7 @@ def test_a_run_whose_controller_takes_no_setpoint_has_no_controller_surface(monk
     itself.
 
     Given a `Sim` over a controller with no setpoint surface, when a script reads `sim.controller`,
-    then it is `None`.
+    then it's `None`.
     """
     fake = _FakeOrch()
     monkeypatch.setattr(sim_mod, "build_from_launch", lambda launch, **kw: fake)

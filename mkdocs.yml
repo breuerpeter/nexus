@@ -159,6 +159,7 @@ nav:
       - guide/contributing/pull-requests.md
   - Design:
     - design/index.md
+    - Concepts: design/concepts.md
     - Architecture: design/architecture.md
     - Execution & determinism: design/execution.md
     - Real system ↔ simulation: design/real-vs-sim.md
