@@ -54,7 +54,7 @@ class RtxRendererFactory:
         self._peer = peer
         self._components = components
 
-    def link(self, physics, vehicle_builder, cfg: dict) -> KitRenderer:
+    def link(self, physics, vehicle_builder) -> KitRenderer:
         """The render link for this run: each model body paired with its prim on the render stage."""
         from pxr import Usd
 
@@ -98,7 +98,7 @@ class RtxRendererFactory:
         from nexus_sim._src.vehicle.sensors.declared import build_sensors, requires, sensor_specs
 
         usd = vehicle_builder.cfg["usd_path"]
-        renderer = self.link(physics, vehicle_builder, cfg)
+        renderer = self.link(physics, vehicle_builder)
         sensors = build_sensors(
             [spec for spec in sensor_specs(usd, self._components) if requires(spec, PEER)],
             usd_path=usd,

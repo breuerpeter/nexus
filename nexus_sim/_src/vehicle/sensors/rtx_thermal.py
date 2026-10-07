@@ -82,7 +82,7 @@ class RtxThermalSensor(RtxMountedSensor):
         not the authored render-product size. Idempotent.
         """
         h, w = int(shape[0]), int(shape[1])
-        if not self._frustum_logged and self._logger is not None:
+        if not self._frustum_logged:
             self._frustum_logged = True  # once, whether it lands or not: the images log at this entity anyway
             try:
                 loc = self._local
@@ -102,12 +102,11 @@ class RtxThermalSensor(RtxMountedSensor):
 
     def emit(self, arrays: dict, t_shown: float) -> None:
         rad = arrays.get("radiance")
-        if rad is None:
-            return
+        if rad is None or self._logger is None:
+            return  # the image only goes to the recording, so a run that records nothing skips the post
         self._emit_size(rad.shape)
         img = self._post(rad, self._sky_mask(rad.shape, arrays.get("depth")))
-        if self._logger is not None:
-            self._logger.log_image("", img, sim_time=t_shown)
+        self._logger.log_image("", img, sim_time=t_shown)
 
     def _sky_mask(self, shape, depth) -> np.ndarray:
         """Dome pixels on the AOV grid, True = sky, from the full-res depth buffer, strided down."""

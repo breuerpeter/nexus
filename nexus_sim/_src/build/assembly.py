@@ -206,7 +206,7 @@ def build_orchestrator(
     if vehicle_builder is None:
         raise ValueError(f"vehicle_builder is required for {vehicle!r} (resolve it via the launch glue)")
     physics = NewtonPhysics(vehicle_builder=vehicle_builder, cfg=cfg)
-    renderer = renderer_factory.link(physics, vehicle_builder, cfg) if renderer_factory else None
+    renderer = renderer_factory.link(physics, vehicle_builder) if renderer_factory else None
     a = assemble(
         physics, vehicle_builder, cfg,
         controller=controller, rerun=rerun, viewer=viewer, debug=debug, link=renderer, components=components,
