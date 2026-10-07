@@ -82,7 +82,7 @@ def observation_from_state(
     ``prev_action``, shape ``(..., 4)``: when given, the builder appends the last CTBR action ->
     ``(..., 16)``, the trained-policy observation, :data:`POLICY_OBS_DIM`. The append is the single
     source for both training, where the env passes its last applied action, and deploy, where the
-    controller passes its last emitted action, so the augmented obs can't drift across the seam.
+    controller passes its last emitted action, so the augmented obs can't drift between training and deployment.
     """
     import torch
 

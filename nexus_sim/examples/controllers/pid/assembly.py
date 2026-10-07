@@ -1,4 +1,4 @@
-"""Assemble the core Orchestrator around the in-process Proportional Integral Derivative (PID)
+"""Assemble the core Orchestrator around the Proportional Integral Derivative (PID)
 :class:`PidController`.
 
 This example-owned assembly, moved out of core because PX4 is the one first-class control path, wires
@@ -7,7 +7,7 @@ actuator, the device-native observation sensor, and the core ``Orchestrator``. T
 aero/thrust map comes from the vehicle's Universal Scene Description (USD) file.
 ``Sim.from_orchestrator`` hosts the built orchestrator.
 
-This is also the **determinism authority**: a deterministic in-process controller over the
+This is also the **determinism authority**: a deterministic controller over the
 bit-exact Newton CPU physics gives the bit-reproducible CI gate that real PX4, with its
 non-deterministic work-queue interleaving, can't. The core determinism/capture tests import
 this assembly from here, because examples ship in the wheel.
@@ -38,7 +38,7 @@ def build_pid_orchestrator(
     vehicle_usd=None,
     renderer_factory=None,
 ) -> Orchestrator:
-    """Assemble the core Orchestrator with the in-process :class:`PidController`.
+    """Assemble the core Orchestrator with the :class:`PidController`.
 
     The control law's gains are the differentiable design parameters tuned offline by the
     design-optimization example. ``cfg["physics"]["solver"] == "semi_implicit"`` selects the
@@ -67,7 +67,7 @@ def build_pid_orchestrator(
         from nexus_sim.examples._lib import build_rotor_mixer_from_layout
         from nexus_sim.examples._lib.single_body import collapse_to_single_body
 
-        sb = collapse_to_single_body(vehicle_usd)  # the one single-body seam: collapse plus rotor layout
+        sb = collapse_to_single_body(vehicle_usd)  # the one single-body path: collapse plus rotor layout
         physics = NewtonPhysics(
             model=sb.model,
             cfg={"physics": {"dt": dt, "solver": "semi_implicit", "contacts": False,
@@ -96,7 +96,7 @@ def build_pid_orchestrator(
 
     # The PID law emits direct moments [thrust, m_x, m_y, m_z]; the controller's moment mixer, B⁻¹ with no
     # Collective Thrust and Body Rate (CTBR) rate loop, turns them into per-rotor commands, and the
-    # single-body Rotors motor model realizes them: the same seam for the articulated model, with
+    # single-body Rotors motor model realizes them: the same path for the articulated model, with
     # force-free rotors, and for the collapsed one, see _lib/coupling.py.
     actuator = Rotors(mixer=mixer, dt=dt, thrust_sign=-1.0, motor_tau=act["tau"])
     controller = PidController(
@@ -110,7 +110,7 @@ def build_pid_orchestrator(
     # Device-native obs sensor: fills meas.observation with a Warp array so the PID's exchange runs
     # on-device with no per-tick host hop -> the whole tick is one graph / tape-able.
     sensors = [WarpObservationSensor(goal_w=goal_w)]
-    # The one runtime seam, see the core assembly: an optional renderer plus its host-rate sensors.
+    # Rendering enters here alone, as in the core assembly: an optional renderer plus its host-rate sensors.
     renderer, extra_sensors = renderer_factory(physics, vehicle_usd, cfg) if renderer_factory else (None, [])
     sensors += extra_sensors
     # Share the sensor's persistent device goal buffer with the controller, so the guidance's

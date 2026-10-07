@@ -1,6 +1,6 @@
 """The command seam's components: each turns the controller's command into Newton's control inputs.
 
-A command stage runs once per physics substep, after the physics ``clear`` stage and before the force
+A command element's stage runs once per physics substep, after the physics ``clear`` stage and before the force
 stages, and writes the targets and feedforward the model's ``newton.Control`` holds; physics then steps
 every Newton actuator the vehicle declares before its solver. The shipped one is the rotors',
 :class:`~nexus_sim._src.vehicle.commands.rotors.RotorCommand`: the controller's normalized per-rotor commands

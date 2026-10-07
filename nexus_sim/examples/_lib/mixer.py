@@ -67,7 +67,7 @@ def build_allocation(
     physical ``r × (thrust_sign·f·ẑ)``: the moment arms carry ``thrust_sign`` so the allocation is
     consistent with the collective force direction, FRD ⇒ thrust along −body-z. This matters for an
     external controller such as PX4: it computes per-motor outputs assuming the physical wrench, so the
-    actuator's ``B·f`` must equal that physical wrench. For the in-process controllers ``B`` and ``B⁻¹``
+    actuator's ``B·f`` must equal that physical wrench. For the controllers whose law runs in nexus, ``B`` and ``B⁻¹``
     cancel, so the sign convention is internally immaterial, but getting it physically right is what lets
     PX4 fly the same summed-wrench actuator. Each rotor's cw/ccw spin sign comes from its rotor-z compared
     to the body-z, as authored in the Universal Scene Description (USD).
@@ -202,7 +202,7 @@ def pack_vec4(a: wp.array(dtype=float), out: wp.array(dtype=wp.vec4)):
 @dataclass
 class RotorMixer:
     """The airframe mixer/coupling config, built once from the rotor geometry + the actuator thrust map,
-    then split across the seam: the controller takes the mixer side, ``B_inv`` + the thrust map, the
+    then split between the controller and the actuator: the controller takes the mixer side, ``B_inv`` + the thrust map, the
     :class:`Rotors` motor model takes the coupling side, forward ``B`` + the thrust map. Both
     derive from the same :func:`build_allocation`, so they can't drift.
     """
@@ -229,7 +229,7 @@ class RotorMixer:
 def build_rotor_mixer_from_model(model, joints, act_cfg: dict, rest_body_q) -> RotorMixer:
     """Build the :class:`RotorMixer` from a finalized model's rotor joints + the actuator thrust map:
     the airframe that configures both the controller, ``B_inv``, and the :class:`Rotors` actuator,
-    forward ``B``. ``joints`` is the joint path of each rotor the vehicle declares, the vehicle builder's
+    forward ``B``. ``joints`` is the joint path of each rotor the vehicle declares, the ``VehicleUsd``'s
     ``rotor_joints()``. ``rest_body_q`` is the settled rest pose ``(nbodies, 7)`` the allocation builds
     from, since the rest-pose geometry is rigid.
     """
@@ -336,7 +336,7 @@ class MomentMixer:
     """The moment mixer a deploy PID controller runs each tick: a direct-moment action
     ``[collective, m_x, m_y, m_z]``, a Warp ``(4,)`` array, the device-native ``pid_law`` output, → ``nr``
     per-rotor commands. Device-native, ``pack_vec4`` → :func:`moment_to_cmd_batched` with ``dim = 1``, over
-    persistent buffers, so the in-process PID loop captures into a CUDA graph.
+    persistent buffers, so the PID loop captures into a CUDA graph.
     """
 
     def __init__(self, mixer: RotorMixer, *, thrust_to_weight: float, weight: float, moment_scale: float):

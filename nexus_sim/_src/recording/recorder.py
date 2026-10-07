@@ -118,7 +118,7 @@ class RecordChannel:
 
 
 class Recorder:
-    """The observation sink handed to each recordable component: the single switch, ``None`` when off.
+    """The Recorder, handed to each recordable component: the single switch, ``None`` when off.
 
     Owns the named channels; a component registers its channel via :meth:`channel` in its
     ``set_recorder`` and the host reads them via :attr:`channels`, for example ``recorder.channels["state"]``.

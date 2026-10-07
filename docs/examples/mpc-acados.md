@@ -152,7 +152,7 @@ the current state and hover thrust. So a new trajectory never inherits a stale s
 ### Where it sits in the framework
 
 The orchestrator runs physics CUDA-graph-captured. The NMPC solve is the one per-tick host
-operation. It runs at the host-exchange seam between graph replays, the captured-host-exchange
+operation. It runs in a host stage between graph replays, the captured-host-exchange
 strategy. See [Execution](../design/execution.md). Two side channels feed the artifacts.
 `track_err` records the per-tick realized-versus-reference position error at node 0, the APE the
 example gates on. When recording, every sixth tick logs the predicted horizon positions as the

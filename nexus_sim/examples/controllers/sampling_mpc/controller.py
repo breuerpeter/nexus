@@ -1,7 +1,7 @@
 """``SamplingMPCController``: receding-horizon sampling + gradient diffsim Model Predictive
 Control (MPC) on the Controller seam.
 
-A first-class in-process Controller, alongside :class:`~nexus_sim.examples.controllers.pid.PidController`,
+A first-class Controller, alongside :class:`~nexus_sim.examples.controllers.pid.PidController`,
 :class:`~nexus_sim._src.vehicle.controllers.px4.Px4MavlinkController`, and the trained-policy controller. Each
 tick it samples ``num_rollouts`` noisy plans around the nominal, refines them all in parallel by
 back-propagating an obstacle-aware cost through a batched differentiable rollout, a forward/backward
@@ -453,7 +453,7 @@ class SamplingMPCController:
         self._step += 1
         return Controls(command=u0)
 
-    # -- control surface: the thin setpoint seam ---------
+    # -- the setpoint input ---------
     def accept_setpoint(self, sp) -> None:
         """Write the active target **in place** from a :class:`PositionGoal` via ``.assign``: the captured
         rollout reads the buffer's current contents, so no graph re-capture. Uniform with policy/pid: the

@@ -1,9 +1,9 @@
-"""PidController: the **built-in simple controller**, an in-process, fully deterministic
+"""PidController: the **built-in simple controller**, a fully deterministic
 Proportional Integral Derivative (PID) flown *in place of external PX4*.
 
 Two roles, one control law, ``law.pid_action_np`` and ``law.pid_law``:
 
-1. **Determinism authority.** A deterministic in-process controller over the bit-exact
+1. **Determinism authority.** A deterministic controller over the bit-exact
    Newton CPU physics is what closes the bit-reproducibility gap left open with real PX4,
    whose multi-threaded work-queue interleaving isn't the same bit for bit. Flown through the unchanged
    :class:`~nexus_sim._src.core.orchestrator.Orchestrator` it gives a CI determinism gate that does
@@ -18,7 +18,7 @@ direct-moment action ``[thrust, m_x, m_y, m_z]``; the controller's **moment mixe
 with no rate loop, :class:`~nexus_sim.examples._lib.mixer.MomentMixer`, then turns it into the ``nr``
 per-rotor commands the single-body :class:`~nexus_sim.examples._lib.rotors.Rotors`
 motor model consumes. So PID, policy, and PX4 all fly through the same orchestrator tick, all emitting
-``Controls.command`` = per-rotor commands; only the host boundary differs.
+``Controls.command`` = per-rotor commands; only where the control law runs differs.
 
 The mixer is optional: the differentiable design-optimization rollout configures the controller with no
 mixer and consumes the raw moment action, ``act_wp``, directly, composing the shared mixer + motor-model
@@ -36,7 +36,7 @@ from .law import DEFAULT_GAINS, hover_action, pid_action_np
 
 
 class PidController:
-    """Deterministic in-process PID controller, built-in.
+    """Deterministic PID controller, built-in.
 
     Args:
         gains: the PID gain vector, see ``law.GAIN_NAMES``; defaults to ``law.DEFAULT_GAINS``.
@@ -85,9 +85,9 @@ class PidController:
         self.gains_wp = None
         self._action_wp = None
 
-    # -- lifecycle; no I/O: an in-process controller has nothing to connect to --
+    # -- lifecycle; no I/O: a controller with no peer has nothing to connect to --
     def connect(self) -> None:
-        """Reserve the device buffers at the pre-run lifecycle seam; ``connect`` runs before any
+        """Reserve the device buffers before the run starts; ``connect`` runs before any
         CUDA-graph capture. Creating them lazily in the first ``exchange`` put the allocations
         inside the captured graph, graph-owned memory that nothing must ever reference across replays;
         it read as stable until some other consumer, the Kit renderer, allocated between replays,
@@ -168,7 +168,7 @@ class PidController:
         """Protocol step: flies through ``Orchestrator.run()`` exactly as PX4 and the policy do.
 
         Reads the 12-D observation a ``*ObservationSensor`` writes to ``meas.observation``; falls
-        back to a bound state provider. Never returns ``None``, since an in-process controller doesn't
+        back to a bound state provider. Never returns ``None``, since a controller with no peer doesn't
         time out, so a finite run sets ``Orchestrator(max_steps=...)``.
 
         **Device-native when the observation is a Warp array**, from ``WarpObservationSensor``: runs
@@ -221,13 +221,13 @@ class PidController:
         """
         self._goal_wp = goal_wp
 
-    # -- control surface: the thin setpoint seam ---------
+    # -- the setpoint input ---------
     def accept_setpoint(self, sp) -> None:
         """Write the move-to goal **in place** from a :class:`PositionGoal`: the host buffer, for
         ``obs_from_state`` and the fallback, and, when bound, the device goal buffer, where ``.assign``
         makes the captured obs kernel pick it up on the next replay. A single goal set before the run goes
-        into the capture once, the PID-determinism and design-opt path; a mission advances it at the host
-        seam. Raises on a non-``PositionGoal`` variant, since PID flies to a position, not waypoints or a
+        into the capture once, the PID-determinism and design-opt path; a mission advances it in a host
+        stage. Raises on a non-``PositionGoal`` variant, since PID flies to a position, not waypoints or a
         reference.
         """
         if not isinstance(sp, PositionGoal):

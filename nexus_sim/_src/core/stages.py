@@ -75,7 +75,7 @@ def build_ring(
     *, sensors, controller, physics, commands=(), forces=(), actuator=None, record: Stage, substeps: int, guidance=None
 ) -> list[Bound]:
     """Every component's stages in the canonical order the domain fixes: sensors, the guidance when the
-    run has one, controller, then ``clear`` -> the command stages -> the force stages -> ``step`` unrolled
+    run has one, controller, then ``clear`` -> the command elements -> the force elements -> ``step`` unrolled
     ``substeps`` times, then ``record``. The guidance sits before the controller, so the setpoint it writes
     to the tick, which the loop hands to the controller after the guidance's stage, is the one the
     controller reads on that tick. The old actuator seam's one stage, the
@@ -131,8 +131,8 @@ def partition(ring: list[Bound]) -> list[Segment]:
 
 def seed_stages(ring: list[Bound]) -> list[Stage]:
     """The stages of one pass over the settled state: the sensors' and the controller's warm device
-    stages, and the controller's host stages, in ring order. Physics, the command stages, the force
-    stages and the record stage never run here, so the settled state is the state the first tick starts from, and a
+    stages, and the controller's host stages, in ring order. Physics, the command elements, the force
+    elements and the record stage never run here, so the settled state is the state the first tick starts from, and a
     sensor's host stage never does, so a camera's frame exchange starts with the first tick.
     """
     out = []
@@ -188,7 +188,7 @@ def read_sensors(tick: Tick) -> None:
 def peer_stages(controller) -> list[Stage]:
     """The stages of a controller that blocks on a peer or solves on the host: ``bind``, a device
     stage with no kernel, binds ``Tick.controls`` to a persistent ``(1, 16)`` device command buffer in
-    the warm pass, so the command stages capture over it before the peer connects; ``read`` fans
+    the warm pass, so the command elements' stages capture over it before the peer connects; ``read`` fans
     the sensors into the ``Measurement``; ``exchange`` runs the controller's ``exchange`` and copies
     its commands into the buffer. ``None`` from the exchange reads as the peer not answering, which
     the stage reports by returning ``False``.

@@ -63,10 +63,10 @@ class _FakeOrch:
         while self.step():
             pass
 
-    def close(self):  # the step-driven teardown seam, which closes the tick generator
+    def close(self):  # the step-driven teardown, which closes the tick generator
         self.closed = True
 
-    def _close_logs(self):  # the logging-teardown seam for a Sim entered but never driven
+    def _close_logs(self):  # the logging teardown for a Sim entered but never driven
         self.logs_closed = True
 
     def stop(self):
@@ -165,7 +165,7 @@ class _FakeController:
         self.setpoints.append(sp)
 
 
-class _InProcessOrch:
+class _SetpointOrch:
     """An orchestrator whose controller has accept_setpoint: run() is synchronous, fires on_tick."""
 
     def __init__(self):
@@ -178,21 +178,21 @@ class _InProcessOrch:
         self.ran = False
         self._stop = False
 
-    def _close_logs(self):  # the orchestrator's logging-teardown seam, a no-op: this mock has no Logger
+    def _close_logs(self):  # the orchestrator's logging teardown, a no-op: this mock has no Logger
         pass
 
-    def add_loggable(self, component, path):  # the orchestrator's loggable-registration seam, a no-op in the mock
+    def add_loggable(self, component, path):  # the orchestrator's loggable registration, a no-op in the mock
         pass
 
-    def attach_recorder(self, recorder):  # the observation seam: register the airframe channel Sim caches
+    def attach_recorder(self, recorder):  # recording: register the airframe channel Sim caches
         recorder.channel("vehicle/body/body_frd", width=BODY_WIDTH, decode=decode_body)
 
-    def close(self):  # the step/run teardown seam, a no-op in this mock
+    def close(self):  # the step and run teardown, a no-op in this mock
         pass
 
     def run(self):
         self.ran = True
-        # one host-seam tick at the goal, so the guidance advances or ends, then stamp run_stats
+        # one host-stage tick at the goal, so the guidance advances or ends, then stamp run_stats
         if self.on_tick is not None:
             self.on_tick(_FakeView(), _T(), 1)
         self.run_stats = {"control_steps": 1, "rtf": 1.0}
@@ -208,13 +208,13 @@ class _InProcessOrch:
 def test_sim_hands_the_flights_guidance_to_the_orchestrator_and_runs():
     from nexus_sim._src.guidance import MissionGuidance
 
-    fake = _InProcessOrch()
+    fake = _SetpointOrch()
     guidance = MissionGuidance()
 
     # A self-assembled orchestrator enters via from_orchestrator, the examples' entry, with its guidance.
     with sim_mod.Sim.from_orchestrator(fake, guidance=guidance) as sim:
         assert sim.guidance is guidance and fake.guidance is guidance  # the guidance joins the loop
-        assert sim.controller is fake.controller  # thin surface, which has accept_setpoint
+        assert sim.controller is fake.controller  # the controller, which has accept_setpoint
         assert fake.on_tick is None  # the hook stays the caller's: the guidance rides a stage
         sim.guidance.set_mission([(0.0, 0.0, 4.0)])
         assert tuple(guidance.active_setpoint.pos) == (0.0, 0.0, 4.0)  # the loop hands it over, not Sim
@@ -225,8 +225,8 @@ def test_sim_hands_the_flights_guidance_to_the_orchestrator_and_runs():
     assert fake._stop  # __exit__ -> stop()
 
 
-def test_sim_step_drives_inprocess_tick_by_tick():
-    fake = _InProcessOrch()
+def test_sim_step_drives_a_self_assembled_run_tick_by_tick():
+    fake = _SetpointOrch()
     with sim_mod.Sim.from_orchestrator(fake) as sim:
         assert sim.step() is True  # advances one tick, delegating to orch.step()
         assert sim.step() is True
@@ -238,7 +238,7 @@ def test_sim_step_drives_px4_on_the_calling_thread(monkeypatch):
     fake = _FakeOrch()
     monkeypatch.setattr(sim_mod, "build_from_launch", lambda launch, **kw: fake)
     with sim_mod.Sim("astro_max_base", scene="empty", device="cpu") as sim:
-        assert sim.step() is True  # a host-boundary sim steps the same as any other
+        assert sim.step() is True  # a sim whose controller has a peer steps the same as any other
         assert sim.step() is True
         assert fake.threads == [threading.main_thread(), threading.main_thread()]
 
@@ -320,5 +320,5 @@ def test_reading_the_guidance_of_a_run_that_has_none_fails_with_the_way_to_const
     Given a `Sim` over a setpoint controller and no guidance, when a caller reads `sim.guidance`, then it
     raises `RuntimeError` whose message shows how a flight constructs one.
     """
-    with sim_mod.Sim.from_orchestrator(_InProcessOrch()) as sim, pytest.raises(RuntimeError, match="MissionGuidance"):
+    with sim_mod.Sim.from_orchestrator(_SetpointOrch()) as sim, pytest.raises(RuntimeError, match="MissionGuidance"):
         _ = sim.guidance

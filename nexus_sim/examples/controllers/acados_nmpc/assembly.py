@@ -6,7 +6,7 @@ wires the **catalog vehicle** Universal Scene Description (USD), the full articu
 the core rotor chain. The NMPC is a pure *tracking* controller, and the min-snap/flatness
 planner lives with the **guidance**: the flight file hands it to a ``TrackingGuidance``, which plans
 the whole-path ``ReferenceTrajectory`` and feeds ``accept_setpoint``. The NMPC's per-tick Sequential Quadratic
-Programming (SQP) Real-Time Iteration (RTI) solve runs at the host seam; everything else captures,
+Programming (SQP) Real-Time Iteration (RTI) solve runs in a host stage; everything else captures,
 the captured-host-exchange strategy. acados needs provisioning first: ``python -m nexus_sim.examples acados_nmpc --provision``.
 """
 
@@ -30,7 +30,7 @@ def build_acados_orchestrator(
     vehicle_usd=None,
     renderer_factory=None,
 ) -> Orchestrator:
-    """Assemble the core Orchestrator with the in-process real-time NMPC."""
+    """Assemble the core Orchestrator with the real-time NMPC."""
     import newton
     import numpy as np
 
@@ -53,7 +53,7 @@ def build_acados_orchestrator(
         cfg={"physics": {"dt": dt, "solver": "mujoco", "contacts": True,
                          "spawn": {"pos": tuple(spawn), "attitude": "native", "prespin": "hover"}}},
     )  # the hover pre-spin reads ct from vehicle_usd's USD params, not cfg  # fmt: skip
-    # The core rotor chain, the same one PX4 flies: the rotors' command stage, the USD-authored
+    # The core rotor chain, the same one PX4 flies: the rotors' command element, the USD-authored
     # newton.actuators rotor motors physics steps, and the propellers' airflow-aware force element from
     # the solver-integrated Ω. Real motor lag, spinning props.
     joints = vehicle_usd.rotor_joints()  # the joint of each rotor the vehicle USD declares
@@ -85,7 +85,7 @@ def build_acados_orchestrator(
             # The viewer's Settings tab: the scenario cfg + this example's effective tunables.
             settings={"scenario": cfg, "example": {"spawn": spawn, "max_steps": max_steps}},
         )  # fmt: skip
-    # The one runtime seam, see the core assembly: an optional renderer plus its host-rate sensors.
+    # Rendering enters here alone, as in the core assembly: an optional renderer plus its host-rate sensors.
     renderer, extra_sensors = renderer_factory(physics, vehicle_usd, cfg) if renderer_factory else (None, [])
     orch = Orchestrator(
         clock=Clock(dt),

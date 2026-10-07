@@ -1,9 +1,9 @@
-"""The device-native control seam, the capture/autodiff prerequisite: with a Warp ``observation`` slot
-the in-process Proportional Integral Derivative (PID) loop has no per-tick host hop. WarpObservationSensor
+"""The device-native control path, the capture and autodiff prerequisite: with a Warp ``observation`` slot
+the Proportional Integral Derivative (PID) loop has no per-tick host hop. WarpObservationSensor
 -> PidController.exchange, the law + moment mixer, -> Rotors.forces_wp all stay on-device, so
 the whole tick is one graph. A NumPy observation still takes the host path.
 
-The single-body motor model + the moment mixer need rotor geometry for the allocation, so the seam fixture
+The single-body motor model + the moment mixer need rotor geometry for the allocation, so the fixture
 builds a real rotored vehicle, the local fixture vehicle of ``tests/usd/sensor_vehicle.py``.
 """
 
@@ -45,7 +45,7 @@ def _rotored_model(tmp_path):
     return model, vehicle_usd.rotor_joints(), state, mass
 
 
-def test_inprocess_seam_is_device_native(tmp_path):
+def test_a_warp_observation_keeps_the_pid_path_on_the_device(tmp_path):
     model, joints, state, mass = _rotored_model(tmp_path)
     mixer = build_rotor_mixer_from_model(model, joints, _ACT_CFG, state.body_q.numpy())
 

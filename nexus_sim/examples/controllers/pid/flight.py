@@ -1,17 +1,17 @@
-"""Proportional Integral Derivative (PID) waypoint tour, the minimal in-process controller example: the
+"""Proportional Integral Derivative (PID) waypoint tour, the minimal controller example: the
 deterministic, differentiable PID, :mod:`law`, flying the collapsed single-body astro-max around a square,
 fully CUDA-graph captured.
 
-This controller is the framework's **determinism authority**, deterministic in-process control over
+This controller is the framework's **determinism authority**, deterministic control over
 the bit-exact Newton CPU physics, the bit-reproducible CI gate real PX4 can't give, and the
 **design-optimization controller**: its gains are the differentiable parameters
 ``design_opt/gain_tuning.py`` tunes, and this flight deploys that example's proven configuration,
 the collapsed single-body plant + stable gains. This flight is the smallest end-to-end demo of
-the in-process shape: assemble the orchestrator, the example-owned :mod:`assembly`, host it via
+an example's shape: assemble the orchestrator, the example-owned :mod:`assembly`, host it via
 ``Sim.from_orchestrator``, fly its mission through ``sim.guidance``.
 
 **The shape.** A zero-arg, self-contained script. On CUDA the whole tick captures into one CUDA
-graph, controller + actuator + physics + sensors, the captured-inprocess strategy; on CPU it runs
+graph, controller + actuator + physics + sensors; on CPU it runs
 eager and bit-exact.
 
     uv run -m nexus_sim.examples pid                # flies + asserts + writes the .rrd

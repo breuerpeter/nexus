@@ -1,4 +1,4 @@
-"""Sim: the control-surface handle, the program-driving API.
+"""Sim: the one public entry to a run, the program-driving API.
 
 Owns the sim: builds it from a ``LaunchConfig`` via ``build_from_launch`` and drives the
 ``Orchestrator`` loop on the *caller's* thread, one driving model for every controller. A
@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
 
 class Sim:
-    """Control-surface handle for a Newton sim run.
+    """The one public entry to a Newton sim run.
 
     Builds an ``Orchestrator`` from a ``LaunchConfig`` and drives its loop on the *caller's*
     thread, one control tick per :meth:`step`, the same for a controller that takes setpoints
@@ -39,7 +39,7 @@ class Sim:
 
     With ``observe=True`` the handle attaches a :class:`~nexus_sim._src.recording.Recorder`,
     making :attr:`physics` and :attr:`sensors` read sim ground truth, in the world frame,
-    Z-up Forward-Left-Up (FLU), off the components' observation channels.
+    Z-up Forward-Left-Up (FLU), off the components' recorded channels.
 
     Args:
         vehicle: Catalog vehicle *name*, for example ``"astro_max_fpv"``, or a local .usd path.
@@ -138,7 +138,7 @@ class Sim:
 
         An example builds its own orchestrator, its controller plus actuator plus sensors around
         the core components, see ``nexus_sim/examples/controllers/*/assembly.py``, and hands it
-        over; the ``Sim`` adds the control surface: the observation ``Recorder``, ``sim.physics``
+        over; the ``Sim`` adds what a script reads and drives: the ``Recorder``, ``sim.physics``
         and ``sim.sensors``; the guidance the flight constructed, which joins the loop; and the run
         lifecycle, ``run``, ``step``, ``stop``, ``results`` and ``artifacts``.
 
@@ -206,7 +206,7 @@ class Sim:
             # A vehicle that authors RTX sensors starts the Kit render peer here, from the host.
             self._orch = build_from_launch(self._launch, cache_dir=self._cache_dir)
         if self._observe:
-            # Attach the observation sink: each recordable component registers its device-only channels;
+            # Attach the Recorder: each recordable component registers its device-only channels;
             # physics → one per body plus per joint. dt → the per-row snapshot time, counter × dt.
             # The ring must cover the *whole* run, since post-run evaluation reads the full trajectory, so
             # size it from max_steps when the launch sets one, plus margin for the pre-flight seed rows.
@@ -228,7 +228,7 @@ class Sim:
         # step-driven the same way as any other.
         return self
 
-    # -- the guidance of a setpoint controller, the run's port map, and the controller's thin surface --
+    # -- the guidance of a setpoint controller, the run's port map, and the controller --
     @property
     def guidance(self) -> Guidance:
         """The guidance of this run: the component a flight constructed and handed to
@@ -274,7 +274,7 @@ class Sim:
 
     @property
     def controller(self) -> Controller | None:
-        """The controller's thin control surface, ``accept_setpoint`` plus config, or ``None`` for PX4,
+        """The controller that takes setpoints, through ``accept_setpoint``, or ``None`` for PX4,
         which owns its mission in the external process and takes commands over its offboard link,
         which a script opens on :attr:`ports`.
 

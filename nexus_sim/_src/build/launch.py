@@ -1,4 +1,4 @@
-"""Launch glue: a ``LaunchConfig`` → a running ``Orchestrator``, the one path every run builds through.
+"""The run's builder: a ``LaunchConfig`` → a running ``Orchestrator``, the one path every run builds through.
 
 Resolves the launch against the catalog, sha-verifying every asset, wraps the vehicle
 Universal Scene Description (USD) file in a :class:`VehicleUsd`, threads the resolved scene, its

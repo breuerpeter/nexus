@@ -1,4 +1,4 @@
-"""The physics-state observation channels: every body → ``BodyState``, every joint → ``JointState``.
+"""The physics-state channels: every body → ``BodyState``, every joint → ``JointState``.
 
 Physics registers one channel per body, ``vehicle/body/<label>``, and one per joint,
 ``vehicle/joints/<label>``, from the finalized model's labels, so the full Newton model state is

@@ -6,7 +6,7 @@ Positioning System (GPS), the barometer and the magnetometer, give PX4 noisy phy
 state-feedback controller, such as the Model Predictive Control (MPC) example, instead needs the
 *full* ground-truth state, ``body_q`` and ``body_qd``, to seed its planning rollout. Rather than a
 privileged side-channel, this sensor writes the live state into ``meas.state`` so the controller
-reads it through the same neutral ``exchange(meas)`` seam every controller uses, keeping the Orchestrator
+reads it through the same neutral ``exchange(meas)`` every controller uses, keeping the Orchestrator
 loop unchanged. Never serialized to MAVLink.
 """
 

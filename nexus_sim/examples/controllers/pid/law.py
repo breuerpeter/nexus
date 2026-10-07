@@ -1,5 +1,5 @@
 """The differentiable Proportional Integral Derivative (PID) control law: the single source of truth, one
-``obs[12] -> action[4]`` map used by **both** the in-process eager :class:`PidController`, the determinism
+``obs[12] -> action[4]`` map used by **both** the eager :class:`PidController`, the determinism
 authority and built-in simple controller, and the differentiable design-optimization rollout,
 ``nexus_sim/examples/design_opt/design_optimization.py``.
 

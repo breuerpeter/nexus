@@ -1,4 +1,4 @@
-"""Px4MavlinkController: the loop face of the PX4 peer.
+"""Px4MavlinkController: the component that speaks the PX4 peer's link.
 
 Its work is three host stages, ``read``, ``truth`` and ``exchange``: ``exchange(measurement, t)`` is the
 blocking lockstep that paces the loop: opens a tcpin TCP server on :4560, which PX4 dials into as client with no

@@ -21,7 +21,7 @@ from tests.usd import sensor_vehicle as sv
 @pytest.fixture(autouse=True)
 def daemon(monkeypatch, tmp_path):
     """``build_from_launch`` starts the PX4 Software In The Loop (SITL) peer, which builds and runs PX4
-    in docker. These tests exercise the resolution + routing seam, so the docker daemon is a stand-in
+    in docker. These tests exercise resolution and routing, so the docker daemon is a stand-in
     that records what the build asks of it, and ``$PX4_DIR`` a stand-in tree, so nothing fetches.
     """
     from docker.errors import NotFound
@@ -121,7 +121,7 @@ def test_scene_threads_uniformly_and_anchors_gps(tmp_path, monkeypatch):
     and its geodetic origin anchors *both* the render world, cfg.rtx.georef, *and* the
     Hardware In The Loop (HIL) Global Positioning System (GPS), cfg.sensors.gps.init, so the
     Ground Control Station (GCS) minimap matches the camera feed: the Woodinville-versus-SF bug.
-    Runtime-*neutral* since the controller unbind: the one launch glue does this for every runtime.
+    Runtime-*neutral* since the controller unbind: the run's builder does this for every runtime.
     """
     import nexus_sim._src.build.launch as L
 
@@ -161,7 +161,7 @@ def test_scene_threads_uniformly_and_anchors_gps(tmp_path, monkeypatch):
 
 
 def test_build_from_launch_starts_the_px4_peer_before_the_assembly(tmp_path, monkeypatch, daemon):
-    """This is the seam *both* runtimes share, so the PX4 lifecycle hangs off it: the catalog's
+    """This is the path *both* runtimes share, so the PX4 lifecycle hangs off it: the catalog's
     airframe reaches the peer, and the peer *starts*, its incremental build first, before the
     orchestrator exists: the build has to stay outside the sim's 30 s preroll window, see GH #39.
     """

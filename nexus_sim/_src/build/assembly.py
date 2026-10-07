@@ -1,15 +1,15 @@
 """The core orchestrator assembly, shared by every run, per §12.
 
 Controller-agnostic by construction: the assembly wires the plant, ``NewtonPhysics`` from nexus_sim's
-own ModelBuilder + solvers, the shipped rotor chain, the rotors' command stage and the propellers' force
+own ModelBuilder + solvers, the shipped rotor chain, the rotors' command element and the propellers' force
 element around the Newton motors physics steps, the sensor suite authored in
 Universal Scene Description (USD) with the site's ambient values, and the Rerun sink around a
-**caller-supplied controller**. Which controller flies is a decision one layer up: the launch glue
+**caller-supplied controller**. Which controller flies is a decision one layer up: the run's builder
 builds the controller the vehicle USD declares, and the example controllers self-assemble beside their flight
 scripts in ``nexus_sim/examples/controllers/*/assembly.py``, reusing the helpers here,
 ``build_scenario`` / ``resolve_device``.
 
-Rendering enters through one seam, injected per build: ``renderer_factory``, from
+Rendering enters through one argument, injected per build: ``renderer_factory``, from
 :func:`~nexus_sim._src.rendering.rtx_renderer`, or ``None``, which renders nothing. After the physics
 build, since the render poses the stage prims from the model's bodies, its ``link`` gives the render
 link, the sensors build in one pass, each RTX sensor over that link, and its ``finish`` hands the link
@@ -35,7 +35,7 @@ class Assembly:
 
     clock: Any
     physics: Any
-    commands: list  # the command stages: the rotors'
+    commands: list  # the command elements: the rotors'
     forces: list  # the force elements: the propellers'
     sensors: list
     controller: Any
@@ -44,7 +44,7 @@ class Assembly:
 
 def rotor_chain(physics, vehicle_usd) -> tuple[list, list]:
     """The shipped rotor chain from the rotors the vehicle USD declares, the single, hash-pinned source:
-    the rotors' command stage and the propellers' force element, as the command stages and force elements
+    the rotors' command element and the propellers' force element, as the command elements and force elements
     a loop takes. The motors between them are Newton's, ``NewtonActuator`` prims the USD authors on the
     rotor joints, a ControllerPID velocity servo + the ClampingDCMotor envelope each, which physics steps
     before its solver, so the rotor speed is a physical joint state: real motor lag + saturation, and
@@ -91,13 +91,13 @@ def assemble(
 
     dt = cfg["physics"]["dt"]
     rtf = cfg["physics"].get("rtf", 0)
-    # The site: the scene's geodetic origin, which the launch glue threaded into the cfg, and the
+    # The site: the scene's geodetic origin, which the run's builder threaded into the cfg, and the
     # ambient values resolved from it once, here, for the sensors that read them.
     gps = cfg["sensors"]["gps"]["init"]
     site = Site.at(gps["lat"], gps["lon"], gps["alt"])
     commands, forces = rotor_chain(physics, vehicle_usd)  # from the vehicle USD's rotors, not cfg
 
-    seedtree = SeedTree(cfg.get("seed", 42))  # launch glue threads runtime.seed; string-name path keeps 42
+    seedtree = SeedTree(cfg.get("seed", 42))  # the run's builder threads runtime.seed; string-name path keeps 42
     # The sensors come from the schemas the vehicle USD applies, the single, hash-pinned source, the
     # same as the preceding rotor chain; only the site stays config, since it's a world property,
     # not a vehicle one. A vehicle that declares no sensor builds: which sensors a flight needs is its
@@ -192,19 +192,19 @@ def build_orchestrator(
     """The core orchestrator: the one ``NewtonPhysics`` + the one shared assembly around the
     caller-supplied ``controller``; a run differs only in its renderer.
 
-    ``renderer_factory`` is the one rendering seam, from :func:`~nexus_sim._src.rendering.rtx_renderer`:
+    ``renderer_factory`` is the one way rendering enters, from :func:`~nexus_sim._src.rendering.rtx_renderer`:
     used after the physics build, since the render poses stage prims from the model's bodies;
     ``None`` renders nothing. ``components`` resolves each sensor's schema to its class.
     ``peers`` are the processes the build started for this run, which the loop stops when the run ends.
     ``ports`` is the run's port map, the links that leave the run, which ``Sim.ports`` exposes.
     ``settings`` is the run's effective configuration, which the loop keeps for a caller to read back
-    and the logger shows in the viewer's Settings tab; the launch glue passes the tested-config receipt.
-    ``preroll_timeout`` covers a host-boundary controller's boot, since an autopilot in a container
+    and the logger shows in the viewer's Settings tab; the run's builder passes the tested-config receipt.
+    ``preroll_timeout`` covers the boot of a controller with a peer, since an autopilot in a container
     needs a generous window.
     """
     logger.info(f"device: {resolve_device(cfg)}")
     if vehicle_usd is None:
-        raise ValueError(f"vehicle_usd is required for {vehicle!r} (resolve it via the launch glue)")
+        raise ValueError(f"vehicle_usd is required for {vehicle!r} (resolve it with resolve_vehicle_usd)")
     physics = NewtonPhysics(vehicle_usd=vehicle_usd, cfg=cfg)
     renderer = renderer_factory.link(physics, vehicle_usd) if renderer_factory else None
     a = assemble(

@@ -1,6 +1,6 @@
-"""The policy controller's thin control surface: accept_setpoint mutates the goal buffer *in place*,
-and the controller's own observation builder picks it up: the control-surface-api.md contract, where the
-controller owns the goal + action-history buffers and folds them into the obs itself.
+"""The policy controller's setpoint input: accept_setpoint mutates the goal buffer *in place*,
+and the controller's own observation builder picks it up: the controller owns the goal and
+action-history buffers and folds them into the obs itself.
 """
 
 import numpy as np

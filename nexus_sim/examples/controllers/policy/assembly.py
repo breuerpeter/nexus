@@ -5,7 +5,7 @@ the same core components as the PX4 assembly: ``NewtonPhysics``, the full articu
 Description (USD), the single-body ``Rotors`` actuator, a ground-truth :class:`StateSensor`, and the core
 ``Orchestrator``. The controller builds its own observation from ``meas.state``, the single
 train↔deploy obs source, ``nexus_sim.examples._lib.observation``, and runs its TorchScript
-inference at the host seam; everything else captures, the captured-host-exchange strategy.
+inference in a host stage; everything else captures, the captured-host-exchange strategy.
 """
 
 from __future__ import annotations
@@ -79,7 +79,7 @@ def build_policy_orchestrator(
     )
 
     # The airframe mixer, B⁻¹ + forward B + thrust map, built once from the model rotor geometry + the USD
-    # thrust map; split across the seam: the controller runs the CTBR mixer, rate loop → B⁻¹, the actuator
+    # thrust map; split between the controller and the actuator: the controller runs the CTBR mixer, rate loop → B⁻¹, the actuator
     # runs the single-body motor model, per-rotor cmd → lag → forward B → wrench. Both derive from this one
     # RotorMixer so they can't drift.
     mixer = build_rotor_mixer_from_model(physics.model, vehicle_usd.rotor_joints(), act, physics.state0.body_q.numpy())
@@ -104,10 +104,10 @@ def build_policy_orchestrator(
         mixer=mixer,
         ctbr_params=ctbr_params,
     )
-    # Ground-truth state through the neutral Measurement seam: the controller builds its own obs
+    # Ground-truth state through the neutral Measurement: the controller builds its own obs
     # from meas.state, the single obs source; no observation sensor, no per-tick torch in the graph.
     sensors = [StateSensor()]
-    # The one runtime seam, see the core assembly: an optional renderer + its host-rate sensors.
+    # Rendering enters here alone, as in the core assembly: an optional renderer + its host-rate sensors.
     renderer, extra_sensors = renderer_factory(physics, vehicle_usd, cfg) if renderer_factory else (None, [])
     sensors += extra_sensors
 

@@ -1,6 +1,6 @@
 """PidController.accept_setpoint: writes the goal *in place* into the host buffer and, when bound, the
 shared persistent device goal buffer via .assign, which is capture-safe, so the WarpObservationSensor's
-obs kernel picks up the new goal on the next captured replay, see control-surface-api.md.
+obs kernel picks up the new goal on the next captured replay.
 """
 
 import numpy as np

@@ -1,5 +1,5 @@
 """Collapse a quad-X vehicle Universal Scene Description (USD) into a single rigid body: the one framework
-seam for the single-body model path, the differentiable sampling Model Predictive Control (MPC) +
+path for the single-body model, the differentiable sampling Model Predictive Control (MPC) +
 design-optimization rollouts, and their real sim.
 
 Core framework rule: **models are only ever created from USDs**, never synthesized in code. The
@@ -103,7 +103,7 @@ def collapse_to_single_body(
     requires_grad: bool = False,
     cfg: dict | None = None,
 ) -> SingleBody:
-    """Collapse a quad-X vehicle USD to ``count`` free single rigid bodies: the one single-body seam.
+    """Collapse a quad-X vehicle USD to ``count`` free single rigid bodies: the one single-body path.
 
     Reads the rotor layout + actuator params from the articulated USD, its rotor joints, stamps ``count``
     vehicle copies into one model, retypes each rotor REVOLUTE joint to a fixed joint and ``collapse_fixed_joints()``

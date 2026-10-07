@@ -4,8 +4,8 @@ This example-owned assembly, moved out of core since PX4 is the one first-class 
 the **catalog vehicle** Universal Scene Description (USD) collapsed to a single rigid body + the resolved
 scene USD, its cost-only obstacle shapes, for example the ``slalom`` pillars, into both the real
 single-drone model, stepped by the Orchestrator, and the batched rollout model, ``num_rollouts``
-differentiable drones the planner back-props through. The controller's per-tick optimization runs at the
-host seam; everything else captures, the captured-host-exchange strategy.
+differentiable drones the planner back-props through. The controller's per-tick optimization runs in a
+host stage; everything else captures, the captured-host-exchange strategy.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ def build_sampling_mpc_orchestrator(
     vehicle_usd=None,
     renderer_factory=None,
 ) -> Orchestrator:
-    """Assemble the core Orchestrator with the in-process sampling + gradient diffsim Model Predictive Control (MPC).
+    """Assemble the core Orchestrator with the sampling + gradient diffsim Model Predictive Control (MPC).
 
     Needs a scene with obstacles threaded into ``cfg``: ``resolve_scenario`` with
     ``set_scene("slalom")``; the controller discovers the scene's shapes from the collapsed model.
@@ -48,7 +48,7 @@ def build_sampling_mpc_orchestrator(
     if not cfg.get("scene_usd_path"):
         raise ValueError("the sampling MPC needs a scene with obstacles (resolve with scene='slalom')")
 
-    # The one single-body seam: collapse the quad-X USD to the real sim, 1 body, + the batched differentiable
+    # The one single-body path: collapse the quad-X USD to the real sim, 1 body, + the batched differentiable
     # rollout, num_rollouts bodies. The collapse loads the scene USD exactly as the full build path does;
     # its authored semantics ride with it: the slalom pillars ship ``physics:collisionEnabled = false``, so
     # they're cost-only. The controller discovers the scene's shapes from the model. The collapse reads the
@@ -95,7 +95,7 @@ def build_sampling_mpc_orchestrator(
                 "goal_w": goal_w, "spawn": spawn, "num_rollouts": num_rollouts, "max_steps": max_steps,
             }},
         )  # fmt: skip
-    # The one runtime seam, see the core assembly: an optional renderer + its host-rate sensors.
+    # Rendering enters here alone, as in the core assembly: an optional renderer + its host-rate sensors.
     renderer, extra_sensors = renderer_factory(physics, vehicle_usd, cfg) if renderer_factory else (None, [])
     return Orchestrator(
         clock=Clock(dt),

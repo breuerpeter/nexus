@@ -79,7 +79,7 @@ def _file_asset(tmp_path, name, body):
 def test_scene_surfaces_usd_path_and_geo(tmp_path):
     """A scene resolves with scene_usd_path populated *and* the geo origin surfaced so the
     environment can anchor. What the USD *is*, simulation geometry or the visual world, is the
-    USD's own business: the launch glue reads its authored physics schemas, not the catalog.
+    USD's own business: the run's builder reads its authored physics schemas, not the catalog.
     """
     reg = _fpv_reg(
         _file_asset(tmp_path, "veh.usdz", b"USD-VEH"),
@@ -97,7 +97,7 @@ def test_scene_surfaces_usd_path_and_geo(tmp_path):
 
 def test_scene_start_surfaces_on_the_receipt(tmp_path):
     """The scene's ``start``, the scene-frame point placed at the world origin where the drone
-    starts, rides the receipt so the launch glue can hand it to the renderer; missing = None.
+    starts, rides the receipt so the run's builder can hand it to the renderer; missing = None.
     """
     reg = _fpv_reg(
         _file_asset(tmp_path, "veh.usdz", b"USD-VEH"),

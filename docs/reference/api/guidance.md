@@ -1,5 +1,5 @@
 ---
-description: "API reference for guidance, the in-loop seam that turns a mission into a controller's setpoint: MissionGuidance and TrackingGuidance, reached through sim.guidance."
+description: "API reference for guidance, the role that turns a mission into a controller's setpoint: MissionGuidance and TrackingGuidance, reached through sim.guidance."
 ---
 
 # Guidance

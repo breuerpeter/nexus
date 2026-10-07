@@ -1,7 +1,7 @@
 """``AcadosNMPCController``: analytic real-time Nonlinear Model Predictive Control (NMPC) via acados, the
 Controller seam.
 
-A first-class in-process Controller, alongside the Proportional Integral Derivative (PID), PX4, sampling
+A first-class Controller, alongside the Proportional Integral Derivative (PID), PX4, sampling
 Model Predictive Control (MPC), and trained-policy controllers. It solves the optimal-control problem
 directly with **acados**, using the High-Performance Interior Point Method (HPIPM) quadratic-program solver
 and Sequential Quadratic Programming (SQP) real-time iteration, with fixed cost weights, to **track** a
@@ -247,7 +247,7 @@ class AcadosNMPCController:
     def close(self) -> None:  # lifecycle teardown: nothing to release, the horizon logs from exchange()
         pass
 
-    # -- control surface: the thin setpoint seam ---------
+    # -- the setpoint input ---------
     def accept_setpoint(self, sp) -> None:
         """Accept the guidance-planned tracking reference, a :class:`ReferenceTrajectory` carrying a
         queryable ``FlatnessReference``. The controller stores it and tracks it from the next tick; the

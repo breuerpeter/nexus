@@ -42,7 +42,7 @@ class RtxConfig:
 
 
 class RtxRendererFactory:
-    """The renderer seam for a started Kit peer, called after the physics build.
+    """The renderer for a started Kit peer, called after the physics build.
 
     :meth:`link` maps the model's bodies onto the render stage and returns the :class:`KitRenderer`
     the RTX sensors ride. :meth:`finish` hands that renderer the built sensors. Calling the factory
@@ -130,7 +130,7 @@ def rtx_renderer(
     meanwhile. A vehicle that declares no such sensor starts no container, whatever prims it holds.
 
     Args:
-        vehicle_usd: The vehicle's builder, whose USD decides.
+        vehicle_usd: The vehicle's ``VehicleUsd``, whose Universal Scene Description (USD) decides.
         cfg: The scenario config, carrying the resolved scene.
         cache_dir: The asset cache the run fetched into; ``None`` for the default.
         peer: The class that starts the Kit peer, or a callable that builds one: :class:`KitPeer`, or

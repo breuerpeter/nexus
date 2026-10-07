@@ -5,7 +5,7 @@ fault-wrappable. Every loop component states its per-tick work as a list of
 :class:`Stage`, and the loop runs each stage over the shared :class:`Tick`. The per-body
 ``Wrench`` takes the form of the shared ``state.body_f`` device buffer the force elements add to in
 place, the shared-buffer contract, so a force element's stage and ``Physics.step`` don't pass a
-Wrench value type: Physics reads ``state.body_f``. A command stage and a force element are each one
+Wrench value type: Physics reads ``state.body_f``. A command element and a force element are each one
 shape, a ``stages()`` list, so neither has a Protocol of its own here.
 """
 
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 class Tick:
     """The context one control tick hands every stage: the shared state and buffers a stage reads and
     writes in place. ``controls`` is the controller's persistent ``(1, n)`` device buffer of normalized
-    per-actuator commands, which its stage sets and the command stages read, so a captured
+    per-actuator commands, which its stage sets and the command elements read, so a captured
     graph reads the same buffer every replay. ``dt`` is one physics step, the control timestep over
     ``physics_substeps``. ``sensors`` are the sensors with device stages, whose ``read`` fills ``meas``
     at a controller's ``read`` host stage. ``timeout`` bounds a host stage's wait on its peer. ``base`` is the
@@ -114,8 +114,8 @@ class Physics(Protocol):
     def clear_forces(self, state: newton.State) -> None: ...
     def step(self, state: newton.State, dt: float) -> newton.State: ...
     def stages(self) -> list[Stage]:
-        """The ``clear`` and ``step`` stages; the loop runs ``clear``, the command stages, the force
-        stages and ``step`` once per physics substep, and ``step`` steps Newton's actuators before the solver.
+        """The ``clear`` and ``step`` stages; the loop runs ``clear``, the command elements, the force
+        elements and ``step`` once per physics substep, and ``step`` steps Newton's actuators before the solver.
         """
 
 
@@ -123,7 +123,7 @@ class Physics(Protocol):
 class Actuator(Protocol):
     """The old actuator seam, kept for the examples' single-body ``Rotors``: the controller's command
     buffer in, forces out, in one stage the loop runs with the force stages. A run on the articulated
-    plant states a command stage and a force element instead, with Newton's actuators between them.
+    plant states a command element and a force element instead, with Newton's actuators between them.
     """
 
     def forces_wp(self, cmd: Any, state: newton.State) -> None:
@@ -166,7 +166,7 @@ class Controller(Protocol):
     def accept_setpoint(self, sp: Setpoint) -> None:
         """Write the controller's own setpoint buffer **in place** from a ``Setpoint``.
 
-        The thin control surface: the loop hands a controller the setpoint its guidance wrote to the
+        The setpoint input: the loop hands a controller the setpoint its guidance wrote to the
         tick, and a script without a guidance calls it itself. The call flips the controller's
         persistent setpoint buffer, a §6 value-mutation with a static address and zero re-capture on
         the next replay, then the controller's stages read it. Each controller
@@ -174,8 +174,8 @@ class Controller(Protocol):
         Waypoints for sampling Model Predictive Control (MPC), ReferenceTrajectory for acados, and raises
         on the rest.
 
-        **PX4 has no setpoint surface**, since its mission lives in its peer, so the
-        ``Px4MavlinkController`` does *not* offer this, and its control surface is ``None``; instead,
+        **PX4 takes no setpoint**, since its mission lives in its peer, so the
+        ``Px4MavlinkController`` does *not* offer this; instead,
         a script commands PX4 over its offboard link, with a client it opens itself. Optional on
         the protocol for exactly that reason.
         """
@@ -189,7 +189,7 @@ class Recorder(Protocol):
     def log(self, t: SimTime, state: newton.State) -> None:
         """Hand one tick's state to the logger. Output-only.
 
-        The minimal per-tick seam: the core loop calls this so something can log the
+        The one per-tick call: the core loop calls this so something can log the
         evolving state, for example :mod:`nexus_sim._src.logging` drives NVIDIA Newton's ``ViewerRerun.log_state``,
         without core depending on Rerun. Components log their own *events* through the
         ``newton`` logger directly.

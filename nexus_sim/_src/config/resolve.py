@@ -124,7 +124,7 @@ def resolve(
     local_scene = _local_usd(scene_id, "scene")
     if local_scene is not None:
         # Local scene USD, the scene-development workflow: a freshly converted mesh or splat, not yet
-        # registered. What it *is* is the USD's own business: the launch glue routes by the physics
+        # registered. What it *is* is the USD's own business: the run's builder routes by the physics
         # schemas the USD authors, or their absence. Used in place the same way as a local vehicle
         # USD, with no cache copy; the receipt stays honest, with a sha256 the same way as a catalog
         # asset. ``start`` is catalog data: a local scene flies from its own origin, and

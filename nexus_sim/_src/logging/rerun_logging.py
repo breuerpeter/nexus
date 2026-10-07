@@ -21,10 +21,10 @@ The recording, app ID ``nexus`` and recording ID ``nexus``, either serves
 over gRPC on :9876, where a native Rerun viewer connects with
 ``rerun --connect rerun+http://127.0.0.1:9876/proxy``, or goes to an
 ``.rrd`` file for replay/forensics. Every producer writes through this one Logger,
-in-process on the component-owned logging seam, so serve and file mode carry the same
+in-process, through the component-owned logging, so serve and file mode carry the same
 content: no second producer, no sidecar files, no merge.
 
-`RerunLogger` fills the orchestrator's optional ``recorder`` seam: the core loop
+`RerunLogger` fills the orchestrator's optional ``recorder`` slot: the core loop
 hands it each tick's state, and it drives ``ViewerRerun.log_state``. It's
 output-only and so can't perturb determinism.
 """
@@ -309,7 +309,7 @@ class Logger:
       to keep one, save it from the connected viewer.
     * **log**, ``serve=False``: write the full ``.rrd`` to disk.
 
-    Every producer writes through this one Logger, in-process on this seam, so both modes
+    Every producer writes through this one Logger, in-process through it, so both modes
     carry the same content.
 
     The scene logs **in-process**, with no self-gRPC, via NVIDIA Newton's
@@ -554,7 +554,7 @@ class Logger:
     def log_rtf(self, rtf: float) -> None:
         """Log the live real-time factor as a one-line markdown doc at ``run/rtf``, stamped on the
         timeline, so the viewer's RTF row always shows the value AT the timeline cursor and scrubbing
-        replays it. The orchestrator calls this ~1 Hz wall-clock from its per-tick log seam; the
+        replays it. The orchestrator calls this ~1 Hz wall-clock from its per-tick log fan-out; the
         timeline is already set.
         """
         try:
@@ -717,7 +717,7 @@ class Logger:
 
     def log_text(self, entity: str, text: str, *, level=None, sim_time=None) -> None:
         """One ``TextLog`` row at *entity*: the framework's own events land under ``sim/logs`` in the
-        Logs pane, and another producer's adapter writes its rows through the same seam.
+        Logs pane, and another producer's adapter writes its rows through the same call.
         ``level`` is a rerun ``TextLogLevel`` name in Rerun's uppercase spelling; ``sim_time`` as in :meth:`log_points`.
         """
         if sim_time is not None:

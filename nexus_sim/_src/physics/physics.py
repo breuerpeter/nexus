@@ -1,8 +1,8 @@
-"""Physics plugin backed by NVIDIA Newton.
+"""Physics, backed by NVIDIA Newton.
 
 Owns the model build + solver + double-buffered step + the settle after
 placing the vehicle. Consumes a per-body Wrench at the shared ``state.body_f`` buffer, which the force
-elements add to before ``step``, and the control inputs the command stages write into the model's
+elements add to before ``step``, and the control inputs the command elements write into the model's
 ``newton.Control``; ``step`` steps every Newton actuator the vehicle declares, then the solver.
 
 **The solver is configurable** via ``cfg["physics"]["solver"]``: ``mujoco``, the default, is the
@@ -13,7 +13,7 @@ design-optimization path, since ``mujoco-warp`` isn't differentiable, see
 control, contacts, dt)`` signature, so only the constructor differs.
 
 **One class, three regimes**, selected by ``cfg["physics"]``, so the production runtime and the
-standalone Model Predictive Control (MPC) examples drive the same ``reset``/``clear_forces``/``step`` seam:
+standalone Model Predictive Control (MPC) examples drive the same ``reset``, ``clear_forces`` and ``step``:
 
 * *Production*, the default: build the model from ``vehicle_usd`` + ``cfg``, with ground plane, scene,
   and the USD-authored motors, settle on the ground at ``reset``, contacts on, MuJoCo solver. The SITL
@@ -109,11 +109,11 @@ class NewtonPhysics:
         self.cfg = cfg
         # Component-owned groundtruth logging, since physics owns the true state: log() draws the generic
         # scene via the shared logger. The orchestrator hands over the Logger, self._logger, None when off,
-        # and calls log() at the host seam, outside the captured graph, only when recording. The flown path
+        # and calls log() between graph replays, outside the captured graph, only when recording. The flown path
         # is not logged here: it is the base body's recorded position series, drawn by the recorder's
         # Rerun adapter at teardown.
         self._logger = None
-        # Component-owned observation taps, the read-side twin of logging: when Sim observes, the
+        # Component-owned record taps, the read-side twin of logging: when Sim observes, the
         # orchestrator hands over a Recorder and physics registers one channel per body + per joint, the
         # full model state by label. record_wp() then snapshots them each tick INSIDE the captured graph
         # with no D2H, so observing never forces the eager strategy. Empty when not observing.
@@ -129,7 +129,7 @@ class NewtonPhysics:
         if model is not None:
             # Pre-built model: the single-body path passes the USD collapsed via
             # :func:`~nexus_sim.examples._lib.single_body.collapse_to_single_body`, for the sampling-MPC
-            # real sim + its batched rollout twin, and design-opt; the collapse lives in that one seam, not here.
+            # real sim + its batched rollout twin, and design-opt; the collapse lives in that one function, not here.
             self.model = model
         else:
             logger.info(f"Default warp device: {wp.get_device()}")
@@ -207,7 +207,7 @@ class NewtonPhysics:
         self._logger = logger
 
     def log(self, t) -> None:
-        """Component log step, which the orchestrator calls at the host seam, outside the captured graph, at
+        """Component log step, which the orchestrator calls between graph replays, outside the captured graph, at
         the decimated per-tick rate, since the orchestrator throttles its fan-out to ``log_hz``, only when
         recording. Physics owns the groundtruth state, so it draws the generic scene via the shared
         ``self._logger.log_state``. ``step`` mutates ``self.state0`` in place, so it's always current.
@@ -262,7 +262,7 @@ class NewtonPhysics:
                 self._joint_taps.append((ch, int(qs[j]), nq, int(qds[j]), nqd))
 
     def record_wp(self) -> None:
-        """Device-only observation tap, the read-side twin of :meth:`log`: snapshot every body + joint of
+        """Device-only record tap, the read-side twin of :meth:`log`: snapshot every body + joint of
         the live ``state0``, the persistent buffers the graph advances, into their Recorder channels with
         NO host readback, so it joins the captured graph. Launched each tick by the orchestrator inside the
         device region. A no-op when not observing.

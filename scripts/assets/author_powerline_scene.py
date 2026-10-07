@@ -427,7 +427,7 @@ def _road_colliders(stage, root: str, centre) -> None:
         xf = UsdGeom.Xformable(box)
         xf.AddTranslateOp().Set(centre_pt)
         xf.AddOrientOp().Set(Gf.Quatf(frame.ExtractRotation().GetQuat()))
-        # A little longer than its chord, so neighbouring boxes overlap and leave no seam in a turn.
+        # A little longer than its chord, so neighbouring boxes overlap and leave no gap in a turn.
         xf.AddScaleOp().Set(Gf.Vec3f((top_b - top_a).GetLength() + 0.2, 2.0 * ROAD_HALF_WIDTH, thick))
         box.CreateVisibilityAttr(UsdGeom.Tokens.invisible)
         UsdPhysics.CollisionAPI.Apply(box.GetPrim())

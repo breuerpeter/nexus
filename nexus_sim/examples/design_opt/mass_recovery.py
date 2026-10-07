@@ -23,7 +23,7 @@ import warp as wp
 
 import nexus_sim as nx
 from nexus_sim.examples._lib import dump_stats
-from nexus_sim.examples._lib.single_body import collapse_to_single_body  # the one single-body seam
+from nexus_sim.examples._lib.single_body import collapse_to_single_body  # the one single-body path
 
 GRAVITY = 9.81
 

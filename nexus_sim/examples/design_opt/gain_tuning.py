@@ -39,7 +39,7 @@ from nexus_sim.examples._lib import (
     rigid_body_wrench_world,  # the single-body motor model: per-rotor cmd → lag → forward-B → base wrench
 )
 from nexus_sim.examples._lib.observation import WarpObservationSensor
-from nexus_sim.examples._lib.single_body import collapse_to_single_body  # the one single-body seam
+from nexus_sim.examples._lib.single_body import collapse_to_single_body  # the one single-body path
 from nexus_sim.examples.controllers.pid import NUM_GAINS, PidController
 
 GRAVITY = 9.81
@@ -69,7 +69,7 @@ class AstroMaxWaypointRollout:
     Where the old rollout flew the multi-body astro-max Universal Scene Description (USD) with a hand-rolled
     per-rotor thrust kernel under ``SolverFeatherstone``, whose articulation forced *truncated* BPTT, this
     flies the **single free body** astro-max proxy from :func:`build_single_body_drone`, real mass/inertia +
-    a quad-X rotor layout, with the shared, fully differentiable seam: the **moment mixer**
+    a quad-X rotor layout, with the shared, fully differentiable **moment mixer**
     :func:`moment_to_cmd_batched`, collective + moments -> ``B^-1`` -> per-rotor command with NO rate loop,
     feeding the single-body motor model :func:`rigid_body_wrench_world`, per-rotor command -> first-order
     motor lag/saturation -> forward ``B`` -> base wrench, under the gradient-capable ``SolverSemiImplicit``.
@@ -102,7 +102,7 @@ class AstroMaxWaypointRollout:
         from nexus_sim._src.config import LaunchConfig
 
         vehicle_usd, _ = resolve_vehicle_usd(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
-        # Single rigid body collapsed from the astro-max USD, the same seam the sampling
+        # Single rigid body collapsed from the astro-max USD, the same path the sampling
         # Model Predictive Control (MPC) example uses: correct lumped mass/inertia + the real rotor layout,
         # FRD with thrust along −body-z, spawned rotors-up.
         sb = collapse_to_single_body(vehicle_usd, requires_grad=True)

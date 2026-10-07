@@ -1,9 +1,8 @@
-"""Complete-determinism gate with the in-process
-Proportional Integral Derivative (PID) controller.
+"""Complete-determinism gate with the Proportional Integral Derivative (PID) controller.
 
 Newton CPU physics is bit-exact, but real-PX4 *armed* flight isn't
 bit-reproducible, because of its multi-threaded work-queue interleaving. The built-in PID is the
-deterministic in-process controller that closes that gap: flown through the unchanged
+deterministic controller that closes that gap: flown through the unchanged
 ``Orchestrator.run()`` over the bit-exact Newton CPU backend, two runs of the same setup produce
 **bit-for-bit the same** trajectories: the determinism CI gate that doesn't wait on PX4.
 
@@ -36,7 +35,7 @@ def _run(steps: int, vehicle: str):
         max_steps=steps,
         vehicle_usd=vehicle_usd,
     )
-    # Capture per-tick body_q/body_qd via the post-step observer, with no recorder seam: step() mutates
+    # Capture per-tick body_q/body_qd via the post-step observer, with no Recorder: step() mutates
     # physics.state0 in place, so it's the current state at the same per-tick point logging would see.
     q, qd = [], []
 

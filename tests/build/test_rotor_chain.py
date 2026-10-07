@@ -2,7 +2,7 @@
 the shipped vehicle flies as before.
 
 Real builds on the Warp CPU backend: the fixture quad of ``tests/vehicle/quad.py`` around a stand-in
-controller, with stand-in command stages and force elements beside the rotors' where a test needs them,
+controller, with stand-in command elements and force elements beside the rotors' where a test needs them,
 and the hosted ``astro_max_base`` for the trajectory ``main`` flew. Skipped without newton or pxr.
 """
 
@@ -86,7 +86,7 @@ def _servo_target(cmd: wp.array2d(dtype=float), channel: int, scale: float, inde
 
 
 class _ServoCommand:
-    """A command stage beside the rotors': it writes the servo's position target from one channel of the
+    """A command element beside the rotors': it writes the servo's position target from one channel of the
     controller's command, `scale` radians per unit.
     """
 
@@ -154,7 +154,7 @@ def _rotor_bodies(physics) -> list[int]:
 
 
 def _loop(path, controller, *, commands=(), forces=()):
-    """The run the quad at `path` builds around `controller`, with stand-in command stages and force
+    """The run the quad at `path` builds around `controller`, with stand-in command elements and force
     elements built by `commands` and `forces`, each a callable of the physics, beside the rotors' own.
     """
     cfg = build_scenario()
@@ -256,10 +256,10 @@ def test_a_newton_actuator_on_a_joint_that_is_no_rotor_still_drives_its_joint(tm
     assert (round(angles[0], 1), abs(angles[-1]) < SETTLED) == (SERVO_RAD, True)
 
 
-def test_a_command_stage_beside_the_rotors_sets_the_target_of_the_actuator_it_commands(tmp_path):
-    """A command stage beside the rotors' sets the target of the actuator it commands.
+def test_a_command_element_beside_the_rotors_sets_the_target_of_the_actuator_it_commands(tmp_path):
+    """A command element beside the rotors' sets the target of the actuator it commands.
 
-    Given that fixture and a stand-in command stage that writes the servo's target from the fifth value of
+    Given that fixture and a stand-in command element that writes the servo's target from the fifth value of
     the controller's command, when the controller sends 0.5 there at full throttle, then the joint settles
     at the angle the stand-in maps 0.5 to, and the vehicle still climbs.
     """

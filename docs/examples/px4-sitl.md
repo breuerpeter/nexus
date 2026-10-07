@@ -22,7 +22,7 @@ Hardware In The Loop (HIL) link on `:4560`.
 | Flight | PX4 closed-loop: `AUTO.TAKEOFF` → arm → climb → 4 yaw sweeps, the one flight profile |
 | Takeoff | **confirmed**, climbed **+5.0 m**, yawed 90/180/270/0° |
 | PX4 warnings | **0**, gated: the run fails on any `WARN` or `ERROR` line about the sim |
-| Rotor chain | The rotors' command stage, USD-authored `newton.actuators` DC-motor servos on the real rotor joints, one `NewtonActuator` prim each, and the propellers' force element from each rotor body's `NexusPropellerAPI` |
+| Rotor chain | The rotors' command element, USD-authored `newton.actuators` DC-motor servos on the real rotor joints, one `NewtonActuator` prim each, and the propellers' force element from each rotor body's `NexusPropellerAPI` |
 | **Sim speed with PX4** | **~3.7×** real-time on the GPU with the captured strategy, RTX 5080, for the full takeoff+yaw profile with recording on |
 
 **Clean log gate.** The flight asserts **zero PX4 warnings**, the `px4_warnings` metric gated to 0.

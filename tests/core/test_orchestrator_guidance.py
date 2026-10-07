@@ -1,8 +1,8 @@
 """The loop runs a guidance's stage before the controller's, so the setpoint a guidance computes on a
 tick is the one the controller reads on that tick. A guidance holds no controller and no stop: its
 stage writes a changed setpoint to the tick, which the loop hands to the controller, and marks the
-tick done when its mission is over, which the loop ends the run on. Stand-in components at the
-loop's seams, on the Warp CPU device, where every stage runs as plain Python on each tick.
+tick done when its mission is over, which the loop ends the run on. Stand-in components in the
+loop's roles, on the Warp CPU device, where every stage runs as plain Python on each tick.
 """
 
 import logging
