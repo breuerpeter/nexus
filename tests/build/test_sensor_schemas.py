@@ -332,3 +332,43 @@ print(">", type(own).__module__, seeds[0] == seeds[1], seeds[0] != seeds[2], tic
     (line,) = [line[2:] for line in r.stdout.splitlines() if line.startswith("> ")]
 
     assert line == "nexus_stand_in.sensor True True [0.004, 0.004, 0.004] [2.5, 2.5, 2.5]"
+
+
+def test_a_projects_own_sensor_writes_its_output_as_a_signal_of_the_projects_own_type_and_an_estimator_reads_it(
+    tmp_path,
+):
+    """A project's own sensor, declared by its schema, writes its output as a signal of a type the project defines, and an estimator reads it.
+
+    Given the stand-in package under `tests/usd/stand_in`, installed with its sensor schema and a signal type
+    of its own, and the fixture applying the schema with a gain of 2.5, when the run steps two ticks, then a
+    stand-in estimator that reads that sensor's signal reads 2.5 on both. A child process, so the installed
+    package changes no module state here.
+    """
+    site = tmp_path / "site"
+    subprocess.run(
+        ["uv", "pip", "install", "--python", sys.executable, "--no-deps", "--target", str(site), str(STAND_IN)],
+        check=True,
+        capture_output=True,
+    )
+    code = f"""
+import pathlib
+import warp as wp
+import nexus_sim
+from nexus_sim._src.core.signals import Signal
+from nexus_stand_in.sensor import Gain
+from tests.usd import sensor_vehicle as sv
+
+prims = sv.prim("Own", "StandInSensorAPI", "float nexus:gain = 2.5")
+reader = sv.estimator(Signal("gain", Gain, shape=(1,)))
+with wp.ScopedDevice("cpu"):
+    loop = sv.build(
+        sv.vehicle(pathlib.Path({str(tmp_path)!r}), prims, estimator=""), components=sv.components(StandInAPI=reader)
+    )
+    sv.steps(loop, 2)
+print(">", [[float(v) for v in gain.reshape(-1)] for _, gain in reader.kept])
+"""
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(site), str(ROOT)])}
+    r = subprocess.run([sys.executable, "-c", code], check=False, cwd=tmp_path, env=env, capture_output=True, text=True)
+    lines = [line[2:] for line in r.stdout.splitlines() if line.startswith("> ")]
+
+    assert lines == ["[[2.5], [2.5]]"], r.stderr[-2000:]

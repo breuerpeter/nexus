@@ -123,3 +123,22 @@ def test_api_reference_documents_no_envsample():
     for line in _IMPORT_LINE.findall((_API_REFERENCE / "core.md").read_text()):
         names += [name.strip() for name in line.split(",")]
     assert "EnvSample" not in names and "Environment" not in names
+
+
+def test_the_public_surface_names_no_measurement():
+    """The public surface names no `Measurement`.
+
+    Given a fresh interpreter, when it imports `nexus_sim`, then `Measurement` isn't in `nexus_sim.__all__`, and
+    `nexus_sim.Measurement` raises `AttributeError`.
+    """
+    code = (
+        "import nexus_sim as nx\n"
+        "try:\n"
+        "    nx.Measurement\n"
+        "    raised = False\n"
+        "except AttributeError:\n"
+        "    raised = True\n"
+        "print('Measurement' in nx.__all__, raised)"
+    )
+    out = subprocess.run([sys.executable, "-c", code], check=False, capture_output=True, text=True)
+    assert out.stdout.strip() == "False True", out.stderr

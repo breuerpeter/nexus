@@ -66,6 +66,30 @@ class PoseTwist(DeviceType):
     dtype: ClassVar[type] = float
 
 
+class ImuSample(DeviceType):
+    """The sample of an Inertial Measurement Unit (IMU): its time, its specific force and its angular rate."""
+
+
+class MagSample(DeviceType):
+    """A magnetometer's sample: its time and the magnetic field."""
+
+
+class BaroSample(DeviceType):
+    """A barometer's sample: its time and the static pressure."""
+
+
+class GpsSample(DeviceType):
+    """A Global Positioning System (GPS) receiver's sample: its time and its position."""
+
+
+class Image:
+    """A camera's frame: the sim time it shows and its pixels."""
+
+
+class PointCloud:
+    """A lidar's scan: the sim time it shows and its points."""
+
+
 @dataclass(slots=True)
 class Measurement:
     """Per-tick sensor bundle in the Forward Right Down (FRD) body frame / physical units.
