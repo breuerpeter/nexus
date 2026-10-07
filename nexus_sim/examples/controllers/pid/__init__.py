@@ -1,6 +1,6 @@
 """Built-in differentiable Proportional Integral Derivative (PID) controller, the built-in simple controller.
 
-The deterministic in-process controller that's both the determinism authority and the
+The deterministic controller that's both the determinism authority and the
 design-optimization controller; its gains are the differentiable design parameters. One
 control law, :mod:`law`, two consumers: :class:`PidController`, eager, and the Warp ``pid_law``
 kernel used by ``nexus_sim/examples/design_opt/gain_tuning.py``.

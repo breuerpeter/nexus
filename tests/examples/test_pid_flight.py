@@ -28,10 +28,10 @@ def test_the_pid_example_flies_the_shipped_vehicle_to_its_first_waypoint():
     launch = LaunchConfig().set_vehicle(flight.VEHICLE).set_scene(flight.SCENE)
     launch.runtime.device = "cpu"
     launch.runtime.solver = "semi_implicit"
-    builder, _, cfg = resolve_scenario(launch)
+    vehicle_usd, _, cfg = resolve_scenario(launch)
     orch = build_pid_orchestrator(
         cfg,
-        vehicle_builder=builder,
+        vehicle_usd=vehicle_usd,
         goal_w=flight.WAYPOINTS[0],
         gains=flight.GAINS,
         moment_scale=flight.MOMENT_SCALE,

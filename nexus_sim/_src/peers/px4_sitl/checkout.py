@@ -22,7 +22,7 @@ from pathlib import Path
 
 from nexus_sim._src.core import logger
 
-PROJECT_PIN = "nexus.px4.ref"  # a project's pin, beside its nexus.registry.yaml
+PROJECT_PIN = "nexus.px4.ref"  # a project's pin, beside its nexus.catalog.yaml
 _SHIPPED_PIN = Path(__file__).with_name("px4.ref")
 _AIRFRAME = Path("ROMFS/px4fmu_common/init.d-posix/airframes/80000_none_astro_max")
 _MAG_PATCH = "param set-default EKF2_MAG_TYPE 6"

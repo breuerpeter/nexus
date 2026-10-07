@@ -1,4 +1,4 @@
-"""Scene ingestion: a scene is data, a registry row plus one self-contained Universal Scene Description (USD) file.
+"""Scene ingestion: a scene is data, a catalog row plus one self-contained Universal Scene Description (USD) file.
 
 :func:`add_scene` loads the scene into the physics model exactly as the vehicle USD loads: physics
 takes the ``UsdPhysics``-authored prims, and everything else lives only in the render world. A scene

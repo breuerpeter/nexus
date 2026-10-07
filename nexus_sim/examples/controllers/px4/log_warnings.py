@@ -17,7 +17,7 @@ _ANSI = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 #   when the none_astro_max airframe names a parameter this PX4 build lacks. Every other `param` failure, such as a
 #   corrupt file, a rejected value or a failed save, still gates.
 # - "no heading reference": the pre-arm Extended Kalman Filter (EKF) convergence transient on a
-#   fresh boot; heading aligns from the first mag samples, and the operator's failure-free settle
+#   fresh boot; heading aligns from the first mag samples, and the flight script's failure-free settle
 #   wait rides it out. Allowlisted by content so every other pre-arm warning, mag interference
 #   included, still gates.
 # - "Too many subscriptions, failed to add: <topic> <instance>": PX4's default logging profiles in

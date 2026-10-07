@@ -15,7 +15,7 @@ pytest.importorskip("newton")
 
 import nexus_sim as nx
 from nexus_sim._src.build.assembly import build_scenario
-from nexus_sim._src.build.launch import resolve_to_vehicle_builder
+from nexus_sim._src.build.launch import resolve_vehicle_usd
 from nexus_sim._src.config import LaunchConfig
 from nexus_sim.examples.controllers.policy.assembly import build_policy_orchestrator
 from nexus_sim.examples.controllers.policy.goto import flight
@@ -28,7 +28,7 @@ def _catalog_with_base(tmp_path, monkeypatch):
     """
     base = tmp_path / "blobs"
     base.mkdir()
-    (tmp_path / "nexus.registry.yaml").write_text(f"assets:\n  base: {base.as_uri()}\n")
+    (tmp_path / "nexus.catalog.yaml").write_text(f"assets:\n  base: {base.as_uri()}\n")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("NEXUS_ASSET_CACHE", str(tmp_path / "cache"))
     return base
@@ -87,8 +87,8 @@ def _fly_tour(policy: str, steps: int) -> tuple[np.ndarray, np.ndarray]:
     """
     cfg = build_scenario()
     cfg["physics"]["force_cpu"] = True
-    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
-    orch = build_policy_orchestrator(cfg, policy_path=policy, vehicle_builder=vb, max_steps=steps)
+    vehicle_usd, _ = resolve_vehicle_usd(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
+    orch = build_policy_orchestrator(cfg, policy_path=policy, vehicle_usd=vehicle_usd, max_steps=steps)
     guidance = GeofenceGuidance(bounds=flight.FENCE)
     with nx.Sim.from_orchestrator(orch, guidance=guidance) as sim:
         sim.guidance.set_mission(flight.WAYPOINTS)
@@ -120,8 +120,8 @@ def test_a_run_with_a_guidance_and_a_host_exchange_runs_one_device_segment_per_t
     """
     cfg = build_scenario()
     cfg["physics"]["force_cpu"] = True
-    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
-    orch = build_policy_orchestrator(cfg, policy_path=torchscript_policy(), vehicle_builder=vb, max_steps=1)
+    vehicle_usd, _ = resolve_vehicle_usd(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
+    orch = build_policy_orchestrator(cfg, policy_path=torchscript_policy(), vehicle_usd=vehicle_usd, max_steps=1)
     guidance = GeofenceGuidance(bounds=flight.FENCE)
     guidance.set_mission(flight.WAYPOINTS)
     with caplog.at_level(logging.INFO, logger="nexus"), nx.Sim.from_orchestrator(orch, guidance=guidance) as sim:

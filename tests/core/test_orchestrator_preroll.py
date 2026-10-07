@@ -57,8 +57,6 @@ class _LatePeerController:
     shape, a ``read`` and an ``exchange`` host stage.
     """
 
-    host_boundary = True
-
     def __init__(self):
         self._tries = 0
         self.stamps = []

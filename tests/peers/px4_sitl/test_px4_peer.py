@@ -35,7 +35,7 @@ import nexus_sim
 import nexus_sim._src.build.launch as launch_mod
 import nexus_sim._src.peers.containers as containers
 from nexus_sim._src.api.sim import Sim
-from nexus_sim._src.config import LaunchConfig, Registry
+from nexus_sim._src.config import Catalog, LaunchConfig
 from nexus_sim._src.core.interfaces import Stage
 from nexus_sim._src.core.orchestrator import Orchestrator
 from nexus_sim._src.core.schema import Controls, SimTime
@@ -223,8 +223,8 @@ def _vehicle(tmp_path) -> dict:
 
 
 @pytest.fixture
-def catalog(tmp_path) -> Registry:
-    return Registry.from_dict({"vehicles": _vehicle(tmp_path), "scenes": {"empty": {}}})
+def catalog(tmp_path) -> Catalog:
+    return Catalog.from_dict({"vehicles": _vehicle(tmp_path), "scenes": {"empty": {}}})
 
 
 @pytest.fixture
@@ -238,7 +238,7 @@ def run(daemon, assembly, catalog, tmp_path):
             path.write_text(layer)
             spec["layer"] = str(path)
         launch = LaunchConfig.from_dict(spec)
-        return launch_mod.build_from_launch(launch, registry=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0)
+        return launch_mod.build_from_launch(launch, catalog=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0)
 
     return _run
 
@@ -374,10 +374,10 @@ def test_the_peers_console_log_stays_in_the_runs_artifacts(daemon, assembly, cat
     Given a PX4 run with a managed peer, when the run closes, then its artifacts list the peer's
     console log path.
     """
-    project = tmp_path / "nexus.registry.yaml"
+    project = tmp_path / "nexus.catalog.yaml"
     project.write_text(yaml.safe_dump({"vehicles": _vehicle(tmp_path)}))
 
-    with Sim("astro", scene="empty", registry=str(project), device="cpu", observe=False) as sim:
+    with Sim("astro", scene="empty", catalog=str(project), device="cpu", observe=False) as sim:
         pass
 
     log = Path(sim.artifacts()["px4_log"]).name
@@ -440,7 +440,7 @@ def test_a_local_vehicle_usd_flies_the_airframe_its_px4_schema_declares(daemon, 
     )
     launch = LaunchConfig.from_dict({"vehicle": str(usd), "scene": "empty"})
 
-    launch_mod.build_from_launch(launch, registry=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0).close()
+    launch_mod.build_from_launch(launch, catalog=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0).close()
 
     assert _started_models(daemon) == ["none_foo"]
 
@@ -479,7 +479,7 @@ def _faked(catalog, tmp_path) -> Orchestrator:
     """Build the catalog's vehicle with the PX4 SITL peer sent to its fake."""
     launch = LaunchConfig.from_dict({"vehicle": "astro", "scene": "empty"})
     return launch_mod.build_from_launch(
-        launch, registry=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0, peers=_FAKE_PX4
+        launch, catalog=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0, peers=_FAKE_PX4
     )
 
 
@@ -626,7 +626,7 @@ def test_a_peer_mapping_with_an_unknown_key_fails_the_build_before_any_peer_star
 
     try:
         launch_mod.build_from_launch(
-            launch, registry=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0, peers={"px4-sitl": Px4Fake}
+            launch, catalog=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0, peers={"px4-sitl": Px4Fake}
         ).close()
         message = "no error"
     except ValueError as exc:
@@ -654,7 +654,7 @@ def _declared_run(tmp_path, layer: str | None = None) -> Orchestrator:
     blob = tmp_path / "declared.usda"
     blob.write_text(_DECLARED)
     sha = hashlib.sha256(blob.read_bytes()).hexdigest()
-    catalog = Registry.from_dict(
+    catalog = Catalog.from_dict(
         {
             "vehicles": {"astro": {"usd": {"url": blob.as_uri(), "sha256": sha, "filename": blob.name}}},
             "scenes": {"empty": {}},
@@ -666,7 +666,7 @@ def _declared_run(tmp_path, layer: str | None = None) -> Orchestrator:
         path.write_text(layer)
         spec["layer"] = str(path)
     launch = LaunchConfig.from_dict(spec)
-    return launch_mod.build_from_launch(launch, registry=catalog, cache_dir=tmp_path / "cache", preroll_timeout=5.0)
+    return launch_mod.build_from_launch(launch, catalog=catalog, cache_dir=tmp_path / "cache", preroll_timeout=5.0)
 
 
 def test_a_vehicle_that_declares_the_px4_sitl_peer_starts_it(daemon, monkeypatch, tmp_path, warp_cpu):
@@ -676,7 +676,7 @@ def test_a_vehicle_that_declares_the_px4_sitl_peer_starts_it(daemon, monkeypatch
     sent to its fake, and the Kit peer to its own, then one fake PX4 starts and receives `HIL_SENSOR`
     over the HIL link as the run steps.
     """
-    from nexus_sim._src.config.registry import load_registry
+    from nexus_sim._src.config.catalog import load_catalog
     from nexus_sim._src.peers.kit.fake import KitFake
 
     monkeypatch.delenv("NEXUS_ASSET_CACHE")  # the shipped vehicles come from the checkout's own cache
@@ -684,7 +684,7 @@ def test_a_vehicle_that_declares_the_px4_sitl_peer_starts_it(daemon, monkeypatch
     # The network is a boundary: a PX4 fetch this run must not make fails at once on an unreachable proxy.
     for var in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"):
         monkeypatch.setenv(var, "http://127.0.0.1:9")
-    names = list(load_registry().vehicles)
+    names = list(load_catalog().vehicles)
 
     flown = {}
     for name in names:

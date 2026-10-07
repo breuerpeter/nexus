@@ -5,7 +5,7 @@ single-body plant, RL train + deploy, Proportional Integral Derivative (PID), po
 Predictive Control (MPC) and design-opt, runs this actuator at the highest fidelity that runs everywhere,
 airflow propeller + motor lag, summing the per-rotor wrench into one base-body wrench,
 ``state.body_f[base]``. It stays on the old seam, the loop's ``actuator``, until the single-body plant's
-motor lag finds a home: it needs the controller's command, so it's neither a command stage, which writes
+motor lag finds a home: it needs the controller's command, so it's neither a command element, which writes
 Newton's control inputs, nor a force element, which reads the state alone.
 
     per-rotor command u ∈ [0, 1]  →  Ω_cmd = clamp(u, 0, 1)·Ω_max  →  motor lag (Ω state)
@@ -16,7 +16,7 @@ controller. Built from a :class:`~nexus_sim.examples._lib.mixer.RotorMixer`, the
 thrust map + rotor offsets, so the controller's ``B⁻¹`` and the actuator's forward ``B`` can't drift.
 
 No cosmetic prop spin here: an articulated model that should render spinning props runs the core rotor
-chain, the rotors' command stage, the Newton motors physics steps and the propellers' force element; its
+chain, the rotors' command element, the Newton motors physics steps and the propellers' force element; its
 rotor joints really turn. A collapsed single body has no rotor joints to spin.
 """
 
@@ -105,8 +105,3 @@ class Rotors:
                 reads=(self.controls,),
             )
         ]
-
-
-# Back-compat alias: the unified actuator is the former single-body rigid-body actuator, now used
-# everywhere. Existing ``RigidBodyRotors`` import sites keep working.
-RigidBodyRotors = Rotors

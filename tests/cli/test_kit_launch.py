@@ -47,15 +47,15 @@ def test_the_host_fetches_the_vehicle_and_the_scene_before_the_kit_container_sta
     vehicle.parent.mkdir()
     vehicle.write_text(CAMERA_USD)
     scene.write_text(PLAIN_USD)
-    registry = tmp_path / "catalog.yaml"
-    registry.write_text(
+    catalog = tmp_path / "catalog.yaml"
+    catalog.write_text(
         f"vehicles:\n  v:\n    usd: {_ref(vehicle)}\nscenes:\n  s:\n    usd: {_ref(scene)}\n    geodetic_origin: null\n"
     )
     exe = shutil.which("nexus")
     assert exe, "no `nexus` command on the path"
 
     subprocess.run(
-        [exe, "run", "--vehicle", "v", "--scene", "s", "--registry", str(registry)],
+        [exe, "run", "--vehicle", "v", "--scene", "s", "--catalog", str(catalog)],
         cwd=tmp_path,
         env=_env(tmp_path),
         check=False,
@@ -94,7 +94,7 @@ def test_an_rtx_run_without_docker_names_docker_and_no_missing_file(tmp_path):
     vehicle = consumer / "cam.usda"
     vehicle.write_text(CAMERA_USD)
     # A catalog with an empty scene, which the run names, so it fetches nothing over the network.
-    (consumer / "nexus.registry.yaml").write_text("scenes:\n  empty: {}\n")
+    (consumer / "nexus.catalog.yaml").write_text("scenes:\n  empty: {}\n")
     env = {**_env(tmp_path), "PYTHONPATH": str(site)}
 
     out = subprocess.run(

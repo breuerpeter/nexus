@@ -1,4 +1,4 @@
-# registry.yaml — the checked-in vehicle/scene catalog.
+# catalog.yaml — the checked-in vehicle/scene catalog.
 #
 # S3 holds only content-addressed blobs; this file is the semantic <-> content binding. Every
 # vehicle variant is a name, its key, plus its USD, which declares its controller. A launch names the variant it flies,

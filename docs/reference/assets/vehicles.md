@@ -1,10 +1,10 @@
 ---
-description: "The quadrotor vehicles nexus supports, resolved by name from the registry to a Universal Scene Description (USD) file: the Freefly Astro Max."
+description: "The quadrotor vehicles nexus supports, resolved by name from the catalog to a Universal Scene Description (USD) file: the Freefly Astro Max."
 ---
 
 # Vehicles
 
-The registry resolves vehicles by name, with `nexus run --vehicle <name>`, to a USD. The framework only ever builds a model from a USD and never synthesizes
+The catalog resolves vehicles by name, with `nexus run --vehicle <name>`, to a USD. The framework only ever builds a model from a USD and never synthesizes
 one in code. See [Conventions](../../design/conventions.md).
 
 !!! warning
@@ -15,12 +15,12 @@ one in code. See [Conventions](../../design/conventions.md).
 Astro is an industrial quadrotor for professional applications such as mapping and
 inspection. Learn more on the [Freefly Systems](https://freeflysystems.com/) website.
 
-The registry carries two Astro Max vehicles: `astro_max_base`, the base build, and
+The catalog carries two Astro Max vehicles: `astro_max_base`, the base build, and
 `astro_max_fpv`, which adds a First Person View (FPV) camera.
 
 ### Base
 
-<!-- Interactive 3D preview, injected from registry.yaml by docs/hooks/vehicle_previews.py.
+<!-- Interactive 3D preview, injected from catalog.yaml by docs/hooks/vehicle_previews.py.
      Serves the .glb sibling of the vehicle's USD on CloudFront (or a local assets/local/
      copy when present, for preview-before-publish). -->
 

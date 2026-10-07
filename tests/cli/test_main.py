@@ -116,17 +116,47 @@ def test_a_run_on_a_catalog_with_a_defaults_block_fails_and_says_to_name_the_veh
     """A project catalog with a `defaults` block fails to load, and the error names the removal and
     says to name the vehicle and scene on the run.
 
-    Given a `nexus.registry.yaml` with `defaults: { vehicle: my_quad }`, when a run that names its
+    Given a `nexus.catalog.yaml` with `defaults: { vehicle: my_quad }`, when a run that names its
     vehicle and scene loads it, then it fails with an error that names `defaults` as removed and
     points at `--vehicle` and `--scene`.
     """
-    catalog = tmp_path / "nexus.registry.yaml"
+    catalog = tmp_path / "nexus.catalog.yaml"
     catalog.write_text(
         'vehicles:\n  my_quad:\n    usd: { url: "file:///my_quad.usda", sha256: abc }\ndefaults: { vehicle: my_quad }\n'
     )
-    argv = ("--registry", str(catalog), "--vehicle", "astro_max_base", "--scene", "empty")
+    argv = ("--catalog", str(catalog), "--vehicle", "astro_max_base", "--scene", "empty")
     failed, said = _said_when_run(monkeypatch, capsys, tmp_path, *argv)
     assert (failed, [w in said for w in ("defaults", "remov", "--vehicle", "--scene")]) == (True, [True] * 4)
+
+
+def test_a_run_told_its_catalog_flies_the_vehicles_of_that_file(monkeypatch, capsys, tmp_path):
+    """`nexus run --catalog <file>` and `Sim(..., catalog=<file>)` fly the vehicles of that file
+    beside the bundled ones.
+
+    Given a catalog file outside the working directory that lists a vehicle at a local Universal Scene
+    Description (USD) path, when the command line parses `--catalog <file>`, and when `Sim` takes
+    `catalog=<file>`, then the vehicle resolves from that file in both: each run goes on to fetch the
+    vehicle's file that the catalog lists, which stops it, since the entry's hash is a stand-in.
+    """
+    from nexus_sim import Sim
+
+    usd = tmp_path / "assets" / "project_vehicle.usda"
+    usd.parent.mkdir()
+    usd.write_text(PLAIN_USD)
+    catalog = tmp_path / "elsewhere" / "project.yaml"
+    catalog.parent.mkdir()
+    catalog.write_text(f'vehicles:\n  project_vehicle:\n    usd: {{ url: "file://{usd}", sha256: "0" }}\n')
+    work = tmp_path / "work"
+    work.mkdir()
+    monkeypatch.chdir(work)
+
+    argv = ("--catalog", str(catalog), "--vehicle", "project_vehicle", "--scene", "empty")
+    _, by_cli = _said_when_run(monkeypatch, capsys, tmp_path, *argv)
+    with pytest.raises(BaseException) as by_sim:
+        with Sim("project_vehicle", scene="empty", catalog=str(catalog), device="cpu"):
+            pass
+
+    assert (usd.name in by_cli, usd.name in str(by_sim.value)) == (True, True)
 
 
 # --- the override layer, and the PX4 flags that go -------------------------------------------------

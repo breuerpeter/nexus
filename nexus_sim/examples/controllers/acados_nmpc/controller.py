@@ -1,7 +1,7 @@
 """``AcadosNMPCController``: analytic real-time Nonlinear Model Predictive Control (NMPC) via acados, the
 Controller seam.
 
-A first-class in-process Controller, alongside the Proportional Integral Derivative (PID), PX4, sampling
+A first-class Controller, alongside the Proportional Integral Derivative (PID), PX4, sampling
 Model Predictive Control (MPC), and trained-policy controllers. It solves the optimal-control problem
 directly with **acados**, using the High-Performance Interior Point Method (HPIPM) quadratic-program solver
 and Sequential Quadratic Programming (SQP) real-time iteration, with fixed cost weights, to **track** a
@@ -131,7 +131,7 @@ def build_acados_model(*, mass, inertia, rotor_offsets, turning_dirs, reaction_k
 
 class AcadosNMPCController:
     """Receding-horizon NMPC. Each control tick it seeds the current measured state, sets
-    a full flat-state reference over the horizon, queried from the operator-planned reference, runs one SQP
+    a full flat-state reference over the horizon, queried from the guidance-planned reference, runs one SQP
     real-time iteration with HPIPM, and applies the first rotor-thrust command, converted to the actuator's
     normalised throttle. The solver warm-starts from the earlier solution, which is what makes one
     real-time iteration per tick enough.

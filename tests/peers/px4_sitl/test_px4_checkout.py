@@ -81,7 +81,7 @@ def test_a_projects_pin_file_beside_its_catalog_overrides_the_controllers_pin(tm
     Given a project catalog with a pin file beside it, when the controller resolves its PX4 tree, then
     it's the project's commit, and with no file it's the controller's.
     """
-    catalog = tmp_path / "nexus.registry.yaml"
+    catalog = tmp_path / "nexus.catalog.yaml"
     catalog.write_text("vehicles: {}\n")
     (tmp_path / "nexus.px4.ref").write_text("example/px4@" + "a" * 40 + "\n")
     shipped = importlib.resources.files("nexus_sim._src.peers.px4_sitl").joinpath("px4.ref").read_text()

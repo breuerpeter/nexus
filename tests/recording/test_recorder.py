@@ -1,4 +1,4 @@
-"""Recorder seam: capturable per-entity taps write into device ring buffers the host reads on demand,
+"""Recorder: capturable per-entity taps write into device ring buffers the host reads on demand,
 the read-side twin of logging. Exercises the body channel, record_body → BodyState, the joint channel,
 record_joint → JointState with variable width, and the ChannelMap name view.
 """

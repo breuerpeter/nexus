@@ -1,7 +1,7 @@
-"""The sensor-measurement observation channels: each sensor's device buffer → ``SensorSample``.
+"""The sensor-measurement channels: each sensor's device buffer → ``SensorSample``.
 
 A sensor already fills a persistent device buffer, ``_out``, each tick. :class:`SensorRecorder` is a
-mixin that gives it the recordable seam: ``set_recorder`` registers a ``vehicle/sensors/<name>`` channel and
+mixin that makes it recordable: ``set_recorder`` registers a ``vehicle/sensors/<name>`` channel and
 ``record_wp`` copies ``_out`` into it inside the captured graph, device-only, no D2H. The host reads it
 via ``sim.sensors["imu"]`` → a :class:`SensorSample` whose ``fields`` map the sensor's documented
 layout, for example the Inertial Measurement Unit (IMU) ``xacc``/…/``zgyro``/quat. The Global
@@ -76,7 +76,7 @@ def make_decode_sensor(fields: tuple[str, ...]) -> Callable[[np.ndarray], Sensor
 
 
 class SensorRecorder:
-    """Mixin giving a sensor the recordable seam, the read-side twin of logging.
+    """Mixin that makes a sensor recordable, the read-side twin of logging.
 
     The sensor declares ``name``, the ``sim.sensors`` key, which is the flat instance name, and
     ``fields``, its ``_out`` layout; it already owns the device buffer ``_out``. ``set_recorder``

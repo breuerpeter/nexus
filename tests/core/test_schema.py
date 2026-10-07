@@ -1,4 +1,4 @@
-"""The public vocabulary of ``core/schema.py``: ``Controls`` names the seam it crosses, not a vehicle type."""
+"""The public vocabulary of ``core/schema.py``: ``Controls`` names what it carries between roles, not a vehicle type."""
 
 import dataclasses
 

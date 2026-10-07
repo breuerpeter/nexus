@@ -1,4 +1,4 @@
-"""FlatnessReference, the operator's ruckig + differential-flatness planner: plans a valid jerk-limited
+"""FlatnessReference, the guidance's ruckig + differential-flatness planner: plans a valid jerk-limited
 trajectory through the waypoints and lifts it to the full flat state. CPU-only, with ruckig + numpy.
 """
 

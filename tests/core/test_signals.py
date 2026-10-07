@@ -211,15 +211,15 @@ def _stopped(tmp_path, controller, *, sensors=(), guidance=None) -> tuple[str, i
     from nexus_sim._src.api.sim import Sim
     from nexus_sim._src.build.assembly import assemble, build_scenario, resolve_device
     from nexus_sim._src.physics import NewtonPhysics
-    from nexus_sim._src.physics.builders.usd import USDBuilder
+    from nexus_sim._src.physics.vehicle import VehicleUsd
     from tests.vehicle import quad
 
     cfg = build_scenario()
     cfg["physics"]["force_cpu"] = True
     resolve_device(cfg)
-    vb = USDBuilder({"usd_path": str(quad.author(tmp_path / "quad.usda"))}, None)
-    physics = NewtonPhysics(vehicle_builder=vb, cfg=cfg)
-    a = assemble(physics, vb, cfg, controller=controller)
+    vehicle_usd = VehicleUsd({"usd_path": str(quad.author(tmp_path / "quad.usda"))})
+    physics = NewtonPhysics(vehicle_usd=vehicle_usd, cfg=cfg)
+    a = assemble(physics, vehicle_usd, cfg, controller=controller)
     orch = Orchestrator(
         clock=a.clock,
         physics=a.physics,

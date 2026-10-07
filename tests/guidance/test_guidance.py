@@ -1,5 +1,5 @@
 """MissionGuidance and TrackingGuidance: the mission a guidance sequences or plans, driven through its
-stages, the seam the loop calls. A guidance holds no controller and no stop: its stage writes a
+stages, which the loop calls. A guidance holds no controller and no stop: its stage writes a
 changed setpoint to its setpoint signal, wired as the loop wires it, and marks the tick done when the
 mission is over. A stand-in state holds the vehicle's position: no real sim.
 """

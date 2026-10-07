@@ -5,7 +5,7 @@ fault-wrappable. Every loop component states its per-tick work as a list of
 :class:`Stage`, and the loop runs each stage over the shared :class:`Tick`. The per-body
 ``Wrench`` takes the form of the shared ``state.body_f`` device buffer the force elements add to in
 place, the shared-buffer contract, so a force element's stage and ``Physics.step`` don't pass a
-Wrench value type: Physics reads ``state.body_f``. A command stage and a force element are each one
+Wrench value type: Physics reads ``state.body_f``. A command element and a force element are each one
 shape, a ``stages()`` list, so neither has a Protocol of its own here.
 """
 
@@ -114,8 +114,8 @@ class Physics(Protocol):
     def clear_forces(self, state: newton.State) -> None: ...
     def step(self, state: newton.State, dt: float) -> newton.State: ...
     def stages(self) -> list[Stage]:
-        """The ``clear`` and ``step`` stages; the loop runs ``clear``, the command stages, the force
-        stages and ``step`` once per physics substep, and ``step`` steps Newton's actuators before the solver.
+        """The ``clear`` and ``step`` stages; the loop runs ``clear``, the command elements, the force
+        elements and ``step`` once per physics substep, and ``step`` steps Newton's actuators before the solver.
         """
 
 
@@ -123,7 +123,7 @@ class Physics(Protocol):
 class Actuator(Protocol):
     """The old actuator seam, kept for the examples' single-body ``Rotors``: the controller's command
     buffer in, forces out, in one stage the loop runs with the force stages. A run on the articulated
-    plant states a command stage and a force element instead, with Newton's actuators between them.
+    plant states a command element and a force element instead, with Newton's actuators between them.
     """
 
     def forces_wp(self, cmd: Any, state: newton.State) -> None:
@@ -176,7 +176,7 @@ class Recorder(Protocol):
     def log(self, t: SimTime, state: newton.State) -> None:
         """Hand one tick's state to the logger. Output-only.
 
-        The minimal per-tick seam: the core loop calls this so something can log the
+        The one per-tick call: the core loop calls this so something can log the
         evolving state, for example :mod:`nexus_sim._src.logging` drives NVIDIA Newton's ``ViewerRerun.log_state``,
         without core depending on Rerun. Components log their own *events* through the
         ``newton`` logger directly.

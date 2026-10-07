@@ -162,7 +162,7 @@ class QuadcopterNewtonEnv(QuadcopterEnv):
     # learn to fly to the goal. The rate-loop params live on the cfg: omega_max / rate_gain / gyro_ff.
     #
     # The concrete subclass provides the actuation, ``_pre_physics_step``, writing the world-frame wrench
-    # into self._thrust/self._moment: ``GoToEnv`` launches the single-body RigidBodyRotors kernel.
+    # into self._thrust/self._moment: ``GoToEnv`` launches the single-body Rotors kernel.
     # This Newton base only carries the backend-portable setup + CTBR params + NaN/reset robustness below.
 
     def _get_observations(self) -> dict:

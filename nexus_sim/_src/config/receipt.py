@@ -26,7 +26,7 @@ class TestedConfig(_Base):
     __test__ = False  # not a pytest test class despite the name
 
     vehicle: str  # the variant's key in the catalog, or the local ``.usd`` path a run flew
-    registry: str | None = None  # the catalog the run resolved against, when it loaded one itself
+    catalog: str | None = None  # the catalog the run resolved against, when it loaded one itself
     vehicle_usd: AssetRef
     layer: AssetRef | None = None  # the override layer the run composed over the vehicle
     px4: Px4Spec | None = None

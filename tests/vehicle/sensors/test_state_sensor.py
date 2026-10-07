@@ -1,5 +1,5 @@
 """StateSensor passes the live state through ``Measurement.state``, the ground-truth
-state-feedback seam a privileged controller reads. A pure passthrough: no device work.
+state a privileged controller reads. A pure passthrough: no device work.
 """
 
 from nexus_sim._src.core.schema import Measurement, SimTime

@@ -4,14 +4,14 @@ and flies it, no Isaac Lab involved.
 
 The training half lives in the separate ``nexus-rl`` Isaac Lab project, ``--project
 nexus-rl``; *this* runs on **standalone Newton** via ``uv``, with no Isaac Lab and no container. It
-loads the exported ``policy.pt`` and flies it with the single-body :class:`RigidBodyRotors`, the
+loads the exported ``policy.pt`` and flies it with the single-body :class:`Rotors`, the
 same per-rotor model the policy trained against, closing the loop: train on Isaac-Lab-on-Newton →
 deploy on the core.
 
 **The shape.** A zero-arg, self-contained script: it assembles its own orchestrator, the
 example-owned :mod:`assembly`, and hosts it via ``Sim.from_orchestrator`` + ``sim.guidance``. The
 controller builds its observation from the ground-truth ``meas.state``, the single train↔deploy obs
-source, and runs its TorchScript inference at the host seam; everything else runs CUDA-graph
+source, and runs its TorchScript inference in a host stage; everything else runs CUDA-graph
 captured. A geofence guidance sequences the waypoints, advancing on arrival, since the policy is
 goal-relative, so each arrival hands it a fresh single-goal problem. It owns the run's end, and ends
 the run at once if the vehicle leaves the fence.
@@ -63,11 +63,11 @@ def _resolve_policy(override: str | None, asset: dict = POLICY_ASSET) -> str:
             raise SystemExit(f"--policy {override!r} is not a file (expected an exported policy.pt)")
         return override
     from nexus_sim._src.assets.resolver import fetch, hosted_url
-    from nexus_sim._src.config import load_registry
+    from nexus_sim._src.config import load_catalog
 
     name, sha = asset["name"], asset["sha256"]
     try:
-        base = load_registry().assets.base
+        base = load_catalog().assets.base
         if not base:
             raise ValueError("the catalog names no assets.base to fetch the hosted policy from")
         return str(fetch(hosted_url(base, "policies", name, sha, "pt"), sha, filename=f"{name}.pt"))
@@ -90,14 +90,14 @@ def main() -> None:
     nx.logger.info(f"[policy] policy={policy}  {len(WAYPOINTS)} waypoints")
     launch = LaunchConfig().set_vehicle(VEHICLE).set_scene(SCENE)
     launch.runtime.device = "cuda"  # prefer CUDA; resolve_device falls back to CPU when there is none
-    builder, _resolved, cfg = resolve_scenario(launch)
+    vehicle_usd, _resolved, cfg = resolve_scenario(launch)
     orch = build_policy_orchestrator(
         cfg,
         policy_path=policy,
-        vehicle_builder=builder,
+        vehicle_usd=vehicle_usd,
         max_steps=MAX_STEPS,
         rerun=True,  # the .rrd is the demo's artifact
-        renderer_factory=rtx_renderer(builder, cfg),  # the Kit peer, when the vehicle authors RTX sensors
+        renderer_factory=rtx_renderer(vehicle_usd, cfg),  # the Kit peer, when the vehicle authors RTX sensors
     )
     guidance = GeofenceGuidance(bounds=FENCE)
     with nx.Sim.from_orchestrator(orch, guidance=guidance) as sim:

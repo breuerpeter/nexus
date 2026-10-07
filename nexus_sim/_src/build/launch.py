@@ -1,7 +1,7 @@
-"""Launch glue: a ``LaunchConfig`` → a running ``Orchestrator``, the one path every run builds through.
+"""The run's builder: a ``LaunchConfig`` → a running ``Orchestrator``, the one path every run builds through.
 
-Resolves the launch against the registry, sha-verifying every asset, wraps the vehicle
-Universal Scene Description (USD) file in a :class:`USDBuilder`, threads the resolved scene, its
+Resolves the launch against the catalog, sha-verifying every asset, wraps the vehicle
+Universal Scene Description (USD) file in a :class:`VehicleUsd`, threads the resolved scene, its
 USD plus start plus geodetic origin, into the scenario cfg, and assembles the core orchestrator,
 the controller-agnostic ``build.assembly``, around the one controller the vehicle USD declares on
 its root prim. PX4 is the one first-class controller, and *this* layer builds its
@@ -31,12 +31,12 @@ from typing import IO
 
 import warp as wp
 
-from nexus_sim._src.config import LaunchConfig, Px4Spec, Registry, ResolvedLaunch, Runtime, resolve
+from nexus_sim._src.config import Catalog, LaunchConfig, Px4Spec, ResolvedLaunch, Runtime, resolve
 from nexus_sim._src.core import Orchestrator
 from nexus_sim._src.core.ports import PortMap
 from nexus_sim._src.core.registry import ComponentRegistry
 from nexus_sim._src.peers.px4_sitl import HIL_PORT, OFFBOARD_PORT
-from nexus_sim._src.physics import USDBuilder
+from nexus_sim._src.physics import VehicleUsd
 from nexus_sim._src.rendering import rtx_renderer
 from nexus_sim._src.usd.reader import read_declarations
 
@@ -57,20 +57,20 @@ def shipped_peers() -> dict[str, type]:
     return {"px4_sitl": Px4Sitl, "kit": KitPeer}
 
 
-def resolve_to_vehicle_builder(
+def resolve_vehicle_usd(
     launch: LaunchConfig,
-    registry: Registry | None = None,
+    catalog: Catalog | None = None,
     *,
     cache_dir: str | pathlib.Path | None = None,
-) -> tuple[USDBuilder, ResolvedLaunch]:
-    """Resolve *launch*, fetching and sha-verifying assets, and wrap the vehicle USD in a USDBuilder.
+) -> tuple[VehicleUsd, ResolvedLaunch]:
+    """Resolve *launch*, fetching and sha-verifying assets, and wrap the vehicle USD in a VehicleUsd.
 
     The receipt records the airframe of the PX4 schema the vehicle declares, if it declares one, and
     the device the run picks: ``cpu`` for an explicit ``cpu`` or a machine with no CUDA device, else
     ``cuda``. The pick sits here, not in ``resolve``, so a caller that only resolves an asset path
     never starts Warp.
     """
-    resolved = resolve(launch, registry, cache_dir=cache_dir)
+    resolved = resolve(launch, catalog, cache_dir=cache_dir)
     rt = resolved.tested_config.runtime
     picked = "cpu" if rt.device == "cpu" or not wp.is_cuda_available() else "cuda"
     resolved.tested_config.runtime = rt.model_copy(update={"device": picked})
@@ -80,8 +80,8 @@ def resolve_to_vehicle_builder(
         ]
         if airframes:
             resolved.tested_config.px4 = Px4Spec(airframe=airframes[0])
-    builder = USDBuilder({"usd_path": resolved.vehicle_usd_path}, None)
-    return builder, resolved
+    vehicle_usd = VehicleUsd({"usd_path": resolved.vehicle_usd_path})
+    return vehicle_usd, resolved
 
 
 def _scenario_from_receipt(rt: Runtime) -> dict:
@@ -125,24 +125,24 @@ def _thread_scene(cfg: dict, resolved: ResolvedLaunch) -> None:
 def resolve_scenario(
     launch: LaunchConfig,
     *,
-    registry: Registry | None = None,
+    catalog: Catalog | None = None,
     cache_dir: str | pathlib.Path | None = None,
-) -> tuple[USDBuilder, ResolvedLaunch, dict]:
-    """Resolve *launch* to ``(vehicle_builder, resolved, scenario cfg)``: the shared front half of
+) -> tuple[VehicleUsd, ResolvedLaunch, dict]:
+    """Resolve *launch* to ``(vehicle_usd, resolved, scenario cfg)``: the shared front half of
     any orchestrator assembly. ``build_from_launch`` composes it with the PX4 assembly; a
     self-assembled example, with its own controller plus actuator plus physics, starts from this and
     hands the built orchestrator to ``Sim.from_orchestrator``.
     """
-    builder, resolved = resolve_to_vehicle_builder(launch, registry, cache_dir=cache_dir)
+    vehicle_usd, resolved = resolve_vehicle_usd(launch, catalog, cache_dir=cache_dir)
     cfg = _scenario_from_receipt(resolved.tested_config.runtime)
     _thread_scene(cfg, resolved)
-    return builder, resolved, cfg
+    return vehicle_usd, resolved, cfg
 
 
 def build_from_launch(
     launch: LaunchConfig,
     *,
-    registry: Registry | None = None,
+    catalog: Catalog | None = None,
     cache_dir: str | pathlib.Path | None = None,
     cfg: dict | None = None,
     preroll_timeout: float = 30.0,
@@ -165,7 +165,7 @@ def build_from_launch(
         FileNotFoundError: The launch names an override layer with no file behind it.
         KitPeerError: The vehicle declares RTX sensors and the Kit peer couldn't start.
     """
-    builder, resolved = resolve_to_vehicle_builder(launch, registry, cache_dir=cache_dir)
+    vehicle_usd, resolved = resolve_vehicle_usd(launch, catalog, cache_dir=cache_dir)
     if cfg is None:
         cfg = _scenario_from_receipt(resolved.tested_config.runtime)
     _thread_scene(cfg, resolved)
@@ -193,7 +193,9 @@ def build_from_launch(
         )
     # By now the run has fetched every asset it renders, so the Kit peer starts first and boots while
     # PX4 builds and the physics compiles; None for a vehicle that declares no RTX sensor.
-    renderer_factory = rtx_renderer(builder, cfg, cache_dir=cache_dir, peer=peer_classes["kit"], components=components)
+    renderer_factory = rtx_renderer(
+        vehicle_usd, cfg, cache_dir=cache_dir, peer=peer_classes["kit"], components=components
+    )
     started: list = []
     try:
         # *This* is where the declared controller becomes an instance; the assembly that follows is
@@ -209,7 +211,7 @@ def build_from_launch(
         return build_orchestrator(
             label,
             cfg,
-            vehicle_builder=builder,
+            vehicle_usd=vehicle_usd,
             controller=controller,
             peers=started,
             ports=_ports(instance, started),
@@ -256,7 +258,7 @@ def _start_px4(cls: Callable, resolved: ResolvedLaunch, instance: int, airframe:
     """
     from nexus_sim._src.peers.px4_sitl.runner import PX4_LOG_DIR
 
-    catalog = resolved.tested_config.registry
+    catalog = resolved.tested_config.catalog
     os.makedirs(PX4_LOG_DIR, exist_ok=True)
     peer = cls(
         catalog=pathlib.Path(catalog) if catalog else None,

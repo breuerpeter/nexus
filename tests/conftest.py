@@ -363,14 +363,14 @@ def fly_recorded(
         spec["layer"] = str(path)
     with pytest.MonkeyPatch.context() as patch, wp.ScopedDevice("cpu"):
         patch.setenv("HOME", str(tmp))
-        builder, _, cfg = resolve_scenario(LaunchConfig.from_dict(spec))
+        vehicle_usd, _, cfg = resolve_scenario(LaunchConfig.from_dict(spec))
         controller = StandInController()
-        renderer_factory = rtx_renderer(builder, cfg, peer=kit or KitFake)
+        renderer_factory = rtx_renderer(vehicle_usd, cfg, peer=kit or KitFake)
         try:
             orch = build_orchestrator(
                 "fixture",
                 cfg,
-                vehicle_builder=builder,
+                vehicle_usd=vehicle_usd,
                 controller=controller,
                 rerun=True,
                 viewer=False,

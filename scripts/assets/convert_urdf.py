@@ -1,7 +1,7 @@
 """Convert a Unified Robot Description Format (URDF) file to Universal Scene Description (USD) via
 Isaac Lab's UrdfConverter. Run once; the USD is a generated artifact Isaac Lab spawns from. The Astro
 Max RL example, ``nexus`` and ``examples/isaac-lab``, spawns from this USD, which ships in the
-asset registry, so this is a **rare offline regeneration step**, not part of the train/deploy flow.
+asset catalog, so this is a **rare offline regeneration step**, not part of the train/deploy flow.
 It needs the **full Isaac Sim**, because Isaac Lab's URDF importer is Kit/GUI-based, so the kitless
 Newton install can't run it. The Scripts page of the docs says how to run it.
 

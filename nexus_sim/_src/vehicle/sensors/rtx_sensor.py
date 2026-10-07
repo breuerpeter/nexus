@@ -20,8 +20,8 @@ class RtxMountedSensor:
     """Shared base for RTX sensors mounted on a vehicle body: a ``Sensor`` whose work is one host
     stage, over a prim authored in the vehicle USD as a body child.
 
-    Its frames come from the Kit peer over a socket, so its stage runs once per tick at the host
-    seam, outside any captured graph, self-decimating to ``rate``. The mount is rigid: the link poses the sensor prim with
+    Its frames come from the Kit peer over a socket, so its stage runs once per tick as a host
+    stage, outside any captured graph, self-decimating to ``rate``. The mount is rigid: the link poses the sensor prim with
     W = L_authored * W_body, in row-vector form, from the same state the body poses come from, since a
     Fabric world matrix has no hierarchy.
 
@@ -56,7 +56,7 @@ class RtxMountedSensor:
         logger.info(f"{type(self).__name__}: {path} @{self.rate:.0f}Hz -> sensors/{self.name} (body[{body}])")
 
     def set_logger(self, logger_) -> None:
-        """Component-owned logging seam; the orchestrator hands over the Logger scoped to this sensor,
+        """Component-owned logging: the orchestrator hands over the Logger scoped to this sensor,
         and None = off.
 
         In debug mode, non-camera sensors log their coordinate frame once, statically, at their own row
@@ -96,7 +96,7 @@ class RtxMountedSensor:
         return [Stage(self.name, "host", lambda tick: self.sample(tick.state, tick.t, tick.meas))]
 
     def sample(self, state, t, out) -> None:
-        """Host-seam sample: the link sends the due sensors' frame and hands back the one before.
+        """Host-stage sample: the link sends the due sensors' frame and hands back the one before.
 
         Decimation is on sim time, since ``rate`` is the sensor's physical rate: a 30 Hz camera
         samples 30x per simulated second whatever the Real Time Factor (RTF).

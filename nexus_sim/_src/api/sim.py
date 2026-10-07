@@ -1,4 +1,4 @@
-"""Sim: the control-surface handle, the program-driving API.
+"""Sim: the one public entry to a run, the program-driving API.
 
 Owns the sim: builds it from a ``LaunchConfig`` via ``build_from_launch`` and drives the
 ``Orchestrator`` loop on the *caller's* thread, one driving model for every controller. A
@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING, NoReturn
+from typing import TYPE_CHECKING
 
 from nexus_sim._src.api.args import save_run_artifacts, sim_argparser  # noqa: F401  # re-export; defs are import-light
 from nexus_sim._src.build.launch import build_from_launch
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 
 
 class Sim:
-    """Control-surface handle for a Newton sim run.
+    """The one public entry to a Newton sim run.
 
     Builds an ``Orchestrator`` from a ``LaunchConfig`` and drives its loop on the *caller's*
     thread, one control tick per :meth:`step`, the same for a controller that takes setpoints
@@ -38,14 +38,14 @@ class Sim:
 
     With ``observe=True`` the handle attaches a :class:`~nexus_sim._src.recording.Recorder`,
     making :attr:`physics` and :attr:`sensors` read sim ground truth, in the world frame,
-    Z-up Forward-Left-Up (FLU), off the components' observation channels.
+    Z-up Forward-Left-Up (FLU), off the components' recorded channels.
 
     Args:
-        vehicle: Registry vehicle *name*, for example ``"astro_max_fpv"``, or a local .usd path.
-        registry: Path to a catalog that extends the bundled one. ``None`` takes the nearest
-            ``nexus.registry.yaml`` in the working directory or a directory over it, and only the
+        vehicle: Catalog vehicle *name*, for example ``"astro_max_fpv"``, or a local .usd path.
+        catalog: Path to a catalog that extends the bundled one. ``None`` takes the nearest
+            ``nexus.catalog.yaml`` in the working directory or a directory over it, and only the
             catalog bundled in the wheel when no directory holds one.
-        scene: Registry scene *name* to fly in, for example ``"empty"`` for flat ground or the
+        scene: Catalog scene *name* to fly in, for example ``"empty"`` for flat ground or the
             ``"slalom"`` obstacle pillars, or a local scene .usd path.
         device: Compute device for the runtime: ``"auto"``, the default, which picks CUDA when
             present, or an explicit ``"cpu"``, for bit-exact determinism, or ``"cuda"``.
@@ -73,7 +73,7 @@ class Sim:
         vehicle: str,
         *,
         scene: str,
-        registry: str | None = None,
+        catalog: str | None = None,
         geo: str | None = None,
         device: str = "auto",
         observe: bool = True,
@@ -87,12 +87,12 @@ class Sim:
         layer: str | None = None,
     ):
         self._launch = LaunchConfig()
-        self._launch.set_vehicle(vehicle)  # a registry *name* or a local .usd path
+        self._launch.set_vehicle(vehicle)  # a catalog *name* or a local .usd path
         self._launch.layer = layer  # an override layer the run composes over the vehicle, or None
-        self._launch.registry = registry  # None: the run finds its own catalog, see load_registry
+        self._launch.catalog = catalog  # None: the run finds its own catalog, see load_catalog
         if solver is not None:  # physics integrator override: mujoco | semi_implicit | featherstone
             self._launch.runtime.solver = solver
-        self._launch.set_scene(scene)  # registry scene, for example the 'slalom' obstacle pillars for sampling-mpc
+        self._launch.set_scene(scene)  # catalog scene, for example the 'slalom' obstacle pillars for sampling-mpc
         if geo is not None:  # override the scene's geodetic origin, for example to fly cesium over any lat/lon
             parts = [float(x) for x in geo.split(",")]
             self._launch.set_geodetic_origin(*parts)  # lat,lon[,alt]; alt is the WGS84 ellipsoidal surface height
@@ -137,7 +137,7 @@ class Sim:
 
         An example builds its own orchestrator, its controller plus actuator plus sensors around
         the core components, see ``nexus_sim/examples/controllers/*/assembly.py``, and hands it
-        over; the ``Sim`` adds the control surface: the observation ``Recorder``, ``sim.physics``
+        over; the ``Sim`` adds what a script reads and drives: the ``Recorder``, ``sim.physics``
         and ``sim.sensors``; the guidance the flight constructed, which joins the loop; and the run
         lifecycle, ``run``, ``step``, ``stop``, ``results`` and ``artifacts``.
 
@@ -178,7 +178,7 @@ class Sim:
         diagnostics.configure(args)  # the shared --profile/--trace/--benchmark flags, process-wide
         kw = {
             "vehicle": args.vehicle,
-            "registry": getattr(args, "registry", None),
+            "catalog": getattr(args, "catalog", None),
             "device": getattr(args, "device", "auto"),
             "scene": args.scene,
             "geo": getattr(args, "geo", None),
@@ -205,7 +205,7 @@ class Sim:
             # A vehicle that authors RTX sensors starts the Kit render peer here, from the host.
             self._orch = build_from_launch(self._launch, cache_dir=self._cache_dir)
         if self._observe:
-            # Attach the observation sink: each recordable component registers its device-only channels;
+            # Attach the Recorder: each recordable component registers its device-only channels;
             # physics → one per body plus per joint. dt → the per-row snapshot time, counter × dt.
             # The ring must cover the *whole* run, since post-run evaluation reads the full trajectory, so
             # size it from max_steps when the launch sets one, plus margin for the pre-flight seed rows.
@@ -249,24 +249,6 @@ class Sim:
                 "`Sim.from_orchestrator(orch, guidance=guidance)`; a PX4 run takes none"
             )
         return self._guidance
-
-    @property
-    def operator(self) -> NoReturn:
-        """No run has an operator, so this raises on every run and names what commands the run. A
-        controller that reads a setpoint flies its :attr:`guidance`, which runs in the loop. A
-        controller that reads none, an autopilot in a peer such as PX4, takes its commands from a
-        script, over a link the script opens itself on the address :attr:`ports` names.
-
-        Raises:
-            RuntimeError: On every access. Before the ``Sim`` context, the message says to enter it.
-                After, it names :attr:`guidance` and :attr:`ports`.
-        """
-        if self._orch is None:
-            raise RuntimeError("enter the Sim context first (`with nx.Sim(...) as sim:`)")
-        raise RuntimeError(
-            "a run has no operator: a controller that reads a setpoint flies the guidance in `sim.guidance`, "
-            "and a script commands an autopilot over a link it opens itself, on an address from sim.ports"
-        )
 
     @property
     def ports(self) -> Mapping[str, dict]:

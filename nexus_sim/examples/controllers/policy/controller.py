@@ -5,7 +5,7 @@ Loads a policy exported by `nexus-rl`, Isaac Lab on the Newton backend, and runs
 deployment on core. A trained policy is a **state-feedback** controller: it consumes ground-truth
 kinematics as a 12-D observation, not the MAVLink Hardware in the Loop (HIL) sensor bundle. It
 builds that observation itself from the ground-truth ``meas.state`` a :class:`StateSensor` passes
-through the neutral ``Measurement`` seam, with no observation sensor, using the single
+through the neutral ``Measurement``, with no observation sensor, using the single
 train↔deploy obs source ``nexus_sim.examples._lib.observation``.
 
 The exported policy maps ``obs[16] -> action[4]`` = ``[thrust, ωx_cmd, ωy_cmd, ωz_cmd]``, the
@@ -42,7 +42,7 @@ class TrainedPolicyController:
         policy_path: path to the exported TorchScript ``policy.pt``.
         goal_w: target world position [m], the hover/move-to-position goal.
         action_clip: clamp applied to policy outputs; Isaac Lab clamps actions to [-1, 1].
-        device: torch device for inference; ``"cpu"`` keeps the host boundary CPU-only.
+        device: torch device for inference; ``"cpu"`` keeps the host stage on the CPU.
         mixer: the airframe :class:`~nexus_sim.examples._lib.mixer.RotorMixer`, ``B⁻¹`` plus the thrust
             map. With it the controller emits ``nr`` per-rotor commands; ``None`` emits the raw CTBR action,
             the legacy form.
@@ -128,7 +128,7 @@ class TrainedPolicyController:
         if self._mixer is None:
             return Controls(command=action.astype(np.float32))  # raw CTBR action, for a legacy / raw-action consumer
         # The airframe CTBR mixer: action + body rate → nr per-rotor commands, the deploy half of the
-        # byte-shared train↔deploy mixer. Host path, because the policy is a CPU host boundary, so read back numpy.
+        # byte-shared train↔deploy mixer. Host path, because the policy runs in a host stage on the CPU, so read back numpy.
         cmd = self._mixer.cmd(action, omega_b)
         return Controls(command=cmd.numpy().reshape(-1).astype(np.float32))
 

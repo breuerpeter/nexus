@@ -1,11 +1,11 @@
 ---
-description: "Convert a photogrammetry mesh or Gaussian splat into a flyable visual world: conversion in the Kit container, start pick, preview flight, and publishing to the registry."
+description: "Convert a photogrammetry mesh or Gaussian splat into a flyable visual world: conversion in the Kit container, start pick, preview flight, and publishing to the catalog."
 ---
 
 # Converting scenes
 
 Turn a captured 3D scan, an Esri Site Scan **`.obj`** export or a 3D-Tiles **Gaussian splat**
-export, into a registry [scene](../reference/assets/scenes.md): a visual world the First Person
+export, into a catalog [scene](../reference/assets/scenes.md): a visual world the First Person
 View (FPV) vehicles fly in. The output is always one self-contained `.usdz`, finalized onto the
 scene-asset conventions in `scripts/assets/scene_root.py`. That means one root `Xform`, the
 `defaultPrim` and the target the runtime places `start` at, holding everything, including the
@@ -48,8 +48,8 @@ uv run python scripts/assets/spawn_site.py "$NEXUS_DATA/scans/my_site_splat.usdz
     --geo <lat>,<lon>,<alt>   # the converter's "scene origin" trace
 ```
 
-Prints the registry `start:`, a flat open-terrain spot near the scene center, and, with `--geo`,
-the `geodetic_origin` measured **at that start**. Both are advisory registry data: eyeball, tweak
+Prints the catalog `start:`, a flat open-terrain spot near the scene center, and, with `--geo`,
+the `geodetic_origin` measured **at that start**. Both are advisory catalog data: eyeball, tweak
 numbers, no reconversion. A mesh carries no geodesy, so reuse the sibling splat's origin trace and
 omit `alt`.
 
@@ -71,5 +71,5 @@ uv run python scripts/assets/prepare_asset_upload.py --scene "$NEXUS_DATA/scans/
 ```
 
 Prints the content-addressed upload key, `public/assets/usd/scenes/<name>-<sha256>.usdz`, and the
-`registry.yaml` snippet. Upload it by hand, then add the scene row with `start` and
+`catalog.yaml` snippet. Upload it by hand, then add the scene row with `start` and
 `geodetic_origin` from step 2. Done: `--scene my_site_splat` flies it anywhere.

@@ -1,6 +1,6 @@
-"""The observation sink: component-owned, device-only taps the host reads on demand.
+"""The Recorder: component-owned, device-only taps the host reads on demand.
 
-The read-side twin of the logging seam, ``_src/logging``. Logging hands each component a ``Logger``
+The read-side twin of logging, ``_src/logging``. Logging hands each component a ``Logger``
 and the component emits its quantities to it: rerun, host-side, throttled. Observation is the same
 shape to a different sink: each recordable component gets a :class:`Recorder`, registers a named
 :class:`RecordChannel`, and writes its quantities into the channel's DEVICE ring buffer each tick via a

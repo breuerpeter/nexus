@@ -156,10 +156,10 @@ def components(**entries) -> ComponentRegistry:
     return ComponentRegistry({**shipped, "NexusPx4API": Controller, **entries})
 
 
-def build(vehicle_path: str, *, seed: int = 42, scene: str = SCENE, registry=None, **kw):
+def build(vehicle_path: str, *, seed: int = 42, scene: str = SCENE, catalog=None, **kw):
     """Build a run of the vehicle at `vehicle_path` on the CPU, flown by the stand-in controller.
 
-    `registry` is the catalog, for a scene of the test's own. The rest goes to the build: `components`
+    `catalog` is the catalog, for a scene of the test's own. The rest goes to the build: `components`
     replaces the registry of :func:`components`, and `peers` is the peer mapping.
     """
     import nexus_sim._src.build.launch as launch_mod
@@ -168,7 +168,7 @@ def build(vehicle_path: str, *, seed: int = 42, scene: str = SCENE, registry=Non
         {"vehicle": vehicle_path, "scene": scene, "runtime": {"device": "cpu", "seed": seed}}
     )
     kw.setdefault("components", components())
-    return launch_mod.build_from_launch(launch, registry=registry, preroll_timeout=10.0, **kw)
+    return launch_mod.build_from_launch(launch, catalog=catalog, preroll_timeout=10.0, **kw)
 
 
 def fly(loop, ticks: int) -> list:

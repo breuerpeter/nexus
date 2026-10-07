@@ -63,7 +63,7 @@ def test_dump_draws_the_flown_path_from_the_airframe_channel(tmp_path, rrd_entit
 
 
 class _Sink:
-    """A Logger stand-in that keeps what the dump handed it, the adapter's own output seam."""
+    """A Logger stand-in that keeps what the dump handed it, the adapter's own output."""
 
     def __init__(self):
         self.trail = None

@@ -23,7 +23,7 @@ class _Base(BaseModel):
 class AssetRef(_Base):
     """A content-addressed asset resolved to a verified local path: ``{url, sha256, filename}``.
 
-    The registry declares the compact ``{name, sha256}`` form; a load-time validator expands it to
+    The catalog declares the compact ``{name, sha256}`` form; a load-time validator expands it to
     this, deriving the ``.usdz`` URL + cache filename from the shared hosting scheme. The sha *is*
     the version pin: the resolver verifies it on fetch.
     """
@@ -100,23 +100,23 @@ class LaunchConfig(_Base):
     """The sim's *fixed* standup properties: what the sim **is**, not what happens to it.
 
     Dynamics, such as faults and moving actors, are control-API verbs, not config.
-    Small in the common case: the vehicle and the scene, and the registry fills in the rest.
+    Small in the common case: the vehicle and the scene, and the catalog fills in the rest.
     """
 
     vehicle: str | None = None
-    """The vehicle to fly: a registry ``name`` handle (``--vehicle astro_max_fpv``), or a path to a
+    """The vehicle to fly: a catalog ``name`` handle (``--vehicle astro_max_fpv``), or a path to a
     local vehicle Universal Scene Description (USD) file.
 
     ``None`` until set; a launch that still names none fails to resolve.
     """
-    registry: str | None = None
-    """Path to the catalog that extends the bundled one for this run, the ``--registry`` value.
+    catalog: str | None = None
+    """Path to the catalog that extends the bundled one for this run, the ``--catalog`` value.
 
-    ``None`` takes the nearest ``nexus.registry.yaml`` in the working directory or a directory over
+    ``None`` takes the nearest ``nexus.catalog.yaml`` in the working directory or a directory over
     it, and only the catalog bundled in the wheel when no directory holds one.
     """
     scene: str | None = None
-    """Name of the static scene to stand up, keyed into the registry's ``scenes``, or a local
+    """Name of the static scene to stand up, keyed into the catalog's ``scenes``, or a local
     scene Universal Scene Description (USD) path (a converted mesh/splat, flown as the visual world).
 
     ``None`` until set; a launch that still names none fails to resolve.
@@ -124,7 +124,7 @@ class LaunchConfig(_Base):
     geodetic_origin: GeodeticOrigin | None = None
     """Override the scene's geodetic origin (the lat/lon the local frame anchors to).
 
-    ``None`` uses the registry scene's ``geodetic_origin`` (its default). A launch value wins: it
+    ``None`` uses the catalog scene's ``geodetic_origin`` (its default). A launch value wins: it
     re-anchors the GPS/magnetic/gravity reference and, for the streamed cesium globe, selects the
     place it streams. So `cesium` at any location is `--scene cesium --geo <lat>,<lon>`.
     """
@@ -182,15 +182,15 @@ class LaunchConfig(_Base):
         return cls.from_dict(yaml.safe_load(pathlib.Path(path).read_text()))
 
     def set_vehicle(self, vehicle: str) -> LaunchConfig:
-        """Set the vehicle to fly in place: a registry ``name`` handle or a local ``.usd`` path.
+        """Set the vehicle to fly in place: a catalog ``name`` handle or a local ``.usd`` path.
 
         ``resolve()`` reads a value with a path separator or a ``.usd`` suffix as a file and every other
-        value as a registry name, so this setter takes
+        value as a catalog name, so this setter takes
         a ``--vehicle`` command-line value unchanged. ``Sim`` and the command-line tool both select
         through it, so the two behave identically.
 
         Args:
-            vehicle: The registry name or the local ``.usd`` path.
+            vehicle: The catalog name or the local ``.usd`` path.
 
         Returns:
             ``self``, so calls chain.
@@ -202,7 +202,7 @@ class LaunchConfig(_Base):
         """Set the scene name in place.
 
         Args:
-            scene: The scene name to key into the registry's ``scenes``.
+            scene: The scene name to key into the catalog's ``scenes``.
 
         Returns:
             ``self``, so calls chain.

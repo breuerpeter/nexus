@@ -1,4 +1,4 @@
-"""Px4MavlinkController plugin: host-boundary blocking lockstep over MAVLink."""
+"""Px4MavlinkController: blocking lockstep with the PX4 Software In The Loop (SITL) peer over MAVLink."""
 
 from .controller import Px4MavlinkController
 

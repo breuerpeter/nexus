@@ -50,7 +50,7 @@ class Guidance:
         # gate, and sets the timeline at tick start, so an emitter just hands data to the Logger.
         self._logger = None
 
-    # -- the stage, the seam the loop calls ------------------------------------------
+    # -- the stage the loop calls ----------------------------------------------------
     def stages(self) -> list[Stage]:
         """One host stage, ``guidance``, which the loop runs before the controller's stages and which
         writes the setpoint. A warm stage: the loop also runs it once over the settled state, before any

@@ -218,7 +218,7 @@ class Renderer:
         stage.SetEditTarget(stage.GetSessionLayer())
         self._compose_vehicle(stage, setup["vehicle"], setup["spawn"])
         if world and self._scene is None:
-            # The registry start places the scene: one -start translate on the asset's single root
+            # The catalog's start places the scene: one -start translate on the asset's single root
             # prim, session-only, while the vehicle composes at the origin; see scripts/assets/scene_root.py.
             sx, sy, sz = setup.get("scene_start") or (0.0, 0.0, 0.0)
             if (sx, sy, sz) != (0.0, 0.0, 0.0):

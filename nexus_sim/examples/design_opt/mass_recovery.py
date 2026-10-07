@@ -23,7 +23,7 @@ import warp as wp
 
 import nexus_sim as nx
 from nexus_sim.examples._lib import dump_stats
-from nexus_sim.examples._lib.single_body import collapse_to_single_body  # the one single-body seam
+from nexus_sim.examples._lib.single_body import collapse_to_single_body  # the one single-body path
 
 GRAVITY = 9.81
 
@@ -63,14 +63,14 @@ def recover_mass(
     true mass. Returns the convergence history. ``inv_mass`` is the differentiable leaf the SemiImplicit
     integrator actually consumes; reported back as mass = 1/inv_mass.
     """
-    from nexus_sim._src.build.launch import resolve_to_vehicle_builder
+    from nexus_sim._src.build.launch import resolve_vehicle_usd
     from nexus_sim._src.config import LaunchConfig
 
     # Single rigid body collapsed from the vehicle Universal Scene Description (USD): the open-loop world-+z
     # thrust is frame-agnostic, so the Forward Right Down (FRD) body works unchanged here; only the body
     # mass matters for the system-ID.
-    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle(vehicle).set_scene("empty"))
-    sb = collapse_to_single_body(vb, requires_grad=True)
+    vehicle_usd, _ = resolve_vehicle_usd(LaunchConfig().set_vehicle(vehicle).set_scene("empty"))
+    sb = collapse_to_single_body(vehicle_usd, requires_grad=True)
     model, nominal_mass = sb.model, sb.mass
     solver = newton.solvers.SolverSemiImplicit(model)
     true_mass = nominal_mass * true_mass_scale

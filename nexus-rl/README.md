@@ -47,8 +47,8 @@ CUDA GPU, and runs on Linux-x86_64 only.
 > versions. So this project's `[tool.uv]` override co-resolves the whole stack into **one** Newton, and
 > training and the standalone deploy then share the same Newton.
 
-The Astro Max Universal Scene Description (USD) file is a content-addressed registry asset. It
-**auto-resolves** on the host, since the framework's pydantic and registry dependencies are present,
+The Astro Max Universal Scene Description (USD) file is a content-addressed catalog asset. It
+**auto-resolves** on the host, since the framework's pydantic and catalog dependencies are present,
 caching under `assets/cache/` in the repo, which `$NEXUS_ASSET_CACHE` overrides. Pass
 `--vehicle_usd /path/to/astro_max.usdz` to train.py only to override the lookup.
 
@@ -111,7 +111,7 @@ The stock `Isaac-Quadcopter-Direct-v0` is PhysX-only and doesn't learn on Newton
 
 The vehicle config, `config/astro_max.py`, supplies the Astro-Max-specific bits: the robot USD, the
 Forward Right Down (FRD) frame with `base_body="body_frd"` and `thrust_sign=-1`, and a custom spawner
-`func`. That `func` disables the world→base `PhysicsFixedJoint` the registry USD bakes in, which would
+`func`. That `func` disables the world→base `PhysicsFixedJoint` the catalog USD bakes in, which would
 otherwise pin the base, so thrust moves nothing. The thrust map, `ct`, `cd`, and `rpm_max`, comes from
 the rotors the USD declares, the propeller schema on each rotor body and its motor's no-load speed, the same
 source the core uses. A

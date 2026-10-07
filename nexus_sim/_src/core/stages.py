@@ -77,7 +77,7 @@ def build_ring(
     *, sensors, controller, physics, commands=(), forces=(), actuator=None, record: Stage, substeps: int, guidance=None
 ) -> list[Bound]:
     """Every component's stages in the canonical order the domain fixes: sensors, the guidance when the
-    run has one, controller, then ``clear`` -> the command stages -> the force stages -> ``step`` unrolled
+    run has one, controller, then ``clear`` -> the command elements -> the force elements -> ``step`` unrolled
     ``substeps`` times, then ``record``. The guidance sits before the controller, so the setpoint it writes
     is the one the controller reads on that tick. The old actuator seam's one stage, the
     examples' single-body ``Rotors``, runs with the force stages, since it writes the body forces too.
@@ -132,8 +132,8 @@ def partition(ring: list[Bound]) -> list[Segment]:
 
 def seed_stages(ring: list[Bound]) -> list[Stage]:
     """The stages of one pass over the settled state: the sensors' and the controller's warm device
-    stages, and the controller's host stages, in ring order. Physics, the command stages, the force
-    stages and the record stage never run here, so the settled state is the state the first tick starts from, and a
+    stages, and the controller's host stages, in ring order. Physics, the command elements, the force
+    elements and the record stage never run here, so the settled state is the state the first tick starts from, and a
     sensor's host stage never does, so a camera's frame exchange starts with the first tick.
     """
     out = []
@@ -190,7 +190,7 @@ def peer_stages(controller, *, reads: tuple = ()) -> list[Stage]:
     """The stages of a controller that blocks on a peer or solves on the host: ``read`` fans the sensors
     into the ``Measurement``, and ``exchange`` runs the controller's ``exchange`` and writes its commands
     to the controls, a ``(1, 16)`` device signal, in place between graph replays. The builder allocates
-    that buffer before the capture, so the command stages capture over it before the peer connects.
+    that buffer before the capture, so the command elements' stages capture over it before the peer connects.
     ``None`` from the exchange reads as the peer not answering, which the stage reports by returning
     ``False``. ``reads`` are the signals the controller's ``exchange`` reads, such as its setpoint, which
     the ``exchange`` stage declares.

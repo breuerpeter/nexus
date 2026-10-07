@@ -41,7 +41,7 @@ pytestmark = [
     ),
 ]
 
-_OPERATOR_LINK = "udpin:0.0.0.0:14540"  # PX4's offboard and onboard API instance sends here
+_OFFBOARD_LINK = "udpin:0.0.0.0:14540"  # PX4's offboard and onboard API instance sends here
 _GCS_LINK = "udpin:0.0.0.0:14550"  # PX4's GCS instance, :18570, sends here, where QGroundControl listens
 _DATALINK_TIMEOUT_S = 10.0  # COM_DL_LOSS_T at its default: how long PX4 waits before it counts a GCS as lost
 _SET_MODE = mavutil.mavlink.MAV_CMD_DO_SET_MODE
@@ -147,15 +147,15 @@ def _set_param(sim, link: _Peer, name: str, value: int) -> None:
 
 @pytest.fixture(scope="module")
 def run_with_no_gcs():
-    """A recording run with no GCS and no operator.
+    """A recording run with no GCS and a silent offboard link.
 
-    A command link on the operator port, which never heartbeats, puts PX4 in Hold, where a command arms it
+    A command link on the offboard port, which never heartbeats, puts PX4 in Hold, where a command arms it
     without sticks, and waits until PX4 reports it could arm and has been up past the datalink timeout. Then
     it makes a GCS required, ``NAV_DLL_ACT`` 2, asks PX4 to arm, and puts the parameter back.
     """
     with nx.Sim("astro_max_base", scene="empty", log=True, rtf=1.0) as sim:
         sim.start(timeout=120.0)
-        link = _Peer(_OPERATOR_LINK, heartbeat=False)
+        link = _Peer(_OFFBOARD_LINK, heartbeat=False)
         try:
             sim.wait_until(lambda: link.px4 is not None, sim_timeout=60.0)
             _retry_until(

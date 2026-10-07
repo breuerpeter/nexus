@@ -13,7 +13,7 @@ layers =
     nexus_sim._src.api
     nexus_sim._src.build
     nexus_sim._src.rendering
-    nexus_sim._src.physics : nexus_sim._src.operator : nexus_sim._src.guidance
+    nexus_sim._src.physics : nexus_sim._src.guidance
     nexus_sim._src.scene
     nexus_sim._src.vehicle
     nexus_sim._src.recording

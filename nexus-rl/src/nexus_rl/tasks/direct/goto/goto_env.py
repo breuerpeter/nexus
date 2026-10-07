@@ -28,7 +28,7 @@ import torch
 import warp as wp
 from isaaclab.utils.configclass import configclass
 
-from nexus_sim._src.physics.builders.usd import parse_rotors  # the rotors the vehicle USD declares
+from nexus_sim._src.physics.vehicle import parse_rotors  # the rotors the vehicle USD declares
 from nexus_sim._src.vehicle.rotors import RPM_PER_RADS, quat_to_R  # shared rotor geometry, from the core
 from nexus_sim.examples._lib import (  # the shared single-body model + mixer: train + deploy + diff
     build_allocation,  # the one allocation builder; replaces the hand-rolled torch B

@@ -109,7 +109,7 @@ class Propellers:
 
     Args:
         model: The finalized articulated model, whose rotor joints really turn.
-        joints: The joint path of each rotor the vehicle USD declares, the vehicle builder's
+        joints: The joint path of each rotor the vehicle USD declares, the ``VehicleUsd``'s
             ``rotor_joints()``.
         ct: Thrust coefficient [N/rpm²], the propeller schema's ``nexus:ct``, the vehicle USD authority.
         cd: Reaction-torque-per-thrust, ``nexus:cd``, the yaw allocation κ.
