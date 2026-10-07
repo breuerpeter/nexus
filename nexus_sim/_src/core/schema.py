@@ -57,6 +57,16 @@ class Controls(DeviceType):
     command: Any = None  # one entry per actuator: an np.ndarray of length n, or a (1, n) Warp array
 
 
+class PoseTwist(DeviceType):
+    """The pose and twist of the vehicle's base body in world axes: the estimate an estimator writes, and
+    the guidance and the controllers read.
+
+    As a signal, ``estimate``, it lives on the device: a ``(1, 13)`` array of floats, which holds the
+    position (3), the orientation as a quaternion in ``(x, y, z, w)`` order (4), the linear velocity (3) and
+    the angular velocity (3), the order of a body's row in the Recorder.
+    """
+
+
 @dataclass(slots=True)
 class Measurement:
     """Per-tick sensor bundle in the Forward Right Down (FRD) body frame / physical units.
