@@ -129,6 +129,13 @@ docs = [
 # pytest's default list also skips `build`, the name of the folder that mirrors `nexus_sim/_src/build/`.
 norecursedirs = [".*", "dist", "node_modules", "venv"]
 testpaths = ["tests"]
+# A misspelled marker fails the run instead of moving a test to the wrong leg.
+addopts = ["--strict-markers"]
+# cpu-pytest runs `-m "not gpu and not px4_sitl"` and gpu-pytest `-m "gpu or px4_sitl" --require-cuda`.
+markers = [
+    "gpu: needs a CUDA device; skips without one, and fails when it does not run under --require-cuda",
+    "px4_sitl: flies a real PX4 SITL, built from the tree on this machine",
+]
 
 [tool.ruff]
 line-length = 120
