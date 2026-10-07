@@ -25,4 +25,4 @@ tokens:
   - '(?:nexus\.)?registry\.yaml'
   - 'USDBuilder|BuilderBase|vehicle[ _]builders?'
   - 'RigidBodyRotors'
-  - 'StateSensor'
+  - 'State ?Sensor'
