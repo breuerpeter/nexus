@@ -20,6 +20,8 @@ from .schema import Measurement, Setpoint, SimTime
 if TYPE_CHECKING:
     import newton
 
+    from .signals import Signal
+
 
 @dataclass(slots=True)
 class Tick:
@@ -58,13 +60,16 @@ class Stage:
     peer didn't answer, which the preroll retries and the steady loop ends the run on. A ``warm``
     sensor or controller stage runs in the seed pass over the settled state, before any capture, so
     every device buffer it allocates exists first. A ``warm`` guidance stage runs in that pass too,
-    so the controller holds the guidance's first setpoint before its own first stage.
+    so the controller holds the guidance's first setpoint before its own first stage. ``reads`` and
+    ``writes`` are the signals the stage reads and writes, which the loop wires before any stage runs.
     """
 
     name: str
     kind: Literal["device", "host"]
     run: Callable[[Tick], Any]
     warm: bool = True
+    reads: tuple[Signal, ...] = ()
+    writes: tuple[Signal, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

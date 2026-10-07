@@ -25,6 +25,7 @@ from .logging import logger
 from .ports import PortMap
 from .profiling import LoopProfiler
 from .schema import Measurement
+from .signals import wire
 from .stages import build_ring, device_sensors, partition, plan_line, seed_stages, warm_stages
 
 if TYPE_CHECKING:
@@ -474,6 +475,7 @@ class Orchestrator:
                 record=record,
                 substeps=self.physics_substeps,
             )
+            wire(ring)  # every signal a stage declares gets its buffer before any stage runs
             segments = partition(ring)
             captured = _on_cuda()
             logger.info(plan_line(segments, captured))
