@@ -530,14 +530,15 @@ class Orchestrator:
         return type(self.controller).__name__
 
     def _check_estimator(self, ring) -> None:
-        """Check that a stage writes the estimate when a guidance or a controller reads it: a run takes an
-        estimator for a guidance or a controller that reads the vehicle's state.
+        """Check that the run has an estimator when a guidance or a controller reads the estimate: a run takes
+        an estimator for a guidance or a controller that reads the vehicle's state, and the estimate is the
+        estimator's, whatever other component writes a signal of its type.
 
         Raises:
-            ValueError: A stage reads the estimate, and no stage writes it, as on a run built with no
-                estimator. The message names each reader's class and the estimator.
+            ValueError: A stage reads the estimate, and the run has no estimator, as on a run built with none.
+                The message names each reader's class and the estimator.
         """
-        if any(s.type is PoseTwist for b in ring for s in b.stage.writes):
+        if any(b.role == "estimator" for b in ring):
             return
         readers = list(
             dict.fromkeys(type(b.component).__name__ for b in ring for s in b.stage.reads if s.type is PoseTwist)

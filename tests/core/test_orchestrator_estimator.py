@@ -149,3 +149,34 @@ def test_the_controller_reads_an_estimate_made_from_that_ticks_sensor_values(dev
             seen.append(float(controller.seen.numpy()[0]))
         orch.close()
     assert seen == [1.0, 2.0, 3.0]
+
+
+class _EstimateSensor:
+    """A sensor whose device stage writes the estimate, which is the estimator's to write. It counts its runs."""
+
+    def __init__(self):
+        self.estimate = Signal("estimate", PoseTwist, shape=(1, 13))
+        self.runs = 0
+
+    def stages(self):
+        return [Stage("estimate", "device", self._run, writes=(self.estimate,))]
+
+    def _run(self, tick):
+        self.runs += 1
+
+
+@pytest.mark.usefixtures("warp_cpu")
+def test_a_sensor_that_writes_the_estimate_does_not_stand_in_for_the_estimator():
+    """A run whose controller reads the estimate fails before any stage runs when it has no estimator, even
+    when another component writes the estimate.
+
+    Given a stand-in sensor whose device stage writes the estimate, a stand-in controller that reads it and no
+    estimator, when the run takes its first step, then it fails before the sensor's stage runs, and the error
+    names the controller and the estimator.
+    """
+    sensor = _EstimateSensor()
+    orch = Orchestrator(clock=_Clock(), physics=_Physics(), sensors=[sensor], controller=_EstimateReader())
+    with pytest.raises(ValueError) as e:
+        orch.step()
+    orch.close()
+    assert ("_EstimateReader" in str(e.value), "estimator" in str(e.value), sensor.runs) == (True, True, 0)
