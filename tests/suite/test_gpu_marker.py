@@ -18,7 +18,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 
 def _pytest(test: Path, *args: str, cuda: bool = True) -> subprocess.CompletedProcess:
     """Run pytest on ``test`` in a fresh process under the repo's settings; ``cuda=False`` hides every CUDA device."""
-    env = dict(os.environ)
+    env = dict(os.environ, COLUMNS="1000")  # wide enough that the short summary keeps each whole message
     if not cuda:
         env["CUDA_VISIBLE_DEVICES"] = ""
     return subprocess.run(
@@ -83,7 +83,7 @@ def test_on_the_gpu_leg_a_gpu_test_that_finds_no_cuda_device_fails(tmp_path):
     """
     test = _scratch(tmp_path, '@pytest.mark.gpu\ndef test_uses_cuda():\n    wp.zeros(1, device="cuda:0")\n')
     run = _pytest(test, "--require-cuda", cuda=False)
-    failed = [e for e in _summary(run, "FAILED") if "::test_uses_cuda" in e]
+    failed = [e for e in _summary(run, "FAILED") + _summary(run, "ERROR") if "::test_uses_cuda" in e]
     assert any("no CUDA device" in e for e in failed), run.stdout[-3000:] + run.stderr[-3000:]
 
 
