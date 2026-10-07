@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar
 
+import numpy as np
+
 if TYPE_CHECKING:
     from .stages import Bound
 
@@ -71,8 +73,6 @@ class Signal:
         array of the signal's shape, so the next graph replay reads it, and a host buffer holds ``value``.
         """
         if self.device:
-            import numpy as np
-
             self.buffer.assign(np.asarray(value))
         else:
             self.buffer.value = value
@@ -156,7 +156,7 @@ def wire(ring: list[Bound]) -> None:
                     f"{signal.shape}: a reader reads the leading part of its writer's buffer"
                 )
         default = next((signal.default for _, signal in readers if signal.default is not None), None)
-        _hand(written._allocate(), [s for _, s in writes[name]] + [s for _, s in readers], default)
+        _hand(written._allocate(), [written, *(signal for _, signal in readers)], default)
     for name, written in writes.items():
         if name not in reads:  # an output no component reads: each writer keeps a buffer of its own
             for _, signal in written:
