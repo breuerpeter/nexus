@@ -25,10 +25,9 @@ if TYPE_CHECKING:
 
 @dataclass(slots=True)
 class Tick:
-    """The context one control tick hands every stage: the shared state and buffers a stage reads and
-    writes in place. ``controls`` is the controller's persistent ``(1, n)`` device buffer of normalized
-    per-actuator commands, which its stage sets and the command stages read, so a captured
-    graph reads the same buffer every replay. ``dt`` is one physics step, the control timestep over
+    """The context one control tick hands every stage: the loop's own state, which a stage reads and
+    writes in place. A value between two components is a signal the stages declare, not a field here.
+    ``dt`` is one physics step, the control timestep over
     ``physics_substeps``. ``sensors`` are the sensors with device stages, whose ``read`` fills ``meas``
     at a controller's ``read`` host stage. ``timeout`` bounds a host stage's wait on its peer. ``base`` is the
     index of the vehicle's base body, its airframe, in ``state``: a stage that reads the vehicle's true
@@ -42,7 +41,6 @@ class Tick:
     t: SimTime
     dt: float
     meas: Measurement
-    controls: Any = None
     sensors: list = field(default_factory=list)
     timeout: float | None = None
     base: int = 0
@@ -158,7 +156,7 @@ class Controller(Protocol):
         """The controller's per-tick work. A controller that blocks on a peer, PX4, or solves on the
         host, a Model Predictive Control (MPC) solver, states a ``read`` host stage for the sensor fan-in and an ``exchange`` host
         stage, :func:`nexus_sim._src.core.stages.peer_stages`; a device-native law, the Proportional Integral Derivative (PID) example, states device
-        stages. Its stage sets ``Tick.controls`` to the controller's persistent command buffer.
+        stages. A stage of it writes the controls, a ``Controls`` signal the command elements read.
 
         A controller with a peer, one that exposes ``attached``, connects after the loop's warm pass
         and graph capture, so a peer that dials in early waits on no kernel load. Its device stages

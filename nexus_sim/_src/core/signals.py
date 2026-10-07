@@ -105,7 +105,8 @@ def wire(ring: list[Bound]) -> None:
     input that no component writes reads its own buffer, which holds its default.
 
     Raises:
-        ValueError: A reader and its writer disagree on the type. The message names both ends.
+        ValueError: A device signal has no shape, a reader and its writer disagree on the type, or a
+            reader needs more of an axis than its writer's buffer holds. The message names both ends.
     """
     writes: dict[str, list[tuple[Bound, Signal]]] = {}
     reads: dict[str, list[tuple[Bound, Signal]]] = {}
@@ -114,10 +115,11 @@ def wire(ring: list[Bound]) -> None:
         if id(bound) in seen:  # the ring repeats the stages of each physics substep
             continue
         seen.add(id(bound))
-        for signal in bound.stage.reads:
-            reads.setdefault(signal.name, []).append((bound, signal))
-        for signal in bound.stage.writes:
-            writes.setdefault(signal.name, []).append((bound, signal))
+        for table, signals in ((reads, bound.stage.reads), (writes, bound.stage.writes)):
+            for signal in signals:
+                if signal.device and signal.shape is None:
+                    raise ValueError(f"{_owner(bound)} declares the device signal {signal.name!r} with no shape")
+                table.setdefault(signal.name, []).append((bound, signal))
     for name, readers in reads.items():
         if name not in writes:
             for _, signal in readers:
@@ -130,12 +132,22 @@ def wire(ring: list[Bound]) -> None:
                     f"{_owner(writer)} writes {name!r} as {_type(written)}, and {_owner(bound)} reads it as "
                     f"{_type(signal)}: a reader and its writer agree on the type"
                 )
+            if signal.device and not _fits(written.shape, signal.shape):
+                raise ValueError(
+                    f"{_owner(writer)} writes {name!r} with shape {written.shape}, and {_owner(bound)} reads "
+                    f"{signal.shape}: a reader reads the leading part of its writer's buffer"
+                )
         default = next((signal.default for _, signal in readers if signal.default is not None), None)
         _hand(written._allocate(), [s for _, s in writes[name]] + [s for _, s in readers], default)
     for name, written in writes.items():
         if name not in reads:  # an output no component reads: each writer keeps a buffer of its own
             for _, signal in written:
                 _hand(signal._allocate(), [signal], None)
+
+
+def _fits(written: tuple[int, ...], read: tuple[int, ...]) -> bool:
+    """Whether a reader of shape ``read`` takes the leading part of a buffer of shape ``written``."""
+    return len(written) == len(read) and all(w >= r for w, r in zip(written, read, strict=True))
 
 
 def _hand(buffer: Any, signals: list[Signal], default: Any) -> None:

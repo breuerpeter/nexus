@@ -115,15 +115,16 @@ class _ServoCommand:
         coord = self.control.joint_target_q.shape[0] == model.joint_coord_count
         self.index = int((model.joint_q_start if coord else model.joint_qd_start).numpy()[j])
         self.channel, self.scale = channel, scale
+        self.controls = Signal("controls", Controls, shape=(1, channel + 1))
 
     def stages(self):
-        return [Stage("servo", "device", self._write)]
+        return [Stage("servo", "device", self._write, reads=(self.controls,))]
 
     def _write(self, tick):
         wp.launch(
             _servo_target,
             dim=1,
-            inputs=(tick.controls, self.channel, self.scale, self.index),
+            inputs=(self.controls.buffer, self.channel, self.scale, self.index),
             outputs=(self.control.joint_target_q,),
         )
 

@@ -39,7 +39,7 @@ class SimTime:
 
 
 @dataclass(slots=True)
-class Controls:
+class Controls(DeviceType):
     """The controller→actuator command: always one command per actuator, normalized to ``[0, 1]``.
 
     This is the standardized actuator seam: the control law and the vehicle's mixer, the rate loop and
@@ -47,7 +47,12 @@ class Controls:
     Rate (CTBR), moments or Nonlinear Model Predictive Control (NMPC) thrusts, ``command`` is what the
     controller emits and the actuator chain takes in. A length-``n`` host ``np.ndarray`` on the PX4 and
     eager deploy paths, or a device-native ``(1, n)`` Warp array in the captured in-process loop.
+
+    As a signal, ``controls``, it lives on the device: a ``(1, n)`` array of floats, which the controller
+    writes and the command elements read.
     """
+
+    dtype: ClassVar[type] = float
 
     command: Any = None  # one entry per actuator: an np.ndarray of length n, or a (1, n) Warp array
 

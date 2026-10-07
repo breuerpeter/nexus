@@ -165,8 +165,8 @@ class Px4MavlinkController:
         """The ``read``, ``truth`` and ``exchange`` host stages: the MAVLink lockstep round-trip blocks on
         the peer, so it runs between graph replays.
         """
-        bind, read, exchange = peer_stages(self)
-        return [bind, read, Stage("truth", "host", self._truth), exchange]
+        read, exchange = peer_stages(self)
+        return [read, Stage("truth", "host", self._truth), exchange]
 
     def _truth(self, tick) -> None:
         """Copy the base body's true attitude and rates to the host, in PX4's frames, for the ground truth

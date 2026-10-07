@@ -16,7 +16,7 @@ import warp as wp
 
 from nexus_sim._src.core.interfaces import Stage
 from nexus_sim._src.core.orchestrator import Orchestrator
-from nexus_sim._src.core.schema import Controls, PositionGoal, ReferenceTrajectory, SimTime
+from nexus_sim._src.core.schema import PositionGoal, ReferenceTrajectory, SimTime
 from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.guidance import MissionGuidance, TrackingGuidance
 
@@ -116,7 +116,6 @@ class _ExchangeController:
     def stages(self):
         def exchange(tick):
             self.exchanges.append((tick.t.sim_time, tuple(self._state.pos), self.setpoint.read()))
-            tick.controls = Controls(command=[0.0, 0.0, 0.0, 0.0])
             return True
 
         return [Stage("read", "host", lambda tick: None), Stage("exchange", "host", exchange, reads=(self.setpoint,))]

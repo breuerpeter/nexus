@@ -18,6 +18,8 @@ from __future__ import annotations
 import warp as wp
 
 from nexus_sim._src.core.interfaces import Stage
+from nexus_sim._src.core.schema import Controls
+from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.vehicle.rotors import RPM_PER_RADS, find_rotor_joints
 
 
@@ -85,19 +87,18 @@ class RotorCommand:
         # Persistent small device buffers for the per-rotor command scatter.
         self._omega_cmd = wp.zeros(self.nr, dtype=float)
         self._drag_ff = wp.zeros(self.nr, dtype=float)
+        # The controller's commands, of which the first nr are the rotor motors: the builder checks that the
+        # controller writes at least that many, as PX4 streams 16 HIL_ACTUATOR_CONTROLS channels.
+        self.controls = Signal("controls", Controls, shape=(1, self.nr))
 
     def _write(self, tick) -> None:
         """The device stage: the controller's ``(1, n)`` normalized commands → rotor-speed targets and the
-        steady-state drag feedforward → scatter into the control arrays. The first ``nr`` commands are the
-        rotor motors: PX4 streams 16 HIL_ACTUATOR_CONTROLS channels.
+        steady-state drag feedforward → scatter into the control arrays.
         """
-        cmd = tick.controls
-        if cmd.shape[1] < self.nr:
-            raise ValueError(f"{type(self).__name__} expects at least {self.nr} per-rotor commands, got {cmd.shape[1]}")
         wp.launch(
             _rotor_targets,
             dim=self.nr,
-            inputs=(cmd, self.omega_max, self.cd, self.kf),
+            inputs=(self.controls.buffer, self.omega_max, self.cd, self.kf),
             outputs=(self._omega_cmd, self._drag_ff),
         )
         wp.launch(
@@ -108,8 +109,8 @@ class RotorCommand:
         )
 
     def stages(self) -> list[Stage]:
-        """One device stage, ``rotors``, reading the controller's command buffer."""
-        return [Stage("rotors", "device", self._write)]
+        """One device stage, ``rotors``, reading the controls."""
+        return [Stage("rotors", "device", self._write, reads=(self.controls,))]
 
 
 __all__ = ["RotorCommand"]

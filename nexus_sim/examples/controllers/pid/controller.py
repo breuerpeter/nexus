@@ -80,6 +80,8 @@ class PidController:
         self.weight = float(weight)
         self.moment_scale = float(moment_scale)
         self._moment_mixer = None
+        # The per-rotor commands the loop flies, which the moment mixer writes: one per rotor of the airframe.
+        self.controls = Signal("controls", Controls, shape=(1, mixer.nr)) if mixer is not None else None
         # Device-native state, lazily allocated on first Warp use; keeps the host/eager-numpy path
         # warp-free to import. ``gains_wp`` is the differentiable leaf the optimizer descends,
         # and can replace; ``_action_wp`` is a persistent moment buffer, static address -> graph-safe.
@@ -200,17 +202,20 @@ class PidController:
 
     def stages(self) -> list[Stage]:
         """One device stage, ``act``: the law over the observation sensor's device buffer, then the
-        moment mixer into the persistent ``(1, nr)`` command buffer the actuator reads. It reads the
+        moment mixer into the controls, the ``(1, nr)`` per-rotor commands the actuator reads. It reads the
         setpoint, the goal of that observation. The whole tick stays one graph.
-        """
-        return [Stage("act", "device", self._act_stage, reads=(self.setpoint,))]
 
-    def _act_stage(self, tick) -> None:
+        Raises:
+            RuntimeError: The controller has no airframe mixer, so it has no per-rotor commands to fly.
+        """
         if self._rotor_mixer is None:
             raise RuntimeError("PidController flies through the loop only with an airframe mixer")
+        return [Stage("act", "device", self._act_stage, reads=(self.setpoint,), writes=(self.controls,))]
+
+    def _act_stage(self, tick) -> None:
         self._ensure_wp()
         self.act_wp(tick.meas.observation, self._action_wp)  # law → moments, device-native
-        tick.controls = self._moment_mixer.cmd_wp(self._action_wp)  # moments → per-rotor commands, on-device
+        self._moment_mixer.cmd_wp(self._action_wp, out=self.controls.buffer)  # moments → per-rotor commands
 
     def bind_state_provider(self, fn) -> None:
         """Bind a callable returning ``(pos_w, quat_xyzw, lin_vel_w, ang_vel_w)`` for :meth:`exchange`."""

@@ -298,19 +298,20 @@ class StandInReference:
 
 
 class StandInController:
-    """A controller named `standin` that commands nothing, reads a planned reference as its setpoint and
-    logs one row of its own, `horizon`, each tick through the logger the loop hands it.
+    """A controller named `standin` that commands nothing, its controls all zero, reads a planned
+    reference as its setpoint and logs one row of its own, `horizon`, each tick through the logger the
+    loop hands it.
     """
 
     name = "standin"
 
     def __init__(self):
-        from nexus_sim._src.core.schema import ReferenceTrajectory
+        from nexus_sim._src.core.schema import Controls, ReferenceTrajectory
         from nexus_sim._src.core.signals import Signal
 
         self._logger = None
-        self._controls = None
         self.setpoint = Signal("setpoint", ReferenceTrajectory)
+        self.controls = Signal("controls", Controls, shape=(1, 16))  # every channel off: the vehicle rests
 
     def connect(self) -> None:
         pass
@@ -322,16 +323,13 @@ class StandInController:
         self._logger = logger
 
     def _act(self, tick) -> None:
-        if self._controls is None:
-            self._controls = wp.zeros((1, 16), dtype=wp.float32)  # every channel off: the vehicle rests
-        tick.controls = self._controls
         if self._logger is not None:
             self._logger.log_strip("horizon", [[0.0, 0.0, 1.0], [1.0, 0.0, 1.0]], color=(255, 140, 0))
 
     def stages(self):
         from nexus_sim._src.core.interfaces import Stage
 
-        return [Stage("act", "host", self._act, reads=(self.setpoint,))]
+        return [Stage("act", "host", self._act, reads=(self.setpoint,), writes=(self.controls,))]
 
 
 def fly_recorded(
