@@ -4,7 +4,7 @@ description: "The execution model of nexus, a ring of device and host stages tha
 
 # Execution & determinism
 
-The same components and the same fixed-order [tick](architecture.md#the-simulation-loop) run on a
+The same [components](concepts.md#component) and the same fixed-order [tick](concepts.md#tick) run on a
 CPU or a CUDA device. **Nothing selects a strategy**, and there is no knob for one. The one
 user-facing control is `--device {auto,cpu,cuda}`, as in
 `nexus run --vehicle astro_max_base --scene empty --device cpu`. The default, `auto`, takes the GPU
@@ -14,7 +14,7 @@ and captures graphs on CUDA.
 ## Stages and segments
 
 A [tick](concepts.md#tick) runs the [ring](concepts.md#ring) of [stages](concepts.md#stage) the
-components state, in the loop's fixed order. Device stages include the physics, the command and
+components state, in the loop's fixed order. Device stages include the [physics](concepts.md#physics), the command and
 force elements, a sensor's sampling kernel, the record taps, and the Proportional Integral
 Derivative (PID) law. On CUDA a device stage replays as part of a CUDA graph. On a CPU device it
 runs stage by stage, the bit-exact determinism authority. Host stages include PX4's `read` and
@@ -29,7 +29,7 @@ It rotates the ring to start after the last cut, so the ring's tail folds into t
 **Each [segment](concepts.md#segment) becomes one CUDA graph.** The host stages run between the replays. With no
 host stage the whole ring is one graph. A component that states no stages fails the build with an
 error that names it, and so does a stage of a kind the loop doesn't know. Nothing falls back to a
-slower path in silence. A run logs its plan once at start, for example
+slower path in silence. A [run](concepts.md#run) logs its plan once at start, for example
 `stage plan: graph(clear -> rotors -> propellers -> step -> record -> imu -> mag -> baro -> gps -> bind) host(read) host(truth) host(exchange)`.
 
 **A guidance passes its output through the tick.** Its stage is a host stage, and it holds no
@@ -66,7 +66,7 @@ The *same* thing gates CUDA-graph capture and reverse-mode automatic differentia
 cross a host, marshalling, or process boundary. The work that keeps the per-tick loop device-native
 unlocks both. The eager and differentiable paths share the per-tick control sequence of observe →
 control → actuate. They don't share the *outer* loop. They differ in their memory model, with
-persistent double-buffers for capture versus a per-step history for backprop-through-time, in host
+persistent double-buffers for capture versus one state per step for backprop-through-time, in host
 scaffolding, and in the physics assembly. So components take their buffers as arguments, and one
 set of Warp kernels serves both callers.
 

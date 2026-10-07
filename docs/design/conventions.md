@@ -4,14 +4,14 @@ description: "The conventions of nexus: where a contract lives, who declares eac
 
 # Conventions
 
-The rules for the components' contracts and for the project's names, then the structure of every
+The rules for the [components](concepts.md#component)' contracts and for the project's names, then the structure of every
 shipped vehicle. [Concepts](concepts.md) defines each term.
 
 ## Where a contract lives
 
 A contract lives at or below its consumer: in the caller's own package, or lower in the import layers
 `.importlinter` fixes. The [loop](concepts.md#loop) drives `Clock`, `Physics`, `Sensor`, `Controller`,
-`Renderer` and `Recorder`, and the stages a command element or a force element states, and sits at
+`Renderer` and `Recorder`, and the [stages](concepts.md#stage) a command element or a force element states, and sits at
 the bottom layer, so those contracts live in `core/`. A contract that sits higher
 than its consumer ends up written twice: once where the consumer can import it, once beside the
 implementations. That's how the actuator's contract came to exist in two files before this rule.
@@ -20,9 +20,9 @@ implementations. That's how the actuator's contract came to exist in two files b
 
 A vehicle **declares** a component in its Universal Scene Description (USD) when the component is a
 property of the machine: every [role](concepts.md#role) but the guidance. What a scene contributes
-is the scene's. The guidance is a property of the run, not of either, so it stays
-an **argument**: a flight constructs it and hands it to `Sim`. It holds no controller: the loop
-hands the setpoint it writes to the tick to the controller. PX4 takes none, because its own
+is the scene's. The guidance is a property of the [run](concepts.md#run), not of either, so it stays
+an **argument**: a flight constructs it and hands it to [`Sim`](concepts.md#sim). It holds no controller: the loop
+hands the setpoint it writes to the [tick](concepts.md#tick) to the controller. PX4 takes none, because its own
 navigator is its guidance. The `Renderer` follows from the vehicle: a sensor whose class requires
 the Kit render peer starts it. The clock, the [physics](concepts.md#physics), the
 [Recorder](concepts.md#recorder), and the [Logger](concepts.md#logger) stay **fixed**: one
@@ -37,13 +37,13 @@ A [peer](concepts.md#peer) enters a run in one of two ways, and one question sep
 the peer have a counterpart on the real vehicle?
 
 - A **declared peer** stands in for a part of the vehicle, so the vehicle's USD declares it with a
-  schema. PX4 Software In The Loop (SITL) stands in for the flight controller, and
+  [schema](concepts.md#schema). PX4 Software In The Loop (SITL) stands in for the flight controller, and
   `NexusPx4SitlAPI` on the vehicle's root prim declares it. The run starts it, and a run's override
   layer drops the declaration to attach to a process started elsewhere.
 - A **required peer** is part of the model that replaces a real component, so the component's class
   requires it, and no asset names it. The real camera is the component, and the Kit render peer is how
   its model computes an image. A camera's schema says what the camera is: its resolution and its
-  rate. The class the registry maps that schema to states `requires = ("kit",)`, and the build
+  rate. The class the [component registry](concepts.md#component-registry) maps that schema to states `requires = ("kit",)`, and the build
   starts the peer once for all the sensors that require it.
 
 The split is a design choice. A Kit schema on the vehicle would put a renderer into the description
@@ -59,7 +59,7 @@ collide.
 
 Where an address goes depends on which side of the run the link's end sits:
 
-- **An end inside the run**: the builder builds it from the run's addresses. The PX4 controller's
+- **An end inside the run**: the [builder](concepts.md#builder) builds it from the run's addresses. The PX4 controller's
   Hardware In The Loop (HIL) server is one, and the builder hands the controller its port.
 - **An end outside the run**: it reads its address from the run's [port map](concepts.md#port-map),
   `sim.ports`. PX4's

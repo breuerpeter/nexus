@@ -12,7 +12,7 @@ and drives it.
 
 ## The simulation loop
 
-Each tick runs the same fixed sequence, and the order is what makes runs reproducible:
+Each tick runs the same fixed sequence, and the order is what makes [runs](concepts.md#run) reproducible:
 
 ```
 t = clock.advance()
@@ -62,7 +62,7 @@ Each component fills one [role](concepts.md#role), and each role's contract is a
 fault-wrappable. Every component states its work as [stages](concepts.md#stage) over the
 [tick](concepts.md#tick). The fixed parts, the clock, the [physics](concepts.md#physics), the
 [Recorder](concepts.md#recorder) and the [Logger](concepts.md#logger), keep contracts of their own,
-such as `Clock` and `Physics`, and the Kit render peer's lifecycle rides the `Renderer` contract.
+such as `Clock` and `Physics`, and the Kit render [peer](concepts.md#peer)'s lifecycle rides the `Renderer` contract.
 
 The **scene and the vehicle aren't code interfaces**: they come from
 Universal Scene Description (USD). A single `VehicleUsd` reads the vehicle model through
@@ -112,8 +112,8 @@ controller, with a `ruckig` or min-snap planner. A flight constructs its guidanc
 guidance's own parameters and hands it to `Sim.from_orchestrator`.
 
 PX4 takes no guidance, because its own navigator sequences its missions, and no setpoint from the
-loop. A script commands it over its offboard link, a MAVLink link of its own beside the lockstep
-link. The run owns that link's address and names it in its port map, and the script opens its own
+loop. A script commands it over its offboard [link](concepts.md#link), a MAVLink link of its own beside the lockstep
+link. The run owns that link's address and names it in its [port map](concepts.md#port-map), and the script opens its own
 client there: [`nexus_sim.px4.OffboardClient`](../reference/api/px4.md) on `sim.ports["offboard"]`.
 [Conventions](conventions.md#who-owns-an-address) states the rule.
 
@@ -134,7 +134,7 @@ Newton's actuator.
   inflow into thrust and in-plane force on the rotor body. A force element adds and never assigns,
   so two elements on one body both act.
 
-The propeller's parameters, `ct`, `cd` and the aero terms, come from the `NexusPropellerAPI` schema
+The propeller's parameters, `ct`, `cd` and the aero terms, come from the `NexusPropellerAPI` [schema](concepts.md#schema)
 that each rotor's rigid body applies in the vehicle USD. The rotor speed at full command is the
 motor's no-load speed, `newton:velocityLimit`. The **mixer**, the
 Collective Thrust and Body Rates (CTBR) rate loop and the `B⁻¹` control allocation, lives in the
