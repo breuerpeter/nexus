@@ -88,6 +88,17 @@ def test_api_reference_documents_no_state():
     assert "State" not in names
 
 
+def test_the_public_surface_names_the_vehicle_and_scene_catalog_catalog_and_no_registry():
+    """The public surface names the vehicle and scene catalog `Catalog`, and no name `Registry`.
+
+    Given a fresh interpreter, when it imports `nexus_sim`, then `nexus_sim.Catalog` loads the bundled
+    catalog with its two vehicles, and `Registry` isn't in `nexus_sim.__all__`.
+    """
+    code = "import nexus_sim as nx; print(sorted(nx.Catalog.from_yaml().vehicles), 'Registry' in nx.__all__)"
+    out = subprocess.run([sys.executable, "-c", code], check=False, capture_output=True, text=True)
+    assert out.stdout.strip() == "['astro_max_base', 'astro_max_fpv'] False", out.stderr
+
+
 def test_importing_core_loads_neither_newton_nor_warp():
     """Importing core loads neither `newton` nor `warp`."""
     code = "import sys, nexus_sim._src.core; print('newton' in sys.modules, 'warp' in sys.modules)"

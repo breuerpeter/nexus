@@ -243,6 +243,19 @@ def test_sim_step_drives_px4_on_the_calling_thread(monkeypatch):
         assert fake.threads == [threading.main_thread(), threading.main_thread()]
 
 
+def test_sim_has_no_operator(tmp_path):
+    """`Sim` has no `operator`.
+
+    Given a `Sim` on the fixture vehicle, when a script reads `sim.operator`, then it raises
+    `AttributeError`.
+    """
+    from tests.usd import sensor_vehicle as sv
+
+    sim = sim_mod.Sim(sv.vehicle(tmp_path), scene="empty")
+    with pytest.raises(AttributeError):
+        _ = sim.operator
+
+
 def test_a_run_whose_controller_takes_no_setpoint_has_no_operator_and_the_error_names_the_port_map(monkeypatch):
     """A run whose controller takes no setpoint, as PX4's does, has no controller surface and no
     operator: the autopilot owns its mission in its own process, and a script commands it over a
