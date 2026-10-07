@@ -1,7 +1,7 @@
 """The passthrough estimator: each reader of its estimate gets the base body's true pose and twist of the same
-tick, from the pass before the first tick on. It flies the fixture quad of `tests/vehicle/quad.py` in free fall,
-on real physics, so every tick's state differs from the last. Each test scopes the device it uses, so the default
-device is the same after it.
+tick, from the pass before the first tick on. The run flies the fixture quad of `tests/vehicle/quad.py` in free
+fall, on real physics, so every tick's state differs from the last. Each test scopes the device it uses, so the
+default device is the same after it.
 """
 
 import numpy as np
@@ -15,9 +15,10 @@ import warp as wp
 from nexus_sim._src.api.sim import Sim
 from nexus_sim._src.build.assembly import build_scenario
 from nexus_sim._src.core import Clock, Orchestrator
-from nexus_sim._src.core.interfaces import Stage
-from nexus_sim._src.core.schema import PoseTwist, PositionGoal
-from nexus_sim._src.core.signals import Signal
+from nexus_sim._src.core.interfaces import Stage, Tick
+from nexus_sim._src.core.schema import Measurement, PoseTwist, PositionGoal, SimTime
+from nexus_sim._src.core.signals import Signal, wire
+from nexus_sim._src.core.stages import Bound
 from nexus_sim._src.guidance import MissionGuidance
 from nexus_sim._src.physics import NewtonPhysics
 from nexus_sim._src.physics.builders.usd import USDBuilder
@@ -104,3 +105,32 @@ def test_each_reader_gets_the_base_bodys_true_pose_and_twist_with_no_noise_and_n
         np.array_equal(_bits(guidance.kept), _bits(truth)[:, :3]),
         np.array_equal(_bits(controller.kept), _bits(truth)),
     ) == (True, True)
+
+
+class _TwoBodies:
+    """A physics state of two bodies, each with its own pose and twist: body 1 is the vehicle's base."""
+
+    def __init__(self):
+        self.body_q = wp.array(
+            np.array([[9.0, 9.0, 9.0, 0.0, 0.0, 0.0, 1.0], [1.0, 2.0, 3.0, 0.5, -0.5, 0.5, 0.5]], dtype=np.float32),
+            dtype=wp.transform,
+        )
+        self.body_qd = wp.array(
+            np.array([[9.0, 9.0, 9.0, 9.0, 9.0, 9.0], [4.0, 5.0, 6.0, 7.0, 8.0, 9.5]], dtype=np.float32),
+            dtype=wp.spatial_vector,
+        )
+
+
+@pytest.mark.usefixtures("warp_cpu")
+def test_the_passthrough_writes_the_base_bodys_pose_and_twist_not_body_zeros():
+    """The passthrough writes the pose and twist of the body the loop names as the base, not body 0's.
+
+    Given a physics state of two bodies and a tick that names body 1 the base, when the passthrough's stage
+    runs, then its estimate holds body 1's position, quaternion, linear velocity and angular velocity.
+    """
+    estimator = GroundTruthEstimator()
+    stage = estimator.stages()[0]
+    wire([Bound(stage, estimator, "estimator")])
+    stage.run(Tick(state=_TwoBodies(), t=SimTime(), dt=0.004, meas=Measurement(), base=1))
+
+    assert estimator.estimate.read()[0].tolist() == [1.0, 2.0, 3.0, 0.5, -0.5, 0.5, 0.5, 4.0, 5.0, 6.0, 7.0, 8.0, 9.5]

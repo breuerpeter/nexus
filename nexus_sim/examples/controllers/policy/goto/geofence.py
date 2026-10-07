@@ -30,8 +30,7 @@ class GeofenceGuidance(MissionGuidance):
 
     Args:
         bounds: The box as ``((x_min, y_min, z_min), (x_max, y_max, z_max))`` in world axes [m].
-        **mission: :class:`MissionGuidance`'s own arguments: ``reached_m``, ``final_hold_s`` and
-            ``body_index``.
+        **mission: :class:`MissionGuidance`'s own arguments: ``reached_m`` and ``final_hold_s``.
     """
 
     def __init__(self, *, bounds, **mission):

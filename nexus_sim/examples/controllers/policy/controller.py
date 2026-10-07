@@ -2,11 +2,11 @@
 
 Loads a policy exported by `nexus-rl`, Isaac Lab on the Newton backend, and runs it
 *in place of external PX4*, closing the loop from training on Isaac Lab on Newton to
-deployment on core. A trained policy is a **state-feedback** controller: it consumes ground-truth
+deployment on core. A trained policy is a **state-feedback** controller: it consumes the vehicle's
 kinematics as a 12-D observation, not the MAVLink Hardware in the Loop (HIL) sensor bundle. It
-builds that observation itself from the ground-truth ``meas.state`` a :class:`StateSensor` passes
-through the neutral ``Measurement`` seam, with no observation sensor, using the single
-train↔deploy obs source ``nexus_sim.examples._lib.observation``.
+builds that observation itself from the estimate, the base body's pose and twist an estimator writes,
+with no observation sensor, using the single train↔deploy obs source
+``nexus_sim.examples._lib.observation``.
 
 The exported policy maps ``obs[16] -> action[4]`` = ``[thrust, ωx_cmd, ωy_cmd, ωz_cmd]``, the
 Isaac-Lab quadcopter **Collective Thrust and Body Rate (CTBR)** action of collective thrust plus
@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from nexus_sim._src.core.schema import Controls, PositionGoal
+from nexus_sim._src.core.schema import Controls, PoseTwist, PositionGoal
 from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.core.stages import peer_stages
 from nexus_sim.examples._lib.observation import ACTION_DIM, build_observation
@@ -68,6 +68,8 @@ class TrainedPolicyController:
         # one does.
         self.goal_w = np.array(goal_w, dtype=np.float64)
         self.setpoint = Signal("setpoint", PositionGoal, shape=(1,), default=[goal_w])
+        # The vehicle's estimate, the base body's pose and twist an estimator writes: the observation's source.
+        self.estimate = Signal("estimate", PoseTwist, shape=(1, 13))
         self.action_clip = float(action_clip)
         self.device = device
         self.body_index = int(body_index)
@@ -103,10 +105,10 @@ class TrainedPolicyController:
         self._policy = None
 
     def stages(self):
-        """The ``read`` and ``exchange`` host stages: inference runs on the host between replays, toward
-        the setpoint the exchange reads.
+        """The ``read`` and ``exchange`` host stages: inference runs on the host between replays, over the
+        estimate and toward the setpoint the exchange reads.
         """
-        return peer_stages(self, reads=(self.setpoint,))
+        return peer_stages(self, reads=(self.setpoint, self.estimate))
 
     # -- inference ---------------------------------------------------------------
     def act(self, obs: np.ndarray) -> Controls:
@@ -157,33 +159,20 @@ class TrainedPolicyController:
     def exchange(self, meas, t, timeout=None) -> Controls | None:
         """Protocol-conforming step: flies through ``Orchestrator.run()`` exactly as PX4 does.
 
-        Builds the complete observation itself from the ground-truth ``meas.state`` a
-        :class:`StateSensor` passes through, via :meth:`obs_from_state`, the single train↔deploy obs
-        source, last action folded in. Also accepts a pre-built ``meas.observation`` from a
-        device-native obs sensor, or a bound state provider. Raises if none is present, because a
-        trained policy needs ground-truth state, not the HIL sensor bundle alone. In the loop, the goal
-        is the setpoint's: the exchange copies it to the host first.
+        Builds the complete observation from the estimate, the base body's pose and twist an estimator
+        writes, through :func:`~nexus_sim.examples._lib.observation.build_observation`, the single
+        train↔deploy obs source, last action folded in. In the loop, the goal is the setpoint's: the
+        exchange copies it to the host first.
         """
         if self.setpoint.buffer is not None:  # wired by the loop: fly to the goal the guidance writes
             self.goal_w[:] = self.setpoint.read()[0]
-        obs = getattr(meas, "observation", None)
-        if obs is None:
-            state = getattr(meas, "state", None)
-            if state is not None:
-                return self.act(self.obs_from_state(state))
-            provider = getattr(self, "_state_provider", None)
-            if provider is None:
-                raise RuntimeError(
-                    "TrainedPolicyController.exchange() needs ground-truth state. Add a StateSensor "
-                    "(it fills meas.state), or bind_state_provider(fn), or call act_from_state(state) "
-                    "directly."
-                )
-            pos_w, quat_xyzw, lin_w, ang_w = provider()
-            obs = build_observation(pos_w, quat_xyzw, lin_w, ang_w, self.goal_w, prev_action=self._prev_action)
+        est = self.estimate.read()[0]  # [pos(0:3), quat_xyzw(3:7), lin(7:10), ang(10:13)], world frame
+        obs = build_observation(
+            pos_w=est[0:3],
+            quat_xyzw=est[3:7],
+            lin_vel_w=est[7:10],
+            ang_vel_w=est[10:13],
+            goal_w=self.goal_w,
+            prev_action=self._prev_action,
+        )
         return self.act(obs)
-
-    def bind_state_provider(self, fn) -> None:
-        """Bind a callable returning ``(pos_w, quat_xyzw, lin_vel_w, ang_vel_w)`` for
-        :meth:`exchange`, the runtime's ground-truth kinematics plane.
-        """
-        self._state_provider = fn

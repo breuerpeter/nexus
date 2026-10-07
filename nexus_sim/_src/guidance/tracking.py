@@ -28,11 +28,10 @@ class TrackingGuidance(Guidance):
     Args:
         planner: ``waypoints -> reference``, the flight file's own, acados' min-snap planner.
         final_hold_s: Keep running this long, in sim time, after the trajectory completes.
-        body_index: The vehicle body whose position is the reference's start; 0 is the base.
     """
 
-    def __init__(self, *, planner: Callable, final_hold_s: float = 2.0, body_index: int = 0):
-        super().__init__(setpoint=Signal("setpoint", ReferenceTrajectory), body_index=body_index)
+    def __init__(self, *, planner: Callable, final_hold_s: float = 2.0):
+        super().__init__(setpoint=Signal("setpoint", ReferenceTrajectory))
         self._planner = planner
         self._final_hold_s = float(final_hold_s)
         self._end_at: float | None = None
@@ -40,11 +39,11 @@ class TrackingGuidance(Guidance):
         self.reference_started_at: float | None = None
 
     def stages(self) -> list[Stage]:
-        """One host stage, ``guidance``, which writes the setpoint and stays out of the warm pass. The
-        controller starts the reference's clock at the exchange that first reads it, and
+        """One host stage, ``guidance``, which reads the estimate, writes the setpoint and stays out of the
+        warm pass. The controller starts the reference's clock at the exchange that first reads it, and
         ``reference_started_at`` names that tick, so the plan waits for the run's first tick.
         """
-        return [Stage("guidance", "host", self._run, warm=False, writes=(self.setpoint,))]
+        return [Stage("guidance", "host", self._run, warm=False, reads=(self.estimate,), writes=(self.setpoint,))]
 
     def set_mission(self, setpoints: list[Setpoint]) -> None:
         """Set the waypoints the reference flies through; the plan waits for the first tick.

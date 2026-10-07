@@ -13,6 +13,7 @@ from __future__ import annotations
 from nexus_sim._src.build.assembly import resolve_device
 from nexus_sim._src.core import Clock, Orchestrator, logger
 from nexus_sim._src.physics import NewtonPhysics
+from nexus_sim._src.vehicle.estimators import GroundTruthEstimator
 
 
 def build_sampling_mpc_orchestrator(
@@ -36,7 +37,6 @@ def build_sampling_mpc_orchestrator(
     ``set_scene("slalom")``; the controller discovers the scene's shapes from the collapsed model.
     The guidance sequences the mission and writes each goal to the setpoint the controller reads.
     """
-    from nexus_sim._src.vehicle.sensors import StateSensor
     from nexus_sim.examples._lib import RigidBodyRotors, build_rotor_mixer_from_layout
     from nexus_sim.examples._lib.single_body import collapse_to_single_body
     from nexus_sim.examples.controllers.sampling_mpc.controller import SamplingMPCController
@@ -102,7 +102,8 @@ def build_sampling_mpc_orchestrator(
         clock=Clock(dt),
         physics=physics,
         actuator=actuator,
-        sensors=[StateSensor(), *extra_sensors],
+        sensors=extra_sensors,
+        estimator=GroundTruthEstimator(),
         controller=controller,
         renderer=renderer,
         logger=sink,

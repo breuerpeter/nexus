@@ -11,12 +11,9 @@ cross component boundaries.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import Any, ClassVar
 
 from .signals import DeviceType
-
-if TYPE_CHECKING:
-    import newton
 
 
 @dataclass(slots=True)
@@ -65,6 +62,8 @@ class PoseTwist(DeviceType):
     position (3), the orientation as a quaternion in ``(x, y, z, w)`` order (4), the linear velocity (3) and
     the angular velocity (3), the order of a body's row in the Recorder.
     """
+
+    dtype: ClassVar[type] = float
 
 
 @dataclass(slots=True)
@@ -140,10 +139,6 @@ class Measurement:
     ``exchange(meas)`` path as PX4. ``None`` when no such sensor runs; never
     serialized to MAVLink.
     """
-    # Ground-truth live newton.State for privileged state-feedback controllers; for example the
-    # Model Predictive Control (MPC) seeds its planner from body_q/body_qd. StateSensor fills it; None
-    # otherwise; never serialized.
-    state: newton.State | None = None
 
 
 # --- Setpoint: the guidance→controller command vocabulary ----------------

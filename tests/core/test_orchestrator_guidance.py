@@ -2,12 +2,12 @@
 tick is the one the controller reads on that tick. A guidance holds no controller and no stop: its
 stage writes the setpoint signal the controller reads, and marks the tick done when its mission is
 over, which the loop ends the run on. Stand-in components at the loop's seams, on the Warp CPU device,
-where every stage runs as plain Python on each tick.
+where every stage runs as plain Python on each tick; a stand-in estimator hands the guidance the
+scripted position.
 """
 
 import logging
 
-import numpy as np
 import pytest
 
 pytest.importorskip("warp")
@@ -16,7 +16,7 @@ import warp as wp
 
 from nexus_sim._src.core.interfaces import Stage
 from nexus_sim._src.core.orchestrator import Orchestrator
-from nexus_sim._src.core.schema import PositionGoal, ReferenceTrajectory, SimTime
+from nexus_sim._src.core.schema import PoseTwist, PositionGoal, ReferenceTrajectory, SimTime
 from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.guidance import MissionGuidance, TrackingGuidance
 
@@ -41,14 +41,10 @@ class _Clock:
 
 
 class _State:
-    """The physics state a guidance reads: one body, at the position a test scripts."""
+    """The physics state: one body, at the position a test scripts."""
 
     def __init__(self, pos):
         self.pos = pos
-
-    @property
-    def body_q(self):
-        return wp.array(np.array([[*self.pos, 0.0, 0.0, 0.0, 1.0]], dtype=np.float32), dtype=wp.transform)
 
 
 class _Physics:
@@ -77,6 +73,21 @@ class _Physics:
             Stage("clear", "device", lambda tick: self.clear_forces(tick.state)),
             Stage("step", "device", lambda tick: self.step(tick.state, tick.dt)),
         ]
+
+
+class _Estimator:
+    """An estimator whose stage writes the scripted position to the estimate the guidance reads."""
+
+    capturable = True
+
+    def __init__(self):
+        self.estimate = Signal("estimate", PoseTwist, shape=(1, 13))
+
+    def stages(self):
+        def estimate(tick):
+            self.estimate.write([[*tick.state.pos, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]])
+
+        return [Stage("estimate", "device", estimate, writes=(self.estimate,))]
 
 
 class _Actuator:
@@ -212,7 +223,13 @@ class _View:
 
 def _orch(controller, physics, **kw):
     return Orchestrator(
-        clock=_Clock(), physics=physics, actuator=_Actuator(), sensors=[_Sensor()], controller=controller, **kw
+        clock=_Clock(),
+        physics=physics,
+        actuator=_Actuator(),
+        sensors=[_Sensor()],
+        estimator=_Estimator(),
+        controller=controller,
+        **kw,
     )
 
 
@@ -367,6 +384,7 @@ def test_a_run_whose_controller_reads_no_setpoint_refuses_a_guidance_that_anothe
             physics=_Physics([(0.0, 0.0, 0.0)]),
             actuator=_Actuator(),
             sensors=[_SetpointSensor()],
+            estimator=_Estimator(),
             controller=_NoSetpointController(),
             guidance=guidance,
         )

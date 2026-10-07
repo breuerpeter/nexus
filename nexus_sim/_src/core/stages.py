@@ -1,8 +1,8 @@
 """The ring of stages one control tick runs, and its partition into captured segments.
 
 A tick is an ordered ring of stages, per docs/design/execution.md. :func:`build_ring` lays every
-component's stages out in the canonical order, sensors, guidance, controller, ``clear`` -> the command
-stages -> the force stages -> ``step`` per physics substep, record. :func:`partition` cuts the ring at
+component's stages out in the canonical order, sensors, estimator, guidance, controller, ``clear`` -> the
+command stages -> the force stages -> ``step`` per physics substep, record. :func:`partition` cuts the ring at
 its host stages and rotates it to
 start after the last cut, so the ring's tail folds into the first run and each maximal run of
 device stages becomes one CUDA graph; with no host stage the whole ring is one segment in canonical
@@ -34,7 +34,7 @@ class Bound:
 
     stage: Stage
     component: object
-    role: str  # sensor, guidance, controller, physics, command, force, actuator or record
+    role: str  # sensor, estimator, guidance, controller, physics, command, force, actuator or record
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,13 +74,25 @@ def device_sensors(ring: list[Bound]) -> list:
 
 
 def build_ring(
-    *, sensors, controller, physics, commands=(), forces=(), actuator=None, record: Stage, substeps: int, guidance=None
+    *,
+    sensors,
+    controller,
+    physics,
+    commands=(),
+    forces=(),
+    actuator=None,
+    record: Stage,
+    substeps: int,
+    estimator=None,
+    guidance=None,
 ) -> list[Bound]:
-    """Every component's stages in the canonical order the domain fixes: sensors, the guidance when the
-    run has one, controller, then ``clear`` -> the command stages -> the force stages -> ``step`` unrolled
-    ``substeps`` times, then ``record``. The guidance sits before the controller, so the setpoint it writes
-    is the one the controller reads on that tick. The old actuator seam's one stage, the
-    examples' single-body ``Rotors``, runs with the force stages, since it writes the body forces too.
+    """Every component's stages in the canonical order the domain fixes: sensors, the estimator and the
+    guidance when the run has them, controller, then ``clear`` -> the command stages -> the force stages ->
+    ``step`` unrolled ``substeps`` times, then ``record``. The estimator sits after the sensors, so it
+    reads their values of that tick, and before the guidance and the controller, so they read its estimate
+    of that tick. The guidance sits before the controller, so the setpoint it writes is the one the
+    controller reads on that tick. The old actuator seam's one stage, the examples' single-body ``Rotors``,
+    runs with the force stages, since it writes the body forces too.
 
     Raises:
         ValueError: A component states no stages, a stage of an unknown kind, or physics states no
@@ -89,6 +101,8 @@ def build_ring(
     ring = []
     for s in sensors:
         ring += stages_of(s, "sensor")
+    if estimator is not None:
+        ring += stages_of(estimator, "estimator")
     if guidance is not None:
         ring += stages_of(guidance, "guidance")
     ring += stages_of(controller, "controller")
@@ -131,14 +145,14 @@ def partition(ring: list[Bound]) -> list[Segment]:
 
 
 def seed_stages(ring: list[Bound]) -> list[Stage]:
-    """The stages of one pass over the settled state: the sensors' and the controller's warm device
-    stages, and the controller's host stages, in ring order. Physics, the command stages, the force
-    stages and the record stage never run here, so the settled state is the state the first tick starts from, and a
+    """The stages of one pass over the settled state: the sensors', the estimator's and the controller's
+    warm device stages, and the controller's host stages, in ring order. Physics, the command stages, the
+    force stages and the record stage never run here, so the settled state is the state the first tick starts from, and a
     sensor's host stage never does, so a camera's frame exchange starts with the first tick.
     """
     out = []
     for b in ring:
-        if b.role not in ("sensor", "controller"):
+        if b.role not in ("sensor", "estimator", "controller"):
             continue
         if b.stage.kind == "host":
             if b.role == "controller":
@@ -151,15 +165,16 @@ def seed_stages(ring: list[Bound]) -> list[Stage]:
 def warm_stages(ring: list[Bound]) -> list[Stage]:
     """The stages of the warm pass, which runs once over the settled state before any capture, in ring
     order and with no peer involved: the device stages of the seed pass, so every device buffer exists
-    and every kernel has loaded first, and a guidance's warm stage between the sensors' and the
-    controller's, so the controller holds the guidance's first setpoint before its own first stage.
+    and every kernel has loaded first, and a guidance's warm stage between the estimator's and the
+    controller's, so the guidance's first stage reads an estimate and the controller holds the guidance's
+    first setpoint before its own first stage.
     """
     out = []
     for b in ring:
         if b.role == "guidance":
             if b.stage.warm:
                 out.append(b.stage)
-        elif b.role in ("sensor", "controller") and b.stage.kind == "device" and b.stage.warm:
+        elif b.role in ("sensor", "estimator", "controller") and b.stage.kind == "device" and b.stage.warm:
             out.append(b.stage)
     return out
 

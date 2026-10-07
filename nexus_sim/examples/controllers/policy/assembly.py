@@ -2,8 +2,8 @@
 
 This example-owned assembly, moved out of core since PX4 is the one first-class control path, wires
 the same core components as the PX4 assembly: ``NewtonPhysics``, the full articulated Universal Scene
-Description (USD), the single-body ``Rotors`` actuator, a ground-truth :class:`StateSensor`, and the core
-``Orchestrator``. The controller builds its own observation from ``meas.state``, the single
+Description (USD), the single-body ``Rotors`` actuator, the passthrough estimator, and the core
+``Orchestrator``. The controller builds its own observation from the estimate, the single
 train↔deploy obs source, ``nexus_sim.examples._lib.observation``, and runs its TorchScript
 inference at the host seam; everything else captures, the captured-host-exchange strategy.
 """
@@ -13,6 +13,7 @@ from __future__ import annotations
 from nexus_sim._src.build.assembly import resolve_device
 from nexus_sim._src.core import Clock, Orchestrator, logger
 from nexus_sim._src.physics import NewtonPhysics
+from nexus_sim._src.vehicle.estimators import GroundTruthEstimator
 
 
 def build_policy_orchestrator(
@@ -56,7 +57,6 @@ def build_policy_orchestrator(
     import numpy as np
     import warp as wp
 
-    from nexus_sim._src.vehicle.sensors import StateSensor
     from nexus_sim.examples._lib import CtbrParams, RigidBodyRotors, build_rotor_mixer_from_model
     from nexus_sim.examples.controllers.policy.controller import TrainedPolicyController
 
@@ -105,12 +105,8 @@ def build_policy_orchestrator(
         mixer=mixer,
         ctbr_params=ctbr_params,
     )
-    # Ground-truth state through the neutral Measurement seam: the controller builds its own obs
-    # from meas.state, the single obs source; no observation sensor, no per-tick torch in the graph.
-    sensors = [StateSensor()]
     # The one runtime seam, see the core assembly: an optional renderer + its host-rate sensors.
-    renderer, extra_sensors = renderer_factory(physics, builder, cfg) if renderer_factory else (None, [])
-    sensors += extra_sensors
+    renderer, sensors = renderer_factory(physics, builder, cfg) if renderer_factory else (None, [])
 
     # Optional Rerun recording of the rollout: viewer → serve live on :9876; not viewer → write the
     # full .rrd, to record_to_rrd, else a timestamped default.
@@ -131,6 +127,9 @@ def build_policy_orchestrator(
         physics=physics,
         actuator=actuator,
         sensors=sensors,
+        # The controller builds its own obs from the estimate, the single obs source; no observation
+        # sensor, no per-tick torch in the graph.
+        estimator=GroundTruthEstimator(),
         controller=controller,
         renderer=renderer,
         logger=sink,

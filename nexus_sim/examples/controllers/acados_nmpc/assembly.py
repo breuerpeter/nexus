@@ -15,6 +15,7 @@ from __future__ import annotations
 from nexus_sim._src.build.assembly import resolve_device, rotor_chain
 from nexus_sim._src.core import Clock, Orchestrator, logger
 from nexus_sim._src.physics import NewtonPhysics
+from nexus_sim._src.vehicle.estimators import GroundTruthEstimator
 
 
 def build_acados_orchestrator(
@@ -35,7 +36,6 @@ def build_acados_orchestrator(
     import numpy as np
 
     from nexus_sim._src.vehicle.rotors import find_rotor_joints
-    from nexus_sim._src.vehicle.sensors import StateSensor
     from nexus_sim.examples.controllers.acados_nmpc.controller import AcadosNMPCController
 
     logger.info(f"device: {resolve_device(cfg)}")
@@ -93,7 +93,8 @@ def build_acados_orchestrator(
         physics=physics,
         commands=commands,
         forces=forces,
-        sensors=[StateSensor(), *extra_sensors],
+        sensors=extra_sensors,
+        estimator=GroundTruthEstimator(),
         controller=controller,
         renderer=renderer,
         logger=sink,

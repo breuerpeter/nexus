@@ -2,7 +2,8 @@
 
 A tick is an ordered ring of stages, per docs/design/execution.md. Every component states its
 per-tick work as a list of ``Stage``: a device stage joins a CUDA graph, a host stage runs between
-graph replays. The loop lays the stages out in the canonical order, sensors -> controller ->
+graph replays. The loop lays the stages out in the canonical order, sensors -> estimator -> guidance ->
+controller ->
 [clear -> the command stages -> the force stages -> step] per physics substep -> record, cuts the ring at its host stages and
 rotates it to start after the last cut, so each maximal run of device stages becomes one CUDA
 graph, the Real Time Factor (RTF) lever, and the host stages run between
@@ -24,7 +25,7 @@ from .interfaces import Stage, Tick
 from .logging import logger
 from .ports import PortMap
 from .profiling import LoopProfiler
-from .schema import Measurement
+from .schema import Measurement, PoseTwist
 from .signals import wire
 from .stages import build_ring, device_sensors, partition, plan_line, seed_stages, warm_stages
 
@@ -116,6 +117,7 @@ class Orchestrator:
         physics: Physics,
         sensors: Iterable[Sensor],
         controller: Controller,
+        estimator: object | None = None,
         guidance: object | None = None,
         commands: Iterable[object] = (),
         forces: Iterable[object] = (),
@@ -148,6 +150,12 @@ class Orchestrator:
                 seed pass waits for it; its stages set the command buffer; ``close()`` tears down.
                 A controller with a peer exposes ``attached``, false until the peer dials in,
                 which holds the seed pass's clock.
+            estimator: Optional estimator, for a guidance or a controller that reads the vehicle's state:
+                its stages run each tick after the sensors' and before the guidance's, and write the
+                estimate, the base body's pose and twist, which the guidance and the controller read in
+                place of the physics state. A run whose guidance or controller reads the estimate fails
+                without one. The loop reads the attribute when it builds the ring, at the first step.
+                ``None`` for PX4, whose estimator runs in its peer.
             guidance: Optional guidance, for a controller that reads a setpoint: its stages run each
                 tick after the sensors' and before the controller's. It holds no controller: its
                 stage writes the setpoint signal the controller reads, so the controller reads a new
@@ -200,6 +208,7 @@ class Orchestrator:
         self.actuator = actuator
         self.sensors = list(sensors)
         self.controller = controller
+        self.estimator = estimator  # the loop reads it when it builds the ring, at the first step
         self.guidance = guidance  # the loop reads it when it builds the ring, at the first step
         self.renderer = renderer
         self.peers = list(peers)
@@ -215,6 +224,7 @@ class Orchestrator:
             *((c, f"vehicle/commands/{_instance(c)}") for c in self.commands),
             *((f, f"vehicle/forces/{_instance(f)}") for f in self.forces),
             *([(actuator, f"vehicle/actuators/{_instance(actuator)}")] if actuator is not None else []),
+            *([(estimator, f"vehicle/estimators/{_instance(estimator)}")] if estimator is not None else []),
             (controller, f"vehicle/controllers/{_instance(controller)}"),
             *(
                 (s, f"vehicle/sensors/{name}")
@@ -451,6 +461,7 @@ class Orchestrator:
                 self.add_loggable(self.guidance, "guidance")
             ring = build_ring(
                 sensors=self.sensors,
+                estimator=self.estimator,
                 guidance=self.guidance,
                 controller=self.controller,
                 physics=self.physics,
@@ -460,6 +471,7 @@ class Orchestrator:
                 record=record,
                 substeps=self.physics_substeps,
             )
+            self._check_estimator(ring)
             wire(ring)  # every signal a stage declares gets its buffer before any stage runs
             self._check_guidance(ring)
             segments = partition(ring)
@@ -516,6 +528,25 @@ class Orchestrator:
     def _controller_name(self) -> str:
         """The controller's class, so a run's end names the peer that left it: ``Px4MavlinkController``."""
         return type(self.controller).__name__
+
+    def _check_estimator(self, ring) -> None:
+        """Check that a stage writes the estimate when a guidance or a controller reads it: a run takes an
+        estimator for a guidance or a controller that reads the vehicle's state.
+
+        Raises:
+            ValueError: A stage reads the estimate, and no stage writes it, as on a run built with no
+                estimator. The message names each reader's class and the estimator.
+        """
+        if any(s.type is PoseTwist for b in ring for s in b.stage.writes):
+            return
+        readers = list(
+            dict.fromkeys(type(b.component).__name__ for b in ring for s in b.stage.reads if s.type is PoseTwist)
+        )
+        if readers:
+            raise ValueError(
+                f"{' and '.join(readers)} read the estimate, and no estimator writes it: a run whose guidance or "
+                "controller reads the vehicle's state takes an estimator, and PX4 estimates in its own peer"
+            )
 
     def _check_guidance(self, ring) -> None:
         """Check that the controller reads a signal the guidance writes, when the run has a guidance: a
