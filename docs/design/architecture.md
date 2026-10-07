@@ -60,7 +60,8 @@ persistent, in-place device buffers with static shapes, so the device region can
 Each component fills one [role](concepts.md#role), and each role's contract is a narrow, typed
 `Protocol`, light on side effects, so each component is independently testable and
 fault-wrappable. Every component states its work as [stages](concepts.md#stage) over the
-[tick](concepts.md#tick). The fixed parts, the clock, the [physics](concepts.md#physics), the
+[tick](concepts.md#tick), and each stage declares the [signals](concepts.md#signal) it reads and
+writes. The fixed parts, the clock, the [physics](concepts.md#physics), the
 [Recorder](concepts.md#recorder) and the [Logger](concepts.md#logger), keep contracts of their own,
 such as `Clock` and `Physics`, and the Kit render [peer](concepts.md#peer)'s lifecycle rides the `Renderer` contract.
 
@@ -102,11 +103,11 @@ same loop:
 **What to fly is separate from how it flies.** A controller that takes setpoints flies the mission
 of its **guidance**, the outer loop of the control cascade, reached through
 [`sim.guidance`](../reference/api/guidance.md). The guidance is a component of the loop, and it
-holds no other component: it passes its output through the tick, as every stage does. Its stage
-runs each tick after the sensors' and before the controller's. It writes a changed setpoint, a
-`PositionGoal`, `Waypoints` or `ReferenceTrajectory`, to the tick, and the loop hands that to the
-controller's `accept_setpoint`, so the controller narrows it on that same tick. When the mission
-is over, the stage marks the tick done, and the loop ends the run. `MissionGuidance` sequences
+holds no other component. Its stage runs each tick after the sensors' and before the controller's.
+It writes the setpoint, a [signal](execution.md#signals) of one setpoint type, a `PositionGoal` or a
+`ReferenceTrajectory`, and the controller reads it on that same tick. The loop checks before any
+stage runs that the controller reads the type the guidance writes. When the mission is over, the
+stage marks the tick done, and the loop ends the run. `MissionGuidance` sequences
 position goals and advances on arrival. `TrackingGuidance` plans one reference for a tracking
 controller, with a `ruckig` or min-snap planner. A flight constructs its guidance from the
 guidance's own parameters and hands it to `Sim.from_orchestrator`.

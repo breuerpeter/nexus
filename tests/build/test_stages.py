@@ -1,6 +1,6 @@
-"""The Proportional Integral Derivative (PID) example on the stage loop: the trajectory main recorded
-and the seed row ``Sim.start()`` returns with. The CUDA tests are `gpu`; each test scopes the
-device it uses, so the default device is the same after it.
+"""The Proportional Integral Derivative (PID) example on the stage loop: the trajectory main recorded,
+the seed row ``Sim.start()`` returns with, and the run a guidance of another setpoint type stops. The
+CUDA tests are `gpu`; each test scopes the device it uses, so the default device is the same after it.
 """
 
 import hashlib
@@ -17,6 +17,7 @@ from nexus_sim._src.api.sim import Sim
 from nexus_sim._src.build.assembly import build_scenario
 from nexus_sim._src.build.launch import resolve_vehicle_usd
 from nexus_sim._src.config import LaunchConfig
+from nexus_sim._src.guidance import TrackingGuidance
 from nexus_sim.examples.controllers.pid.assembly import build_pid_orchestrator
 from tests.usd import sensor_vehicle as sv
 
@@ -70,3 +71,36 @@ def test_start_returns_with_the_seed_row_and_the_first_tick_recorded(device, tmp
         sim.start()
         rows = len(sim.physics[sim.base_body].history())
     assert rows == 2
+
+
+class _Reference:
+    """A planned reference, the shape a tracking guidance writes."""
+
+    duration = 4.0
+
+    def set_start(self, p0):
+        pass
+
+    def reference_path(self):
+        return []
+
+
+def test_a_guidance_whose_setpoint_type_its_controller_does_not_read_fails_the_run_naming_both(tmp_path):
+    """A guidance that writes a setpoint of another type than its controller reads fails the run before any
+    stage runs, and the error names both components and both types.
+
+    Given the PID example's run and a `TrackingGuidance`, which writes a `ReferenceTrajectory`, when the run
+    starts, then it fails before any stage runs, and the error names `TrackingGuidance`, `PidController`,
+    `ReferenceTrajectory` and `PositionGoal`. No stage ran, so the recording holds no row.
+    """
+    guidance = TrackingGuidance(planner=lambda waypoints: _Reference())
+    guidance.set_mission([(1.0, 0.0, 1.5)])
+    with (
+        wp.ScopedDevice("cpu"),
+        Sim.from_orchestrator(_pid(cpu=True, max_steps=50, vehicle=sv.vehicle(tmp_path)), guidance=guidance) as sim,
+    ):
+        with pytest.raises(ValueError) as e:
+            sim.run()
+        rows = len(sim.physics[sim.base_body].history())
+    words = ("TrackingGuidance", "PidController", "ReferenceTrajectory", "PositionGoal")
+    assert (all(word in str(e.value) for word in words), rows) == (True, 0)

@@ -38,7 +38,8 @@ from nexus_sim._src.api.sim import Sim
 from nexus_sim._src.config import Catalog, LaunchConfig
 from nexus_sim._src.core.interfaces import Stage
 from nexus_sim._src.core.orchestrator import Orchestrator
-from nexus_sim._src.core.schema import SimTime
+from nexus_sim._src.core.schema import Controls, SimTime
+from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
 from nexus_sim._src.vehicle.controllers.px4 import controller as ctrl
 from tests.usd import sensor_vehicle as sv
@@ -179,7 +180,7 @@ class _Actuator:
         pass
 
     def stages(self):
-        return [Stage("forces", "device", lambda tick: self.forces(tick.controls, tick.state))]
+        return [Stage("forces", "device", lambda tick: self.forces(None, tick.state))]
 
 
 def _loop(controller, **kw):
@@ -450,16 +451,20 @@ _FAKE_PX4 = {"px4_sitl": Px4Fake}
 
 
 class _Commands:
-    """An actuator that keeps the command it's handed each tick, the controls the controller received."""
+    """An actuator that keeps the controls it reads each tick, the commands the controller received."""
 
     def __init__(self):
         self.seen: list[tuple[float, ...]] = []
+        self.controls = Signal("controls", Controls, shape=(1, 16))
 
     def forces(self, controls, state):
         pass
 
     def stages(self):
-        return [Stage("forces", "host", lambda tick: self.seen.append(tuple(tick.controls.numpy()[0].tolist())))]
+        def keep(tick):
+            self.seen.append(tuple(self.controls.read()[0].tolist()))
+
+        return [Stage("forces", "host", keep, reads=(self.controls,))]
 
 
 def _step(loop, ticks: int) -> list[bool]:

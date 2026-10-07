@@ -11,7 +11,9 @@ cross component boundaries.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
+
+from .signals import DeviceType
 
 if TYPE_CHECKING:
     import newton
@@ -37,7 +39,7 @@ class SimTime:
 
 
 @dataclass(slots=True)
-class Controls:
+class Controls(DeviceType):
     """The controller→actuator command: always one command per actuator, normalized to ``[0, 1]``.
 
     This is the standardized actuator seam: the control law and the vehicle's mixer, the rate loop and
@@ -45,7 +47,12 @@ class Controls:
     Rate (CTBR), moments or Nonlinear Model Predictive Control (NMPC) thrusts, ``command`` is what the
     controller emits and the actuator chain takes in. A length-``n`` host ``np.ndarray`` on the PX4 and
     eager deploy paths, or a device-native ``(1, n)`` Warp array in the captured loop.
+
+    As a signal, ``controls``, it lives on the device: a ``(1, n)`` array of floats, which the controller
+    writes and the command elements read.
     """
+
+    dtype: ClassVar[type] = float
 
     command: Any = None  # one entry per actuator: an np.ndarray of length n, or a (1, n) Warp array
 
@@ -131,22 +138,22 @@ class Measurement:
 
 # --- Setpoint: the guidance→controller command vocabulary ----------------
 #
-# Setpoints are heterogeneous, so the core owns NO fixed buffer. A `Setpoint` is a small marshalled
-# *intent* value, such as `Controls`/`Measurement`; the **controller** owns its own typed persistent
-# buffer and writes it in place from the setpoint in ``Controller.accept_setpoint(sp)``, a §6
-# value-mutation, so the next CUDA-graph replay picks it up with zero re-capture, per the capture contract.
-# A guidance, `MissionGuidance`, writes its setpoint to the tick, and the loop makes that call, between
-# graph replays, never inside the captured region. Each controller narrows the union to the variant it
-# supports and raises on the rest.
+# Each setpoint is a type the signal `setpoint` takes, which a guidance writes and a controller reads, so
+# the builder checks that the two agree before the capture. A guidance writes it in place between graph
+# replays, never inside the captured region, so the next replay reads it with zero re-capture.
 
 
 @dataclass(slots=True)
-class PositionGoal:
+class PositionGoal(DeviceType):
     """A single move-to / hold goal in the world frame, Newton FLU / Z-up. Consumed by the
     state-feedback controllers, policy and pid: the guidance feeds one ``PositionGoal`` at a time and
     sequences a mission by advancing it on arrival; the controller is goal-relative, so each is a
     fresh single-goal problem. ``yaw`` is the optional heading [rad]; ``None`` = don't command yaw.
+
+    As a signal it lives on the device, one ``vec3`` of the position, since no controller reads yaw.
     """
+
+    dtype: ClassVar[str] = "vec3"
 
     pos: tuple[float, float, float]
     yaw: float | None = None
@@ -154,9 +161,9 @@ class PositionGoal:
 
 @dataclass(slots=True)
 class Waypoints:
-    """An ordered list of world-frame positions the *controller* holds and advances internally;
-    in the sampling MPC, reach-radius advances the persistent ``target`` buffer. Distinct from a
-    mission the *guidance* sequences with ``PositionGoal``: here the whole path is the setpoint.
+    """An ordered list of world-frame positions the *controller* holds and advances internally.
+    Distinct from a mission the *guidance* sequences with ``PositionGoal``: here the whole path is the
+    setpoint.
     """
 
     points: list[tuple[float, float, float]] = field(default_factory=list)
@@ -173,8 +180,8 @@ class ReferenceTrajectory:
     reference: Any = None
 
 
-# The neutral union a guidance writes and every controller's
-# `accept_setpoint` narrows. Evaluated eagerly, as a real ``types.UnionType``, because the
+# The neutral union of the setpoint types: a guidance writes one of them, and its controller declares
+# the one it reads. Evaluated eagerly, as a real ``types.UnionType``, because the
 # ``from __future__`` import only stringifies *annotations*, not this assignment, so it stays a usable
 # runtime value: ``isinstance(sp, Setpoint)`` / ``typing.get_args(Setpoint)``.
 Setpoint = PositionGoal | Waypoints | ReferenceTrajectory

@@ -31,6 +31,7 @@ import numpy as np
 
 from nexus_sim._src.core.interfaces import Stage
 from nexus_sim._src.core.schema import Controls, PositionGoal
+from nexus_sim._src.core.signals import Signal
 
 from .law import DEFAULT_GAINS, hover_action, pid_action_np
 
@@ -65,11 +66,11 @@ class PidController:
         body_index: int = 0,
     ):
         self.gains = np.asarray(gains, dtype=np.float32)
-        # Owned, mutable goal buffer, on the host: obs_from_state and the exchange fallback read it, and
-        # accept_setpoint writes it in place. The device path's goal lives in the WarpObservationSensor's
-        # persistent buffer, bound via bind_goal_buffer; accept_setpoint updates both, kept in sync.
+        # Owned goal on the host: obs_from_state and the exchange fallback read it.
         self.goal_w = np.array(goal_w, dtype=np.float64)
-        self._goal_wp = None  # the shared device goal buffer, WarpObservationSensor.goal, bound at build
+        # The goal the loop flies to: the setpoint a guidance writes, `goal_w` until one does. The
+        # observation sensor's kernel reads it, since the observation is still a sensor of its own.
+        self.setpoint = Signal("setpoint", PositionGoal, shape=(1,), default=[goal_w])
         self.thrust_to_weight = float(thrust_to_weight)
         self.hover = hover_action(thrust_to_weight)
         self.body_index = int(body_index)
@@ -79,6 +80,8 @@ class PidController:
         self.weight = float(weight)
         self.moment_scale = float(moment_scale)
         self._moment_mixer = None
+        # The per-rotor commands the loop flies, which the moment mixer writes: one per rotor of the airframe.
+        self.controls = Signal("controls", Controls, shape=(1, mixer.nr)) if mixer is not None else None
         # Device-native state, lazily allocated on first Warp use; keeps the host/eager-numpy path
         # warp-free to import. ``gains_wp`` is the differentiable leaf the optimizer descends,
         # and can replace; ``_action_wp`` is a persistent moment buffer, static address -> graph-safe.
@@ -199,39 +202,21 @@ class PidController:
 
     def stages(self) -> list[Stage]:
         """One device stage, ``act``: the law over the observation sensor's device buffer, then the
-        moment mixer into the persistent ``(1, nr)`` command buffer the actuator reads. The whole tick
-        stays one graph.
-        """
-        return [Stage("act", "device", self._act_stage)]
+        moment mixer into the controls, the ``(1, nr)`` per-rotor commands the actuator reads. It reads the
+        setpoint, the goal of that observation. The whole tick stays one graph.
 
-    def _act_stage(self, tick) -> None:
+        Raises:
+            RuntimeError: The controller has no airframe mixer, so it has no per-rotor commands to fly.
+        """
         if self._rotor_mixer is None:
             raise RuntimeError("PidController flies through the loop only with an airframe mixer")
+        return [Stage("act", "device", self._act_stage, reads=(self.setpoint,), writes=(self.controls,))]
+
+    def _act_stage(self, tick) -> None:
         self._ensure_wp()
         self.act_wp(tick.meas.observation, self._action_wp)  # law → moments, device-native
-        tick.controls = self._moment_mixer.cmd_wp(self._action_wp)  # moments → per-rotor commands, on-device
+        self._moment_mixer.cmd_wp(self._action_wp, out=self.controls.buffer)  # moments → per-rotor commands
 
     def bind_state_provider(self, fn) -> None:
         """Bind a callable returning ``(pos_w, quat_xyzw, lin_vel_w, ang_vel_w)`` for :meth:`exchange`."""
         self._state_provider = fn
-
-    def bind_goal_buffer(self, goal_wp) -> None:
-        """Share the ``WarpObservationSensor``'s persistent device goal buffer, so ``accept_setpoint``
-        updates the goal the device-native obs kernel actually reads; the build wires this.
-        """
-        self._goal_wp = goal_wp
-
-    # -- the setpoint input ---------
-    def accept_setpoint(self, sp) -> None:
-        """Write the move-to goal **in place** from a :class:`PositionGoal`: the host buffer, for
-        ``obs_from_state`` and the fallback, and, when bound, the device goal buffer, where ``.assign``
-        makes the captured obs kernel pick it up on the next replay. A single goal set before the run goes
-        into the capture once, the PID-determinism and design-opt path; a mission advances it in a host
-        stage. Raises on a non-``PositionGoal`` variant, since PID flies to a position, not waypoints or a
-        reference.
-        """
-        if not isinstance(sp, PositionGoal):
-            raise TypeError(f"PidController accepts a PositionGoal setpoint, got {type(sp).__name__}")
-        self.goal_w[:] = np.asarray(sp.pos, dtype=np.float64)
-        if self._goal_wp is not None:
-            self._goal_wp.assign(np.asarray([sp.pos], dtype=np.float32))

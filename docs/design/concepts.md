@@ -1,5 +1,5 @@
 ---
-description: "Every term the framework's code and docs use, each defined once, in the words the code uses: a run and its loop, the tick and its stages, components and their roles, peers and links, declaration, and recording."
+description: "Every term the framework's code and docs use, each defined once, in the words the code uses: a run and its loop, the tick with its stages and signals, components and their roles, peers and links, declaration, and recording."
 ---
 
 # Concepts
@@ -48,8 +48,9 @@ run down.
 ### Tick
 
 One control step of the loop: each stage in the ring runs once, and the physics steps its
-substeps. `Tick` is the context the loop hands every stage: the time, the physics state, and
-the buffers the stages share.
+substeps. `Tick` is the loop's own context, which it hands every stage: the time, the physics
+state and the sensors' measurement. A value one component passes to another is a
+[signal](#signal), not a field of the tick.
 
 ### Stage
 
@@ -69,6 +70,13 @@ the controller. Once per physics substep, `clear`, the command elements, the for
 A maximal run of device stages between two host stages of the ring. On CUDA the loop captures each
 segment as one CUDA graph and replays it every tick. With no host stage the whole ring is one
 segment. [Execution](execution.md#stages-and-segments) says how the loop cuts and replays them.
+
+### Signal
+
+A named, typed value that one component writes and others read on the tick, a `Signal`. Each
+stage declares the signals it reads and writes. Before any stage runs, the loop wires each input
+to the one output of its name and hands the writer and each reader one buffer.
+[Execution](execution.md#signals) says where a signal's buffer lives and what the loop checks.
 
 ## The parts of a run
 

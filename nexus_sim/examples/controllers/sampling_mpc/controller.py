@@ -11,8 +11,8 @@ over the horizon, the optimisation replayed from a captured graph, the sampling 
 
 The controller is task-parameterized: the caller passes the **batched rollout model**, ``num_rollouts``
 differentiable drones + the cost-only obstacle pillars, the obstacle shape indices, the rotor geometry,
-and the initial ``goal_w``; the guidance advances the active target, which ``accept_setpoint(PositionGoal)`` takes,
-uniform with policy/pid. The per-rotor rollout dynamics is the shared single-body motor
+and the initial ``goal_w``; the guidance advances the active target, the ``PositionGoal`` setpoint the
+rollout reads, uniform with policy/pid. The per-rotor rollout dynamics is the shared single-body motor
 model :func:`~nexus_sim.examples._lib.rigid_body_wrench_world`, so planner ≡ the real-sim
 :class:`~nexus_sim.examples._lib.rotors.Rotors` actuator: both consume per-rotor commands and
 run the forward-``B`` allocation. The cost-weight defaults below tune a gentle arrive-and-stop with
@@ -28,6 +28,7 @@ import warp.optim
 from newton.geometry import sdf_capsule  # warp-callable Signed Distance Field (SDF) for the collision-cost kernel
 
 from nexus_sim._src.core.schema import PositionGoal
+from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.core.stages import peer_stages
 from nexus_sim.examples._lib import build_rotor_mixer_from_layout, rigid_body_wrench_world
 
@@ -216,7 +217,7 @@ class SamplingMPCController:
         turning_dirs,
         ct,
         rpm_max,
-        goal_w=(0.0, 0.0, 1.0),  # initial target; the guidance advances it, through accept_setpoint(PositionGoal)
+        goal_w=(0.0, 0.0, 1.0),  # initial target; the guidance advances it, through the setpoint
         dt,
         num_rollouts=16,
         control_points=5,  # trajectory knots; interpolated over the horizon: low-dim → effective sampling
@@ -253,10 +254,10 @@ class SamplingMPCController:
         obs_indices = [i for i in range(len(sb)) if sb[i] == -1 and st[i] == int(newton.GeoType.CAPSULE)]
         self.obs_indices = wp.array(np.asarray(obs_indices, dtype=np.int32), dtype=int)
         self.num_obstacles = len(obs_indices)
-        # The ACTIVE target: a persistent (1,) vec3 buffer the rollout reads; accept_setpoint advances it
-        # in place via .assign without invalidating the captured CUDA graph, because the rollout reads its
+        # The ACTIVE target: the setpoint, a persistent (1,) vec3 buffer the rollout reads. The guidance
+        # writes it in place without invalidating the captured CUDA graph, because the rollout reads its
         # current contents. The guidance owns mission sequencing, advance on arrival, uniform with policy/pid.
-        self.target = wp.array(np.asarray([goal_w], dtype=np.float32), dtype=wp.vec3)
+        self.setpoint = Signal("setpoint", PositionGoal, shape=(1,), default=[goal_w])
 
         self.model = batch_model
         self.solver = newton.solvers.SolverSemiImplicit(batch_model)
@@ -310,8 +311,10 @@ class SamplingMPCController:
         pass
 
     def stages(self):
-        """The ``read`` and ``exchange`` host stages: the per-tick solve runs on the host between replays."""
-        return peer_stages(self)
+        """The ``read`` and ``exchange`` host stages: the per-tick solve runs on the host between replays,
+        toward the setpoint the exchange reads.
+        """
+        return peer_stages(self, reads=(self.setpoint,))
 
     name = "sampling_mpc"  # the instance name: its rows land at sim/vehicle/controllers/sampling_mpc
 
@@ -373,7 +376,7 @@ class SamplingMPCController:
                 inputs=(
                     self.S[h + 1].body_q,
                     self.S[h + 1].body_qd,
-                    self.target,
+                    self.setpoint.buffer,
                     self.step_controls[h],
                     self.n_rotors,
                     self.horizon,
@@ -452,14 +455,3 @@ class SamplingMPCController:
         self._k = (self._k + 1) % self.replan_every
         self._step += 1
         return Controls(command=u0)
-
-    # -- the setpoint input ---------
-    def accept_setpoint(self, sp) -> None:
-        """Write the active target **in place** from a :class:`PositionGoal` via ``.assign``: the captured
-        rollout reads the buffer's current contents, so no graph re-capture. Uniform with policy/pid: the
-        guidance sequences a mission, advance on arrival, and the planner always optimizes toward the
-        current target. Raises on a non-``PositionGoal`` variant.
-        """
-        if not isinstance(sp, PositionGoal):
-            raise TypeError(f"SamplingMPCController accepts a PositionGoal setpoint, got {type(sp).__name__}")
-        self.target.assign(np.asarray([sp.pos], dtype=np.float32))

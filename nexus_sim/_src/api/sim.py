@@ -23,7 +23,6 @@ from nexus_sim._src.recording import ChannelMap, Recorder
 
 if TYPE_CHECKING:
     from nexus_sim._src.core import Orchestrator
-    from nexus_sim._src.core.interfaces import Controller
     from nexus_sim._src.guidance import Guidance
 
 
@@ -145,9 +144,9 @@ class Sim:
         Args:
             orch: The built orchestrator; its components already carry the renderer and logger.
             guidance: The guidance the flight constructed, for example
-                ``MissionGuidance(reached_m=0.3)``. Its stage runs each tick before the controller's,
-                and the loop hands the setpoint it writes to the controller. ``None`` flies with
-                whatever setpoint the controller holds.
+                ``MissionGuidance(reached_m=0.3)``. Its stage runs each tick before the controller's
+                and writes the setpoint the controller reads. ``None`` flies the controller to the
+                setpoint's default.
             observe: Attach the ``Recorder`` behind ``sim.physics`` and ``sim.sensors``.
 
         Returns:
@@ -228,7 +227,7 @@ class Sim:
         # step-driven the same way as any other.
         return self
 
-    # -- the guidance of a setpoint controller, the run's port map, and the controller --
+    # -- the guidance of a setpoint controller, and the run's port map --
     @property
     def guidance(self) -> Guidance:
         """The guidance of this run: the component a flight constructed and handed to
@@ -271,18 +270,6 @@ class Sim:
         if self._orch is None:
             raise RuntimeError("enter the Sim context first (`with nx.Sim(...) as sim:`)")
         return self._orch.ports
-
-    @property
-    def controller(self) -> Controller | None:
-        """The controller that takes setpoints, through ``accept_setpoint``, or ``None`` for PX4,
-        which owns its mission in the external process and takes commands over its offboard link,
-        which a script opens on :attr:`ports`.
-
-        Returns:
-            The controller that takes setpoints, or ``None`` for a PX4 run.
-        """
-        ctrl = getattr(self._orch, "controller", None) if self._orch is not None else None
-        return ctrl if (ctrl is not None and hasattr(ctrl, "accept_setpoint")) else None
 
     def start(self, timeout: float | None = None) -> None:
         """Drive the run's setup, returning once the first control tick has completed.

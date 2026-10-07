@@ -25,6 +25,7 @@ from .logging import logger
 from .ports import PortMap
 from .profiling import LoopProfiler
 from .schema import Measurement
+from .signals import wire
 from .stages import build_ring, device_sensors, partition, plan_line, seed_stages, warm_stages
 
 if TYPE_CHECKING:
@@ -92,7 +93,9 @@ class Orchestrator:
     """Fixed-order, deterministic per-tick driver over typed component boundaries.
 
     Runs the ring of stages every component states, sensors -> controller -> actuate and step ->
-    record, per docs/design/execution.md. On a CUDA device each maximal run of device stages
+    record, per docs/design/execution.md. Before any stage runs, it wires the signals the stages
+    declare: each input meets the one output of its name, and a pair that disagrees on the type or
+    the shape stops the run. On a CUDA device each maximal run of device stages
     replays as one CUDA graph and the host stages run between replays; on a CPU device the same
     segments run stage by stage. The partition is component-agnostic: it reads each stage's stated
     kind, never a component's type.
@@ -145,19 +148,18 @@ class Orchestrator:
                 seed pass waits for it; its stages set the command buffer; ``close()`` tears down.
                 A controller with a peer exposes ``attached``, false until the peer dials in,
                 which holds the seed pass's clock.
-            guidance: Optional guidance, for a controller that takes setpoints: its stages run each
+            guidance: Optional guidance, for a controller that reads a setpoint: its stages run each
                 tick after the sensors' and before the controller's. It holds no controller: its
-                stage writes a changed setpoint to the tick, and the loop hands that to the
-                controller's ``accept_setpoint``, so the controller reads it on that tick. Its stage
-                marks the tick done when its mission is over, which ends the run. A flight can also
-                set the ``guidance`` attribute before the first step. ``None`` for PX4, which flies
-                its own missions.
-            commands: The command elements: each turns the controller's command buffer into Newton's
+                stage writes the setpoint signal the controller reads, so the controller reads a new
+                setpoint on the tick the guidance writes it. Its stage marks the tick done when its
+                mission is over, which ends the run. A flight can also set the ``guidance`` attribute
+                before the first step. ``None`` for PX4, which flies its own missions.
+            commands: The command elements: each turns the controls the controller writes into Newton's
                 control inputs, the rotors' speed targets and feedforward, in its device stages.
             forces: The force elements: each adds its body wrenches to the shared ``state.body_f``
                 from the current state, the propellers' thrust and drag, in its device stages.
             actuator: The old actuator seam, the examples' single-body ``Rotors``: one device stage
-                that writes the shared body forces from the controller's command buffer. ``None``
+                that writes the shared body forces from the controls the controller writes. ``None``
                 for a run on the command and force seams.
             renderer: Optional render-lifecycle object, for example the Kit render peer's
                 :class:`~nexus_sim._src.rendering.KitRenderer`: the loop calls only
@@ -280,16 +282,6 @@ class Orchestrator:
         if component not in self._loggables:
             self._loggables.append(component)
         component.set_logger(self._scoped(path))
-
-    # -- the guidance's setpoint, from the tick to the controller -------------------
-    def _hand_over(self, tick) -> None:
-        """Hand the setpoint a guidance's stage wrote to the tick to the controller, and clear it. The
-        loop calls this after a host stage, between graph replays, so the controller's in-place write
-        reaches the next replay with no new capture. A no-op on a tick that carries none.
-        """
-        if tick.setpoint is not None:
-            self.controller.accept_setpoint(tick.setpoint)
-            tick.setpoint = None
 
     # -- component-owned recording, the read-side twin of logging -----------------
     def attach_recorder(self, recorder) -> None:
@@ -453,15 +445,9 @@ class Orchestrator:
             if self.renderer is not None and hasattr(self.renderer, "on_physics_ready"):
                 self.renderer.on_physics_ready()
             record = Stage("record", "device", lambda tick: self._record_tick())
-            if self.guidance is not None:
-                # Checked here, since a flight can hand the guidance over after construction.
-                if not hasattr(self.controller, "accept_setpoint"):
-                    raise TypeError(
-                        f"{self._controller_name()} takes no setpoint, so this run takes no guidance: a "
-                        "guidance commands a controller that takes setpoints, and PX4 flies its own missions"
-                    )
-                if hasattr(self.guidance, "set_logger"):
-                    self.add_loggable(self.guidance, "guidance")
+            if self.guidance is not None and hasattr(self.guidance, "set_logger"):
+                # Here, since a flight can hand the guidance over after construction.
+                self.add_loggable(self.guidance, "guidance")
             ring = build_ring(
                 sensors=self.sensors,
                 guidance=self.guidance,
@@ -473,6 +459,8 @@ class Orchestrator:
                 record=record,
                 substeps=self.physics_substeps,
             )
+            wire(ring)  # every signal a stage declares gets its buffer before any stage runs
+            self._check_guidance(ring)
             segments = partition(ring)
             captured = _on_cuda()
             logger.info(plan_line(segments, captured))
@@ -493,13 +481,12 @@ class Orchestrator:
             if not peer:
                 self.controller.connect()
             # The warm pass, over the settled state. A guidance's warm stage runs between the sensors'
-            # and the controller's, and the loop hands its setpoint over at once, so the controller
-            # holds the first goal before its own first stage. The log opens at the settled state's
-            # time, so the markers a guidance logs here sit on the timeline.
+            # and the controller's and writes its setpoint, so the controller holds the first goal
+            # before its own first stage. The log opens at the settled state's time, so the markers a
+            # guidance logs here sit on the timeline.
             self._begin_log(tick.t)
             for st in warm_stages(ring):
                 st.run(tick)
-                self._hand_over(tick)
             self._record_tick()  # the settled pre-flight row, the datum every climb measures against
             graphs = self._capture(segments, tick) if captured else None
             if peer:
@@ -528,6 +515,23 @@ class Orchestrator:
     def _controller_name(self) -> str:
         """The controller's class, so a run's end names the peer that left it: ``Px4MavlinkController``."""
         return type(self.controller).__name__
+
+    def _check_guidance(self, ring) -> None:
+        """Check that the controller reads a signal the guidance writes, when the run has a guidance: a
+        run takes a guidance only for a controller that reads a setpoint.
+
+        Raises:
+            TypeError: The controller reads nothing the guidance writes, as on a PX4 run, whose controller
+                reads no setpoint, whatever other component reads it. The message names the controller.
+        """
+        if self.guidance is None:
+            return
+        written = {s.name for b in ring if b.role == "guidance" for s in b.stage.writes}
+        if not written & {s.name for b in ring if b.role == "controller" for s in b.stage.reads}:
+            raise TypeError(
+                f"{self._controller_name()} reads no setpoint, so this run takes no guidance: a guidance "
+                "writes the setpoint a controller reads, and PX4 flies its own missions"
+            )
 
     def _stop_peers(self) -> None:
         """Stop each peer the build started. A peer whose stop fails, a docker daemon that went
@@ -600,9 +604,8 @@ class Orchestrator:
         """The steady loop as a generator: one control tick per ``yield``, which step() drives.
         Each tick advances the clock, opens its log, then runs the segments in ring order: a device
         segment replays its graph, or runs stage by stage without one, and a host stage runs on the
-        host between replays. After a host stage the loop hands a setpoint the stage wrote to the tick
-        to the controller. A host stage that reports its peer gone ends the run, and so does a tick a
-        stage marked done, once it completes. The ``finally``
+        host between replays. A host stage that reports its peer gone ends the run, and so does a tick
+        a stage marked done, once it completes. The ``finally``
         stamps the RTF, so it runs whether the generator runs out or closes early on stop.
         """
         count = 0
@@ -632,7 +635,6 @@ class Orchestrator:
                             raise ConnectionError(
                                 f"{self._controller_name()} disconnected (no actuator controls received)"
                             )
-                        self._hand_over(tick)  # a guidance's changed setpoint, before the controller's stages
                         prof.mark(st.name)
                     elif replay is not None:
                         prof.gpu_begin()

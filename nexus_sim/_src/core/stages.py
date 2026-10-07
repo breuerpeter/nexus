@@ -18,6 +18,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from .interfaces import Stage
+from .schema import Controls
+from .signals import Signal
 
 if TYPE_CHECKING:
     from .interfaces import Tick
@@ -77,8 +79,7 @@ def build_ring(
     """Every component's stages in the canonical order the domain fixes: sensors, the guidance when the
     run has one, controller, then ``clear`` -> the command elements -> the force elements -> ``step`` unrolled
     ``substeps`` times, then ``record``. The guidance sits before the controller, so the setpoint it writes
-    to the tick, which the loop hands to the controller after the guidance's stage, is the one the
-    controller reads on that tick. The old actuator seam's one stage, the
+    is the one the controller reads on that tick. The old actuator seam's one stage, the
     examples' single-body ``Rotors``, runs with the force stages, since it writes the body forces too.
 
     Raises:
@@ -185,37 +186,35 @@ def read_sensors(tick: Tick) -> None:
         s.read(tick.meas)
 
 
-def peer_stages(controller) -> list[Stage]:
-    """The stages of a controller that blocks on a peer or solves on the host: ``bind``, a device
-    stage with no kernel, binds ``Tick.controls`` to a persistent ``(1, 16)`` device command buffer in
-    the warm pass, so the command elements' stages capture over it before the peer connects; ``read`` fans
-    the sensors into the ``Measurement``; ``exchange`` runs the controller's ``exchange`` and copies
-    its commands into the buffer. ``None`` from the exchange reads as the peer not answering, which
-    the stage reports by returning ``False``.
+def peer_stages(controller, *, reads: tuple = ()) -> list[Stage]:
+    """The stages of a controller that blocks on a peer or solves on the host: ``read`` fans the sensors
+    into the ``Measurement``, and ``exchange`` runs the controller's ``exchange`` and writes its commands
+    to the controls, a ``(1, 16)`` device signal, in place between graph replays. The builder allocates
+    that buffer before the capture, so the command elements' stages capture over it before the peer connects.
+    ``None`` from the exchange reads as the peer not answering, which the stage reports by returning
+    ``False``. ``reads`` are the signals the controller's ``exchange`` reads, such as its setpoint, which
+    the ``exchange`` stage declares.
     """
-    import warp as wp
-
-    buf = wp.zeros((1, CHANNELS), dtype=float)
+    controls = Signal("controls", Controls, shape=(1, CHANNELS))
     cmd = np.zeros((1, CHANNELS), dtype=np.float32)
 
-    def bind(tick):
-        tick.controls = buf
-
     def exchange(tick):
-        controls = controller.exchange(tick.meas, tick.t, tick.timeout)
-        if controls is None:
+        out = controller.exchange(tick.meas, tick.t, tick.timeout)
+        if out is None:
             return False
-        command = np.asarray(controls.command, dtype=np.float32).reshape(-1)
+        command = np.asarray(out.command, dtype=np.float32).reshape(-1)
         if command.shape[0] > CHANNELS:
             raise ValueError(
                 f"{type(controller).__name__} sent {command.shape[0]} commands, over the {CHANNELS} channels"
             )
         cmd[0, : command.shape[0]] = command
-        buf.assign(cmd)
-        tick.controls = buf
+        controls.write(cmd)
         return True
 
-    return [Stage("bind", "device", bind), Stage("read", "host", read_sensors), Stage("exchange", "host", exchange)]
+    return [
+        Stage("read", "host", read_sensors),
+        Stage("exchange", "host", exchange, reads=tuple(reads), writes=(controls,)),
+    ]
 
 
 __all__ = [

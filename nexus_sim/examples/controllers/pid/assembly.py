@@ -108,14 +108,12 @@ def build_pid_orchestrator(
         moment_scale=moment_scale,
     )
     # Device-native obs sensor: fills meas.observation with a Warp array so the PID's exchange runs
-    # on-device with no per-tick host hop -> the whole tick is one graph / tape-able.
-    sensors = [WarpObservationSensor(goal_w=goal_w)]
+    # on-device with no per-tick host hop -> the whole tick is one graph / tape-able. Its kernel reads
+    # the controller's setpoint, the goal a guidance writes, until the observation moves into PID's stage.
+    sensors = [WarpObservationSensor(goal_w=goal_w, setpoint=controller.setpoint)]
     # Rendering enters here alone, as in the core assembly: an optional renderer plus its host-rate sensors.
     renderer, extra_sensors = renderer_factory(physics, vehicle_usd, cfg) if renderer_factory else (None, [])
     sensors += extra_sensors
-    # Share the sensor's persistent device goal buffer with the controller, so the guidance's
-    # accept_setpoint(.assign) reaches the captured obs kernel: the capture contract.
-    controller.bind_goal_buffer(sensors[0].goal)
     if sink is None and rerun:  # central Rerun recording, §10: the .rrd of a standard PID run
         from nexus_sim._src.logging import build_logger
 

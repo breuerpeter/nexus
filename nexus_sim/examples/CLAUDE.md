@@ -4,20 +4,23 @@ in the script, and it records its flight `.rrd`. The launcher map is `_EXAMPLES`
 - A non-PX4 controller example, `controllers/<name>/`, self-assembles its orchestrator in its own
   `assembly.py` and enters via `Sim.from_orchestrator`. Its flight file constructs its guidance,
   a `MissionGuidance` or a `TrackingGuidance` from `nexus_sim._src.guidance`, from the guidance's own
-  parameters, and hands it over as `guidance=`. A guidance holds no controller and no stop: its
-  stage writes a changed setpoint to `tick.setpoint`, which the loop hands to the controller's
-  `accept_setpoint`, and sets `tick.done` when its mission is over, which ends the run. The policy
-  example's `GeofenceGuidance` is the worked example of a guidance an example specialises.
+  parameters, and hands it over as `guidance=`. A guidance holds no controller and no stop. Its
+  stage writes the `setpoint` signal, a `PositionGoal` or a `ReferenceTrajectory`, which the
+  controller declares it reads. The stage sets `tick.done` when its mission is over, which ends the
+  run. The policy example's `GeofenceGuidance` is the worked example of a guidance an example
+  specialises.
 - Every component states its per-tick work as `stages()`, a list of `Stage` from
-  `nexus_sim._src.core.interfaces`. A controller that solves on the host returns `peer_stages(self)`
-  from `nexus_sim._src.core.stages`: the Model Predictive Control (MPC), acados, and policy examples.
-  Those are a `bind` device stage that binds `tick.controls` to a persistent `(1, 16)` command
-  buffer, and the `read` and `exchange` host stages over its `exchange(meas, t, timeout)`. A
-  device-native law, the Proportional Integral Derivative (PID) example, states a device stage
-  that sets `tick.controls` to its persistent `(1, nr)` command buffer. The loop never calls
-  `exchange` itself. A controller with a peer, one with an `attached` flag, connects after the
-  capture, so its device buffers exist from construction. One without a peer connects before the
-  warm pass.
+  `nexus_sim._src.core.interfaces`, and each stage declares the `Signal`s, from
+  `nexus_sim._src.core.signals`, that it reads and writes. The loop wires them before any stage
+  runs: a kernel takes a signal's `buffer`, and a host stage calls its `read()` and `write()`. A
+  controller that solves on the host returns `peer_stages(self, reads=(self.setpoint,))` from
+  `nexus_sim._src.core.stages`: the Model Predictive Control (MPC), acados, and policy examples.
+  Those are the `read` and `exchange` host stages over its `exchange(meas, t, timeout)`, and the
+  `exchange` stage writes the `(1, 16)` `controls` signal. A device-native law, the Proportional
+  Integral Derivative (PID) example, states a device stage that writes its `(1, nr)` `controls`
+  signal. The loop never calls `exchange` itself. A controller with a peer, one with an `attached`
+  flag, connects after the capture, so its device buffers exist from construction. One without a
+  peer connects before the warm pass.
 - An example hands the loop its rotor chain in one of two ways. One that sums the rotor wrench on
   the base body, the PID, policy and sampling MPC examples, passes `_lib`'s `Rotors` as the loop's
   `actuator`, the old seam the loop keeps for it. Where such an example keeps the articulated

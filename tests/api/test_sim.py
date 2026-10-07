@@ -158,15 +158,11 @@ def test_sim_passes_device_into_launch(monkeypatch):
 
 
 class _FakeController:
-    def __init__(self):
-        self.setpoints = []
-
-    def accept_setpoint(self, sp):
-        self.setpoints.append(sp)
+    pass
 
 
 class _SetpointOrch:
-    """An orchestrator whose controller has accept_setpoint: run() is synchronous, fires on_tick."""
+    """An orchestrator whose controller reads a setpoint: run() is synchronous, fires on_tick."""
 
     def __init__(self):
         self.sensors = []
@@ -214,11 +210,9 @@ def test_sim_hands_the_flights_guidance_to_the_orchestrator_and_runs():
     # A self-assembled orchestrator enters via from_orchestrator, the examples' entry, with its guidance.
     with sim_mod.Sim.from_orchestrator(fake, guidance=guidance) as sim:
         assert sim.guidance is guidance and fake.guidance is guidance  # the guidance joins the loop
-        assert sim.controller is fake.controller  # the controller, which has accept_setpoint
         assert fake.on_tick is None  # the hook stays the caller's: the guidance rides a stage
         sim.guidance.set_mission([(0.0, 0.0, 4.0)])
-        assert tuple(guidance.active_setpoint.pos) == (0.0, 0.0, 4.0)  # the loop hands it over, not Sim
-        assert fake.controller.setpoints == []
+        assert tuple(guidance.active_setpoint.pos) == (0.0, 0.0, 4.0)  # its stage writes it, not Sim
         sim.run()
         assert fake.ran  # ran synchronously, no thread
         assert sim.results() == {"control_steps": 1, "rtf": 1.0}
@@ -254,24 +248,6 @@ def test_sim_has_no_operator(tmp_path):
     sim = sim_mod.Sim(sv.vehicle(tmp_path), scene="empty")
     with pytest.raises(AttributeError):
         _ = sim.operator
-
-
-def test_a_run_whose_controller_takes_no_setpoint_shows_a_script_no_controller(monkeypatch):
-    """A run whose controller takes no setpoint, as PX4's does, shows a script no controller: the
-    autopilot owns its mission in its own process, and a script commands it over a link it opens
-    itself.
-
-    Given a `Sim` over a controller that takes no setpoint, when a script reads `sim.controller`,
-    then it's `None`.
-    """
-    fake = _FakeOrch()
-    monkeypatch.setattr(sim_mod, "build_from_launch", lambda launch, **kw: fake)
-
-    with sim_mod.Sim("astro_max_base", scene="empty", device="cpu") as sim:
-        sim.start(timeout=30.0)
-        controller = sim.controller
-
-    assert controller is None
 
 
 def test_sim_takes_no_control_argument():

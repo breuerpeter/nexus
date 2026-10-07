@@ -10,8 +10,8 @@ smooth flat-state reference.
 A pure *tracking* controller: the planner lives with the **guidance**, by default the min-snap plus
 differential-flatness ``nexus_sim.examples._lib.min_snap.MinSnapReference``, with the ruckig
 ``FlatnessReference`` as the jerk-limited fallback, which plans
-the whole-path flat-state reference and hands it over via ``accept_setpoint(ReferenceTrajectory)``.
-The controller stores that queryable reference and tracks it.
+the whole-path flat-state reference and writes it to the setpoint, a ``ReferenceTrajectory`` on the host.
+The controller reads that queryable reference and tracks it.
 
 The formulation:
   * **State, 13 wide:** position, quaternion orientation, velocity, body rate.
@@ -36,6 +36,8 @@ import os
 
 import numpy as np
 
+from nexus_sim._src.core.schema import ReferenceTrajectory
+from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.core.stages import peer_stages
 
 GRAVITY = 9.81
@@ -134,9 +136,10 @@ class AcadosNMPCController:
     normalised throttle. The solver warm-starts from the earlier solution, which is what makes one
     real-time iteration per tick enough.
 
-    This controller doesn't own the reference: the guidance plans it, min-snap → flatness, and hands it
-    over via :meth:`accept_setpoint`. Before a reference arrives, the one tick between the run starting and
-    the guidance's first host stage, the controller holds hover.
+    This controller doesn't own the reference: the guidance plans it, min-snap → flatness, and writes it to
+    the setpoint. The controller restarts its reference's clock and its warm start on each new reference it
+    reads there. Before a reference arrives, the one tick between the run starting and the guidance's first
+    tick, the controller holds hover.
     """
 
     def __init__(
@@ -168,7 +171,11 @@ class AcadosNMPCController:
         self.rpm_max = float(rpm_max)
         self.t_max = self.ct * self.rpm_max * self.rpm_max  # per-rotor max thrust [N] = actuator clamp at throttle 1
         self.hover = float(mass) * GRAVITY / self.n
-        self.reference = None  # the guidance hands this over via accept_setpoint(ReferenceTrajectory)
+        # The setpoint the guidance writes, a ReferenceTrajectory on the host, and the one this controller
+        # last read, so it notices a new reference by its identity.
+        self.setpoint = Signal("setpoint", ReferenceTrajectory)
+        self._read = None
+        self.reference = None  # the tracked reference, from the setpoint
         self._ref_step0 = None  # the control step at which the active reference started, the time anchor
         self._logger = None  # the orchestrator hands over the Logger, None when off; gates the horizon viz
         self.track_err = []  # per-tick ‖realized − reference‖ world position error, the evo-style APE gate
@@ -233,8 +240,10 @@ class AcadosNMPCController:
         pass
 
     def stages(self):
-        """The ``read`` and ``exchange`` host stages: the per-tick solve runs on the host between replays."""
-        return peer_stages(self)
+        """The ``read`` and ``exchange`` host stages: the per-tick solve runs on the host between replays,
+        tracking the reference the exchange reads from the setpoint.
+        """
+        return peer_stages(self, reads=(self.setpoint,))
 
     name = "acados_nmpc"  # the instance name: its rows land at sim/vehicle/controllers/acados_nmpc
 
@@ -247,33 +256,32 @@ class AcadosNMPCController:
     def close(self) -> None:  # lifecycle teardown: nothing to release, the horizon logs from exchange()
         pass
 
-    # -- the setpoint input ---------
-    def accept_setpoint(self, sp) -> None:
-        """Accept the guidance-planned tracking reference, a :class:`ReferenceTrajectory` carrying a
-        queryable ``FlatnessReference``. The controller stores it and tracks it from the next tick; the
-        time anchor + the warm-start cold-seed reset so the trajectory plays from its start. Raises on a
-        non-``ReferenceTrajectory`` variant, because acados tracks a reference, not a single goal.
+    def _read_setpoint(self) -> None:
+        """Read the setpoint, and on a new reference, a :class:`ReferenceTrajectory` carrying a queryable
+        ``FlatnessReference``, track it from this exchange: the time anchor and the warm start reset, so the
+        trajectory plays from its start.
         """
-        from nexus_sim._src.core.schema import ReferenceTrajectory
-
-        if not isinstance(sp, ReferenceTrajectory):
-            raise TypeError(f"AcadosNMPCController accepts a ReferenceTrajectory setpoint, got {type(sp).__name__}")
-        self.reference = sp.reference
-        self._ref_step0 = None  # re-anchor: the trajectory plays from t=0 at the next exchange
+        setpoint = self.setpoint.read() if self.setpoint.buffer is not None else None
+        if setpoint is self._read:
+            return
+        self._read = setpoint
+        self.reference = None if setpoint is None else setpoint.reference
+        self._ref_step0 = None  # re-anchor: the trajectory plays from t=0 at this exchange
         self._first = True  # cold-seed the warm start at the current state for the fresh reference
 
     def reference_path(self, n: int = 300) -> np.ndarray:
         return self.reference.reference_path(n) if self.reference is not None else np.zeros((0, 3))
 
     def _hover_throttle(self) -> np.ndarray:
-        """Per-rotor hover throttle, held until the guidance hands over a reference."""
+        """Per-rotor hover throttle, held until the guidance writes a reference."""
         throttle = float(np.sqrt(np.clip(self.hover, 0.0, self.t_max) / self.ct) / self.rpm_max)
         return np.full(self.n, throttle, dtype=np.float32)
 
     def exchange(self, meas, t, timeout=None):
         from nexus_sim._src.core import Controls
 
-        if self.reference is None:  # the guidance hasn't planned/handed the reference yet → hold hover
+        self._read_setpoint()
+        if self.reference is None:  # the guidance hasn't planned the reference yet → hold hover
             self._step += 1
             return Controls(command=self._hover_throttle())
 
@@ -307,7 +315,7 @@ class AcadosNMPCController:
 
         self._solver.set(0, "lbx", x0)
         self._solver.set(0, "ubx", x0)
-        # Anchor the reference clock to the first exchange after accepting a reference, so the planned
+        # Anchor the reference clock to the first exchange that reads a new reference, so the planned
         # trajectory plays from t=0 here; the guidance set its start to about this position.
         if self._ref_step0 is None:
             self._ref_step0 = self._step

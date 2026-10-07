@@ -95,3 +95,21 @@ def test_controller_builds_observation_from_state():
     # level attitude, pos (0,0,1), goal (0,0,2) -> goal_rel_b (0,0,1)
     np.testing.assert_allclose(obs[9:12], [0, 0, 1], atol=1e-6)
     np.testing.assert_allclose(obs[12:16], 0.0, atol=1e-6)  # default prev_action zeros
+
+
+def test_exchange_builds_obs_from_meas_state(tmp_path):
+    class Echo(torch.nn.Module):
+        def forward(self, x):
+            return x[:, 12:16]
+
+    path = tmp_path / "echo.pt"
+    torch.jit.script(Echo()).save(str(path))
+    c = TrainedPolicyController(policy_path=str(path), goal_w=(0.0, 0.0, 2.0))
+    c.connect()
+    c._prev_action[:] = [0.5, -0.5, 0.25, 0.1]
+
+    class _Meas:
+        state = _FakeState()
+
+    out = c.exchange(_Meas(), t=0.0)  # obs built from meas.state, the StateSensor passthrough
+    np.testing.assert_allclose(np.asarray(out.command), [0.5, -0.5, 0.25, 0.1], atol=1e-6)

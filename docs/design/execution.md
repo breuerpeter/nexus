@@ -30,15 +30,44 @@ It rotates the ring to start after the last cut, so the ring's tail folds into t
 host stage the whole ring is one graph. A component that states no stages fails the build with an
 error that names it, and so does a stage of a kind the loop doesn't know. Nothing falls back to a
 slower path in silence. A [run](concepts.md#run) logs its plan once at start, for example
-`stage plan: graph(clear -> rotors -> propellers -> step -> record -> imu -> mag -> baro -> gps -> bind) host(read) host(truth) host(exchange)`.
+`stage plan: graph(clear -> rotors -> propellers -> step -> record -> imu -> mag -> baro -> gps) host(read) host(truth) host(exchange)`.
 
-**A guidance passes its output through the tick.** Its stage is a host stage, and it holds no
-controller. It writes a changed setpoint to the tick, and the loop hands that to the controller's
-`accept_setpoint` before the next segment runs. The loop also runs that stage once before the first
-tick, over the settled state, so the controller holds its first setpoint before its own first stage.
-A tracking guidance stays out of that pass, because its plan starts the reference's clock. A stage
-that marks the tick done ends the run once the tick completes, which is how a guidance ends its
-mission.
+## Signals
+
+Components pass values to each other as [signals](concepts.md#signal). Each stage declares the
+signals it reads and the signals it writes, so a component's inputs and outputs are those of its
+stages.
+
+A signal's type fixes where its buffer lives. A device type's buffer is a Warp array. Device stages
+read and write it in their kernels, and a host stage reads it with a copy and writes it in place
+between graph replays. Any other type is a host type, whose buffer holds one object. Core ships the
+types of the values between [roles](concepts.md#role). `Controls` holds the per-actuator commands a controller writes and
+the command elements read, on the device. The setpoints are `PositionGoal`, on the device, and
+`ReferenceTrajectory`, on the host: a guidance writes one, and its controller reads it. A component
+can also declare its own type.
+
+When the loop builds the ring, it wires each input to the one output of its name. It allocates one
+buffer per signal and hands it to the writer and to every reader, before any stage runs, so a captured
+graph replays buffers that existed at the capture. A reader's default fills the buffer until the
+writer first writes, and an input that no component writes reads its default. The run stops before
+any stage runs, with an error that names both ends, when:
+
+- a reader and its writer disagree on the type
+- a reader needs more of an axis than its writer's buffer holds. A reader reads the leading part of a
+  wider buffer, as the rotors read the first four of the 16 controls PX4 sends
+- an input has no writer, and its component gives no default
+- a device stage declares a host signal
+- two components write one signal that a third reads
+
+**A guidance writes the setpoint.** Its stage is a host stage, and it holds no controller. It writes
+a changed setpoint, which the controller reads on that tick. The loop also runs that stage once before
+the first tick, over the settled state, so the controller holds its first setpoint before its own
+first stage. A tracking guidance stays out of that pass, because its plan starts the reference's
+clock. A stage that marks the tick done ends the run once the tick completes, which is how a guidance
+ends its mission. A run whose guidance writes a setpoint no stage reads, such as a guidance on a PX4
+run, fails.
+
+## Capture
 
 **Captured execution benefits online Software In The Loop (SITL) runs, not just batch.** The PX4
 controller states three host stages. Its `read` stage is the sensor fan-in into the `Measurement`.

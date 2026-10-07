@@ -350,9 +350,10 @@ class MomentMixer:
         self._act4 = wp.zeros(1, dtype=wp.vec4)
         self._cmd = wp.zeros((1, self.nr), dtype=float)
 
-    def cmd_wp(self, moments_wp) -> wp.array:
+    def cmd_wp(self, moments_wp, out=None) -> wp.array:
         """Run the mixer over a device-native ``(4,)`` Warp moment action → the persistent ``(1, nr)``
-        per-rotor command Warp array, graph-safe, with no host hop.
+        per-rotor command Warp array, graph-safe, with no host hop: ``out`` when given, such as the
+        controls signal's buffer, else the mixer's own.
         """
         wp.launch(pack_vec4, dim=1, inputs=(moments_wp,), outputs=(self._act4,))
         wp.launch(
@@ -368,6 +369,6 @@ class MomentMixer:
                 self.omega_max_motor,
                 self.nr,
             ),
-            outputs=(self._cmd,),
+            outputs=(self._cmd if out is None else out,),
         )
-        return self._cmd
+        return self._cmd if out is None else out
