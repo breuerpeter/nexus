@@ -108,8 +108,8 @@ Each role's contract is a `Protocol` in `nexus_sim/_src/core/interfaces.py`.
 The plant side stands in for the real drone and its world: the physics, the command elements,
 the force elements and the sensors, which read and write Newton's state in place. The flight stack
 is what a real drone carries: the estimator, the guidance, and the controller, which see the plant
-only through the sensors. The ground-truth estimator is the one exception: it reads the physics state
-to stand in for a real estimator. The line between them is where real drone code stops and the simulation takes over,
+only through the sensors. Two parts of it read the physics state instead: the ground-truth estimator,
+to stand in for a real estimator, and PX4's controller, to send PX4 its ground truth. The line between them is where real drone code stops and the simulation takes over,
 [Real system ↔ simulation](real-vs-sim.md).
 
 ### Physics
