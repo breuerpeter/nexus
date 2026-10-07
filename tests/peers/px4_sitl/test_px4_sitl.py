@@ -1,8 +1,7 @@
 """The PX4 Software In The Loop (SITL) peer: the container it starts, field by field, that the
 runner clears a same-name leftover first, that a start removes a leftover of its instance whose
 process has exited and fails while a live one holds it, that a missing tree names its fix, that the
-container runs as the tree's owner, that the peer's stop removes only what it started, and that this
-module stays the only definition of the container, see GH #86.
+container runs as the tree's owner, and that the peer's stop removes only what it started.
 """
 
 import os
@@ -10,13 +9,10 @@ import pathlib
 import subprocess
 
 import pytest
-import yaml
 from docker.errors import ImageNotFound, NotFound
 
 import nexus_sim._src.peers.containers as containers
 from nexus_sim._src.peers.px4_sitl.runner import IMAGE, Px4Sitl, build
-
-ROOT = pathlib.Path(__file__).resolve().parents[3]
 
 
 class _Calls(list):
@@ -208,15 +204,6 @@ def test_container_user_is_the_trees_owner(daemon, tree, tmp_path, monkeypatch):
     _peer(tree, tmp_path).start()
 
     assert {kw["user"] for kind, kw in daemon if kind == "run"} == {"4242:4343"}
-
-
-def test_compose_does_not_redefine_the_container():
-    """The container has one definition: this module. A second one lived in docker-compose.yml as
-    the `px4-sitl` service and drifted from it for months unnoticed, with the wrong user, no home directory at /tmp,
-    and a hardcoded telemetry port, because nothing executable ran it. Re-adding it starts that over.
-    """
-    doc = yaml.safe_load((ROOT / "docker" / "docker-compose.yml").read_text())
-    assert "px4-sitl" not in doc["services"]
 
 
 def test_stop_leaves_a_container_this_peer_never_started(daemon, tree, tmp_path):

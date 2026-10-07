@@ -5,7 +5,7 @@ declares its sensor with an applied schema. The Kit peer is a required peer: no 
 sensor's class requires it, and the build starts it once. Each sensor decimates to its
 declared rate on sim time. At a due tick the render link sends the poses and the loop flies
 on; the frame comes back on a later tick, stamped with the sim time it shows, and the sensor logs
-and streams it here on the host.
+it here on the host.
 """
 
 from __future__ import annotations
@@ -105,8 +105,5 @@ class RtxMountedSensor:
         self._link.tick(t, state)
 
     def emit(self, arrays: dict, t_shown: float) -> None:
-        """Log and stream one frame; ``t_shown`` is the sim time the frame shows."""
+        """Log one frame; ``t_shown`` is the sim time the frame shows."""
         raise NotImplementedError
-
-    def close(self) -> None:
-        pass

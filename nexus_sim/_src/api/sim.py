@@ -53,9 +53,6 @@ class Sim:
         observe: Attach a ``Recorder`` so :attr:`physics` and :attr:`sensors` read ground truth.
         log: Record the run to a ``.rrd``; ``False`` runs headless with no recorder, at max speed.
         view: Serve the Rerun recording live on ``:9876`` instead of writing a ``.rrd`` file.
-        stream: Publish each RTX camera's feed over Real Time Streaming Protocol (RTSP) to MediaMTX,
-            which needs an NVENC-capable ``ffmpeg`` on this host; without it, frames go to the
-            recording only.
         cache_dir: Override the asset cache directory; ``None`` = the framework default.
         max_steps: Cap the run at this many control steps; ``None`` = the launch-config default.
         rtf: Real-time-factor throttle. ``0``, the default, runs unthrottled, as fast as the
@@ -83,7 +80,6 @@ class Sim:
         observe: bool = True,
         log: bool = False,
         view: bool = False,
-        stream: bool = False,
         debug: bool = False,
         cache_dir: str | None = None,
         solver: str | None = None,
@@ -120,7 +116,6 @@ class Sim:
         self._launch.output.log = log
         self._launch.output.view = view
         self._launch.output.debug = debug  # axes-only scene: coordinate triads, no meshes → a small .rrd
-        self._stream = stream
         self._cache_dir = cache_dir
         self._observe = observe
         self._takes_setpoints = False  # set at build, from the controller the vehicle declares
@@ -193,7 +188,6 @@ class Sim:
             "solver": getattr(args, "solver", None),
             "log": getattr(args, "log", False),
             "view": getattr(args, "view", False),
-            "stream": getattr(args, "stream", False),
             "debug": getattr(args, "debug", False),
             "max_steps": getattr(args, "max_steps", None),
             "rtf": getattr(args, "rtf", 0.0),
@@ -212,7 +206,7 @@ class Sim:
                 self._orch.guidance = self._guidance
         else:
             # A vehicle that authors RTX sensors starts the Kit render peer here, from the host.
-            self._orch = build_from_launch(self._launch, cache_dir=self._cache_dir, stream=self._stream)
+            self._orch = build_from_launch(self._launch, cache_dir=self._cache_dir)
             # A controller with a setpoint surface takes a guidance. PX4's has none: a script commands
             # PX4 over the offboard link it opens itself, on the address in sim.ports.
             self._takes_setpoints = hasattr(getattr(self._orch, "controller", None), "accept_setpoint")

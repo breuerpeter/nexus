@@ -145,7 +145,6 @@ def build_from_launch(
     registry: Registry | None = None,
     cache_dir: str | pathlib.Path | None = None,
     cfg: dict | None = None,
-    stream: bool = False,
     preroll_timeout: float = 30.0,
     components: ComponentRegistry | None = None,
     peers: Mapping[str, Callable] | None = None,
@@ -154,7 +153,6 @@ def build_from_launch(
 
     PX4 is the one first-class controller; every other controller is an example that
     self-assembles from ``resolve_scenario`` plus its own components plus ``Sim.from_orchestrator``.
-    ``stream`` publishes each RTX camera's feed over Real Time Streaming Protocol (RTSP).
     ``components`` resolves the vehicle's schemas to classes; ``None`` takes the default registry.
     ``peers`` maps a peer's name, ``px4_sitl`` or ``kit``, to the class the build starts for it, or for
     ``kit`` a callable that builds one, over :func:`shipped_peers`: a test sends a peer to its fake
@@ -195,9 +193,7 @@ def build_from_launch(
         )
     # By now the run has fetched every asset it renders, so the Kit peer starts first and boots while
     # PX4 builds and the physics compiles; None for a vehicle that declares no RTX sensor.
-    renderer_factory = rtx_renderer(
-        builder, cfg, cache_dir=cache_dir, stream=stream, peer=peer_classes["kit"], components=components
-    )
+    renderer_factory = rtx_renderer(builder, cfg, cache_dir=cache_dir, peer=peer_classes["kit"], components=components)
     started: list = []
     try:
         # *This* is where the declared controller becomes an instance; the assembly that follows is

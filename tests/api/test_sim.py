@@ -273,6 +273,17 @@ def test_sim_takes_no_control_argument():
         sim_mod.Sim("astro_max_base", scene="empty", control="px4-sitl")
 
 
+def test_sim_takes_no_stream_argument():
+    """`Sim` takes no `stream` argument: a camera's feed has nowhere to publish until a vehicle declares a
+    companion.
+
+    Given `Sim("astro_max_fpv", scene="empty", stream=True)`, when constructed, then it raises `TypeError`
+    naming `stream`, and no run builds.
+    """
+    with pytest.raises(TypeError, match="stream"):
+        sim_mod.Sim("astro_max_fpv", scene="empty", stream=True)
+
+
 def test_a_sim_that_names_no_vehicle_fails_at_construction():
     """A `Sim` that names no vehicle fails at construction, and the error names the missing argument.
 

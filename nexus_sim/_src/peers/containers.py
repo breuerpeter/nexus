@@ -1,11 +1,9 @@
 """The one place this repo runs a container it owns, through the docker daemon's Python SDK.
 
-The governing rule for the two ways this repo talks to docker: **the SDK where this repo owns the
-container definition, compose where compose owns it.** A peer the flight starts and stops as part of
-its own lifecycle runs from here, so the ordering a runbook used to write as a warning becomes code:
-PX4 Software In The Loop (SITL) from :mod:`nexus_sim._src.peers.px4_sitl.runner`, and the Kit
-render peer from :mod:`nexus_sim._src.peers.kit.runner`. Compose keeps only the ground services a runbook
-brings up by hand, in ``docker/docker-compose.yml``.
+A peer the flight starts and stops as part of its own lifecycle runs from here, so the ordering a
+runbook used to write as a warning becomes code: PX4 Software In The Loop (SITL) from
+:mod:`nexus_sim._src.peers.px4_sitl.runner`, and the Kit render peer from
+:mod:`nexus_sim._src.peers.kit.runner`.
 
 The px4-sitl image, PX4's build toolchain, builds on the machine that runs it, from a folder that
 ships in the wheel as package data. Its tag hashes that folder, so a change to the image always
@@ -44,9 +42,8 @@ def client():
     global _client
     if _client is not None:
         return _client
-    from docker.errors import DockerException
-
     import docker
+    from docker.errors import DockerException
 
     try:
         _client = docker.from_env()

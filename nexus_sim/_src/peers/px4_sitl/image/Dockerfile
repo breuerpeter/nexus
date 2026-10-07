@@ -32,6 +32,6 @@ RUN uv pip install --system --break-system-packages --no-cache \
     pyros-genmsg \
     pyyaml
 
-# No git safe.directory shim is needed: the compose `px4-sitl` service runs the container as the
-# host UID (matching the bind-mounted px4 checkout's owner), so git sees the repo as its own and
-# build artifacts land host-owned (no root-owned build/ tree to clean up).
+# No git safe.directory shim is needed: the runner, ../runner.py, runs the container as the owner of
+# the bind-mounted px4 checkout, so git sees the repo as its own and build artifacts land host-owned
+# (no root-owned build/ tree to clean up).

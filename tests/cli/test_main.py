@@ -1,6 +1,5 @@
 """``nexus`` command-line tool parsing/validation: the command surface only, no run starts."""
 
-import hashlib
 import importlib
 
 import pytest
@@ -17,25 +16,6 @@ PLAIN_USD = (
 def test_log_and_view_are_exclusive(monkeypatch):
     monkeypatch.setattr("sys.argv", ["nexus", "run", "--log", "--view"])
     with pytest.raises(SystemExit):
-        cli.main()
-
-
-def test_stream_on_a_vehicle_without_a_camera_fails_before_the_run(monkeypatch, tmp_path):
-    """--stream publishes the camera feeds, so a vehicle that authors no camera has nothing to stream."""
-    pytest.importorskip("pxr")
-    usd = tmp_path / "plain.usda"
-    usd.write_text(PLAIN_USD)
-    registry = tmp_path / "catalog.yaml"
-    registry.write_text(
-        "vehicles:\n  plain:\n"
-        f'    usd: {{ url: "{usd.as_uri()}", sha256: {hashlib.sha256(usd.read_bytes()).hexdigest()} }}\n'
-        "scenes:\n  empty: {}\n"
-    )
-    monkeypatch.setenv("NEXUS_ASSET_CACHE", str(tmp_path / "cache"))
-    monkeypatch.setattr(
-        "sys.argv", ["nexus", "run", "--stream", "--vehicle", "plain", "--scene", "empty", "--registry", str(registry)]
-    )
-    with pytest.raises(ValueError, match="camera"):
         cli.main()
 
 
@@ -75,6 +55,22 @@ def test_control_is_no_flag_of_the_command_line_tool(monkeypatch, tmp_path, caps
     with pytest.raises(SystemExit) as e:
         cli.main()
     assert (e.value.code, "unrecognized arguments: --control" in capsys.readouterr().err) == (2, True)
+
+
+def test_nexus_run_rejects_stream(monkeypatch, tmp_path, capsys):
+    """The `nexus run` command rejects `--stream`: a camera's feed has nowhere to publish until a vehicle
+    declares a companion.
+
+    Given `nexus run --stream`, when it parses, then it exits with argparse's unrecognized-argument
+    error. The vehicle names a file that doesn't exist and `DOCKER_HOST` points nowhere, so no run can
+    start if the tool still takes the flag.
+    """
+    monkeypatch.setenv("DOCKER_HOST", f"unix://{tmp_path / 'no-daemon.sock'}")
+    missing = tmp_path / "missing.usda"
+    monkeypatch.setattr("sys.argv", ["nexus", "run", "--stream", "--vehicle", str(missing), "--scene", "empty"])
+    with pytest.raises(SystemExit) as e:
+        cli.main()
+    assert (e.value.code, "unrecognized arguments: --stream" in capsys.readouterr().err) == (2, True)
 
 
 def _said_when_run(monkeypatch, capsys, tmp_path, *argv):

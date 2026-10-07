@@ -56,8 +56,7 @@ These stances shape everything else and are load-bearing across the codebase:
 - **One loop, rendering as a peer.** Every run's loop runs in one process on the host, rendered or
   not, and it's the authority for CI and determinism. A vehicle that authors RTX sensors renders
   them in the **Kit render peer**, a container holding Isaac Sim, Cesium worlds, and no nexus code.
-  The host sends it poses, takes back frames, and streams the video itself. No nexus module imports
-  Isaac Sim or Omniverse.
+  The host sends it poses and takes back frames. No nexus module imports Isaac Sim or Omniverse.
 - **Neutral USD is the single vehicle and scene authority.** A vehicle is one OpenUSD model,
   authored once, carrying geometry, mass, rotor joints, motor and propeller parameters, and the
   whole sensor suite. The loop, the Kit peer and the training app consume it unchanged. The framework
