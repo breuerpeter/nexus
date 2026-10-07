@@ -1,7 +1,7 @@
-"""The launch glue: resolve a vehicle Universal Scene Description (USD) via nexus_sim._src.config + route by
+"""The run's builder: resolve a vehicle Universal Scene Description (USD) via nexus_sim._src.config + route by
 control kind.
 
-Exercises the resolution + builder-construction + routing seam, not the heavy NewtonPhysics build,
+Exercises resolution, the vehicle's USD and the routing, not the heavy NewtonPhysics build,
 which needs a real newton-loadable USD asset. The resolved USD is a file:// asset, sha-verified by
 the real asset resolver.
 """
@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from nexus_sim._src.config import LaunchConfig, Registry
+from nexus_sim._src.config import Catalog, LaunchConfig
 from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
 from tests.usd import sensor_vehicle as sv
 
@@ -21,7 +21,7 @@ from tests.usd import sensor_vehicle as sv
 @pytest.fixture(autouse=True)
 def daemon(monkeypatch, tmp_path):
     """``build_from_launch`` starts the PX4 Software In The Loop (SITL) peer, which builds and runs PX4
-    in docker. These tests exercise the resolution + routing seam, so the docker daemon is a stand-in
+    in docker. These tests exercise resolution and routing, so the docker daemon is a stand-in
     that records what the build asks of it, and ``$PX4_DIR`` a stand-in tree, so nothing fetches.
     """
     from docker.errors import NotFound
@@ -67,8 +67,8 @@ PX4_VEHICLE = (
 )
 
 
-def _registry(usd_ref: dict) -> Registry:
-    return Registry.from_dict(
+def _astro_catalog(usd_ref: dict) -> Catalog:
+    return Catalog.from_dict(
         {
             "vehicles": {"astro": {"usd": usd_ref}},
             "scenes": {"empty": {}},
@@ -82,17 +82,17 @@ def _usd_ref(tmp_path) -> dict:
     return {"url": blob.as_uri(), "sha256": hashlib.sha256(blob.read_bytes()).hexdigest(), "filename": "vehicle.usda"}
 
 
-def test_resolve_to_vehicle_builder_uses_resolved_usd(tmp_path):
-    from nexus_sim._src.build.launch import resolve_to_vehicle_builder
+def test_resolve_vehicle_usd_uses_resolved_usd(tmp_path):
+    from nexus_sim._src.build.launch import resolve_vehicle_usd
 
     ref = _usd_ref(tmp_path)
-    reg = _registry(ref)
-    builder, resolved = resolve_to_vehicle_builder(
+    reg = _astro_catalog(ref)
+    vehicle_usd, resolved = resolve_vehicle_usd(
         LaunchConfig().set_vehicle("astro").set_scene("empty"), reg, cache_dir=tmp_path / "cache"
     )
-    # the builder points at the verified, content-addressed local copy of the USD
-    assert Path(builder.cfg["usd_path"]).read_bytes() == PX4_VEHICLE
-    assert ref["sha256"] in str(builder.cfg["usd_path"])  # content-addressed cache path
+    # the vehicle's USD points at the verified, content-addressed local copy of the asset
+    assert Path(vehicle_usd.cfg["usd_path"]).read_bytes() == PX4_VEHICLE
+    assert ref["sha256"] in str(vehicle_usd.cfg["usd_path"])  # content-addressed cache path
     assert resolved.tested_config.px4.airframe == "80001"
 
 
@@ -121,11 +121,11 @@ def test_scene_threads_uniformly_and_anchors_gps(tmp_path, monkeypatch):
     and its geodetic origin anchors *both* the render world, cfg.rtx.georef, *and* the
     Hardware In The Loop (HIL) Global Positioning System (GPS), cfg.sensors.gps.init, so the
     Ground Control Station (GCS) minimap matches the camera feed: the Woodinville-versus-SF bug.
-    Runtime-*neutral* since the controller unbind: the one launch glue does this for every runtime.
+    Runtime-*neutral* since the controller unbind: the run's builder does this for every runtime.
     """
     import nexus_sim._src.build.launch as L
 
-    reg = Registry.from_dict(
+    reg = Catalog.from_dict(
         {
             "vehicles": {"astro": {"usd": _usd_ref(tmp_path)}},
             "scenes": {
@@ -147,7 +147,7 @@ def test_scene_threads_uniformly_and_anchors_gps(tmp_path, monkeypatch):
 
     monkeypatch.setattr(L, "build_orchestrator", fake_build)
     lc = LaunchConfig().set_vehicle("astro").set_scene("geo-scene")
-    assert L.build_from_launch(lc, registry=reg, cache_dir=tmp_path / "cache") == "ORCH"
+    assert L.build_from_launch(lc, catalog=reg, cache_dir=tmp_path / "cache") == "ORCH"
 
     assert captured["cfg"]["scene_usd_path"] is not None, "the model build + render stage get the scene USD"
     assert captured["cfg"]["scene_start"] == (10.0, -94.0, -8.5), "start places the scene"
@@ -161,7 +161,7 @@ def test_scene_threads_uniformly_and_anchors_gps(tmp_path, monkeypatch):
 
 
 def test_build_from_launch_starts_the_px4_peer_before_the_assembly(tmp_path, monkeypatch, daemon):
-    """This is the seam *both* runtimes share, so the PX4 lifecycle hangs off it: the registry's
+    """This is the path *both* runtimes share, so the PX4 lifecycle hangs off it: the catalog's
     airframe reaches the peer, and the peer *starts*, its incremental build first, before the
     orchestrator exists: the build has to stay outside the sim's 30 s preroll window, see GH #39.
     """
@@ -170,13 +170,13 @@ def test_build_from_launch_starts_the_px4_peer_before_the_assembly(tmp_path, mon
     order = []
     monkeypatch.setattr(L, "build_orchestrator", lambda label, cfg, **kw: order.append("orchestrator") or kw)
 
-    reg = _registry(_usd_ref(tmp_path))
+    reg = _astro_catalog(_usd_ref(tmp_path))
     lc = LaunchConfig().set_vehicle("astro").set_scene("empty")
-    kw = L.build_from_launch(lc, registry=reg, cache_dir=tmp_path / "cache")
+    kw = L.build_from_launch(lc, catalog=reg, cache_dir=tmp_path / "cache")
 
     started = [r["environment"].get("PX4_SIM_MODEL") for r in daemon if r.get("detach", True)]
     assert order == ["orchestrator"] and started == ["none_80001"], "the peer starts before the assembly"
-    assert [p.airframe for p in kw["peers"]] == ["80001"], "the registry airframe reaches the peer"
+    assert [p.airframe for p in kw["peers"]] == ["80001"], "the catalog's airframe reaches the peer"
 
 
 # --- the controller a vehicle Universal Scene Description (USD) file declares ------------------------
@@ -198,9 +198,9 @@ def _local_vehicle(tmp_path, prims: str) -> str:
     return str(path)
 
 
-def _catalog(tmp_path) -> Registry:
+def _catalog(tmp_path) -> Catalog:
     """A catalog with one vehicle and no PX4 entry: the airframe lives in the vehicle's USD."""
-    return Registry.from_dict(
+    return Catalog.from_dict(
         {
             "vehicles": {"astro": {"usd": _usd_ref(tmp_path)}},
             "scenes": {"empty": {}},
@@ -213,7 +213,7 @@ def _build(tmp_path, prims: str, **kw):
     import nexus_sim._src.build.launch as L
 
     lc = LaunchConfig().set_vehicle(_local_vehicle(tmp_path, prims)).set_scene("empty")
-    return L.build_from_launch(lc, registry=_catalog(tmp_path), cache_dir=tmp_path / "cache", **kw)
+    return L.build_from_launch(lc, catalog=_catalog(tmp_path), cache_dir=tmp_path / "cache", **kw)
 
 
 def test_the_receipt_records_the_airframe_the_vehicle_usd_declares(tmp_path):
@@ -222,10 +222,10 @@ def test_the_receipt_records_the_airframe_the_vehicle_usd_declares(tmp_path):
     Given the local vehicle USD with airframe `foo`, when the run builds, then the receipt's PX4
     airframe is `foo`.
     """
-    from nexus_sim._src.build.launch import resolve_to_vehicle_builder
+    from nexus_sim._src.build.launch import resolve_vehicle_usd
 
     lc = LaunchConfig().set_vehicle(_local_vehicle(tmp_path, PX4_ROOT)).set_scene("empty")
-    _, resolved = resolve_to_vehicle_builder(lc, _catalog(tmp_path), cache_dir=tmp_path / "cache")
+    _, resolved = resolve_vehicle_usd(lc, _catalog(tmp_path), cache_dir=tmp_path / "cache")
 
     assert resolved.tested_config.model_dump(mode="json")["px4"] == {"airframe": "foo"}
 
@@ -474,7 +474,7 @@ def test_a_run_with_no_layer_builds_and_records_as_today(tmp_path, monkeypatch, 
         [type(p).__name__ for p in loop.peers],
     )
     loop.close()
-    receipt = L.resolve_to_vehicle_builder(launch)[1].tested_config.model_dump(mode="json")
+    receipt = L.resolve_vehicle_usd(launch)[1].tested_config.model_dump(mode="json")
     recorded = {k: receipt[k] for k in ("vehicle", "layer", "px4", "scene", "scene_start", "geodetic_origin")}
 
     assert (built, recorded) == (
@@ -595,7 +595,7 @@ def test_a_layer_path_that_does_not_exist_fails_before_any_peer_starts(tmp_path,
     launch = _layered(tmp_path, _local_vehicle(tmp_path, PX4_SITL_ROOT), missing)
 
     with pytest.raises(FileNotFoundError) as err:
-        L.build_from_launch(launch, registry=_catalog(tmp_path), cache_dir=tmp_path / "cache")
+        L.build_from_launch(launch, catalog=_catalog(tmp_path), cache_dir=tmp_path / "cache")
 
     assert (str(missing) in str(err.value), daemon) == (True, [])
 

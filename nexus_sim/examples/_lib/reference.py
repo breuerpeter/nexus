@@ -5,7 +5,7 @@ into a smooth, jerk-limited tracking reference and hands it to a tracking contro
 Nonlinear Model Predictive Control (NMPC), as a ``ReferenceTrajectory`` setpoint. ruckig plans a
 C²-continuous position trajectory through the waypoints, as chained legs, and differential flatness lifts it to the full quad state, attitude and body rate, + the
 collective-thrust feedforward the NMPC tracks. The planner sits apart from the Model Predictive
-Control (MPC), on the guidance side of the seam.
+Control (MPC), on the guidance side.
 
 Pure host Python, ruckig + numpy; no casadi or acados, so the guidance stays solver-agnostic.
 """

@@ -1,4 +1,4 @@
-"""Sensor plugins: Inertial Measurement Unit (IMU), magnetometer, barometer and Global Positioning
+"""Sensors: Inertial Measurement Unit (IMU), magnetometer, barometer and Global Positioning
 System (GPS), all **Warp-native**.
 
 Each sensor's math is a ``@wp.kernel`` over the live ``newton.State``'s device arrays,
@@ -8,7 +8,7 @@ the rest of the device step: no host NumPy / ``math`` in the per-tick path. The 
 canonical frame math from :mod:`nexus_sim._src.transform` **verbatim**.
 
 Each tick reads the result back once into the host :class:`Measurement` dataclass, which the PX4
-``Controller`` serialises to MAVLink: the one host boundary, an external process, exactly the
+``Controller`` serialises to MAVLink for its peer, an external process: exactly the
 "captured region = device step minus the controller" split. Each sensor splits
 that into :meth:`sample_wp`, which launches the kernel into its device buffer, the "Warp Measurement
 buffer" with no readback, so it joins a CUDA graph, and :meth:`read`, the single D2H into the host

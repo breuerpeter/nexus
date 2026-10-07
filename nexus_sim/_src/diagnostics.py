@@ -5,7 +5,7 @@ computes, only what gets measured and reported, so they don't belong in ``Launch
 tested-config receipt reproduces byte-for-byte. They're process-scoped by nature, one loop, one
 profiler. This module gives that process-global scope a typed, documented surface the entry
 points fill from parsed args, ``Sim.from_args`` and the examples launcher call :meth:`configure`,
-and the instrumented seams read: the orchestrator's profiler, the Kit render peer's benchmark.
+and the instrumented parts read: the orchestrator's profiler, the Kit render peer's benchmark.
 
 Import-light BY DESIGN, stdlib only: the examples launcher and the command-line tool configure it
 before the run builds.
@@ -39,7 +39,7 @@ class Diagnostics:
 
 
 diagnostics = Diagnostics()
-"""The one per-process instance: entry points ``configure()`` it, instrumented seams read it."""
+"""The one per-process instance: entry points ``configure()`` it, instrumented parts read it."""
 
 
 def add_diagnostics_args(p):

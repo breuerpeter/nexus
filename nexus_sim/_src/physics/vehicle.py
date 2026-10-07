@@ -5,11 +5,10 @@ from pathlib import Path
 import newton
 import warp as wp
 
+from nexus_sim._src.core import logger
 from nexus_sim._src.usd.reader import read_declarations
 from nexus_sim._src.vehicle.forces.propellers import Propeller
 from nexus_sim._src.vehicle.rotors import RPM_PER_RADS
-
-from .builder_base import BuilderBase
 
 PROPELLER_SCHEMA = "NexusPropellerAPI"  # the schema a rotor's rigid body applies to declare its propeller
 _MOTOR_PREFIX = "motor:"  # the joint attributes of the single-body examples' motor model, such as motor:tau
@@ -93,8 +92,8 @@ def parse_rotors(usd_path: str | Path) -> tuple[dict, list[str]]:
     return first, [joint for _, _, joint, _ in rotors]
 
 
-class USDBuilder(BuilderBase):
-    """Build a vehicle from a **USD** asset: the unified vehicle definition.
+class VehicleUsd:
+    """The vehicle from its **USD** asset: the unified vehicle definition, as physics loads it.
 
     The resolved, content-addressed and sha-verified USD path arrives as ``cfg['usd_path']``. In
     production that path comes from :mod:`nexus_sim._src.config`'s resolver, so the *same* USD asset serves
@@ -119,6 +118,9 @@ class USDBuilder(BuilderBase):
     refuses to arm and reports "Attitude failure (roll)" as the reason. Override with
     ``cfg['spawn_att']``, a wp.quat, if a future USD's authored frame differs.
     """
+
+    def __init__(self, cfg: dict):
+        self.cfg = cfg
 
     def actuator_params(self) -> dict:
         """The values the rotors the USD declares share; see :func:`parse_rotors`."""
@@ -155,13 +157,13 @@ class USDBuilder(BuilderBase):
             return (0.0, 0.0, 2.0)  # unreadable bounds: the old conservative drop
 
     def spawn_pose(self):
-        """The resolved start pose, position and attitude: *the* one placement seam. :meth:`build`
+        """The resolved start pose, position and attitude: *the* one source of the placement. :meth:`build`
         consumes it, and the Kit render peer places the vehicle's render root with it. The default
         attitude is the FRD flip; the default position is support-height placement, :meth:`_ground_spawn`.
         """
         usd_path = self.cfg.get("usd_path")
         if not usd_path:
-            raise FileNotFoundError("USDBuilder requires cfg['usd_path'] (a resolved local USD path)")
+            raise FileNotFoundError("VehicleUsd requires cfg['usd_path'] (a resolved local USD path)")
         if not Path(usd_path).exists():
             raise FileNotFoundError(f"USD asset not found: {usd_path}")
         # FRD body → Newton Z-up world: rotors up plus the FRD sensor frame. See the class docstring.
@@ -192,3 +194,9 @@ class USDBuilder(BuilderBase):
                 f"(joint types added: {added}). The vehicle would be pinned to the world and cannot "
                 f"fly. Re-export the USD with a free/floating base (no fixed world->base joint)."
             )
+
+    def model_debug_print(self, model: newton.Model) -> None:
+        for i, key in enumerate(model.body_label):
+            mass = model.body_mass.numpy()[i]
+            inertia = model.body_inertia.numpy()[i]
+            logger.debug(f"Body {i} ({key}): mass = {mass}, inertia =\n{inertia}")

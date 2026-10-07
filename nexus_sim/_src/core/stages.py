@@ -2,7 +2,7 @@
 
 A tick is an ordered ring of stages, per docs/design/execution.md. :func:`build_ring` lays every
 component's stages out in the canonical order, sensors, estimator, guidance, controller, ``clear`` -> the
-command stages -> the force stages -> ``step`` per physics substep, record. :func:`partition` cuts the ring at
+command elements -> the force elements -> ``step`` per physics substep, record. :func:`partition` cuts the ring at
 its host stages and rotates it to
 start after the last cut, so the ring's tail folds into the first run and each maximal run of
 device stages becomes one CUDA graph; with no host stage the whole ring is one segment in canonical
@@ -87,8 +87,8 @@ def build_ring(
     guidance=None,
 ) -> list[Bound]:
     """Every component's stages in the canonical order the domain fixes: sensors, the estimator and the
-    guidance when the run has them, controller, then ``clear`` -> the command stages -> the force stages ->
-    ``step`` unrolled ``substeps`` times, then ``record``. The estimator sits after the sensors, so it
+    guidance when the run has them, controller, then ``clear`` -> the command elements -> the force elements
+    -> ``step`` unrolled ``substeps`` times, then ``record``. The estimator sits after the sensors, so it
     reads their values of that tick, and before the guidance and the controller, so they read its estimate
     of that tick. The guidance sits before the controller, so the setpoint it writes is the one the
     controller reads on that tick. The old actuator seam's one stage, the examples' single-body ``Rotors``,
@@ -146,8 +146,8 @@ def partition(ring: list[Bound]) -> list[Segment]:
 
 def seed_stages(ring: list[Bound]) -> list[Stage]:
     """The stages of one pass over the settled state: the sensors', the estimator's and the controller's
-    warm device stages, and the controller's host stages, in ring order. Physics, the command stages, the
-    force stages and the record stage never run here, so the settled state is the state the first tick starts from, and a
+    warm device stages, and the controller's host stages, in ring order. Physics, the command elements, the
+    force elements and the record stage never run here, so the settled state is the state the first tick starts from, and a
     sensor's host stage never does, so a camera's frame exchange starts with the first tick.
     """
     out = []
@@ -205,7 +205,7 @@ def peer_stages(controller, *, reads: tuple = ()) -> list[Stage]:
     """The stages of a controller that blocks on a peer or solves on the host: ``read`` fans the sensors
     into the ``Measurement``, and ``exchange`` runs the controller's ``exchange`` and writes its commands
     to the controls, a ``(1, 16)`` device signal, in place between graph replays. The builder allocates
-    that buffer before the capture, so the command stages capture over it before the peer connects.
+    that buffer before the capture, so the command elements' stages capture over it before the peer connects.
     ``None`` from the exchange reads as the peer not answering, which the stage reports by returning
     ``False``. ``reads`` are the signals the controller's ``exchange`` reads, such as its setpoint, which
     the ``exchange`` stage declares.

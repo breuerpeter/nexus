@@ -40,7 +40,7 @@ from nexus_sim.examples._lib import dump_run
 from nexus_sim.examples.controllers.px4.log_warnings import px4_warnings
 from nexus_sim.px4 import OffboardClient
 
-VEHICLE = "astro_max_base"  # the registry vehicle flown, which declares PX4
+VEHICLE = "astro_max_base"  # the catalog vehicle flown, which declares PX4
 SCENE = "empty"  # flat ground
 TAKEOFF_ALT = 5.0  # takeoff altitude [m]; sets MIS_TAKEOFF_ALT, authoritative for Takeoff mode
 YAW_SWEEP = (90.0, 180.0, 270.0, 0.0)  # yaw headings [deg] flown at the hold position, compass/NED

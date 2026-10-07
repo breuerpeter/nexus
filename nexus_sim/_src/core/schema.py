@@ -43,7 +43,7 @@ class Controls(DeviceType):
     the ``B⁻¹`` allocation, live in the controller, so whatever the law computes, Collective Thrust Body
     Rate (CTBR), moments or Nonlinear Model Predictive Control (NMPC) thrusts, ``command`` is what the
     controller emits and the actuator chain takes in. A length-``n`` host ``np.ndarray`` on the PX4 and
-    eager deploy paths, or a device-native ``(1, n)`` Warp array in the captured in-process loop.
+    eager deploy paths, or a device-native ``(1, n)`` Warp array in the captured loop.
 
     As a signal, ``controls``, it lives on the device: a ``(1, n)`` array of floats, which the controller
     writes and the command elements read.
@@ -176,9 +176,9 @@ class Waypoints:
 
 @dataclass(slots=True)
 class ReferenceTrajectory:
-    """A full flat-state reference over time, for the acados NMPC: the operator plans it, ruckig →
+    """A full flat-state reference over time, for the acados NMPC: the guidance plans it, ruckig →
     differential-flatness, from waypoints and feeds it to the controller, which tracks it. The
-    payload is a queryable reference object, for example the operator's ``FlatnessReference``, the
+    payload is a queryable reference object, for example the guidance's ``FlatnessReference``, the
     controller samples per horizon node, kept opaque here so core imports no controller backend.
     """
 

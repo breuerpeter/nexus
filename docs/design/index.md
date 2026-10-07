@@ -16,10 +16,11 @@ to *use* it. The [Reference](../reference/index.md) documents the *surface*.
 
 <div class="grid cards" markdown>
 
--   **[Architecture](architecture.md)**: the data model, the typed component interfaces, the deterministic tick, and the operator, recording, and configuration seams.
+-   **[Concepts](concepts.md)**: every term the framework uses, each defined once, in the words the code uses.
+-   **[Architecture](architecture.md)**: the data model, the typed component interfaces, the deterministic tick, the guidance, the recording, and the configuration.
 -   **[Execution &amp; determinism](execution.md)**: eager, CUDA-graph-captured, and differentiable rollouts, what makes runs bit-reproducible, and where they're only tolerance-bounded.
 -   **[Real system ↔ simulation](real-vs-sim.md)**: the six subsystem planes and the boundary where real drone code stops and the sim takes over.
--   **[Conventions](conventions.md)**: where a seam lives, which seams a vehicle or a scene declares, and the vehicle model's frames, rotor indexing, and structure.
+-   **[Conventions](conventions.md)**: where a contract lives, who declares each part, how a peer enters a run, the project's names, and the vehicle model's frames, rotor indexing, and structure.
 
 </div>
 

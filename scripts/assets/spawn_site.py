@@ -1,18 +1,18 @@
 """Suggest a ``start``, the drone's start point, for a converted First Person View (FPV) scene
 Universal Scene Description (USD).
 
-Placement is per-scene registry data, not baked into the asset: the registry scene's
+Placement is per-scene catalog data, not baked into the asset: the catalog scene's
 ``start: [x, y, z]`` is the scene-frame point the runtime places at the world origin, so the
 drone, created at the origin and resting on the z=0 physics ground, starts on that surface.
 This tool suggests one. It's advisory: eyeball the result, tweak the numbers in
-``registry.yaml`` if the scene calls for a different spot; either way, no reconversion.
+``catalog.yaml`` if the scene calls for a different spot; either way, no reconversion.
 
 Host-runnable with usd-core + numpy and no Kit::
 
     uv run python scripts/assets/spawn_site.py <scene.usdz> [--geo lat,lon[,alt]]
 
 ``--geo`` is the geodetic anchor of the scene frame's origin, which the splat converter traces as
-"scene origin: …"; with it, the tool also prints the registry ``geodetic_origin``: the
+"scene origin: …"; with it, the tool also prints the catalog ``geodetic_origin``: the
 lat/lon plus ellipsoidal alt of the picked start point, which is the world origin the runtime
 places it at.
 
@@ -147,7 +147,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="LAT,LON[,ALT]",
         help="geodetic anchor of the scene frame's origin (the converter's 'scene origin' trace);"
-        " prints the registry geodetic_origin AT the picked start",
+        " prints the catalog geodetic_origin AT the picked start",
     )
     return p
 
@@ -156,7 +156,7 @@ def main(argv=None) -> None:
     args = build_parser().parse_args(argv)
     x, y, z, how = pick_spawn_site(scene_points(args.usd))
     print(f"pick: {how}")
-    print(f"registry scene entry:  start: [{x:.1f}, {y:.1f}, {z:.1f}]")
+    print(f"catalog scene entry:  start: [{x:.1f}, {y:.1f}, {z:.1f}]")
     if args.geo:
         import math
 

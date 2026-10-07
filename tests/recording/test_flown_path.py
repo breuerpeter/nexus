@@ -60,8 +60,8 @@ def flight_paths(tmp_path_factory, rrd_entities):
     from nexus_sim._src.core.clock import Clock
     from nexus_sim._src.core.orchestrator import Orchestrator
     from nexus_sim._src.logging import Logger
-    from nexus_sim._src.physics.builders.usd import USDBuilder
     from nexus_sim._src.physics.physics import NewtonPhysics
+    from nexus_sim._src.physics.vehicle import VehicleUsd
     from nexus_sim._src.recording import Recorder
 
     tmp = tmp_path_factory.mktemp("flight")
@@ -71,7 +71,7 @@ def flight_paths(tmp_path_factory, rrd_entities):
     rrd = str(tmp / "flight.rrd")
     with wp.ScopedDevice("cpu"):
         mb = newton.ModelBuilder()
-        USDBuilder({"usd_path": usd}, None).build(mb)
+        VehicleUsd({"usd_path": usd}).build(mb)
         model = mb.finalize()
         orch = Orchestrator(
             clock=Clock(DT),

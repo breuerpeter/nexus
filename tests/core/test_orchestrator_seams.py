@@ -1,4 +1,4 @@
-"""The seams the loop drives take no ambient sample: physics, the actuator and each sensor read the
+"""The contracts the loop drives take no ambient sample: physics, the actuator and each sensor read the
 state and the clock, and nothing else. Warp-free stubs, as in test_orchestrator_stop.py.
 """
 
@@ -94,7 +94,7 @@ class _Controller:
 
 
 def test_the_loop_runs_a_tick_on_seams_that_take_no_env():
-    """The loop runs a tick on seams that take no `env`: `Physics.step(state, dt)`,
+    """The loop runs a tick on contracts that take no `env`: `Physics.step(state, dt)`,
     `Actuator.forces(controls, state)` and `Sensor.sample(state, t, out)`. A tick's exchange follows
     its step, so the second tick's measurement carries the state after two ticks.
     """

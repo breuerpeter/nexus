@@ -1,7 +1,7 @@
 """A guidance names only its own rows: ``waypoints/wp_<i>`` and ``reference``. The loop scopes its
 logger to the guidance's path, which ``tests/core/test_orchestrator_guidance.py`` proves. A stand-in
-sink takes the place of that scoped logger, and each test drives the guidance through its stages, the
-seam the loop calls.
+sink takes the place of that scoped logger, and each test drives the guidance through its stages,
+which the loop calls.
 """
 
 import pytest

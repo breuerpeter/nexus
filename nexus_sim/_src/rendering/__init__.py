@@ -37,12 +37,12 @@ class RtxConfig:
         # 24 fps is the production rate: it holds >=1x realtime with two cameras on the photoreal
         # cesium world.
         self.render_hz = float(o.get("render_hz", 24.0))
-        # Geodetic anchor for a streamed world, {lat, lon, alt}: the registry scene's geodetic_origin.
+        # Geodetic anchor for a streamed world, {lat, lon, alt}: the catalog scene's geodetic_origin.
         self.georef = o.get("georef")
 
 
 class RtxRendererFactory:
-    """The renderer seam for a started Kit peer, called after the physics build.
+    """The renderer for a started Kit peer, called after the physics build.
 
     :meth:`link` maps the model's bodies onto the render stage and returns the :class:`KitRenderer`
     the RTX sensors ride. :meth:`finish` hands that renderer the built sensors. Calling the factory
@@ -54,13 +54,13 @@ class RtxRendererFactory:
         self._peer = peer
         self._components = components
 
-    def link(self, physics, vehicle_builder) -> KitRenderer:
+    def link(self, physics, vehicle_usd) -> KitRenderer:
         """The render link for this run: each model body paired with its prim on the render stage."""
         from pxr import Usd
 
         from nexus_sim._src.vehicle.sensors.rtx_stage import render_path
 
-        stage = Usd.Stage.Open(str(vehicle_builder.cfg["usd_path"]))
+        stage = Usd.Stage.Open(str(vehicle_usd.cfg["usd_path"]))
         root_path = str(stage.GetDefaultPrim().GetPath())
         # The body prims the render poses: a model body's label is its prim's path. The rest of the
         # vehicle composes beneath them.
@@ -71,13 +71,13 @@ class RtxRendererFactory:
             logger.warning(f"no vehicle prim for model bodies {missing}: they don't render")
         return KitRenderer(self._peer, bodies=bodies)
 
-    def finish(self, renderer: KitRenderer, sensors: list, vehicle_builder, cfg: dict) -> None:
+    def finish(self, renderer: KitRenderer, sensors: list, vehicle_usd, cfg: dict) -> None:
         """Hand `renderer` the RTX sensors built over it, and fill its setup message."""
         from nexus_sim._src.diagnostics import diagnostics
 
         rtx = RtxConfig(cfg.get("rtx"))
         renderer.sensors = sensors
-        pos, att = vehicle_builder.spawn_pose()
+        pos, att = vehicle_usd.spawn_pose()
         rates = [s.rate for s in sensors if s.output != "points"]
         benchmark = Path.home() / ".cache" / "nexus" / "logs" / f"benchmark-{int(time.time())}.json"
         renderer.setup = {
@@ -86,19 +86,19 @@ class RtxRendererFactory:
             # The streamed world's anchor falls back to the Global Positioning System (GPS) origin, so the globe and the GPS
             # sensor agree on where local (0,0,0) is on Earth.
             "georef": rtx.georef or cfg.get("sensors", {}).get("gps", {}).get("init"),
-            "vehicle": str(vehicle_builder.cfg["usd_path"]),
+            "vehicle": str(vehicle_usd.cfg["usd_path"]),
             "spawn": {"pos": [float(v) for v in pos], "quat_xyzw": [float(v) for v in att]},
             # The highest declared camera rate; the vehicle's file is the authority.
             "render_dt": 1.0 / (max(rates) if rates else rtx.render_hz),
             "benchmark": str(benchmark) if diagnostics.benchmark else None,
         }
 
-    def __call__(self, physics, vehicle_builder, cfg: dict):
+    def __call__(self, physics, vehicle_usd, cfg: dict):
         from nexus_sim._src.core import SeedTree
         from nexus_sim._src.vehicle.sensors.declared import build_sensors, requires, sensor_specs
 
-        usd = vehicle_builder.cfg["usd_path"]
-        renderer = self.link(physics, vehicle_builder)
+        usd = vehicle_usd.cfg["usd_path"]
+        renderer = self.link(physics, vehicle_usd)
         sensors = build_sensors(
             [spec for spec in sensor_specs(usd, self._components) if requires(spec, PEER)],
             usd_path=usd,
@@ -108,7 +108,7 @@ class RtxRendererFactory:
             site=None,
             link=renderer,
         )
-        self.finish(renderer, sensors, vehicle_builder, cfg)
+        self.finish(renderer, sensors, vehicle_usd, cfg)
         return renderer, sensors
 
     def close(self) -> None:
@@ -117,7 +117,7 @@ class RtxRendererFactory:
 
 
 def rtx_renderer(
-    vehicle_builder,
+    vehicle_usd,
     cfg: dict,
     *,
     cache_dir=None,
@@ -130,7 +130,7 @@ def rtx_renderer(
     meanwhile. A vehicle that declares no such sensor starts no container, whatever prims it holds.
 
     Args:
-        vehicle_builder: The vehicle's builder, whose USD decides.
+        vehicle_usd: The vehicle's ``VehicleUsd``, whose Universal Scene Description (USD) decides.
         cfg: The scenario config, carrying the resolved scene.
         cache_dir: The asset cache the run fetched into; ``None`` for the default.
         peer: The class that starts the Kit peer, or a callable that builds one: :class:`KitPeer`, or
@@ -150,7 +150,7 @@ def rtx_renderer(
     from nexus_sim._src.assets.resolver import default_cache
     from nexus_sim._src.vehicle.sensors.declared import requires, sensor_specs
 
-    usd = vehicle_builder.cfg.get("usd_path")
+    usd = vehicle_usd.cfg.get("usd_path")
     specs = [spec for spec in sensor_specs(usd, components) if requires(spec, PEER)] if usd else []
     if not specs:
         return None

@@ -71,8 +71,8 @@ def test_the_loop_hands_each_component_a_logger_scoped_to_its_role_folder_and_it
     )
 
 
-def test_the_loop_hands_a_command_stage_and_a_force_element_a_logger_scoped_to_their_role_folders():
-    """The loop hands a command stage and a force element a logger scoped to `vehicle/commands/<name>`
+def test_the_loop_hands_a_command_element_and_a_force_element_a_logger_scoped_to_their_role_folders():
+    """The loop hands a command element and a force element a logger scoped to `vehicle/commands/<name>`
     and `vehicle/forces/<name>`, their role folders.
     """
     command, force = _Component("rotors"), _Component("propellers")

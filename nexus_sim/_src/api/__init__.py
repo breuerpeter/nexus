@@ -1,7 +1,7 @@
-"""The in-process control surface, the program-driving API.
+"""The program-driving API: ``Sim``, the one public entry to a run.
 
 This is the first slice: a ``Sim`` handle that owns/runs/observes the sim from
-Python, with ground-truth observation read off the ``Recorder`` seam in ``_src/recording``;
+Python, with ground truth read off the ``Recorder`` in ``_src/recording``;
 ``BodyState`` / ``JointState`` / ``SensorSample`` are its public per-entity read types.
 
 Lazy re-exports, per Python Enhancement Proposal (PEP) 562 and mirroring the top-level package: importing

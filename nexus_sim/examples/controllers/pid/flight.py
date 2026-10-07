@@ -1,17 +1,17 @@
-"""Proportional Integral Derivative (PID) waypoint tour, the minimal in-process controller example: the
+"""Proportional Integral Derivative (PID) waypoint tour, the minimal controller example: the
 deterministic, differentiable PID, :mod:`law`, flying the collapsed single-body astro-max around a square,
 fully CUDA-graph captured.
 
-This controller is the framework's **determinism authority**, deterministic in-process control over
+This controller is the framework's **determinism authority**, deterministic control over
 the bit-exact Newton CPU physics, the bit-reproducible CI gate real PX4 can't give, and the
 **design-optimization controller**: its gains are the differentiable parameters
 ``design_opt/gain_tuning.py`` tunes, and this flight deploys that example's proven configuration,
 the collapsed single-body plant + stable gains. This flight is the smallest end-to-end demo of
-the in-process shape: assemble the orchestrator, the example-owned :mod:`assembly`, host it via
+an example's shape: assemble the orchestrator, the example-owned :mod:`assembly`, host it via
 ``Sim.from_orchestrator``, fly its mission through ``sim.guidance``.
 
 **The shape.** A zero-arg, self-contained script. On CUDA the whole tick captures into one CUDA
-graph, controller + actuator + physics + sensors, the captured-inprocess strategy; on CPU it runs
+graph, controller + actuator + physics + sensors; on CPU it runs
 eager and bit-exact.
 
     uv run -m nexus_sim.examples pid                # flies + asserts + writes the .rrd
@@ -48,16 +48,16 @@ def main() -> None:
     launch = LaunchConfig().set_vehicle(VEHICLE).set_scene(SCENE)
     launch.runtime.device = "cuda"  # prefer CUDA; resolve_device falls back to CPU when there is none
     launch.runtime.solver = "semi_implicit"  # the collapsed single-body plant this PID's tuning targets
-    builder, _resolved, cfg = resolve_scenario(launch)
+    vehicle_usd, _resolved, cfg = resolve_scenario(launch)
     orch = build_pid_orchestrator(
         cfg,
-        vehicle_builder=builder,
+        vehicle_usd=vehicle_usd,
         goal_w=WAYPOINTS[0],
         gains=GAINS,
         moment_scale=MOMENT_SCALE,
         max_steps=MAX_STEPS,
         rerun=True,  # the .rrd is the demo's artifact
-        renderer_factory=rtx_renderer(builder, cfg),  # the Kit peer, when the vehicle authors RTX sensors
+        renderer_factory=rtx_renderer(vehicle_usd, cfg),  # the Kit peer, when the vehicle authors RTX sensors
     )
     guidance = MissionGuidance(reached_m=0.3, final_hold_s=2.0)
     with nx.Sim.from_orchestrator(orch, guidance=guidance) as sim:

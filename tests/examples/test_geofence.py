@@ -1,6 +1,6 @@
 """GeofenceGuidance, the guidance demonstrator of the goto policy flight: a mission guidance that
-ends the run when the vehicle leaves its box. Each test drives the guidance through its stages, the
-seam the loop calls, with a stand-in estimator and recording sink, and reads what the stage wrote: the goal
+ends the run when the vehicle leaves its box. Each test drives the guidance through its stages,
+which the loop calls, with a stand-in estimator and recording sink, and reads what the stage wrote: the goal
 in its setpoint signal, wired as the loop wires it, and whether the tick's mission is over.
 """
 

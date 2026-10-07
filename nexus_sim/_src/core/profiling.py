@@ -106,7 +106,7 @@ class LoopProfiler:
         total = now - self._t_tick0
         self._ring[self._ticks % _RING] = total
         # Window RTF over wall-clock boundary-to-boundary spans; summed in-tick time would exclude
-        # the inter-tick seam, for example a caller's own work between step() calls, and overstate speed.
+        # the time between ticks, for example a caller's own work between step() calls, and overstate speed.
         self._win_ticks += 1
         if self._win_ticks == _WIN:
             self._win_rtfs.append(_WIN * self._dt_ns / max(1, now - self._win_t0))

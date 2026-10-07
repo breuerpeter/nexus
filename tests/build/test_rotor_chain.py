@@ -2,7 +2,7 @@
 the shipped vehicle flies as before. Controls that a reader can't take stop the run before any stage runs.
 
 Real builds on the Warp CPU backend: the fixture quad of ``tests/vehicle/quad.py`` around a stand-in
-controller, with stand-in command stages and force elements beside the rotors' where a test needs them,
+controller, with stand-in command elements and force elements beside the rotors' where a test needs them,
 and the hosted ``astro_max_base`` for the trajectory ``main`` flew. Skipped without newton or pxr.
 """
 
@@ -19,7 +19,7 @@ import warp as wp
 
 from nexus_sim._src.api.sim import Sim
 from nexus_sim._src.build.assembly import assemble, build_orchestrator, build_scenario, resolve_device
-from nexus_sim._src.build.launch import resolve_to_vehicle_builder
+from nexus_sim._src.build.launch import resolve_vehicle_usd
 from nexus_sim._src.config import LaunchConfig
 from nexus_sim._src.core import Clock
 from nexus_sim._src.core.interfaces import Stage
@@ -28,7 +28,7 @@ from nexus_sim._src.core.schema import Controls
 from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.core.stages import peer_stages
 from nexus_sim._src.physics import NewtonPhysics
-from nexus_sim._src.physics.builders.usd import USDBuilder
+from nexus_sim._src.physics.vehicle import VehicleUsd
 from nexus_sim._src.scene.site import GRAVITY
 from nexus_sim.examples._lib import Rotors, build_rotor_mixer_from_model
 from tests.vehicle import quad
@@ -105,7 +105,7 @@ def _servo_target(cmd: wp.array2d(dtype=float), channel: int, scale: float, inde
 
 
 class _ServoCommand:
-    """A command stage beside the rotors': it writes the servo's position target from one channel of the
+    """A command element beside the rotors': it writes the servo's position target from one channel of the
     controller's command, `scale` radians per unit.
     """
 
@@ -174,15 +174,15 @@ def _rotor_bodies(physics) -> list[int]:
 
 
 def _loop(path, controller, *, commands=(), forces=()):
-    """The run the quad at `path` builds around `controller`, with stand-in command stages and force
+    """The run the quad at `path` builds around `controller`, with stand-in command elements and force
     elements built by `commands` and `forces`, each a callable of the physics, beside the rotors' own.
     """
     cfg = build_scenario()
     cfg["physics"]["force_cpu"] = True
     resolve_device(cfg)
-    vb = USDBuilder({"usd_path": str(path)}, None)
-    physics = NewtonPhysics(vehicle_builder=vb, cfg=cfg)
-    a = assemble(physics, vb, cfg, controller=controller)
+    vehicle_usd = VehicleUsd({"usd_path": str(path)})
+    physics = NewtonPhysics(vehicle_usd=vehicle_usd, cfg=cfg)
+    a = assemble(physics, vehicle_usd, cfg, controller=controller)
     return Orchestrator(
         clock=a.clock,
         physics=a.physics,
@@ -201,10 +201,10 @@ def _rotors(path, controller):
     cfg = build_scenario()
     cfg["physics"]["force_cpu"] = True
     resolve_device(cfg)
-    vb = USDBuilder({"usd_path": str(path)}, None)
-    physics = NewtonPhysics(vehicle_builder=vb, cfg=cfg, step_actuators=False)
+    vehicle_usd = VehicleUsd({"usd_path": str(path)})
+    physics = NewtonPhysics(vehicle_usd=vehicle_usd, cfg=cfg, step_actuators=False)
     mixer = build_rotor_mixer_from_model(
-        physics.model, vb.rotor_joints(), vb.actuator_params(), physics.state0.body_q.numpy()
+        physics.model, vehicle_usd.rotor_joints(), vehicle_usd.actuator_params(), physics.state0.body_q.numpy()
     )
     dt = cfg["physics"]["dt"]
     return Orchestrator(
@@ -232,8 +232,8 @@ def fly_shipped(steps: int = STREAM_TICKS) -> np.ndarray:
     """
     cfg = build_scenario()
     cfg["physics"]["force_cpu"] = True
-    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
-    orch = build_orchestrator("astro_max_base", cfg, vb, controller=_Stream(), max_steps=steps)
+    vehicle_usd, _ = resolve_vehicle_usd(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
+    orch = build_orchestrator("astro_max_base", cfg, vehicle_usd, controller=_Stream(), max_steps=steps)
     poses = []
     orch.on_tick = lambda view, t, n: poses.append(orch.physics.state0.body_q.numpy().copy())
     orch.run()
@@ -323,10 +323,10 @@ def test_a_newton_actuator_on_a_joint_that_is_no_rotor_still_drives_its_joint(tm
     assert (round(angles[0], 1), abs(angles[-1]) < SETTLED) == (SERVO_RAD, True)
 
 
-def test_a_command_stage_beside_the_rotors_sets_the_target_of_the_actuator_it_commands(tmp_path):
-    """A command stage beside the rotors' sets the target of the actuator it commands.
+def test_a_command_element_beside_the_rotors_sets_the_target_of_the_actuator_it_commands(tmp_path):
+    """A command element beside the rotors' sets the target of the actuator it commands.
 
-    Given that fixture and a stand-in command stage that writes the servo's target from the fifth value of
+    Given that fixture and a stand-in command element that writes the servo's target from the fifth value of
     the controller's command, when the controller sends 0.5 there at full throttle, then the joint settles
     at the angle the stand-in maps 0.5 to, and the vehicle still climbs.
     """

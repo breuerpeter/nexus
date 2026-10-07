@@ -21,7 +21,7 @@ from nexus_sim._src.core.signals import Signal, wire
 from nexus_sim._src.core.stages import Bound
 from nexus_sim._src.guidance import MissionGuidance
 from nexus_sim._src.physics import NewtonPhysics
-from nexus_sim._src.physics.builders.usd import USDBuilder
+from nexus_sim._src.physics.vehicle import VehicleUsd
 from nexus_sim._src.vehicle.estimators import GroundTruthEstimator
 from tests.vehicle import quad
 
@@ -89,7 +89,7 @@ def test_each_reader_gets_the_base_bodys_true_pose_and_twist_with_no_noise_and_n
         orch = Orchestrator(
             clock=Clock(cfg["physics"]["dt"]),
             physics=NewtonPhysics(
-                vehicle_builder=USDBuilder({"usd_path": str(quad.author(tmp_path / "quad.usda"))}, None), cfg=cfg
+                vehicle_usd=VehicleUsd({"usd_path": str(quad.author(tmp_path / "quad.usda"))}), cfg=cfg
             ),
             sensors=[],
             estimator=GroundTruthEstimator(),

@@ -79,7 +79,7 @@ markdown_extensions:
       alternate_style: true
 
 hooks:
-  # Generates the <model-viewer> vehicle previews from registry.yaml (model-preview markers).
+  # Generates the <model-viewer> vehicle previews from catalog.yaml (model-preview markers).
   - docs/hooks/vehicle_previews.py
   # Renders benchmark tables from the committed docs/data/*.json (benchmark-* / example-stats markers).
   - docs/hooks/benchmarks.py
@@ -159,6 +159,7 @@ nav:
       - guide/contributing/pull-requests.md
   - Design:
     - design/index.md
+    - Concepts: design/concepts.md
     - Architecture: design/architecture.md
     - Execution & determinism: design/execution.md
     - Real system ↔ simulation: design/real-vs-sim.md

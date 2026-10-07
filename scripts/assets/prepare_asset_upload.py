@@ -3,7 +3,7 @@ content-addressed asset storage.
 
 This does everything *except* upload; you upload by hand, out of band:
 
-1. sha256 the USD: the content address and the registry version pin.
+1. sha256 the USD: the content address and the catalog version pin.
 2. Compute the flat content-addressed URL to upload it to, under the catalog's own base:
 
        <base>/assets/usd/vehicles/<name>-<sha256>.usdz     (a --vehicle asset)
@@ -12,14 +12,14 @@ This does everything *except* upload; you upload by hand, out of band:
    ``<name>`` is the USD's filename stem. Hosted assets are self-contained ``.usdz``, one blob and
    one sha256, so the hash sits in the key and nothing ever overwrites the object: a
    Content Delivery Network (CDN) caches it forever. ``--base`` publishes somewhere else, for
-   example a bucket of your own; the registry snippet then carries the full URL rather than the
+   example a bucket of your own; the catalog snippet then carries the full URL rather than the
    compact ref, which only the catalog's own base completes.
 3. For a **vehicle** only: convert it to a web-ready ``.glb`` preview, the ``<model-viewer>``
    companion, written next to the USD under ``assets/local/`` so the docs preview works before
    you publish the asset; ``docs/hooks/vehicle_previews.py`` serves that local copy when present,
    and this writes nothing into ``docs/``. Its upload key is the ``.glb`` sibling of the USD key.
    **Scenes get no glb.**
-4. Print the files to upload, their upload keys + CloudFront URLs, and the `registry.yaml`
+4. Print the files to upload, their upload keys + CloudFront URLs, and the `catalog.yaml`
    snippet to paste in.
 
 Usage, run in the project env so the sha helper imports:
@@ -181,12 +181,12 @@ def _reinvoke_convert(src: Path, dst: Path, rotate_x: float) -> None:
 
 def _catalog_base() -> str:
     """The base the catalog this repo ships names, so a printed URL matches what a run would fetch."""
-    from nexus_sim._src.config import load_registry
+    from nexus_sim._src.config import load_catalog
 
-    return load_registry().assets.base or ""
+    return load_catalog().assets.base or ""
 
 
-def _registry_snippet(kind: str, name: str, sha: str, url: str, compact: bool) -> str:
+def _catalog_snippet(kind: str, name: str, sha: str, url: str, compact: bool) -> str:
     # An asset under the catalog's own base is compact, because that base completes it. One published
     # anywhere else carries its full URL, which is how a catalog names a blob hosted elsewhere.
     ref = f"{{ name: {name}, sha256: {sha} }}" if compact else f'{{ url: "{url}", sha256: {sha} }}'
@@ -221,7 +221,7 @@ def main(argv: list[str]) -> int:
     from nexus_sim._src.assets.resolver import hosted_url, sha256_file  # reuse the scheme + hasher, no duplicate
 
     kind_dir = "vehicles" if is_vehicle else "scenes"
-    name = usd.stem  # <name> is the filename stem; the registry stores just this + the sha
+    name = usd.stem  # <name> is the filename stem; the catalog stores just this + the sha
     sha = sha256_file(usd)
     catalog_base = _catalog_base()
     base = args.base or catalog_base
@@ -246,8 +246,8 @@ def main(argv: list[str]) -> int:
         if not compact:
             print("  NOTE: the docs preview reads the local copy until this base is one the site can reach.")
 
-    print(f"\nregistry.yaml snippet (add under `{kind_dir}:`):\n")
-    print(_registry_snippet("vehicle" if is_vehicle else "scene", name, sha, usd_url, compact))
+    print(f"\ncatalog.yaml snippet (add under `{kind_dir}:`):\n")
+    print(_catalog_snippet("vehicle" if is_vehicle else "scene", name, sha, usd_url, compact))
     return 0
 
 

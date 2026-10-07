@@ -1,4 +1,4 @@
-"""The rotors' command stage: the controller's command to each rotor motor's control inputs.
+"""The rotors' command element: the controller's command to each rotor motor's control inputs.
 
 Each rotor's motor is a ``NewtonActuator`` prim the vehicle's Universal Scene Description (USD) file authors
 on the rotor joint, ``NewtonPIDControlAPI`` with ``kd`` alone, so a velocity servo,
@@ -61,14 +61,14 @@ def _scatter_rotor_commands(
 
 
 class RotorCommand:
-    """The rotors' command stage: the controller's normalized per-rotor commands to each rotor motor's
+    """The rotors' command element: the controller's normalized per-rotor commands to each rotor motor's
     speed target and drag feedforward in the model's ``newton.Control``.
 
     Args:
         model: The finalized articulated model, whose rotor joints the vehicle USD authors a motor on.
         control: The model's persistent ``newton.Control``; physics owns it. The stage writes the rotors'
             ``joint_target_qd`` and ``joint_act``, and physics' actuator step reads them.
-        joints: The joint path of each rotor the vehicle USD declares, the vehicle builder's
+        joints: The joint path of each rotor the vehicle USD declares, the ``VehicleUsd``'s
             ``rotor_joints()``. A joint that isn't one of them is no rotor.
         ct: Thrust coefficient [N/rpm²], the propeller schema's ``nexus:ct``, which the feedforward reads.
         cd: Reaction-torque-per-thrust, ``nexus:cd``, the yaw allocation κ.

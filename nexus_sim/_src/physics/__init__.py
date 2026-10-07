@@ -1,6 +1,6 @@
-"""Physics plugin: NVIDIA Newton + SolverMuJoCo, with vehicle builders + scenes."""
+"""Physics: NVIDIA Newton and SolverMuJoCo, with the vehicle's Universal Scene Description (USD) and the scene."""
 
-from .builders.usd import USDBuilder
 from .physics import NewtonPhysics
+from .vehicle import VehicleUsd
 
-__all__ = ["NewtonPhysics", "USDBuilder"]
+__all__ = ["NewtonPhysics", "VehicleUsd"]

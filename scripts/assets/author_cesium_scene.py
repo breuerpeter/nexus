@@ -62,7 +62,7 @@ def main(argv=None) -> int:
     UsdGeom.SetStageMetersPerUnit(stage, 1.0)
 
     # Georeference: placeholder origin; the runtime overwrites lat/lon from the resolved geodetic
-    # origin, registry default or a launch override. Height stays 0; the ground-align probe converges it.
+    # origin, catalog default or a launch override. Height stays 0; the ground-align probe converges it.
     geo = CesiumGeoreference.Define(stage, "/CesiumGeoreference")
     geo.GetGeoreferenceOriginLatitudeAttr().Set(0.0)
     geo.GetGeoreferenceOriginLongitudeAttr().Set(0.0)

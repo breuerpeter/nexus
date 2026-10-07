@@ -1,53 +1,52 @@
 ---
-description: "The conventions of nexus: where a seam lives, which seams a vehicle or a scene declares, which form of the name a thing takes, and the vehicle model's frames, rotor indexing and structure."
+description: "The conventions of nexus: where a contract lives, who declares each part, how a peer enters a run, who owns an address, which form of the name a thing takes, and the vehicle model's frames, rotor indexing and structure."
 ---
 
 # Conventions
 
-The rules for the component seams and for the project's names, then the structure of every shipped
-vehicle.
+The rules for the [components](concepts.md#component)' contracts and for the project's names, then the structure of every
+shipped vehicle. [Concepts](concepts.md) defines each term.
 
-## Where a seam lives
+## Where a contract lives
 
-A seam lives at or below its consumer: in the caller's own package, or lower in the import layers
-`.importlinter` fixes. The orchestrator drives `Clock`, `Physics`, `Sensor`, `Controller`,
-`Renderer` and `Recorder`, and the stages a command stage or a force element states, and sits at
+A contract lives at or below its consumer: in the caller's own package, or lower in the import layers
+`.importlinter` fixes. The [loop](concepts.md#loop) drives `Clock`, `Physics`, `Sensor`, `Controller`,
+`Renderer` and `Recorder`, and the [stages](concepts.md#stage) a command element or a force element states, and sits at
 the bottom layer, so those contracts live in `core/`. A contract that sits higher
 than its consumer ends up written twice: once where the consumer can import it, once beside the
-implementations. That's how the actuator seam came to exist in two files before this rule.
+implementations. That's how the actuator's contract came to exist in two files before this rule.
 
-## Which seams are customizable
+## Who declares a part
 
-Three tiers. A vehicle or a scene **declares** a component in its Universal Scene Description (USD)
-when the component is a property of the machine or of the site. `Controller`, the estimator, `Sensor`,
-`Companion` and the rotor chain, its command stage and its force element, are the vehicle's. The
-estimator writes the estimate, the [signal](execution.md#signals) of the vehicle's pose and twist that
-the guidance and the controller read in place of the physics state. Until the example controllers fly
-as variants of the vehicle, each example's assembly constructs it. What a scene contributes is the scene's. The guidance turns
-a mission into the setpoint a controller tracks. It's a property of the run, not of either, so it
-stays an **argument**: a flight constructs it and hands it to `Sim`. Its stage runs before the
-controller's, and it holds no controller: it writes the setpoint, a [signal](execution.md#signals)
-the controller reads. PX4 takes none, because its own navigator is its guidance, and no estimator,
-because its own estimator runs in its peer. The `Renderer` follows from the
-vehicle: a sensor whose class requires the Kit render peer starts it. `Clock`, `Physics`, `Recorder` and `Logger` are the
-framework's own architecture, **fixed**: one implementation each, configured by settings rather than
-swapped, so none gets a resolver or a published Protocol. Fixed is about publishing no resolver, not
+A vehicle **declares** a component in its Universal Scene Description (USD) when the component is a
+property of the machine: every [role](concepts.md#role) but the guidance. The
+[estimator](concepts.md#role) is one of them. The guidance and the controller read its estimate in
+place of the physics state. Until the example controllers fly as variants of the vehicle, each
+example's assembly constructs it. What a scene contributes
+is the scene's. The guidance is a property of the [run](concepts.md#run), not of either, so it stays
+an **argument**: a flight constructs it and hands it to [`Sim`](concepts.md#sim). It holds no controller: it
+writes the setpoint, a [signal](concepts.md#signal) the controller reads. PX4 takes none, because its own
+navigator is its guidance, and no estimator, because its own estimator runs in its peer. The `Renderer` follows from the vehicle: a sensor whose class requires
+the Kit render peer starts it. The clock, the [physics](concepts.md#physics), the
+[Recorder](concepts.md#recorder), and the [Logger](concepts.md#logger) stay **fixed**: one
+implementation each, configured by settings rather than swapped, so none gets a resolver or a
+published Protocol. Fixed is about publishing no resolver, not
 about which directory the implementation sits in: `_src/physics/` imports `newton`, which
 `.importlinter` keeps out of `core/`, and no module imports Kit, which runs only in the Kit peer.
 
 ## How a peer enters a run
 
-A peer is a process outside the loop's process. It enters a run in one of two ways, and one question
-separates them: does the peer have a counterpart on the real vehicle?
+A [peer](concepts.md#peer) enters a run in one of two ways, and one question separates them: does
+the peer have a counterpart on the real vehicle?
 
 - A **declared peer** stands in for a part of the vehicle, so the vehicle's USD declares it with a
-  schema. PX4 Software In The Loop (SITL) stands in for the flight controller, and
+  [schema](concepts.md#schema). PX4 Software In The Loop (SITL) stands in for the flight controller, and
   `NexusPx4SitlAPI` on the vehicle's root prim declares it. The run starts it, and a run's override
   layer drops the declaration to attach to a process started elsewhere.
 - A **required peer** is part of the model that replaces a real component, so the component's class
   requires it, and no asset names it. The real camera is the component, and the Kit render peer is how
   its model computes an image. A camera's schema says what the camera is: its resolution and its
-  rate. The class the registry maps that schema to states `requires = ("kit",)`, and the build
+  rate. The class the [component registry](concepts.md#component-registry) maps that schema to states `requires = ("kit",)`, and the build
   starts the peer once for all the sensors that require it.
 
 The split is a design choice. A Kit schema on the vehicle would put a renderer into the description
@@ -56,21 +55,22 @@ peer, another renderer is another class for the same camera schema, one registry
 
 ## Who owns an address
 
-The run owns every address. A link is a socket between two processes, and one side has to pick the
-port. The run picks, because only the run knows what else flies on the machine. It claims the
+The run owns every address. A [link](concepts.md#link) runs over a socket between two processes, and
+one side has to pick the port. The run picks, because only the run knows what else flies on the machine. It claims the
 lowest PX4 instance free there and numbers every link from it, so two runs on one machine never
 collide.
 
 Where an address goes depends on which side of the run the link's end sits:
 
-- **An end inside the run**: the builder builds it from the run's addresses. The PX4 controller's
+- **An end inside the run**: the [builder](concepts.md#builder) builds it from the run's addresses. The PX4 controller's
   Hardware In The Loop (HIL) server is one, and the builder hands the controller its port.
-- **An end outside the run**: it reads its address from the run's port map, `sim.ports`. PX4's
+- **An end outside the run**: it reads its address from the run's [port map](concepts.md#port-map),
+  `sim.ports`. PX4's
   offboard link is one. A script opens its own client, `nexus_sim.px4.OffboardClient`, on
   `sim.ports["offboard"]`, which holds the port and PX4's MAVLink system id.
 
 The split is a design choice, and it follows from a second rule: no generic part names PX4. The
-loop, the seams and `Sim` carry no PX4 class, port or verb, and an import contract in
+loop, the roles' contracts and `Sim` carry no PX4 class, port or verb, and an import contract in
 `.importlinter` holds that. A client that `Sim` built for the script would put a PX4 class into
 `Sim`. A method on the peer object would ask the peer for a port the run owns. It would also miss a
 run attached to a PX4 started elsewhere, which holds no peer object while the link is live. So the
@@ -87,7 +87,7 @@ The project's name takes three forms, each for one kind of thing:
 |---|---|---|
 | `nexus-sim` | The distribution on PyPI | `pip install nexus-sim` |
 | `nexus_sim` | The Python import package and its folder: every name Python resolves | `import nexus_sim as nx`, `nexus_sim/_src/` |
-| `nexus` | The project, and every name outside Python's import system | the `nexus` command, the `nexus:` USD attributes, the `nexus.components` entry-point group, the `nexus` logger, the `nexus.peer` Docker label, `nexus.registry.yaml`, `~/.cache/nexus` |
+| `nexus` | The project, and every name outside Python's import system | the `nexus` command, the `nexus:` USD attributes, the `nexus.components` entry-point group, the `nexus` logger, the `nexus.peer` Docker label, `nexus.catalog.yaml`, `~/.cache/nexus` |
 
 The reinforcement learning project follows the same split: `nexus-rl` is its folder and project, and
 `nexus_rl` is its import package.

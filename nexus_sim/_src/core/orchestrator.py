@@ -3,8 +3,8 @@
 A tick is an ordered ring of stages, per docs/design/execution.md. Every component states its
 per-tick work as a list of ``Stage``: a device stage joins a CUDA graph, a host stage runs between
 graph replays. The loop lays the stages out in the canonical order, sensors -> estimator -> guidance ->
-controller ->
-[clear -> the command stages -> the force stages -> step] per physics substep -> record, cuts the ring at its host stages and
+controller -> [clear -> the command elements -> the force elements -> step] per physics substep -> record,
+cuts the ring at its host stages and
 rotates it to start after the last cut, so each maximal run of device stages becomes one CUDA
 graph, the Real Time Factor (RTF) lever, and the host stages run between
 replays. One partition and one loop serve every arrangement: PX4, whose ``read`` and ``exchange``
@@ -163,7 +163,7 @@ class Orchestrator:
                 setpoint on the tick the guidance writes it. Its stage marks the tick done when its
                 mission is over, which ends the run. A flight can also set the ``guidance`` attribute
                 before the first step. ``None`` for PX4, which flies its own missions.
-            commands: The command stages: each turns the controls the controller writes into Newton's
+            commands: The command elements: each turns the controls the controller writes into Newton's
                 control inputs, the rotors' speed targets and feedforward, in its device stages.
             forces: The force elements: each adds its body wrenches to the shared ``state.body_f``
                 from the current state, the propellers' thrust and drag, in its device stages.
@@ -173,7 +173,7 @@ class Orchestrator:
             renderer: Optional render-lifecycle object, for example the Kit render peer's
                 :class:`~nexus_sim._src.rendering.KitRenderer`: the loop calls only
                 ``on_physics_ready()``/``close()``; the host-rate RTX camera *sensors* drive
-                rendering itself at the host seam.
+                rendering itself in a host stage.
             peers: The peers the build started for this run, for example the PX4 Software In The
                 Loop (SITL) container. The loop stops each when the run ends, whether it ran out,
                 stopped early or never stepped; it starts none, since a peer boots while the build
@@ -184,9 +184,9 @@ class Orchestrator:
             logger: Optional :class:`~nexus_sim._src.logging.Logger`: the recording
                 sink + shared log calls. ``None`` ⇒ no recording and no per-tick log
                 fan-out, for max speed. When present, each loggable component's
-                ``log(t, logger)`` / ``flush(logger)`` runs at the host seam, §10.
+                ``log(t, logger)`` / ``flush(logger)`` runs between graph replays, §10.
             on_tick: Optional post-step observer called as ``on_tick(state, t, steps)``
-                after recording: an output-only demo and test seam to read the live state,
+                after recording: an output-only hook for demos and tests to read the live state,
                 for example to capture a trajectory.
             preroll_timeout: Seconds to wait for the controller to establish lockstep
                 during preroll before raising ``ConnectionError``.
@@ -253,25 +253,25 @@ class Orchestrator:
         # Distinct from _last_log_t, the sim-time scene decimation, and from run_stats' post-hoc RTF.
         self._rtf_wall_prev: float | None = None
         self._rtf_sim_prev = 0.0
-        # Component-owned observation seam, the read-side twin of logging: a recordable component exposes
+        # Component-owned recording, the read-side twin of logging: a recordable component exposes
         # a device-only `record_wp()` that snapshots its quantities into a Recorder channel. Sim's `observe`
-        # attaches the Recorder post-build, via `attach_recorder`, since observation is a
-        # control-surface concern. The taps are device stages, so observing never adds a host stage.
+        # attaches the Recorder post-build, via `attach_recorder`, since recording is Sim's
+        # concern. The taps are device stages, so recording never adds a host stage.
         self._recordables = [c for c, _ in wired if hasattr(c, "record_wp")]
         self._recorder = None
-        # Hosting hooks; the control surface, Sim, drives these. on_tick is the per-tick observer,
-        # post-step, fired as on_tick(state, t, steps) after recording: a demo/test seam to read the
+        # Hosting hooks; Sim drives these. on_tick is the per-tick observer,
+        # post-step, fired as on_tick(state, t, steps) after recording: a demo and test hook to read the
         # live state, output-only. _stop is the cooperative teardown the host sets to end the steady loop.
         self.on_tick = on_tick
         self._stop = False
-        # The tick generator backing run()/step(), the in-process driving seam, lazily created on the
+        # The tick generator backing run()/step(), lazily created on the
         # first step(), None between runs. run() exhausts it; Sim.step() advances it one tick.
         self._ticks_iter = None
         self._stepped = False  # a first step() ran, or close() tore down a run that never stepped
         self.preroll_timeout = preroll_timeout
         self.exchange_timeout = exchange_timeout
         # Bound the steady loop; None = run until the controller ends it, the PX4 default.
-        # An in-process controller, for example the trained policy, never returns None, so a
+        # A controller with no peer, for example the trained policy, never returns None, so a
         # finite run, test/demo/episode, sets this.
         self.max_steps = max_steps
         # Physics steps per control exchange, zero-order-hold control over finer physics,
@@ -280,7 +280,7 @@ class Orchestrator:
         self.physics_substeps = int(physics_substeps)
         self.settings = settings
 
-    # -- component-owned logging seam ---------------------------------------------
+    # -- component-owned logging --------------------------------------------------
     def _scoped(self, path: str):
         """The Logger's view for the component at ``path`` under the sim's root; None when off."""
         return self.logger.scoped(path) if self.logger is not None else None
@@ -294,9 +294,9 @@ class Orchestrator:
             self._loggables.append(component)
         component.set_logger(self._scoped(path))
 
-    # -- component-owned observation seam, the read-side twin of logging -----------
+    # -- component-owned recording, the read-side twin of logging -----------------
     def attach_recorder(self, recorder) -> None:
-        """Attach the observation sink, Sim's ``observe=True``, and hand each recordable component the
+        """Attach the Recorder, Sim's ``observe=True``, and hand each recordable component the
         Recorder, so it registers its channel. The read-side mirror of the Logger wiring; the taps are
         device-only, so observing never adds a host stage. Call before ``run()``; a captured graph
         records the taps at capture time.
@@ -326,7 +326,7 @@ class Orchestrator:
             self.logger.set_time(float(t.sim_time))
 
     def _log_tick(self, t) -> None:
-        """Host-seam per-tick log fan-out, outside any captured graph: call each loggable that has a
+        """Per-tick log fan-out between graph replays, outside any captured graph: call each loggable that has a
         per-tick ``log(t)``, physics' scene + trail. Decimated to the Logger's ``log_hz`` here, so every
         per-tick logger rides one clock. The single off-switch: a no-op when ``logger is None``. The
         guidance + controllers log event-driven in their own methods, not here.
@@ -346,7 +346,7 @@ class Orchestrator:
     def _log_rtf(self, st: float) -> None:
         """Emit the live real-time factor ~1 Hz wall-clock: sim seconds over wall seconds since the
         last emission, a rolling window exactly one emission interval wide. Only completed ticks reach
-        this seam, so a stalled exchange shows as a *low* next reading, not a live countdown.
+        this call, so a stalled exchange shows as a *low* next reading, not a live countdown.
         """
         log_rtf = getattr(self.logger, "log_rtf", None)  # a custom sink might not have it
         if log_rtf is None:
@@ -422,14 +422,13 @@ class Orchestrator:
             trace_path=diagnostics.trace,
         )
         if self.renderer is not None and hasattr(self.renderer, "set_profiler"):
-            self.renderer.set_profiler(prof)  # detail spans inside the render seam: render/grab
+            self.renderer.set_profiler(prof)  # detail spans inside the renderer: render/grab
         return prof
 
     def stop(self) -> None:
         """Cooperatively end the steady loop; checked at the top of each tick.
 
-        The in-process Sim host sets this to tear a run down: the control surface's
-        lifecycle verb. Takes effect within one ``exchange_timeout``, since the loop might be
+        ``Sim`` sets this to tear a run down: its lifecycle verb. Takes effect within one ``exchange_timeout``, since the loop might be
         waiting in ``controller.exchange``.
         """
         self._stop = True
@@ -634,7 +633,7 @@ class Orchestrator:
         return graphs
 
     def _loop(self, segments, graphs, tick):
-        """The steady loop as a generator: one control tick per ``yield``, the step() driving seam.
+        """The steady loop as a generator: one control tick per ``yield``, which step() drives.
         Each tick advances the clock, opens its log, then runs the segments in ring order: a device
         segment replays its graph, or runs stage by stage without one, and a host stage runs on the
         host between replays. A host stage that reports its peer gone ends the run, and so does a tick
@@ -682,13 +681,13 @@ class Orchestrator:
                         for st in seg.stages:
                             st.run(tick)
                         prof.mark("stages")
-                self._log_tick(tick.t)  # host-seam log fan-out: scene+trail, …; no-op if logging off
+                self._log_tick(tick.t)  # log fan-out between graph replays: scene+trail, …; no-op if logging off
                 if self.on_tick is not None:
-                    self.on_tick(tick.state, tick.t, count)  # post-step observer, a demo and test seam
+                    self.on_tick(tick.state, tick.t, count)  # post-step observer, a demo and test hook
                 self.clock.throttle()  # no-op unless rtf>0, the interactive real-time throttle
                 prof.mark("log")
                 prof.tick_end()
-                yield  # one control tick complete: the step() driving seam
+                yield  # one control tick complete: step() returns here
         finally:
             self._record_rtf(count, t0, t_warm, steps_warm)
             prof.close()
@@ -697,8 +696,8 @@ class Orchestrator:
     def step(self) -> bool:
         """Advance the run one control tick, returning ``True`` if a tick ran or ``False`` when the run has
         ended: mission complete / ``max_steps`` / ``stop()`` / peer disconnect. Setup, reset, connect and
-        graph capture, runs on the first call; teardown runs automatically when the run ends. The
-        control surface, ``Sim.step``, drives this for every controller, PX4 included. Deterministic:
+        graph capture, runs on the first call; teardown runs automatically when the run ends.
+        ``Sim.step`` drives this for every controller, PX4 included. Deterministic:
         no wall-clock.
         """
         if self._ticks_iter is None:

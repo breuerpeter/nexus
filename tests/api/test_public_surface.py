@@ -59,7 +59,7 @@ def test_a_script_imports_the_px4_client_and_the_mission_plan_types_from_nexus_p
 
 
 # The API reference pages: a `::: nexus.<Name>` directive with one dotted segment documents a
-# public export; the `_src` directives in operator.md have more segments and stay out.
+# public export; the `_src` directives in guidance.md have more segments and stay out.
 _API_REFERENCE = Path(__file__).resolve().parents[2] / "docs" / "reference" / "api"
 _DIRECTIVE = re.compile(r"^::: nexus\.(\w+)$", re.MULTILINE)
 _IMPORT_LINE = re.compile(r"^from nexus_sim import (.+)$", re.MULTILINE)
@@ -86,6 +86,17 @@ def test_api_reference_documents_no_state():
     assert names, "no reference directive found"
     assert [name for name in names if name not in nx.__all__] == []
     assert "State" not in names
+
+
+def test_the_public_surface_names_the_vehicle_and_scene_catalog_catalog_and_no_registry():
+    """The public surface names the vehicle and scene catalog `Catalog`, and no name `Registry`.
+
+    Given a fresh interpreter, when it imports `nexus_sim`, then `nexus_sim.Catalog` loads the bundled
+    catalog with its two vehicles, and `Registry` isn't in `nexus_sim.__all__`.
+    """
+    code = "import nexus_sim as nx; print(sorted(nx.Catalog.from_yaml().vehicles), 'Registry' in nx.__all__)"
+    out = subprocess.run([sys.executable, "-c", code], check=False, capture_output=True, text=True)
+    assert out.stdout.strip() == "['astro_max_base', 'astro_max_fpv'] False", out.stderr
 
 
 def test_importing_core_loads_neither_newton_nor_warp():

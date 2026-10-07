@@ -17,7 +17,7 @@ pytest.importorskip("pxr")
 import warp as wp
 
 from nexus_sim._src.config import LaunchConfig
-from nexus_sim._src.config.registry import load_registry
+from nexus_sim._src.config.catalog import load_catalog
 from nexus_sim._src.core.schema import Controls
 from nexus_sim._src.core.stages import peer_stages
 from tests.usd import sensor_vehicle as sv
@@ -63,17 +63,17 @@ class _Controller:
 
 def _catalog(tmp_path):
     """A project catalog over the bundled one: two scenes with an origin each, and `bare` with none. None names a scene file, so no build fetches one."""
-    path = tmp_path / "nexus.registry.yaml"
+    path = tmp_path / "nexus.catalog.yaml"
     path.write_text(
         "scenes:\n"
         f"  zurich:\n    geodetic_origin: {{ lat: {ZURICH[0]}, lon: {ZURICH[1]}, alt: {ZURICH[2]} }}\n"
         f"  woodinville:\n    geodetic_origin: {{ lat: {WOODINVILLE[0]}, lon: {WOODINVILLE[1]}, alt: 5.02 }}\n"
         "  bare: {}\n"
     )
-    return load_registry(path)
+    return load_catalog(path)
 
 
-def _settled(launch, registry):
+def _settled(launch, catalog):
     """Build the run *launch* names, settle it on the ground and run its seed pass; the run and the
     measurement of the settled state. A tick's exchange follows its step, so the settled state's
     measurement is the seed pass's, and the run flies no tick.
@@ -85,7 +85,7 @@ def _settled(launch, registry):
     from nexus_sim._src.build.launch import resolve_scenario
 
     with wp.ScopedDevice("cpu"):
-        builder, resolved, cfg = resolve_scenario(launch, registry=registry)
+        builder, resolved, cfg = resolve_scenario(launch, catalog=catalog)
         cfg["physics"]["force_cpu"] = True
         controller = _Controller()
         orch = build_orchestrator(resolved.tested_config.vehicle, cfg, builder, controller=controller, max_steps=0)

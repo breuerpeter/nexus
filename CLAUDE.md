@@ -50,8 +50,8 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
   `Args:`, `Returns:`, and `Raises:` sections, on the public `nexus_sim.*` surface. The reference
   filters out underscore-prefixed members and the `nexus_sim._src` layout, so document the curated
   public API, not internals.
-- **Vehicle and scene USDs are content-addressed, hosted assets.** The registry is
-  `nexus_sim/_src/config/registry.yaml`. The runtime resolver, `nexus_sim._src.assets.resolver`,
+- **Vehicle and scene USDs are content-addressed, hosted assets.** The catalog is
+  `nexus_sim/_src/config/catalog.yaml`. The runtime resolver, `nexus_sim._src.assets.resolver`,
   fetches `{url, sha256}` to a verified cache at `assets/cache/`, which `$NEXUS_ASSET_CACHE`
   overrides. Read `scripts/assets/CLAUDE.md` before adding or updating an asset.
 - **A recorded row's entity path names who wrote it**: the process, `sim` or a peer's folder name,

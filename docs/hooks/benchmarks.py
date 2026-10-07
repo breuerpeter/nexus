@@ -29,7 +29,7 @@ _REPO = Path(__file__).resolve().parents[2]
 _MATRIX = _REPO / "docs/data/rtf_matrix.json"
 _EXAMPLES = _REPO / "docs/data/examples_bench.json"
 _BASELINES = _REPO / "scripts/ci/examples_baselines.json"
-_REGISTRY = _REPO / "nexus_sim/_src/config/registry.yaml"  # names the bucket's base, which the feed sits under
+_CATALOG = _REPO / "nexus_sim/_src/config/catalog.yaml"  # names the bucket's base, which the feed sits under
 _MARKER = re.compile(
     r"<!--\s*(?P<kind>benchmark-matrix|benchmark-examples|benchmark-trends|example-stats:\s*(?P<name>[\w.-]+))\s*-->"
 )
@@ -182,7 +182,7 @@ def trends(baselines: dict, repo: str = "") -> str:
             bound = _bound(rule)
             if bound is not None:
                 gates[f"{metric}[{example}]"] = bound
-    base = (yaml.safe_load(_REGISTRY.read_text()).get("assets") or {}).get("base", "")
+    base = (yaml.safe_load(_CATALOG.read_text()).get("assets") or {}).get("base", "")
     return "\n".join(
         [
             f'<div class="bench-trends" data-feed="{base}/ci/bench/latest.json" data-repo="{repo}" markdown="0">',

@@ -103,7 +103,7 @@ def convert_obj(obj_dir, out_usdz, *, recenter="spawn") -> str:
 def _recenter_obj(obj_path: str, out_dir: str) -> str:
     """Copy an OBJ plus siblings into ``out_dir`` with vertices recentered XY on the bbox center,
     for float precision, z kept as authored. Where the drone starts is deliberately not baked into
-    the asset: the registry scene's ``start``, suggested by ``scripts/assets/spawn_site.py``,
+    the asset: the catalog scene's ``start``, suggested by ``scripts/assets/spawn_site.py``,
     places the chosen surface point at the world origin at load time. The copy keeps the sidecar
     files, ``.mtl`` and textures, verbatim. Returns the recentered ``.obj`` path.
     """

@@ -5,13 +5,14 @@ description: "How nexus works: a fixed-order deterministic sim loop of typed, re
 # Architecture
 
 The framework is an **imperative, fixed-order, deterministic simulation loop** in which every concern is
-a replaceable component behind a typed interface. A central
-[`Orchestrator`](../reference/api/core.md) steps the components in a fixed order each tick. The
-[`Sim`](../reference/api/simulation.md) façade builds and drives it.
+a replaceable [component](concepts.md#component) behind a typed interface. The
+[loop](concepts.md#loop), the class [`Orchestrator`](../reference/api/core.md), steps the
+components in a fixed order each [tick](concepts.md#tick), and [`Sim`](concepts.md#sim) builds
+and drives it.
 
 ## The simulation loop
 
-Each tick runs the same fixed sequence, and the order is what makes runs reproducible:
+Each tick runs the same fixed sequence, and the order is what makes [runs](concepts.md#run) reproducible:
 
 ```
 t = clock.advance()
@@ -19,14 +20,15 @@ t = clock.advance()
 [estimator stages]                        # the estimate: the base body's pose and twist; none on PX4
 [guidance stage]                          # the setpoint, from the mission and the estimate; none on PX4
 [controller stages]                       # PX4: read + exchange host stages; PID: one device stage
-[clear → command stages → force stages → step] × substeps
+[clear → command elements → force elements → step] × substeps
                                           # command buffer → Newton's control inputs; state → per-body
                                           # forces; step: Newton's actuators, then the solver
 [record]                                  # the recorder's device taps
 ```
 
-Every component states its stages, and the loop cuts the ring at the host stages, so each run of
-device stages replays as one CUDA graph. See [Execution](execution.md#stages-and-segments).
+Every component states its [stages](concepts.md#stage), and the loop cuts the
+[ring](concepts.md#ring) at the host stages, so each [segment](concepts.md#segment) replays as
+one CUDA graph. See [Execution](execution.md#stages-and-segments).
 
 The **site is resolved once at build**, not sampled per tick: the scene's geodetic origin gives the
 magnetic field, the air pressure and temperature, and gravity, and the sensors that read them take
@@ -58,25 +60,17 @@ persistent, in-place device buffers with static shapes, so the device region can
 
 ## Component interfaces
 
-Components are narrow, typed `Protocol`s, light on side effects, so each is independently testable and
-fault-wrappable:
-
-| Interface | Responsibility |
-|---|---|
-| `Clock` | sim-time and step, with real-time scaling |
-| `Physics` | `reset` / `step` the Newton dynamics: `step` steps every Newton actuator the vehicle declares, then the solver |
-| Command stage | device stages that turn the controls the controller writes into Newton's control inputs: the rotors' speed targets and feedforward |
-| Force element | device stages that add body wrenches to the shared `body_f` buffer from the current state: the propellers' thrust and drag |
-| `Sensor` | a device stage into its own buffer plus `read(meas) → Measurement`, or a host stage where a camera sensor uses a renderer |
-| Estimator | its stages, which write the estimate after the sensors' stages and before the guidance's: `GroundTruthEstimator`, the ground-truth passthrough, is the one that ships |
-| `Controller` | its stages, one contract, many implementations: a peer's `read` and `exchange` host stages, or a device-native law |
-| `Renderer` | the Kit render peer's lifecycle: RTX sensors render in a container fed poses over a socket |
-| `Stage`, `Tick` | the stage contract: one unit of per-tick work, which declares the [signals](execution.md#signals) it reads and writes, and the loop's own context every stage runs over |
-| `Recorder` | cross-cutting observability |
+Each component fills one [role](concepts.md#role), and each role's contract is a narrow, typed
+`Protocol`, light on side effects, so each component is independently testable and
+fault-wrappable. Every component states its work as [stages](concepts.md#stage) over the
+[tick](concepts.md#tick), and each stage declares the [signals](concepts.md#signal) it reads and
+writes. The fixed parts, the clock, the [physics](concepts.md#physics), the
+[Recorder](concepts.md#recorder) and the [Logger](concepts.md#logger), keep contracts of their own,
+such as `Clock` and `Physics`, and the Kit render [peer](concepts.md#peer)'s lifecycle rides the `Renderer` contract.
 
 The **scene and the vehicle aren't code interfaces**: they come from
-Universal Scene Description (USD). A single `USDBuilder` reads the vehicle model through
-`ModelBuilder.add_usd`. There is no hand-written builder to swap.
+Universal Scene Description (USD). A single `VehicleUsd` reads the vehicle model through
+`ModelBuilder.add_usd`. There is no hand-written vehicle model to swap.
 
 **Reading state.** Components never call an engine API directly. They read the live
 `newton.State`, `body_q` as a transform and `body_qd` as a spatial vector, through Warp kernels.
@@ -109,9 +103,9 @@ same loop:
 - **`TrainedPolicyController`**: loads a policy exported from `nexus-rl` and drives the
   vehicle from an observation it builds from the estimate.
 
-**The estimator** is the first block of the control cascade: the role whose stages run each tick
-after the sensors' and before the guidance's. It writes the estimate, a
-[signal](execution.md#signals) of the type `PoseTwist`: the base body's position, its quaternion, and its
+The [estimator](concepts.md#role) is the first block of the control cascade. Its stages run each tick
+after the sensors' and before the guidance's. They write the estimate, a
+[signal](concepts.md#signal) of the type `PoseTwist`: the base body's position, its quaternion, and its
 linear and angular velocity, in world axes. The guidance and each controller that reads the vehicle's
 state read the estimate, never the physics state, so a controller written against it flies behind any
 estimator. The estimator belongs to the vehicle's flight stack, beside its controller, so the run
@@ -136,8 +130,8 @@ guidance's own parameters and hands it to `Sim.from_orchestrator`.
 
 PX4 takes no guidance, because its own navigator sequences its missions, and no setpoint from the
 loop. It takes no estimator either, because its own estimator runs in its peer and takes the
-sensors' values over the lockstep link. A script commands it over its offboard link, a MAVLink link of its own beside the lockstep
-link. The run owns that link's address and names it in its port map, and the script opens its own
+sensors' values over the lockstep link. A script commands it over its offboard [link](concepts.md#link), a MAVLink link of its own beside the lockstep
+link. The run owns that link's address and names it in its [port map](concepts.md#port-map), and the script opens its own
 client there: [`nexus_sim.px4.OffboardClient`](../reference/api/px4.md) on `sim.ports["offboard"]`.
 [Conventions](conventions.md#who-owns-an-address) states the rule.
 
@@ -146,24 +140,22 @@ client there: [`nexus_sim.px4.OffboardClient`](../reference/api/px4.md) on `sim.
 The rotor chain has three parts, split along NVIDIA Newton's model, so nothing in nexus overlaps
 Newton's actuator.
 
-- A **command stage** turns the controller's command into Newton's control inputs. The rotors'
-  scales each command to a rotor-speed target, the job of an Electronic Speed Controller (ESC)
-  reduced to one multiply, and adds a drag feedforward.
+- The rotors' **[command element](concepts.md#role)** scales each command to a rotor-speed target,
+  the job of an Electronic Speed Controller (ESC) reduced to one multiply, and adds a drag
+  feedforward.
 - The motor is **Newton's actuator**, a `NewtonActuator` prim authored in the vehicle USD: a velocity
   servo under a torque-speed envelope on the real rotor joint. Physics steps every Newton actuator
   the vehicle declares, rotor motor or not, before its solver. So the rotor speed is a
   solver-integrated state with physical lag and saturation.
-- A **force element** turns the current state into body wrenches and adds them to the shared
-  `body_f` buffer. The propellers' is the airflow-aware closed form that turns rotor speed and
-  inflow into thrust and in-plane force on the rotor body. A force element adds and never assigns,
-  so two elements on one body both act.
+- The propellers' **[force element](concepts.md#role)** is the airflow-aware closed form that turns
+  rotor speed and inflow into thrust and in-plane force on the rotor body.
 
-The propeller's parameters, `ct`, `cd` and the aero terms, come from the `NexusPropellerAPI` schema
+The propeller's parameters, `ct`, `cd` and the aero terms, come from the `NexusPropellerAPI` [schema](concepts.md#schema)
 that each rotor's rigid body applies in the vehicle USD. The rotor speed at full command is the
 motor's no-load speed, `newton:velocityLimit`. The **mixer**, the
 Collective Thrust and Body Rates (CTBR) rate loop and the `B⁻¹` control allocation, lives in the
 *controllers*, not the rotor chain. So `Controls.command` is always one entry per actuator, and a
-command stage only ever applies the forward map. PX4 and the acados example fly this chain. The
+command element only ever applies the forward map. PX4 and the acados example fly this chain. The
 PID, policy and sampling Model Predictive Control (MPC) examples fly a single-body plant with a
 motor lag of their own.
 
@@ -171,8 +163,8 @@ motor lag of their own.
 
 Observability is cross-cutting, split into a **write** side and a **read** side:
 
-- **One central Rerun sink.** A single `Logger`, injected into every component, owns the one
-  Rerun recording. Each row's entity path names its process, its component and its instance, such
+- **One central Rerun sink.** A single [Logger](concepts.md#logger), handed to every component,
+  owns the one Rerun recording. Each row's entity path names its process, its component and its instance, such
   as `sim/vehicle/sensors/imu` or `sim/guidance/reference`, on a shared `sim_time` timeline. The
   [logging reference](../reference/api/logging.md#entity-paths) states the rule. It can serve a live
   viewer over gRPC on port `9876` or write a durable `.rrd`. A peer writes under its own root, the
@@ -180,24 +172,24 @@ Observability is cross-cutting, split into a **write** side and a **read** side:
   Kit render peer's frames on the host, under `sim/`. Logging is **output-only**: nothing reads it back
   into the loop, so it can't perturb determinism. It decimates to a configurable rate, 50 Hz by
   default, so it doesn't cap the real-time factor.
-- **The Recorder read-seam.** Components record typed samples into device-side ring buffers: body
+- **The [Recorder](concepts.md#recorder).** Components record typed samples into device-side ring buffers: body
   poses and velocities as `BodyState` and `JointState`, and sensor outputs as `SensorSample`. A
   caller reads them on demand through [`sim.physics`](../reference/api/simulation.md) and
   `sim.sensors`. A channel's key is its instance's path below the process root: `vehicle/body/…`,
   `vehicle/joints/…` and `vehicle/sensors/…`. The instance has the same path in the recording, so
   the recorder and the recording use one name for one thing. This is the capture-safe way
-  to observe a run without a host round-trip each tick. At the end of a recorded run the Logger
+  to read a run without a host round-trip each tick. At the end of a recorded run the Logger
   dumps every channel's ring as time-series entities at `sim/<key>/series/<field>`. So you can inspect the
-  whole observation history in the viewer's debug tabs.
+  whole [history](concepts.md#history) in the viewer's debug tabs.
 
 Each PX4 run also produces PX4's native `.ulg` flight log alongside the `.rrd`, both surfaced as run
 artifacts.
 
 ## Configuration and vehicles
 
-A typed [`LaunchConfig`](../reference/api/configuration.md), resolved against a `Registry`,
-describes a run. A launch names the vehicle variant it flies, and a launch that names none flies the
-registry's default. Resolution maps the variant to its Universal Scene Description (USD), which
+A typed [`LaunchConfig`](../reference/api/configuration.md), resolved against the
+[catalog](concepts.md#catalog), describes a run. A launch names the vehicle variant it flies and
+its scene. Resolution maps the variant to its Universal Scene Description (USD), which
 declares its controller: PX4, through the `NexusPx4API` schema and its airframe. It emits a fully specified, sha-pinned **tested-configuration receipt**, so a test records
 exactly what it simulated. Vehicle assets are content-addressed. The
 [publish pipeline](conventions.md) converts a USD to a preview `.glb` and uploads both.

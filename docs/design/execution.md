@@ -4,46 +4,43 @@ description: "The execution model of nexus, a ring of device and host stages tha
 
 # Execution & determinism
 
-The same components and the same fixed-order [tick](architecture.md#the-simulation-loop) run on a
+The same [components](concepts.md#component) and the same fixed-order [tick](concepts.md#tick) run on a
 CPU or a CUDA device. **Nothing selects a strategy**, and there is no knob for one. The one
 user-facing control is `--device {auto,cpu,cuda}`, as in
 `nexus run --vehicle astro_max_base --scene empty --device cpu`. The default, `auto`, takes the GPU
-when one is present. The `Orchestrator` builds the tick from the stages each component states and
-captures graphs on CUDA.
+when one is present. The [loop](concepts.md#loop) builds the tick from the stages each component states
+and captures graphs on CUDA.
 
 ## Stages and segments
 
-A tick is an ordered ring of **stages**. Every component states its per-tick work as a list of
-stages, and each stage states its kind:
+A [tick](concepts.md#tick) runs the [ring](concepts.md#ring) of [stages](concepts.md#stage) the
+components state, in the loop's fixed order. Device stages include the [physics](concepts.md#physics), the command and
+force elements, a sensor's sampling kernel, the record taps, and the Proportional Integral
+Derivative (PID) law. On CUDA a device stage replays as part of a CUDA graph. On a CPU device it
+runs stage by stage, the bit-exact determinism authority. Host stages include PX4's `read` and
+`exchange`, a Model Predictive Control (MPC) solve, a torch policy's inference, and an RTX
+sensor's frame exchange with the Kit peer. A host stage runs on the host between graph replays. A
+differentiable rollout, for design optimization, records the whole loop on a Warp tape, the PID
+law included, and a loss back-propagates through it.
 
-| Stage kind | What | How it runs |
-|---|---|---|
-| **Device stage** | A static launch over persistent device buffers: physics, a command stage, a force element, a sensor's sampling kernel, the record taps, the Proportional Integral Derivative (PID) law | On CUDA, replayed as part of a CUDA graph. On a CPU device, run stage by stage, the bit-exact determinism authority |
-| **Host stage** | Work that leaves the device or the process: PX4's `read` and `exchange`, a Model Predictive Control (MPC) solve, a torch policy's inference, an RTX sensor's frame exchange with the Kit peer | On the host, between graph replays |
-| **Differentiable rollout** | Design optimization | A Warp tape records the whole loop, including the PID law. A loss back-propagates through it |
-
-The loop lays the stages out in one canonical order. The sensors come first, then the estimator and
-the guidance when the run has them, then the controller. `clear`, the command stages, the force stages and `step` follow,
-once per physics substep, and record comes last. The command stages write Newton's control inputs, the
-force stages add the body forces, and `step` steps Newton's actuators and then the solver. The loop cuts
-the ring at its host stages. It rotates
-the ring to start after the last cut, so the ring's tail folds into the first run. **Each maximal
-run of device stages becomes one CUDA graph.** The host stages run between the replays. With no
+The loop cuts the ring at its host stages. It rotates the ring to start after the last cut, so the
+ring's tail folds into the first run.
+**Each [segment](concepts.md#segment) becomes one CUDA graph.** The host stages run between the replays. With no
 host stage the whole ring is one graph. A component that states no stages fails the build with an
 error that names it, and so does a stage of a kind the loop doesn't know. Nothing falls back to a
-slower path in silence. A run logs its plan once at start, for example
+slower path in silence. A [run](concepts.md#run) logs its plan once at start, for example
 `stage plan: graph(clear -> rotors -> propellers -> step -> record -> imu -> mag -> baro -> gps) host(read) host(truth) host(exchange)`.
 
 ## Signals
 
-Components pass values to each other as **signals**. A signal is a named, typed value that one
-component writes and others read on the tick. Each stage declares the signals it reads and the signals
-it writes, so a component's inputs and outputs are those of its stages.
+Components pass values to each other as [signals](concepts.md#signal). Each stage declares the
+signals it reads and the signals it writes, so a component's inputs and outputs are those of its
+stages.
 
 A signal's type fixes where its buffer lives. A device type's buffer is a Warp array. Device stages
 read and write it in their kernels, and a host stage reads it with a copy and writes it in place
 between graph replays. Any other type is a host type, whose buffer holds one object. Core ships the
-types of the values between roles. `Controls` holds the per-actuator commands a controller writes and
+types of the values between [roles](concepts.md#role). `Controls` holds the per-actuator commands a controller writes and
 the command elements read, on the device. The setpoints are `PositionGoal`, on the device, and
 `ReferenceTrajectory`, on the host: a guidance writes one, and its controller reads it. `PoseTwist`
 is the estimate, on the device: the estimator writes the base body's pose and twist, and the guidance
@@ -79,7 +76,7 @@ run, fails.
 **Captured execution benefits online Software In The Loop (SITL) runs, not just batch.** The PX4
 controller states three host stages. Its `read` stage is the sensor fan-in into the `Measurement`.
 Its `truth` stage copies the base body's true state, the ground truth PX4 logs. Its `exchange` stage is
-the blocking MAVLink lockstep. The graph captures the command and force stages,
+the blocking MAVLink lockstep. The graph captures the command and force elements,
 physics, record and sensors *around* them. The only host↔device traffic per tick is then the small controls, measurements
 and base body vectors the lockstep already moves. A **host solver** states the `read` and `exchange` stages. Examples are the
 per-tick optimization of an MPC controller and a torch policy. Its solve runs between replays while
@@ -102,7 +99,7 @@ The *same* thing gates CUDA-graph capture and reverse-mode automatic differentia
 cross a host, marshalling, or process boundary. The work that keeps the per-tick loop device-native
 unlocks both. The eager and differentiable paths share the per-tick control sequence of observe →
 control → actuate. They don't share the *outer* loop. They differ in their memory model, with
-persistent double-buffers for capture versus a per-step history for backprop-through-time, in host
+persistent double-buffers for capture versus one state per step for backprop-through-time, in host
 scaffolding, and in the physics assembly. So components take their buffers as arguments, and one
 set of Warp kernels serves both callers.
 
@@ -114,7 +111,7 @@ CUDA-array-interface or DLPack framework can join zero-copy. **At a host stage**
 be any language, process, or device, at the cost of a per-tick copy and no capture or automatic
 differentiation across that stage. For the current stack there are **two** kinds: the PX4
 controller's `read`, `truth` and `exchange`, every tick, and the RTX sensors' frame exchange, at their render
-rate. Each talks to a peer: a process the run starts, and speaks to over a link. The Kit render peer runs in a
+rate. Each talks to a [peer](concepts.md#peer) over a [link](concepts.md#link). The Kit render peer runs in a
 process of its own. At a frame's due tick the host copies the body poses and sends them, a few
 hundred bytes. It takes the frame on a later tick, so the loop waits only when the peer falls a full
 frame behind.

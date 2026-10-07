@@ -1,4 +1,4 @@
-"""Standard per-run evaluation artifacts: the examples' half of the CI evaluation seam.
+"""Standard per-run evaluation artifacts: the examples' half of the CI evaluation.
 
 Every example dumps its flown trajectory, its reference when one exists, and its run stats to a
 small ``<name>.npz`` + ``<name>.json`` pair via :func:`dump_run`, or via :func:`dump_stats` for a

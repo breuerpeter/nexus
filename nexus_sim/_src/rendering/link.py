@@ -1,4 +1,4 @@
-"""The host's end of the render link, and the renderer seam the loop drives.
+"""The host's end of the render link, and the renderer the loop drives.
 
 The framing, a 4-byte big-endian header length, the header as UTF-8 JSON, then the binary blobs
 the header lists by size under ``blobs``, and the message set live once, in the Kit peer's
@@ -63,10 +63,10 @@ def pose_matrices(body_q) -> np.ndarray:
 
 
 class KitRenderer:
-    """The Kit render peer on the loop's side: the renderer seam plus the link the RTX sensors ride.
+    """The Kit render peer on the loop's side: the renderer plus the link the RTX sensors ride.
 
     The loop calls :meth:`on_physics_ready` before the flight and :meth:`close` after it. Each RTX
-    sensor calls :meth:`tick` from its host-seam sample; the first call at a sim time does the
+    sensor calls :meth:`tick` from its host-stage sample; the first call at a sim time does the
     tick's work and later ones return.
 
     Args:

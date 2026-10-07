@@ -1,5 +1,5 @@
 """Collapse a quad-X vehicle Universal Scene Description (USD) into a single rigid body: the one framework
-seam for the single-body model path, the differentiable sampling Model Predictive Control (MPC) +
+path for the single-body model, the differentiable sampling Model Predictive Control (MPC) +
 design-optimization rollouts, and their real sim.
 
 Core framework rule: **models are only ever created from USDs**, never synthesized in code. The
@@ -71,7 +71,7 @@ def _fix_rotor_joints(builder) -> int:
     return n
 
 
-def _read_rotor_layout(vehicle_builder):
+def _read_rotor_layout(vehicle_usd):
     """Read ``(mass, offsets(nr,3), dirs(nr,))`` from the articulated USD, its declared rotor joints, before
     the collapse: offsets in the base-body frame, spin signs from each rotor-z compared to the base-z,
     USD-authored.
@@ -80,12 +80,12 @@ def _read_rotor_layout(vehicle_builder):
 
     b = newton.ModelBuilder()
     b.add_ground_plane()
-    vehicle_builder.build(b)
+    vehicle_usd.build(b)
     m = b.finalize()
     st = m.state()
     newton.eval_fk(m, m.joint_q, m.joint_qd, st)
     bq = st.body_q.numpy()
-    _vel, _pos, bodies, base = find_rotor_joints(m, vehicle_builder.rotor_joints())
+    _vel, _pos, bodies, base = find_rotor_joints(m, vehicle_usd.rotor_joints())
     rb = _quat_to_R(bq[base, 3:7])
     bz = rb @ np.array([0.0, 0.0, 1.0])
     offsets = np.array([rb.T @ (bq[r, :3] - bq[base, :3]) for r in bodies], dtype=np.float32)  # base-frame
@@ -97,13 +97,13 @@ def _read_rotor_layout(vehicle_builder):
 
 
 def collapse_to_single_body(
-    vehicle_builder,
+    vehicle_usd,
     *,
     count: int = 1,
     requires_grad: bool = False,
     cfg: dict | None = None,
 ) -> SingleBody:
-    """Collapse a quad-X vehicle USD to ``count`` free single rigid bodies: the one single-body seam.
+    """Collapse a quad-X vehicle USD to ``count`` free single rigid bodies: the one single-body path.
 
     Reads the rotor layout + actuator params from the articulated USD, its rotor joints, stamps ``count``
     vehicle copies into one model, retypes each rotor REVOLUTE joint to a fixed joint and ``collapse_fixed_joints()``
@@ -115,7 +115,7 @@ def collapse_to_single_body(
     ``sb.offsets``/``sb.dirs``: it drives the collapsed body exactly as the articulated model.
 
     Args:
-        vehicle_builder: The articulated quad-X vehicle builder, for example the registry ``USDBuilder``.
+        vehicle_usd: The articulated quad-X vehicle's ``VehicleUsd``, such as the catalog vehicle's.
         count: Number of independent single bodies to stamp: ``1`` for the real sim, ``num_rollouts`` for
             the sampling-MPC batched differentiable rollout.
         requires_grad: Build the model with gradients, for the differentiable rollout model, or without,
@@ -130,12 +130,12 @@ def collapse_to_single_body(
 
     from nexus_sim._src.scene import add_scene
 
-    mass, offsets, dirs = _read_rotor_layout(vehicle_builder)
-    act = dict(vehicle_builder.actuator_params())
+    mass, offsets, dirs = _read_rotor_layout(vehicle_usd)
+    act = dict(vehicle_usd.actuator_params())
     b = newton.ModelBuilder()
     b.add_ground_plane()
-    for _ in range(int(count)):  # count copies of the registry vehicle USD
-        vehicle_builder.build(b)
+    for _ in range(int(count)):  # count copies of the catalog vehicle USD
+        vehicle_usd.build(b)
     # Drop any USD-authored NewtonActuator entries, the core path's rotor motors: the collapse
     # destroys the rotor joints they target, and the single-body regime runs the joint-agnostic
     # Rotors actuator instead.

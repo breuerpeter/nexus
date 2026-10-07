@@ -5,7 +5,7 @@ which work under every launcher: ``python -m nexus_sim.examples`` and plain
 ``python path/to/flight.py``. Ships in the wheel as the examples themselves do.
 
 The single-body actuator world lives here, and the examples that collapse the model to one rigid
-body run it: :mod:`rotors` holds the summed-base-wrench ``Rotors`` and ``RigidBodyRotors``;
+body run it: :mod:`rotors` holds the summed-base-wrench ``Rotors``;
 :mod:`mixer` holds ``RotorMixer``, the Collective Thrust and Body Rate (CTBR) and moment mixers,
 and the allocation builders; :mod:`motor` holds the first-order Ω lag; :mod:`coupling` holds the
 wrench kernels the RL rollouts also run; :mod:`single_body` holds the collapse from
@@ -34,4 +34,4 @@ from nexus_sim.examples._lib.mixer import (  # noqa: F401
     wrench_to_cmd,
 )
 from nexus_sim.examples._lib.motor import lag_step, motor_alpha  # noqa: F401
-from nexus_sim.examples._lib.rotors import RigidBodyRotors, Rotors  # noqa: F401
+from nexus_sim.examples._lib.rotors import Rotors  # noqa: F401

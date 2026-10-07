@@ -1,6 +1,6 @@
 """The loop runs each component's work as device and host stages: every component states its stages,
 each maximal run of device stages replays as one CUDA graph, and the host stages run between replays.
-Stand-in components at the loop's seams; the CUDA tests skip without a device and scope the one they
+Stand-in components in the loop's roles; the CUDA tests skip without a device and scope the one they
 use, so the default device is the same after them.
 """
 
@@ -122,8 +122,6 @@ class _PeerController:
     before a peer connects. ``answers`` says which exchanges the peer answers; ``attached`` says when
     the peer dialed in. It keeps every exchange and device-stage call.
     """
-
-    host_boundary = True
 
     def __init__(self, *, attached=True, answers=lambda n: True):
         self.attached = attached
@@ -392,8 +390,8 @@ class _Noting(_Physics):
         return state
 
 
-class _CommandStage:
-    """A command stage: one device stage that notes when it runs."""
+class _CommandElement:
+    """A command element: one device stage that notes when it runs."""
 
     def __init__(self, notes):
         self.notes = notes
@@ -412,11 +410,11 @@ class _ForceElement:
         return [Stage("force", "device", lambda tick: self.notes.append("force"))]
 
 
-def test_a_tick_runs_clear_the_command_stages_the_force_stages_and_step_once_per_substep():
-    """A tick runs `clear`, the command stages, the force stages and `step`, in that order, once per
+def test_a_tick_runs_clear_the_command_elements_the_force_elements_and_step_once_per_substep():
+    """A tick runs `clear`, the command elements, the force elements and `step`, in that order, once per
     physics substep.
 
-    Given a loop with stand-in physics, a stand-in command stage and a stand-in force element that each
+    Given a loop with stand-in physics, a stand-in command element and a stand-in force element that each
     note when they run, when one tick runs with two physics substeps, then the notes read clear, command,
     force, step, twice over.
     """
@@ -425,7 +423,7 @@ def test_a_tick_runs_clear_the_command_stages_the_force_stages_and_step_once_per
         orch = Orchestrator(
             clock=_Clock(),
             physics=_Noting(notes),
-            commands=[_CommandStage(notes)],
+            commands=[_CommandElement(notes)],
             forces=[_ForceElement(notes)],
             sensors=[_GraphSensor()],
             controller=_DeviceController(),
@@ -437,10 +435,10 @@ def test_a_tick_runs_clear_the_command_stages_the_force_stages_and_step_once_per
 
 
 @pytest.mark.parametrize("role", ["commands", "forces"])
-def test_a_command_stage_or_a_force_element_that_states_no_stages_fails_the_build_naming_it(role):
-    """A command stage or a force element that states no stages fails the build and names it.
+def test_a_command_element_or_a_force_element_that_states_no_stages_fails_the_build_naming_it(role):
+    """A command element or a force element that states no stages fails the build and names it.
 
-    Given a run with a stand-in command stage that states no stages, and one with such a force element,
+    Given a run with a stand-in command element that states no stages, and one with such a force element,
     when each loop builds, then each fails and the error names the stand-in's class.
     """
     with wp.ScopedDevice("cpu"), pytest.raises(ValueError, match="_Stageless"):
@@ -455,7 +453,7 @@ def test_a_command_stage_or_a_force_element_that_states_no_stages_fails_the_buil
 
 @pytest.mark.gpu
 def test_a_host_stage_sensor_samples_once_per_tick_outside_the_graph():
-    """A sensor whose work is a host stage samples once per tick at the host seam, outside the graph:
+    """A sensor whose work is a host stage samples once per tick in a host stage, outside the graph:
     over three ticks it sampled three times, never under capture.
     """
     with _cuda():

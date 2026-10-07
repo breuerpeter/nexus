@@ -25,12 +25,12 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-# Hosted assets sit on a flat, content-addressed scheme under a registry's base:
+# Hosted assets sit on a flat, content-addressed scheme under a catalog's base:
 # ``<base>/assets/<kind>/<name>-<sha256>.<ext>``, where ``<kind>`` is the whole folder under
 # ``assets/``: ``usd/vehicles`` and ``usd/scenes`` for the self-contained ``.usdz`` files and their
 # ``.glb`` previews, ``policies`` for an example's exported ``.pt`` policy. ``<name>`` is
 # human-readable and the sha in the key makes objects immutable, cached forever. This is the single
-# source of truth for the scheme; the base is the registry's own, so where the blobs live is data a
+# source of truth for the scheme; the base is the catalog's own, so where the blobs live is data a
 # catalog carries and not a name in this package. The docs preview hook and
 # ``scripts/assets/prepare_asset_upload.py`` derive their URLs here.
 
@@ -136,5 +136,5 @@ def fetch(
 
 
 def resolve(ref: dict, **kw) -> Path:
-    """Resolve a registry asset ref ``{"url": ..., "sha256": ...}`` to a local path."""
+    """Resolve a catalog asset ref ``{"url": ..., "sha256": ...}`` to a local path."""
     return fetch(ref["url"], ref["sha256"], filename=ref.get("filename"), **kw)

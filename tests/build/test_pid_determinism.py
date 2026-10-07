@@ -1,9 +1,8 @@
-"""Complete-determinism gate with the in-process
-Proportional Integral Derivative (PID) controller.
+"""Complete-determinism gate with the Proportional Integral Derivative (PID) controller.
 
 Newton CPU physics is bit-exact, but real-PX4 *armed* flight isn't
 bit-reproducible, because of its multi-threaded work-queue interleaving. The built-in PID is the
-deterministic in-process controller that closes that gap: flown through the unchanged
+deterministic controller that closes that gap: flown through the unchanged
 ``Orchestrator.run()`` over the bit-exact Newton CPU backend, two runs of the same setup produce
 **bit-for-bit the same** trajectories: the determinism CI gate that doesn't wait on PX4.
 
@@ -18,7 +17,7 @@ pytest.importorskip("newton")
 pytest.importorskip("warp")
 
 from nexus_sim._src.build.assembly import build_scenario
-from nexus_sim._src.build.launch import resolve_to_vehicle_builder
+from nexus_sim._src.build.launch import resolve_vehicle_usd
 from nexus_sim._src.config import LaunchConfig
 from nexus_sim.examples.controllers.pid.assembly import build_pid_orchestrator
 from tests.usd import sensor_vehicle as sv
@@ -29,14 +28,14 @@ pytestmark = pytest.mark.usefixtures("warp_cpu")  # the build's force_cpu sets t
 def _run(steps: int, vehicle: str):
     cfg = build_scenario()
     cfg["physics"]["force_cpu"] = True
-    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle(vehicle).set_scene(sv.SCENE))
+    vehicle_usd, _ = resolve_vehicle_usd(LaunchConfig().set_vehicle(vehicle).set_scene(sv.SCENE))
     orch = build_pid_orchestrator(
         cfg,
         goal_w=(0.0, 0.0, 1.5),
         max_steps=steps,
-        vehicle_builder=vb,
+        vehicle_usd=vehicle_usd,
     )
-    # Capture per-tick body_q/body_qd via the post-step observer, with no recorder seam: step() mutates
+    # Capture per-tick body_q/body_qd via the post-step observer, with no Recorder: step() mutates
     # physics.state0 in place, so it's the current state at the same per-tick point logging would see.
     q, qd = [], []
 

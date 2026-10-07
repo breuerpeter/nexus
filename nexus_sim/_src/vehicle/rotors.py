@@ -1,5 +1,5 @@
 """Shared rotor-layout discovery + small geometry helpers: the one home for these, imported by the rotors'
-command stage, the propellers' force element, the examples' mixer and coupling, the physics builders and
+command element, the propellers' force element, the examples' mixer and coupling, ``VehicleUsd`` and
 the RL task, so there is no per-consumer copy.
 
 * :data:`RPM_PER_RADS`: the rad/s → rpm factor. The authored unit of ``ct`` is N/min², so ``thrust = ct·rpm²``.

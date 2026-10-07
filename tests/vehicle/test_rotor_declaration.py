@@ -15,7 +15,7 @@ pytest.importorskip("pxr")
 import newton
 import warp as wp
 
-from nexus_sim._src.physics.builders.usd import USDBuilder, parse_rotors
+from nexus_sim._src.physics.vehicle import VehicleUsd, parse_rotors
 from nexus_sim._src.vehicle.rotors import find_rotor_joints
 from tests.vehicle.quad import LIFT_CT, ROOT, WEAK_CT
 from tests.vehicle.quad import author as _author
@@ -127,7 +127,7 @@ def test_find_rotor_joints_returns_the_declared_joints_and_no_other(tmp_path):
     """
     with wp.ScopedDevice("cpu"):
         builder = newton.ModelBuilder()
-        USDBuilder({"usd_path": str(_author(tmp_path / "quad.usda", gimbal=True))}, None).build(builder)
+        VehicleUsd({"usd_path": str(_author(tmp_path / "quad.usda", gimbal=True))}).build(builder)
         model = builder.finalize()
     _vel, _pos, bodies, base = find_rotor_joints(model, [f"{ROOT}/rotor_{i}_joint" for i in range(4)])
     labels = list(model.body_label)

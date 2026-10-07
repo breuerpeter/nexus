@@ -186,14 +186,14 @@ print(">", "nexus_stand_in.heavy" in sys.modules)
     assert _python(code, cwd=tmp_path, pythonpath=STAND_IN) == ["False", "True"]
 
 
-def test_the_provider_registry_goes_and_nexus_registry_still_names_the_catalog():
-    """The provider registry nothing calls goes, and `nexus_sim.Registry` still names the catalog.
+def test_the_provider_registry_goes_and_nexus_catalog_names_the_catalog():
+    """The provider registry nothing calls goes, and `nexus_sim.Catalog` names the catalog.
 
     Given `import nexus_sim`, when the test looks, then `nexus_sim._src.core` exports no `Registry`
-    and `nexus_sim.Registry` resolves the catalog.
+    and `nexus_sim.Catalog` resolves the catalog.
     """
     import nexus_sim as nx
     import nexus_sim._src.core as core
-    from nexus_sim._src.config import Registry as Catalog
+    from nexus_sim._src.config import Catalog
 
-    assert (hasattr(core, "Registry"), nx.Registry) == (False, Catalog)
+    assert (hasattr(core, "Registry"), nx.Catalog) == (False, Catalog)

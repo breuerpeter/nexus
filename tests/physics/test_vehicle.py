@@ -1,8 +1,8 @@
-"""USDBuilder loads a Universal Scene Description (USD) asset into a Newton ModelBuilder: the standalone
+"""VehicleUsd loads a Universal Scene Description (USD) asset into a Newton ModelBuilder: the standalone
 USD vehicle path.
 
 Real end-to-end on the Warp CPU backend: author a minimal USD, a rigid body with a mass, build it
-through USDBuilder, finish the model, and assert the body + mass came through. Needs USD support,
+through VehicleUsd, finish the model, and assert the body + mass came through. Needs USD support,
 usd-core + newton-usd-schemas, newton's importers deps minus open3d; skipped if pxr is missing.
 """
 
@@ -31,13 +31,13 @@ def _author_min_usd(path: str) -> None:
 def test_usd_builder_loads_body_and_mass(tmp_path):
     import newton
 
-    from nexus_sim._src.physics.builders.usd import USDBuilder
+    from nexus_sim._src.physics.vehicle import VehicleUsd
 
     usd = str(tmp_path / "mini.usda")
     _author_min_usd(usd)
 
     mb = newton.ModelBuilder()
-    USDBuilder({"usd_path": usd}, None).build(mb)
+    VehicleUsd({"usd_path": usd}).build(mb)
     model = mb.finalize()
 
     assert len(model.body_label) == 1
@@ -45,7 +45,7 @@ def test_usd_builder_loads_body_and_mass(tmp_path):
 
 
 def test_usd_builder_spawns_frd_init_attitude(tmp_path):
-    """The vehicle body's authored frame is Forward Right Down (FRD); USDBuilder must place it with the
+    """The vehicle body's authored frame is Forward Right Down (FRD); VehicleUsd must place it with the
     180°-X FRD→world init attitude so it rests upright and the Inertial Measurement Unit (IMU)/mag read
     FRD, the frame PX4 Hardware In The Loop (HIL) expects. Placing it at identity instead leaves the FRD
     body inverted → PX4 reads an upside-down attitude and refuses to arm. Asserts the resting body
@@ -54,13 +54,13 @@ def test_usd_builder_spawns_frd_init_attitude(tmp_path):
     import newton
     import numpy as np
 
-    from nexus_sim._src.physics.builders.usd import USDBuilder
+    from nexus_sim._src.physics.vehicle import VehicleUsd
 
     usd = str(tmp_path / "mini.usda")
     _author_min_usd(usd)
 
     mb = newton.ModelBuilder()
-    USDBuilder({"usd_path": usd}, None).build(mb)
+    VehicleUsd({"usd_path": usd}).build(mb)
     model = mb.finalize()
     state = model.state()
     newton.eval_fk(model, model.joint_q, model.joint_qd, state)
@@ -79,13 +79,13 @@ def test_usd_builder_spawn_att_override(tmp_path):
     import numpy as np
     import warp as wp
 
-    from nexus_sim._src.physics.builders.usd import USDBuilder
+    from nexus_sim._src.physics.vehicle import VehicleUsd
 
     usd = str(tmp_path / "mini.usda")
     _author_min_usd(usd)
 
     mb = newton.ModelBuilder()
-    USDBuilder({"usd_path": usd, "spawn_att": wp.quat_identity()}, None).build(mb)
+    VehicleUsd({"usd_path": usd, "spawn_att": wp.quat_identity()}).build(mb)
     model = mb.finalize()
     state = model.state()
     newton.eval_fk(model, model.joint_q, model.joint_qd, state)
@@ -114,25 +114,25 @@ def test_usd_builder_fixed_base_raises(tmp_path):
     joint.GetBody1Rel().SetTargets([body.GetPrim().GetPath()])
     stage.GetRootLayer().Save()
 
-    from nexus_sim._src.physics.builders.usd import USDBuilder
+    from nexus_sim._src.physics.vehicle import VehicleUsd
 
     with pytest.raises(ValueError, match="floating base"):
-        USDBuilder({"usd_path": usd}, None).build(newton.ModelBuilder())
+        VehicleUsd({"usd_path": usd}).build(newton.ModelBuilder())
 
 
 def test_usd_builder_missing_path_raises():
     import newton
 
-    from nexus_sim._src.physics.builders.usd import USDBuilder
+    from nexus_sim._src.physics.vehicle import VehicleUsd
 
     with pytest.raises(FileNotFoundError):
-        USDBuilder({}, None).build(newton.ModelBuilder())
+        VehicleUsd({}).build(newton.ModelBuilder())
 
 
 def test_usd_builder_nonexistent_file_raises(tmp_path):
     import newton
 
-    from nexus_sim._src.physics.builders.usd import USDBuilder
+    from nexus_sim._src.physics.vehicle import VehicleUsd
 
     with pytest.raises(FileNotFoundError):
-        USDBuilder({"usd_path": str(tmp_path / "nope.usda")}, None).build(newton.ModelBuilder())
+        VehicleUsd({"usd_path": str(tmp_path / "nope.usda")}).build(newton.ModelBuilder())
