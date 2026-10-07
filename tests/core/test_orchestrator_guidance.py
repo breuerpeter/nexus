@@ -339,6 +339,42 @@ def test_a_run_whose_controller_takes_no_setpoint_refuses_a_guidance():
         orch.close()
 
 
+class _SetpointSensor:
+    """A sensor whose device stage reads a signal named `setpoint`, as the guidance's is."""
+
+    def __init__(self):
+        self.setpoint = Signal("setpoint", PositionGoal, shape=(1,))
+
+    def read(self, meas):
+        pass
+
+    def stages(self):
+        return [Stage("sample", "device", lambda tick: None, reads=(self.setpoint,))]
+
+
+def test_a_run_whose_controller_reads_no_setpoint_refuses_a_guidance_that_another_component_reads():
+    """A run whose controller reads no setpoint refuses a guidance, even when another component reads it.
+
+    Given a controller that reads no setpoint, a sensor that reads a signal named `setpoint` and a
+    `MissionGuidance`, when the run takes its first step, then it raises `TypeError` that names the
+    controller's class.
+    """
+    with wp.ScopedDevice("cpu"):
+        guidance = MissionGuidance()
+        guidance.set_mission(GOALS)
+        orch = Orchestrator(
+            clock=_Clock(),
+            physics=_Physics([(0.0, 0.0, 0.0)]),
+            actuator=_Actuator(),
+            sensors=[_SetpointSensor()],
+            controller=_NoSetpointController(),
+            guidance=guidance,
+        )
+        with pytest.raises(TypeError, match="_NoSetpointController"):
+            orch.step()
+        orch.close()
+
+
 def test_the_mission_markers_and_the_tracked_reference_sit_under_guidance_in_the_recording():
     """The mission markers and the tracked reference sit under `guidance/` in the recording."""
     recording = _Recording()

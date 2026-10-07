@@ -518,16 +518,17 @@ class Orchestrator:
         return type(self.controller).__name__
 
     def _check_guidance(self, ring) -> None:
-        """Check that a stage reads a signal the guidance writes, when the run has a guidance.
+        """Check that the controller reads a signal the guidance writes, when the run has a guidance: a
+        run takes a guidance only for a controller that reads a setpoint.
 
         Raises:
-            TypeError: No stage reads what the guidance writes, as on a PX4 run, whose controller reads
-                no setpoint. The message names the controller.
+            TypeError: The controller reads nothing the guidance writes, as on a PX4 run, whose controller
+                reads no setpoint, whatever other component reads it. The message names the controller.
         """
         if self.guidance is None:
             return
         written = {s.name for b in ring if b.role == "guidance" for s in b.stage.writes}
-        if not written & {s.name for b in ring for s in b.stage.reads}:
+        if not written & {s.name for b in ring if b.role == "controller" for s in b.stage.reads}:
             raise TypeError(
                 f"{self._controller_name()} reads no setpoint, so this run takes no guidance: a guidance "
                 "writes the setpoint a controller reads, and PX4 flies its own missions"
