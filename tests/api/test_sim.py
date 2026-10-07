@@ -192,7 +192,7 @@ class _InProcessOrch:
 
     def run(self):
         self.ran = True
-        # one host-seam tick at the goal, so the operator advances/ends, then stamp run_stats
+        # one host-seam tick at the goal, so the guidance advances or ends, then stamp run_stats
         if self.on_tick is not None:
             self.on_tick(_FakeView(), _T(), 1)
         self.run_stats = {"control_steps": 1, "rtf": 1.0}
@@ -256,14 +256,13 @@ def test_sim_has_no_operator(tmp_path):
         _ = sim.operator
 
 
-def test_a_run_whose_controller_takes_no_setpoint_has_no_operator_and_the_error_names_the_port_map(monkeypatch):
-    """A run whose controller takes no setpoint, as PX4's does, has no controller surface and no
-    operator: the autopilot owns its mission in its own process, and a script commands it over a
-    link it opens itself.
+def test_a_run_whose_controller_takes_no_setpoint_has_no_controller_surface(monkeypatch):
+    """A run whose controller takes no setpoint, as PX4's does, has no controller surface: the
+    autopilot owns its mission in its own process, and a script commands it over a link it opens
+    itself.
 
-    Given a `Sim` over a controller with no setpoint surface, when a script reads `sim.controller`
-    and `sim.operator`, then the controller is `None` and the operator raises `RuntimeError` that
-    names `sim.ports`.
+    Given a `Sim` over a controller with no setpoint surface, when a script reads `sim.controller`,
+    then it is `None`.
     """
     fake = _FakeOrch()
     monkeypatch.setattr(sim_mod, "build_from_launch", lambda launch, **kw: fake)
@@ -271,8 +270,6 @@ def test_a_run_whose_controller_takes_no_setpoint_has_no_operator_and_the_error_
     with sim_mod.Sim("astro_max_base", scene="empty", device="cpu") as sim:
         sim.start(timeout=30.0)
         controller = sim.controller
-        with pytest.raises(RuntimeError, match=r"no operator.*sim\.ports"):
-            _ = sim.operator
 
     assert controller is None
 

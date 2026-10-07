@@ -1,6 +1,6 @@
 """SamplingMPCController.accept_setpoint: writes the active target *in place* from a PositionGoal
 via .assign, since the captured rollout reads the buffer's current contents, so no graph re-capture.
-Uniform with policy/pid; the operator sequences the mission. CPU-only, with a small 2-rollout model.
+Uniform with policy/pid; the guidance sequences the mission. CPU-only, with a small 2-rollout model.
 """
 
 import numpy as np

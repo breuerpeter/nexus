@@ -294,7 +294,7 @@ class Logger:
     but never both, the blueprint, and routing the ``newton`` logger's events into ``sim/logs``. Second,
     it exposes the **shared** log calls components use directly: :meth:`log_state`, the generic scene
     via NVIDIA ``ViewerRerun``, :meth:`set_time`, :meth:`log_image`. Semantic overlays such as the
-    operator's reference or a controller's horizon live in each component's own log step, not here,
+    guidance's reference or a controller's horizon live in each component's own log step, not here,
     and a component reaches these calls through its :meth:`scoped` view. The orchestrator holds one
     ``Logger | None``; ``None`` is the single, clean off-switch: no recording, no per-tick log fan-out,
     max benchmark/CI speed.
@@ -693,7 +693,7 @@ class Logger:
         )
 
     def log_points(self, entity: str, positions, *, colors=None, radii=None, labels=None, sim_time=None) -> None:
-        """Log marker points, for example the operator's waypoint spheres, at the current timeline time.
+        """Log marker points, for example the guidance's waypoint spheres, at the current timeline time.
         ``sim_time`` stamps the thread-local timeline first: pass it when logging off the lockstep
         thread, as with ``log_transform``.
         """

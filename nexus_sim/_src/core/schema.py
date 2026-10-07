@@ -129,7 +129,7 @@ class Measurement:
     state: newton.State | None = None
 
 
-# --- Setpoint: the operator→controller command vocabulary ----------------
+# --- Setpoint: the guidance→controller command vocabulary ----------------
 #
 # Setpoints are heterogeneous, so the core owns NO fixed buffer. A `Setpoint` is a small marshalled
 # *intent* value, such as `Controls`/`Measurement`; the **controller** owns its own typed persistent
@@ -143,7 +143,7 @@ class Measurement:
 @dataclass(slots=True)
 class PositionGoal:
     """A single move-to / hold goal in the world frame, Newton FLU / Z-up. Consumed by the
-    state-feedback controllers, policy and pid: the operator feeds one ``PositionGoal`` at a time and
+    state-feedback controllers, policy and pid: the guidance feeds one ``PositionGoal`` at a time and
     sequences a mission by advancing it on arrival; the controller is goal-relative, so each is a
     fresh single-goal problem. ``yaw`` is the optional heading [rad]; ``None`` = don't command yaw.
     """
@@ -156,7 +156,7 @@ class PositionGoal:
 class Waypoints:
     """An ordered list of world-frame positions the *controller* holds and advances internally;
     in the sampling MPC, reach-radius advances the persistent ``target`` buffer. Distinct from a
-    mission the *operator* sequences with ``PositionGoal``: here the whole path is the setpoint.
+    mission the *guidance* sequences with ``PositionGoal``: here the whole path is the setpoint.
     """
 
     points: list[tuple[float, float, float]] = field(default_factory=list)
@@ -164,16 +164,16 @@ class Waypoints:
 
 @dataclass(slots=True)
 class ReferenceTrajectory:
-    """A full flat-state reference over time, for the acados NMPC: the operator plans it, ruckig →
+    """A full flat-state reference over time, for the acados NMPC: the guidance plans it, ruckig →
     differential-flatness, from waypoints and feeds it to the controller, which tracks it. The
-    payload is a queryable reference object, for example the operator's ``FlatnessReference``, the
+    payload is a queryable reference object, for example the guidance's ``FlatnessReference``, the
     controller samples per horizon node, kept opaque here so core imports no controller backend.
     """
 
     reference: Any = None
 
 
-# The neutral union every operator `goto`/`set_mission` carries and every controller's
+# The neutral union a guidance writes and every controller's
 # `accept_setpoint` narrows. Evaluated eagerly, as a real ``types.UnionType``, because the
 # ``from __future__`` import only stringifies *annotations*, not this assignment, so it stays a usable
 # runtime value: ``isinstance(sp, Setpoint)`` / ``typing.get_args(Setpoint)``.

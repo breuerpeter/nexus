@@ -45,7 +45,7 @@ yet: run `scripts/ci/evaluate_examples.py --upload`.*
 ## How it works
 
 The controller, `nexus_sim/examples/controllers/acados_nmpc/controller.py`, never plans: the
-operator hands it the whole-path reference once through `accept_setpoint(ReferenceTrajectory)`,
+guidance hands it the whole-path reference once through `accept_setpoint(ReferenceTrajectory)`,
 and every control tick it solves a short optimal-control problem to stay on it.
 
 ### The internal model
@@ -127,14 +127,14 @@ solve ~0.13 ms against the 4 ms control period. The first run compiles the gener
 
 Each `exchange()` tick:
 
-1. **Hold hover** until the operator has handed over a reference.
+1. **Hold hover** until the guidance has handed over a reference.
 2. **Read the measured state** from Newton's `body_q` and `body_qd` and adapt it. Rotate the
    world-frame $\omega$ into the body frame. Re-express the Forward Right Down (FRD) authored
    body, with thrust along $-z_b$, in the upright NMPC convention, with thrust along $+z_b$. That
    uses the fixed 180°-about-x flip $q_{\mathrm{nmpc}} = q_{\mathrm{meas}} \otimes q_{\mathrm{flip}}$,
    $\omega_{\mathrm{nmpc}} = \operatorname{diag}(1,-1,-1)\,\omega_{\mathrm{body}}$. Only the state
    read needs this. The emitted per-rotor thrusts are frame-independent.
-3. **Write the reference**: query the operator-planned min-snap reference at $t_0 + k \cdot 50$ ms
+3. **Write the reference**: query the guidance-planned min-snap reference at $t_0 + k \cdot 50$ ms
    for each node, as that node's $y^{\mathrm{ref}}_k$. Each node's reference holds position,
    quaternion, velocity, body rate, and collective thrust from the differential-flatness lift, with
    the collective split evenly across rotors as the input reference. The reference clock anchors

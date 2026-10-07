@@ -24,7 +24,7 @@ def test_every_row_the_sim_writes_sits_under_sim(recorded_flight, rrd_rows):
     """Every row the sim writes sits under `sim/`.
 
     Given a recorded flight of a vehicle with mesh shapes, a ground plane, rotor joints, an Inertial
-    Measurement Unit (IMU), cameras, a stand-in controller and an operator, when it ends, then every
+    Measurement Unit (IMU), cameras, a stand-in controller and a guidance, when it ends, then every
     entity path in the `.rrd` starts with `/sim/`. Rerun writes `/__properties` itself.
     """
     entities = {entity for entity, _, _ in rrd_rows(recorded_flight)}

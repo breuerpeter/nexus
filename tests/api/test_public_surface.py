@@ -59,7 +59,7 @@ def test_a_script_imports_the_px4_client_and_the_mission_plan_types_from_nexus_p
 
 
 # The API reference pages: a `::: nexus.<Name>` directive with one dotted segment documents a
-# public export; the `_src` directives in operator.md have more segments and stay out.
+# public export; the `_src` directives in guidance.md have more segments and stay out.
 _API_REFERENCE = Path(__file__).resolve().parents[2] / "docs" / "reference" / "api"
 _DIRECTIVE = re.compile(r"^::: nexus\.(\w+)$", re.MULTILINE)
 _IMPORT_LINE = re.compile(r"^from nexus_sim import (.+)$", re.MULTILINE)
