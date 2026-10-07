@@ -1,7 +1,7 @@
 name: cpu-pytest
 
-# The full pytest suite on CPU (ubuntu) — free, fast, the per-PR merge gate. GPU-gated tests
-# (tests/vehicle/sensors/test_capture.py) auto-skip here; gpu-pytest.yml runs the same suite on a GPU.
+# The pytest suite on CPU (ubuntu), the per-PR merge gate: every test but the `gpu` tests, which need
+# a CUDA device, and the `px4_sitl` tests, which fly a real PX4 SITL; gpu-pytest.yml runs those.
 # No path filter so it's a clean required check (a path-filtered required check stays stuck-pending
 # on PRs that don't match).
 
@@ -25,7 +25,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - run: uv run --locked --extra policy pytest --cov=nexus_sim --cov-report=xml -q
+      - run: uv run --locked --extra policy pytest -m "not gpu and not px4_sitl" --cov=nexus_sim --cov-report=xml -q
       - uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}

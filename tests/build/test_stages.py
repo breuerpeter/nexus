@@ -1,5 +1,5 @@
 """The Proportional Integral Derivative (PID) example on the stage loop: the trajectory main recorded
-and the seed row ``Sim.start()`` returns with. Auto-skips without a CUDA device; each test scopes the
+and the seed row ``Sim.start()`` returns with. The CUDA tests are `gpu`; each test scopes the
 device it uses, so the default device is the same after it.
 """
 
@@ -39,13 +39,12 @@ def _pid(*, cpu: bool, max_steps: int, vehicle: str = "astro_max_base"):
     return build_pid_orchestrator(cfg, goal_w=(0.0, 0.0, 1.5), max_steps=max_steps, vehicle_builder=vb)
 
 
+@pytest.mark.gpu
 def test_pid_on_cuda_flies_the_trajectory_main_recorded():
     """The PID example on CUDA flies its whole tick as one graph, and its trajectory matches today's
     captured path: 200 ticks of body poses equal, to the byte, the ones main recorded through ``run()``
     before the change, on each GPU model main flew it on.
     """
-    if not wp.is_cuda_available():
-        pytest.skip("no CUDA device")
     gpu = wp.get_device("cuda:0").name
     if gpu not in _MAIN_TRAJECTORY:
         pytest.skip(f"main's trajectory was never recorded on {gpu!r}")
@@ -58,14 +57,12 @@ def test_pid_on_cuda_flies_the_trajectory_main_recorded():
     assert hashlib.sha256(body_q.tobytes()).hexdigest() == _MAIN_TRAJECTORY[gpu]
 
 
-@pytest.mark.parametrize("device", ["cpu", "cuda:0"])
+@pytest.mark.parametrize("device", ["cpu", pytest.param("cuda:0", marks=pytest.mark.gpu)])
 def test_start_returns_with_the_seed_row_and_the_first_tick_recorded(device, tmp_path):
     """``Sim.start()`` returns with one observation row recorded and the capture done, for every
     controller kind: the pid example's base body holds two rows after ``start()``, the settled seed row
     and the first tick's. It flies the local fixture vehicle of ``tests/usd/sensor_vehicle.py``.
     """
-    if device != "cpu" and not wp.is_cuda_available():
-        pytest.skip("no CUDA device")
     with (
         wp.ScopedDevice(device),
         Sim.from_orchestrator(_pid(cpu=device == "cpu", max_steps=50, vehicle=sv.vehicle(tmp_path))) as sim,

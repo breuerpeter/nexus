@@ -23,6 +23,7 @@ line here, so no checkout carries an account's name.
   `bpy`. Pass `--rotate-x 180` for assets authored "up = -Z" such as Astro Max. Scenes get no
   `.glb`.
 - A vehicle re-pin that changes a flown value changes the per-GPU trajectory hashes in
-  `tests/build/test_stages.py`, a test that skips without CUDA. Record the local GPU's hash from
+  `tests/build/test_stages.py`. It's a `gpu` test: it skips without CUDA, and it fails gpu-pytest on
+  a GPU model with no recorded hash. Record the local GPU's hash from
   the failing test, and the A10G's from the `gpu-pytest` log of a pull request that carries the
   `gpu` label.
