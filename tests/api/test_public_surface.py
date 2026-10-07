@@ -1,7 +1,7 @@
 """The driver-script public surface: a test script imports these from nexus_sim.
 
 Guidance and controllers are *internal*: a flight reaches its guidance via ``sim.guidance`` and its
-controller via ``sim.controller``, and a PX4 script imports its client from ``nexus_sim.px4``. The old
+controller through the objects it built, and a PX4 script imports its client from ``nexus_sim.px4``. The old
 ``Pilot``, ``Px4Pilot`` and ``wait_until`` exports on ``nx`` no longer exist.
 """
 

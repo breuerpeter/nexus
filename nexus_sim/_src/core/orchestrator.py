@@ -93,7 +93,9 @@ class Orchestrator:
     """Fixed-order, deterministic per-tick driver over typed component boundaries.
 
     Runs the ring of stages every component states, sensors -> controller -> actuate and step ->
-    record, per docs/design/execution.md. On a CUDA device each maximal run of device stages
+    record, per docs/design/execution.md. Before any stage runs, it wires the signals the stages
+    declare: each input meets the one output of its name, and a pair that disagrees on the type or
+    the shape stops the run. On a CUDA device each maximal run of device stages
     replays as one CUDA graph and the host stages run between replays; on a CPU device the same
     segments run stage by stage. The partition is component-agnostic: it reads each stage's stated
     kind, never a component's type.
