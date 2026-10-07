@@ -10,7 +10,7 @@ aero/thrust map comes from the vehicle's Universal Scene Description (USD) file.
 This is also the **determinism authority**: a deterministic in-process controller over the
 bit-exact Newton CPU physics gives the bit-reproducible CI gate that real PX4, with its
 non-deterministic work-queue interleaving, can't. The core determinism/capture tests import
-this builder from here, because examples ship in the wheel.
+this assembly from here, because examples ship in the wheel.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ def build_pid_orchestrator(
     viewer: bool = False,  # serve or file, one only: False records the .rrd, the demo's artifact, as every example does
     record_to_rrd: str | None = None,
     debug: bool = False,
-    vehicle_builder=None,
+    vehicle_usd=None,
     renderer_factory=None,
 ) -> Orchestrator:
     """Assemble the core Orchestrator with the in-process :class:`PidController`.
@@ -50,7 +50,7 @@ def build_pid_orchestrator(
     """
     import numpy as np
 
-    from nexus_sim.examples._lib import RigidBodyRotors, build_rotor_mixer_from_model
+    from nexus_sim.examples._lib import Rotors, build_rotor_mixer_from_model
     from nexus_sim.examples._lib.observation import WarpObservationSensor
     from nexus_sim.examples.controllers.pid.controller import PidController
     from nexus_sim.examples.controllers.pid.law import DEFAULT_GAINS
@@ -59,16 +59,15 @@ def build_pid_orchestrator(
     dt = cfg["physics"]["dt"]
     rtf = cfg["physics"].get("rtf", 0)
 
-    if vehicle_builder is None:
-        raise ValueError("vehicle_builder is required (resolve it via build.launch.resolve_scenario)")
-    builder = vehicle_builder
-    act = builder.actuator_params()  # aero/thrust map from the vehicle USD, hash-pinned and not in cfg
+    if vehicle_usd is None:
+        raise ValueError("vehicle_usd is required (resolve it via build.launch.resolve_scenario)")
+    act = vehicle_usd.actuator_params()  # aero/thrust map from the vehicle USD, hash-pinned and not in cfg
     single_body = cfg["physics"].get("solver") == "semi_implicit"
     if single_body:
         from nexus_sim.examples._lib import build_rotor_mixer_from_layout
         from nexus_sim.examples._lib.single_body import collapse_to_single_body
 
-        sb = collapse_to_single_body(builder)  # the one single-body seam: collapse plus rotor layout
+        sb = collapse_to_single_body(vehicle_usd)  # the one single-body seam: collapse plus rotor layout
         physics = NewtonPhysics(
             model=sb.model,
             cfg={"physics": {"dt": dt, "solver": "semi_implicit", "contacts": False,
@@ -79,10 +78,12 @@ def build_pid_orchestrator(
         mixer = build_rotor_mixer_from_layout(sb.offsets, sb.dirs, {"ct": act["ct"], "cd": act["cd"], "rpm_max": act["rpm_max"]})  # fmt: skip
     else:
         # The articulated plant, its Newton motors idle: Rotors holds the motor model and the rotors hang free.
-        physics = NewtonPhysics(vehicle_builder=builder, cfg=cfg, step_actuators=False)
+        physics = NewtonPhysics(vehicle_usd=vehicle_usd, cfg=cfg, step_actuators=False)
         robot_mass = float(np.sum(physics.model.body_mass.numpy()))
         # The airframe mixer built from the model rotor geometry + the settled rest pose.
-        mixer = build_rotor_mixer_from_model(physics.model, builder.rotor_joints(), act, physics.state0.body_q.numpy())
+        mixer = build_rotor_mixer_from_model(
+            physics.model, vehicle_usd.rotor_joints(), act, physics.state0.body_q.numpy()
+        )
     if thrust_to_weight is None:
         # The action scale = the plant's true thrust-to-weight, from the USD-authored thrust map, not a
         # declared constant: action = +1 means the plant's real max thrust. DEFAULT_GAINS' altitude
@@ -97,7 +98,7 @@ def build_pid_orchestrator(
     # Collective Thrust and Body Rate (CTBR) rate loop, turns them into per-rotor commands, and the
     # single-body Rotors motor model realizes them: the same seam for the articulated model, with
     # force-free rotors, and for the collapsed one, see _lib/coupling.py.
-    actuator = RigidBodyRotors(mixer=mixer, dt=dt, thrust_sign=-1.0, motor_tau=act["tau"])
+    actuator = Rotors(mixer=mixer, dt=dt, thrust_sign=-1.0, motor_tau=act["tau"])
     controller = PidController(
         gains=DEFAULT_GAINS if gains is None else gains,
         goal_w=goal_w,
@@ -110,7 +111,7 @@ def build_pid_orchestrator(
     # on-device with no per-tick host hop -> the whole tick is one graph / tape-able.
     sensors = [WarpObservationSensor(goal_w=goal_w)]
     # The one runtime seam, see the core assembly: an optional renderer plus its host-rate sensors.
-    renderer, extra_sensors = renderer_factory(physics, builder, cfg) if renderer_factory else (None, [])
+    renderer, extra_sensors = renderer_factory(physics, vehicle_usd, cfg) if renderer_factory else (None, [])
     sensors += extra_sensors
     # Share the sensor's persistent device goal buffer with the controller, so the guidance's
     # accept_setpoint(.assign) reaches the captured obs kernel: the capture contract.

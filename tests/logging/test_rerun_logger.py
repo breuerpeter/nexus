@@ -299,7 +299,7 @@ def test_scene_logged_via_log_state(tmp_path):
     from pxr import Usd, UsdGeom, UsdPhysics
 
     from nexus_sim._src.logging import Logger
-    from nexus_sim._src.physics.builders.usd import USDBuilder
+    from nexus_sim._src.physics.vehicle import VehicleUsd
 
     usd = str(tmp_path / "mini.usda")
     stage = Usd.Stage.CreateNew(usd)
@@ -312,7 +312,7 @@ def test_scene_logged_via_log_state(tmp_path):
     stage.GetRootLayer().Save()
 
     mb = newton.ModelBuilder()
-    USDBuilder({"usd_path": usd}, None).build(mb)
+    VehicleUsd({"usd_path": usd}).build(mb)
     model = mb.finalize()
     state = model.state()
     newton.eval_fk(model, model.joint_q, model.joint_qd, state)

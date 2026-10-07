@@ -48,16 +48,16 @@ def main() -> None:
     launch = LaunchConfig().set_vehicle(VEHICLE).set_scene(SCENE)
     launch.runtime.device = "cuda"  # prefer CUDA; resolve_device falls back to CPU when there is none
     launch.runtime.solver = "semi_implicit"  # the collapsed single-body plant this PID's tuning targets
-    builder, _resolved, cfg = resolve_scenario(launch)
+    vehicle_usd, _resolved, cfg = resolve_scenario(launch)
     orch = build_pid_orchestrator(
         cfg,
-        vehicle_builder=builder,
+        vehicle_usd=vehicle_usd,
         goal_w=WAYPOINTS[0],
         gains=GAINS,
         moment_scale=MOMENT_SCALE,
         max_steps=MAX_STEPS,
         rerun=True,  # the .rrd is the demo's artifact
-        renderer_factory=rtx_renderer(builder, cfg),  # the Kit peer, when the vehicle authors RTX sensors
+        renderer_factory=rtx_renderer(vehicle_usd, cfg),  # the Kit peer, when the vehicle authors RTX sensors
     )
     guidance = MissionGuidance(reached_m=0.3, final_hold_s=2.0)
     with nx.Sim.from_orchestrator(orch, guidance=guidance) as sim:

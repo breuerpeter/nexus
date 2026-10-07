@@ -4,7 +4,7 @@ hover→waypoint flight to **auto-tune the Proportional Integral Derivative (PID
 Self-contained example, as NVIDIA's ``example_diffsim_*`` are: it defines its own differentiable rollout
 inline and imports only reusable framework bits, namely the shared PID law, the obs/actuator kernels, and
 the solvers. :class:`AstroMaxWaypointRollout` is a single free body with astro-max's mass/inertia + a
-quad-X rotor layout, actuated by the shared **moment-input RigidBodyRotors** kernel, namely control
+quad-X rotor layout, actuated by the shared **moment-input Rotors** kernel, namely control
 allocation ``B`` + per-rotor motor lag + saturation with **no Collective Thrust and Body Rate (CTBR) rate
 loop**, under ``SolverSemiImplicit``. Gradient descent on the PID gains makes it fly a waypoint and settle,
 with an **exact full-horizon gradient**, cosine ≈ 1.0 compared to finite-diff at a contractive operating
@@ -19,7 +19,7 @@ Run:
     uv run --extra examples -m nexus_sim.examples gain_tuning --log      # also write the optimized-flight .rrd
 
 Runs on Compute Unified Device Architecture (CUDA) when present, else the CPU backend; the single-body
-RigidBodyRotors rollout is light either way.
+Rotors rollout is light either way.
 """
 
 from __future__ import annotations
@@ -64,7 +64,7 @@ def waypoint_cost(
 
 
 class AstroMaxWaypointRollout:
-    """Differentiable hover->waypoint rollout on the **single-body astro-max + the shared RigidBodyRotors model**.
+    """Differentiable hover->waypoint rollout on the **single-body astro-max + the shared Rotors model**.
 
     Where the old rollout flew the multi-body astro-max Universal Scene Description (USD) with a hand-rolled
     per-rotor thrust kernel under ``SolverFeatherstone``, whose articulation forced *truncated* BPTT, this
@@ -98,14 +98,14 @@ class AstroMaxWaypointRollout:
         vel_weight: float = 0.2,
         ramp_time_weight: bool = True,
     ):
-        from nexus_sim._src.build.launch import resolve_to_vehicle_builder
+        from nexus_sim._src.build.launch import resolve_vehicle_usd
         from nexus_sim._src.config import LaunchConfig
 
-        vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
+        vehicle_usd, _ = resolve_vehicle_usd(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
         # Single rigid body collapsed from the astro-max USD, the same seam the sampling
         # Model Predictive Control (MPC) example uses: correct lumped mass/inertia + the real rotor layout,
         # FRD with thrust along −body-z, spawned rotors-up.
-        sb = collapse_to_single_body(vb, requires_grad=True)
+        sb = collapse_to_single_body(vehicle_usd, requires_grad=True)
         self.model, self.total_mass, rotor_offsets, turning_dirs = sb.model, sb.mass, sb.offsets, sb.dirs
         self.solver = newton.solvers.SolverSemiImplicit(self.model)
 
@@ -122,9 +122,9 @@ class AstroMaxWaypointRollout:
 
         # Airframe mixer: control allocation B, per-rotor thrust -> [T, tx, ty, tz], + its inverse B^-1, from
         # the quad-X rotor geometry, the same builder the deploy paths use. The moment mixer, B^-1 with no
-        # rate loop, and the forward B, the RigidBodyRotors motor model, carry the real arm + kappa yaw
+        # rate loop, and the forward B, the Rotors motor model, carry the real arm + kappa yaw
         # authority.
-        m = vb.actuator_params()  # aero/thrust map from the rotors the vehicle USD declares
+        m = vehicle_usd.actuator_params()  # aero/thrust map from the rotors the vehicle USD declares
         mixer = build_rotor_mixer_from_layout(
             rotor_offsets, turning_dirs, {"ct": m["ct"], "cd": m["cd"], "rpm_max": m["rpm_max"]}
         )
@@ -262,7 +262,7 @@ class AstroMaxWaypointRollout:
 
     def finite_difference_check(self, gains, eps: float = 1e-3) -> dict:
         """Check ``tape.backward`` against central finite differences over the full horizon: the exact
-        gradient the moment-input single-body RigidBodyRotors model affords, the win over truncated BPTT.
+        gradient the moment-input single-body Rotors model affords, the win over truncated BPTT.
         """
         g0 = np.asarray(gains, dtype=np.float32)
         _, analytic = self.gradient(g0)
@@ -395,15 +395,15 @@ def main():
         launch = LaunchConfig().set_vehicle("astro_max_base").set_scene("empty")
         launch.runtime.device = "cuda"  # prefer CUDA; falls back to CPU without one
         launch.runtime.solver = "semi_implicit"  # the collapsed diffsim plant: deploy ≡ tuning plant
-        vb2, _resolved, cfg = resolve_scenario(launch)
+        vehicle_usd_2, _resolved, cfg = resolve_scenario(launch)
         orch = build_pid_orchestrator(
             cfg,
-            vehicle_builder=vb2,
+            vehicle_usd=vehicle_usd_2,
             gains=list(gains),
             moment_scale=MS,
             max_steps=2750,
             rerun=True,
-            renderer_factory=rtx_renderer(vb2, cfg),  # the Kit peer, when the vehicle authors RTX sensors
+            renderer_factory=rtx_renderer(vehicle_usd_2, cfg),  # the Kit peer, when the vehicle authors RTX sensors
         )
         guidance = MissionGuidance(reached_m=0.15, final_hold_s=3.0)
         with nx.Sim.from_orchestrator(orch, guidance=guidance) as sim:

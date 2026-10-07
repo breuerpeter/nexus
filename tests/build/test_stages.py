@@ -15,7 +15,7 @@ import warp as wp
 
 from nexus_sim._src.api.sim import Sim
 from nexus_sim._src.build.assembly import build_scenario
-from nexus_sim._src.build.launch import resolve_to_vehicle_builder
+from nexus_sim._src.build.launch import resolve_vehicle_usd
 from nexus_sim._src.config import LaunchConfig
 from nexus_sim.examples.controllers.pid.assembly import build_pid_orchestrator
 from tests.usd import sensor_vehicle as sv
@@ -35,8 +35,8 @@ def _pid(*, cpu: bool, max_steps: int, vehicle: str = "astro_max_base"):
     """The PID example's orchestrator flying `vehicle`, a catalog name or a path, toward 1.5 m up."""
     cfg = build_scenario()
     cfg["physics"]["force_cpu"] = cpu
-    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle(vehicle).set_scene(sv.SCENE))
-    return build_pid_orchestrator(cfg, goal_w=(0.0, 0.0, 1.5), max_steps=max_steps, vehicle_builder=vb)
+    vehicle_usd, _ = resolve_vehicle_usd(LaunchConfig().set_vehicle(vehicle).set_scene(sv.SCENE))
+    return build_pid_orchestrator(cfg, goal_w=(0.0, 0.0, 1.5), max_steps=max_steps, vehicle_usd=vehicle_usd)
 
 
 @pytest.mark.gpu

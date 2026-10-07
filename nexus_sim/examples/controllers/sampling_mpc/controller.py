@@ -14,7 +14,7 @@ differentiable drones + the cost-only obstacle pillars, the obstacle shape indic
 and the initial ``goal_w``; the guidance advances the active target, which ``accept_setpoint(PositionGoal)`` takes,
 uniform with policy/pid. The per-rotor rollout dynamics is the shared single-body motor
 model :func:`~nexus_sim.examples._lib.rigid_body_wrench_world`, so planner ≡ the real-sim
-:class:`~nexus_sim.examples._lib.rotors.RigidBodyRotors` actuator: both consume per-rotor commands and
+:class:`~nexus_sim.examples._lib.rotors.Rotors` actuator: both consume per-rotor commands and
 run the forward-``B`` allocation. The cost-weight defaults below tune a gentle arrive-and-stop with
 obstacle avoidance. The vehicle's Universal Scene Description (USD) asset uses the Forward Right
 Down (FRD) convention: thrust points along −body-z.
@@ -260,7 +260,7 @@ class SamplingMPCController:
 
         self.model = batch_model
         self.solver = newton.solvers.SolverSemiImplicit(batch_model)
-        # Airframe mixer from the rotor layout: the same forward B the real-sim RigidBodyRotors actuator
+        # Airframe mixer from the rotor layout: the same forward B the real-sim Rotors actuator
         # uses, so planner ≡ real. κ = reaction_k is the yaw allocation, passed as the layout's "cd" key.
         mixer = build_rotor_mixer_from_layout(rotor_offsets, turning_dirs, {"ct": ct, "cd": reaction_k, "rpm_max": rpm_max})  # fmt: skip
         self.B_wp = wp.array(mixer.B.astype(np.float32), dtype=float)  # (4, nr) forward allocation

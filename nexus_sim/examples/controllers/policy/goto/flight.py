@@ -4,7 +4,7 @@ and flies it, no Isaac Lab involved.
 
 The training half lives in the separate ``nexus-rl`` Isaac Lab project, ``--project
 nexus-rl``; *this* runs on **standalone Newton** via ``uv``, with no Isaac Lab and no container. It
-loads the exported ``policy.pt`` and flies it with the single-body :class:`RigidBodyRotors`, the
+loads the exported ``policy.pt`` and flies it with the single-body :class:`Rotors`, the
 same per-rotor model the policy trained against, closing the loop: train on Isaac-Lab-on-Newton →
 deploy on the core.
 
@@ -90,14 +90,14 @@ def main() -> None:
     nx.logger.info(f"[policy] policy={policy}  {len(WAYPOINTS)} waypoints")
     launch = LaunchConfig().set_vehicle(VEHICLE).set_scene(SCENE)
     launch.runtime.device = "cuda"  # prefer CUDA; resolve_device falls back to CPU when there is none
-    builder, _resolved, cfg = resolve_scenario(launch)
+    vehicle_usd, _resolved, cfg = resolve_scenario(launch)
     orch = build_policy_orchestrator(
         cfg,
         policy_path=policy,
-        vehicle_builder=builder,
+        vehicle_usd=vehicle_usd,
         max_steps=MAX_STEPS,
         rerun=True,  # the .rrd is the demo's artifact
-        renderer_factory=rtx_renderer(builder, cfg),  # the Kit peer, when the vehicle authors RTX sensors
+        renderer_factory=rtx_renderer(vehicle_usd, cfg),  # the Kit peer, when the vehicle authors RTX sensors
     )
     guidance = GeofenceGuidance(bounds=FENCE)
     with nx.Sim.from_orchestrator(orch, guidance=guidance) as sim:

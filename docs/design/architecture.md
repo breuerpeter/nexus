@@ -65,8 +65,8 @@ fault-wrappable. Every component states its work as [stages](concepts.md#stage) 
 such as `Clock` and `Physics`, and the Kit render peer's lifecycle rides the `Renderer` contract.
 
 The **scene and the vehicle aren't code interfaces**: they come from
-Universal Scene Description (USD). A single `USDBuilder` reads the vehicle model through
-`ModelBuilder.add_usd`. There is no hand-written builder to swap.
+Universal Scene Description (USD). A single `VehicleUsd` reads the vehicle model through
+`ModelBuilder.add_usd`. There is no hand-written vehicle model to swap.
 
 **Reading state.** Components never call an engine API directly. They read the live
 `newton.State`, `body_q` as a transform and `body_qd` as a spatial vector, through Warp kernels.

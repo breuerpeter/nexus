@@ -27,7 +27,7 @@ def build_acados_orchestrator(
     record_to_rrd: str | None = None,
     debug: bool = False,
     sink=None,
-    vehicle_builder=None,
+    vehicle_usd=None,
     renderer_factory=None,
 ) -> Orchestrator:
     """Assemble the core Orchestrator with the in-process real-time NMPC."""
@@ -40,25 +40,24 @@ def build_acados_orchestrator(
 
     logger.info(f"device: {resolve_device(cfg)}")
     dt = cfg["physics"]["dt"]
-    if vehicle_builder is None:
-        raise ValueError("vehicle_builder is required (resolve it via build.launch.resolve_scenario)")
-    builder = vehicle_builder
-    m = builder.actuator_params()  # aero/thrust map from the vehicle USD, hash-pinned and not in cfg
+    if vehicle_usd is None:
+        raise ValueError("vehicle_usd is required (resolve it via build.launch.resolve_scenario)")
+    m = vehicle_usd.actuator_params()  # aero/thrust map from the vehicle USD, hash-pinned and not in cfg
 
     # Flown sim: the real articulated astro-max USD. Free articulated regime: spawned in free
     # flight, with no ground-settle, at its native Forward Right Down (FRD) orientation with rotors
     # pre-spun to hover. The DC-motor servos then hold Ω; the pre-spin seeds the solver-integrated
     # rotor state.
     physics = NewtonPhysics(
-        vehicle_builder=builder,
+        vehicle_usd=vehicle_usd,
         cfg={"physics": {"dt": dt, "solver": "mujoco", "contacts": True,
                          "spawn": {"pos": tuple(spawn), "attitude": "native", "prespin": "hover"}}},
-    )  # the hover pre-spin reads ct from vehicle_builder's USD params, not cfg  # fmt: skip
+    )  # the hover pre-spin reads ct from vehicle_usd's USD params, not cfg  # fmt: skip
     # The core rotor chain, the same one PX4 flies: the rotors' command stage, the USD-authored
     # newton.actuators rotor motors physics steps, and the propellers' airflow-aware force element from
     # the solver-integrated Ω. Real motor lag, spinning props.
-    joints = builder.rotor_joints()  # the joint of each rotor the vehicle USD declares
-    commands, forces = rotor_chain(physics, builder)
+    joints = vehicle_usd.rotor_joints()  # the joint of each rotor the vehicle USD declares
+    commands, forces = rotor_chain(physics, vehicle_usd)
 
     # NMPC rigid-body params, read from the real model in the NMPC's upright frame. Spawned at FRD, the NMPC
     # frame coincides with world, q_nmpc = identity, so the body-frame moment arms = the world-frame rotor
@@ -87,7 +86,7 @@ def build_acados_orchestrator(
             settings={"scenario": cfg, "example": {"spawn": spawn, "max_steps": max_steps}},
         )  # fmt: skip
     # The one runtime seam, see the core assembly: an optional renderer plus its host-rate sensors.
-    renderer, extra_sensors = renderer_factory(physics, builder, cfg) if renderer_factory else (None, [])
+    renderer, extra_sensors = renderer_factory(physics, vehicle_usd, cfg) if renderer_factory else (None, [])
     orch = Orchestrator(
         clock=Clock(dt),
         physics=physics,

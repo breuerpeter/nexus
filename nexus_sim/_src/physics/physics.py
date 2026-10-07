@@ -15,7 +15,7 @@ control, contacts, dt)`` signature, so only the constructor differs.
 **One class, three regimes**, selected by ``cfg["physics"]``, so the production runtime and the
 standalone Model Predictive Control (MPC) examples drive the same ``reset``/``clear_forces``/``step`` seam:
 
-* *Production*, the default: build the model from ``vehicle_builder`` + ``cfg``, with ground plane, scene,
+* *Production*, the default: build the model from ``vehicle_usd`` + ``cfg``, with ground plane, scene,
   and the USD-authored motors, settle on the ground at ``reset``, contacts on, MuJoCo solver. The SITL
   path.
 * *Free articulated*, with ``spawn`` set and contacts optional: the real multi-body vehicle placed in free
@@ -105,7 +105,7 @@ def make_solver(name: str, model, *, njmax: int = 224):
 
 
 class NewtonPhysics:
-    def __init__(self, *, vehicle_builder=None, model=None, cfg: dict, njmax: int = 224, step_actuators: bool = True):
+    def __init__(self, *, vehicle_usd=None, model=None, cfg: dict, njmax: int = 224, step_actuators: bool = True):
         self.cfg = cfg
         # Component-owned groundtruth logging, since physics owns the true state: log() draws the generic
         # scene via the shared logger. The orchestrator hands over the Logger, self._logger, None when off,
@@ -122,7 +122,7 @@ class NewtonPhysics:
         self.base_body = None  # the base body's label, discovered: Sim's default "vehicle" entity
         phys = cfg["physics"]
         self.sim_dt = phys["dt"]
-        self.vehicle_builder = vehicle_builder
+        self.vehicle_usd = vehicle_usd
         self.contacts_on = phys.get("contacts", True)
         self.spawn_cfg = phys.get("spawn")  # None → ground-settle; dict → free placement at spawn['pos']
 
@@ -136,7 +136,7 @@ class NewtonPhysics:
             builder = newton.ModelBuilder()
             builder.add_ground_plane()
             add_scene(builder, cfg)  # scene USD -> builder, exactly as for the vehicle USD
-            vehicle_builder.build(builder)
+            vehicle_usd.build(builder)
             # The site's gravity, the one value the IMU reports too. add_usd resets the builder's gravity
             # from any PhysicsScene the USD holds, authored or not, so it is set after the last add.
             builder.gravity = -GRAVITY
@@ -144,8 +144,8 @@ class NewtonPhysics:
             # parses them onto model.actuators, which step() steps before the solver. A collapsed single
             # body has no joints, so no motors.
             self.model = builder.finalize()
-            if vehicle_builder is not None:
-                vehicle_builder.model_debug_print(self.model)
+            if vehicle_usd is not None:
+                vehicle_usd.model_debug_print(self.model)
 
         # A collapsed single body uses maximal coordinates, body_q, with no joint actuation; the articulated
         # vehicle uses generalized coordinates, joint_q, + the joint control buffer + contacts.
@@ -178,12 +178,10 @@ class NewtonPhysics:
         # read straight from the vehicle, the single hash-pinned actuator source, not a config value.
         self._rotor_vel_dofs = None
         if self.articulated and self.spawn_cfg and self.spawn_cfg.get("prespin") == "hover":
-            if self.vehicle_builder is None:
-                raise ValueError("prespin='hover' needs a vehicle_builder to read ct from the USD")
-            ct = float(self.vehicle_builder.actuator_params()["ct"])
-            self._rotor_vel_dofs, _pos, _bodies, _base = find_rotor_joints(
-                self.model, self.vehicle_builder.rotor_joints()
-            )
+            if self.vehicle_usd is None:
+                raise ValueError("prespin='hover' needs a vehicle_usd to read ct from the USD")
+            ct = float(self.vehicle_usd.actuator_params()["ct"])
+            self._rotor_vel_dofs, _pos, _bodies, _base = find_rotor_joints(self.model, self.vehicle_usd.rotor_joints())
             mass = float(self.model.body_mass.numpy().sum())
             hover_thrust = mass * GRAVITY / len(self._rotor_vel_dofs)
             self._hover_omega = float(np.sqrt(hover_thrust / ct) / RPM_PER_RADS)
@@ -219,7 +217,7 @@ class NewtonPhysics:
     def _find_base(self) -> int:
         """The index of the base body, the vehicle's airframe: the declared rotor joints' shared parent, else body 0."""
         try:  # articulated: the declared rotor joints' shared parent
-            joints = self.vehicle_builder.rotor_joints() if self.vehicle_builder is not None else []
+            joints = self.vehicle_usd.rotor_joints() if self.vehicle_usd is not None else []
             return find_rotor_joints(self.model, joints)[3]
         except ValueError:
             return 0  # single body, no rotor joints: body 0 is the base body

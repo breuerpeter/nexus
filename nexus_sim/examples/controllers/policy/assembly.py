@@ -31,12 +31,12 @@ def build_policy_orchestrator(
     record_to_rrd: str | None = None,
     debug: bool = False,
     sink=None,
-    vehicle_builder=None,
+    vehicle_usd=None,
     renderer_factory=None,
 ) -> Orchestrator:
     """Assemble the core Orchestrator with a trained-policy Controller in place of PX4.
 
-    The actuator is the single-body :class:`RigidBodyRotors` in Collective Thrust and Body Rates (CTBR)
+    The actuator is the single-body :class:`Rotors` in Collective Thrust and Body Rates (CTBR)
     mode, matching the policy's Isaac-Lab **CTBR** action: collective thrust + body-rate setpoints → mixer
     → per-rotor motor-speed states. The policy thus flies through ``Orchestrator.run()`` exactly as PX4
     does: same fixed-order tick, same live newton.State, no orchestrator changes.
@@ -57,19 +57,18 @@ def build_policy_orchestrator(
     import warp as wp
 
     from nexus_sim._src.vehicle.sensors import StateSensor
-    from nexus_sim.examples._lib import CtbrParams, RigidBodyRotors, build_rotor_mixer_from_model
+    from nexus_sim.examples._lib import CtbrParams, Rotors, build_rotor_mixer_from_model
     from nexus_sim.examples.controllers.policy.controller import TrainedPolicyController
 
     logger.info(f"device: {resolve_device(cfg)}")
     dt = cfg["physics"]["dt"]
     rtf = cfg["physics"].get("rtf", 0)
 
-    if vehicle_builder is None:
-        raise ValueError("vehicle_builder is required (resolve it via build.launch.resolve_scenario)")
-    builder = vehicle_builder
-    act = builder.actuator_params()  # aero/thrust map from the vehicle USD; hash-pinned, not in cfg
+    if vehicle_usd is None:
+        raise ValueError("vehicle_usd is required (resolve it via build.launch.resolve_scenario)")
+    act = vehicle_usd.actuator_params()  # aero/thrust map from the vehicle USD; hash-pinned, not in cfg
     # The articulated plant, its Newton motors idle: Rotors holds the motor model and the rotors hang free.
-    physics = NewtonPhysics(vehicle_builder=builder, cfg=cfg, step_actuators=False)
+    physics = NewtonPhysics(vehicle_usd=vehicle_usd, cfg=cfg, step_actuators=False)
     robot_mass = float(np.sum(physics.model.body_mass.numpy()))
     # Base-body principal inertia diag for the CTBR inner rate loop, τ = I·gain·Δω, read from the
     # model so the loop is inertia-correct, exactly as training reads it, in goto_env.__init__.
@@ -83,8 +82,8 @@ def build_policy_orchestrator(
     # thrust map; split across the seam: the controller runs the CTBR mixer, rate loop → B⁻¹, the actuator
     # runs the single-body motor model, per-rotor cmd → lag → forward B → wrench. Both derive from this one
     # RotorMixer so they can't drift.
-    mixer = build_rotor_mixer_from_model(physics.model, builder.rotor_joints(), act, physics.state0.body_q.numpy())
-    actuator = RigidBodyRotors(
+    mixer = build_rotor_mixer_from_model(physics.model, vehicle_usd.rotor_joints(), act, physics.state0.body_q.numpy())
+    actuator = Rotors(
         mixer=mixer, dt=dt, thrust_sign=thrust_sign, motor_tau=act["tau"]
     )  # τ from the vehicle USD, the single authority
     # CTBR rate-loop params for the controller's mixer: the deploy effective values, substeps=1; the policy
@@ -109,7 +108,7 @@ def build_policy_orchestrator(
     # from meas.state, the single obs source; no observation sensor, no per-tick torch in the graph.
     sensors = [StateSensor()]
     # The one runtime seam, see the core assembly: an optional renderer + its host-rate sensors.
-    renderer, extra_sensors = renderer_factory(physics, builder, cfg) if renderer_factory else (None, [])
+    renderer, extra_sensors = renderer_factory(physics, vehicle_usd, cfg) if renderer_factory else (None, [])
     sensors += extra_sensors
 
     # Optional Rerun recording of the rollout: viewer → serve live on :9876; not viewer → write the

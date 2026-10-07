@@ -19,14 +19,14 @@ import warp as wp
 
 from nexus_sim._src.api.sim import Sim
 from nexus_sim._src.build.assembly import assemble, build_orchestrator, build_scenario, resolve_device
-from nexus_sim._src.build.launch import resolve_to_vehicle_builder
+from nexus_sim._src.build.launch import resolve_vehicle_usd
 from nexus_sim._src.config import LaunchConfig
 from nexus_sim._src.core.interfaces import Stage
 from nexus_sim._src.core.orchestrator import Orchestrator
 from nexus_sim._src.core.schema import Controls
 from nexus_sim._src.core.stages import peer_stages
 from nexus_sim._src.physics import NewtonPhysics
-from nexus_sim._src.physics.builders.usd import USDBuilder
+from nexus_sim._src.physics.vehicle import VehicleUsd
 from nexus_sim._src.scene.site import GRAVITY
 from tests.vehicle import quad
 
@@ -160,9 +160,9 @@ def _loop(path, controller, *, commands=(), forces=()):
     cfg = build_scenario()
     cfg["physics"]["force_cpu"] = True
     resolve_device(cfg)
-    vb = USDBuilder({"usd_path": str(path)}, None)
-    physics = NewtonPhysics(vehicle_builder=vb, cfg=cfg)
-    a = assemble(physics, vb, cfg, controller=controller)
+    vehicle_usd = VehicleUsd({"usd_path": str(path)})
+    physics = NewtonPhysics(vehicle_usd=vehicle_usd, cfg=cfg)
+    a = assemble(physics, vehicle_usd, cfg, controller=controller)
     return Orchestrator(
         clock=a.clock,
         physics=a.physics,
@@ -189,8 +189,8 @@ def fly_shipped(steps: int = STREAM_TICKS) -> np.ndarray:
     """
     cfg = build_scenario()
     cfg["physics"]["force_cpu"] = True
-    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
-    orch = build_orchestrator("astro_max_base", cfg, vb, controller=_Stream(), max_steps=steps)
+    vehicle_usd, _ = resolve_vehicle_usd(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
+    orch = build_orchestrator("astro_max_base", cfg, vehicle_usd, controller=_Stream(), max_steps=steps)
     poses = []
     orch.on_tick = lambda view, t, n: poses.append(orch.physics.state0.body_q.numpy().copy())
     orch.run()

@@ -42,7 +42,7 @@ class Assembly:
     logger: Any  # the Rerun sink, or None for no recording
 
 
-def rotor_chain(physics, vehicle_builder) -> tuple[list, list]:
+def rotor_chain(physics, vehicle_usd) -> tuple[list, list]:
     """The shipped rotor chain from the rotors the vehicle USD declares, the single, hash-pinned source:
     the rotors' command stage and the propellers' force element, as the command stages and force elements
     a loop takes. The motors between them are Newton's, ``NewtonActuator`` prims the USD authors on the
@@ -53,8 +53,8 @@ def rotor_chain(physics, vehicle_builder) -> tuple[list, list]:
     from nexus_sim._src.vehicle.commands import RotorCommand
     from nexus_sim._src.vehicle.forces import Propellers
 
-    values = vehicle_builder.actuator_params()
-    joints = vehicle_builder.rotor_joints()
+    values = vehicle_usd.actuator_params()
+    joints = vehicle_usd.rotor_joints()
     command = RotorCommand(
         model=physics.model, control=physics.control, joints=joints, ct=values["ct"], cd=values["cd"],
         rpm_max=values["rpm_max"],
@@ -69,7 +69,7 @@ def rotor_chain(physics, vehicle_builder) -> tuple[list, list]:
 
 def assemble(
     physics,
-    vehicle_builder,
+    vehicle_usd,
     cfg: dict,
     *,
     controller,
@@ -95,14 +95,14 @@ def assemble(
     # ambient values resolved from it once, here, for the sensors that read them.
     gps = cfg["sensors"]["gps"]["init"]
     site = Site.at(gps["lat"], gps["lon"], gps["alt"])
-    commands, forces = rotor_chain(physics, vehicle_builder)  # from the vehicle USD's rotors, not cfg
+    commands, forces = rotor_chain(physics, vehicle_usd)  # from the vehicle USD's rotors, not cfg
 
     seedtree = SeedTree(cfg.get("seed", 42))  # launch glue threads runtime.seed; string-name path keeps 42
     # The sensors come from the schemas the vehicle USD applies, the single, hash-pinned source, the
     # same as the preceding rotor chain; only the site stays config, since it's a world property,
     # not a vehicle one. A vehicle that declares no sensor builds: which sensors a flight needs is its
     # controller's matter.
-    usd_path = vehicle_builder.cfg["usd_path"]
+    usd_path = vehicle_usd.cfg["usd_path"]
     sensors = build_sensors(
         sensor_specs(usd_path, components),
         usd_path=usd_path,
@@ -148,7 +148,7 @@ DEFAULT_SCENARIO = {
     },
     # No rotor entry, by design. The aero/thrust map (rpm_max, ct, cd, tau, aero_h, aero_hforce)
     # lives in the vehicle USD, declared per rotor on its body, its motor and its joint, and
-    # USDBuilder.actuator_params() reads it; since the USD is content-hashed, the vehicle hash pins the
+    # VehicleUsd.actuator_params() reads it; since the USD is content-hashed, the vehicle hash pins the
     # rotor chain, not any config. Every build reads those params directly from the builder.
 }
 
@@ -175,7 +175,7 @@ def resolve_device(cfg: dict) -> str:
 def build_orchestrator(
     vehicle: str,
     cfg: dict,
-    vehicle_builder=None,
+    vehicle_usd=None,
     *,
     controller,
     rerun: bool = False,
@@ -203,18 +203,18 @@ def build_orchestrator(
     needs a generous window.
     """
     logger.info(f"device: {resolve_device(cfg)}")
-    if vehicle_builder is None:
-        raise ValueError(f"vehicle_builder is required for {vehicle!r} (resolve it via the launch glue)")
-    physics = NewtonPhysics(vehicle_builder=vehicle_builder, cfg=cfg)
-    renderer = renderer_factory.link(physics, vehicle_builder) if renderer_factory else None
+    if vehicle_usd is None:
+        raise ValueError(f"vehicle_usd is required for {vehicle!r} (resolve it via the launch glue)")
+    physics = NewtonPhysics(vehicle_usd=vehicle_usd, cfg=cfg)
+    renderer = renderer_factory.link(physics, vehicle_usd) if renderer_factory else None
     a = assemble(
-        physics, vehicle_builder, cfg,
+        physics, vehicle_usd, cfg,
         controller=controller, rerun=rerun, viewer=viewer, debug=debug, link=renderer, components=components,
         settings=settings,
     )  # fmt: skip
     if renderer_factory:
         rtx = [s for s in a.sensors if getattr(s, "requires", ())]
-        renderer_factory.finish(renderer, rtx, vehicle_builder, cfg)
+        renderer_factory.finish(renderer, rtx, vehicle_usd, cfg)
     return Orchestrator(
         clock=a.clock,
         physics=a.physics,

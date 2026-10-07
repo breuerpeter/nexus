@@ -94,8 +94,3 @@ class Rotors:
     def stages(self) -> list[Stage]:
         """One device stage over :meth:`forces_wp`, reading the controller's command buffer."""
         return [Stage("forces", "device", lambda tick: self.forces_wp(tick.controls, tick.state))]
-
-
-# Back-compat alias: the unified actuator is the former single-body rigid-body actuator, now used
-# everywhere. Existing ``RigidBodyRotors`` import sites keep working.
-RigidBodyRotors = Rotors

@@ -83,13 +83,13 @@ WAYPOINTS = [
 def main() -> None:
     launch = LaunchConfig().set_vehicle(VEHICLE).set_scene(SCENE)
     launch.runtime.device = "cuda"  # prefer CUDA; resolve_device falls back to CPU when there is none
-    builder, _resolved, cfg = resolve_scenario(launch)
+    vehicle_usd, _resolved, cfg = resolve_scenario(launch)
     orch = build_acados_orchestrator(
         cfg,
-        vehicle_builder=builder,
+        vehicle_usd=vehicle_usd,
         max_steps=MAX_STEPS,
         rerun=True,  # the .rrd is the demo's artifact
-        renderer_factory=rtx_renderer(builder, cfg),  # the Kit peer, when the vehicle authors RTX sensors
+        renderer_factory=rtx_renderer(vehicle_usd, cfg),  # the Kit peer, when the vehicle authors RTX sensors
     )
     # The guidance owns the planner. MinSnapReference, the polynomial planner, is a smooth min-snap path
     # plus a smooth yaw polynomial, so nose-first flight tracks cleanly; swap in the ruckig

@@ -1,6 +1,6 @@
 """The device-native control seam, the capture/autodiff prerequisite: with a Warp ``observation`` slot
 the in-process Proportional Integral Derivative (PID) loop has no per-tick host hop. WarpObservationSensor
--> PidController.exchange, the law + moment mixer, -> RigidBodyRotors.forces_wp all stay on-device, so
+-> PidController.exchange, the law + moment mixer, -> Rotors.forces_wp all stay on-device, so
 the whole tick is one graph. A NumPy observation still takes the host path.
 
 The single-body motor model + the moment mixer need rotor geometry for the allocation, so the seam fixture
@@ -16,10 +16,10 @@ pytest.importorskip("warp")
 import newton
 import warp as wp
 
-from nexus_sim._src.build.launch import resolve_to_vehicle_builder
+from nexus_sim._src.build.launch import resolve_vehicle_usd
 from nexus_sim._src.config import LaunchConfig
 from nexus_sim._src.core.schema import Measurement, SimTime
-from nexus_sim.examples._lib import RigidBodyRotors, build_rotor_mixer_from_model
+from nexus_sim.examples._lib import Rotors, build_rotor_mixer_from_model
 from nexus_sim.examples._lib.observation import WarpObservationSensor
 from nexus_sim.examples.controllers.pid import PidController
 from tests.usd import sensor_vehicle as sv
@@ -36,13 +36,13 @@ def _is_warp_array(x) -> bool:
 def _rotored_model(tmp_path):
     """A real rotored vehicle, the fixture, + its settled rest pose: the geometry the allocation needs."""
     b = newton.ModelBuilder()
-    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle(sv.vehicle(tmp_path)).set_scene(sv.SCENE))
-    vb.build(b)
+    vehicle_usd, _ = resolve_vehicle_usd(LaunchConfig().set_vehicle(sv.vehicle(tmp_path)).set_scene(sv.SCENE))
+    vehicle_usd.build(b)
     model = b.finalize()
     state = model.state()
     newton.eval_fk(model, model.joint_q, model.joint_qd, state)  # populate body_q, the rotor offsets
     mass = float(np.sum(model.body_mass.numpy()))
-    return model, vb.rotor_joints(), state, mass
+    return model, vehicle_usd.rotor_joints(), state, mass
 
 
 def test_inprocess_seam_is_device_native(tmp_path):
@@ -62,7 +62,7 @@ def test_inprocess_seam_is_device_native(tmp_path):
     assert controls.command.numpy().reshape(-1).shape == (mixer.nr,)
 
     # 3. the actuator's device stage applies the Warp command buffer directly, no H2D, and writes a real wrench
-    act = RigidBodyRotors(mixer=mixer, dt=0.004, thrust_sign=-1.0, motor_tau=0.033)
+    act = Rotors(mixer=mixer, dt=0.004, thrust_sign=-1.0, motor_tau=0.033)
     state.clear_forces()
     act.forces_wp(controls.command, state)
     wp.synchronize()

@@ -14,7 +14,7 @@ pytest.importorskip("newton")
 
 import nexus_sim as nx
 from nexus_sim._src.build.assembly import build_scenario
-from nexus_sim._src.build.launch import resolve_to_vehicle_builder
+from nexus_sim._src.build.launch import resolve_vehicle_usd
 from nexus_sim._src.config import LaunchConfig
 from nexus_sim.examples.controllers.policy.assembly import build_policy_orchestrator
 from nexus_sim.examples.controllers.policy.goto import flight
@@ -86,8 +86,8 @@ def _fly_tour(policy: str, steps: int) -> tuple[np.ndarray, np.ndarray]:
     """
     cfg = build_scenario()
     cfg["physics"]["force_cpu"] = True
-    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
-    orch = build_policy_orchestrator(cfg, policy_path=policy, vehicle_builder=vb, max_steps=steps)
+    vehicle_usd, _ = resolve_vehicle_usd(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
+    orch = build_policy_orchestrator(cfg, policy_path=policy, vehicle_usd=vehicle_usd, max_steps=steps)
     guidance = GeofenceGuidance(bounds=flight.FENCE)
     with nx.Sim.from_orchestrator(orch, guidance=guidance) as sim:
         sim.guidance.set_mission(flight.WAYPOINTS)

@@ -52,13 +52,13 @@ PILLAR_RADIUS = 0.4  # must match the slalom scene's authored pillars, see scrip
 def main() -> None:
     launch = LaunchConfig().set_vehicle(VEHICLE).set_scene(SCENE)
     launch.runtime.device = "cuda"  # prefer CUDA; resolve_device falls back to CPU when there is none
-    builder, _resolved, cfg = resolve_scenario(launch)
+    vehicle_usd, _resolved, cfg = resolve_scenario(launch)
     orch = build_sampling_mpc_orchestrator(
         cfg,
-        vehicle_builder=builder,
+        vehicle_usd=vehicle_usd,
         max_steps=MAX_STEPS,
         rerun=True,  # the .rrd is the demo's artifact
-        renderer_factory=rtx_renderer(builder, cfg),  # the Kit peer, when the vehicle authors RTX sensors
+        renderer_factory=rtx_renderer(vehicle_usd, cfg),  # the Kit peer, when the vehicle authors RTX sensors
     )
     # reached_m=0.5 matches the demo's leg spacing: the guidance advances to the next waypoint this close;
     # final_hold_s lets the stochastic MPC settle on the final waypoint before the guidance ends the run.

@@ -27,7 +27,7 @@ def build_sampling_mpc_orchestrator(
     record_to_rrd: str | None = None,
     debug: bool = False,
     sink=None,
-    vehicle_builder=None,
+    vehicle_usd=None,
     renderer_factory=None,
 ) -> Orchestrator:
     """Assemble the core Orchestrator with the in-process sampling + gradient diffsim Model Predictive Control (MPC).
@@ -37,15 +37,14 @@ def build_sampling_mpc_orchestrator(
     The guidance sequences the mission, and the loop hands each goal to ``accept_setpoint(PositionGoal)``.
     """
     from nexus_sim._src.vehicle.sensors import StateSensor
-    from nexus_sim.examples._lib import RigidBodyRotors, build_rotor_mixer_from_layout
+    from nexus_sim.examples._lib import Rotors, build_rotor_mixer_from_layout
     from nexus_sim.examples._lib.single_body import collapse_to_single_body
     from nexus_sim.examples.controllers.sampling_mpc.controller import SamplingMPCController
 
     logger.info(f"device: {resolve_device(cfg)}")
     dt = cfg["physics"]["dt"]
-    if vehicle_builder is None:
-        raise ValueError("vehicle_builder is required (resolve it via build.launch.resolve_scenario)")
-    builder = vehicle_builder
+    if vehicle_usd is None:
+        raise ValueError("vehicle_usd is required (resolve it via build.launch.resolve_scenario)")
     if not cfg.get("scene_usd_path"):
         raise ValueError("the sampling MPC needs a scene with obstacles (resolve with scene='slalom')")
 
@@ -54,8 +53,8 @@ def build_sampling_mpc_orchestrator(
     # its authored semantics ride with it: the slalom pillars ship ``physics:collisionEnabled = false``, so
     # they're cost-only. The controller discovers the scene's shapes from the model. The collapse reads the
     # rotor layout/params from the articulated USD before it merges the joints.
-    real = collapse_to_single_body(builder, count=1, requires_grad=False, cfg=cfg)
-    batch = collapse_to_single_body(builder, count=num_rollouts, requires_grad=True, cfg=cfg)
+    real = collapse_to_single_body(vehicle_usd, count=1, requires_grad=False, cfg=cfg)
+    batch = collapse_to_single_body(vehicle_usd, count=num_rollouts, requires_grad=True, cfg=cfg)
     real_model, batch_model = real.model, batch.model
     mass, offsets, dirs, m = real.mass, real.offsets, real.dirs, real.act
     logger.info(f"sampling-mpc-orchestrator: mass={mass:.4f} kg, goal={tuple(goal_w)}, num_rollouts={num_rollouts}")
@@ -68,11 +67,11 @@ def build_sampling_mpc_orchestrator(
         cfg={"physics": {"dt": dt, "solver": "semi_implicit", "contacts": False,
                          "spawn": {"pos": tuple(spawn), "attitude": "flip"}}},
     )  # fmt: skip
-    # Real-sim actuator: the shared single-body RigidBodyRotors motor model, the same forward-B kernel the
+    # Real-sim actuator: the shared single-body Rotors motor model, the same forward-B kernel the
     # planner rolls out, planner ≡ real. The yaw-reaction coefficient is the vehicle USD's authored ``cd``,
     # the single model authority with no proxy override: the real rotor-drag yaw authority is what lets the
     # sampling planner turn the nose to fly the slalom nose-first.
-    actuator = RigidBodyRotors(
+    actuator = Rotors(
         mixer=build_rotor_mixer_from_layout(offsets, dirs, {"ct": m["ct"], "cd": m["cd"], "rpm_max": m["rpm_max"]}),
         dt=dt,
         motor_tau=m["tau"],
@@ -97,7 +96,7 @@ def build_sampling_mpc_orchestrator(
             }},
         )  # fmt: skip
     # The one runtime seam, see the core assembly: an optional renderer + its host-rate sensors.
-    renderer, extra_sensors = renderer_factory(physics, builder, cfg) if renderer_factory else (None, [])
+    renderer, extra_sensors = renderer_factory(physics, vehicle_usd, cfg) if renderer_factory else (None, [])
     return Orchestrator(
         clock=Clock(dt),
         physics=physics,
