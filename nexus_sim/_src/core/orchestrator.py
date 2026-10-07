@@ -93,8 +93,8 @@ def _sensor_names(sensors: list) -> list[str]:
 class Orchestrator:
     """Fixed-order, deterministic per-tick driver over typed component boundaries.
 
-    Runs the ring of stages every component states, sensors -> controller -> actuate and step ->
-    record, per docs/design/execution.md. Before any stage runs, it wires the signals the stages
+    Runs the ring of stages every component states, sensors -> estimator -> guidance -> controller ->
+    actuate and step -> record, per docs/design/execution.md. Before any stage runs, it wires the signals the stages
     declare: each input meets the one output of its name, and a pair that disagrees on the type or
     the shape stops the run. On a CUDA device each maximal run of device stages
     replays as one CUDA graph and the host stages run between replays; on a CPU device the same
@@ -157,7 +157,8 @@ class Orchestrator:
                 without one. The loop reads the attribute when it builds the ring, at the first step.
                 ``None`` for PX4, whose estimator runs in its peer.
             guidance: Optional guidance, for a controller that reads a setpoint: its stages run each
-                tick after the sensors' and before the controller's. It holds no controller: its
+                tick after the estimator's and before the controller's, and read the vehicle's
+                position from the estimate. It holds no controller: its
                 stage writes the setpoint signal the controller reads, so the controller reads a new
                 setpoint on the tick the guidance writes it. Its stage marks the tick done when its
                 mission is over, which ends the run. A flight can also set the ``guidance`` attribute

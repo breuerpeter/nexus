@@ -48,7 +48,8 @@ class TrainedPolicyController:
             the legacy form.
         ctbr_params: the :class:`~nexus_sim.examples._lib.mixer.CtbrParams` for the inner rate loop, required iff
             ``mixer``. Must match the training env's CTBR params diluted to the deploy step: T/W and rate gain.
-        body_index: articulation body whose state drives the observation; 0 = base.
+        body_index: the articulation body :meth:`obs_from_state` reads; 0 = base. In the loop the
+            observation comes from the estimate, the base body's pose and twist.
     """
 
     def __init__(
