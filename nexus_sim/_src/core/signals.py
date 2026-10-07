@@ -65,8 +65,10 @@ class Signal:
         return isinstance(self.type, type) and issubclass(self.type, DeviceType)
 
     def read(self) -> Any:
-        """The signal's value on the host: a copy of a device buffer, or the object a host buffer holds."""
-        return self.buffer.numpy() if self.device else self.buffer.value
+        """The signal's value on the host: a copy of a device buffer, or the object a host buffer holds.
+        The copy is explicit, since Warp's ``numpy()`` shares a buffer's memory on the CPU device.
+        """
+        return self.buffer.numpy().copy() if self.device else self.buffer.value
 
     def write(self, value: Any) -> None:
         """Write the signal's value from the host, in place: a device buffer takes a copy of ``value``, an

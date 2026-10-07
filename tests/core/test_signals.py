@@ -131,6 +131,27 @@ class _HostReader:
         return True
 
 
+class _KeepingReader:
+    """A controller whose host stage keeps each value of the signal `count` it reads, as read gave it."""
+
+    def __init__(self):
+        self.count = Signal("count", Count, shape=(1,))
+        self.kept = []
+
+    def connect(self):
+        pass
+
+    def close(self):
+        pass
+
+    def stages(self):
+        def keep(tick):
+            self.kept.append(self.count.read())
+            return True
+
+        return [Stage("keep", "host", keep, reads=(self.count,))]
+
+
 class _Reference:
     """A planned reference, the shape a tracking guidance writes."""
 
@@ -207,6 +228,23 @@ def test_a_host_stage_reads_the_value_a_device_stage_wrote_earlier_in_the_same_t
             seen.append(controller.seen[-1])
         orch.close()
     assert seen == [1, 2, 3]
+
+
+@pytest.mark.parametrize("device", DEVICES)
+def test_a_host_stage_keeps_the_copy_it_read_after_a_later_write(device):
+    """A host stage reads a device signal with a copy, so what it keeps doesn't change at a later write.
+
+    Given a stand-in sensor whose device stage writes its tick count to a signal, and a stand-in controller
+    whose host stage keeps each value it reads, when the run steps 3 ticks, eagerly on the CPU device and
+    captured on a CUDA device, then the controller keeps 1, 2 and 3.
+    """
+    with wp.ScopedDevice(device):
+        controller = _KeepingReader()
+        orch = _orch([_Counter()], controller)
+        for _ in range(3):
+            orch.step()
+        orch.close()
+    assert [int(value[0]) for value in controller.kept[-3:]] == [1, 2, 3]
 
 
 def test_a_device_stage_that_reads_a_host_signal_fails_the_run_naming_the_stage_and_the_signal():
