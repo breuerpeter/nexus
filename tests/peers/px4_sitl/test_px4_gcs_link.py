@@ -31,13 +31,15 @@ from nexus_sim._src.peers.px4_sitl import checkout
 
 # The tree the run would fly, with no fetch: $PX4_DIR, or the pinned tree once a run fetched it.
 _TREE = checkout.tree(fetch_missing=False)
-if _TREE is None or not list(
-    (_TREE / "ROMFS" / "px4fmu_common" / "init.d-posix" / "airframes").glob("*_none_astro_max")
-):
-    pytest.skip(
-        "needs docker and a PX4 tree on this machine, $PX4_DIR or the fetched pin, carrying the none_astro_max airframe",
-        allow_module_level=True,
-    )
+# A mark, not a skip at import, so a run that deselects `px4_sitl` lists none of these tests.
+pytestmark = [
+    pytest.mark.px4_sitl,
+    pytest.mark.skipif(
+        _TREE is None
+        or not list((_TREE / "ROMFS" / "px4fmu_common" / "init.d-posix" / "airframes").glob("*_none_astro_max")),
+        reason="needs docker and a PX4 tree on this machine, $PX4_DIR or the fetched pin, carrying the none_astro_max airframe",
+    ),
+]
 
 _OPERATOR_LINK = "udpin:0.0.0.0:14540"  # PX4's offboard and onboard API instance sends here
 _GCS_LINK = "udpin:0.0.0.0:14550"  # PX4's GCS instance, :18570, sends here, where QGroundControl listens

@@ -1,7 +1,7 @@
 """The suite passes in any order: no test leaves the Warp default device changed for a later one.
 
 Each test runs pytest in a subprocess, since the order bug is a segfault that would end this run.
-Skips without a CUDA device, where ``cpu`` is the only device and the default can't change.
+The tests are `gpu`: without a CUDA device ``cpu`` is the only device, and the default can't change.
 """
 
 import re
@@ -13,7 +13,7 @@ import pytest
 
 wp = pytest.importorskip("warp")
 
-pytestmark = pytest.mark.skipif(not wp.is_cuda_available(), reason="no CUDA device")
+pytestmark = pytest.mark.gpu
 
 _ROOT = Path(__file__).resolve().parents[2]
 

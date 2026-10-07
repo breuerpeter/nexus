@@ -1,7 +1,7 @@
 """Captured sensor kernels: the in-graph sensors' device stages replay from a CUDA graph with noise
-that dithers per replay and samples that match the eager ones. Auto-skips without a CUDA device;
-each test scopes the device it needs with ``wp.ScopedDevice``, so the default device is the same
-after it.
+that dithers per replay and samples that match the eager ones. The tests are `gpu`, so they skip
+without a CUDA device; each test scopes the device it needs with ``wp.ScopedDevice``, so the default
+device is the same after it.
 """
 
 import numpy as np
@@ -11,6 +11,8 @@ pytest.importorskip("newton")
 pytest.importorskip("warp")
 
 import warp as wp
+
+pytestmark = pytest.mark.gpu
 
 
 class _WarpView:
@@ -33,10 +35,8 @@ def test_captured_sensor_noise_dithers_per_replay():
     """The device step counter must make sensor noise vary across graph replays. A frozen captured
     sensor stream, with a baked-at-capture step, reads to PX4's Extended Kalman Filter (EKF) as a stuck
     sensor -> Global Positioning System (GPS)/position fusion never starts -> won't arm, the real bug
-    behind the captured PX4 flight. Auto-skips without CUDA.
+    behind the captured PX4 flight.
     """
-    if not wp.is_cuda_available():
-        pytest.skip("no CUDA device")
     from nexus_sim._src.core.schema import SimTime
     from nexus_sim._src.vehicle.sensors import ImuSensor
 
@@ -61,8 +61,6 @@ def test_captured_px4_sensors_match_eager():
     host readback, join a CUDA graph; replay + one read() reproduces the eager sample() values, so the
     PX4 device region is capturable. Validated with noise off so the result is step-independent.
     """
-    if not wp.is_cuda_available():
-        pytest.skip("no CUDA device")
     from nexus_sim._src.core.schema import Measurement, SimTime
     from nexus_sim._src.vehicle.sensors import BaroSensor, GpsSensor, ImuSensor, MagSensor
 

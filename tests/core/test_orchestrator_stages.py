@@ -251,11 +251,10 @@ def _messages(caplog):
 
 
 def _cuda():
-    if not wp.is_cuda_available():
-        pytest.skip("no CUDA device")
     return wp.ScopedDevice("cuda:0")
 
 
+@pytest.mark.gpu
 def test_a_controllers_device_stages_replay_in_the_graph_and_its_host_stages_run_between():
     """A controller written against the stage contract flies: its device stages replay inside the graph
     and its host stages run once per tick between replays. Over two steady ticks the host stage ran
@@ -290,6 +289,7 @@ def test_a_component_with_no_stages_fails_the_build_naming_it(controller):
         _orch(controller).step()
 
 
+@pytest.mark.gpu
 def test_a_run_logs_its_stage_plan_with_its_host_stages(caplog):
     """A run logs its stage plan once at start: each captured segment and the host stages between them.
     The PX4 shape: one line naming one segment and the ``read`` and ``exchange`` host stages.
@@ -302,6 +302,7 @@ def test_a_run_logs_its_stage_plan_with_its_host_stages(caplog):
     assert len(plans) == 1 and plans[0].count("graph(") == 1 and "read" in plans[0] and "exchange" in plans[0]
 
 
+@pytest.mark.gpu
 def test_a_run_logs_its_stage_plan_as_one_segment_for_device_stages_only(caplog):
     """A run logs its stage plan once at start. The Proportional Integral Derivative (PID) shape: one
     segment and no host stage.
@@ -357,6 +358,7 @@ def test_a_peer_that_stops_answering_mid_flight_ends_the_run_normally(caplog):
     )
 
 
+@pytest.mark.gpu
 def test_physics_substeps_run_that_many_physics_steps_per_tick_when_captured():
     """``physics_substeps`` greater than 1 runs that many physics steps per tick on the captured path, as eager
     does: with two substeps, five ticks add ten physics steps.
@@ -452,6 +454,7 @@ def test_a_command_stage_or_a_force_element_that_states_no_stages_fails_the_buil
         ).step()
 
 
+@pytest.mark.gpu
 def test_a_host_stage_sensor_samples_once_per_tick_outside_the_graph():
     """A sensor whose work is a host stage samples once per tick at the host seam, outside the graph:
     over three ticks it sampled three times, never under capture.
