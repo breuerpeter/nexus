@@ -98,7 +98,7 @@ argument.
 | Guidance | turns a mission into the setpoint a controller tracks |
 | Controller | turns the sensors' measurements into the controls, one command per actuator |
 | Command element | turns the controls into Newton's control inputs, such as the rotors' speed targets |
-| Force element | adds body wrenches to the shared `body_f` buffer from the current state, such as the propellers' thrust |
+| Force element | adds body wrenches to the shared `body_f` buffer from the current state, such as the propellers' thrust. It adds and never assigns, so two on one body both act |
 
 Each role's contract is a `Protocol` in `nexus_sim/_src/core/interfaces.py`.
 

@@ -123,17 +123,15 @@ client there: [`nexus_sim.px4.OffboardClient`](../reference/api/px4.md) on `sim.
 The rotor chain has three parts, split along NVIDIA Newton's model, so nothing in nexus overlaps
 Newton's actuator.
 
-- A **[command element](concepts.md#role)** turns the controls into Newton's control inputs. The rotors'
-  scales each command to a rotor-speed target, the job of an Electronic Speed Controller (ESC)
-  reduced to one multiply, and adds a drag feedforward.
+- The rotors' **[command element](concepts.md#role)** scales each command to a rotor-speed target,
+  the job of an Electronic Speed Controller (ESC) reduced to one multiply, and adds a drag
+  feedforward.
 - The motor is **Newton's actuator**, a `NewtonActuator` prim authored in the vehicle USD: a velocity
   servo under a torque-speed envelope on the real rotor joint. Physics steps every Newton actuator
   the vehicle declares, rotor motor or not, before its solver. So the rotor speed is a
   solver-integrated state with physical lag and saturation.
-- A **[force element](concepts.md#role)** turns the current state into body wrenches and adds them to the shared
-  `body_f` buffer. The propellers' is the airflow-aware closed form that turns rotor speed and
-  inflow into thrust and in-plane force on the rotor body. A force element adds and never assigns,
-  so two elements on one body both act.
+- The propellers' **[force element](concepts.md#role)** is the airflow-aware closed form that turns
+  rotor speed and inflow into thrust and in-plane force on the rotor body.
 
 The propeller's parameters, `ct`, `cd` and the aero terms, come from the `NexusPropellerAPI` [schema](concepts.md#schema)
 that each rotor's rigid body applies in the vehicle USD. The rotor speed at full command is the

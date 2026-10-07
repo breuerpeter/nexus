@@ -23,9 +23,8 @@ sensor's frame exchange with the Kit peer. A host stage runs on the host between
 differentiable rollout, for design optimization, records the whole loop on a Warp tape, the PID
 law included, and a loss back-propagates through it.
 
-The command elements write Newton's control inputs, the force elements add the body forces, and
-`step` steps Newton's actuators and then the solver. The loop cuts the ring at its host stages.
-It rotates the ring to start after the last cut, so the ring's tail folds into the first run.
+The loop cuts the ring at its host stages. It rotates the ring to start after the last cut, so the
+ring's tail folds into the first run.
 **Each [segment](concepts.md#segment) becomes one CUDA graph.** The host stages run between the replays. With no
 host stage the whole ring is one graph. A component that states no stages fails the build with an
 error that names it, and so does a stage of a kind the loop doesn't know. Nothing falls back to a
