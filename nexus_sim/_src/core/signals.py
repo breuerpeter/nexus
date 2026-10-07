@@ -105,9 +105,10 @@ def wire(ring: list[Bound]) -> None:
     input that no component writes reads its own buffer, which holds its default.
 
     Raises:
-        ValueError: A device signal has no shape, a reader and its writer disagree on the type, a reader
-            needs more of an axis than its writer's buffer holds, or an input has neither a writer nor a
-            default. The message names both ends, or the reader and the signal.
+        ValueError: A device stage declares a host signal, a device signal has no shape, a reader and its
+            writer disagree on the type, a reader needs more of an axis than its writer's buffer holds, or
+            an input has neither a writer nor a default. The message names both ends, or the stage or the
+            reader and the signal.
     """
     writes: dict[str, list[tuple[Bound, Signal]]] = {}
     reads: dict[str, list[tuple[Bound, Signal]]] = {}
@@ -116,8 +117,14 @@ def wire(ring: list[Bound]) -> None:
         if id(bound) in seen:  # the ring repeats the stages of each physics substep
             continue
         seen.add(id(bound))
-        for table, signals in ((reads, bound.stage.reads), (writes, bound.stage.writes)):
+        for verb, table, signals in (("reads", reads, bound.stage.reads), ("writes", writes, bound.stage.writes)):
             for signal in signals:
+                if bound.stage.kind == "device" and not signal.device:
+                    raise ValueError(
+                        f"{_owner(bound)}'s device stage {bound.stage.name!r} {verb} {signal.name!r}, a "
+                        f"{_type(signal)}, which lives on the host: a device stage reads and writes device "
+                        "signals only"
+                    )
                 if signal.device and signal.shape is None:
                     raise ValueError(f"{_owner(bound)} declares the device signal {signal.name!r} with no shape")
                 table.setdefault(signal.name, []).append((bound, signal))
