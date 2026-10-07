@@ -10,8 +10,8 @@ deploy on the core.
 
 **The shape.** A zero-arg, self-contained script: it assembles its own orchestrator, the
 example-owned :mod:`assembly`, and hosts it via ``Sim.from_orchestrator`` + ``sim.guidance``. The
-controller builds its observation from the ground-truth ``meas.state``, the single train↔deploy obs
-source, and runs its TorchScript inference in a host stage; everything else runs CUDA-graph
+controller builds its observation from the estimate the passthrough estimator writes, the single
+train↔deploy obs source, and runs its TorchScript inference in a host stage; everything else runs CUDA-graph
 captured. A geofence guidance sequences the waypoints, advancing on arrival, since the policy is
 goal-relative, so each arrival hands it a fresh single-goal problem. It owns the run's end, and ends
 the run at once if the vehicle leaves the fence.

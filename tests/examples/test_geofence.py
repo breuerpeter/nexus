@@ -1,19 +1,16 @@
 """GeofenceGuidance, the guidance demonstrator of the goto policy flight: a mission guidance that
 ends the run when the vehicle leaves its box. Each test drives the guidance through its stages,
-which the loop calls, with a stand-in state and recording sink, and reads what the stage wrote: the goal
+which the loop calls, with a stand-in estimator and recording sink, and reads what the stage wrote: the goal
 in its setpoint signal, wired as the loop wires it, and whether the tick's mission is over.
 """
 
-import numpy as np
 import pytest
 
 pytest.importorskip("warp")
 
-import warp as wp
-
-from nexus_sim._src.core.interfaces import Tick
-from nexus_sim._src.core.schema import SimTime
-from nexus_sim._src.core.signals import wire
+from nexus_sim._src.core.interfaces import Stage, Tick
+from nexus_sim._src.core.schema import PoseTwist, SimTime
+from nexus_sim._src.core.signals import Signal, wire
 from nexus_sim._src.core.stages import Bound
 from nexus_sim.examples.controllers.policy.goto.geofence import GeofenceGuidance
 
@@ -24,15 +21,14 @@ MISSION = [(1.0, 0.0, 2.0), (2.0, 0.0, 2.0)]
 RED = (255, 0, 0)
 
 
-class _State:
-    """The physics state a guidance reads: one body at a set position."""
+class _Estimator:
+    """Stands in for the estimator: it writes the estimate the guidance reads, which each tick sets."""
 
-    def __init__(self, pos):
-        self.pos = pos
+    def __init__(self):
+        self.estimate = Signal("estimate", PoseTwist, shape=(1, 13))
 
-    @property
-    def body_q(self):
-        return wp.array(np.array([[*self.pos, 0.0, 0.0, 0.0, 1.0]], dtype=np.float32), dtype=wp.transform)
+    def stages(self):
+        return [Stage("estimate", "device", lambda tick: None, writes=(self.estimate,))]
 
 
 class _Sink:
@@ -54,8 +50,15 @@ class _Sink:
 
 
 def _wired(guidance):
-    """The guidance with its setpoint wired, as the loop wires it before any stage runs."""
-    wire([Bound(stage, guidance, "guidance") for stage in guidance.stages()])
+    """The guidance with its estimate and setpoint wired, as the loop wires them before any stage runs."""
+    estimator = _Estimator()
+    wire(
+        [
+            Bound(stage, c, role)
+            for c, role in ((estimator, "estimator"), (guidance, "guidance"))
+            for stage in c.stages()
+        ]
+    )
     return guidance
 
 
@@ -66,7 +69,8 @@ def _goal(guidance) -> tuple[float, float, float]:
 
 def _tick(guidance, pos, sim_time) -> Tick:
     """Run the guidance's stages once, as the loop does on one tick, and return that tick."""
-    tick = Tick(state=_State(pos), t=SimTime(sim_time, 0), dt=0.004, meas=None)
+    guidance.estimate.write([[*pos, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]])  # the vehicle at `pos`
+    tick = Tick(state=None, t=SimTime(sim_time, 0), dt=0.004, meas=None)
     for stage in guidance.stages():
         stage.run(tick)
     return tick

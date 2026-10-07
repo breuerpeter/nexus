@@ -20,18 +20,17 @@ class MissionGuidance(Guidance):
     between graph replays.
 
     A subclass, such as the policy example's geofence, overrides ``_tick``, the stage's work over the
-    vehicle's position and the sim time. It can command a setpoint with ``_command``, read and set
-    ``_done``, which freezes the sequencing and ends the run, log through ``_logger``, and read
-    ``_body_index``. The rest is this class's own.
+    vehicle's position, which the stage reads from the estimate, and the sim time. It can command a
+    setpoint with ``_command``, read and set ``_done``, which freezes the sequencing and ends the run, and
+    log through ``_logger``. The rest is this class's own.
 
     Args:
         reached_m: Advance to the next goal within this distance [m] of the active one.
         final_hold_s: Keep running this long, in sim time, after the vehicle reaches the final goal.
-        body_index: The vehicle body whose position drives arrival detection; 0 is the base.
     """
 
-    def __init__(self, *, reached_m: float = 0.3, final_hold_s: float = 2.0, body_index: int = 0):
-        super().__init__(setpoint=Signal("setpoint", PositionGoal, shape=(1,)), body_index=body_index)
+    def __init__(self, *, reached_m: float = 0.3, final_hold_s: float = 2.0):
+        super().__init__(setpoint=Signal("setpoint", PositionGoal, shape=(1,)))
         self._reached_m = float(reached_m)
         self._final_hold_s = float(final_hold_s)
         self._end_at: float | None = None  # sim time at which the mission is over, set on the final goal

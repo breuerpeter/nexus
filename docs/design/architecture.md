@@ -1,5 +1,5 @@
 ---
-description: "How nexus works: a fixed-order deterministic sim loop of typed, replaceable components. The data model, interfaces, controllers and guidance, actuators, observability, configuration, and packaging."
+description: "How nexus works: a fixed-order deterministic sim loop of typed, replaceable components. The data model, interfaces, the estimator, guidance and controllers, actuators, observability, configuration, and packaging."
 ---
 
 # Architecture
@@ -17,6 +17,8 @@ Each tick runs the same fixed sequence, and the order is what makes [runs](conce
 ```
 t = clock.advance()
 [sensor stages]                           # IMU, GPS, baro, mag into device buffers; a camera's host stage
+[estimator stages]                        # the estimate: the base body's pose and twist; none on PX4
+[guidance stage]                          # the setpoint, from the mission and the estimate; none on PX4
 [controller stages]                       # PX4: read + exchange host stages; PID: one device stage
 [clear → command elements → force elements → step] × substeps
                                           # command buffer → Newton's control inputs; state → per-body
@@ -51,8 +53,9 @@ persistent, in-place device buffers with static shapes, so the device region can
 |---|---|
 | `newton.State` | pose, velocity, body rates, per-body forces: the live Newton state in `body_q`, `body_qd`, and `body_f` |
 | `Controls` | one normalized command per actuator, what the controller emits |
+| `PoseTwist` | the estimate: the base body's pose and twist in world axes, what the estimator writes and the guidance and the controller read |
 | `Wrench` | a **per-body** spatial force over the whole articulation, the base body plus each actuator's body, realized as the shared `body_f` buffer, not a single body-level force and torque pair |
-| `Measurement` | per-sensor output such as Inertial Measurement Unit (IMU) and Global Positioning System (GPS) samples, plus a free-form ground-truth `observation` slot a policy reads |
+| `Measurement` | per-sensor output such as Inertial Measurement Unit (IMU) and Global Positioning System (GPS) samples, plus a free-form ground-truth `observation` slot the Proportional Integral Derivative (PID) example reads |
 | `SimTime` | sim-time and step index |
 
 ## Component interfaces
@@ -83,7 +86,7 @@ Directed Acyclic Graph (DAG) with the core at the root, and `import-linter` enfo
 module imports Kit: the Kit render peer's program ships as package data that nothing imports, and
 the contract forbids `omni`, `usdrt`, `isaacsim` and `carb` in every tier.
 
-## Controllers and guidance
+## Estimator, guidance, and controllers
 
 Every controller states its stages, and a peer's autopilot and a device-native law fly through the
 same loop:
@@ -94,16 +97,29 @@ same loop:
   commands. Its work is three **host stages**, `read`, `truth` and `exchange`, outside graph capture
   and not differentiable, and a lost connection ends the run.
 - **`PidController`**: the device-native, differentiable built-in, a
-  Proportional Integral Derivative (PID) controller whose gains are Warp arrays with gradients, so
+  PID controller whose gains are Warp arrays with gradients, so
   it doubles as the [design-optimization](../examples/design-optimization.md) parameter set and the
   [determinism authority](execution.md#determinism).
 - **`TrainedPolicyController`**: loads a policy exported from `nexus-rl` and drives the
-  vehicle from the ground-truth observation.
+  vehicle from an observation it builds from the estimate.
+
+The [estimator](concepts.md#role) is the first block of the control cascade. Its stages run each tick
+after the sensors' and before the guidance's. They write the estimate, a
+[signal](concepts.md#signal) of the type `PoseTwist`: the base body's position, its quaternion, and its
+linear and angular velocity, in world axes. The guidance and each controller that reads the vehicle's
+state read the estimate, never the physics state, so a controller written against it flies behind any
+estimator. The estimator belongs to the vehicle's flight stack, beside its controller, so the run
+doesn't name it: each example's assembly constructs it today. One estimator ships, `GroundTruthEstimator`,
+a passthrough that hands on the base body's true pose and twist with no noise and no delay. Its stage
+also runs once over the settled state before the first tick, so the guidance's first stage reads an
+estimate. A run whose guidance or controller reads the estimate, and that has no estimator, fails
+before any stage runs, with an error that names the readers and the estimator.
 
 **What to fly is separate from how it flies.** A controller that takes setpoints flies the mission
 of its **guidance**, the outer loop of the control cascade, reached through
 [`sim.guidance`](../reference/api/guidance.md). The guidance is a component of the loop, and it
-holds no other component. Its stage runs each tick after the sensors' and before the controller's.
+holds no other component. Its stage runs each tick after the estimator's and before the controller's,
+and it reads the vehicle's position from the estimate.
 It writes the setpoint, a [signal](execution.md#signals) of one setpoint type, a `PositionGoal` or a
 `ReferenceTrajectory`, and the controller reads it on that same tick. The loop checks before any
 stage runs that the controller reads the type the guidance writes. When the mission is over, the
@@ -113,7 +129,8 @@ controller, with a `ruckig` or min-snap planner. A flight constructs its guidanc
 guidance's own parameters and hands it to `Sim.from_orchestrator`.
 
 PX4 takes no guidance, because its own navigator sequences its missions, and no setpoint from the
-loop. A script commands it over its offboard [link](concepts.md#link), a MAVLink link of its own beside the lockstep
+loop. It takes no estimator either, because its own estimator runs in its peer and takes the
+sensors' values over the lockstep link. A script commands it over its offboard [link](concepts.md#link), a MAVLink link of its own beside the lockstep
 link. The run owns that link's address and names it in its [port map](concepts.md#port-map), and the script opens its own
 client there: [`nexus_sim.px4.OffboardClient`](../reference/api/px4.md) on `sim.ports["offboard"]`.
 [Conventions](conventions.md#who-owns-an-address) states the rule.

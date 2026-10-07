@@ -53,8 +53,9 @@ class Stage:
     ``stages()``. A ``device`` stage joins the CUDA graph; a ``host`` stage runs between graph replays.
     ``run(tick)`` does the work; a host stage returns ``False`` when it produced nothing because its
     peer didn't answer, which the preroll retries and the steady loop ends the run on. A ``warm``
-    sensor or controller stage runs in the seed pass over the settled state, before any capture, so
-    every device buffer it allocates exists first. A ``warm`` guidance stage runs in that pass too,
+    sensor, estimator or controller stage runs in the seed pass over the settled state, before any
+    capture, so every device buffer it allocates exists first, and the guidance's first stage reads an
+    estimate. A ``warm`` guidance stage runs in that pass too,
     so the controller holds the guidance's first setpoint before its own first stage. ``reads`` and
     ``writes`` are the signals the stage reads and writes, which the loop wires before any stage runs.
     """

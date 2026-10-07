@@ -61,8 +61,8 @@ before the first tick.
 
 ### Ring
 
-The stages one tick runs, in the loop's fixed order. The sensors come first, then the guidance and
-the controller. Once per physics substep, `clear`, the command elements, the force elements, and
+The stages one tick runs, in the loop's fixed order. The sensors come first, then the estimator, the
+guidance, and the controller. Once per physics substep, `clear`, the command elements, the force elements, and
 `step` follow, and the record stage comes last. `build_ring` lays the ring out.
 
 ### Segment
@@ -95,8 +95,9 @@ argument.
 | Role | What it does |
 |---|---|
 | Sensor | samples the plant into its own buffer: an Inertial Measurement Unit (IMU), a Global Positioning System (GPS) receiver, a camera |
+| Estimator | turns the sensors' values into the estimate, the vehicle's pose and twist that the guidance and the controller read in place of the physics state. The one that ships, `GroundTruthEstimator`, hands on the base body's true pose and twist |
 | Guidance | turns a mission into the setpoint a controller tracks |
-| Controller | turns the sensors' measurements into the controls, one command per actuator |
+| Controller | turns the estimate, or the sensors' measurements, into the controls, one command per actuator |
 | Command element | turns the controls into Newton's control inputs, such as the rotors' speed targets |
 | Force element | adds body wrenches to the shared `body_f` buffer from the current state, such as the propellers' thrust. It adds and never assigns, so two on one body both act |
 
@@ -106,8 +107,9 @@ Each role's contract is a `Protocol` in `nexus_sim/_src/core/interfaces.py`.
 
 The plant side stands in for the real drone and its world: the physics, the command elements,
 the force elements and the sensors, which read and write Newton's state in place. The flight stack
-is what a real drone carries: the guidance and the controller, which see the plant only through
-the sensors. The line between them is where real drone code stops and the simulation takes over,
+is what a real drone carries: the estimator, the guidance, and the controller, which see the plant
+only through the sensors. Two parts of it read the physics state instead: the ground-truth estimator,
+to stand in for a real estimator, and PX4's controller, to send PX4 its ground truth. The line between them is where real drone code stops and the simulation takes over,
 [Real system ↔ simulation](real-vs-sim.md).
 
 ### Physics

@@ -6,8 +6,9 @@ description: "API reference for guidance, the role that turns a mission into a c
 
 **Guidance** is the outer loop of the control cascade: each tick it turns a mission into the setpoint
 the controller tracks. It's a component of the loop, for a controller that takes setpoints, and its
-stage runs before the controller's, so a setpoint applies on the tick that computes it. A guidance
-holds no controller and no stop. Its stage writes a changed setpoint to the `setpoint`
+stage runs after the [estimator's](estimator.md) and before the controller's, so a setpoint applies on
+the tick that computes it. It reads the vehicle's position from the estimate. A guidance holds no
+controller and no stop. Its stage writes a changed setpoint to the `setpoint`
 [signal](../../design/execution.md#signals), which the controller reads, and the loop checks before any
 stage runs that the controller reads the type the guidance writes. When the mission is over, the stage
 marks the tick done, and the loop ends the run. PX4 takes none, because its own navigator sequences

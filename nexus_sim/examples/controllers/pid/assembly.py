@@ -3,7 +3,8 @@
 
 This example-owned assembly, moved out of core because PX4 is the one first-class control path, wires
 the same core components as the PX4 assembly: ``NewtonPhysics``, the single-body ``Rotors``
-actuator, the device-native observation sensor, and the core ``Orchestrator``. The actuator's
+actuator, the device-native observation sensor, the passthrough estimator, whose estimate the guidance
+reads, and the core ``Orchestrator``. The actuator's
 aero/thrust map comes from the vehicle's Universal Scene Description (USD) file.
 ``Sim.from_orchestrator`` hosts the built orchestrator.
 
@@ -18,6 +19,7 @@ from __future__ import annotations
 from nexus_sim._src.build.assembly import resolve_device
 from nexus_sim._src.core import Clock, Orchestrator, logger
 from nexus_sim._src.physics import NewtonPhysics
+from nexus_sim._src.vehicle.estimators import GroundTruthEstimator
 
 
 def build_pid_orchestrator(
@@ -131,6 +133,7 @@ def build_pid_orchestrator(
         physics=physics,
         actuator=actuator,
         sensors=sensors,
+        estimator=GroundTruthEstimator(),  # the guidance reads its estimate
         controller=controller,
         renderer=renderer,
         logger=sink,

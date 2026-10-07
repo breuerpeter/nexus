@@ -3,6 +3,5 @@ magnetometer. Each yields a Measurement in the Forward Right Down (FRD) frame.
 """
 
 from .sensors import BaroSensor, GpsSensor, ImuSensor, MagSensor
-from .state import StateSensor
 
-__all__ = ["BaroSensor", "GpsSensor", "ImuSensor", "MagSensor", "StateSensor"]
+__all__ = ["BaroSensor", "GpsSensor", "ImuSensor", "MagSensor"]

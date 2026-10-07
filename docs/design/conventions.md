@@ -19,11 +19,14 @@ implementations. That's how the actuator's contract came to exist in two files b
 ## Who declares a part
 
 A vehicle **declares** a component in its Universal Scene Description (USD) when the component is a
-property of the machine: every [role](concepts.md#role) but the guidance. What a scene contributes
+property of the machine: every [role](concepts.md#role) but the guidance. The
+[estimator](concepts.md#role) is one of them. The guidance and the controller read its estimate in
+place of the physics state. Until the example controllers fly as variants of the vehicle, each
+example's assembly constructs it. What a scene contributes
 is the scene's. The guidance is a property of the [run](concepts.md#run), not of either, so it stays
 an **argument**: a flight constructs it and hands it to [`Sim`](concepts.md#sim). It holds no controller: it
 writes the setpoint, a [signal](concepts.md#signal) the controller reads. PX4 takes none, because its own
-navigator is its guidance. The `Renderer` follows from the vehicle: a sensor whose class requires
+navigator is its guidance, and no estimator, because its own estimator runs in its peer. The `Renderer` follows from the vehicle: a sensor whose class requires
 the Kit render peer starts it. The clock, the [physics](concepts.md#physics), the
 [Recorder](concepts.md#recorder), and the [Logger](concepts.md#logger) stay **fixed**: one
 implementation each, configured by settings rather than swapped, so none gets a resolver or a

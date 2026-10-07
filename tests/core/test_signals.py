@@ -201,8 +201,8 @@ def _orch(sensors, controller, **kw):
 
 
 def _stopped(tmp_path, controller, *, sensors=(), guidance=None) -> tuple[str, int]:
-    """Fly the fixture quad of `tests/vehicle/quad.py` around `controller`, with `sensors` beside its own and
-    `guidance`, on real physics, and return the message of the `ValueError` the run stops with and the rows
+    """Fly the fixture quad of `tests/vehicle/quad.py` around `controller`, with `sensors` beside its own, the
+    passthrough estimator and `guidance`, on real physics, and return the message of the `ValueError` the run stops with and the rows
     its recording holds: the warm pass records the first row, so a run that stopped before any stage ran
     holds none.
     """
@@ -212,6 +212,7 @@ def _stopped(tmp_path, controller, *, sensors=(), guidance=None) -> tuple[str, i
     from nexus_sim._src.build.assembly import assemble, build_scenario, resolve_device
     from nexus_sim._src.physics import NewtonPhysics
     from nexus_sim._src.physics.vehicle import VehicleUsd
+    from nexus_sim._src.vehicle.estimators import GroundTruthEstimator
     from tests.vehicle import quad
 
     cfg = build_scenario()
@@ -226,6 +227,7 @@ def _stopped(tmp_path, controller, *, sensors=(), guidance=None) -> tuple[str, i
         commands=a.commands,
         forces=a.forces,
         sensors=[*a.sensors, *sensors],
+        estimator=GroundTruthEstimator(),
         controller=a.controller,
         max_steps=quad.FLIGHT_STEPS,
     )

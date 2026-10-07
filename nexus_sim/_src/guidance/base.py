@@ -1,8 +1,10 @@
 """The guidance base: the mission a guidance holds, its stage, and the markers it logs.
 
 A guidance is a component of the loop for a controller that reads a setpoint. It states one host
-stage, ``guidance``, which the loop runs before the controller's stages. It holds no controller and no
-stop. The stage writes a changed setpoint to the signal ``setpoint``, which the controller reads, in
+stage, ``guidance``, which the loop runs after the estimator's stages and before the controller's. It
+holds no controller and no stop. The stage reads the vehicle's position from the signal ``estimate``,
+which an estimator writes, never from the physics state. It writes a changed setpoint to the signal
+``setpoint``, which the controller reads, in
 place between graph replays, so a captured graph stays valid, per the capture contract, and the
 controller reads the setpoint on that tick. The stage sets ``Tick.done`` when the mission is over, and
 the loop ends the run. Logging is component-owned: the orchestrator hands over the Logger scoped to the
@@ -16,7 +18,7 @@ from __future__ import annotations
 import numpy as np
 
 from nexus_sim._src.core.interfaces import Stage, Tick
-from nexus_sim._src.core.schema import PositionGoal, Setpoint, as_position_goal
+from nexus_sim._src.core.schema import PoseTwist, PositionGoal, Setpoint, as_position_goal
 from nexus_sim._src.core.signals import Signal
 
 # The waypoint markers: the active goal is gold, a reached goal turns green, a future one is dim.
@@ -34,12 +36,13 @@ class Guidance:
 
     Args:
         setpoint: The signal ``setpoint`` the guidance writes, of the setpoint type its controller reads.
-        body_index: The vehicle body whose position the guidance reads; 0 is the base.
     """
 
-    def __init__(self, *, setpoint: Signal, body_index: int = 0):
+    def __init__(self, *, setpoint: Signal):
         self.setpoint = setpoint
-        self._body_index = int(body_index)
+        # The vehicle's estimate, the base body's pose and twist an estimator writes: the stage reads the
+        # position there.
+        self.estimate = Signal("estimate", PoseTwist, shape=(1, 13))
         self._mission: list[PositionGoal] = []
         self._active: int = 0
         # The two outputs: a setpoint commanded since the stage last ran, which the stage writes to the
@@ -52,15 +55,15 @@ class Guidance:
 
     # -- the stage the loop calls ----------------------------------------------------
     def stages(self) -> list[Stage]:
-        """One host stage, ``guidance``, which the loop runs before the controller's stages and which
-        writes the setpoint. A warm stage: the loop also runs it once over the settled state, before any
-        tick, so the controller holds the first setpoint before its own first stage.
+        """One host stage, ``guidance``, which the loop runs before the controller's stages, which reads the
+        estimate and writes the setpoint. A warm stage: the loop also runs it once over the settled state,
+        before any tick, so the controller holds the first setpoint before its own first stage.
         """
-        return [Stage("guidance", "host", self._run, writes=(self.setpoint,))]
+        return [Stage("guidance", "host", self._run, reads=(self.estimate,), writes=(self.setpoint,))]
 
     def _run(self, tick: Tick) -> None:
-        # One host copy of the body pose per tick, trivial next to a controller's host stage.
-        pos = tick.state.body_q.numpy()[self._body_index][:3].astype(float)
+        # One host copy of the estimate per tick, trivial next to a controller's host stage.
+        pos = self.estimate.read()[0][:3].astype(float)
         self._tick(pos, float(tick.t.sim_time))
         if self._commanded is not None:
             self._write(self._commanded)

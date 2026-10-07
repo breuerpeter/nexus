@@ -344,8 +344,8 @@ def fly_recorded(
 ):
     """Fly ``vehicle`` on the Warp CPU backend with recording on, and return the path of its ``.rrd``.
 
-    The run flies a :class:`StandInController` under a guidance that plans a two-waypoint mission,
-    with a ``Recorder`` attached and the Kit peer sent to its fake, or to ``kit``, in ``scene``, a catalog
+    The run flies a :class:`StandInController` under a guidance that plans a two-waypoint mission, over
+    the passthrough estimator's estimate, with a ``Recorder`` attached and the Kit peer sent to its fake, or to ``kit``, in ``scene``, a catalog
     name or a path. ``layer`` is an override layer's text. The home folder is ``tmp`` for the run, so the recording lands there.
     """
     import nexus_sim as nx
@@ -355,6 +355,7 @@ def fly_recorded(
     from nexus_sim._src.guidance import TrackingGuidance
     from nexus_sim._src.peers.kit.fake import KitFake
     from nexus_sim._src.rendering import rtx_renderer
+    from nexus_sim._src.vehicle.estimators import GroundTruthEstimator
 
     spec = {"vehicle": vehicle, "scene": scene, "runtime": {"device": "cpu"}}
     if layer is not None:
@@ -382,6 +383,7 @@ def fly_recorded(
             if renderer_factory is not None:
                 renderer_factory.close()  # the loop never took the Kit peer over, so it stops here
             raise
+        orch.estimator = GroundTruthEstimator()  # the guidance reads the vehicle's position from its estimate
         guidance = TrackingGuidance(planner=StandInReference)
         with nx.Sim.from_orchestrator(orch, guidance=guidance) as sim:
             sim.guidance.set_mission([(1.0, 0.0, 2.0), (2.0, 0.0, 2.0)])

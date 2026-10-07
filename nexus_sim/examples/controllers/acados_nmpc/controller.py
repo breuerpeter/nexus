@@ -36,7 +36,7 @@ import os
 
 import numpy as np
 
-from nexus_sim._src.core.schema import ReferenceTrajectory
+from nexus_sim._src.core.schema import PoseTwist, ReferenceTrajectory
 from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.core.stages import peer_stages
 
@@ -174,6 +174,8 @@ class AcadosNMPCController:
         # The setpoint the guidance writes, a ReferenceTrajectory on the host, and the one this controller
         # last read, so it notices a new reference by its identity.
         self.setpoint = Signal("setpoint", ReferenceTrajectory)
+        # The vehicle's estimate, the base body's pose and twist an estimator writes: each solve starts there.
+        self.estimate = Signal("estimate", PoseTwist, shape=(1, 13))
         self._read = None
         self.reference = None  # the tracked reference, from the setpoint
         self._ref_step0 = None  # the control step at which the active reference started, the time anchor
@@ -241,9 +243,9 @@ class AcadosNMPCController:
 
     def stages(self):
         """The ``read`` and ``exchange`` host stages: the per-tick solve runs on the host between replays,
-        tracking the reference the exchange reads from the setpoint.
+        from the estimate, tracking the reference the exchange reads from the setpoint.
         """
-        return peer_stages(self, reads=(self.setpoint,))
+        return peer_stages(self, reads=(self.setpoint, self.estimate))
 
     name = "acados_nmpc"  # the instance name: its rows land at sim/vehicle/controllers/acados_nmpc
 
@@ -285,9 +287,9 @@ class AcadosNMPCController:
             self._step += 1
             return Controls(command=self._hover_throttle())
 
-        state = meas.state
-        bq = state.body_q.numpy()[0]
-        bqd = state.body_qd.numpy()[0]
+        est = self.estimate.read()[0]  # [pos(0:3), quat_xyzw(3:7), lin(7:10), ang(10:13)], world frame
+        bq = est[0:7]
+        bqd = est[7:13]
 
         # measured state → NMPC state. Newton stores body_qd = (v_world, ω_world); the model uses a
         # body-frame rate, so rotate ω into the body frame. Quaternion order: warp xyzw → model wxyz.

@@ -27,7 +27,7 @@ import warp as wp
 import warp.optim
 from newton.geometry import sdf_capsule  # warp-callable Signed Distance Field (SDF) for the collision-cost kernel
 
-from nexus_sim._src.core.schema import PositionGoal
+from nexus_sim._src.core.schema import PoseTwist, PositionGoal
 from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.core.stages import peer_stages
 from nexus_sim.examples._lib import build_rotor_mixer_from_layout, rigid_body_wrench_world
@@ -88,14 +88,18 @@ def increment_seed(seed: wp.array(dtype=int)):
 
 @wp.kernel
 def replicate_state(
-    src_q: wp.array(dtype=wp.transform),
-    src_qd: wp.array(dtype=wp.spatial_vector),
+    estimate: wp.array2d(dtype=float),  # (1, 13): position, quaternion xyzw, linear and angular velocity
     dst_q: wp.array(dtype=wp.transform),
     dst_qd: wp.array(dtype=wp.spatial_vector),
 ):
     w = wp.tid()
-    dst_q[w] = src_q[0]
-    dst_qd[w] = src_qd[0]
+    dst_q[w] = wp.transform(
+        wp.vec3(estimate[0, 0], estimate[0, 1], estimate[0, 2]),
+        wp.quat(estimate[0, 3], estimate[0, 4], estimate[0, 5], estimate[0, 6]),
+    )
+    dst_qd[w] = wp.spatial_vector(
+        estimate[0, 7], estimate[0, 8], estimate[0, 9], estimate[0, 10], estimate[0, 11], estimate[0, 12]
+    )
 
 
 @wp.kernel
@@ -258,6 +262,8 @@ class SamplingMPCController:
         # writes it in place without invalidating the captured CUDA graph, because the rollout reads its
         # current contents. The guidance owns mission sequencing, advance on arrival, uniform with policy/pid.
         self.setpoint = Signal("setpoint", PositionGoal, shape=(1,), default=[goal_w])
+        # The vehicle's estimate, the base body's pose and twist an estimator writes: each plan starts there.
+        self.estimate = Signal("estimate", PoseTwist, shape=(1, 13))
 
         self.model = batch_model
         self.solver = newton.solvers.SolverSemiImplicit(batch_model)
@@ -312,9 +318,9 @@ class SamplingMPCController:
 
     def stages(self):
         """The ``read`` and ``exchange`` host stages: the per-tick solve runs on the host between replays,
-        toward the setpoint the exchange reads.
+        from the estimate and toward the setpoint the exchange reads.
         """
-        return peer_stages(self, reads=(self.setpoint,))
+        return peer_stages(self, reads=(self.setpoint, self.estimate))
 
     name = "sampling_mpc"  # the instance name: its rows land at sim/vehicle/controllers/sampling_mpc
 
@@ -327,11 +333,11 @@ class SamplingMPCController:
     def close(self) -> None:  # lifecycle teardown: nothing to release; the horizon logs from _plan()
         pass
 
-    def _seed_states(self, state) -> None:
+    def _seed_states(self) -> None:
         wp.launch(
             replicate_state,
             dim=self.num_rollouts,
-            inputs=(state.body_q, state.body_qd),
+            inputs=(self.estimate.buffer,),
             outputs=(self.S[0].body_q, self.S[0].body_qd),
         )
 
@@ -404,8 +410,8 @@ class SamplingMPCController:
         self.costs.grad.fill_(1.0)
         self.tape.backward()
 
-    def _plan(self, state) -> None:
-        self._seed_states(state)
+    def _plan(self) -> None:
+        self._seed_states()
         # Sample noisy plans around the nominal, outside the captured graph; keep the last slot = nominal.
         wp.launch(
             sample_gaussian,
@@ -445,11 +451,10 @@ class SamplingMPCController:
     def exchange(self, meas, t, timeout=None):
         from nexus_sim._src.core import Controls
 
-        state = meas.state
         if not hasattr(self, "_step"):
             self._step = 0
         if self._k == 0:
-            self._plan(state)
+            self._plan()
         # Apply the first control of the lowest-cost plan: interpolate the nominal at t=0, the first knot.
         u0 = self.nominal.numpy()[0, 0].astype(np.float32)
         self._k = (self._k + 1) % self.replan_every
