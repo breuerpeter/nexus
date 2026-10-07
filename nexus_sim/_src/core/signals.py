@@ -105,8 +105,9 @@ def wire(ring: list[Bound]) -> None:
     input that no component writes reads its own buffer, which holds its default.
 
     Raises:
-        ValueError: A device signal has no shape, a reader and its writer disagree on the type, or a
-            reader needs more of an axis than its writer's buffer holds. The message names both ends.
+        ValueError: A device signal has no shape, a reader and its writer disagree on the type, a reader
+            needs more of an axis than its writer's buffer holds, or an input has neither a writer nor a
+            default. The message names both ends, or the reader and the signal.
     """
     writes: dict[str, list[tuple[Bound, Signal]]] = {}
     reads: dict[str, list[tuple[Bound, Signal]]] = {}
@@ -122,7 +123,12 @@ def wire(ring: list[Bound]) -> None:
                 table.setdefault(signal.name, []).append((bound, signal))
     for name, readers in reads.items():
         if name not in writes:
-            for _, signal in readers:
+            for bound, signal in readers:
+                if signal.default is None:
+                    raise ValueError(
+                        f"{_owner(bound)} reads {name!r}, a {_type(signal)}, which no component writes, and it "
+                        "gives no default"
+                    )
                 _hand(signal._allocate(), [signal], signal.default)
             continue
         writer, written = writes[name][0]
