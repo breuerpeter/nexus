@@ -1,9 +1,10 @@
 """The goto_policy example: its policy resolution, the hosted policy from the catalog's base or the
-``--policy`` override, with no GPU and no network since the base is a ``file://`` directory; and
-its flight, which repeats bit for bit on the Newton CPU backend.
+``--policy`` override, with no GPU and no network since the base is a ``file://`` directory; its
+flight, which repeats bit for bit on the Newton CPU backend; and its stage plan.
 """
 
 import hashlib
+import logging
 import re
 
 import numpy as np
@@ -107,3 +108,23 @@ def test_a_policy_flies_the_same_path_every_time(torchscript_policy):
     pos_2, quat_2 = _fly_tour(policy, steps=200)
 
     assert (len(pos_1) > 0, np.array_equal(pos_1, pos_2), np.array_equal(quat_1, quat_2)) == (True, True, True)
+
+
+@pytest.mark.usefixtures("warp_cpu")  # the build's force_cpu sets the device; the scope puts it back
+def test_a_run_with_a_guidance_and_a_host_exchange_runs_one_device_segment_per_tick(torchscript_policy, caplog):
+    """A run with a guidance and a controller that exchanges on the host runs one device segment per tick,
+    not two.
+
+    Given the policy example's run on the CPU device with a TorchScript stand-in policy and its guidance,
+    when it takes its first tick, then its logged stage plan holds one device segment.
+    """
+    cfg = build_scenario()
+    cfg["physics"]["force_cpu"] = True
+    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
+    orch = build_policy_orchestrator(cfg, policy_path=torchscript_policy(), vehicle_builder=vb, max_steps=1)
+    guidance = GeofenceGuidance(bounds=flight.FENCE)
+    guidance.set_mission(flight.WAYPOINTS)
+    with caplog.at_level(logging.INFO, logger="nexus"), nx.Sim.from_orchestrator(orch, guidance=guidance) as sim:
+        sim.run()
+    plan = next(m for m in (r.getMessage() for r in caplog.records) if m.startswith("stage plan:"))
+    assert plan.count("eager(") + plan.count("graph(") == 1

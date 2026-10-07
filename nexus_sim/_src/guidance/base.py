@@ -1,14 +1,14 @@
 """The guidance base: the mission a guidance holds, its stage, and the markers it logs.
 
-A guidance is a component of the loop for a controller that takes setpoints. It states one host
+A guidance is a component of the loop for a controller that reads a setpoint. It states one host
 stage, ``guidance``, which the loop runs before the controller's stages. It holds no controller and no
-stop, and passes its two outputs through the tick, as every stage does. The stage writes a changed
-setpoint to ``Tick.setpoint``, and the loop hands that to the controller's ``accept_setpoint`` between
-graph replays, so a captured graph stays valid, per the capture contract, and the controller reads the
-setpoint on that tick. The stage sets ``Tick.done`` when the mission is over, and the loop ends the
-run. Logging is component-owned: the orchestrator hands over the Logger scoped to the guidance's path,
-and the guidance emits its own rows, ``waypoints/wp_<i>`` and ``reference``, when the mission changes,
-on set, advance or plan. Rerun shows the last value per entity path, so logging only on change is enough.
+stop. The stage writes a changed setpoint to the signal ``setpoint``, which the controller reads, in
+place between graph replays, so a captured graph stays valid, per the capture contract, and the
+controller reads the setpoint on that tick. The stage sets ``Tick.done`` when the mission is over, and
+the loop ends the run. Logging is component-owned: the orchestrator hands over the Logger scoped to the
+guidance's path, and the guidance emits its own rows, ``waypoints/wp_<i>`` and ``reference``, when the
+mission changes, on set, advance or plan. Rerun shows the last value per entity path, so logging only on
+change is enough.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ import numpy as np
 
 from nexus_sim._src.core.interfaces import Stage, Tick
 from nexus_sim._src.core.schema import PositionGoal, Setpoint, as_position_goal
+from nexus_sim._src.core.signals import Signal
 
 # The waypoint markers: the active goal is gold, a reached goal turns green, a future one is dim.
 _GOLD = (255, 215, 0)
@@ -29,18 +30,20 @@ class Guidance:
     """Shared guidance state: the mission, the stage, its two outputs and the markers.
 
     A subclass does its work in ``_tick``. It commands a setpoint with ``_command`` and ends its mission
-    by setting ``_done``, and the stage passes both through the tick.
+    by setting ``_done``. The stage writes the setpoint to its signal and marks the tick done.
 
     Args:
+        setpoint: The signal ``setpoint`` the guidance writes, of the setpoint type its controller reads.
         body_index: The vehicle body whose position the guidance reads; 0 is the base.
     """
 
-    def __init__(self, *, body_index: int = 0):
+    def __init__(self, *, setpoint: Signal, body_index: int = 0):
+        self.setpoint = setpoint
         self._body_index = int(body_index)
         self._mission: list[PositionGoal] = []
         self._active: int = 0
-        # The two outputs, which the stage passes through the tick: a setpoint commanded since the stage
-        # last ran, and whether the mission is over.
+        # The two outputs: a setpoint commanded since the stage last ran, which the stage writes to the
+        # signal, and whether the mission is over.
         self._commanded: Setpoint | None = None
         self._done = False
         # Component-owned logging: the orchestrator hands over the Logger, None when off, which is the
@@ -49,18 +52,19 @@ class Guidance:
 
     # -- the stage, the seam the loop calls ------------------------------------------
     def stages(self) -> list[Stage]:
-        """One host stage, ``guidance``, which the loop runs before the controller's stages. A warm
-        stage: the loop also runs it once over the settled state, before any tick, so the controller holds
-        the first setpoint before its own first stage.
+        """One host stage, ``guidance``, which the loop runs before the controller's stages and which
+        writes the setpoint. A warm stage: the loop also runs it once over the settled state, before any
+        tick, so the controller holds the first setpoint before its own first stage.
         """
-        return [Stage("guidance", "host", self._run)]
+        return [Stage("guidance", "host", self._run, writes=(self.setpoint,))]
 
     def _run(self, tick: Tick) -> None:
         # One host copy of the body pose per tick, trivial next to a controller's host stage.
         pos = tick.state.body_q.numpy()[self._body_index][:3].astype(float)
         self._tick(pos, float(tick.t.sim_time))
         if self._commanded is not None:
-            tick.setpoint, self._commanded = self._commanded, None  # the loop hands it to the controller
+            self._write(self._commanded)
+            self._commanded = None
         if self._done:
             tick.done = True  # the loop ends the run after this tick
 
@@ -69,11 +73,14 @@ class Guidance:
         raise NotImplementedError
 
     def _command(self, setpoint: Setpoint) -> None:
-        """Command a setpoint. The stage writes it to the tick it next runs on, and the loop hands it to
-        the controller before the controller's stages. A later command replaces one the stage hasn't
-        written yet.
+        """Command a setpoint. The stage writes it to the signal on its next run, before the controller's
+        stages. A later command replaces one the stage hasn't written yet.
         """
         self._commanded = setpoint
+
+    def _write(self, setpoint: Setpoint) -> None:
+        """Write a commanded setpoint to the signal: a host setpoint unchanged."""
+        self.setpoint.write(setpoint)
 
     # -- setpoint normalization: accept a PositionGoal or a bare position ---------
     _as_position_goal = staticmethod(as_position_goal)

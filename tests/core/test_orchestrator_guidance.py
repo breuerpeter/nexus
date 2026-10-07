@@ -1,8 +1,8 @@
 """The loop runs a guidance's stage before the controller's, so the setpoint a guidance computes on a
 tick is the one the controller reads on that tick. A guidance holds no controller and no stop: its
-stage writes a changed setpoint to the tick, which the loop hands to the controller, and marks the
-tick done when its mission is over, which the loop ends the run on. Stand-in components at the
-loop's seams, on the Warp CPU device, where every stage runs as plain Python on each tick.
+stage writes the setpoint signal the controller reads, and marks the tick done when its mission is
+over, which the loop ends the run on. Stand-in components at the loop's seams, on the Warp CPU device,
+where every stage runs as plain Python on each tick.
 """
 
 import logging
@@ -16,7 +16,8 @@ import warp as wp
 
 from nexus_sim._src.core.interfaces import Stage
 from nexus_sim._src.core.orchestrator import Orchestrator
-from nexus_sim._src.core.schema import Controls, SimTime
+from nexus_sim._src.core.schema import PositionGoal, ReferenceTrajectory, SimTime
+from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.guidance import MissionGuidance, TrackingGuidance
 
 GOALS = [(1.0, 0.0, 0.0), (2.0, 0.0, 0.0)]
@@ -96,13 +97,14 @@ class _Sensor:
 
 
 class _ExchangeController:
-    """A controller that takes setpoints and solves on the host: a ``read`` and an ``exchange`` host
-    stage. It keeps, per exchange, the sim time, the vehicle's position and the setpoint it holds.
+    """A controller that reads a setpoint of type `setpoint` and solves on the host: a ``read`` and an
+    ``exchange`` host stage. It keeps, per exchange, the sim time, the vehicle's position and the setpoint
+    it reads.
     """
 
-    def __init__(self, state):
+    def __init__(self, state, setpoint=PositionGoal):
         self._state = state
-        self.setpoint = None
+        self.setpoint = Signal("setpoint", setpoint, shape=(1,) if setpoint is PositionGoal else None)
         self.exchanges = []
 
     def connect(self):
@@ -111,28 +113,24 @@ class _ExchangeController:
     def close(self):
         pass
 
-    def accept_setpoint(self, sp):
-        self.setpoint = sp
-
     def stages(self):
         def exchange(tick):
-            self.exchanges.append((tick.t.sim_time, tuple(self._state.pos), self.setpoint))
-            tick.controls = Controls(command=[0.0, 0.0, 0.0, 0.0])
+            self.exchanges.append((tick.t.sim_time, tuple(self._state.pos), self.setpoint.read()))
             return True
 
-        return [Stage("read", "host", lambda tick: None), Stage("exchange", "host", exchange)]
+        return [Stage("read", "host", lambda tick: None), Stage("exchange", "host", exchange, reads=(self.setpoint,))]
 
 
 class _DeviceController:
-    """A controller that takes setpoints and whose stages are all device stages, the shape of the
-    Proportional Integral Derivative (PID) example. It keeps the setpoint it holds each time its
+    """A controller that reads a setpoint and whose stages are all device stages, the shape of the
+    Proportional Integral Derivative (PID) example. It keeps the setpoint it reads each time its
     stage runs.
     """
 
     capturable = True
 
     def __init__(self):
-        self.setpoint = None
+        self.setpoint = Signal("setpoint", PositionGoal, shape=(1,))
         self.held = []
 
     def connect(self):
@@ -141,15 +139,12 @@ class _DeviceController:
     def close(self):
         pass
 
-    def accept_setpoint(self, sp):
-        self.setpoint = sp
-
     def stages(self):
-        return [Stage("act", "device", lambda tick: self.held.append(self.setpoint))]
+        return [Stage("act", "device", lambda tick: self.held.append(self.setpoint.read()), reads=(self.setpoint,))]
 
 
 class _NoSetpointController:
-    """A controller that takes no setpoint, the shape of PX4's: it has no ``accept_setpoint``."""
+    """A controller that reads no setpoint, the shape of PX4's."""
 
     def connect(self):
         pass
@@ -222,8 +217,8 @@ def _orch(controller, physics, **kw):
 
 
 def test_a_controller_reads_the_next_goal_on_the_tick_the_vehicle_arrives():
-    """A controller reads the next goal on the tick the vehicle arrives: the loop hands the tick's
-    setpoint to the controller before the controller's stages, and the guidance holds no controller.
+    """A controller reads the next goal on the tick the vehicle arrives: the guidance writes the setpoint
+    before the controller's stages read it, and the guidance holds no controller.
     """
     with wp.ScopedDevice("cpu"):
         physics = _Physics([(0.0, 0.0, 0.0), (0.0, 0.0, 0.0), GOALS[0], GOALS[0]])
@@ -236,7 +231,7 @@ def test_a_controller_reads_the_next_goal_on_the_tick_the_vehicle_arrives():
         orch.close()
     held = next(setpoint for _, pos, setpoint in controller.exchanges if pos == GOALS[0])
     holds_the_controller = any(value is controller for value in vars(guidance).values())
-    assert (tuple(held.pos), holds_the_controller) == (GOALS[1], False)
+    assert (tuple(float(v) for v in held[0]), holds_the_controller) == (GOALS[1], False)
 
 
 def test_a_controller_holds_the_first_goal_before_its_own_first_stage():
@@ -253,7 +248,7 @@ def test_a_controller_holds_the_first_goal_before_its_own_first_stage():
         orch = _orch(controller, _Physics([(0.0, 0.0, 0.0)]), guidance=guidance)
         orch.step()
         orch.close()
-    held = [None if sp is None else tuple(sp.pos) for sp in controller.held]
+    held = [tuple(float(v) for v in sp[0]) for sp in controller.held]
     # The stage runs once in the warm pass and once on the first tick.
     assert held == [GOALS[0], GOALS[0]]
 
@@ -265,7 +260,7 @@ def test_a_tracking_controller_holds_its_planned_reference_from_its_first_exchan
     reference = _Reference()
     with wp.ScopedDevice("cpu"):
         physics = _Physics([(0.0, 0.0, 2.0)])
-        controller = _ExchangeController(physics.state)
+        controller = _ExchangeController(physics.state, ReferenceTrajectory)
         guidance = TrackingGuidance(planner=lambda waypoints: reference)
         guidance.set_mission([(2.0, 0.5, 3.5), (3.0, 2.0, 4.0)])
         orch = _orch(controller, physics, guidance=guidance)
@@ -330,15 +325,51 @@ def test_a_mission_that_is_over_ends_the_run():
 
 
 def test_a_run_whose_controller_takes_no_setpoint_refuses_a_guidance():
-    """A run whose controller takes no setpoint refuses a guidance.
+    """A run whose controller reads no setpoint refuses a guidance.
 
-    Given an orchestrator whose controller has no `accept_setpoint` and a `MissionGuidance`, when the
-    run takes its first step, then it raises `TypeError` that names the controller's class.
+    Given an orchestrator whose controller reads no setpoint and a `MissionGuidance`, when the run takes
+    its first step, then it raises `TypeError` that names the controller's class.
     """
     with wp.ScopedDevice("cpu"):
         guidance = MissionGuidance()
         guidance.set_mission(GOALS)
         orch = _orch(_NoSetpointController(), _Physics([(0.0, 0.0, 0.0)]), guidance=guidance)
+        with pytest.raises(TypeError, match="_NoSetpointController"):
+            orch.step()
+        orch.close()
+
+
+class _SetpointSensor:
+    """A sensor whose device stage reads a signal named `setpoint`, as the guidance's is."""
+
+    def __init__(self):
+        self.setpoint = Signal("setpoint", PositionGoal, shape=(1,))
+
+    def read(self, meas):
+        pass
+
+    def stages(self):
+        return [Stage("sample", "device", lambda tick: None, reads=(self.setpoint,))]
+
+
+def test_a_run_whose_controller_reads_no_setpoint_refuses_a_guidance_that_another_component_reads():
+    """A run whose controller reads no setpoint refuses a guidance, even when another component reads it.
+
+    Given a controller that reads no setpoint, a sensor that reads a signal named `setpoint` and a
+    `MissionGuidance`, when the run takes its first step, then it raises `TypeError` that names the
+    controller's class.
+    """
+    with wp.ScopedDevice("cpu"):
+        guidance = MissionGuidance()
+        guidance.set_mission(GOALS)
+        orch = Orchestrator(
+            clock=_Clock(),
+            physics=_Physics([(0.0, 0.0, 0.0)]),
+            actuator=_Actuator(),
+            sensors=[_SetpointSensor()],
+            controller=_NoSetpointController(),
+            guidance=guidance,
+        )
         with pytest.raises(TypeError, match="_NoSetpointController"):
             orch.step()
         orch.close()
@@ -356,7 +387,7 @@ def test_the_mission_markers_and_the_tracked_reference_sit_under_guidance_in_the
         orch.step()
         orch.close()
         physics = _Physics([(0.0, 0.0, 2.0)])
-        controller = _ExchangeController(physics.state)
+        controller = _ExchangeController(physics.state, ReferenceTrajectory)
         tracking = TrackingGuidance(planner=lambda waypoints: _Reference())
         tracking.set_mission([(2.0, 0.5, 3.5), (3.0, 2.0, 4.0)])
         orch = _orch(controller, physics, guidance=tracking, logger=recording)

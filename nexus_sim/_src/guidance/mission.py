@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from nexus_sim._src.core.schema import PositionGoal, Setpoint
+from nexus_sim._src.core.signals import Signal
 
 from .base import Guidance
 
@@ -13,7 +14,7 @@ class MissionGuidance(Guidance):
     """Sequence a mission of position goals: advance on arrival, and end the run after the final hold.
 
     The stage runs each tick before the controller's: it detects arrival at the active goal, writes the
-    next goal to the tick, which the loop hands to the controller, and marks the tick done once the
+    next goal to the setpoint, a ``PositionGoal`` the controller reads, and marks the tick done once the
     final goal has held for ``final_hold_s``, which ends the run. The stage is a warm stage, so the
     controller holds the first goal before its own first stage; a mission of two or more goals advances
     between graph replays.
@@ -30,7 +31,7 @@ class MissionGuidance(Guidance):
     """
 
     def __init__(self, *, reached_m: float = 0.3, final_hold_s: float = 2.0, body_index: int = 0):
-        super().__init__(body_index=body_index)
+        super().__init__(setpoint=Signal("setpoint", PositionGoal, shape=(1,)), body_index=body_index)
         self._reached_m = float(reached_m)
         self._final_hold_s = float(final_hold_s)
         self._end_at: float | None = None  # sim time at which the mission is over, set on the final goal
@@ -69,6 +70,10 @@ class MissionGuidance(Guidance):
         self._announced = False
         self.arrival_times = []
         self._command(mission[0])
+
+    def _write(self, setpoint: PositionGoal) -> None:
+        """Write a goal's position to the setpoint, in place on the device."""
+        self.setpoint.write([setpoint.pos])
 
     def _tick(self, pos: np.ndarray, ts: float) -> None:
         if self._done:

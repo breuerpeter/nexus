@@ -15,38 +15,35 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
-from .schema import Measurement, Setpoint, SimTime
+from .schema import Measurement, SimTime
 
 if TYPE_CHECKING:
     import newton
 
+    from .signals import Signal
+
 
 @dataclass(slots=True)
 class Tick:
-    """The context one control tick hands every stage: the shared state and buffers a stage reads and
-    writes in place. ``controls`` is the controller's persistent ``(1, n)`` device buffer of normalized
-    per-actuator commands, which its stage sets and the command stages read, so a captured
-    graph reads the same buffer every replay. ``dt`` is one physics step, the control timestep over
+    """The context one control tick hands every stage: the loop's own state, which a stage reads and
+    writes in place. A value between two components is a signal the stages declare, not a field here.
+    ``dt`` is one physics step, the control timestep over
     ``physics_substeps``. ``sensors`` are the sensors with device stages, whose ``read`` fills ``meas``
     at a controller's ``read`` host stage. ``timeout`` bounds a host stage's wait on its peer. ``base`` is the
     index of the vehicle's base body, its airframe, in ``state``: a stage that reads the vehicle's true
     state reads that row.
 
-    ``setpoint`` and ``done`` are a guidance's two outputs. Its stage sets ``setpoint`` on the tick
-    its setpoint changes, and the loop hands it to the controller's ``accept_setpoint`` and clears it,
-    before the controller's stages run. A stage sets ``done`` to end the run, a guidance's when its
-    mission is over: the loop completes the tick and takes no further one.
+    A stage sets ``done`` to end the run, a guidance's when its mission is over: the loop completes the
+    tick and takes no further one.
     """
 
     state: Any
     t: SimTime
     dt: float
     meas: Measurement
-    controls: Any = None
     sensors: list = field(default_factory=list)
     timeout: float | None = None
     base: int = 0
-    setpoint: Setpoint | None = None
     done: bool = False
 
 
@@ -58,13 +55,16 @@ class Stage:
     peer didn't answer, which the preroll retries and the steady loop ends the run on. A ``warm``
     sensor or controller stage runs in the seed pass over the settled state, before any capture, so
     every device buffer it allocates exists first. A ``warm`` guidance stage runs in that pass too,
-    so the controller holds the guidance's first setpoint before its own first stage.
+    so the controller holds the guidance's first setpoint before its own first stage. ``reads`` and
+    ``writes`` are the signals the stage reads and writes, which the loop wires before any stage runs.
     """
 
     name: str
     kind: Literal["device", "host"]
     run: Callable[[Tick], Any]
     warm: bool = True
+    reads: tuple[Signal, ...] = ()
+    writes: tuple[Signal, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,28 +156,15 @@ class Controller(Protocol):
         """The controller's per-tick work. A controller that blocks on a peer, PX4, or solves on the
         host, a Model Predictive Control (MPC) solver, states a ``read`` host stage for the sensor fan-in and an ``exchange`` host
         stage, :func:`nexus_sim._src.core.stages.peer_stages`; a device-native law, the Proportional Integral Derivative (PID) example, states device
-        stages. Its stage sets ``Tick.controls`` to the controller's persistent command buffer.
+        stages. A stage of it writes the controls, a ``Controls`` signal the command elements read.
 
         A controller with a peer, one that exposes ``attached``, connects after the loop's warm pass
         and graph capture, so a peer that dials in early waits on no kernel load. Its device stages
         run and capture before ``connect()``, over buffers that exist from construction.
-        """
 
-    def accept_setpoint(self, sp: Setpoint) -> None:
-        """Write the controller's own setpoint buffer **in place** from a ``Setpoint``.
-
-        The thin control surface: the loop hands a controller the setpoint its guidance wrote to the
-        tick, and a script without a guidance calls it itself. The call flips the controller's
-        persistent setpoint buffer, a §6 value-mutation with a static address and zero re-capture on
-        the next replay, then the controller's stages read it. Each controller
-        narrows the ``Setpoint`` union to the variant it supports, PositionGoal for policy/pid,
-        Waypoints for sampling Model Predictive Control (MPC), ReferenceTrajectory for acados, and raises
-        on the rest.
-
-        **PX4 has no setpoint surface**, since its mission lives in its peer, so the
-        ``Px4MavlinkController`` does *not* offer this, and its control surface is ``None``; instead,
-        a script commands PX4 over its offboard link, with a client it opens itself. Optional on
-        the protocol for exactly that reason.
+        A controller that flies a guidance's mission declares the setpoint it reads on a stage, as a
+        signal of one setpoint type. PX4's controller declares none: its mission lives in its peer, and
+        a script commands it over its offboard link, with a client it opens itself.
         """
 
 

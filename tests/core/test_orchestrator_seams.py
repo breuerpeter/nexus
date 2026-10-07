@@ -55,7 +55,7 @@ class _Actuator:
         state["q"] += 1
 
     def stages(self):
-        return [Stage("forces", "device", lambda tick: self.forces(tick.controls, tick.state))]
+        return [Stage("forces", "device", lambda tick: self.forces(None, tick.state))]
 
 
 class _Sensor:
@@ -88,8 +88,7 @@ class _Controller:
 
     def stages(self):
         def exchange(tick):
-            tick.controls = self.exchange(tick.meas, tick.t, None)
-            return tick.controls is not None
+            return self.exchange(tick.meas, tick.t, None) is not None
 
         return [Stage("read", "host", lambda tick: None), Stage("exchange", "host", exchange)]
 

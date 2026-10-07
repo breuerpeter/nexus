@@ -9,8 +9,8 @@ can't easily handle.
 **The shape.** A zero-arg, self-contained script: it assembles its own orchestrator, the example-owned
 :mod:`assembly`, and hosts it via ``Sim.from_orchestrator`` + ``sim.guidance``. The min-snap +
 differential-flatness planner lives with the **guidance**: ``sim.guidance.set_mission(WAYPOINTS)``
-plans the whole-path flat-state reference and hands it to the NMPC as a ``ReferenceTrajectory``; the
-controller just *tracks* it. The flat-state reference, position + attitude +
+plans the whole-path flat-state reference and writes it to the setpoint the NMPC reads, as a
+``ReferenceTrajectory``; the controller just *tracks* it. The flat-state reference, position + attitude +
 body-rate + thrust feedforward, is the quadrotor differential-flatness map with a velocity-aligned,
 nose-first yaw: N=20 shooting nodes, HPIPM partial
 condensing, SQP Real Time Iteration (RTI) re-solved every control tick. The ruckig ``FlatnessReference``
@@ -95,6 +95,7 @@ def main() -> None:
     # plus a smooth yaw polynomial, so nose-first flight tracks cleanly; swap in the ruckig
     # FlatnessReference for the jerk-limited fallback.
     mass = float(orch.physics.model.body_mass.numpy().sum())
+    controller = orch.controller  # the NMPC its assembly built, whose telemetry the flight reads after the run
     guidance = TrackingGuidance(planner=lambda waypoints: MinSnapReference(waypoints, mass=mass), final_hold_s=3.0)
     with nx.Sim.from_orchestrator(orch, guidance=guidance) as sim:
         sim.guidance.set_mission(WAYPOINTS)  # the guidance plans the min-snap reference; the NMPC tracks it
@@ -124,7 +125,7 @@ def main() -> None:
     # Tracking error compared to the planned reference: evo-style position Absolute Pose Error (APE), world
     # frame, time-synced, with no alignment needed since both are in the sim world frame. The metric that
     # catches a flight-quality regression the end-state `final dist` misses.
-    track = np.array(sim.controller.track_err)
+    track = np.array(controller.track_err)
     track_rmse = float(np.sqrt(np.mean(track**2))) if track.size else 0.0
     track_max = float(track.max()) if track.size else 0.0
     nx.logger.info(
@@ -146,7 +147,7 @@ def main() -> None:
         sim,
         "acados_nmpc",
         stats=stats,
-        reference=sim.controller.reference,
+        reference=controller.reference,
         reference_t0=guidance.reference_started_at,
     )
     assert np.isfinite(traj).all(), "trajectory diverged"

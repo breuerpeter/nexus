@@ -62,12 +62,12 @@ fault-wrappable:
 |---|---|
 | `Clock` | sim-time and step, with real-time scaling |
 | `Physics` | `reset` / `step` the Newton dynamics: `step` steps every Newton actuator the vehicle declares, then the solver |
-| Command stage | device stages that turn the controller's command buffer into Newton's control inputs: the rotors' speed targets and feedforward |
+| Command stage | device stages that turn the controls the controller writes into Newton's control inputs: the rotors' speed targets and feedforward |
 | Force element | device stages that add body wrenches to the shared `body_f` buffer from the current state: the propellers' thrust and drag |
 | `Sensor` | a device stage into its own buffer plus `read(meas) → Measurement`, or a host stage where a camera sensor uses a renderer |
 | `Controller` | its stages, one contract, many implementations: a peer's `read` and `exchange` host stages, or a device-native law |
 | `Renderer` | the Kit render peer's lifecycle: RTX sensors render in a container fed poses over a socket |
-| `Stage`, `Tick` | the stage contract: one unit of per-tick work, and the context every stage runs over |
+| `Stage`, `Tick` | the stage contract: one unit of per-tick work, which declares the [signals](execution.md#signals) it reads and writes, and the loop's own context every stage runs over |
 | `Recorder` | cross-cutting observability |
 
 The **scene and the vehicle aren't code interfaces**: they come from
@@ -108,11 +108,11 @@ same loop:
 **What to fly is separate from how it flies.** A controller that takes setpoints flies the mission
 of its **guidance**, the outer loop of the control cascade, reached through
 [`sim.guidance`](../reference/api/guidance.md). The guidance is a component of the loop, and it
-holds no other component: it passes its output through the tick, as every stage does. Its stage
-runs each tick after the sensors' and before the controller's. It writes a changed setpoint, a
-`PositionGoal`, `Waypoints` or `ReferenceTrajectory`, to the tick, and the loop hands that to the
-controller's `accept_setpoint`, so the controller narrows it on that same tick. When the mission
-is over, the stage marks the tick done, and the loop ends the run. `MissionGuidance` sequences
+holds no other component. Its stage runs each tick after the sensors' and before the controller's.
+It writes the setpoint, a [signal](execution.md#signals) of one setpoint type, a `PositionGoal` or a
+`ReferenceTrajectory`, and the controller reads it on that same tick. The loop checks before any
+stage runs that the controller reads the type the guidance writes. When the mission is over, the
+stage marks the tick done, and the loop ends the run. `MissionGuidance` sequences
 position goals and advances on arrival. `TrackingGuidance` plans one reference for a tracking
 controller, with a `ruckig` or min-snap planner. A flight constructs its guidance from the
 guidance's own parameters and hands it to `Sim.from_orchestrator`.

@@ -23,7 +23,6 @@ from nexus_sim._src.recording import ChannelMap, Recorder
 
 if TYPE_CHECKING:
     from nexus_sim._src.core import Orchestrator
-    from nexus_sim._src.core.interfaces import Controller
     from nexus_sim._src.guidance import Guidance
 
 
@@ -118,7 +117,6 @@ class Sim:
         self._launch.output.debug = debug  # axes-only scene: coordinate triads, no meshes → a small .rrd
         self._cache_dir = cache_dir
         self._observe = observe
-        self._takes_setpoints = False  # set at build, from the controller the vehicle declares
         self._orch = None
         self._guidance = None  # a launch-built run has none: a flight hands one to from_orchestrator
         self._recorder: Recorder | None = None
@@ -146,9 +144,9 @@ class Sim:
         Args:
             orch: The built orchestrator; its components already carry the renderer and logger.
             guidance: The guidance the flight constructed, for example
-                ``MissionGuidance(reached_m=0.3)``. Its stage runs each tick before the controller's,
-                and the loop hands the setpoint it writes to the controller. ``None`` flies with
-                whatever setpoint the controller holds.
+                ``MissionGuidance(reached_m=0.3)``. Its stage runs each tick before the controller's
+                and writes the setpoint the controller reads. ``None`` flies the controller to the
+                setpoint's default.
             observe: Attach the ``Recorder`` behind ``sim.physics`` and ``sim.sensors``.
 
         Returns:
@@ -159,7 +157,6 @@ class Sim:
         sim._launch = None
         sim._cache_dir = None
         sim._observe = observe
-        sim._takes_setpoints = hasattr(orch.controller, "accept_setpoint")
         sim._orch = None
         sim._prebuilt_orch = orch
         sim._guidance = guidance
@@ -207,9 +204,6 @@ class Sim:
         else:
             # A vehicle that authors RTX sensors starts the Kit render peer here, from the host.
             self._orch = build_from_launch(self._launch, cache_dir=self._cache_dir)
-            # A controller with a setpoint surface takes a guidance. PX4's has none: a script commands
-            # PX4 over the offboard link it opens itself, on the address in sim.ports.
-            self._takes_setpoints = hasattr(getattr(self._orch, "controller", None), "accept_setpoint")
         if self._observe:
             # Attach the observation sink: each recordable component registers its device-only channels;
             # physics → one per body plus per joint. dt → the per-row snapshot time, counter × dt.
@@ -233,7 +227,7 @@ class Sim:
         # step-driven the same way as any other.
         return self
 
-    # -- the guidance of a setpoint controller, the run's port map, and the controller's thin surface --
+    # -- the guidance of a setpoint controller, and the run's port map --
     @property
     def guidance(self) -> Guidance:
         """The guidance of this run: the component a flight constructed and handed to
@@ -259,22 +253,19 @@ class Sim:
     @property
     def operator(self) -> NoReturn:
         """No run has an operator, so this raises on every run and names what commands the run. A
-        controller that takes setpoints flies its :attr:`guidance`, which runs in the loop. A
-        controller that takes none, an autopilot in a peer such as PX4, takes its commands from a
+        controller that reads a setpoint flies its :attr:`guidance`, which runs in the loop. A
+        controller that reads none, an autopilot in a peer such as PX4, takes its commands from a
         script, over a link the script opens itself on the address :attr:`ports` names.
 
         Raises:
             RuntimeError: On every access. Before the ``Sim`` context, the message says to enter it.
-                On a run whose controller takes setpoints, it names :attr:`guidance`. On any other
-                run, it names :attr:`ports`.
+                After, it names :attr:`guidance` and :attr:`ports`.
         """
         if self._orch is None:
             raise RuntimeError("enter the Sim context first (`with nx.Sim(...) as sim:`)")
-        if self._takes_setpoints:
-            raise RuntimeError("this run's controller takes setpoints: command it through `sim.guidance`")
         raise RuntimeError(
-            "this run's controller takes no setpoint, so the run has no operator: a script commands "
-            "its autopilot over a link it opens itself, on an address from sim.ports"
+            "a run has no operator: a controller that reads a setpoint flies the guidance in `sim.guidance`, "
+            "and a script commands an autopilot over a link it opens itself, on an address from sim.ports"
         )
 
     @property
@@ -297,18 +288,6 @@ class Sim:
         if self._orch is None:
             raise RuntimeError("enter the Sim context first (`with nx.Sim(...) as sim:`)")
         return self._orch.ports
-
-    @property
-    def controller(self) -> Controller | None:
-        """The controller's thin control surface, ``accept_setpoint`` plus config, or ``None`` for PX4,
-        which owns its mission in the external process and takes commands over its offboard link,
-        which a script opens on :attr:`ports`.
-
-        Returns:
-            The controller that takes setpoints, or ``None`` for a PX4 run.
-        """
-        ctrl = getattr(self._orch, "controller", None) if self._orch is not None else None
-        return ctrl if (ctrl is not None and hasattr(ctrl, "accept_setpoint")) else None
 
     def start(self, timeout: float | None = None) -> None:
         """Drive the run's setup, returning once the first control tick has completed.

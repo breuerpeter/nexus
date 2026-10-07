@@ -158,15 +158,11 @@ def test_sim_passes_device_into_launch(monkeypatch):
 
 
 class _FakeController:
-    def __init__(self):
-        self.setpoints = []
-
-    def accept_setpoint(self, sp):
-        self.setpoints.append(sp)
+    pass
 
 
 class _InProcessOrch:
-    """An orchestrator whose controller has accept_setpoint: run() is synchronous, fires on_tick."""
+    """An orchestrator whose controller reads a setpoint: run() is synchronous, fires on_tick."""
 
     def __init__(self):
         self.sensors = []
@@ -214,11 +210,9 @@ def test_sim_hands_the_flights_guidance_to_the_orchestrator_and_runs():
     # A self-assembled orchestrator enters via from_orchestrator, the examples' entry, with its guidance.
     with sim_mod.Sim.from_orchestrator(fake, guidance=guidance) as sim:
         assert sim.guidance is guidance and fake.guidance is guidance  # the guidance joins the loop
-        assert sim.controller is fake.controller  # thin surface, which has accept_setpoint
         assert fake.on_tick is None  # the hook stays the caller's: the guidance rides a stage
         sim.guidance.set_mission([(0.0, 0.0, 4.0)])
-        assert tuple(guidance.active_setpoint.pos) == (0.0, 0.0, 4.0)  # the loop hands it over, not Sim
-        assert fake.controller.setpoints == []
+        assert tuple(guidance.active_setpoint.pos) == (0.0, 0.0, 4.0)  # its stage writes it, not Sim
         sim.run()
         assert fake.ran  # ran synchronously, no thread
         assert sim.results() == {"control_steps": 1, "rtf": 1.0}
@@ -244,24 +238,19 @@ def test_sim_step_drives_px4_on_the_calling_thread(monkeypatch):
 
 
 def test_a_run_whose_controller_takes_no_setpoint_has_no_operator_and_the_error_names_the_port_map(monkeypatch):
-    """A run whose controller takes no setpoint, as PX4's does, has no controller surface and no
-    operator: the autopilot owns its mission in its own process, and a script commands it over a
-    link it opens itself.
+    """A run whose controller takes no setpoint, as PX4's does, has no operator: the autopilot owns its
+    mission in its own process, and a script commands it over a link it opens itself.
 
-    Given a `Sim` over a controller with no setpoint surface, when a script reads `sim.controller`
-    and `sim.operator`, then the controller is `None` and the operator raises `RuntimeError` that
-    names `sim.ports`.
+    Given a `Sim` over a controller that reads no setpoint, when a script reads `sim.operator`, then it
+    raises `RuntimeError` that names `sim.ports`.
     """
     fake = _FakeOrch()
     monkeypatch.setattr(sim_mod, "build_from_launch", lambda launch, **kw: fake)
 
     with sim_mod.Sim("astro_max_base", scene="empty", device="cpu") as sim:
         sim.start(timeout=30.0)
-        controller = sim.controller
         with pytest.raises(RuntimeError, match=r"no operator.*sim\.ports"):
             _ = sim.operator
-
-    assert controller is None
 
 
 def test_sim_takes_no_control_argument():

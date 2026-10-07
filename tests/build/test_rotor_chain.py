@@ -1,5 +1,5 @@
 """The rotor chain splits into a command seam, a force seam and physics stepping Newton's actuators, and
-the shipped vehicle flies as before.
+the shipped vehicle flies as before. Controls that a reader can't take stop the run before any stage runs.
 
 Real builds on the Warp CPU backend: the fixture quad of ``tests/vehicle/quad.py`` around a stand-in
 controller, with stand-in command stages and force elements beside the rotors' where a test needs them,
@@ -21,13 +21,16 @@ from nexus_sim._src.api.sim import Sim
 from nexus_sim._src.build.assembly import assemble, build_orchestrator, build_scenario, resolve_device
 from nexus_sim._src.build.launch import resolve_to_vehicle_builder
 from nexus_sim._src.config import LaunchConfig
+from nexus_sim._src.core import Clock
 from nexus_sim._src.core.interfaces import Stage
 from nexus_sim._src.core.orchestrator import Orchestrator
 from nexus_sim._src.core.schema import Controls
+from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.core.stages import peer_stages
 from nexus_sim._src.physics import NewtonPhysics
 from nexus_sim._src.physics.builders.usd import USDBuilder
 from nexus_sim._src.scene.site import GRAVITY
+from nexus_sim.examples._lib import Rotors, build_rotor_mixer_from_model
 from tests.vehicle import quad
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")
@@ -68,13 +71,29 @@ class _Stream:
 
 
 class _Narrow:
-    """A device-native controller whose command buffer holds three values, one short of the quad's rotors."""
+    """A device-native controller whose controls hold three values, one short of the quad's four rotors."""
+
+    def __init__(self):
+        self.controls = Signal("controls", Controls, shape=(1, 3))
 
     def connect(self):
-        self.buf = wp.zeros((1, 3), dtype=float)
+        pass
 
     def stages(self):
-        return [Stage("act", "device", lambda tick: setattr(tick, "controls", self.buf))]
+        return [Stage("act", "device", lambda tick: None, writes=(self.controls,))]
+
+    def close(self):
+        pass
+
+
+class _Silent:
+    """A device-native controller that writes no controls."""
+
+    def connect(self):
+        pass
+
+    def stages(self):
+        return [Stage("idle", "device", lambda tick: None)]
 
     def close(self):
         pass
@@ -96,15 +115,16 @@ class _ServoCommand:
         coord = self.control.joint_target_q.shape[0] == model.joint_coord_count
         self.index = int((model.joint_q_start if coord else model.joint_qd_start).numpy()[j])
         self.channel, self.scale = channel, scale
+        self.controls = Signal("controls", Controls, shape=(1, channel + 1))
 
     def stages(self):
-        return [Stage("servo", "device", self._write)]
+        return [Stage("servo", "device", self._write, reads=(self.controls,))]
 
     def _write(self, tick):
         wp.launch(
             _servo_target,
             dim=1,
-            inputs=(tick.controls, self.channel, self.scale, self.index),
+            inputs=(self.controls.buffer, self.channel, self.scale, self.index),
             outputs=(self.control.joint_target_q,),
         )
 
@@ -174,6 +194,29 @@ def _loop(path, controller, *, commands=(), forces=()):
     )
 
 
+def _rotors(path, controller):
+    """The run the quad at `path` builds around `controller` with the examples' `Rotors` in place of the
+    rotor chain, the Newton motors idle, as the Proportional Integral Derivative (PID) example flies.
+    """
+    cfg = build_scenario()
+    cfg["physics"]["force_cpu"] = True
+    resolve_device(cfg)
+    vb = USDBuilder({"usd_path": str(path)}, None)
+    physics = NewtonPhysics(vehicle_builder=vb, cfg=cfg, step_actuators=False)
+    mixer = build_rotor_mixer_from_model(
+        physics.model, vb.rotor_joints(), vb.actuator_params(), physics.state0.body_q.numpy()
+    )
+    dt = cfg["physics"]["dt"]
+    return Orchestrator(
+        clock=Clock(dt),
+        physics=physics,
+        actuator=Rotors(mixer=mixer, dt=dt, motor_tau=0.033),
+        sensors=[],
+        controller=controller,
+        max_steps=quad.FLIGHT_STEPS,
+    )
+
+
 def _flown(orch) -> tuple[float, float | None]:
     """The airframe's climb over the flight [m], and the gimbal joint's final angle [rad] when it has one."""
     with wp.ScopedDevice("cpu"), Sim.from_orchestrator(orch) as sim:
@@ -220,17 +263,41 @@ def test_a_rotor_command_outside_0_to_1_flies_as_the_nearest_bound(tmp_path, out
     assert np.array_equal(flights[0], flights[1])
 
 
-def test_a_controller_with_fewer_commands_than_rotors_fails_the_run_naming_both_counts(tmp_path):
-    """A controller whose command holds fewer values than the vehicle has rotors fails the run, and the
-    error names both counts.
+@pytest.mark.parametrize("reader", ["RotorCommand", "Rotors"])
+def test_a_controller_whose_controls_are_narrower_than_a_reader_needs_fails_the_run_naming_both(tmp_path, reader):
+    """A controller whose controls hold fewer values than a reader needs fails the run before any stage
+    runs, and the error names both components and both widths.
 
-    Given a fixture quad with four rotors and a device-native controller whose command buffer holds three
-    values, when the run starts, then it fails with an error that names 4 and 3.
+    Given the fixture quad with four rotors and a controller whose controls hold three values, when the run
+    starts, then it fails before any stage runs, and the error names the controller, the reader, 3 and 4;
+    once with the rotors' command element and once with the examples' `Rotors`. No stage ran, so the
+    recording holds no row.
     """
-    orch = quad.build(quad.author(tmp_path / "quad.usda"), quad.FLIGHT_STEPS, _Narrow())
-    with wp.ScopedDevice("cpu"), pytest.raises(ValueError) as e, Sim.from_orchestrator(orch) as sim:
-        sim.run()
-    assert re.search(r"\b4\b", str(e.value)) and re.search(r"\b3\b", str(e.value))
+    path = quad.author(tmp_path / "quad.usda")
+    orch = quad.build(path, quad.FLIGHT_STEPS, _Narrow()) if reader == "RotorCommand" else _rotors(path, _Narrow())
+    with wp.ScopedDevice("cpu"), Sim.from_orchestrator(orch) as sim:
+        with pytest.raises(ValueError) as e:
+            sim.run()
+        rows = len(sim.physics["body"].history())
+    named = all(re.search(rf"\b{word}\b", str(e.value)) for word in ("_Narrow", reader, "3", "4"))
+    assert (named, rows) == (True, 0)
+
+
+def test_an_input_no_component_writes_fails_the_run_naming_the_reader_and_the_signal(tmp_path):
+    """An input that no component writes, and whose component gives it no default, fails the run before any
+    stage runs, and the error names the reader and the signal.
+
+    Given the fixture quad and a controller that writes no controls, when the run starts, then it fails before
+    any stage runs, and the error names the rotors' command element and the controls. No stage ran, so the
+    recording holds no row.
+    """
+    orch = quad.build(quad.author(tmp_path / "quad.usda"), quad.FLIGHT_STEPS, _Silent())
+    with wp.ScopedDevice("cpu"), Sim.from_orchestrator(orch) as sim:
+        with pytest.raises(ValueError) as e:
+            sim.run()
+        rows = len(sim.physics["body"].history())
+    named = all(word in str(e.value) for word in ("RotorCommand", "controls"))
+    assert (named, rows) == (True, 0)
 
 
 def test_a_rotor_whose_joint_no_newton_actuator_drives_fails_the_build_naming_the_rotor(tmp_path):

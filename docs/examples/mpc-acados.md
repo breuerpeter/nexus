@@ -44,9 +44,9 @@ yet: run `scripts/ci/evaluate_examples.py --upload`.*
 
 ## How it works
 
-The controller, `nexus_sim/examples/controllers/acados_nmpc/controller.py`, never plans: the
-operator hands it the whole-path reference once through `accept_setpoint(ReferenceTrajectory)`,
-and every control tick it solves a short optimal-control problem to stay on it.
+The controller, `nexus_sim/examples/controllers/acados_nmpc/controller.py`, never plans. The
+guidance writes the whole-path reference once to the setpoint, a `ReferenceTrajectory` the controller
+reads. Every control tick, the controller solves a short optimal-control problem to stay on it.
 
 ### The internal model
 
@@ -138,7 +138,7 @@ Each `exchange()` tick:
    for each node, as that node's $y^{\mathrm{ref}}_k$. Each node's reference holds position,
    quaternion, velocity, body rate, and collective thrust from the differential-flatness lift, with
    the collective split evenly across rotors as the input reference. The reference clock anchors
-   to the first exchange after `accept_setpoint`, so the trajectory plays from its own $t = 0$.
+   to the first exchange that reads a new reference, so the trajectory plays from its own $t = 0$.
 4. **Solve once, apply the first input**: take $u_0$, four thrusts in N, and invert the thrust map
    into the actuator's normalized command,
    $\mathrm{throttle}_i = \sqrt{T_i / c_T}\, /\, \mathrm{rpm}_{\max}$. That command drives

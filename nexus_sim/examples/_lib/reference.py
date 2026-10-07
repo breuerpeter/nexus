@@ -53,8 +53,8 @@ def _quat_from_z_yaw(z_body: np.ndarray, yaw: float) -> np.ndarray:
 class FlatnessReference:
     """The ruckig reference: ruckig plans a jerk-limited position trajectory through the waypoints,
     chained C2-continuous legs, and differential flatness lifts it to a full state reference, attitude and
-    body rate, plus the collective-thrust feedforward the NMPC tracks. Built by the **guidance** and fed
-    to the controller via ``accept_setpoint(ReferenceTrajectory(reference=ref))``.
+    body rate, plus the collective-thrust feedforward the NMPC tracks. Built by the **guidance**, which
+    writes it to the setpoint the controller reads, wrapped in a ``ReferenceTrajectory``.
     """
 
     def __init__(
