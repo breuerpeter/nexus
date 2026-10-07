@@ -154,12 +154,12 @@ class Orchestrator:
                 setpoint on the tick the guidance writes it. Its stage marks the tick done when its
                 mission is over, which ends the run. A flight can also set the ``guidance`` attribute
                 before the first step. ``None`` for PX4, which flies its own missions.
-            commands: The command stages: each turns the controller's command buffer into Newton's
+            commands: The command stages: each turns the controls the controller writes into Newton's
                 control inputs, the rotors' speed targets and feedforward, in its device stages.
             forces: The force elements: each adds its body wrenches to the shared ``state.body_f``
                 from the current state, the propellers' thrust and drag, in its device stages.
             actuator: The old actuator seam, the examples' single-body ``Rotors``: one device stage
-                that writes the shared body forces from the controller's command buffer. ``None``
+                that writes the shared body forces from the controls the controller writes. ``None``
                 for a run on the command and force seams.
             renderer: Optional render-lifecycle object, for example the Kit render peer's
                 :class:`~nexus_sim._src.rendering.KitRenderer`: the loop calls only

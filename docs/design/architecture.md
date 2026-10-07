@@ -62,7 +62,7 @@ fault-wrappable:
 |---|---|
 | `Clock` | sim-time and step, with real-time scaling |
 | `Physics` | `reset` / `step` the Newton dynamics: `step` steps every Newton actuator the vehicle declares, then the solver |
-| Command stage | device stages that turn the controller's command buffer into Newton's control inputs: the rotors' speed targets and feedforward |
+| Command stage | device stages that turn the controls the controller writes into Newton's control inputs: the rotors' speed targets and feedforward |
 | Force element | device stages that add body wrenches to the shared `body_f` buffer from the current state: the propellers' thrust and drag |
 | `Sensor` | a device stage into its own buffer plus `read(meas) → Measurement`, or a host stage where a camera sensor uses a renderer |
 | `Controller` | its stages, one contract, many implementations: a peer's `read` and `exchange` host stages, or a device-native law |

@@ -10,7 +10,7 @@ from drooping against the steady load. The rotor speed Ω is then a real, solver
 physical lag and saturation, and the props render spinning at no extra cost.
 
 One device stage, ``rotors``: the targets kernel into persistent per-rotor buffers, then their scatter into
-the model-sized control arrays, so a captured graph replays it over the controller's command buffer.
+the model-sized control arrays, so a captured graph replays it over the controls the controller writes.
 """
 
 from __future__ import annotations
