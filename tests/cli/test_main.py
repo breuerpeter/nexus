@@ -1,6 +1,5 @@
 """``nexus`` command-line tool parsing/validation: the command surface only, no run starts."""
 
-import hashlib
 import importlib
 
 import pytest
@@ -17,25 +16,6 @@ PLAIN_USD = (
 def test_log_and_view_are_exclusive(monkeypatch):
     monkeypatch.setattr("sys.argv", ["nexus", "run", "--log", "--view"])
     with pytest.raises(SystemExit):
-        cli.main()
-
-
-def test_stream_on_a_vehicle_without_a_camera_fails_before_the_run(monkeypatch, tmp_path):
-    """--stream publishes the camera feeds, so a vehicle that authors no camera has nothing to stream."""
-    pytest.importorskip("pxr")
-    usd = tmp_path / "plain.usda"
-    usd.write_text(PLAIN_USD)
-    registry = tmp_path / "catalog.yaml"
-    registry.write_text(
-        "vehicles:\n  plain:\n"
-        f'    usd: {{ url: "{usd.as_uri()}", sha256: {hashlib.sha256(usd.read_bytes()).hexdigest()} }}\n'
-        "scenes:\n  empty: {}\n"
-    )
-    monkeypatch.setenv("NEXUS_ASSET_CACHE", str(tmp_path / "cache"))
-    monkeypatch.setattr(
-        "sys.argv", ["nexus", "run", "--stream", "--vehicle", "plain", "--scene", "empty", "--registry", str(registry)]
-    )
-    with pytest.raises(ValueError, match="camera"):
         cli.main()
 
 

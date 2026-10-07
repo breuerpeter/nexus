@@ -1,9 +1,8 @@
 """`nexus run <vehicle>`: the thin command-line entry into a run.
 
-``run`` builds a :class:`~nexus_sim._src.api.sim.Sim` from the shared ``sim_argparser`` flags plus
-``--stream`` and drives it to completion. A vehicle whose Universal Scene Description (USD) file
-declares RTX sensors renders them in the Kit render peer, a container the run starts from this
-host.
+``run`` builds a :class:`~nexus_sim._src.api.sim.Sim` from the shared ``sim_argparser`` flags and
+drives it to completion. A vehicle whose Universal Scene Description (USD) file declares RTX sensors
+renders them in the Kit render peer, a container the run starts from this host.
 """
 
 from __future__ import annotations
@@ -24,12 +23,6 @@ def _run(args) -> None:
 def main() -> None:
     parser = sim_argparser(description="Fly a vehicle against PX4 SITL over the HIL link.")
     parser.add_argument("command", nargs="?", default="run", choices=["run"], help="subcommand")
-    parser.add_argument(
-        "--stream",
-        action="store_true",
-        help="publish each RTX camera's feed: NVENC → RTSP → MediaMTX → WHEP; "
-        "without it, frames go to the Rerun recording only",
-    )
     args = parser.parse_args()
 
     if args.log and args.view:  # serve or file, never both: a live server and a complete .rrd can't coexist in-process
