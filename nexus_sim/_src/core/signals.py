@@ -105,10 +105,10 @@ def wire(ring: list[Bound]) -> None:
     input that no component writes reads its own buffer, which holds its default.
 
     Raises:
-        ValueError: A device stage declares a host signal, a device signal has no shape, a reader and its
-            writer disagree on the type, a reader needs more of an axis than its writer's buffer holds, or
-            an input has neither a writer nor a default. The message names both ends, or the stage or the
-            reader and the signal.
+        ValueError: A device stage declares a host signal, a device signal has no shape, two components
+            write one signal that a third reads, a reader and its writer disagree on the type, a reader
+            needs more of an axis than its writer's buffer holds, or an input has neither a writer nor a
+            default. The message names both ends, or the stage or the reader and the signal.
     """
     writes: dict[str, list[tuple[Bound, Signal]]] = {}
     reads: dict[str, list[tuple[Bound, Signal]]] = {}
@@ -138,6 +138,11 @@ def wire(ring: list[Bound]) -> None:
                     )
                 _hand(signal._allocate(), [signal], signal.default)
             continue
+        if len(writes[name]) > 1:
+            raise ValueError(
+                f"{' and '.join(_owner(b) for b, _ in writes[name])} all write {name!r}, which "
+                f"{' and '.join(_owner(b) for b, _ in readers)} reads: one signal has one writer"
+            )
         writer, written = writes[name][0]
         for bound, signal in readers:
             if signal.type is not written.type:
