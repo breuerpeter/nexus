@@ -1,7 +1,7 @@
 """MissionGuidance and TrackingGuidance: the mission a guidance sequences or plans, driven through its
 stages, the seam the loop calls. A guidance holds no controller and no stop: its stage writes a
-changed setpoint to the tick and marks the tick done when the mission is over. A stand-in state holds
-the vehicle's position: no real sim.
+changed setpoint to its setpoint signal, wired as the loop wires it, and marks the tick done when the
+mission is over. A stand-in state holds the vehicle's position: no real sim.
 """
 
 import numpy as np
@@ -13,6 +13,8 @@ import warp as wp
 
 from nexus_sim._src.core.interfaces import Tick
 from nexus_sim._src.core.schema import PositionGoal, ReferenceTrajectory, SimTime
+from nexus_sim._src.core.signals import wire
+from nexus_sim._src.core.stages import Bound
 from nexus_sim._src.guidance import MissionGuidance, TrackingGuidance
 from nexus_sim.examples.controllers.policy.goto.geofence import GeofenceGuidance
 
@@ -36,6 +38,17 @@ class _State:
     @property
     def body_q(self):
         return wp.array(np.array([[*self.pos, 0.0, 0.0, 0.0, 1.0]], dtype=np.float32), dtype=wp.transform)
+
+
+def _wired(guidance):
+    """The guidance with its setpoint wired, as the loop wires it before any stage runs."""
+    wire([Bound(stage, guidance, "guidance") for stage in guidance.stages()])
+    return guidance
+
+
+def _goal(guidance) -> tuple[float, float, float]:
+    """The goal a mission guidance's setpoint holds."""
+    return tuple(float(v) for v in guidance.setpoint.read()[0])
 
 
 def _tick(guidance, pos, sim_time) -> Tick:
@@ -73,19 +86,22 @@ def test_a_tracking_guidance_states_one_host_stage_that_waits_for_the_first_tick
     assert [(st.name, st.kind, st.warm) for st in stages] == [("guidance", "host", False)]
 
 
-def test_a_guidance_writes_a_changed_setpoint_to_the_tick():
-    """A guidance writes a changed setpoint to the tick.
+def test_a_guidance_writes_the_active_goal_to_its_setpoint():
+    """A guidance writes the active goal to its setpoint.
 
-    Given a `MissionGuidance` with two goals, when its stage runs on a tick where the vehicle is within
-    reach of the first goal, then the tick's setpoint is the second goal, and when it runs on a tick
-    with no arrival, then it leaves the tick's setpoint empty.
+    Given a `MissionGuidance` with two goals, when its stage first runs, then the setpoint holds the first
+    goal, it still holds it on a tick with no arrival, and it holds the second goal once the vehicle is
+    within reach of the first.
     """
-    guidance = MissionGuidance(reached_m=0.3)
+    guidance = _wired(MissionGuidance(reached_m=0.3))
     guidance.set_mission([(1.0, 0.0, 2.0), (0.0, 1.0, 3.0)])
-    first = _tick(guidance, (0.0, 0.0, 0.0), 0.0).setpoint  # the stage's first run writes the first goal
-    idle = _tick(guidance, (0.0, 0.0, 0.0), 0.1).setpoint
-    arrived = _tick(guidance, (1.0, 0.0, 2.0), 1.0).setpoint
-    assert (first, idle, arrived) == (PositionGoal(pos=(1.0, 0.0, 2.0)), None, PositionGoal(pos=(0.0, 1.0, 3.0)))
+    _tick(guidance, (0.0, 0.0, 0.0), 0.0)  # the stage's first run writes the first goal
+    first = _goal(guidance)
+    _tick(guidance, (0.0, 0.0, 0.0), 0.1)
+    idle = _goal(guidance)
+    _tick(guidance, (1.0, 0.0, 2.0), 1.0)
+    arrived = _goal(guidance)
+    assert (first, idle, arrived) == ((1.0, 0.0, 2.0), (1.0, 0.0, 2.0), (0.0, 1.0, 3.0))
 
 
 def test_set_mission_makes_the_first_goal_the_active_one():
@@ -100,21 +116,21 @@ def test_an_empty_mission_raises():
 
 
 def test_the_mission_advances_on_arrival_and_ends_after_the_final_hold():
-    guidance = MissionGuidance(reached_m=0.3, final_hold_s=2.0)
+    guidance = _wired(MissionGuidance(reached_m=0.3, final_hold_s=2.0))
     guidance.set_mission([(1.0, 0.0, 2.0), (0.0, 1.0, 3.0)])
 
     # far from wp0 → no advance
     tick = _tick(guidance, (0.0, 0.0, 0.0), 0.1)
     assert (guidance.reached, tick.done) == (0, False)
 
-    # at wp0 → advance to wp1, which the stage writes to the tick
+    # at wp0 → advance to wp1, which the stage writes to the setpoint
     tick = _tick(guidance, (1.0, 0.0, 2.0), 1.0)
-    assert (guidance.reached, tick.setpoint) == (1, PositionGoal(pos=(0.0, 1.0, 3.0)))
+    assert (guidance.reached, _goal(guidance)) == (1, (0.0, 1.0, 3.0))
     assert guidance.arrival_times == [1.0]
 
-    # at wp1, the final one → no goal beyond the last, and the hold starts
+    # at wp1, the final one → no goal beyond the last: the setpoint holds wp1, and the hold starts
     tick = _tick(guidance, (0.0, 1.0, 3.0), 5.0)
-    assert (guidance.reached, tick.setpoint, tick.done) == (2, None, False)
+    assert (guidance.reached, _goal(guidance), tick.done) == (2, (0.0, 1.0, 3.0), False)
 
     # before the hold elapses: the mission goes on
     assert _tick(guidance, (0.0, 1.0, 3.0), 6.5).done is False
@@ -124,9 +140,10 @@ def test_the_mission_advances_on_arrival_and_ends_after_the_final_hold():
 
 
 def test_goto_is_a_single_goal_mission():
-    guidance = MissionGuidance()
+    guidance = _wired(MissionGuidance())
     guidance.goto(PositionGoal(pos=(2.0, 2.0, 2.0)))
-    assert _tick(guidance, (0.0, 0.0, 0.0), 0.0).setpoint == PositionGoal(pos=(2.0, 2.0, 2.0))
+    _tick(guidance, (0.0, 0.0, 0.0), 0.0)
+    assert _goal(guidance) == (2.0, 2.0, 2.0)
 
 
 def test_a_tracking_guidance_plans_and_writes_a_reference_once_then_ends():
@@ -136,18 +153,19 @@ def test_a_tracking_guidance_plans_and_writes_a_reference_once_then_ends():
         planned["waypoints"] = waypoints
         return _Reference(waypoints)
 
-    guidance = TrackingGuidance(planner=planner, final_hold_s=2.0)
+    guidance = _wired(TrackingGuidance(planner=planner, final_hold_s=2.0))
     guidance.set_mission([(2.0, 0.5, 3.5), (3.0, 2.0, 4.0)])
     assert planned == {}  # nothing planned yet: the plan waits for the first tick, which gives the start position
 
     start = (0.0, 0.0, 2.0)
-    tick = _tick(guidance, start, 0.004)
-    assert isinstance(tick.setpoint, ReferenceTrajectory)  # the guidance planned, and wrote the reference
+    _tick(guidance, start, 0.004)
+    written = guidance.setpoint.read()
+    assert isinstance(written, ReferenceTrajectory)  # the guidance planned, and wrote the reference
     assert planned["waypoints"] == [(2.0, 0.5, 3.5), (3.0, 2.0, 4.0)]
-    np.testing.assert_allclose(tick.setpoint.reference.start, [0.0, 0.0, 2.0])
+    np.testing.assert_allclose(written.reference.start, [0.0, 0.0, 2.0])
     assert guidance.reference_started_at == 0.004
 
     tick = _tick(guidance, start, 1.0)  # mid-trajectory: no new plan, and the mission goes on
-    assert (tick.setpoint, tick.done) == (None, False)
+    assert (guidance.setpoint.read() is written, tick.done) == (True, False)
     assert _tick(guidance, start, 5.5).done is False  # before 0.004 + duration(4.0) + hold(2.0)
     assert _tick(guidance, start, 6.5).done is True  # past it → the mission is over

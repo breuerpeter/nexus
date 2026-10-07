@@ -87,35 +87,54 @@ class Signal:
         return wp.zeros(self.shape, dtype=getattr(wp, dtype) if isinstance(dtype, str) else dtype)
 
 
+def _owner(bound: Bound) -> str:
+    """The instance name of the component that states a stage: its ``name``, else its class's."""
+    return str(getattr(bound.component, "name", None) or type(bound.component).__name__)
+
+
+def _type(signal: Signal) -> str:
+    """The name of a signal's type, as an error names it."""
+    return getattr(signal.type, "__name__", str(signal.type))
+
+
 def wire(ring: list[Bound]) -> None:
-    """Wire every signal the ring's stages declare, before any stage runs.
+    """Wire every signal the ring's stages declare, before any stage runs, and check each pair.
 
     Each input meets the one output of its name. The builder allocates one buffer per signal and hands it
     to the writer and to each reader, and a reader's default fills it until the writer first writes. An
     input that no component writes reads its own buffer, which holds its default.
+
+    Raises:
+        ValueError: A reader and its writer disagree on the type. The message names both ends.
     """
-    writes: dict[str, list[Signal]] = {}
-    reads: dict[str, list[Signal]] = {}
+    writes: dict[str, list[tuple[Bound, Signal]]] = {}
+    reads: dict[str, list[tuple[Bound, Signal]]] = {}
     seen: set[int] = set()
     for bound in ring:
         if id(bound) in seen:  # the ring repeats the stages of each physics substep
             continue
         seen.add(id(bound))
         for signal in bound.stage.reads:
-            reads.setdefault(signal.name, []).append(signal)
+            reads.setdefault(signal.name, []).append((bound, signal))
         for signal in bound.stage.writes:
-            writes.setdefault(signal.name, []).append(signal)
+            writes.setdefault(signal.name, []).append((bound, signal))
     for name, readers in reads.items():
         if name not in writes:
-            for signal in readers:
+            for _, signal in readers:
                 _hand(signal._allocate(), [signal], signal.default)
             continue
-        written = writes[name][0]
-        default = next((signal.default for signal in readers if signal.default is not None), None)
-        _hand(written._allocate(), [*writes[name], *readers], default)
+        writer, written = writes[name][0]
+        for bound, signal in readers:
+            if signal.type is not written.type:
+                raise ValueError(
+                    f"{_owner(writer)} writes {name!r} as {_type(written)}, and {_owner(bound)} reads it as "
+                    f"{_type(signal)}: a reader and its writer agree on the type"
+                )
+        default = next((signal.default for _, signal in readers if signal.default is not None), None)
+        _hand(written._allocate(), [s for _, s in writes[name]] + [s for _, s in readers], default)
     for name, written in writes.items():
         if name not in reads:  # an output no component reads: each writer keeps a buffer of its own
-            for signal in written:
+            for _, signal in written:
                 _hand(signal._allocate(), [signal], None)
 
 

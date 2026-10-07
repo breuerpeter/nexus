@@ -11,7 +11,9 @@ cross component boundaries.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
+
+from .signals import DeviceType
 
 if TYPE_CHECKING:
     import newton
@@ -129,24 +131,24 @@ class Measurement:
     state: newton.State | None = None
 
 
-# --- Setpoint: the operator→controller command vocabulary ----------------
+# --- Setpoint: the guidance→controller command vocabulary ----------------
 #
-# Setpoints are heterogeneous, so the core owns NO fixed buffer. A `Setpoint` is a small marshalled
-# *intent* value, such as `Controls`/`Measurement`; the **controller** owns its own typed persistent
-# buffer and writes it in place from the setpoint in ``Controller.accept_setpoint(sp)``, a §6
-# value-mutation, so the next CUDA-graph replay picks it up with zero re-capture, per the capture contract.
-# A guidance, `MissionGuidance`, writes its setpoint to the tick, and the loop makes that call, between
-# graph replays, never inside the captured region. Each controller narrows the union to the variant it
-# supports and raises on the rest.
+# Each setpoint is a type the signal `setpoint` takes, which a guidance writes and a controller reads, so
+# the builder checks that the two agree before the capture. A guidance writes it in place between graph
+# replays, never inside the captured region, so the next replay reads it with zero re-capture.
 
 
 @dataclass(slots=True)
-class PositionGoal:
+class PositionGoal(DeviceType):
     """A single move-to / hold goal in the world frame, Newton FLU / Z-up. Consumed by the
-    state-feedback controllers, policy and pid: the operator feeds one ``PositionGoal`` at a time and
+    state-feedback controllers, policy and pid: the guidance feeds one ``PositionGoal`` at a time and
     sequences a mission by advancing it on arrival; the controller is goal-relative, so each is a
     fresh single-goal problem. ``yaw`` is the optional heading [rad]; ``None`` = don't command yaw.
+
+    As a signal it lives on the device, one ``vec3`` of the position, since no controller reads yaw.
     """
+
+    dtype: ClassVar[str] = "vec3"
 
     pos: tuple[float, float, float]
     yaw: float | None = None
@@ -154,9 +156,9 @@ class PositionGoal:
 
 @dataclass(slots=True)
 class Waypoints:
-    """An ordered list of world-frame positions the *controller* holds and advances internally;
-    in the sampling MPC, reach-radius advances the persistent ``target`` buffer. Distinct from a
-    mission the *operator* sequences with ``PositionGoal``: here the whole path is the setpoint.
+    """An ordered list of world-frame positions the *controller* holds and advances internally.
+    Distinct from a mission the *guidance* sequences with ``PositionGoal``: here the whole path is the
+    setpoint.
     """
 
     points: list[tuple[float, float, float]] = field(default_factory=list)
@@ -173,8 +175,8 @@ class ReferenceTrajectory:
     reference: Any = None
 
 
-# The neutral union every operator `goto`/`set_mission` carries and every controller's
-# `accept_setpoint` narrows. Evaluated eagerly, as a real ``types.UnionType``, because the
+# The neutral union of the setpoint types: a guidance writes one of them, and its controller declares
+# the one it reads. Evaluated eagerly, as a real ``types.UnionType``, because the
 # ``from __future__`` import only stringifies *annotations*, not this assignment, so it stays a usable
 # runtime value: ``isinstance(sp, Setpoint)`` / ``typing.get_args(Setpoint)``.
 Setpoint = PositionGoal | Waypoints | ReferenceTrajectory

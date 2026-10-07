@@ -13,6 +13,8 @@ import warp as wp
 
 from nexus_sim._src.core.interfaces import Tick
 from nexus_sim._src.core.schema import SimTime
+from nexus_sim._src.core.signals import wire
+from nexus_sim._src.core.stages import Bound
 from nexus_sim._src.guidance import MissionGuidance, TrackingGuidance
 
 START = (0.0, 0.0, 2.0)
@@ -54,6 +56,12 @@ class _Sink:
         self.rows.append(name)
 
 
+def _wired(guidance):
+    """The guidance with its setpoint wired, as the loop wires it before any stage runs."""
+    wire([Bound(stage, guidance, "guidance") for stage in guidance.stages()])
+    return guidance
+
+
 def _tick(guidance, pos, sim_time):
     """Run the guidance's stages once, as the loop does on one tick."""
     tick = Tick(state=_State(pos), t=SimTime(sim_time, 0), dt=0.004, meas=None)
@@ -64,11 +72,11 @@ def _tick(guidance, pos, sim_time):
 def test_a_guidance_names_only_its_own_rows():
     """A guidance names only its own rows, its waypoints and its tracked reference, and no path."""
     sink = _Sink()
-    mission = MissionGuidance()
+    mission = _wired(MissionGuidance())
     mission.set_logger(sink)
     mission.set_mission([(1.0, 0.0, 2.0), (2.0, 0.0, 2.0), (3.0, 0.0, 2.0)])
     _tick(mission, START, 0.004)
-    tracking = TrackingGuidance(planner=lambda waypoints: _Reference())
+    tracking = _wired(TrackingGuidance(planner=lambda waypoints: _Reference()))
     tracking.set_logger(sink)
     tracking.set_mission([(2.0, 0.5, 3.5), (3.0, 2.0, 4.0)])
     _tick(tracking, START, 0.004)

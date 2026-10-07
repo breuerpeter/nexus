@@ -175,14 +175,17 @@ class WarpObservationSensor:
     Args:
         goal_w: target world position [m], the waypoint / hover goal.
         body_index: articulation body the observation tracks; 0 is the base.
+        setpoint: the setpoint signal of the controller the observation feeds, a ``PositionGoal``,
+            whose goal the kernel reads in place of ``goal_w``. The builder fills its buffer before
+            any stage runs, and a guidance writes it in place, so the next captured replay reads it.
     """
 
-    def __init__(self, goal_w=(0.0, 0.0, 1.0), body_index: int = 0):
+    def __init__(self, goal_w=(0.0, 0.0, 1.0), body_index: int = 0, setpoint=None):
         # Persistent length-1 device goal buffer with a static address: the kernel reads goal[0], so a
-        # controller's accept_setpoint can .assign() a new goal in place and the next captured replay
-        # picks it up, with zero re-capture: the capture contract.
+        # new goal .assign()-ed in place reaches the next captured replay with zero re-capture.
         self.goal = wp.array(np.asarray([goal_w], dtype=np.float32), dtype=wp.vec3)
         self.body_index = int(body_index)
+        self._setpoint = setpoint
         self._obs = wp.zeros(OBS_DIM, dtype=float)  # persistent buffer, the same address every replay
 
     def set_goal(self, pos) -> None:
@@ -190,11 +193,14 @@ class WarpObservationSensor:
         self.goal.assign(np.asarray([pos], dtype=np.float32))
 
     def sample_wp(self, state, out_obs: wp.array) -> wp.array:
-        """Launch the obs kernel over ``state.body_q`` / ``state.body_qd`` into ``out_obs`` (12,)."""
+        """Launch the obs kernel over ``state.body_q`` / ``state.body_qd`` into ``out_obs`` (12,), toward
+        the setpoint's goal when the sensor reads one, else toward its own.
+        """
+        goal = self.goal if self._setpoint is None else self._setpoint.buffer
         wp.launch(
             observation_kernel,
             dim=1,
-            inputs=(state.body_q, state.body_qd, self.goal, self.body_index),
+            inputs=(state.body_q, state.body_qd, goal, self.body_index),
             outputs=(out_obs,),
         )
         return out_obs

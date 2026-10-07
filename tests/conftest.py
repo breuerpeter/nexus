@@ -298,23 +298,24 @@ class StandInReference:
 
 
 class StandInController:
-    """A controller named `standin` that commands nothing, takes a planned reference and logs one
-    row of its own, `horizon`, each tick through the logger the loop hands it.
+    """A controller named `standin` that commands nothing, reads a planned reference as its setpoint and
+    logs one row of its own, `horizon`, each tick through the logger the loop hands it.
     """
 
     name = "standin"
 
     def __init__(self):
+        from nexus_sim._src.core.schema import ReferenceTrajectory
+        from nexus_sim._src.core.signals import Signal
+
         self._logger = None
         self._controls = None
+        self.setpoint = Signal("setpoint", ReferenceTrajectory)
 
     def connect(self) -> None:
         pass
 
     def close(self) -> None:
-        pass
-
-    def accept_setpoint(self, setpoint) -> None:
         pass
 
     def set_logger(self, logger) -> None:
@@ -330,7 +331,7 @@ class StandInController:
     def stages(self):
         from nexus_sim._src.core.interfaces import Stage
 
-        return [Stage("act", "host", self._act)]
+        return [Stage("act", "host", self._act, reads=(self.setpoint,))]
 
 
 def fly_recorded(

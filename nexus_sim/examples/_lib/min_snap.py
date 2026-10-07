@@ -93,8 +93,8 @@ class _Polynomial:
 class MinSnapReference:
     """The polynomial reference: a per-axis min-snap position polynomial through the waypoints
     + a smooth, nose-first, min-jerk yaw polynomial, lifted to the full flat quad state via differential
-    flatness. The guidance builds it and writes it to the tick, wrapped in a ``ReferenceTrajectory``,
-    and the loop hands it to the NMPC's ``accept_setpoint``.
+    flatness. The guidance builds it and writes it to the setpoint the NMPC reads, wrapped in a
+    ``ReferenceTrajectory``.
     """
 
     def __init__(

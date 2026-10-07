@@ -31,6 +31,7 @@ import numpy as np
 
 from nexus_sim._src.core.interfaces import Stage
 from nexus_sim._src.core.schema import Controls, PositionGoal
+from nexus_sim._src.core.signals import Signal
 
 from .law import DEFAULT_GAINS, hover_action, pid_action_np
 
@@ -65,11 +66,11 @@ class PidController:
         body_index: int = 0,
     ):
         self.gains = np.asarray(gains, dtype=np.float32)
-        # Owned, mutable goal buffer, on the host: obs_from_state and the exchange fallback read it, and
-        # accept_setpoint writes it in place. The device path's goal lives in the WarpObservationSensor's
-        # persistent buffer, bound via bind_goal_buffer; accept_setpoint updates both, kept in sync.
+        # Owned goal on the host: obs_from_state and the exchange fallback read it.
         self.goal_w = np.array(goal_w, dtype=np.float64)
-        self._goal_wp = None  # the shared device goal buffer, WarpObservationSensor.goal, bound at build
+        # The goal the loop flies to: the setpoint a guidance writes, `goal_w` until one does. The
+        # observation sensor's kernel reads it, since the observation is still a sensor of its own.
+        self.setpoint = Signal("setpoint", PositionGoal, shape=(1,), default=[goal_w])
         self.thrust_to_weight = float(thrust_to_weight)
         self.hover = hover_action(thrust_to_weight)
         self.body_index = int(body_index)
@@ -199,10 +200,10 @@ class PidController:
 
     def stages(self) -> list[Stage]:
         """One device stage, ``act``: the law over the observation sensor's device buffer, then the
-        moment mixer into the persistent ``(1, nr)`` command buffer the actuator reads. The whole tick
-        stays one graph.
+        moment mixer into the persistent ``(1, nr)`` command buffer the actuator reads. It reads the
+        setpoint, the goal of that observation. The whole tick stays one graph.
         """
-        return [Stage("act", "device", self._act_stage)]
+        return [Stage("act", "device", self._act_stage, reads=(self.setpoint,))]
 
     def _act_stage(self, tick) -> None:
         if self._rotor_mixer is None:
@@ -214,24 +215,3 @@ class PidController:
     def bind_state_provider(self, fn) -> None:
         """Bind a callable returning ``(pos_w, quat_xyzw, lin_vel_w, ang_vel_w)`` for :meth:`exchange`."""
         self._state_provider = fn
-
-    def bind_goal_buffer(self, goal_wp) -> None:
-        """Share the ``WarpObservationSensor``'s persistent device goal buffer, so ``accept_setpoint``
-        updates the goal the device-native obs kernel actually reads; the build wires this.
-        """
-        self._goal_wp = goal_wp
-
-    # -- control surface: the thin setpoint seam ---------
-    def accept_setpoint(self, sp) -> None:
-        """Write the move-to goal **in place** from a :class:`PositionGoal`: the host buffer, for
-        ``obs_from_state`` and the fallback, and, when bound, the device goal buffer, where ``.assign``
-        makes the captured obs kernel pick it up on the next replay. A single goal set before the run goes
-        into the capture once, the PID-determinism and design-opt path; a mission advances it at the host
-        seam. Raises on a non-``PositionGoal`` variant, since PID flies to a position, not waypoints or a
-        reference.
-        """
-        if not isinstance(sp, PositionGoal):
-            raise TypeError(f"PidController accepts a PositionGoal setpoint, got {type(sp).__name__}")
-        self.goal_w[:] = np.asarray(sp.pos, dtype=np.float64)
-        if self._goal_wp is not None:
-            self._goal_wp.assign(np.asarray([sp.pos], dtype=np.float32))

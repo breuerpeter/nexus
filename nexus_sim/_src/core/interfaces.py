@@ -15,7 +15,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
-from .schema import Measurement, Setpoint, SimTime
+from .schema import Measurement, SimTime
 
 if TYPE_CHECKING:
     import newton
@@ -34,10 +34,8 @@ class Tick:
     index of the vehicle's base body, its airframe, in ``state``: a stage that reads the vehicle's true
     state reads that row.
 
-    ``setpoint`` and ``done`` are a guidance's two outputs. Its stage sets ``setpoint`` on the tick
-    its setpoint changes, and the loop hands it to the controller's ``accept_setpoint`` and clears it,
-    before the controller's stages run. A stage sets ``done`` to end the run, a guidance's when its
-    mission is over: the loop completes the tick and takes no further one.
+    A stage sets ``done`` to end the run, a guidance's when its mission is over: the loop completes the
+    tick and takes no further one.
     """
 
     state: Any
@@ -48,7 +46,6 @@ class Tick:
     sensors: list = field(default_factory=list)
     timeout: float | None = None
     base: int = 0
-    setpoint: Setpoint | None = None
     done: bool = False
 
 
@@ -166,23 +163,10 @@ class Controller(Protocol):
         A controller with a peer, one that exposes ``attached``, connects after the loop's warm pass
         and graph capture, so a peer that dials in early waits on no kernel load. Its device stages
         run and capture before ``connect()``, over buffers that exist from construction.
-        """
 
-    def accept_setpoint(self, sp: Setpoint) -> None:
-        """Write the controller's own setpoint buffer **in place** from a ``Setpoint``.
-
-        The thin control surface: the loop hands a controller the setpoint its guidance wrote to the
-        tick, and a script without a guidance calls it itself. The call flips the controller's
-        persistent setpoint buffer, a §6 value-mutation with a static address and zero re-capture on
-        the next replay, then the controller's stages read it. Each controller
-        narrows the ``Setpoint`` union to the variant it supports, PositionGoal for policy/pid,
-        Waypoints for sampling Model Predictive Control (MPC), ReferenceTrajectory for acados, and raises
-        on the rest.
-
-        **PX4 has no setpoint surface**, since its mission lives in its peer, so the
-        ``Px4MavlinkController`` does *not* offer this, and its control surface is ``None``; instead,
-        a script commands PX4 over its offboard link, with a client it opens itself. Optional on
-        the protocol for exactly that reason.
+        A controller that flies a guidance's mission declares the setpoint it reads on a stage, as a
+        signal of one setpoint type. PX4's controller declares none: its mission lives in its peer, and
+        a script commands it over its offboard link, with a client it opens itself.
         """
 
 

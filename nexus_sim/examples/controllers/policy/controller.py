@@ -30,6 +30,7 @@ from __future__ import annotations
 import numpy as np
 
 from nexus_sim._src.core.schema import Controls, PositionGoal
+from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.core.stages import peer_stages
 from nexus_sim.examples._lib.observation import ACTION_DIM, build_observation
 
@@ -62,10 +63,11 @@ class TrainedPolicyController:
         body_index: int = 0,
     ):
         self.policy_path = str(policy_path)
-        # The controller owns its setpoint buffer, a writable copy at a static address: accept_setpoint
-        # mutates it in place and the goal-relative observation reads it live each tick.
-        # `np.array`, not asarray, always returns an owned, mutable buffer.
+        # The goal the goal-relative observation reads, an owned, mutable buffer: `np.array`, not asarray.
+        # In the loop each exchange copies it from the setpoint, which a guidance writes, `goal_w` until
+        # one does.
         self.goal_w = np.array(goal_w, dtype=np.float64)
+        self.setpoint = Signal("setpoint", PositionGoal, shape=(1,), default=[goal_w])
         self.action_clip = float(action_clip)
         self.device = device
         self.body_index = int(body_index)
@@ -101,8 +103,10 @@ class TrainedPolicyController:
         self._policy = None
 
     def stages(self):
-        """The ``read`` and ``exchange`` host stages: inference runs on the host between replays."""
-        return peer_stages(self)
+        """The ``read`` and ``exchange`` host stages: inference runs on the host between replays, toward
+        the setpoint the exchange reads.
+        """
+        return peer_stages(self, reads=(self.setpoint,))
 
     # -- inference ---------------------------------------------------------------
     def act(self, obs: np.ndarray) -> Controls:
@@ -157,8 +161,11 @@ class TrainedPolicyController:
         :class:`StateSensor` passes through, via :meth:`obs_from_state`, the single train↔deploy obs
         source, last action folded in. Also accepts a pre-built ``meas.observation`` from a
         device-native obs sensor, or a bound state provider. Raises if none is present, because a
-        trained policy needs ground-truth state, not the HIL sensor bundle alone.
+        trained policy needs ground-truth state, not the HIL sensor bundle alone. In the loop, the goal
+        is the setpoint's: the exchange copies it to the host first.
         """
+        if self.setpoint.buffer is not None:  # wired by the loop: fly to the goal the guidance writes
+            self.goal_w[:] = self.setpoint.read()[0]
         obs = getattr(meas, "observation", None)
         if obs is None:
             state = getattr(meas, "state", None)
@@ -180,16 +187,3 @@ class TrainedPolicyController:
         :meth:`exchange`, the runtime's ground-truth kinematics plane.
         """
         self._state_provider = fn
-
-    # -- control surface: the thin setpoint seam ---------
-    def accept_setpoint(self, sp) -> None:
-        """Write the move-to goal **in place** from a :class:`PositionGoal`.
-
-        The in-place write keeps the buffer's address static, so the next goal-relative obs picks it
-        up, and stays a §6 value-mutation, which is capture-safe. The write skips ``yaw``: this CTBR
-        policy is yaw-agnostic, goal-relative position only. Raises on any non-``PositionGoal``
-        variant the policy doesn't fly.
-        """
-        if not isinstance(sp, PositionGoal):
-            raise TypeError(f"TrainedPolicyController accepts a PositionGoal setpoint, got {type(sp).__name__}")
-        self.goal_w[:] = np.asarray(sp.pos, dtype=np.float64)

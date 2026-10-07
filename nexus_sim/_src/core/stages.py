@@ -77,8 +77,7 @@ def build_ring(
     """Every component's stages in the canonical order the domain fixes: sensors, the guidance when the
     run has one, controller, then ``clear`` -> the command stages -> the force stages -> ``step`` unrolled
     ``substeps`` times, then ``record``. The guidance sits before the controller, so the setpoint it writes
-    to the tick, which the loop hands to the controller after the guidance's stage, is the one the
-    controller reads on that tick. The old actuator seam's one stage, the
+    is the one the controller reads on that tick. The old actuator seam's one stage, the
     examples' single-body ``Rotors``, runs with the force stages, since it writes the body forces too.
 
     Raises:
@@ -185,13 +184,14 @@ def read_sensors(tick: Tick) -> None:
         s.read(tick.meas)
 
 
-def peer_stages(controller) -> list[Stage]:
+def peer_stages(controller, *, reads: tuple = ()) -> list[Stage]:
     """The stages of a controller that blocks on a peer or solves on the host: ``bind``, a device
     stage with no kernel, binds ``Tick.controls`` to a persistent ``(1, 16)`` device command buffer in
     the warm pass, so the command stages capture over it before the peer connects; ``read`` fans
     the sensors into the ``Measurement``; ``exchange`` runs the controller's ``exchange`` and copies
     its commands into the buffer. ``None`` from the exchange reads as the peer not answering, which
-    the stage reports by returning ``False``.
+    the stage reports by returning ``False``. ``reads`` are the signals the controller's ``exchange``
+    reads, such as its setpoint, which the ``exchange`` stage declares.
     """
     import warp as wp
 
@@ -215,7 +215,11 @@ def peer_stages(controller) -> list[Stage]:
         tick.controls = buf
         return True
 
-    return [Stage("bind", "device", bind), Stage("read", "host", read_sensors), Stage("exchange", "host", exchange)]
+    return [
+        Stage("bind", "device", bind),
+        Stage("read", "host", read_sensors),
+        Stage("exchange", "host", exchange, reads=tuple(reads)),
+    ]
 
 
 __all__ = [

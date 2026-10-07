@@ -5,7 +5,7 @@ This example-owned assembly, moved out of core because PX4 is the one first-clas
 wires the **registry vehicle** Universal Scene Description (USD), the full articulated model, and
 the core rotor chain. The NMPC is a pure *tracking* controller, and the min-snap/flatness
 planner lives with the **guidance**: the flight file hands it to a ``TrackingGuidance``, which plans
-the whole-path ``ReferenceTrajectory`` and feeds ``accept_setpoint``. The NMPC's per-tick Sequential Quadratic
+the whole-path ``ReferenceTrajectory`` and writes it to the setpoint the NMPC reads. The NMPC's per-tick Sequential Quadratic
 Programming (SQP) Real-Time Iteration (RTI) solve runs at the host seam; everything else captures,
 the captured-host-exchange strategy. acados needs provisioning first: ``python -m nexus_sim.examples acados_nmpc --provision``.
 """
