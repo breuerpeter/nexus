@@ -134,7 +134,7 @@ def collapse_to_single_body(
     act = dict(vehicle_builder.actuator_params())
     b = newton.ModelBuilder()
     b.add_ground_plane()
-    for _ in range(int(count)):  # count copies of the registry vehicle USD
+    for _ in range(int(count)):  # count copies of the catalog vehicle USD
         vehicle_builder.build(b)
     # Drop any USD-authored NewtonActuator entries, the core path's rotor motors: the collapse
     # destroys the rotor joints they target, and the single-body regime runs the joint-agnostic

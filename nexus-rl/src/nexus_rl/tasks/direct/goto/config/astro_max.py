@@ -6,7 +6,7 @@ link ``body_frd`` and the Forward Right Down (FRD) thrust sign, to the vehicle-a
 ``Nexus-AstroMax-GoTo-Direct-v0``. A different vehicle is just another ``config/<vehicle>.py``, with no env
 change. The env reads the thrust map, ct/cd/rpm_max, from the USD; it isn't set here.
 
-The USD is a content-addressed registry asset, served via CloudFront; pass ``--vehicle_usd`` to the
+The USD is a content-addressed catalog asset, served via CloudFront; pass ``--vehicle_usd`` to the
 train/play scripts to override the resolved path. They mutate ``env_cfg.robot.spawn.usd_path`` after
 loading the registry cfg, the idiomatic Isaac Lab override.
 """
@@ -25,7 +25,7 @@ _TASK = "nexus_rl.tasks.direct.goto"
 
 
 def _resolve_astro_max_usd() -> str:
-    """Resolve the Astro Max USD for Isaac Lab to load: the **hosted, content-addressed registry
+    """Resolve the Astro Max USD for Isaac Lab to load: the **hosted, content-addressed catalog
     asset**, the same source the standalone runtime resolves; cached, so offline after the first fetch.
     """
     from nexus_sim._src.config import LaunchConfig, resolve

@@ -5,7 +5,7 @@
   `mkdocstrings` block of `mkdocs.yml`. The docs cover only the public `nexus_sim.*` surface.
 - **3D vehicle previews.** Vehicle pages embed interactive `<model-viewer>` previews, vendored
   under `javascripts/`. The hook `hooks/vehicle_previews.py` generates them from
-  `nexus_sim/_src/config/registry.yaml` wherever it finds a `<!-- model-preview: <name> -->`
+  `nexus_sim/_src/config/catalog.yaml` wherever it finds a `<!-- model-preview: <name> -->`
   marker. `<name>` is the Universal Scene Description (USD) filename stem, for example
   `astro_max_fpv`. The `.glb` is the content-addressed sibling of the vehicle's USD on
   CloudFront. When a local copy exists under `assets/local/` at the repo root, the site serves

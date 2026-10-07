@@ -1,4 +1,4 @@
-"""Resolve a ``LaunchConfig`` against the registry into a ``ResolvedLaunch``.
+"""Resolve a ``LaunchConfig`` against the catalog into a ``ResolvedLaunch``.
 
 Flow: look the named vehicle variant up → resolve the named scene → fetch and sha-verify every ``{url, sha256}`` asset, for the vehicle and scene
 Universal Scene Description (USD) files and the policy → emit the tested-config receipt plus local
@@ -12,9 +12,9 @@ import pathlib
 
 from nexus_sim._src.core import logger
 
+from .catalog import Catalog, CatalogError, NoMatchError, VehicleVariant, catalog_path, load_catalog
 from .models import AssetRef, LaunchConfig
 from .receipt import ResolvedLaunch, TestedConfig
-from .registry import NoMatchError, Registry, RegistryError, VehicleVariant, load_registry, registry_path
 
 
 def _resolve_asset(ref, cache_dir):
@@ -38,7 +38,7 @@ def _local_usd(name: str | None, kind: str) -> pathlib.Path | None:
         return None
     path = pathlib.Path(name).expanduser()
     if not path.exists():
-        raise RegistryError(f"local {kind} USD not found: {path}")
+        raise CatalogError(f"local {kind} USD not found: {path}")
     return path.resolve()
 
 
@@ -83,12 +83,12 @@ def _stack(layer: pathlib.Path, layer_sha: str, vehicle: pathlib.Path, vehicle_s
 
 def resolve(
     launch: LaunchConfig,
-    registry: Registry | None = None,
+    catalog: Catalog | None = None,
     *,
     fetch: bool = True,
     cache_dir: str | pathlib.Path | None = None,
 ) -> ResolvedLaunch:
-    """Resolve *launch* against *registry*, which defaults to the bundled one.
+    """Resolve *launch* against *catalog*, which defaults to the bundled one.
 
     With ``fetch=True``, the default, the resolver downloads and sha-verifies every ``{url, sha256}``
     asset into the local cache and returns its path: the vehicle USD and the scene USD.
@@ -97,27 +97,27 @@ def resolve(
     the device the run picks, since that needs Warp, which a caller that only wants an asset path
     never starts.
     """
-    # A caller that hands over a Registry owns it; otherwise the run finds its own catalog and says
+    # A caller that hands over a Catalog owns it; otherwise the run finds its own catalog and says
     # which one it flew, so a recording beside it answers what produced it.
     source = None
-    if registry is None:
-        source = registry_path(launch.registry)
-        registry = load_registry(source)
-        logger.info(f"registry: {source}")
+    if catalog is None:
+        source = catalog_path(launch.catalog)
+        catalog = load_catalog(source)
+        logger.info(f"catalog: {source}")
 
     if launch.vehicle is None:
-        raise NoMatchError(f"the launch names no vehicle; name one of {list(registry.vehicles)}")
+        raise NoMatchError(f"the launch names no vehicle; name one of {list(catalog.vehicles)}")
     if launch.scene is None:
-        raise RegistryError(f"the launch names no scene; name one of {list(registry.scenes)}")
+        raise CatalogError(f"the launch names no scene; name one of {list(catalog.scenes)}")
     local = _local_usd(launch.vehicle, "vehicle")
     if local is None:
-        if launch.vehicle not in registry.vehicles:  # `--vehicle <name>`
-            raise NoMatchError(f"no vehicle named {launch.vehicle!r}; registry names: {list(registry.vehicles)}")
-        variant = registry.vehicles[launch.vehicle]
+        if launch.vehicle not in catalog.vehicles:  # `--vehicle <name>`
+            raise NoMatchError(f"no vehicle named {launch.vehicle!r}; catalog names: {list(catalog.vehicles)}")
+        variant = catalog.vehicles[launch.vehicle]
     else:
         # Local vehicle USD, the variant-development workflow: the file *is* the authority. Its
         # controller, actuator params, cameras, and lidars are all authored on it, so it needs no
-        # registry row. The receipt stays honest: the file gets a sha256 the same way as a registry asset.
+        # catalog row. The receipt stays honest: the file gets a sha256 the same way as a catalog asset.
         variant = VehicleVariant(usd=_local_ref(local))
 
     scene_id = launch.scene
@@ -126,16 +126,16 @@ def resolve(
         # Local scene USD, the scene-development workflow: a freshly converted mesh or splat, not yet
         # registered. What it *is* is the USD's own business: the launch glue routes by the physics
         # schemas the USD authors, or their absence. Used in place the same way as a local vehicle
-        # USD, with no cache copy; the receipt stays honest, with a sha256 the same way as a registry
-        # asset. ``start`` is registry data: a local scene flies from its own origin, and
+        # USD, with no cache copy; the receipt stays honest, with a sha256 the same way as a catalog
+        # asset. ``start`` is catalog data: a local scene flies from its own origin, and
         # scripts/assets/spawn_site.py helps pick one.
-        from .registry import Scene
+        from .catalog import Scene
 
         scene = Scene(usd=_local_ref(local_scene))
-    elif scene_id not in registry.scenes:
-        raise RegistryError(f"unknown scene {scene_id!r}; have {list(registry.scenes)}")
+    elif scene_id not in catalog.scenes:
+        raise CatalogError(f"unknown scene {scene_id!r}; have {list(catalog.scenes)}")
     else:
-        scene = registry.scenes[scene_id]
+        scene = catalog.scenes[scene_id]
 
     layer = _layer(launch.layer)
     veh_path = local if local is not None else (_resolve_asset(variant.usd, cache_dir) if fetch else None)
@@ -145,11 +145,11 @@ def resolve(
         scn_path = local_scene  # in place: sibling files such as a mesh's textures/ must stay resolvable
     else:
         scn_path = _resolve_asset(scene.usd, cache_dir) if (fetch and scene.usd) else None
-    # The geodetic origin: a launch override wins, else the registry scene's default, which can be None.
+    # The geodetic origin: a launch override wins, else the catalog scene's default, which can be None.
     geodetic_origin = launch.geodetic_origin or scene.geodetic_origin
     tested = TestedConfig(
         vehicle=str(local) if local is not None else launch.vehicle,
-        registry=str(source) if source is not None else None,
+        catalog=str(source) if source is not None else None,
         vehicle_usd=variant.usd,
         layer=layer[1] if layer is not None else None,
         scene=scene_id,

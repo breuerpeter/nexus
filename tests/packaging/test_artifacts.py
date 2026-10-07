@@ -57,7 +57,7 @@ def test_the_wheel_holds_every_file_the_code_reads(wheel_files):
         "nexus_sim/_src/usd/plugInfo.json",
         "nexus_sim/_src/usd/generatedSchema.usda",
         "nexus_sim/_src/usd/released.json",
-        "nexus_sim/_src/config/registry.yaml",
+        "nexus_sim/_src/config/catalog.yaml",
         "nexus_sim/_src/peers/px4_sitl/px4.ref",
         "nexus_sim/_src/peers/px4_sitl/image/Dockerfile",
         "nexus_sim/examples/controllers/px4/box.plan",

@@ -13,10 +13,10 @@ different detail: the script walks the tileset and picks one tile per region at 
 Pipeline: select tiles, with accumulated world transform → extract each SPZ → transform its splats to
 ECEF → merge → rotate ECEF to East-North-Up (ENU) about the scene centroid, local Z-up; spherical, no
 pyproj needed → recenter XY on the bbox center → ``write_gaussian_splat_usd`` → package as one ``.usdz``.
-Where the drone starts isn't baked in: the registry scene's ``start``, suggested by
+Where the drone starts isn't baked in: the catalog scene's ``start``, suggested by
 ``scripts/assets/spawn_site.py``, places the chosen surface point at the world origin at load time.
 The traced "scene origin" lat/lon/alt is the geodetic anchor of the scene frame: feed it to
-``spawn_site.py --geo`` to get the registry ``geodetic_origin``, the geo of the start point.
+``spawn_site.py --geo`` to get the catalog ``geodetic_origin``, the geo of the start point.
 
 Kit-only: run from the host with plain Python, it starts the Kit image with this file and boots Kit
 there, see ``kit_container.py``::
@@ -71,14 +71,14 @@ def convert_splat(tiles_dir, out_usdz, *, max_geometric_error=0.0) -> str:
 
     field = fields[0] if len(fields) == 1 else _merge_splat_fields(fields, np)
     ref_geo = _ecef_to_enu(field, np)  # ECEF -> local ENU, Z up, about the scene centroid
-    ctr = _recenter_xy(field, np)  # bbox-center XY -> origin, for precision; start placement stays registry data
+    ctr = _recenter_xy(field, np)  # bbox-center XY -> origin, for precision; start placement stays catalog data
     lat0, lon0 = _offset_geo(ref_geo, ctr, np)
     import sys
 
     print(
         f"[site_scan_splat] scene origin: lat {lat0:.6f}, lon {lon0:.6f}, alt {ref_geo[2]:.1f} m "
         f"(geo of the scene frame's origin/z=0; WGS84 ellipsoidal alt), pass to "
-        f"`spawn_site.py --geo` to get the registry geodetic_origin at the picked start",
+        f"`spawn_site.py --geo` to get the catalog geodetic_origin at the picked start",
         file=sys.stderr,
     )
 
@@ -205,7 +205,7 @@ def _ecef_to_wgs84(p, np):
 
 def _recenter_xy(field, np):
     """Recenter XY on the bbox center; z stays the centroid-relative ENU height. Where the drone
-    starts is deliberately not baked into the asset: the registry scene's ``start``, suggested by
+    starts is deliberately not baked into the asset: the catalog scene's ``start``, suggested by
     ``scripts/assets/spawn_site.py``, places the chosen surface point at the world origin at load
     time. Returns the applied ``(cx, cy)`` shift, the scene origin's ENU offset from the centroid.
     """

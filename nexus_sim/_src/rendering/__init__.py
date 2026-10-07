@@ -37,7 +37,7 @@ class RtxConfig:
         # 24 fps is the production rate: it holds >=1x realtime with two cameras on the photoreal
         # cesium world.
         self.render_hz = float(o.get("render_hz", 24.0))
-        # Geodetic anchor for a streamed world, {lat, lon, alt}: the registry scene's geodetic_origin.
+        # Geodetic anchor for a streamed world, {lat, lon, alt}: the catalog scene's geodetic_origin.
         self.georef = o.get("georef")
 
 

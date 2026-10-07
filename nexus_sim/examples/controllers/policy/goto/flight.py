@@ -63,11 +63,11 @@ def _resolve_policy(override: str | None, asset: dict = POLICY_ASSET) -> str:
             raise SystemExit(f"--policy {override!r} is not a file (expected an exported policy.pt)")
         return override
     from nexus_sim._src.assets.resolver import fetch, hosted_url
-    from nexus_sim._src.config import load_registry
+    from nexus_sim._src.config import load_catalog
 
     name, sha = asset["name"], asset["sha256"]
     try:
-        base = load_registry().assets.base
+        base = load_catalog().assets.base
         if not base:
             raise ValueError("the catalog names no assets.base to fetch the hosted policy from")
         return str(fetch(hosted_url(base, "policies", name, sha, "pt"), sha, filename=f"{name}.pt"))

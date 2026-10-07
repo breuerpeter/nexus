@@ -20,8 +20,8 @@ _LAZY_EXPORTS = {
     "BodyState": "nexus_sim._src.api",
     "JointState": "nexus_sim._src.api",
     "SensorSample": "nexus_sim._src.api",
+    "Catalog": "nexus_sim._src.config",
     "LaunchConfig": "nexus_sim._src.config",
-    "Registry": "nexus_sim._src.config",
     "Controls": "nexus_sim._src.core",
     "Measurement": "nexus_sim._src.core",
     "Orchestrator": "nexus_sim._src.core",
@@ -35,12 +35,12 @@ _LAZY_EXPORTS = {
 # Literal mirror of _LAZY_EXPORTS keys, kept sorted: ruff PLE0605 wants a list/tuple literal.
 __all__ = [
     "BodyState",
+    "Catalog",
     "Controls",
     "JointState",
     "LaunchConfig",
     "Measurement",
     "Orchestrator",
-    "Registry",
     "SensorSample",
     "Sim",
     "SimTime",
@@ -61,7 +61,7 @@ if TYPE_CHECKING:
         save_run_artifacts,
         sim_argparser,
     )
-    from nexus_sim._src.config import LaunchConfig, Registry
+    from nexus_sim._src.config import Catalog, LaunchConfig
     from nexus_sim._src.core import (
         Controls,
         Measurement,

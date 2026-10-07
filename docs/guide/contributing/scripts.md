@@ -16,7 +16,7 @@ Every script the repo tracks lives under `scripts/`. None of them ships in the w
 
 ## Assets
 
-[Converting scenes](../convert-scenes.md) covers `obj_to_usd.py`, `site_scan_splat.py`, `spawn_site.py` and `prepare_asset_upload.py`. The scripts below build the assets the registry ships. Each writes a file that `prepare_asset_upload.py` then hashes for upload, see [Bringing your own assets](../your-own-assets.md).
+[Converting scenes](../convert-scenes.md) covers `obj_to_usd.py`, `site_scan_splat.py`, `spawn_site.py` and `prepare_asset_upload.py`. The scripts below build the assets the catalog ships. Each writes a file that `prepare_asset_upload.py` then hashes for upload, see [Bringing your own assets](../your-own-assets.md).
 
 | Script | What it does | Run |
 |---|---|---|

@@ -1,7 +1,7 @@
 """Assemble the core Orchestrator around the :class:`SamplingMPCController`.
 
 This example-owned assembly, moved out of core since PX4 is the one first-class control path, wires
-the **registry vehicle** Universal Scene Description (USD) collapsed to a single rigid body + the resolved
+the **catalog vehicle** Universal Scene Description (USD) collapsed to a single rigid body + the resolved
 scene USD, its cost-only obstacle shapes, for example the ``slalom`` pillars, into both the real
 single-drone model, stepped by the Orchestrator, and the batched rollout model, ``num_rollouts``
 differentiable drones the planner back-props through. The controller's per-tick optimization runs at the

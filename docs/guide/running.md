@@ -75,8 +75,8 @@ no container.
 - A run whose Kit container can't start fails and names the cause, for example an unreachable
   Docker daemon. A Kit container that dies mid-flight ends the run the way a lost autopilot does.
 
-- `--vehicle` accepts a registry vehicle name, such as `astro_max_fpv`, **or a local `.usd`/`.usdz`
-  path**. `--scene` accepts a registry scene name, such as `empty`, or a local scene USD path.
+- `--vehicle` accepts a catalog vehicle name, such as `astro_max_fpv`, **or a local `.usd`/`.usdz`
+  path**. `--scene` accepts a catalog scene name, such as `empty`, or a local scene USD path.
   A run names both.
   Every Astro Max vehicle carries the analytic PX4 suite, an Inertial Measurement Unit (IMU),
   mag, barometer, and Global Positioning System (GPS). Each is a prim under the body it rides that
@@ -121,7 +121,7 @@ Sim physics and PX4 state both appear in the Rerun viewer, because they share th
 ## Worlds for the FPV camera
 
 A vehicle whose USD declares RTX sensors, such as the `astro_max_fpv` variant's `FpvCam` with its
-`NexusCameraAPI` schema, renders them in the Kit peer. The FPV camera's world comes from the registry scene:
+`NexusCameraAPI` schema, renders them in the Kit peer. The FPV camera's world comes from the catalog scene:
 
 ```bash
 # photoreal geolocated globe: Google Photorealistic 3D Tiles streamed live at
@@ -130,9 +130,9 @@ export CESIUM_ION_TOKEN=<your ion access token>      # cesium.com/ion → Access
 uv run nexus run --vehicle astro_max_fpv --scene cesium --geo 37.7942,-122.3954,-32 --view   # SF
 ```
 
-A cesium scene is just a `geodetic_origin` in the registry: latitude, longitude, and the WGS84
+A cesium scene is just a `geodetic_origin` in the catalog: latitude, longitude, and the WGS84
 ellipsoidal height of the street, which sets the globe so the street sits on the physics ground.
-If it sits off, tweak the registry value, with no conversion. Tile selection runs one
+If it sits off, tweak the catalog value, with no conversion. Tile selection runs one
 hidden-cost viewport per camera, and the RTX lidar reflects off the tiles.
 [Benchmarking](../reference/benchmarking.md) lists the measured real-time factor of each vehicle
 on this scene. Without a token the run warns and falls back to a plain sky, and the flight continues.
@@ -175,7 +175,7 @@ once. Later runs rebuild only what changed. Two overrides:
 
 - `PX4_DIR` names a checkout of your own, for work on PX4 itself. The run builds and flies it and
   fetches nothing.
-- A project that keeps its own catalog, `nexus.registry.yaml`, keeps its own pin beside it in
+- A project that keeps its own catalog, `nexus.catalog.yaml`, keeps its own pin beside it in
   `nexus.px4.ref`, of the same form, `owner/repo@<commit>`. Every vehicle of the project then
   flies that tree, and a bump is one edit.
 

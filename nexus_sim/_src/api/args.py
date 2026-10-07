@@ -28,19 +28,19 @@ def sim_argparser(description: str | None = None) -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=description, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     p.add_argument(
         "--vehicle", required=True,
-        help="registry vehicle NAME (e.g. astro_max_fpv) or a local .usd path",
+        help="catalog vehicle NAME (e.g. astro_max_fpv) or a local .usd path",
     )  # fmt: skip
     p.add_argument(
-        "--registry", default=None,
+        "--catalog", default=None,
         help="path to a catalog that extends the bundled one; omit to take the nearest\n"
-        "nexus.registry.yaml at or above the working directory, else only the bundled one",
+        "nexus.catalog.yaml at or above the working directory, else only the bundled one",
     )  # fmt: skip
     p.add_argument(
         "--device", default="auto", choices=["cpu", "cuda", "auto"], help="compute device (cpu=deterministic)"
     )
     p.add_argument(
         "--scene", required=True,
-        help="registry scene NAME (e.g. 'empty' or 'slalom') or a local scene .usdz path (a converted\n"
+        help="catalog scene NAME (e.g. 'empty' or 'slalom') or a local scene .usdz path (a converted\n"
         "mesh/splat, flown as the visual world)",
     )  # fmt: skip
     p.add_argument(
@@ -49,7 +49,7 @@ def sim_argparser(description: str | None = None) -> argparse.ArgumentParser:
     )  # fmt: skip
     p.add_argument(
         "--solver", default=None, choices=["mujoco", "semi_implicit", "featherstone"],
-        help="physics integrator (default: registry default, mujoco)",
+        help="physics integrator (default: catalog default, mujoco)",
     )  # fmt: skip
     p.add_argument("--max-steps", type=int, default=None, help="cap the run at N control steps")
     p.add_argument(

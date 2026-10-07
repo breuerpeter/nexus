@@ -1,12 +1,12 @@
 ---
-description: "API reference for LaunchConfig and Registry: launch configuration and the vehicle and scene catalog."
+description: "API reference for LaunchConfig and Catalog: launch configuration and the vehicle and scene catalog."
 ---
 
 # Configuration
 
 ```python
-from nexus_sim import LaunchConfig, Registry
+from nexus_sim import LaunchConfig, Catalog
 ```
 
 ::: nexus_sim.LaunchConfig
-::: nexus_sim.Registry
+::: nexus_sim.Catalog

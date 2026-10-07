@@ -10,7 +10,7 @@ tuning; the sky, dome and sun prims; and the photoreal render recipe,
 stage, where its absolute ``/Cesium*`` paths compose natively. This handler injects the two
 runtime-only bits, the ion token the host sends in the setup message and the resolved georef of lat,
 lon and alt, both on the session layer, and runs the live machinery no USD can carry: per-camera
-tile-selection viewports and the streaming drain before the flight. The alt is data, the registry
+tile-selection viewports and the streaming drain before the flight. The alt is data, the catalog
 scene's ``geodetic_origin.alt`` or ``--geo lat,lon,alt``: the WGS84 ellipsoidal height of the
 surface, applied as the georeference origin height so the street sits at local z=0, with no runtime
 ground probing. Tile geometry streams into Fabric, usdrt, and never exists as stage prims.
@@ -88,14 +88,14 @@ class CesiumGlobe:
             gprim = stage.GetPrimAtPath("/CesiumGeoreference")
             gprim.GetAttribute("cesium:georeferenceOrigin:latitude").Set(float(georef["lat"]))
             gprim.GetAttribute("cesium:georeferenceOrigin:longitude").Set(float(georef["lon"]))
-            # The surface's WGS84 ellipsoidal height is data, the registry geodetic_origin.alt or
+            # The surface's WGS84 ellipsoidal height is data, the catalog geodetic_origin.alt or
             # --geo lat,lon,alt, applied directly so the street sits at local z=0. Missing alt →
             # 0 with a warning: the terrain sits at its raw ellipsoidal offset; author the value.
             alt = georef.get("alt")
             if alt is None:
                 _log(
                     "no geodetic_origin.alt: georeference height 0 (author the surface's WGS84 "
-                    "ellipsoidal height in the registry, or --geo lat,lon,alt)"
+                    "ellipsoidal height in the catalog, or --geo lat,lon,alt)"
                 )
             gprim.GetAttribute("cesium:georeferenceOrigin:height").Set(float(alt or 0.0))
 

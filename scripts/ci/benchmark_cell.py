@@ -36,7 +36,7 @@ ALT = 5.0  # takeoff altitude [m]; the mission flies relative to the takeoff poi
 WP_ARRIVE_M = 2.0  # 3D arrival radius per waypoint [m]
 WP_TIMEOUT_S = 90.0  # per-waypoint budget [sim s]
 
-# The inspection of the ``powerline`` scene, in the same world axes, from its registry ``start``
+# The inspection of the ``powerline`` scene, in the same world axes, from its catalog ``start``
 # on the road beside the line's end pole: climb to INSPECTION_CLEAR over the line's top conductor, move over the
 # end pole, fly the whole line pole by pole, round the corner and up the 3 m drop to the far end,
 # move off to the side over the landing spot, and land on the high ground. A waypoint over each

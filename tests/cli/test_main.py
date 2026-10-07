@@ -116,15 +116,15 @@ def test_a_run_on_a_catalog_with_a_defaults_block_fails_and_says_to_name_the_veh
     """A project catalog with a `defaults` block fails to load, and the error names the removal and
     says to name the vehicle and scene on the run.
 
-    Given a `nexus.registry.yaml` with `defaults: { vehicle: my_quad }`, when a run that names its
+    Given a `nexus.catalog.yaml` with `defaults: { vehicle: my_quad }`, when a run that names its
     vehicle and scene loads it, then it fails with an error that names `defaults` as removed and
     points at `--vehicle` and `--scene`.
     """
-    catalog = tmp_path / "nexus.registry.yaml"
+    catalog = tmp_path / "nexus.catalog.yaml"
     catalog.write_text(
         'vehicles:\n  my_quad:\n    usd: { url: "file:///my_quad.usda", sha256: abc }\ndefaults: { vehicle: my_quad }\n'
     )
-    argv = ("--registry", str(catalog), "--vehicle", "astro_max_base", "--scene", "empty")
+    argv = ("--catalog", str(catalog), "--vehicle", "astro_max_base", "--scene", "empty")
     failed, said = _said_when_run(monkeypatch, capsys, tmp_path, *argv)
     assert (failed, [w in said for w in ("defaults", "remov", "--vehicle", "--scene")]) == (True, [True] * 4)
 

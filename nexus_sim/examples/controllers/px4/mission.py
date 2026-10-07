@@ -37,7 +37,7 @@ from nexus_sim.examples.controllers.px4.log_warnings import px4_warnings
 from nexus_sim.px4 import NAV_WAYPOINT, OffboardClient, read_plan
 
 PLAN = pathlib.Path(__file__).with_name("box.plan")  # the mission flown; swap the file, fly another
-VEHICLE = "astro_max_base"  # the registry vehicle flown, which declares PX4
+VEHICLE = "astro_max_base"  # the catalog vehicle flown, which declares PX4
 SCENE = "empty"  # flat ground: this example proves the mission path, not a place
 DEFAULT_TIMEOUT_S = 200.0  # --timeout default: budget for PX4 to boot, wall-clock, and to reach lockstep
 UPLOAD_TIMEOUT_S = 60.0  # budget [sim s] for the MISSION_COUNT, MISSION_ITEM, MISSION_ACK handshake to settle

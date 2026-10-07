@@ -42,11 +42,11 @@ class Sim:
     Z-up Forward-Left-Up (FLU), off the components' observation channels.
 
     Args:
-        vehicle: Registry vehicle *name*, for example ``"astro_max_fpv"``, or a local .usd path.
-        registry: Path to a catalog that extends the bundled one. ``None`` takes the nearest
-            ``nexus.registry.yaml`` in the working directory or a directory over it, and only the
+        vehicle: Catalog vehicle *name*, for example ``"astro_max_fpv"``, or a local .usd path.
+        catalog: Path to a catalog that extends the bundled one. ``None`` takes the nearest
+            ``nexus.catalog.yaml`` in the working directory or a directory over it, and only the
             catalog bundled in the wheel when no directory holds one.
-        scene: Registry scene *name* to fly in, for example ``"empty"`` for flat ground or the
+        scene: Catalog scene *name* to fly in, for example ``"empty"`` for flat ground or the
             ``"slalom"`` obstacle pillars, or a local scene .usd path.
         device: Compute device for the runtime: ``"auto"``, the default, which picks CUDA when
             present, or an explicit ``"cpu"``, for bit-exact determinism, or ``"cuda"``.
@@ -74,7 +74,7 @@ class Sim:
         vehicle: str,
         *,
         scene: str,
-        registry: str | None = None,
+        catalog: str | None = None,
         geo: str | None = None,
         device: str = "auto",
         observe: bool = True,
@@ -88,12 +88,12 @@ class Sim:
         layer: str | None = None,
     ):
         self._launch = LaunchConfig()
-        self._launch.set_vehicle(vehicle)  # a registry *name* or a local .usd path
+        self._launch.set_vehicle(vehicle)  # a catalog *name* or a local .usd path
         self._launch.layer = layer  # an override layer the run composes over the vehicle, or None
-        self._launch.registry = registry  # None: the run finds its own catalog, see load_registry
+        self._launch.catalog = catalog  # None: the run finds its own catalog, see load_catalog
         if solver is not None:  # physics integrator override: mujoco | semi_implicit | featherstone
             self._launch.runtime.solver = solver
-        self._launch.set_scene(scene)  # registry scene, for example the 'slalom' obstacle pillars for sampling-mpc
+        self._launch.set_scene(scene)  # catalog scene, for example the 'slalom' obstacle pillars for sampling-mpc
         if geo is not None:  # override the scene's geodetic origin, for example to fly cesium over any lat/lon
             parts = [float(x) for x in geo.split(",")]
             self._launch.set_geodetic_origin(*parts)  # lat,lon[,alt]; alt is the WGS84 ellipsoidal surface height
@@ -181,7 +181,7 @@ class Sim:
         diagnostics.configure(args)  # the shared --profile/--trace/--benchmark flags, process-wide
         kw = {
             "vehicle": args.vehicle,
-            "registry": getattr(args, "registry", None),
+            "catalog": getattr(args, "catalog", None),
             "device": getattr(args, "device", "auto"),
             "scene": args.scene,
             "geo": getattr(args, "geo", None),

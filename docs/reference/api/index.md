@@ -13,7 +13,7 @@ of the public surface. Import from `nexus_sim`, never from `nexus_sim._src`.
 
 -   **[Simulation](simulation.md)**: `Sim`, the top-level entry point for building and running a simulation, and the `BodyState`, `JointState` and `SensorSample` values it reports.
 -   **[Core types](core.md)**: `Orchestrator`, `Controls`, `Measurement`, and `SimTime`, the runtime-agnostic state, control, and observation surfaces.
--   **[Configuration](configuration.md)**: `LaunchConfig` for the launch configuration and `Registry` for the vehicle and scene catalog.
+-   **[Configuration](configuration.md)**: `LaunchConfig` for the launch configuration and `Catalog` for the vehicle and scene catalog.
 -   **[Guidance](guidance.md)**: the in-loop seam that turns a mission into a controller's setpoint, reached via `sim.guidance`. Its classes are internal, so the page is the one exception to importing from `nexus_sim`.
 -   **[PX4](px4.md)**: `OffboardClient`, the client a script opens on PX4's offboard link, and the mission plan types, imported from `nexus_sim.px4`.
 -   **[Logging](logging.md)**: `logger`, the framework logger, which writes to the console and tees into the Rerun recording.

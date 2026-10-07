@@ -1,12 +1,12 @@
-"""Recorder + RecordChannel: the generic mechanics of the observation seam.
+"""Recorder + RecordChannel: the generic mechanics of recording.
 
 A :class:`RecordChannel` is one component's per-tick buffer: a device ring buffer of ``width``-float
 rows the component's device-only kernel writes into, plus the locked read-time D2H + decode the host
 calls. The ring-buffer mechanics, a device counter advancing per graph replay, the wrap, and time =
 counter × dt, are the same across components; only the row width + the row→object decode differ, so
-each component supplies those when it registers its channel. :class:`Recorder` is the registry of
-named channels handed to each recordable component: the single switch, ``None`` when not observing,
-exactly as with ``Logger``.
+each component supplies those when it registers its channel. The loop hands the :class:`Recorder`,
+which holds the named channels, to each recordable component: the single switch, ``None`` when the
+run attaches no Recorder, exactly as with ``Logger``.
 """
 
 from __future__ import annotations

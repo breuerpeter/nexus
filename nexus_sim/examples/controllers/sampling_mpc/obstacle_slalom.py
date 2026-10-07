@@ -11,8 +11,8 @@ port of NVIDIA's ``example_diffsim_drone``, and the counterpart to ``waypoint_tr
 
 **The shape.** A zero-arg, self-contained script: it assembles its own orchestrator, the
 example-owned :mod:`assembly` that wraps controller + actuator + physics around the core components,
-and hosts it via ``Sim.from_orchestrator`` + ``sim.guidance``. The vehicle is the registry
-``astro-max`` and the obstacle pillars ride in the registry ``slalom`` scene, a
+and hosts it via ``Sim.from_orchestrator`` + ``sim.guidance``. The vehicle is the catalog
+``astro-max`` and the obstacle pillars ride in the catalog ``slalom`` scene, a
 Universal Scene Description (USD) file of cost-only capsules. The guidance sequences the waypoints:
 ``set_mission`` → advance on arrival → the next goal on the tick; the controller logs its MPC horizon to
 ``/controller``; the central recorder, always on, logs the physics trajectory + pillars, and the
@@ -40,10 +40,10 @@ from nexus_sim.examples.controllers.sampling_mpc.assembly import build_sampling_
 
 # Everything this demo is, in one place: zero args by design, the configuration IS the example.
 VEHICLE = "astro_max_base"
-SCENE = "slalom"  # the registry obstacle scene, cost-only pillar capsules
+SCENE = "slalom"  # the catalog obstacle scene, cost-only pillar capsules
 MAX_STEPS = 4000  # safety cap; the guidance ends the run on mission completion
 # A slalom: three waypoints staggered into a zigzag, not a straight row, each leg a gentle hop. A pillar
-# sits mid-way along every leg in the registry 'slalom' scene, so the drone must detour around it.
+# sits mid-way along every leg in the catalog 'slalom' scene, so the drone must detour around it.
 SPAWN = (0.0, 0.0, 2.0)
 WAYPOINTS = [(2.5, 1.2, 2.0), (5.0, -1.0, 2.0), (7.5, 0.7, 2.0)]
 PILLAR_RADIUS = 0.4  # must match the slalom scene's authored pillars, see scripts/assets/author_slalom_scene.py

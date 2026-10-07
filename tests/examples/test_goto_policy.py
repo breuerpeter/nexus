@@ -27,7 +27,7 @@ def _catalog_with_base(tmp_path, monkeypatch):
     """
     base = tmp_path / "blobs"
     base.mkdir()
-    (tmp_path / "nexus.registry.yaml").write_text(f"assets:\n  base: {base.as_uri()}\n")
+    (tmp_path / "nexus.catalog.yaml").write_text(f"assets:\n  base: {base.as_uri()}\n")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("NEXUS_ASSET_CACHE", str(tmp_path / "cache"))
     return base

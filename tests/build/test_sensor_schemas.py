@@ -16,7 +16,7 @@ import pytest
 pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
-from nexus_sim._src.config.registry import load_registry
+from nexus_sim._src.config.catalog import load_catalog
 from nexus_sim._src.core.registry import default_registry
 from nexus_sim._src.core.schema import Measurement
 from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
@@ -85,11 +85,11 @@ def test_a_sensor_built_from_a_schema_gets_the_runs_site_values(tmp_path):
     the run steps once, then the Global Positioning System (GPS) reports the origin, the magnetometer the field at Zurich, and the
     barometer the standard pressure a quarter of a metre over mean sea level, where the base body rests.
     """
-    catalog = tmp_path / "nexus.registry.yaml"
+    catalog = tmp_path / "nexus.catalog.yaml"
     catalog.write_text(
         f"scenes:\n  zurich:\n    geodetic_origin: {{ lat: {ZURICH[0]}, lon: {ZURICH[1]}, alt: {ZURICH[2]} }}\n"
     )
-    loop = sv.build(sv.vehicle(tmp_path, QUIET), scene="zurich", registry=load_registry(catalog))
+    loop = sv.build(sv.vehicle(tmp_path, QUIET), scene="zurich", catalog=load_catalog(catalog))
 
     (meas,) = sv.fly(loop, 1)
 

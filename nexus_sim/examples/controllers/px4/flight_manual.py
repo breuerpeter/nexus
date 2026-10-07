@@ -38,7 +38,7 @@ from nexus_sim.examples._lib import dump_run
 from nexus_sim.examples.controllers.px4.log_warnings import px4_warnings
 from nexus_sim.px4 import OffboardClient
 
-VEHICLE = "astro_max_base"  # the registry vehicle flown, which declares PX4
+VEHICLE = "astro_max_base"  # the catalog vehicle flown, which declares PX4
 SCENE = "empty"  # flat ground
 DEFAULT_TIMEOUT_S = 200.0  # --timeout default: wall-clock budget for arm + climb
 

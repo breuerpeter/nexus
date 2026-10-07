@@ -67,7 +67,7 @@ def main() -> dict:
     ap.add_argument("--stats_json", default=None, help="write run stats JSON here (CI regression gate)")
     ap.add_argument(
         "--vehicle_usd", default=None,
-        help="local vehicle USD to train on (default: the hosted, sha-verified registry asset)",
+        help="local vehicle USD to train on (default: the hosted, sha-verified catalog asset)",
     )  # fmt: skip
     args, _ = ap.parse_known_args()
 
@@ -76,7 +76,7 @@ def main() -> dict:
     log_dir = args.log_dir
 
     env_cfg = load_cfg_from_registry(args.task, "env_cfg_entry_point")
-    if args.vehicle_usd:  # load a local Universal Scene Description (USD) file instead of the resolved registry asset
+    if args.vehicle_usd:  # load a local Universal Scene Description (USD) file instead of the resolved catalog asset
         env_cfg.robot.spawn.usd_path = args.vehicle_usd
     env_cfg.scene.num_envs = num_envs
     env_cfg.sim.device = "cuda:0"

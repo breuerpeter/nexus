@@ -19,12 +19,12 @@ from .models import AssetRef, GeodeticOrigin, _Base
 
 
 def _expand_usd(data, kind: str, base: str | None):
-    """Expand a registry ``usd: {name, sha256}`` into a full :class:`AssetRef`, with the
-    content-addressed ``.usdz`` URL + cache filename derived from the registry's ``assets.base``.
+    """Expand a catalog ``usd: {name, sha256}`` into a full :class:`AssetRef`, with the
+    content-addressed ``.usdz`` URL + cache filename derived from the catalog's ``assets.base``.
 
     An explicit ``{url, ...}`` ref passes through untouched, whether it names an asset hosted
     elsewhere, a local ``file://`` one, or a test fixture. So a catalog names blobs in more than one
-    place while the registry surface stays compact, and the resolver, receipt and cache keep working
+    place while the catalog surface stays compact, and the resolver, receipt and cache keep working
     on ordinary ``AssetRef``s. The load reports a compact ref with no base to complete it.
     """
     if isinstance(data, dict) and isinstance(data.get("usd"), dict):
@@ -32,7 +32,7 @@ def _expand_usd(data, kind: str, base: str | None):
         if "name" in usd and "url" not in usd:
             name, sha = usd["name"], usd.get("sha256", "")
             if not base:
-                raise RegistryError(f"{kind[:-1]} {name!r} names no url and the registry has no assets.base")
+                raise CatalogError(f"{kind[:-1]} {name!r} names no url and the catalog has no assets.base")
             data = {
                 **data,
                 "usd": {"url": hosted_url(base, f"usd/{kind}", name, sha), "sha256": sha, "filename": f"{name}.usdz"},
@@ -40,18 +40,18 @@ def _expand_usd(data, kind: str, base: str | None):
     return data
 
 
-class RegistryError(Exception):
-    """A malformed registry: a dangling reference, an unknown scene, and so on."""
+class CatalogError(Exception):
+    """A malformed catalog: a dangling reference, an unknown scene, and so on."""
 
 
-class NoMatchError(RegistryError):
+class NoMatchError(CatalogError):
     """No vehicle variant carries the name the launch asks for."""
 
 
 class VehicleVariant(_Base):
     """One catalog entry: a Universal Scene Description (USD) file, which declares its controller.
 
-    The entry's name is its key in :attr:`Registry.vehicles`.
+    The entry's name is its key in :attr:`Catalog.vehicles`.
     """
 
     usd: AssetRef
@@ -71,7 +71,7 @@ class Scene(_Base):
     geodetic_origin: GeodeticOrigin | None = None
     start: tuple[float, float, float] | None = None
     """The scene-frame point placed at the world origin: where the vehicle starts, on the z=0
-    physics ground. ``None`` = the scene's own origin. Placement is per-scene registry data, NOT
+    physics ground. ``None`` = the scene's own origin. Placement is per-scene catalog data, NOT
     baked into the asset; ``scripts/assets/spawn_site.py`` suggests a value for a converted scan.
     """
 
@@ -86,11 +86,11 @@ class Assets(_Base):
     """
 
 
-class Registry(_Base):
+class Catalog(_Base):
     """The checked-in vehicle/scene catalog and where its blobs live.
 
     Resolution is by name: a launch names a :class:`VehicleVariant` and a scene. Built by
-    :func:`load_registry` from the bundled ``registry.yaml``, extended by the catalog a project
+    :func:`load_catalog` from the bundled ``catalog.yaml``, extended by the catalog a project
     beside the framework keeps.
     """
 
@@ -129,48 +129,48 @@ class Registry(_Base):
         return out
 
     @classmethod
-    def from_dict(cls, data: dict | None) -> Registry:
-        """Build and validate a registry from a plain dict.
+    def from_dict(cls, data: dict | None) -> Catalog:
+        """Build and validate a catalog from a plain dict.
 
         Args:
-            data: The mapping of registry fields. ``None``, or an empty dict, yields an empty,
-                fully defaulted registry.
+            data: The mapping of catalog fields. ``None``, or an empty dict, yields an empty,
+                fully defaulted catalog.
 
         Returns:
-            The validated ``Registry``.
+            The validated ``Catalog``.
 
         Raises:
             pydantic.ValidationError: If ``data`` has unknown keys or values that fail
                 validation.
-            RegistryError: If a compact ``usd`` entry has no ``assets.base`` to complete it.
+            CatalogError: If a compact ``usd`` entry has no ``assets.base`` to complete it.
         """
         return cls.model_validate(data or {})
 
     @classmethod
-    def from_yaml(cls, path: str | pathlib.Path | None = None) -> Registry:
-        """Build and validate a registry from a YAML file.
+    def from_yaml(cls, path: str | pathlib.Path | None = None) -> Catalog:
+        """Build and validate a catalog from a YAML file.
 
         Args:
-            path: Path to the registry YAML. ``None`` loads the package's bundled
-                ``registry.yaml``.
+            path: Path to the catalog YAML. ``None`` loads the package's bundled
+                ``catalog.yaml``.
 
         Returns:
-            The validated ``Registry``.
+            The validated ``Catalog``.
 
         Raises:
             pydantic.ValidationError: If the parsed document fails validation.
-            RegistryError: If a compact ``usd`` entry has no ``assets.base`` to complete it.
+            CatalogError: If a compact ``usd`` entry has no ``assets.base`` to complete it.
         """
-        path = pathlib.Path(path) if path is not None else _DEFAULT_REGISTRY
+        path = pathlib.Path(path) if path is not None else _DEFAULT_CATALOG
         return cls.from_dict(yaml.safe_load(path.read_text()))
 
 
-_DEFAULT_REGISTRY = pathlib.Path(__file__).parent / "registry.yaml"
-REGISTRY_FILENAME = "nexus.registry.yaml"
+_DEFAULT_CATALOG = pathlib.Path(__file__).parent / "catalog.yaml"
+CATALOG_FILENAME = "nexus.catalog.yaml"
 
 
-def discover_registry(start: str | pathlib.Path | None = None) -> pathlib.Path | None:
-    """The nearest ``nexus.registry.yaml`` in *start* or a directory over it, the working directory
+def discover_catalog(start: str | pathlib.Path | None = None) -> pathlib.Path | None:
+    """The nearest ``nexus.catalog.yaml`` in *start* or a directory over it, the working directory
     by default.
 
     A project beside the framework keeps its catalog in its own tree, so a run started anywhere
@@ -182,27 +182,27 @@ def discover_registry(start: str | pathlib.Path | None = None) -> pathlib.Path |
     """
     here = pathlib.Path(start or pathlib.Path.cwd()).resolve()
     for directory in (here, *here.parents):
-        candidate = directory / REGISTRY_FILENAME
+        candidate = directory / CATALOG_FILENAME
         if candidate.is_file():
             return candidate
     return None
 
 
-def registry_path(path: str | pathlib.Path | None = None) -> pathlib.Path:
+def catalog_path(path: str | pathlib.Path | None = None) -> pathlib.Path:
     """The catalog a run flies on top of the bundled one: *path* when it names one, else the nearest
     discovered one, else the catalog bundled in the wheel. Naming the file explicitly always wins over
     the walk up.
     """
     if path is not None:
         return pathlib.Path(path)
-    return discover_registry() or _DEFAULT_REGISTRY
+    return discover_catalog() or _DEFAULT_CATALOG
 
 
 def _sha(usd: AssetRef | None) -> str | None:
     return usd.sha256 if usd is not None else None
 
 
-def _extend(bundled: Registry, project: Registry) -> Registry:
+def _extend(bundled: Catalog, project: Catalog) -> Catalog:
     """*project* laid over *bundled*: a project entry replaces the bundled entry of the same name, and
     each replacement warns with both hashes, so a stale copy of a bundled entry never flies silently.
 
@@ -219,20 +219,20 @@ def _extend(bundled: Registry, project: Registry) -> Registry:
                     f"{kind} {name!r}: the project's entry (sha256 {_sha(entry.usd)}) replaces the bundled one "
                     f"(sha256 {_sha(shipped[name].usd)})"
                 )
-    return Registry(
+    return Catalog(
         assets=project.assets,
         vehicles={**bundled.vehicles, **project.vehicles},
         scenes={**bundled.scenes, **project.scenes},
     )
 
 
-def load_registry(path: str | pathlib.Path | None = None) -> Registry:
-    """Load + validate the bundled catalog, extended by the one :func:`registry_path` picks for *path*.
+def load_catalog(path: str | pathlib.Path | None = None) -> Catalog:
+    """Load + validate the bundled catalog, extended by the one :func:`catalog_path` picks for *path*.
 
     A project catalog lists only what it adds; see :func:`_extend` for how a name in both resolves.
     """
-    bundled = Registry.from_yaml(_DEFAULT_REGISTRY)
-    source = registry_path(path)
-    if source.resolve() == _DEFAULT_REGISTRY.resolve():
+    bundled = Catalog.from_yaml(_DEFAULT_CATALOG)
+    source = catalog_path(path)
+    if source.resolve() == _DEFAULT_CATALOG.resolve():
         return bundled
-    return _extend(bundled, Registry.model_validate(yaml.safe_load(source.read_text()) or {}))
+    return _extend(bundled, Catalog.model_validate(yaml.safe_load(source.read_text()) or {}))

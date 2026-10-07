@@ -15,7 +15,7 @@ import warp as wp
 def add_scene(builder: newton.ModelBuilder, cfg: dict) -> list[int]:
     """Add the resolved scene USD, ``cfg['scene_usd_path']`` if any, to ``builder``.
 
-    The registry scene's ``start``, ``cfg['scene_start']``, shifts the scene so the start point
+    The catalog scene's ``start``, ``cfg['scene_start']``, shifts the scene so the start point
     sits at the world origin: the same placement the render world gets. Returns the imported
     shape indices; a controller might need them, for example the obstacle cost of the sampling
     Model Predictive Control (MPC) controller.

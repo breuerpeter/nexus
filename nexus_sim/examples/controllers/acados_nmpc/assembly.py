@@ -2,7 +2,7 @@
 Nonlinear Model Predictive Control (NMPC).
 
 This example-owned assembly, moved out of core because PX4 is the one first-class control path,
-wires the **registry vehicle** Universal Scene Description (USD), the full articulated model, and
+wires the **catalog vehicle** Universal Scene Description (USD), the full articulated model, and
 the core rotor chain. The NMPC is a pure *tracking* controller, and the min-snap/flatness
 planner lives with the **guidance**: the flight file hands it to a ``TrackingGuidance``, which plans
 the whole-path ``ReferenceTrajectory`` and feeds ``accept_setpoint``. The NMPC's per-tick Sequential Quadratic
