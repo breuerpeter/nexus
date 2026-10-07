@@ -11,14 +11,13 @@ import numpy as np
 
 from nexus_sim._src.core import logger
 
-from .rtsp import RtspPublisher
 from .rtx_sensor import RtxMountedSensor
 
 
 class RtxThermalSensor(RtxMountedSensor):
     """RTX thermal sensor, Long Wave Infrared (LWIR): the peer's radiance, the ``PtSelfIllumination``
     Arbitrary Output Variable (AOV) on the authored camera prim, -> an 8-bit white-hot image via
-    ``Logger.log_image``, at ``cameras/<name>``, and, when streaming, the :class:`RtspPublisher`.
+    ``Logger.log_image``, at ``cameras/<name>``.
 
     The scene encodes temperature as OmniPBR emission, the band law in
     :mod:`~nexus_sim._src.vehicle.sensors.lwir`, with ``emissive_color.r = 1.0`` so red
@@ -36,8 +35,7 @@ class RtxThermalSensor(RtxMountedSensor):
       a Pt-annotated product created after frames have rendered stays permanently empty, measured.
 
     Args:
-        run: The run's values: the ``Camera`` prim, the model body it rides and the render link, which
-            says where to publish the feed when the run streams.
+        run: The run's values: the ``Camera`` prim, the model body it rides and the render link.
         width: Width of the render, pixels: twice the width of the image.
         height: Height of the render, pixels: twice the height of the image.
         rate: How often the camera gives a frame, hertz.
@@ -68,9 +66,6 @@ class RtxThermalSensor(RtxMountedSensor):
         self._focal_mm = float(prim.GetAttribute("focalLength").Get() or 12.0)
         self._h_aperture_mm = float(prim.GetAttribute("horizontalAperture").Get() or 36.0)
         self._v_aperture_mm = float(prim.GetAttribute("verticalAperture").Get() or 0.0) or None
-        self._bitrate = run.link.streams.bitrate
-        self._stream_url = run.link.streams.url("ir")
-        self._publisher = None  # also first-frame: the encoder needs the emitted size, not the authored one
         self._frustum_logged = False
         self._rng = np.random.default_rng(0)
         super().__init__(run, rate=rate)
@@ -83,8 +78,8 @@ class RtxThermalSensor(RtxMountedSensor):
         self._frustum_logged = False
 
     def _emit_size(self, shape) -> None:
-        """First-frame binding of everything that needs the EMITTED size, the AOV's own grid, not
-        the authored render-product size: the Rerun pinhole and the RTSP encoder. Idempotent.
+        """First-frame binding of the Rerun pinhole, which needs the EMITTED size, the AOV's own grid,
+        not the authored render-product size. Idempotent.
         """
         h, w = int(shape[0]), int(shape[1])
         if not self._frustum_logged and self._logger is not None:
@@ -104,14 +99,6 @@ class RtxThermalSensor(RtxMountedSensor):
                 )
             except Exception as exc:  # only the frustum goes missing
                 logger.warning(f"RtxThermalSensor {self.name}: pinhole logging unavailable: {exc!r}")
-        if self._publisher is None and self._stream_url:
-            self._publisher = RtspPublisher(
-                width=w,
-                height=h,
-                fps=max(1, round(self.rate)),
-                bitrate=self._bitrate,
-                rtsp_url=self._stream_url,
-            )
 
     def emit(self, arrays: dict, t_shown: float) -> None:
         rad = arrays.get("radiance")
@@ -121,8 +108,6 @@ class RtxThermalSensor(RtxMountedSensor):
         img = self._post(rad, self._sky_mask(rad.shape, arrays.get("depth")))
         if self._logger is not None:
             self._logger.log_image("", img, sim_time=t_shown)
-        if self._publisher is not None:
-            self._publisher.push(img)
 
     def _sky_mask(self, shape, depth) -> np.ndarray:
         """Dome pixels on the AOV grid, True = sky, from the full-res depth buffer, strided down."""
@@ -168,7 +153,3 @@ class RtxThermalSensor(RtxMountedSensor):
             noise_sigma=self.NOISE_SIGMA,
             rng=self._rng,
         )
-
-    def close(self) -> None:
-        if self._publisher is not None:
-            self._publisher.close()

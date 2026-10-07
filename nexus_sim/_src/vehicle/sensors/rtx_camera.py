@@ -1,25 +1,22 @@
 """The RTX camera: the electro-optical (EO) feed over a ``Camera`` prim the vehicle USD authored.
 
 The Kit peer renders it into one render product with an ``LdrColor`` annotator; here on the host the
-sensor logs the frame as the First Person View image and, when the launch asks for a stream, pushes
-it to the Real Time Streaming Protocol (RTSP) publisher.
+sensor logs the frame as the First Person View image.
 """
 
 from __future__ import annotations
 
 from nexus_sim._src.core import logger
 
-from .rtsp import RtspPublisher
 from .rtx_sensor import RtxMountedSensor
 
 
 class RtxCameraSensor(RtxMountedSensor):
     """RTX camera sensor: the peer's color output -> ``Logger.log_image`` at the sensor's own entity,
-    ``sim/vehicle/sensors/<name>``, and, when streaming, the :class:`RtspPublisher`.
+    ``sim/vehicle/sensors/<name>``.
 
     Args:
-        run: The run's values: the ``Camera`` prim, the model body it rides and the render link, which
-            says where to publish the feed when the run streams.
+        run: The run's values: the ``Camera`` prim, the model body it rides and the render link.
         width: Width of the image, pixels.
         height: Height of the image, pixels.
         rate: How often the camera gives a frame, hertz.
@@ -32,19 +29,6 @@ class RtxCameraSensor(RtxMountedSensor):
         prim = run.prim
         self.width = int(width)
         self.height = int(height)
-        # The --stream consumer is per camera at the CAMERA's resolution/rate.
-        stream_url = run.link.streams.url("cam")
-        self._publisher = (
-            RtspPublisher(
-                width=self.width,
-                height=self.height,
-                fps=max(1, round(rate)),
-                bitrate=run.link.streams.bitrate,
-                rtsp_url=stream_url,
-            )
-            if stream_url
-            else None
-        )
         # authored intrinsics -> the Rerun Pinhole for the frustum / field-of-view visualization; logged once on set_logger
         self._focal_mm = float(prim.GetAttribute("focalLength").Get() or 12.0)
         self._h_aperture_mm = float(prim.GetAttribute("horizontalAperture").Get() or 36.0)
@@ -77,9 +61,3 @@ class RtxCameraSensor(RtxMountedSensor):
         if self._logger is not None:
             # the camera rides the body's pose through its one static transform; no per-frame transform needed
             self._logger.log_image("", rgb, sim_time=t_shown)
-        if self._publisher is not None:
-            self._publisher.push(rgb)
-
-    def close(self) -> None:
-        if self._publisher is not None:
-            self._publisher.close()

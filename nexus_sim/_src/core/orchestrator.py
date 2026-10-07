@@ -513,7 +513,7 @@ class Orchestrator:
             )  # the autopilot's disconnect: a run's normal end. A dying Kit peer raises KitPeerError, which ends the run with it
         finally:
             if self.renderer is not None and hasattr(self.renderer, "close"):
-                self.renderer.close()  # for example flush+close the First Person View (FPV) encoder, an output-only seam
+                self.renderer.close()  # take the last frame, then stop the Kit peer
             # Lifecycle teardown of the controller, then the logging teardown: _close_logs flushes each
             # loggable's accumulated emission, the Model Predictive Control (MPC) horizon, into the recording, dumps the Recorder's
             # rings and closes the sink last, so every send_columns lands before the .rrd finalizes. The recording is

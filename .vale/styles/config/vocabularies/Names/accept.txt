@@ -18,7 +18,6 @@ Kit
 codecov
 RTX
 CUDA
-NVENC
 QGroundControl
 MAVLink
 PyTorch
@@ -51,7 +50,6 @@ JPEG
 LTE
 NTRIP
 SBUS
-WHEP
 FXAA
 NETD
 AMSL

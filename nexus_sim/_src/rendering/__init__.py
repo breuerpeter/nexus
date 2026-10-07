@@ -26,7 +26,7 @@ PEER = "kit"  # the name an RTX sensor's class requires the Kit peer by
 
 
 class RtxConfig:
-    """Rate and stream settings for the RTX sensors.
+    """Rate and world settings for the RTX sensors.
 
     Each sensor's schema is the authority for its resolution and rate; ``render_hz`` paces a run with
     no camera. A ``rtx:`` block in the scenario config overrides any field.
@@ -37,31 +37,8 @@ class RtxConfig:
         # 24 fps is the production rate: it holds >=1x realtime with two cameras on the photoreal
         # cesium world.
         self.render_hz = float(o.get("render_hz", 24.0))
-        self.rtsp_url = str(o.get("rtsp_url", "rtsp://127.0.0.1:8554/cam1"))
-        self.bitrate = str(o.get("bitrate", "6M"))
         # Geodetic anchor for a streamed world, {lat, lon, alt}: the registry scene's geodetic_origin.
         self.georef = o.get("georef")
-
-
-class Streams:
-    """Where each camera of a run publishes its feed, for a run that streams.
-
-    Each kind of camera numbers its streams apart, ``cam1``, ``cam2`` and ``ir1``: adding an infrared
-    camera to a vehicle must never shift ``cam1`` out from under a Ground Control Station (GCS) that
-    already discovered it.
-    """
-
-    def __init__(self, rtx: RtxConfig, *, enabled: bool):
-        self.bitrate = rtx.bitrate
-        self._base = rtx.rtsp_url.rsplit("/", 1)[0] if enabled else None  # rtsp://host:port
-        self._count: dict[str, int] = {}
-
-    def url(self, kind: str) -> str | None:
-        """The next stream address for a camera of `kind`, ``cam`` or ``ir``; ``None`` when the run doesn't stream."""
-        if self._base is None:
-            return None
-        self._count[kind] = self._count.get(kind, 0) + 1
-        return f"{self._base}/{kind}{self._count[kind]}"
 
 
 class RtxRendererFactory:
@@ -73,9 +50,8 @@ class RtxRendererFactory:
     the vehicle's file.
     """
 
-    def __init__(self, peer: KitPeer, *, stream: bool = False, components: ComponentRegistry | None = None):
+    def __init__(self, peer: KitPeer, *, components: ComponentRegistry | None = None):
         self._peer = peer
-        self._stream = stream
         self._components = components
 
     def link(self, physics, vehicle_builder, cfg: dict) -> KitRenderer:
@@ -93,9 +69,7 @@ class RtxRendererFactory:
         missing = [label for label in labels if not stage.GetPrimAtPath(label)]
         if missing:
             logger.warning(f"no vehicle prim for model bodies {missing}: they don't render")
-        renderer = KitRenderer(self._peer, bodies=bodies)
-        renderer.streams = Streams(RtxConfig(cfg.get("rtx")), enabled=self._stream)
-        return renderer
+        return KitRenderer(self._peer, bodies=bodies)
 
     def finish(self, renderer: KitRenderer, sensors: list, vehicle_builder, cfg: dict) -> None:
         """Hand `renderer` the RTX sensors built over it, and fill its setup message."""
@@ -147,7 +121,6 @@ def rtx_renderer(
     cfg: dict,
     *,
     cache_dir=None,
-    stream: bool = False,
     peer: Callable = KitPeer,
     components: ComponentRegistry | None = None,
 ) -> RtxRendererFactory | None:
@@ -160,7 +133,6 @@ def rtx_renderer(
         vehicle_builder: The vehicle's builder, whose USD decides.
         cfg: The scenario config, carrying the resolved scene.
         cache_dir: The asset cache the run fetched into; ``None`` for the default.
-        stream: Publish each RTX camera's feed over Real Time Streaming Protocol (RTSP).
         peer: The class that starts the Kit peer, or a callable that builds one: :class:`KitPeer`, or
             its fake in a test.
         components: The registry that resolves the vehicle's schemas to classes; ``None`` takes the
@@ -173,16 +145,13 @@ def rtx_renderer(
     Raises:
         KitPeerError: The Cesium fetch, the image pull or the container start failed; the message
             names the cause.
-        ValueError: ``stream`` on a vehicle that declares no camera, or a vehicle that declares a
-            sensor wrongly; the message names the prim.
+        ValueError: The vehicle declares a sensor wrongly; the message names the prim.
     """
     from nexus_sim._src.assets.resolver import default_cache
     from nexus_sim._src.vehicle.sensors.declared import requires, sensor_specs
 
     usd = vehicle_builder.cfg.get("usd_path")
     specs = [spec for spec in sensor_specs(usd, components) if requires(spec, PEER)] if usd else []
-    if stream and not [spec for spec in specs if getattr(spec.cls, "KIND", "") == "cameras"]:
-        raise ValueError("streaming needs a camera in the vehicle USD, and this vehicle declares none")
     if not specs:
         return None
     prims = [spec.prim for spec in specs]
@@ -195,4 +164,4 @@ def rtx_renderer(
     stacked = list(root.subLayerPaths)
     started = peer([usd, *stacked, cfg.get("scene_usd_path")], cache_dir=cache_dir or default_cache())
     started.start()
-    return RtxRendererFactory(started, stream=stream, components=components)
+    return RtxRendererFactory(started, components=components)
