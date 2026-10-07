@@ -8,12 +8,14 @@ in the script, and it records its flight `.rrd`. The launcher map is `_EXAMPLES`
   stage writes the `setpoint` signal, a `PositionGoal` or a `ReferenceTrajectory`, which the
   controller declares it reads. The stage sets `tick.done` when its mission is over, which ends the
   run. The policy example's `GeofenceGuidance` is the worked example of a guidance an example
-  specialises.
+  specialises. The example's assembly passes `GroundTruthEstimator` from `nexus_sim._src.vehicle.estimators` as
+  the loop's `estimator`. The guidance and every controller that reads the vehicle's state read it
+  from the `estimate` signal, never from the physics state, and a run with no estimator fails.
 - Every component states its per-tick work as `stages()`, a list of `Stage` from
   `nexus_sim._src.core.interfaces`, and each stage declares the `Signal`s, from
   `nexus_sim._src.core.signals`, that it reads and writes. The loop wires them before any stage
   runs: a kernel takes a signal's `buffer`, and a host stage calls its `read()` and `write()`. A
-  controller that solves on the host returns `peer_stages(self, reads=(self.setpoint,))` from
+  controller that solves on the host returns `peer_stages(self, reads=(self.setpoint, self.estimate))` from
   `nexus_sim._src.core.stages`: the Model Predictive Control (MPC), acados, and policy examples.
   Those are the `read` and `exchange` host stages over its `exchange(meas, t, timeout)`, and the
   `exchange` stage writes the `(1, 16)` `controls` signal. A device-native law, the Proportional

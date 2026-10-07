@@ -22,8 +22,8 @@ stages, and each stage states its kind:
 | **Host stage** | Work that leaves the device or the process: PX4's `read` and `exchange`, a Model Predictive Control (MPC) solve, a torch policy's inference, an RTX sensor's frame exchange with the Kit peer | On the host, between graph replays |
 | **Differentiable rollout** | Design optimization | A Warp tape records the whole loop, including the PID law. A loss back-propagates through it |
 
-The loop lays the stages out in one canonical order. The sensors come first, then the guidance when
-the run has one, then the controller. `clear`, the command stages, the force stages and `step` follow,
+The loop lays the stages out in one canonical order. The sensors come first, then the estimator and
+the guidance when the run has them, then the controller. `clear`, the command stages, the force stages and `step` follow,
 once per physics substep, and record comes last. The command stages write Newton's control inputs, the
 force stages add the body forces, and `step` steps Newton's actuators and then the solver. The loop cuts
 the ring at its host stages. It rotates
@@ -45,8 +45,9 @@ read and write it in their kernels, and a host stage reads it with a copy and wr
 between graph replays. Any other type is a host type, whose buffer holds one object. Core ships the
 types of the values between roles. `Controls` holds the per-actuator commands a controller writes and
 the command elements read, on the device. The setpoints are `PositionGoal`, on the device, and
-`ReferenceTrajectory`, on the host: a guidance writes one, and its controller reads it. A component
-can also declare its own type.
+`ReferenceTrajectory`, on the host: a guidance writes one, and its controller reads it. `PoseTwist`
+is the estimate, on the device: the estimator writes the base body's pose and twist, and the guidance
+and the controller read it in place of the physics state. A component can also declare its own type.
 
 When the loop builds the ring, it wires each input to the one output of its name. It allocates one
 buffer per signal and hands it to the writer and to every reader, before any stage runs, so a captured
@@ -60,11 +61,15 @@ any stage runs, with an error that names both ends, when:
 - an input has no writer, and its component gives no default
 - a device stage declares a host signal
 - two components write one signal that a third reads
+- a guidance or a controller reads the estimate, and the run has no estimator to write it
 
-**A guidance writes the setpoint.** Its stage is a host stage, and it holds no controller. It writes
-a changed setpoint, which the controller reads on that tick. The loop also runs that stage once before
-the first tick, over the settled state, so the controller holds its first setpoint before its own
-first stage. A tracking guidance stays out of that pass, because its plan starts the reference's
+**An estimator writes the estimate, and a guidance writes the setpoint.** The estimator's stage runs
+after the sensors', so it reads their values of that tick. It runs before the guidance's and the
+controller's, so they read its estimate of that tick. The guidance's stage is a host stage, and it
+holds no controller. It reads the vehicle's position from the estimate and writes a changed setpoint,
+which the controller reads on that tick. The loop also runs both stages once before the first tick,
+over the settled state, the estimator's first. So the guidance's first stage reads an estimate, and
+the controller holds its first setpoint before its own first stage. A tracking guidance stays out of that pass, because its plan starts the reference's
 clock. A stage that marks the tick done ends the run once the tick completes, which is how a guidance
 ends its mission. A run whose guidance writes a setpoint no stage reads, such as a guidance on a PX4
 run, fails.

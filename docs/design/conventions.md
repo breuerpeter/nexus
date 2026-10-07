@@ -19,12 +19,16 @@ implementations. That's how the actuator seam came to exist in two files before 
 ## Which seams are customizable
 
 Three tiers. A vehicle or a scene **declares** a component in its Universal Scene Description (USD)
-when the component is a property of the machine or of the site. `Controller`, `Sensor`, `Companion`
-and the rotor chain, its command stage and its force element, are the vehicle's. What a scene contributes is the scene's. The guidance turns
+when the component is a property of the machine or of the site. `Controller`, the estimator, `Sensor`,
+`Companion` and the rotor chain, its command stage and its force element, are the vehicle's. The
+estimator writes the estimate, the [signal](execution.md#signals) of the vehicle's pose and twist that
+the guidance and the controller read in place of the physics state. Until the example controllers fly
+as variants of the vehicle, each example's assembly constructs it. What a scene contributes is the scene's. The guidance turns
 a mission into the setpoint a controller tracks. It's a property of the run, not of either, so it
 stays an **argument**: a flight constructs it and hands it to `Sim`. Its stage runs before the
 controller's, and it holds no controller: it writes the setpoint, a [signal](execution.md#signals)
-the controller reads. PX4 takes none, because its own navigator is its guidance. The `Renderer` follows from the
+the controller reads. PX4 takes none, because its own navigator is its guidance, and no estimator,
+because its own estimator runs in its peer. The `Renderer` follows from the
 vehicle: a sensor whose class requires the Kit render peer starts it. `Clock`, `Physics`, `Recorder` and `Logger` are the
 framework's own architecture, **fixed**: one implementation each, configured by settings rather than
 swapped, so none gets a resolver or a published Protocol. Fixed is about publishing no resolver, not
