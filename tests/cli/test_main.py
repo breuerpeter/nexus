@@ -77,6 +77,22 @@ def test_control_is_no_flag_of_the_command_line_tool(monkeypatch, tmp_path, caps
     assert (e.value.code, "unrecognized arguments: --control" in capsys.readouterr().err) == (2, True)
 
 
+def test_nexus_run_rejects_stream(monkeypatch, tmp_path, capsys):
+    """The `nexus run` command rejects `--stream`: a camera's feed has nowhere to publish until a vehicle
+    declares a companion.
+
+    Given `nexus run --stream`, when it parses, then it exits with argparse's unrecognized-argument
+    error. The vehicle names a file that doesn't exist and `DOCKER_HOST` points nowhere, so no run can
+    start if the tool still takes the flag.
+    """
+    monkeypatch.setenv("DOCKER_HOST", f"unix://{tmp_path / 'no-daemon.sock'}")
+    missing = tmp_path / "missing.usda"
+    monkeypatch.setattr("sys.argv", ["nexus", "run", "--stream", "--vehicle", str(missing), "--scene", "empty"])
+    with pytest.raises(SystemExit) as e:
+        cli.main()
+    assert (e.value.code, "unrecognized arguments: --stream" in capsys.readouterr().err) == (2, True)
+
+
 def _said_when_run(monkeypatch, capsys, tmp_path, *argv):
     """Whether `nexus run *argv` fails, and what it says when it stops, offline and with no Docker daemon.
 
