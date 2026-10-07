@@ -256,12 +256,12 @@ def test_sim_has_no_operator(tmp_path):
         _ = sim.operator
 
 
-def test_a_run_whose_controller_takes_no_setpoint_has_no_controller_surface(monkeypatch):
-    """A run whose controller takes no setpoint, as PX4's does, has no controller surface: the
+def test_a_run_whose_controller_takes_no_setpoint_shows_a_script_no_controller(monkeypatch):
+    """A run whose controller takes no setpoint, as PX4's does, shows a script no controller: the
     autopilot owns its mission in its own process, and a script commands it over a link it opens
     itself.
 
-    Given a `Sim` over a controller with no setpoint surface, when a script reads `sim.controller`,
+    Given a `Sim` over a controller that takes no setpoint, when a script reads `sim.controller`,
     then it's `None`.
     """
     fake = _FakeOrch()
