@@ -29,6 +29,7 @@ import numpy as np
 import warp as wp
 
 from nexus_sim._src.core.interfaces import Stage
+from nexus_sim._src.core.signals import Signal
 
 OBS_DIM = 12  # kinematic observation; the PID determinism gate / WarpObservationSensor use this dim
 ACTION_DIM = 4
@@ -168,15 +169,15 @@ def observation_kernel(
 
 
 class WarpObservationSensor:
-    """Device-native ground-truth observation sensor: writes the 12-D obs into a persistent
-    ``(12,)`` Warp array from the live state's device arrays, so it records on a tape / joins a
+    """Device-native ground-truth observation sensor: writes the 12-D obs to the signal ``observation``, a
+    persistent ``(12,)`` Warp array, from the live state's device arrays, so it records on a tape / joins a
     graph, the Warp twin of :func:`observation_from_state`.
 
     Args:
         goal_w: target world position [m], the waypoint / hover goal.
         body_index: articulation body the observation tracks; 0 is the base.
-        setpoint: the setpoint signal of the controller the observation feeds, a ``PositionGoal``,
-            whose goal the kernel reads in place of ``goal_w``. The builder fills its buffer before
+        setpoint: the setpoint signal of the controller the observation feeds, a position goal as one
+            ``wp.vec3``, whose goal the kernel reads in place of ``goal_w``. The builder fills its buffer before
             any stage runs, and a guidance writes it in place, so the next captured replay reads it.
     """
 
@@ -186,7 +187,9 @@ class WarpObservationSensor:
         self.goal = wp.array(np.asarray([goal_w], dtype=np.float32), dtype=wp.vec3)
         self.body_index = int(body_index)
         self._setpoint = setpoint
-        self._obs = wp.zeros(OBS_DIM, dtype=float)  # persistent buffer, the same address every replay
+        # The observation each tick, the signal PID's stage reads: one persistent buffer, the same address
+        # every replay.
+        self.out = Signal("observation", wp.float32, shape=(OBS_DIM,))
 
     def set_goal(self, pos) -> None:
         """Update the goal in place via ``.assign``: static address, capture-safe."""
@@ -205,19 +208,13 @@ class WarpObservationSensor:
         )
         return out_obs
 
-    def sample(self, state, t, out) -> None:
-        """Write the 12-D obs, a **Warp array**, into ``out.observation``, so a device-native
-        controller's stage consumes it on-device and the loop stays one graph / tape-able. Reuses a
-        persistent buffer with a static address for capture.
-        """
-        out.observation = self.sample_wp(state, self._obs)
-
-    def read(self, out) -> None:
-        """Nothing to read back: the observation stays on the device for the controller's stage."""
-
     def stages(self) -> list[Stage]:
-        """One device stage over :meth:`sample`."""
-        return [Stage("observation", "device", lambda tick: self.sample(tick.state, tick.t, tick.meas))]
+        """One device stage over :meth:`sample_wp`, which writes the observation to the signal ``observation``,
+        so a device-native controller's stage reads it on the device and the loop stays one graph.
+        """
+        return [
+            Stage("observation", "device", lambda tick: self.sample_wp(tick.state, self.out.buffer), writes=(self.out,))
+        ]
 
 
 __all__ = [

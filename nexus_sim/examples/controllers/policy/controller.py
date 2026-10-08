@@ -158,7 +158,7 @@ class TrainedPolicyController:
         return self.act(self.obs_from_state(state, goal_w))
 
     # -- Controller Protocol conformance ----------------------------------------
-    def exchange(self, meas, t, timeout=None) -> Controls | None:
+    def exchange(self, t, timeout=None) -> Controls | None:
         """Protocol-conforming step: flies through ``Orchestrator.run()`` exactly as PX4 does.
 
         Builds the complete observation from the estimate, the base body's pose and twist an estimator

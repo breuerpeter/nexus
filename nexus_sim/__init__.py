@@ -23,7 +23,6 @@ _LAZY_EXPORTS = {
     "Catalog": "nexus_sim._src.config",
     "LaunchConfig": "nexus_sim._src.config",
     "Controls": "nexus_sim._src.core",
-    "Measurement": "nexus_sim._src.core",
     "Orchestrator": "nexus_sim._src.core",
     "SimTime": "nexus_sim._src.core",
     # The framework logger. Examples report results through it, with no bare prints: always the
@@ -39,7 +38,6 @@ __all__ = [
     "Controls",
     "JointState",
     "LaunchConfig",
-    "Measurement",
     "Orchestrator",
     "SensorSample",
     "Sim",
@@ -64,7 +62,6 @@ if TYPE_CHECKING:
     from nexus_sim._src.config import Catalog, LaunchConfig
     from nexus_sim._src.core import (
         Controls,
-        Measurement,
         Orchestrator,
         SimTime,
         logger,

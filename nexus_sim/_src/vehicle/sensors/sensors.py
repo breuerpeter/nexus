@@ -7,12 +7,10 @@ Generator (RNG), ``wp.rand``, so the sensor stages join a CUDA graph and uniform
 the rest of the device step: no host NumPy / ``math`` in the per-tick path. The kernels replicate the
 canonical frame math from :mod:`nexus_sim._src.transform` **verbatim**.
 
-Each tick reads the result back once into the host :class:`Measurement` dataclass, which the PX4
-``Controller`` serialises to MAVLink for its peer, an external process: exactly the
-"captured region = device step minus the controller" split. Each sensor splits
-that into :meth:`sample_wp`, which launches the kernel into its device buffer, the "Warp Measurement
-buffer" with no readback, so it joins a CUDA graph, and :meth:`read`, the single D2H into the host
-``Measurement`` after replay; ``sample`` = both, the eager path.
+Each sensor's :meth:`sample_wp` launches its kernel, which writes the sample, stamped with the tick's sim
+time, to the sensor's output signal on the device, with no readback, so it joins a CUDA graph. A reader
+takes the sample there: an estimator, or the PX4 controller, which serialises it to MAVLink for its peer
+in a host stage.
 
 **Determinism, re-baselined onto the Warp RNG.** Noise comes from ``wp.rand_init(seed, step*16 + axis)``
 with a per-sensor seed, which the builder derives from the run's seed and the sensor's prim, and the
@@ -327,16 +325,6 @@ class ImuSensor(DeviceSensor):
         )
         self._first = False
 
-    def read(self, out) -> None:
-        """One D2H of the device buffer into the host ``Measurement``, the PX4-controller boundary."""
-        r = self._out.numpy()
-        out.xacc, out.yacc, out.zacc = float(r[0]), float(r[1]), float(r[2])
-        out.xgyro, out.ygyro, out.zgyro = float(r[3]), float(r[4]), float(r[5])
-
-    def sample(self, state, t, out) -> None:
-        self.sample_wp(state, t)
-        self.read(out)
-
 
 class MagSensor(DeviceSensor):
     name = "mag"
@@ -379,14 +367,6 @@ class MagSensor(DeviceSensor):
             outputs=(self._out, self.out.buffer),
         )
 
-    def read(self, out) -> None:
-        r = self._out.numpy()
-        out.xmag, out.ymag, out.zmag = float(r[0]), float(r[1]), float(r[2])
-
-    def sample(self, state, t, out) -> None:
-        self.sample_wp(state, t)
-        self.read(out)
-
 
 class BaroSensor(DeviceSensor):
     name = "baro"
@@ -422,15 +402,6 @@ class BaroSensor(DeviceSensor):
             ),
             outputs=(self._out, self.out.buffer),
         )
-
-    def read(self, out) -> None:
-        r = self._out.numpy()
-        out.abs_pressure, out.pressure_alt = float(r[0]), float(r[1])
-        out.temperature = self.temperature
-
-    def sample(self, state, t, out) -> None:
-        self.sample_wp(state, t)
-        self.read(out)
 
 
 class GpsSensor(DeviceSensor):
@@ -469,15 +440,3 @@ class GpsSensor(DeviceSensor):
             ),
             outputs=(self._out, self.out.buffer),
         )
-
-    def read(self, out) -> None:
-        r = self._out.numpy()
-        out.gps_valid = True
-        out.lat_deg, out.lon_deg, out.alt_m = float(r[0]), float(r[1]), float(r[2])
-        out.vn, out.ve, out.vd = float(r[3]), float(r[4]), float(r[5])
-        out.ground_speed = float(r[6])
-        out.fix_type = self.fix_type
-
-    def sample(self, state, t, out) -> None:
-        self.sample_wp(state, t)
-        self.read(out)

@@ -100,9 +100,6 @@ class _Actuator:
 class _Sensor:
     capturable = True
 
-    def read(self, meas):
-        pass
-
     def stages(self):
         return [Stage("sample", "device", lambda tick: None)]
 
@@ -361,9 +358,6 @@ class _SetpointSensor:
 
     def __init__(self):
         self.setpoint = Signal("setpoint", wp.vec3, shape=(1,))
-
-    def read(self, meas):
-        pass
 
     def stages(self):
         return [Stage("sample", "device", lambda tick: None, reads=(self.setpoint,))]

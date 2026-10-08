@@ -68,7 +68,7 @@ class _LatePeerController:
     def connect(self):
         pass
 
-    def exchange(self, meas, t, timeout):
+    def exchange(self, t, timeout):
         reached = self.attached  # a message sent before the peer dials in reaches nobody
         self._tries += 1
         if not reached:
@@ -81,7 +81,7 @@ class _LatePeerController:
 
     def stages(self):
         def exchange(tick):
-            return self.exchange(tick.meas, tick.t, None) is not None
+            return self.exchange(tick.t, None) is not None
 
         return [Stage("read", "host", lambda tick: None), Stage("exchange", "host", exchange)]
 

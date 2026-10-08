@@ -8,7 +8,7 @@ are the single source of truth shared by the eager controller and the differenti
 import numpy as np
 import pytest
 
-from nexus_sim._src.core.schema import Controls, Measurement
+from nexus_sim._src.core.schema import Controls
 from nexus_sim.examples.controllers.pid import (
     DEFAULT_GAINS,
     NUM_GAINS,
@@ -52,17 +52,20 @@ def test_altitude_error_increases_thrust():
     assert a[0] > hover_action(1.9)
 
 
+@pytest.mark.usefixtures("warp_cpu")
 def test_exchange_reads_observation_or_provider():
+    import warp as wp
+
     c = PidController(goal_w=(0, 0, 1), thrust_to_weight=1.9)
-    meas = Measurement()
     with pytest.raises(RuntimeError):
-        c.exchange(meas, None, None)  # no observation, no provider
+        c.exchange(None, None)  # no observation, no provider
     c.bind_state_provider(lambda: ((0, 0, 1), (0, 0, 0, 1), (0, 0, 0), (0, 0, 0)))
-    assert np.asarray(c.exchange(meas, None, None).command).shape == (4,)
-    # and via meas.observation, the WarpObservationSensor plane
-    meas.observation = np.zeros(12, np.float32)
-    meas.observation[6:9] = [0, 0, 1]  # FRD level gravity
-    assert np.asarray(c.exchange(meas, None, None).command).shape == (4,)
+    assert np.asarray(c.exchange(None, None).command).shape == (4,)
+    # and via the signal observation, which the WarpObservationSensor writes: the buffer the loop hands it
+    obs = np.zeros(12, np.float32)
+    obs[6:9] = [0, 0, 1]  # FRD level gravity
+    c.observation.buffer = wp.array(obs, dtype=wp.float32)
+    assert c.exchange(None, None).command.numpy().shape == (4,)
 
 
 def test_act_from_state_matches_obs():

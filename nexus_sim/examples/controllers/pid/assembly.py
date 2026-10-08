@@ -109,9 +109,9 @@ def build_pid_orchestrator(
         weight=robot_mass * 9.81,
         moment_scale=moment_scale,
     )
-    # Device-native obs sensor: fills meas.observation with a Warp array so the PID's exchange runs
-    # on-device with no per-tick host hop -> the whole tick is one graph / tape-able. Its kernel reads
-    # the controller's setpoint, the goal a guidance writes, until the observation moves into PID's stage.
+    # Device-native obs sensor: writes the signal observation, which the PID's device stage reads, so the
+    # whole tick is one graph / tape-able. Its kernel reads the controller's setpoint, the goal a guidance
+    # writes, until the observation moves into PID's stage.
     sensors = [WarpObservationSensor(goal_w=goal_w, setpoint=controller.setpoint)]
     # Rendering enters here alone, as in the core assembly: an optional renderer plus its host-rate sensors.
     renderer, extra_sensors = renderer_factory(physics, vehicle_usd, cfg) if renderer_factory else (None, [])

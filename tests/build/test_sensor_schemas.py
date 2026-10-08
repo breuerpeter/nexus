@@ -1,11 +1,10 @@
 """A vehicle declares each analytic sensor with one applied schema on its mount prim, and the build makes it.
 
 Real builds on the Warp CPU backend of the local fixture vehicle in ``tests/usd/sensor_vehicle.py``,
-with the sensor prims a test adds, flown by a stand-in controller that keeps every ``Measurement`` it
-receives. Skipped without newton or pxr.
+with the sensor prims a test adds and, where a test reads what a sensor wrote, a stand-in estimator that
+keeps what each signal it reads holds. Skipped without newton or pxr.
 """
 
-import dataclasses
 import os
 import subprocess
 import sys
@@ -18,7 +17,8 @@ pytest.importorskip("pxr")
 
 from nexus_sim._src.config.catalog import load_catalog
 from nexus_sim._src.core.registry import default_registry
-from nexus_sim._src.core.schema import Measurement
+from nexus_sim._src.core.schema import BaroSample, GpsSample, ImuSample, MagSample
+from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
 from tests.usd import sensor_vehicle as sv
 
@@ -55,8 +55,27 @@ QUIET_OFF_BASE = (
 )
 
 
-def _field(meas) -> tuple:
-    return (meas.xmag, meas.ymag, meas.zmag)
+def _signals(*names: str) -> list[Signal]:
+    """The signals of the analytic sensors called `names`, each of its sensor's sample type, as a reader reads them."""
+    types = {"imu": ImuSample, "mag": MagSample, "baro": BaroSample, "gps": GpsSample}
+    return [Signal(name, types[name], shape=(1,)) for name in names]
+
+
+def _flat(sample, name: str) -> list[float]:
+    """The field `name` of a sensor's sample, as a flat list of floats."""
+    return [float(x) for x in sample[name].reshape(-1)]
+
+
+def _reading(tmp_path, body: str = "", *, signals: list[Signal], ticks: int, **kw) -> tuple:
+    """A run of the fixture with the prims `body` under its base body and a stand-in estimator that reads
+    `signals`: the loop, after `ticks` ticks, and what the estimator kept. `kw` goes to the vehicle and to the
+    build: `mast` to the vehicle, the rest to the build.
+    """
+    reader = sv.estimator(*signals)
+    path = sv.vehicle(tmp_path, body, mast=kw.pop("mast", None), estimator="")
+    loop = sv.build(path, components=sv.components(StandInEstimatorAPI=reader), **kw)
+    sv.steps(loop, ticks)
+    return loop, reader.kept
 
 
 def test_each_analytic_sensor_schema_on_an_xform_under_a_body_builds_that_sensor_with_its_authored_values(tmp_path):
@@ -89,23 +108,25 @@ def test_a_sensor_built_from_a_schema_gets_the_runs_site_values(tmp_path):
     catalog.write_text(
         f"scenes:\n  zurich:\n    geodetic_origin: {{ lat: {ZURICH[0]}, lon: {ZURICH[1]}, alt: {ZURICH[2]} }}\n"
     )
-    loop = sv.build(sv.vehicle(tmp_path, QUIET), scene="zurich", catalog=load_catalog(catalog))
-
-    (meas,) = sv.fly(loop, 1)
+    signals = _signals("gps", "mag", "baro")
+    _, kept = _reading(tmp_path, QUIET, signals=signals, ticks=1, scene="zurich", catalog=load_catalog(catalog))
+    (_, gps, mag, baro) = kept[-1]
 
     assert (
-        (meas.lat_deg, meas.lon_deg) == pytest.approx(ZURICH[:2], abs=1e-4),
-        _field(meas) == pytest.approx(ZURICH_NED, abs=FIELD_TOL),
-        meas.abs_pressure == pytest.approx(1013.22, abs=0.03),
-    ) == (True, True, True), meas
+        _flat(gps, "lat") + _flat(gps, "lon") == pytest.approx(ZURICH[:2], abs=1e-4),
+        _flat(mag, "field") == pytest.approx(ZURICH_NED, abs=FIELD_TOL),
+        _flat(baro, "pressure") == pytest.approx([1013.22], abs=0.03),
+    ) == (True, True, True), kept[-1]
 
 
 def _samples(tmp_path, name: str, seed: int) -> list[tuple]:
-    """Every sensor sample the controller receives in 100 ticks of the fixture with noise on, built with `seed`."""
+    """Every sensor sample an estimator reads in 100 ticks of the fixture with noise on, built with `seed`."""
     folder = tmp_path / name
     folder.mkdir()
-    loop = sv.build(sv.vehicle(folder, IMU + MAG + BARO + GPS), seed=seed)
-    return [dataclasses.astuple(meas) for meas in sv.fly(loop, 100)]
+    signals = _signals("imu", "mag", "baro", "gps")
+    _, kept = _reading(folder, IMU + MAG + BARO + GPS, signals=signals, ticks=100, seed=seed)
+    # Each field's bits, not the sample's: a struct's padding holds no value.
+    return [tuple(sample[name].tobytes() for sample in row[1:] for name in sample.dtype.names) for row in kept]
 
 
 def test_two_runs_with_one_seed_give_equal_sensor_samples_and_another_seed_gives_different_ones(tmp_path):
@@ -119,38 +140,29 @@ def test_two_runs_with_one_seed_give_equal_sensor_samples_and_another_seed_gives
     assert (len(first), first == second, first == other) == (100, True, False)
 
 
-def test_a_vehicle_with_two_magnetometers_builds_both_with_their_own_noise_and_the_first_fills_the_measurement(
-    tmp_path,
-):
-    """A vehicle can declare two sensors of one kind: both build, each draws its own noise, and the first declared fills `Measurement`.
+def test_a_vehicle_with_two_magnetometers_builds_both_and_each_draws_its_own_noise(tmp_path):
+    """A vehicle can declare two sensors of one kind: both build, and each draws its own noise.
 
-    Given the fixture with two magnetometer prims that author offsets of 0.1 and 0.2 gauss on the
-    forward axis and the same noise, when the run steps, then the loop holds two magnetometers, their
-    readings less their offsets differ, and the controller's `Measurement` carries the first prim's.
+    Given the fixture with two magnetometer prims that author offsets of 0.1 and 0.2 gauss on the forward axis
+    and the same noise, and a stand-in estimator that reads every magnetometer as a list, when the run steps,
+    then the loop holds two magnetometers, the first reads the field plus 0.1 gauss forward, and their readings
+    less their offsets differ.
     """
     noise = "float3 nexus:noise = (0.003, 0.003, 0.003)"
     mags = sv.prim("MagA", "NexusMagAPI", f"float3 nexus:offset = (0.1, 0, 0)\n{noise}") + sv.prim(
         "MagB", "NexusMagAPI", f"float3 nexus:offset = (0.2, 0, 0)\n{noise}"
     )
-    loop = sv.build(sv.vehicle(tmp_path, mags))
-    sensors = list(loop.sensors)
-
-    (meas,) = sv.fly(loop, 1)
-    readings = []
-    for sensor in sensors:
-        own = Measurement()
-        sensor.read(own)
-        readings.append(_field(own))
-    first, second = readings if len(readings) == 2 else ((0.0,) * 3,) * 2
+    loop, kept = _reading(tmp_path, mags, signals=[Signal("mag", list[MagSample], shape=(1,))], ticks=1)
+    (_, samples) = kept[-1]
+    first, second = [_flat(sample, "field") for sample in samples] if len(samples) == 2 else ([0.0] * 3,) * 2
     first_noise = (first[0] - 0.1, first[1], first[2])
     second_noise = (second[0] - 0.2, second[1], second[2])
 
     assert (
-        [type(s).__name__ for s in sensors],
+        [type(s).__name__ for s in loop.sensors],
+        first[0] == pytest.approx(WOODINVILLE_NED[0] + 0.1, abs=FIELD_TOL),
         first_noise != pytest.approx(second_noise, abs=1e-5),
-        _field(meas) == pytest.approx(first, abs=1e-6),
-        meas.xmag == pytest.approx(WOODINVILLE_NED[0] + 0.1, abs=FIELD_TOL),
-    ) == (["MagSensor", "MagSensor"], True, True, True), (readings, _field(meas))
+    ) == (["MagSensor", "MagSensor"], True, True), samples
 
 
 def test_a_magnetometer_barometer_or_gps_reads_its_parent_body_not_body_0(tmp_path):
@@ -161,17 +173,17 @@ def test_a_magnetometer_barometer_or_gps_reads_its_parent_body_not_body_0(tmp_pa
     altitude 1 m over the base body's, and the magnetometer the field in the second body's axes: north,
     west and up, where the base body's are north, east and down.
     """
-    loop = sv.build(sv.vehicle(tmp_path, mast=QUIET_OFF_BASE))
-
-    (meas,) = sv.fly(loop, 1)
+    loop, kept = _reading(tmp_path, signals=_signals("mag", "baro", "gps"), ticks=1, mast=QUIET_OFF_BASE)
     base_z = float(loop.physics.current_state.body_q.numpy()[0, 2])  # the base body, at rest on the ground
+    (_, mag, baro, gps) = kept[-1]
     north, east, down = WOODINVILLE_NED
+    (altitude,), (alt,) = _flat(baro, "altitude"), _flat(gps, "alt")
 
     assert (
-        meas.pressure_alt - base_z == pytest.approx(1.0, abs=0.05),
-        meas.alt_m - WOODINVILLE_ALT - base_z == pytest.approx(1.0, abs=0.05),
-        _field(meas) == pytest.approx((north, -east, -down), abs=FIELD_TOL),
-    ) == (True, True, True), (meas.pressure_alt, meas.alt_m, base_z, _field(meas))
+        altitude - base_z == pytest.approx(1.0, abs=0.05),
+        alt - WOODINVILLE_ALT - base_z == pytest.approx(1.0, abs=0.05),
+        _flat(mag, "field") == pytest.approx((north, -east, -down), abs=FIELD_TOL),
+    ) == (True, True, True), (altitude, alt, base_z, _flat(mag, "field"))
 
 
 def test_a_barometer_prim_with_a_non_zero_translation_fails_the_build_and_names_the_prim(tmp_path):
@@ -282,12 +294,12 @@ def test_an_analytic_sensor_still_samples_every_tick_whatever_rate_it_declares(t
     """An analytic sensor still samples every tick, whatever rate it declares.
 
     Given the fixture with a rate of 5 Hz authored on the barometer, whose noise is on, when the run
-    steps 10 ticks of 0.004 s, then the controller receives 10 different pressures, one fresh sample a tick.
+    steps 10 ticks of 0.004 s, then an estimator reads 10 different pressures, one fresh sample a tick.
     """
     baro = sv.prim("Baro0", "NexusBaroAPI", "float nexus:noise = 0.02\nfloat nexus:rate = 5")
-    loop = sv.build(sv.vehicle(tmp_path, baro))
+    _, kept = _reading(tmp_path, baro, signals=_signals("baro"), ticks=10)
 
-    pressures = [meas.abs_pressure for meas in sv.fly(loop, 10)]
+    pressures = [_flat(sample, "pressure")[0] for _, sample in kept]
 
     assert len(set(pressures)) == 10, pressures
 
@@ -298,8 +310,8 @@ def test_a_projects_own_sensor_schema_builds_its_class_with_the_runs_values_and_
     Given the stand-in package under `tests/usd/stand_in`, installed with a sensor schema and an entry
     in the entry-point group, when runs with seeds 7, 7 and 8 build a fixture applying the schema with a
     gain of 2.5 and step two ticks, then the class gets a tick of 0.004 s, the same seed in the first two
-    runs and another in the third, and its stage writes the gain into the `Measurement` the controller
-    receives. A child process, so the installed package changes no module state here.
+    runs and another in the third, and its stage writes the gain, which a stand-in estimator reads. A child
+    process, so the installed package changes no module state here.
     """
     site = tmp_path / "site"
     subprocess.run(
@@ -311,6 +323,8 @@ def test_a_projects_own_sensor_schema_builds_its_class_with_the_runs_values_and_
 import pathlib
 import warp as wp
 import nexus_sim
+from nexus_sim._src.core.signals import Signal
+from nexus_stand_in.sensor import Gain
 from tests.usd import sensor_vehicle as sv
 
 prims = sv.prim("Own", "StandInSensorAPI", "float nexus:gain = 2.5")
@@ -319,11 +333,14 @@ with wp.ScopedDevice("cpu"):
     for name, seed in (("a", 7), ("b", 7), ("c", 8)):
         folder = pathlib.Path({str(tmp_path)!r}) / name
         folder.mkdir()
-        loop = sv.build(sv.vehicle(folder, prims), seed=seed)
+        reader = sv.estimator(Signal("gain", Gain, shape=(1,)))
+        path = sv.vehicle(folder, prims, estimator="")
+        loop = sv.build(path, seed=seed, components=sv.components(StandInEstimatorAPI=reader))
         (own,) = loop.sensors
         seeds.append(own.seed)
         ticks.append(own.dt)
-        gains.append(sv.fly(loop, 2)[-1].eph)
+        sv.steps(loop, 2)
+        gains.append(float(reader.kept[-1][1]["value"][0]))
 print(">", type(own).__module__, seeds[0] == seeds[1], seeds[0] != seeds[2], ticks, gains)
 """
     env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(site), str(ROOT)])}

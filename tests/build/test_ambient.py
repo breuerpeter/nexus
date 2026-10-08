@@ -18,7 +18,8 @@ import warp as wp
 
 from nexus_sim._src.config import LaunchConfig
 from nexus_sim._src.config.catalog import load_catalog
-from nexus_sim._src.core.schema import Controls
+from nexus_sim._src.core.schema import BaroSample, Controls, GpsSample, ImuSample, MagSample
+from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.core.stages import peer_stages
 from tests.usd import sensor_vehicle as sv
 
@@ -40,21 +41,23 @@ SENSORS = (
 
 
 class _Controller:
-    """Answers the preroll at once and keeps the last measurement it received: the read and exchange
-    host stages over ``exchange``.
-    """
+    """Answers the preroll at once and keeps the last sample of each sensor its exchange read, by signal."""
 
     def __init__(self):
-        self.meas = None
+        self.signals = [
+            Signal(name, sample, shape=(1,))
+            for name, sample in (("imu", ImuSample), ("mag", MagSample), ("baro", BaroSample), ("gps", GpsSample))
+        ]
+        self.samples = {}
 
     def connect(self):
         pass
 
     def stages(self):
-        return peer_stages(self)
+        return peer_stages(self, reads=tuple(self.signals))
 
-    def exchange(self, meas, t, timeout=None):
-        self.meas = meas
+    def exchange(self, t, timeout=None):
+        self.samples = {signal.name: signal.read()[0] for signal in self.signals}
         return Controls(command=np.zeros(4))
 
     def close(self):
@@ -74,9 +77,9 @@ def _catalog(tmp_path):
 
 
 def _settled(launch, catalog):
-    """Build the run *launch* names, settle it on the ground and run its seed pass; the run and the
-    measurement of the settled state. A tick's exchange follows its step, so the settled state's
-    measurement is the seed pass's, and the run flies no tick.
+    """Build the run *launch* names, settle it on the ground and run its seed pass; the run and each sensor's
+    sample of the settled state, by signal. A tick's exchange follows its step, so the settled state's samples
+    are the seed pass's, and the run flies no tick.
 
     The build's ``force_cpu`` sets the Warp device, and the scope puts it back; a module fixture runs
     before the function-scoped ``warp_cpu`` fixture would.
@@ -90,11 +93,11 @@ def _settled(launch, catalog):
         controller = _Controller()
         orch = build_orchestrator(resolved.tested_config.vehicle, cfg, builder, controller=controller, max_steps=0)
         orch.run()
-    return orch, controller.meas
+    return orch, controller.samples
 
 
-def _field(meas):
-    return (meas.xmag, meas.ymag, meas.zmag)
+def _field(samples):
+    return samples["mag"]["field"]
 
 
 @pytest.fixture(scope="module")
@@ -138,36 +141,37 @@ def gravity_five_vehicle(tmp_path_factory):
 
 def test_the_magnetometer_reports_the_field_at_the_catalog_scenes_origin(zurich_scene):
     """The magnetometer of a run built on a catalog scene reports the WMM field at that scene's origin."""
-    _, meas = zurich_scene
+    _, samples = zurich_scene
 
-    np.testing.assert_allclose(_field(meas), ZURICH_NED, atol=FIELD_TOL)
+    np.testing.assert_allclose(_field(samples), ZURICH_NED, atol=FIELD_TOL)
 
 
 def test_a_geo_override_wins_over_the_catalog_origin(geo_override):
     """A `--geo` override wins over the catalog origin for every ambient value."""
-    _, meas = geo_override
+    _, samples = geo_override
 
-    np.testing.assert_allclose(_field(meas), ZURICH_NED, atol=FIELD_TOL)
+    np.testing.assert_allclose(_field(samples), ZURICH_NED, atol=FIELD_TOL)
 
 
 def test_a_scene_with_no_origin_reads_the_default_origins_field(empty_scene):
     """A scene whose catalog entry carries no origin resolves to the bundled default origin, Woodinville."""
-    _, meas = empty_scene
+    _, samples = empty_scene
 
-    np.testing.assert_allclose(_field(meas), WOODINVILLE_NED, atol=FIELD_TOL)
+    np.testing.assert_allclose(_field(samples), WOODINVILLE_NED, atol=FIELD_TOL)
 
 
 def test_a_scene_with_no_origin_reports_the_default_origin_on_gps(empty_scene):
     """A scene whose catalog entry carries no origin resolves to the bundled default origin, Woodinville."""
-    _, meas = empty_scene
+    _, samples = empty_scene
+    gps = samples["gps"]
 
-    assert (meas.lat_deg, meas.lon_deg) == pytest.approx(WOODINVILLE, abs=1e-4)
+    assert (float(gps["lat"]), float(gps["lon"])) == pytest.approx(WOODINVILLE, abs=1e-4)
 
 
 def test_the_imu_reports_the_gravity_the_physics_applies(gravity_five_vehicle):
     """The IMU reports the gravity the physics applies, one value."""
-    _, meas = gravity_five_vehicle
-    reported = math.hypot(meas.xacc, meas.yacc, meas.zacc)
+    _, samples = gravity_five_vehicle
+    reported = math.hypot(*(float(a) for a in samples["imu"]["accel"]))
 
     # The site's one gravity, 9.81: the model-gravity row pins the physics at it, and the IMU reads it.
     assert reported == pytest.approx(9.81, abs=0.1), f"the IMU reports {reported}"
@@ -175,10 +179,11 @@ def test_the_imu_reports_the_gravity_the_physics_applies(gravity_five_vehicle):
 
 def test_the_barometer_reports_the_sites_pressure_and_temperature(gravity_five_vehicle):
     """The barometer reports the site's pressure and temperature as before."""
-    orch, meas = gravity_five_vehicle
+    orch, samples = gravity_five_vehicle
     altitude = float(orch.physics.current_state.body_q.numpy()[0, 2])  # the settled base body, above the ground
     isa_pressure = 1013.25 * (1 - 2.25577e-5 * altitude) ** 5.25588
+    baro = samples["baro"]
 
-    assert (meas.abs_pressure, meas.pressure_alt, meas.temperature) == pytest.approx(
+    assert (float(baro["pressure"]), float(baro["altitude"]), float(baro["temperature"])) == pytest.approx(
         (isa_pressure, altitude, 25.0), abs=0.1
     )

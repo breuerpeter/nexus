@@ -22,7 +22,7 @@ pytest.importorskip("pxr")
 import newton
 from newton.sensors import SensorIMU
 
-from nexus_sim._src.core.schema import Measurement, SimTime
+from nexus_sim._src.core.schema import SimTime
 from nexus_sim._src.core.seedtree import SeedTree
 from nexus_sim._src.scene import Site
 from nexus_sim._src.vehicle.sensors.declared import build_sensors, sensor_specs
@@ -164,8 +164,7 @@ def _gaps(usd_path: str, *, spin=(0.0, 0.0, 0.0), hinge_rate: float = 0.0) -> tu
     state.joint_qd.assign(rates)
     newton.eval_fk(model, state.joint_q, state.joint_qd, state)
 
-    meas = Measurement()
-    imu.sample(state, SimTime(0.0, 0), meas)  # the first sample only seeds the IMU's earlier velocities
+    imu.sample_wp(state, SimTime(0.0, 0))  # the first sample only seeds the IMU's earlier velocities
     ours, theirs = [], []
     for k in range(TICKS):
         t = k * DT
@@ -176,8 +175,9 @@ def _gaps(usd_path: str, *, spin=(0.0, 0.0, 0.0), hinge_rate: float = 0.0) -> tu
         solver.step(state, other, None, None, DT)
         state, other = other, state
         reference.update(state)
-        imu.sample(state, SimTime((k + 1) * DT, k + 1), meas)
-        ours.append((meas.xgyro, meas.ygyro, meas.zgyro, meas.xacc, meas.yacc, meas.zacc))
+        imu.sample_wp(state, SimTime((k + 1) * DT, k + 1))
+        sample = imu.out.read()[0]
+        ours.append((*sample["gyro"].tolist(), *sample["accel"].tolist()))
         theirs.append((*reference.gyroscope.numpy()[0], *reference.accelerometer.numpy()[0]))
     ours, theirs = np.array(ours), np.array(theirs)
     gap = np.abs(ours - theirs)

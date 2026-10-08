@@ -14,10 +14,8 @@ class Gain:
 
 
 class StandInSensor:
-    """A sensor that keeps the seed and the tick the run hands it, and writes its gain where a reader reads it.
-
-    Its stage writes the gain as the signal `gain`, of the project's own type `Gain`, and into the
-    `Measurement`.
+    """A sensor that keeps the seed and the tick the run hands it, and writes its gain where a reader reads it:
+    the signal `gain`, of the project's own type `Gain`.
 
     Args:
         run: The run's values for this sensor; it reads `seed` and `dt`.
@@ -36,4 +34,3 @@ class StandInSensor:
 
     def _sample(self, tick) -> None:
         self.out.write([(self.gain,)])
-        tick.meas.eph = self.gain

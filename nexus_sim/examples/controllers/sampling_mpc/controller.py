@@ -444,7 +444,7 @@ class SamplingMPCController:
             pred = np.array([self.S[h].body_q.numpy()[best, :3] for h in range(self.horizon + 1)], dtype=np.float32)
             self._logger.log_strip("horizon", pred, color=(255, 140, 0))
 
-    def exchange(self, meas, t, timeout=None):
+    def exchange(self, t, timeout=None):
         from nexus_sim._src.core import Controls
 
         if not hasattr(self, "_step"):

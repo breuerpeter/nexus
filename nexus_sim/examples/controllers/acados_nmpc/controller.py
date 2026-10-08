@@ -279,7 +279,7 @@ class AcadosNMPCController:
         throttle = float(np.sqrt(np.clip(self.hover, 0.0, self.t_max) / self.ct) / self.rpm_max)
         return np.full(self.n, throttle, dtype=np.float32)
 
-    def exchange(self, meas, t, timeout=None):
+    def exchange(self, t, timeout=None):
         from nexus_sim._src.core import Controls
 
         self._read_setpoint()

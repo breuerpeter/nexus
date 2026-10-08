@@ -16,7 +16,7 @@ from nexus_sim._src.api.sim import Sim
 from nexus_sim._src.build.assembly import build_scenario
 from nexus_sim._src.core import Clock, Orchestrator
 from nexus_sim._src.core.interfaces import Stage, Tick
-from nexus_sim._src.core.schema import Measurement, PoseTwist, SimTime
+from nexus_sim._src.core.schema import PoseTwist, SimTime
 from nexus_sim._src.core.signals import Signal, wire
 from nexus_sim._src.core.stages import Bound
 from nexus_sim._src.guidance import MissionGuidance
@@ -137,7 +137,7 @@ def test_the_passthrough_writes_the_base_bodys_pose_and_twist_not_body_zeros():
     estimator = GroundTruthEstimator()
     stage = estimator.stages()[0]
     wire([Bound(stage, estimator, "estimator")])
-    stage.run(Tick(state=_TwoBodies(), t=SimTime(), dt=0.004, meas=Measurement(), base=1))
+    stage.run(Tick(state=_TwoBodies(), t=SimTime(), dt=0.004, base=1))
 
     row = _row(estimator.estimate.read()[0])
 

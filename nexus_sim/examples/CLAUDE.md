@@ -19,10 +19,10 @@ in the script, and it records its flight `.rrd`. The launcher map is `_EXAMPLES`
   takes a signal's `buffer`, and a host stage calls its `read()` and `write()`. A controller that
   solves on the host returns `peer_stages(self, reads=(self.setpoint, self.estimate))` from
   `nexus_sim._src.core.stages`: the Model Predictive Control (MPC), acados, and policy examples.
-  Those are the `read` and `exchange` host stages over its `exchange(meas, t, timeout)`, and the
-  `exchange` stage writes the `(1, 16)` `controls` signal. A device-native law, the Proportional
-  Integral Derivative (PID) example, states a device stage that writes its `(1, nr)` `controls`
-  signal. The loop never calls `exchange` itself. A controller with a peer, one with an `attached`
+  That is one host stage, `exchange`, over its `exchange(t, timeout)`, which writes the `(1, 16)`
+  `controls` signal. A device-native law, the Proportional Integral Derivative (PID) example, states a
+  device stage that reads the signal `observation`, which its observation sensor writes, and writes its
+  `(1, nr)` `controls` signal. The loop never calls `exchange` itself. A controller with a peer, one with an `attached`
   flag, connects after the capture, so its device buffers exist from construction. One without a
   peer connects before the warm pass.
 - An example hands the loop its rotor chain in one of two ways. One that sums the rotor wrench on

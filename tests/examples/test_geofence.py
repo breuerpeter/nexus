@@ -70,7 +70,7 @@ def _goal(guidance) -> tuple[float, float, float]:
 def _tick(guidance, pos, sim_time) -> Tick:
     """Run the guidance's stages once, as the loop does on one tick, and return that tick."""
     guidance.estimate.write([(pos, (0.0, 0.0, 0.0, 1.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))])  # the vehicle at `pos`
-    tick = Tick(state=None, t=SimTime(sim_time, 0), dt=0.004, meas=None)
+    tick = Tick(state=None, t=SimTime(sim_time, 0), dt=0.004)
     for stage in guidance.stages():
         stage.run(tick)
     return tick

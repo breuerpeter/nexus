@@ -7,8 +7,8 @@ controller -> [clear -> the command elements -> the force elements -> step] per 
 cuts the ring at its host stages and
 rotates it to start after the last cut, so each maximal run of device stages becomes one CUDA
 graph, the Real Time Factor (RTF) lever, and the host stages run between
-replays. One partition and one loop serve every arrangement: PX4, whose ``read`` and ``exchange``
-host stages block on its peer, a Model Predictive Control (MPC) solver that runs on the host, and a
+replays. One partition and one loop serve every arrangement: PX4, whose ``exchange`` host stage
+blocks on its peer, a Model Predictive Control (MPC) solver that runs on the host, and a
 device-native Proportional Integral Derivative (PID) law whose whole ring is one graph. On a CPU device the same segments run stage by stage, the bit-exact
 determinism gate. GPU physics is tolerance-gated, not bit-exact, so capture is an RTF optimization
 layered over the same component semantics.
@@ -28,9 +28,9 @@ from .interfaces import Stage, Tick
 from .logging import logger
 from .ports import PortMap
 from .profiling import LoopProfiler
-from .schema import Measurement, PoseTwist
+from .schema import PoseTwist
 from .signals import wire
-from .stages import build_ring, device_sensors, opening, partition, plan_line, seed_stages, stages_of, warm_stages
+from .stages import build_ring, opening, partition, plan_line, seed_stages, stages_of, warm_stages
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
@@ -133,9 +133,8 @@ class Orchestrator:
                 the North East Down (NED) origin and returns the initial state; its ``clear``
                 and ``step`` stages zero the shared ``body_f`` and integrate: collide + solver step
                 + double-buffer.
-            sensors: Iterable of sensors producing the Forward Right Down (FRD) ``Measurement``,
-                each a device stage into its own buffer plus ``read(meas)``, or a host stage for a
-                sensor whose work leaves the process. Stored as a list.
+            sensors: Iterable of sensors, each a device stage that writes its sample to a signal of its
+                own type, or a host stage for a sensor whose work leaves the process. Stored as a list.
             controller: Control boundary. ``connect()`` binds and starts the peer, and the
                 seed pass waits for it; its stages set the command buffer; ``close()`` tears down.
                 A controller with a peer exposes ``attached``, false until the peer dials in,
@@ -479,8 +478,6 @@ class Orchestrator:
                 state=state,
                 t=self.clock.now(),
                 dt=self.clock.dt / self.physics_substeps,
-                meas=Measurement(),
-                sensors=device_sensors(ring),
                 base=getattr(self.physics, "base_index", 0),  # a physics that finds none has body 0 as base
             )
             if self._device_clock is not None:

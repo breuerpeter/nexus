@@ -59,11 +59,11 @@ def test_captured_sensor_noise_dithers_per_replay():
 
 
 def test_captured_px4_sensors_match_eager():
-    """The Warp Measurement buffer, B: the Hardware In The Loop (HIL) sensors' kernels, sample_wp with no
-    host readback, join a CUDA graph; replay + one read() reproduces the eager sample() values, so the
-    PX4 device region is capturable. Validated with noise off so the result is step-independent.
+    """The Hardware In The Loop (HIL) sensors' kernels, sample_wp with no host readback, join a CUDA graph,
+    and a replay writes the samples an eager run writes, so the PX4 device region is capturable. Validated
+    with noise off so the result is step-independent.
     """
-    from nexus_sim._src.core.schema import Measurement, SimTime
+    from nexus_sim._src.core.schema import SimTime
     from nexus_sim._src.vehicle.sensors import BaroSensor, GpsSensor, ImuSensor, MagSensor
 
     with wp.ScopedDevice("cuda:0"):
@@ -78,9 +78,9 @@ def test_captured_px4_sensors_match_eager():
             ]
 
         eager = fresh()
-        m_eager = Measurement()
         for s in eager:
-            s.sample(view, SimTime(0.0, 0), m_eager)
+            s.sample_wp(view, SimTime(0.0, 0))
+        eager_imu, eager_mag, eager_baro, eager_gps = (s.out.read()[0] for s in eager)
 
         cap_sensors = fresh()
         # warmup: seeds the Inertial Measurement Unit (IMU) finite-diff prev so capture runs with first=0
@@ -91,16 +91,12 @@ def test_captured_px4_sensors_match_eager():
                 s.sample_wp(view, SimTime(0.0, 0))
         wp.capture_launch(cap.graph)
         wp.synchronize()
-        m_cap = Measurement()
-        for s in cap_sensors:
-            s.read(m_cap)
+        imu, mag, baro, gps = (s.out.read()[0] for s in cap_sensors)
 
         # noise off + static view -> deterministic, step-independent; captured == eager
-        assert (m_cap.xgyro, m_cap.ygyro, m_cap.zgyro) == pytest.approx(
-            (m_eager.xgyro, m_eager.ygyro, m_eager.zgyro), abs=1e-6
-        )
-        assert (m_cap.xmag, m_cap.ymag, m_cap.zmag) == pytest.approx((m_eager.xmag, m_eager.ymag, m_eager.zmag))
-        assert m_cap.abs_pressure == pytest.approx(m_eager.abs_pressure)
-        assert (m_cap.lat_deg, m_cap.lon_deg, m_cap.alt_m) == pytest.approx(
-            (m_eager.lat_deg, m_eager.lon_deg, m_eager.alt_m)
+        np.testing.assert_allclose(imu["gyro"], eager_imu["gyro"], atol=1e-6)
+        np.testing.assert_allclose(mag["field"], eager_mag["field"])
+        assert float(baro["pressure"]) == pytest.approx(float(eager_baro["pressure"]))
+        assert [float(gps[f]) for f in ("lat", "lon", "alt")] == pytest.approx(
+            [float(eager_gps[f]) for f in ("lat", "lon", "alt")]
         )

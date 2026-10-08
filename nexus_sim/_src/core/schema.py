@@ -3,8 +3,8 @@
 A signal that lives on the device takes a Warp struct this module declares, or a Warp value type. The
 hot-loop state is the physics backend's live ``newton.State``, which core never imports; the shared
 ``state.body_f`` device buffer realizes ``Wrench``, see the shared-buffer contract, so this module doesn't
-re-express it as a value type. ``Controls``, ``Measurement`` and ``SimTime`` are the small marshalled
-values that cross component boundaries on the host.
+re-express it as a value type. ``Controls`` and ``SimTime`` are the small marshalled values that cross
+component boundaries on the host.
 """
 
 from __future__ import annotations
@@ -149,81 +149,6 @@ class PointCloud:
     """The sim time the scan shows, seconds."""
     points: np.ndarray
     """The points, ``(n, 3)``, in the frame the Kit peer sends: world axes."""
-
-
-@dataclass(slots=True)
-class Measurement:
-    """Per-tick sensor bundle in the Forward Right Down (FRD) body frame / physical units.
-
-    For the slice the sensors fill one shared Measurement in place, the Hardware In The Loop (HIL)
-    bundle PX4 consumes; the controller serializes it to MAVLink wire units.
-    A field left at its default is simply one no sensor overrode this tick.
-    """
-
-    # --- Inertial Measurement Unit (IMU), HIL_SENSOR, in the axes of its mount: body FRD on an unturned one ---
-    xacc: float = 0.0
-    """Specific force (accelerometer) along the mount's X, forward on an unturned mount, m/s^2."""
-    yacc: float = 0.0
-    """Specific force (accelerometer) along the mount's Y, right on an unturned mount, m/s^2."""
-    zacc: float = 0.0  # specific force [m/s^2]
-    """Specific force (accelerometer) along the mount's Z, down on an unturned mount, m/s^2."""
-    xgyro: float = 0.0
-    """Angular rate about the mount's X, the roll axis on an unturned mount, rad/s."""
-    ygyro: float = 0.0
-    """Angular rate about the mount's Y, the pitch axis on an unturned mount, rad/s."""
-    zgyro: float = 0.0  # [rad/s]
-    """Angular rate about the mount's Z, the yaw axis on an unturned mount, rad/s."""
-    # --- Magnetometer, HIL_SENSOR, body FRD [gauss] ---
-    xmag: float = 0.0
-    """Magnetic field along body FRD X (forward), gauss."""
-    ymag: float = 0.0
-    """Magnetic field along body FRD Y (right), gauss."""
-    zmag: float = 0.0
-    """Magnetic field along body FRD Z (down), gauss."""
-    # --- Barometer, HIL_SENSOR ---
-    abs_pressure: float = 1013.25  # [hPa]
-    """Absolute (static) barometric pressure, hPa."""
-    pressure_alt: float = 0.0  # [m]
-    """Barometric pressure altitude, metres."""
-    temperature: float = 25.0  # [degC]
-    """Sensor temperature, degrees Celsius."""
-    # --- Global Positioning System (GPS), HIL_GPS, physical units ---
-    gps_valid: bool = False
-    """Whether the GPS fields hold a valid fix this tick."""
-    lat_deg: float = 0.0
-    """WGS84 latitude, degrees."""
-    lon_deg: float = 0.0
-    """WGS84 longitude, degrees."""
-    alt_m: float = 0.0  # altitude over mean sea level
-    """Altitude above mean sea level (AMSL), metres."""
-    vn: float = 0.0
-    """GPS velocity north component (NED frame), m/s."""
-    ve: float = 0.0
-    """GPS velocity east component (NED frame), m/s."""
-    vd: float = 0.0  # NED velocity [m/s]
-    """GPS velocity down component (NED frame), m/s."""
-    ground_speed: float = 0.0  # [m/s]
-    """Horizontal ground speed, m/s."""
-    fix_type: int = 3
-    """GPS fix type (MAVLink ``GPS_FIX_TYPE``; 3 = 3D fix)."""
-    eph: float = 1.0
-    """Horizontal position dilution of precision (dimensionless)."""
-    epv: float = 1.0
-    """Vertical position dilution of precision (dimensionless)."""
-    satellites: int = 10
-    """Number of satellites visible/used in the solution."""
-    # --- Perfect ground-truth kinematics for state-feedback consumers, cat-2 ---
-    # An optional slot a ground-truth Sensor fills, for example the RL policy observation, so a
-    # trained-policy Controller consumes it through the same exchange(meas) path as PX4.
-    # Left None when no such sensor runs; never serialized to MAVLink.
-    observation: Any = None
-    """Optional ground-truth observation for state-feedback consumers (cat-2).
-
-    A free-form slot a ground-truth ``Sensor`` fills (e.g. an RL policy observation
-    vector) so a trained-policy ``Controller`` reads it through the same
-    ``exchange(meas)`` path as PX4. ``None`` when no such sensor runs; never
-    serialized to MAVLink.
-    """
 
 
 # --- Setpoint: the guidance→controller command vocabulary ----------------

@@ -145,7 +145,7 @@ def test_a_vehicle_with_rtx_sensors_starts_the_kit_peer_once_and_stops_it_with_t
     second = sv.prim("Cam2", "NexusCameraAPI", kind="Camera")
 
     loop = sv.build(sv.vehicle(tmp_path, CAMERA + second + LIDAR), peers={"kit": kit})
-    sv.fly(loop, 2)
+    sv.steps(loop, 2)
 
     assert [peer.alive() for peer in started] == [False]
 

@@ -63,7 +63,7 @@ class _Stream:
     def stages(self):
         return peer_stages(self)
 
-    def exchange(self, meas, t, timeout=None):
+    def exchange(self, t, timeout=None):
         return Controls(command=stream(min(t.step_index, STREAM_TICKS - 1)))
 
     def close(self):

@@ -13,7 +13,6 @@ from .logging import logger
 from .orchestrator import Orchestrator
 from .schema import (
     Controls,
-    Measurement,
     PositionGoal,
     ReferenceTrajectory,
     Setpoint,
@@ -25,7 +24,6 @@ from .seedtree import SeedTree
 __all__ = [
     "Clock",
     "Controls",
-    "Measurement",
     "Orchestrator",
     "PositionGoal",
     "ReferenceTrajectory",

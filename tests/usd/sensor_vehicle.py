@@ -3,15 +3,13 @@
 The fixture is a local layer over ``fixture_vehicle.usda`` beside this module: a base body with a box
 collider, four rotor bodies with propellers on revolute joints, and the PX4 controller declared on its scope, with
 no mesh and no sensor. A test adds its own sensor prims. A run flies it in ``fixture_scene.usda``, an
-empty world, so a test reads no hosted asset. A stand-in controller answers at once and keeps
-every `Measurement` it receives, so a test reads what a controller reads. A stand-in estimator, which
-the stand-in schema `StandInEstimatorAPI` declares on a scope of its own, keeps what each signal it reads
-holds, so a test reads what an estimator reads.
+empty world, so a test reads no hosted asset. A stand-in controller answers at once with zero
+commands. A stand-in estimator, which the stand-in schema `StandInEstimatorAPI` declares on a scope of its
+own, keeps what each signal it reads holds, so a test reads what a sensor wrote.
 """
 
 from __future__ import annotations
 
-import dataclasses
 from importlib.metadata import entry_points
 from pathlib import Path
 from typing import ClassVar
@@ -139,11 +137,10 @@ over "vehicle"
 
 
 class Controller:
-    """A stand-in controller: it answers at once with zero commands and keeps each `Measurement` it receives."""
+    """A stand-in controller: it answers at once with zero commands."""
 
     def __init__(self, **kwargs):
         self.airframe = kwargs.get("airframe")
-        self.received = []
 
     def connect(self):
         pass
@@ -154,8 +151,7 @@ class Controller:
     def stages(self):
         return peer_stages(self)
 
-    def exchange(self, meas, t, timeout=None):
-        self.received.append(dataclasses.replace(meas))
+    def exchange(self, t, timeout=None):
         return Controls(command=np.zeros(4))
 
 
@@ -247,13 +243,3 @@ def steps(loop, ticks: int) -> int:
         n += 1
     loop.close()
     return n
-
-
-def fly(loop, ticks: int) -> list:
-    """Step `loop` for `ticks` control ticks, close it, and return each `Measurement` its controller received in them."""
-    n = 0
-    while n < ticks and loop.step():
-        n += 1
-    received = loop.controller.received[-n:] if n else []
-    loop.close()
-    return received
