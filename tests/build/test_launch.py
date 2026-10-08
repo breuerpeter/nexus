@@ -59,11 +59,12 @@ def daemon(monkeypatch, tmp_path):
     return runs
 
 
-# A vehicle that declares PX4 and the PX4 SITL peer on its root prim, and nothing else.
+# A vehicle that declares PX4 and the PX4 SITL peer on its controller's scope, and nothing else.
 PX4_VEHICLE = (
     b'#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n\n'
-    b'def Xform "vehicle" (\n    prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n)\n'
-    b'{\n    string nexus:airframe = "80001"\n}\n'
+    b'def Xform "vehicle"\n{\n'
+    b'    def Scope "Controller" (\n        prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n    )\n'
+    b'    {\n        string nexus:airframe = "80001"\n    }\n}\n'
 )
 
 
@@ -181,6 +182,20 @@ def test_build_from_launch_starts_the_px4_peer_before_the_assembly(tmp_path, mon
 
 # --- the controller a vehicle Universal Scene Description (USD) file declares ------------------------
 
+# A vehicle that declares PX4 on its controller's scope, and nothing else.
+PX4_SCOPED = """\
+def Xform "vehicle"
+{
+    def Scope "Controller" (
+        prepend apiSchemas = ["NexusPx4API"]
+    )
+    {
+        string nexus:airframe = "foo"
+    }
+}
+"""
+
+# PX4 on the vehicle's root prim, an Xform, which the PX4 schema doesn't apply to.
 PX4_ROOT = """\
 def Xform "vehicle" (
     prepend apiSchemas = ["NexusPx4API"]
@@ -224,7 +239,7 @@ def test_the_receipt_records_the_airframe_the_vehicle_usd_declares(tmp_path):
     """
     from nexus_sim._src.build.launch import resolve_vehicle_usd
 
-    lc = LaunchConfig().set_vehicle(_local_vehicle(tmp_path, PX4_ROOT)).set_scene("empty")
+    lc = LaunchConfig().set_vehicle(_local_vehicle(tmp_path, PX4_SCOPED)).set_scene("empty")
     _, resolved = resolve_vehicle_usd(lc, _catalog(tmp_path), cache_dir=tmp_path / "cache")
 
     assert resolved.tested_config.model_dump(mode="json")["px4"] == {"airframe": "foo"}
@@ -261,15 +276,18 @@ class _StandInController:
 def test_a_vehicle_that_declares_two_controllers_fails_the_build(tmp_path, daemon):
     """A vehicle that declares two controllers fails the build.
 
-    Given a vehicle USD whose root prim applies two controller schemas, when a run builds, then it
-    raises before any peer starts, and the error names the prim and both schemas.
+    Given a vehicle USD whose controller's scope applies PX4's schema and whose child `Xform` applies a
+    stand-in controller schema, when a run builds, then it raises before any peer starts, and the error
+    names the vehicle's root prim and both schemas.
     """
     from nexus_sim._src.core.registry import ComponentRegistry, default_registry
 
     components = ComponentRegistry(
         {"NexusPx4API": default_registry().resolve("NexusPx4API"), "StandInAPI": _StandInController}
     )
-    two = PX4_ROOT.replace('["NexusPx4API"]', '["NexusPx4API", "StandInAPI"]')
+    # The stand-in schema applies to an Xformable prim, so it sits on an Xform of its own.
+    stand_in = '    def Xform "StandIn" (\n        prepend apiSchemas = ["StandInAPI"]\n    )\n    {\n    }\n}\n'
+    two = PX4_SCOPED.removesuffix("}\n") + stand_in
 
     with pytest.raises(ValueError) as err:
         _build(tmp_path, two, components=components)
@@ -278,25 +296,13 @@ def test_a_vehicle_that_declares_two_controllers_fails_the_build(tmp_path, daemo
     assert (named, daemon) == ([True, True, True], [])
 
 
-def test_a_controller_schema_off_the_root_prim_fails_the_build(tmp_path, daemon):
-    """A controller schema off the root prim fails the build.
-
-    Given a vehicle USD whose PX4 schema sits on a child prim, when a run builds, then it raises and
-    names that prim.
-    """
-    child = 'def Xform "vehicle"\n{\n' + PX4_ROOT.replace('"vehicle"', '"fc"') + "}\n"
-
-    with pytest.raises(ValueError, match="/vehicle/fc"):
-        _build(tmp_path, child)
-
-
 def test_a_px4_schema_with_no_airframe_authored_fails_the_build(tmp_path, daemon):
     """A PX4 schema with no airframe authored fails the build.
 
     Given a vehicle USD whose PX4 schema authors no airframe, when a run builds, then it raises before
     PX4 starts and names the prim, with no fallback to `astro_max`.
     """
-    bare = PX4_ROOT.replace('    string nexus:airframe = "foo"\n', "")
+    bare = PX4_SCOPED.replace('        string nexus:airframe = "foo"\n', "")
 
     with pytest.raises(ValueError) as err:
         _build(tmp_path, bare)
@@ -304,17 +310,144 @@ def test_a_px4_schema_with_no_airframe_authored_fails_the_build(tmp_path, daemon
     assert ("/vehicle" in str(err.value), daemon) == (True, [])
 
 
+# --- the controller's scope: a prim of its own, of type Scope, under the root -----------------------
+
+
+def _scoped(scopes: dict[str, str]) -> str:
+    """A vehicle root `/vehicle`, an `Xform`, holding one `Scope` per entry of `scopes`, each applying the
+    schemas its value lists, and the PX4 schema's airframe, `foo`, on the scope that applies it.
+    """
+    body = ""
+    for name, schemas in scopes.items():
+        airframe = '        string nexus:airframe = "foo"\n' if "NexusPx4API" in schemas else ""
+        body += f'    def Scope "{name}" (\n        prepend apiSchemas = [{schemas}]\n    )\n    {{\n{airframe}    }}\n'
+    return f'def Xform "vehicle"\n{{\n{body}}}\n'
+
+
+class _Px4Peer:
+    """The PX4 SITL peer in the peer mapping: it keeps the airframe the build hands it and starts no process."""
+
+    @staticmethod
+    def claim_instance():
+        return 0, None
+
+    def __init__(self, *, airframe: str, **run):
+        self.airframe = airframe
+
+    def start(self):
+        pass
+
+    def stop(self):
+        pass
+
+    def alive(self):
+        return True
+
+
+def _build_message(tmp_path, monkeypatch, prims: str) -> str:
+    """The error a run of a local vehicle defined by `prims` fails with, or `no error`; the assembly
+    step returns at once, so the vehicle needs no physics.
+    """
+    import nexus_sim._src.build.launch as L
+
+    monkeypatch.setattr(L, "build_orchestrator", lambda label, cfg, **kw: kw)
+    try:
+        _build(tmp_path, prims)
+    except ValueError as exc:
+        return str(exc)
+    return "no error"
+
+
+@pytest.mark.parametrize("scope", ["Controller", "Autopilot"])
+def test_a_vehicle_that_declares_px4_on_a_scope_flies_px4_and_starts_the_peer(tmp_path, monkeypatch, daemon, scope):
+    """A vehicle that declares PX4 and the PX4 SITL peer on a `Scope` flies PX4 and starts the peer.
+
+    Given a local vehicle whose `Scope` `/vehicle/Controller` applies `NexusPx4API` with airframe `foo`
+    and `NexusPx4SitlAPI`, its root `Xform` applying neither, and a stand-in PX4 SITL peer mapped, when
+    the run builds, then it flies PX4 with airframe `foo` and starts the peer once; and once with the
+    scope named `/vehicle/Autopilot`.
+    """
+    import nexus_sim._src.build.launch as L
+
+    monkeypatch.setattr(L, "build_orchestrator", lambda label, cfg, **kw: kw)
+    vehicle = _scoped({scope: '"NexusPx4API", "NexusPx4SitlAPI"'})
+
+    kw = _build(tmp_path, vehicle, peers={"px4_sitl": _Px4Peer})
+
+    assert (kw["controller"].airframe, [p.airframe for p in kw["peers"]]) == ("foo", ["foo"])
+
+
+@pytest.mark.parametrize(
+    "prims, prim",
+    [
+        ('def Xform "vehicle"\n{\n' + PX4_ROOT.replace('"vehicle"', '"Controller"') + "}\n", "/vehicle/Controller"),
+        (PX4_ROOT, "/vehicle"),
+    ],
+    ids=["xform-child", "root"],
+)
+def test_the_px4_schema_on_a_prim_that_is_not_a_scope_fails_the_build(tmp_path, monkeypatch, daemon, prims, prim):
+    """`NexusPx4API` on a prim that isn't a `Scope` fails the build and says it applies to a `Scope`.
+
+    Given a local vehicle whose `Xform` `/vehicle/Controller` applies `NexusPx4API` with airframe `foo`,
+    when the run builds, then it fails before any peer starts, and the error names the prim and
+    `NexusPx4API` and says the schema applies to a `Scope`; and once with the schema on the root `Xform`
+    `/vehicle`.
+    """
+    message = _build_message(tmp_path, monkeypatch, prims)
+
+    named = [f"{prim}:" in message, "NexusPx4API" in message, "Scope" in message]
+    assert (named, daemon) == ([True, True, True], []), message
+
+
+@pytest.mark.parametrize(
+    "scopes, prim",
+    [
+        ({"Controller": '"NexusPx4SitlAPI"'}, "/vehicle/Controller"),
+        ({"Controller": '"NexusPx4API"', "Peer": '"NexusPx4SitlAPI"'}, "/vehicle/Peer"),
+    ],
+    ids=["peer-alone", "peer-on-another-scope"],
+)
+def test_the_px4_sitl_peer_on_a_prim_with_no_px4_schema_fails_the_build(tmp_path, monkeypatch, daemon, scopes, prim):
+    """The PX4 SITL peer on a prim with no `NexusPx4API` fails the build and names the prim and the peer's schema.
+
+    Given a local vehicle whose `Scope` `/vehicle/Controller` applies `NexusPx4SitlAPI` alone, when the
+    run builds, then it fails before any peer starts, and the error names `/vehicle/Controller` and
+    `NexusPx4SitlAPI`; and once with `NexusPx4API` on `/vehicle/Controller` and `NexusPx4SitlAPI` on a
+    second `Scope` `/vehicle/Peer`, naming `/vehicle/Peer`.
+    """
+    message = _build_message(tmp_path, monkeypatch, _scoped(scopes))
+
+    named = [f"{prim}:" in message, "NexusPx4SitlAPI" in message]
+    assert (named, daemon) == ([True, True], []), message
+
+
+def test_a_controller_scope_outside_the_vehicles_root_prim_fails_the_build(tmp_path, monkeypatch, daemon):
+    """A controller's scope outside the vehicle's root prim fails the build and names the prim and the root.
+
+    Given a local vehicle whose root `Xform` `/vehicle` applies nothing and a `Scope` `/Controller`, a
+    sibling of the root, that applies `NexusPx4API` and `NexusPx4SitlAPI`, when the run builds, then it
+    fails before any peer starts, and the error names `/Controller` and `/vehicle`.
+    """
+    sibling = (
+        'def Xform "vehicle"\n{\n}\n\n'
+        'def Scope "Controller" (\n    prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n)\n'
+        '{\n    string nexus:airframe = "foo"\n}\n'
+    )
+
+    message = _build_message(tmp_path, monkeypatch, sibling)
+
+    named = ["/Controller:" in message, "/vehicle" in message]
+    assert (named, daemon) == ([True, True], []), message
+
+
 # --- the override layer a run composes over its vehicle --------------------------------------------
 
-# A vehicle that declares PX4 and the PX4 SITL peer on its root prim, and nothing else.
-PX4_SITL_ROOT = """\
-def Xform "vehicle" (
-    prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]
-)
-{
-    string nexus:airframe = "foo"
-}
-"""
+# A vehicle that declares PX4 and the PX4 SITL peer on its controller's scope, and nothing else.
+PX4_SITL_SCOPED = PX4_SCOPED.replace('["NexusPx4API"]', '["NexusPx4API", "NexusPx4SitlAPI"]')
+
+
+# A layer that sets the PX4 schema's airframe to `bar` on the controller's scope.
+_AIRFRAME_BAR = 'over "vehicle"\n{\n    over "Controller"\n    {\n        string nexus:airframe = "bar"\n    }\n}\n'
 
 
 def _layer(tmp_path, body: str, name: str = "override.usda") -> Path:
@@ -339,14 +472,14 @@ class _Handed(Px4Fake):
 
 def _referenced(tmp_path, metadata: str = "", contents: str = "") -> str:
     """A local vehicle whose root prim `/vehicle` references the local fixture vehicle of
-    ``tests/usd/sensor_vehicle.py``, which flies airframe `astro_max`, and declares the PX4 SITL peer,
-    with `metadata` and `contents` of the root prim's own.
+    ``tests/usd/sensor_vehicle.py``, which flies airframe `astro_max`, and declares the PX4 SITL peer on
+    its controller's scope, with `metadata` and `contents` of the root prim's own.
     """
+    peer = '    over "Controller" (\n        prepend apiSchemas = ["NexusPx4SitlAPI"]\n    )\n    {\n    }\n'
     path = tmp_path / "referencing_vehicle.usda"
     path.write_text(
         f'#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n\n'
-        f'def Xform "vehicle" (\n    references = @{sv.BASE}@\n'
-        f'    prepend apiSchemas = ["NexusPx4SitlAPI"]\n{metadata})\n{{\n{contents}}}\n'
+        f'def Xform "vehicle" (\n    references = @{sv.BASE}@\n{metadata})\n{{\n{peer}{contents}}}\n'
     )
     return str(path)
 
@@ -370,10 +503,10 @@ def test_a_layer_that_changes_a_declared_value_changes_what_the_run_builds(tmp_p
     """A layer that changes a declared value changes what the run builds.
 
     Given a vehicle that references the local fixture vehicle, whose PX4 schema declares airframe
-    `astro_max`, and a layer that sets `nexus:airframe` to `bar` on its root prim, when the run builds
-    with the PX4 SITL peer sent to a fake, then the build hands the fake airframe `bar`.
+    `astro_max`, and a layer that sets `nexus:airframe` to `bar` on its controller's scope, when the run
+    builds    with the PX4 SITL peer sent to a fake, then the build hands the fake airframe `bar`.
     """
-    layer = _layer(tmp_path, 'over "vehicle"\n{\n    string nexus:airframe = "bar"\n}\n')
+    layer = _layer(tmp_path, _AIRFRAME_BAR)
 
     assert _handed_airframe(tmp_path, _referenced(tmp_path), layer) == ["bar"]
 
@@ -387,8 +520,11 @@ def test_a_layer_that_selects_a_variant_builds_that_variant(tmp_path, warp_cpu):
     """
     metadata = '    variants = {\n        string airframe = "a"\n    }\n    prepend variantSets = "airframe"\n'
     contents = (
-        '    variantSet "airframe" = {\n        "a" {\n            string nexus:airframe = "a"\n        }\n'
-        '        "b" {\n            string nexus:airframe = "b"\n        }\n    }\n'
+        '    variantSet "airframe" = {\n'
+        '        "a" {\n            over "Controller"\n            {\n                string nexus:airframe = "a"\n'
+        "            }\n        }\n"
+        '        "b" {\n            over "Controller"\n            {\n                string nexus:airframe = "b"\n'
+        "            }\n        }\n    }\n"
     )
     layer = _layer(tmp_path, 'over "vehicle" (\n    variants = {\n        string airframe = "b"\n    }\n)\n{\n}\n')
 
@@ -440,8 +576,8 @@ def test_the_receipt_records_the_layers_hash_beside_the_vehicle_assets(tmp_path)
     """
     from nexus_sim._src.config import resolve
 
-    vehicle = _local_vehicle(tmp_path, PX4_SITL_ROOT)
-    layer = _layer(tmp_path, 'over "vehicle"\n{\n    string nexus:airframe = "bar"\n}\n')
+    vehicle = _local_vehicle(tmp_path, PX4_SITL_SCOPED)
+    layer = _layer(tmp_path, _AIRFRAME_BAR)
     before = hashlib.sha256(layer.read_bytes()).hexdigest()
     first = resolve(_layered(tmp_path, vehicle, layer), _catalog(tmp_path), cache_dir=tmp_path / "cache")
     layer.write_text(layer.read_text().replace('"bar"', '"baz"'))
@@ -592,7 +728,7 @@ def test_a_layer_path_that_does_not_exist_fails_before_any_peer_starts(tmp_path,
     import nexus_sim._src.build.launch as L
 
     missing = tmp_path / "no_such_layer.usda"
-    launch = _layered(tmp_path, _local_vehicle(tmp_path, PX4_SITL_ROOT), missing)
+    launch = _layered(tmp_path, _local_vehicle(tmp_path, PX4_SITL_SCOPED), missing)
 
     with pytest.raises(FileNotFoundError) as err:
         L.build_from_launch(launch, catalog=_catalog(tmp_path), cache_dir=tmp_path / "cache")

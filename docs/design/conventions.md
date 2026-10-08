@@ -34,6 +34,13 @@ published Protocol. Fixed is about publishing no resolver, not
 about which directory the implementation sits in: `_src/physics/` imports `newton`, which
 `.importlinter` keeps out of `core/`, and no module imports Kit, which runs only in the Kit peer.
 
+A declared component with no geometry, the controller and the estimator, sits on a prim of its own
+under the vehicle's root prim. That prim is a `Scope`, OpenUSD's grouping prim with no transform, as
+an asset keeps its materials under a `Looks` scope. By convention its name is its role, such as
+`/astro_max/Controller` and `/astro_max/Estimator`: the build finds a component by its schema, not
+by its path. PX4's schemas, `NexusPx4API` and `NexusPx4SitlAPI`, apply to a `Scope` alone. A sensor
+sits on its mount prim, under the body it rides.
+
 ## How a peer enters a run
 
 A [peer](concepts.md#peer) enters a run in one of two ways, and one question separates them: does
@@ -41,7 +48,7 @@ the peer have a counterpart on the real vehicle?
 
 - A **declared peer** stands in for a part of the vehicle, so the vehicle's USD declares it with a
   [schema](concepts.md#schema). PX4 Software In The Loop (SITL) stands in for the flight controller, and
-  `NexusPx4SitlAPI` on the vehicle's root prim declares it. The run starts it, and a run's override
+  `NexusPx4SitlAPI` on the controller's scope declares it. The run starts it, and a run's override
   layer drops the declaration to attach to a process started elsewhere.
 - A **required peer** is part of the model that replaces a real component, so the component's class
   requires it, and no asset names it. The real camera is the component, and the Kit render peer is how

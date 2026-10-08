@@ -98,12 +98,17 @@ def assembly(monkeypatch, tmp_path):
 
 _DECLARED = (
     '#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n\n'
-    'def Xform "vehicle" (\n    prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n)\n'
-    '{\n    string nexus:airframe = "astro_max"\n}\n'
+    'def Xform "vehicle"\n{\n'
+    '    def Scope "Controller" (\n        prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n    )\n'
+    '    {\n        string nexus:airframe = "astro_max"\n    }\n}\n'
 )
 
-# A layer that drops the PX4 SITL peer's declaration, so the run attaches to an autopilot started elsewhere.
-_DROP_PX4_SITL = '#usda 1.0\n\nover "vehicle" (\n    delete apiSchemas = ["NexusPx4SitlAPI"]\n)\n{\n}\n'
+# A layer that drops the PX4 SITL peer's declaration from the controller's scope, so the run attaches to an
+# autopilot started elsewhere.
+_DROP_PX4_SITL = (
+    '#usda 1.0\n\nover "vehicle"\n{\n'
+    '    over "Controller" (\n        delete apiSchemas = ["NexusPx4SitlAPI"]\n    )\n    {\n    }\n}\n'
+)
 
 
 class _Px4OnInstance2:

@@ -77,7 +77,7 @@ def test_two_versions_of_one_family_build_side_by_side_each_its_own_class(tmp_pa
 def test_an_undefined_version_of_a_defined_family_fails_the_build(tmp_path):
     """A prim that applies an undefined version of a family a plugin defines fails the build, naming the prim, the version it applies and the framework version.
 
-    Given the fixture's root prim applying `NexusPx4SitlAPI_9` and authoring no `nexus:` attribute, when
+    Given the fixture's controller scope applying `NexusPx4SitlAPI_9` and authoring no `nexus:` attribute, when
     resolved, then the build fails and the message carries the prim path, `NexusPx4SitlAPI_9` and the
     version of the installed framework.
     """

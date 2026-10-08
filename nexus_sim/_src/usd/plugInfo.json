@@ -73,7 +73,7 @@
             "bases": ["UsdAPISchemaBase"],
             "schemaIdentifier": "NexusPx4API",
             "schemaKind": "singleApplyAPI",
-            "apiSchemaCanOnlyApplyTo": ["Xformable"]
+            "apiSchemaCanOnlyApplyTo": ["Scope"]
           },
           "NexusSchemaPx4SitlAPI": {
             "alias": {"UsdSchemaBase": "NexusPx4SitlAPI"},
@@ -81,7 +81,7 @@
             "bases": ["UsdAPISchemaBase"],
             "schemaIdentifier": "NexusPx4SitlAPI",
             "schemaKind": "singleApplyAPI",
-            "apiSchemaCanOnlyApplyTo": ["Xformable"]
+            "apiSchemaCanOnlyApplyTo": ["Scope"]
           }
         }
       },
