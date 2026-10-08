@@ -19,11 +19,12 @@ from typing import ClassVar
 import numpy as np
 
 from nexus_sim._src.config import LaunchConfig
+from nexus_sim._src.core.clock import DeviceClock
 from nexus_sim._src.core.interfaces import Stage
 from nexus_sim._src.core.registry import ComponentRegistry
 from nexus_sim._src.core.schema import Controls
-from nexus_sim._src.core.signals import Signal
-from nexus_sim._src.core.stages import peer_stages
+from nexus_sim._src.core.signals import Signal, wire
+from nexus_sim._src.core.stages import Bound, peer_stages
 from nexus_sim._src.usd import ENTRY_POINT_GROUP
 
 BASE = Path(__file__).with_name("fixture_vehicle.usda")
@@ -198,6 +199,17 @@ def estimator(*reads: Signal) -> type:
             return [Stage("count", "device", count), Stage("estimate", "host", keep, reads=tuple(reads))]
 
     return StandInEstimator
+
+
+def wired(sensor, time: float = 0.0):
+    """`sensor`, its signals wired as a run wires them and the tick's sim time on the device at `time`, for a
+    test that samples it outside a run.
+    """
+    clock = DeviceClock(0.004)
+    pairs = ((clock, "clock"), (sensor, "sensor"))
+    wire([Bound(stage, component, role) for component, role in pairs for stage in component.stages()])
+    clock.time.write([time])
+    return sensor
 
 
 def components(**entries) -> ComponentRegistry:

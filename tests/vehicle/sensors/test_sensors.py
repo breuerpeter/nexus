@@ -18,6 +18,7 @@ from nexus_sim._src.core.schema import Measurement, SimTime
 from nexus_sim._src.core.seedtree import SeedTree
 from nexus_sim._src.scene import Site
 from nexus_sim._src.vehicle.sensors import BaroSensor, GpsSensor, ImuSensor, MagSensor
+from tests.usd import sensor_vehicle as sv
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")
 
@@ -47,7 +48,7 @@ def _run(mag_ned=_MAG_NED, body: int = 0) -> SensorRun:
 
 def test_imu_gyro_parity():
     view = _WarpView((0.0, 0.0, 1.0), _Q, (0.0, 0.0, 0.0), (0.3, -0.4, 0.5))
-    s = ImuSensor(_run(), acc_noise=0.0, gyro_noise=0.0)
+    s = sv.wired(ImuSensor(_run(), acc_noise=0.0, gyro_noise=0.0))
     meas = Measurement()
     s.sample(view, SimTime(0.0, 0), meas)
     wp.synchronize()
@@ -57,7 +58,7 @@ def test_imu_gyro_parity():
 
 
 def test_imu_accel_finite_diff_parity():
-    s = ImuSensor(_run(), acc_noise=0.0, gyro_noise=0.0)
+    s = sv.wired(ImuSensor(_run(), acc_noise=0.0, gyro_noise=0.0))
     meas = Measurement()
     v1, v2 = (0.0, 0.0, 0.0), (0.04, -0.02, 0.06)  # velocity change over one tick
     s.sample(_WarpView((0, 0, 1), _Q, v1, (0.3, -0.4, 0.5)), SimTime(0.0, 0), meas)  # first: accel 0
@@ -73,7 +74,7 @@ def test_imu_accel_finite_diff_parity():
 
 def test_mag_parity():
     view = _WarpView((0, 0, 1), _Q, (0, 0, 0), (0, 0, 0))
-    s = MagSensor(_run(), offset=(0.01, -0.02, 0.0), noise=(0.0, 0.0, 0.0))
+    s = sv.wired(MagSensor(_run(), offset=(0.01, -0.02, 0.0), noise=(0.0, 0.0, 0.0)))
     meas = Measurement()
     s.sample(view, SimTime(0.0, 0), meas)
     wp.synchronize()
@@ -86,8 +87,8 @@ def test_mag_parity():
 def test_baro_and_gps_parity():
     pos = (12.0, -7.0, 30.0)
     view = _WarpView(pos, _Q, (1.5, -0.5, 0.2), (0, 0, 0))
-    BaroSensor(_run(), noise=0.0).sample(view, SimTime(0.0, 0), m := Measurement())
-    GpsSensor(_run()).sample(view, SimTime(0.0, 0), m)
+    sv.wired(BaroSensor(_run(), noise=0.0)).sample(view, SimTime(0.0, 0), m := Measurement())
+    sv.wired(GpsSensor(_run())).sample(view, SimTime(0.0, 0), m)
     wp.synchronize()
     assert m.abs_pressure == pytest.approx(1013.25 * (1 - 2.25577e-5 * 30.0) ** 5.25588, abs=1e-3)
     assert m.pressure_alt == pytest.approx(30.0, abs=1e-4)
@@ -108,7 +109,7 @@ def test_world_to_ned_is_a_proper_rotation():
     inv_lon_scale = 1.0 / (111000.0 * math.cos(math.radians(ref_lat)))
 
     def gps_at(pos, vel=(0.0, 0.0, 0.0)):
-        GpsSensor(_run()).sample(
+        sv.wired(GpsSensor(_run())).sample(
             _WarpView(pos, (0.0, 0.0, 0.0, 1.0), vel, (0, 0, 0)), SimTime(0.0, 0), m := Measurement()
         )
         wp.synchronize()
@@ -126,7 +127,7 @@ def test_world_to_ned_is_a_proper_rotation():
 
     # The mag map's basis images, read out of the magnetometer at identity attitude.
     for ned, want in ((n_world, n_world), ((0.0, 1.0, 0.0), e_world), ((0.0, 0.0, 1.0), d_world)):
-        MagSensor(_run(mag_ned=ned), noise=(0.0, 0.0, 0.0)).sample(
+        sv.wired(MagSensor(_run(mag_ned=ned), noise=(0.0, 0.0, 0.0))).sample(
             _WarpView((0, 0, 1), (0.0, 0.0, 0.0, 1.0), (0, 0, 0), (0, 0, 0)), SimTime(0.0, 0), m := Measurement()
         )
         wp.synchronize()
@@ -150,9 +151,9 @@ def test_a_magnetometer_barometer_and_gps_read_the_body_the_run_names():
     view.body_qd = wp.array(np.zeros((2, 6), dtype=np.float32), dtype=wp.spatial_vector)
     m = Measurement()
     for sensor in (
-        MagSensor(_run(body=1), noise=(0.0, 0.0, 0.0)),
-        BaroSensor(_run(body=1), noise=0.0),
-        GpsSensor(_run(body=1)),
+        sv.wired(MagSensor(_run(body=1), noise=(0.0, 0.0, 0.0))),
+        sv.wired(BaroSensor(_run(body=1), noise=0.0)),
+        sv.wired(GpsSensor(_run(body=1))),
     ):
         sensor.sample(view, SimTime(0.0, 0), m)
     wp.synchronize()
@@ -175,7 +176,7 @@ def test_mag_known_attitude():
     """One hand-computed case, no oracle: 90° about world +z, so the map can't drift with it."""
     s2 = math.sqrt(2.0) / 2.0
     view = _WarpView((0, 0, 1), (0.0, 0.0, s2, s2), (0, 0, 0), (0, 0, 0))  # yaw 90° about +z
-    MagSensor(_run(), noise=(0.0, 0.0, 0.0)).sample(view, SimTime(0.0, 0), m := Measurement())
+    sv.wired(MagSensor(_run(), noise=(0.0, 0.0, 0.0))).sample(view, SimTime(0.0, 0), m := Measurement())
     wp.synchronize()
     # mag_ned (0.21, 0.05, 0.43) -> world (n, -e, -d) = (0.21, -0.05, -0.43); R(q)^-1 maps
     # (x, y, z) -> (y, -x, z), giving body (-0.05, -0.21, -0.43).
@@ -193,10 +194,25 @@ def test_imu_noise_is_run_to_run_bit_identical():
     view = _WarpView((0, 0, 1), _Q, (0.04, 0.0, 0.0), (0.3, -0.4, 0.5))
 
     def run():
-        s = ImuSensor(_run())  # default noise on
+        s = sv.wired(ImuSensor(_run()))  # default noise on
         m = Measurement()
         s.sample(view, SimTime(0.0, 0), m)
         s.sample(view, SimTime(0.004, 1), m)
         return (m.xacc, m.yacc, m.zacc, m.xgyro, m.ygyro, m.zgyro)
 
     assert run() == run()  # same seed + step -> bit-for-bit the same Warp noise
+
+
+@pytest.mark.parametrize("cls", [ImuSensor, MagSensor, BaroSensor, GpsSensor])
+def test_each_analytic_sensors_sample_carries_the_sim_time_the_signal_time_holds(cls):
+    """Each analytic sensor's sample carries the sim time the signal `time` holds when it samples.
+
+    Given an Inertial Measurement Unit (IMU), a magnetometer, a barometer or a Global Positioning System (GPS)
+    receiver, wired alone with the tick's sim time at 1.25 s, when it samples a body at rest, then its sample's
+    time is 1.25 s.
+    """
+    view = _WarpView((0.0, 0.0, 1.0), (0.0, 0.0, 0.0, 1.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
+    sensor = sv.wired(cls(_run()), time=1.25)
+    sensor.sample_wp(view, SimTime(1.25, 0))
+
+    assert float(sensor.out.read()[0]["time"]) == 1.25

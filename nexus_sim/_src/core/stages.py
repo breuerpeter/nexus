@@ -34,7 +34,7 @@ class Bound:
 
     stage: Stage
     component: object
-    role: str  # sensor, estimator, guidance, controller, physics, command, force, actuator or record
+    role: str  # clock, sensor, estimator, guidance, controller, physics, command, force, actuator or record
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,6 +120,15 @@ def build_ring(
         ring += [phys["clear"], *inner, phys["step"]]
     ring.append(Bound(record, None, "record"))
     return ring
+
+
+def opening(ring: list[Bound], bounds: list[Bound]) -> list[Bound]:
+    """The ring with ``bounds`` where each tick begins: after the ring's last host stage, which
+    :func:`partition` rotates to the front, or at the front of a ring with no host stage.
+    """
+    hosts = [i for i, b in enumerate(ring) if b.stage.kind == "host"]
+    at = hosts[-1] + 1 if hosts else 0
+    return [*ring[:at], *bounds, *ring[at:]]
 
 
 def partition(ring: list[Bound]) -> list[Segment]:
@@ -237,6 +246,7 @@ __all__ = [
     "Segment",
     "build_ring",
     "device_sensors",
+    "opening",
     "partition",
     "peer_stages",
     "plan_line",

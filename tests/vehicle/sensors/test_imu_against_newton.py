@@ -26,6 +26,7 @@ from nexus_sim._src.core.schema import Measurement, SimTime
 from nexus_sim._src.core.seedtree import SeedTree
 from nexus_sim._src.scene import Site
 from nexus_sim._src.vehicle.sensors.declared import build_sensors, sensor_specs
+from tests.usd import sensor_vehicle as sv
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")
 
@@ -154,6 +155,7 @@ def _gaps(usd_path: str, *, spin=(0.0, 0.0, 0.0), hinge_rate: float = 0.0) -> tu
         dt=DT,
         site=Site(lat=47.6, lon=-122.3, alt=5.0, mag_ned=(0.21, 0.05, 0.43)),
     )
+    sv.wired(imu)
     solver = newton.solvers.SolverMuJoCo(model)
     state, other = model.state(), model.state()
     rates = np.zeros(model.joint_dof_count, dtype=np.float32)

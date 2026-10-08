@@ -12,6 +12,8 @@ pytest.importorskip("warp")
 
 import warp as wp
 
+from tests.usd import sensor_vehicle as sv
+
 pytestmark = pytest.mark.gpu
 
 
@@ -42,7 +44,7 @@ def test_captured_sensor_noise_dithers_per_replay():
 
     with wp.ScopedDevice("cuda:0"):
         view = _WarpView((0.0, 0.0, 1.0), (0.0, 0.0, 0.0, 1.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
-        s = ImuSensor(_run())  # noise on, the default
+        s = sv.wired(ImuSensor(_run()))  # noise on, the default
         s.sample_wp(view, SimTime(0.0, 0))  # warmup: first=1, seeds prev
         with wp.ScopedCapture() as cap:
             s.sample_wp(view, SimTime(0.0, 0))
@@ -69,10 +71,10 @@ def test_captured_px4_sensors_match_eager():
 
         def fresh():
             return [
-                ImuSensor(_run(), acc_noise=0.0, gyro_noise=0.0),
-                MagSensor(_run(), noise=(0.0, 0.0, 0.0)),
-                BaroSensor(_run(), noise=0.0),
-                GpsSensor(_run()),
+                sv.wired(ImuSensor(_run(), acc_noise=0.0, gyro_noise=0.0)),
+                sv.wired(MagSensor(_run(), noise=(0.0, 0.0, 0.0))),
+                sv.wired(BaroSensor(_run(), noise=0.0)),
+                sv.wired(GpsSensor(_run())),
             ]
 
         eager = fresh()

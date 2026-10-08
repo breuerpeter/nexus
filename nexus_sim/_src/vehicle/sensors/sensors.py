@@ -27,14 +27,35 @@ import numpy as np
 import warp as wp
 
 from nexus_sim._src.core.interfaces import Stage
+from nexus_sim._src.core.schema import BaroSample, GpsSample, ImuSample, MagSample
+from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.recording.sensor import SensorRecorder
 
 
 class DeviceSensor(SensorRecorder):
-    """A sensor whose work is one device stage, named after the sensor, over ``sample_wp``."""
+    """A sensor whose work is one device stage, named after the sensor, over ``sample_wp``. The stage reads
+    the tick's sim time, the signal ``time``, and writes the sensor's sample, stamped with it, to its output
+    signal ``out``.
+
+    Args:
+        output: The name of the output signal, such as ``imu``.
+        sample: The output's type, a Warp struct whose first field is the sample's time.
+    """
+
+    def __init__(self, output: str, sample):
+        self.time = Signal("time", wp.float64, shape=(1,))
+        self.out = Signal(output, sample, shape=(1,))
 
     def stages(self) -> list[Stage]:
-        return [Stage(self.name, "device", lambda tick: self.sample_wp(tick.state, tick.t))]
+        return [
+            Stage(
+                self.name,
+                "device",
+                lambda tick: self.sample_wp(tick.state, tick.t),
+                reads=(self.time,),
+                writes=(self.out,),
+            )
+        ]
 
 
 def _at_body_origin(run, kind: str) -> None:
@@ -101,7 +122,9 @@ def imu_kernel(
     sigma_gyro: float,
     prev_lin: wp.array(dtype=wp.vec3),
     prev_ang: wp.array(dtype=wp.vec3),
+    time: wp.array(dtype=wp.float64),
     out: wp.array(dtype=float),  # [xacc,yacc,zacc, xgyro,ygyro,zgyro], in the mount's axes
+    sample: wp.array(dtype=ImuSample),
 ):
     st = step[0]
     q = wp.transform_get_rotation(body_q[body])
@@ -126,6 +149,11 @@ def imu_kernel(
     out[3] = gyro_s[0] + _noise(seed, st, 3, sigma_gyro)
     out[4] = gyro_s[1] + _noise(seed, st, 4, sigma_gyro)
     out[5] = gyro_s[2] + _noise(seed, st, 5, sigma_gyro)
+    s = ImuSample()
+    s.time = time[0]
+    s.accel = wp.vec3(out[0], out[1], out[2])
+    s.gyro = wp.vec3(out[3], out[4], out[5])
+    sample[0] = s
 
 
 @wp.kernel
@@ -137,7 +165,9 @@ def mag_kernel(
     step: wp.array(dtype=int),
     sigma: wp.vec3,
     body: int,  # the model body the sensor rides
+    time: wp.array(dtype=wp.float64),
     out: wp.array(dtype=float),  # [xmag, ymag, zmag]
+    sample: wp.array(dtype=MagSample),
 ):
     st = step[0]
     q = wp.transform_get_rotation(body_q[body])
@@ -148,6 +178,10 @@ def mag_kernel(
     out[0] = mag_b[0] + offset[0] + _noise(seed, st, 0, sigma[0])
     out[1] = mag_b[1] + offset[1] + _noise(seed, st, 1, sigma[1])
     out[2] = mag_b[2] + offset[2] + _noise(seed, st, 2, sigma[2])
+    s = MagSample()
+    s.time = time[0]
+    s.field = wp.vec3(out[0], out[1], out[2])
+    sample[0] = s
 
 
 @wp.kernel
@@ -158,12 +192,21 @@ def baro_kernel(
     step: wp.array(dtype=int),
     sigma: float,
     body: int,  # the model body the sensor rides
+    temperature: float,
+    time: wp.array(dtype=wp.float64),
     out: wp.array(dtype=float),  # [abs_pressure, pressure_alt]
+    sample: wp.array(dtype=BaroSample),
 ):
     st = step[0]
     alt = wp.transform_get_translation(body_q[body])[2]  # z up in sim
     out[0] = pressure_msl * wp.pow(1.0 - 2.25577e-5 * alt, 5.25588) + _noise(seed, st, 0, sigma)
     out[1] = alt + _noise(seed, st, 1, sigma)
+    s = BaroSample()
+    s.time = time[0]
+    s.pressure = out[0]
+    s.altitude = out[1]
+    s.temperature = temperature
+    sample[0] = s
 
 
 @wp.kernel
@@ -175,7 +218,10 @@ def gps_kernel(
     ref_alt: wp.float64,
     inv_lon_scale: wp.float64,  # 1 / (111000 * cos(radians(ref_lat)))
     body: int,  # the model body the sensor rides
+    fix_type: int,
+    time: wp.array(dtype=wp.float64),
     out: wp.array(dtype=wp.float64),  # [lat, lon, alt, vn, ve, vd, ground_speed]
+    sample: wp.array(dtype=GpsSample),
 ):
     p = wp.transform_get_translation(body_q[body])
     v = wp.spatial_top(body_qd[body])  # world linear vel
@@ -191,6 +237,15 @@ def gps_kernel(
     out[4] = wp.float64(-v[1])  # ve, since world +y = West
     out[5] = wp.float64(-v[2])  # vd
     out[6] = wp.float64(wp.sqrt(v[0] * v[0] + v[1] * v[1]))  # ground speed
+    s = GpsSample()
+    s.time = time[0]
+    s.lat = out[0]
+    s.lon = out[1]
+    s.alt = out[2]
+    s.velocity = wp.vec3(v[0], -v[1], -v[2])
+    s.ground_speed = wp.sqrt(v[0] * v[0] + v[1] * v[1])
+    s.fix_type = fix_type
+    sample[0] = s
 
 
 class ImuSensor(DeviceSensor):
@@ -222,6 +277,7 @@ class ImuSensor(DeviceSensor):
     fields = ("xacc", "yacc", "zacc", "xgyro", "ygyro", "zgyro")  # _out layout
 
     def __init__(self, run, acc_noise: float = 0.02, gyro_noise: float = 0.02, rate: float = 0.0):
+        super().__init__("imu", ImuSample)
         _rigid_mount(run, "inertial measurement unit")
         self.seed = run.seed
         self.dt = float(run.dt)
@@ -265,8 +321,9 @@ class ImuSensor(DeviceSensor):
                 self.gyro_noise,
                 self._prev_lin,
                 self._prev_ang,
+                self.time.buffer,
             ),
-            outputs=(self._out,),
+            outputs=(self._out, self.out.buffer),
         )
         self._first = False
 
@@ -286,6 +343,7 @@ class MagSensor(DeviceSensor):
     fields = ("xmag", "ymag", "zmag")
 
     def __init__(self, run, offset=(0.0, 0.0, 0.0), noise=(0.02, 0.02, 0.03), rate: float = 0.0):
+        super().__init__("mag", MagSample)
         # The field is the site's, a North East Down (NED) vector in gauss, resolved at build.
         # ``noise`` is the per-axis Gaussian sigma in Gauss. The default, 0.02/0.02/0.03, is the
         # bridge value; note it's ~10x a real magnetometer and, against PX4's strict per-sample World
@@ -308,8 +366,17 @@ class MagSensor(DeviceSensor):
         wp.launch(
             mag_kernel,
             dim=1,
-            inputs=(state.body_q, self.mag_ned, self._offset, self.seed, self._step, self._sigma, self.body),
-            outputs=(self._out,),
+            inputs=(
+                state.body_q,
+                self.mag_ned,
+                self._offset,
+                self.seed,
+                self._step,
+                self._sigma,
+                self.body,
+                self.time.buffer,
+            ),
+            outputs=(self._out, self.out.buffer),
         )
 
     def read(self, out) -> None:
@@ -326,6 +393,7 @@ class BaroSensor(DeviceSensor):
     fields = ("abs_pressure", "pressure_alt")
 
     def __init__(self, run, noise: float = 0.02, rate: float = 0.0):
+        super().__init__("baro", BaroSample)
         # The site's air pressure at mean sea level, hPa, and its temperature, degrees Celsius.
         _at_body_origin(run, "barometer")
         self.seed = run.seed
@@ -342,8 +410,17 @@ class BaroSensor(DeviceSensor):
         wp.launch(
             baro_kernel,
             dim=1,
-            inputs=(state.body_q, self.pressure_msl, self.seed, self._step, self.noise, self.body),
-            outputs=(self._out,),
+            inputs=(
+                state.body_q,
+                self.pressure_msl,
+                self.seed,
+                self._step,
+                self.noise,
+                self.body,
+                self.temperature,
+                self.time.buffer,
+            ),
+            outputs=(self._out, self.out.buffer),
         )
 
     def read(self, out) -> None:
@@ -363,6 +440,7 @@ class GpsSensor(DeviceSensor):
     def __init__(self, run, fix_type: int = 3, rate: float = 0.0):
         import math
 
+        super().__init__("gps", GpsSample)
         # The reference is the site's geodetic origin, where the world's origin sits on Earth.
         _at_body_origin(run, "GPS receiver")
         self.body = int(run.body)
@@ -386,8 +464,10 @@ class GpsSensor(DeviceSensor):
                 self.ref_alt,
                 self.inv_lon_scale,
                 self.body,
+                self.fix_type,
+                self.time.buffer,
             ),
-            outputs=(self._out,),
+            outputs=(self._out, self.out.buffer),
         )
 
     def read(self, out) -> None:

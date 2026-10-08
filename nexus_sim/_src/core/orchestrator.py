@@ -23,13 +23,14 @@ import warp as wp
 
 from nexus_sim._src.diagnostics import diagnostics
 
+from .clock import DeviceClock
 from .interfaces import Stage, Tick
 from .logging import logger
 from .ports import PortMap
 from .profiling import LoopProfiler
 from .schema import Measurement, PoseTwist
 from .signals import wire
-from .stages import build_ring, device_sensors, partition, plan_line, seed_stages, warm_stages
+from .stages import build_ring, device_sensors, opening, partition, plan_line, seed_stages, stages_of, warm_stages
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
@@ -267,6 +268,8 @@ class Orchestrator:
         # coarse rate, for example 50 Hz, over finer physics integration, matching its training.
         self.physics_substeps = int(physics_substeps)
         self.settings = settings
+        # The tick's sim time on the device, for a run with a stage that reads it; the ring sets it.
+        self._device_clock: DeviceClock | None = None
 
     # -- component-owned logging --------------------------------------------------
     def _scoped(self, path: str):
@@ -460,6 +463,7 @@ class Orchestrator:
                 substeps=self.physics_substeps,
             )
             self._check_estimator(ring)
+            ring = self._with_clock(ring)
             wire(ring)  # every signal a stage declares gets its buffer before any stage runs
             self._check_guidance(ring)
             segments = partition(ring)
@@ -473,6 +477,8 @@ class Orchestrator:
                 sensors=device_sensors(ring),
                 base=getattr(self.physics, "base_index", 0),  # a physics that finds none has body 0 as base
             )
+            if self._device_clock is not None:
+                self._device_clock.time.write([tick.t.sim_time])
             # A controller without a peer connects first, which reserves its device buffers before the
             # warm pass. One with a peer connects after the capture, so every kernel the loop launches has
             # loaded before the peer is up: from the moment PX4 dials in, it logs a ``poll timeout``
@@ -516,6 +522,16 @@ class Orchestrator:
     def _controller_name(self) -> str:
         """The controller's class, so a run's end names the peer that left it: ``Px4MavlinkController``."""
         return type(self.controller).__name__
+
+    def _with_clock(self, ring):
+        """The ring, opened by the device clock's stage when a stage reads the tick's sim time on the device,
+        the signal ``time``.
+        """
+        self._device_clock = None
+        if not any(s.name == "time" for b in ring for s in b.stage.reads):
+            return ring
+        self._device_clock = DeviceClock(self.clock.dt)
+        return opening(ring, stages_of(self._device_clock, "clock"))
 
     def _check_estimator(self, ring) -> None:
         """Check that the run has an estimator when a guidance or a controller reads the estimate: a run takes
@@ -567,10 +583,10 @@ class Orchestrator:
     def _seed(self, ring, tick, peer: bool) -> None:
         """The seed pass, for a controller with a host stage: one pass of the sensors' warm stages and
         the controller's stages over the settled state, whose final exchange writes the controls the
-        first tick applies. A controller with a peer holds the sim clock until the peer attaches, so
-        the peer's first stamp is near zero, and the pass repeats, re-sampling the static settled
-        state so noise dithers into a live feed, until the first controls arrive or the preroll times
-        out. A controller whose stages are all device stages gets no pass: the warm pass seeded it.
+        first tick applies. Each pass advances the sim clock, and its mirror on the device with it. A
+        controller with a peer holds the sim clock until the peer attaches, so the peer's first stamp is
+        near zero, and the pass repeats, re-sampling the static settled state so noise dithers into a
+        live feed, until the first controls arrive or the preroll times out. A controller whose stages are all device stages gets no pass: the warm pass seeded it.
 
         Raises:
             ConnectionError: No controls arrived within ``preroll_timeout``.
@@ -586,7 +602,12 @@ class Orchestrator:
             # Hold the sim clock until the peer has dialed in: time spent waiting would start the peer's
             # clock late, and PX4 times its boot checks from its first stamp.
             attached = self.controller.attached if peer else True
-            tick.t = self.clock.advance() if attached else self.clock.now()
+            if attached:
+                tick.t = self.clock.advance()
+                if self._device_clock is not None:
+                    self._device_clock.advance()
+            else:
+                tick.t = self.clock.now()
             if all(st.run(tick) is not False for st in stages):
                 if peer:
                     logger.info("controller lockstep established")
