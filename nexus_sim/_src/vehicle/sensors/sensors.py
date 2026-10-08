@@ -16,9 +16,9 @@ stage.
 
 **Determinism, re-baselined onto the Warp RNG.** Noise comes from ``wp.rand_init(seed, step*16 + axis)``
 with a per-sensor seed, which the builder derives from the run's seed and the sensor's prim, and the
-per-tick ``step`` index: an
+sample's index ``step``, which the sensor counts on the device, so each graph replay draws fresh noise: an
 independent, reproducible noise field per sensor, the same bits run to run. Each sensor draws
-its own sequence, not one shared ``random.Random`` stream.
+its own sequence, not one shared ``random.Random`` stream, and a tick with no new sample draws none.
 """
 
 from __future__ import annotations
@@ -106,7 +106,7 @@ def _rigid_mount(run, kind: str) -> None:
 
 @wp.func
 def _noise(seed: int, step: int, axis: int, sigma: float) -> float:
-    """Reproducible Gaussian noise for one (sensor seed, tick, axis): ``sigma * N(0,1)``."""
+    """Reproducible Gaussian noise for one (sensor seed, sample, axis): ``sigma * N(0,1)``."""
     r = wp.rand_init(seed, step * 16 + axis)
     return sigma * wp.randn(r)
 
@@ -121,6 +121,10 @@ def _due(now: wp.float64, period: wp.float64, start: wp.array(dtype=wp.float64),
     """Whether a sample is due at sim time ``now``; a due sample counts toward the next one's due time. The k-th
     sample after the first is due at the first's time plus k periods: absolute due times, as the RTX sensors keep,
     so a rate that doesn't divide the tick rate neither quantises nor drifts. A period of 0 makes every tick due.
+
+    The count ``taken`` lives on the device, so a graph replay counts too, and it indexes each sample's noise. A
+    count baked at capture would freeze the sensor stream, which PX4's Extended Kalman Filter (EKF) flags as a
+    stuck sensor: no GPS/position fusion, so it won't arm.
     """
     k = taken[0]
     if k > 0 and period > wp.float64(0.0) and now < start[0] + wp.float64(k) * period - _SLACK:
@@ -129,16 +133,6 @@ def _due(now: wp.float64, period: wp.float64, start: wp.array(dtype=wp.float64),
         start[0] = now
     taken[0] = k + 1
     return True
-
-
-@wp.kernel
-def increment_step(step: wp.array(dtype=int)):
-    """Advance the per-sensor tick counter. Launched inside a captured region so the noise field
-    varies per **graph replay**; without this the baked-at-capture step freezes the sensor stream,
-    which PX4's Extended Kalman Filter (EKF) flags as a stuck sensor: no GPS/position fusion, so it
-    won't arm.
-    """
-    step[0] = step[0] + 1
 
 
 @wp.kernel
@@ -152,7 +146,6 @@ def imu_kernel(
     dt: float,
     first: int,
     seed: int,
-    step: wp.array(dtype=int),
     sigma_acc: float,
     sigma_gyro: float,
     prev_lin: wp.array(dtype=wp.vec3),
@@ -170,7 +163,7 @@ def imu_kernel(
         return
     interval = dt * wp.float32(ticks[0])  # the time since the last sample, over which the velocity changed
     ticks[0] = 0
-    st = step[0]
+    st = taken[0]
     q = wp.transform_get_rotation(body_q[body])
     vlin = wp.spatial_top(body_qd[body])  # world, at COM
     vang = wp.spatial_bottom(body_qd[body])  # world
@@ -206,7 +199,6 @@ def mag_kernel(
     mag_ned: wp.vec3,
     offset: wp.vec3,
     seed: int,
-    step: wp.array(dtype=int),
     sigma: wp.vec3,
     body: int,  # the model body the sensor rides
     time: wp.array(dtype=wp.float64),
@@ -218,7 +210,7 @@ def mag_kernel(
 ):
     if not _due(time[0], period, start, taken):
         return
-    st = step[0]
+    st = taken[0]
     q = wp.transform_get_rotation(body_q[body])
     # NED -> world is a PROPER rotation: X=N, Y=-E, which is west, Z=-D; the frame contract lives in
     # ``nexus_sim._src.transform``. The old Y=+E map was a reflection, GH #61.
@@ -238,7 +230,6 @@ def baro_kernel(
     body_q: wp.array(dtype=wp.transform),
     pressure_msl: float,
     seed: int,
-    step: wp.array(dtype=int),
     sigma: float,
     body: int,  # the model body the sensor rides
     temperature: float,
@@ -251,7 +242,7 @@ def baro_kernel(
 ):
     if not _due(time[0], period, start, taken):
         return
-    st = step[0]
+    st = taken[0]
     alt = wp.transform_get_translation(body_q[body])[2]  # z up in sim
     out[0] = pressure_msl * wp.pow(1.0 - 2.25577e-5 * alt, 5.25588) + _noise(seed, st, 0, sigma)
     out[1] = alt + _noise(seed, st, 1, sigma)
@@ -354,16 +345,14 @@ class ImuSensor(DeviceSensor):
         self._prev_ang = wp.zeros(1, dtype=wp.vec3)
         self._ticks = wp.zeros(1, dtype=int)  # the ticks since the last sample, over which the velocity changed
         self._out = wp.zeros(6, dtype=float)
-        self._step = wp.zeros(1, dtype=int)  # per-tick counter, incremented in-graph so the noise varies
         self._first = True
 
     def sample_wp(self, state, t) -> None:
         """Launch the IMU kernel into the device buffer ``self._out``, with NO host readback, so it joins
-        a captured region. Increments the device step counter first so the noise field varies per
+        a captured region. The kernel counts its samples on the device, so the noise field varies per
         replay. For a captured region, call once eagerly first to seed the finite-diff ``prev``
         velocities, then capture with ``first`` already 0.
         """
-        wp.launch(increment_step, dim=1, inputs=(self._step,))
         wp.launch(
             imu_kernel,
             dim=1,
@@ -377,7 +366,6 @@ class ImuSensor(DeviceSensor):
                 self.dt,
                 1 if self._first else 0,
                 self.seed,
-                self._step,
                 self.acc_noise,
                 self.gyro_noise,
                 self._prev_lin,
@@ -413,10 +401,8 @@ class MagSensor(DeviceSensor):
         self._offset = wp.vec3(*self.offset)
         self._sigma = wp.vec3(*self.noise)
         self._out = wp.zeros(3, dtype=float)
-        self._step = wp.zeros(1, dtype=int)
 
     def sample_wp(self, state, t) -> None:
-        wp.launch(increment_step, dim=1, inputs=(self._step,))
         wp.launch(
             mag_kernel,
             dim=1,
@@ -425,7 +411,6 @@ class MagSensor(DeviceSensor):
                 self.mag_ned,
                 self._offset,
                 self.seed,
-                self._step,
                 self._sigma,
                 self.body,
                 self.time.buffer,
@@ -451,10 +436,8 @@ class BaroSensor(DeviceSensor):
         self.temperature = float(run.site.temperature)
         self.noise = float(noise)
         self._out = wp.zeros(2, dtype=float)
-        self._step = wp.zeros(1, dtype=int)
 
     def sample_wp(self, state, t) -> None:
-        wp.launch(increment_step, dim=1, inputs=(self._step,))
         wp.launch(
             baro_kernel,
             dim=1,
@@ -462,7 +445,6 @@ class BaroSensor(DeviceSensor):
                 state.body_q,
                 self.pressure_msl,
                 self.seed,
-                self._step,
                 self.noise,
                 self.body,
                 self.temperature,
