@@ -103,9 +103,13 @@ same loop:
 - **`Px4MavlinkController`**: runs the MAVLink lockstep handshake against a real PX4 Software In
   The Loop (SITL) instance, its peer. It reads each sensor's sample as a signal and encodes the samples
   in `HIL_SENSOR` and `HIL_GPS`, and the base body's true state in `HIL_STATE_QUATERNION`, then
-  **blocks** for the returned actuator commands. Of two sensors of one kind, a connection on its prim,
-  such as `nexus:inputs:imu`, picks the one PX4 receives. Its work is two **host stages**, `truth` and
-  `exchange`, outside graph capture and not differentiable, and a lost connection ends the run.
+  **blocks** for the returned actuator commands. `HIL_SENSOR` goes out every tick and marks a sensor's
+  fields updated, in `fields_updated`, only on a tick that brings a new sample of it, as PX4's Gazebo
+  Classic bridge does. `HIL_GPS` goes out with each new sample of the Global Positioning System (GPS)
+  receiver. So PX4 receives each sensor at the rate its schema declares. Of two sensors of one kind, a
+  connection on its prim, such as `nexus:inputs:imu`, picks the one PX4 receives. Its work is two
+  **host stages**, `truth` and `exchange`, outside graph capture and not differentiable, and a lost
+  connection ends the run.
 - **`PidController`**: the device-native, differentiable built-in, a
   PID controller whose gains are Warp arrays with gradients, so
   it doubles as the [design-optimization](../examples/design-optimization.md) parameter set and the

@@ -8,6 +8,11 @@ body's true state, which ``truth`` reads, into HIL_STATE_QUATERNION, then blocks
 run-ending timeout. The sensors already give their samples in their own axes; this layer only encodes wire units
 and moves bytes.
 
+PX4 receives each sensor at the rate its schema declares. HIL_SENSOR goes out every tick, and marks a sensor's
+fields updated in ``fields_updated`` only on a tick that brings a new sample of it, one whose time differs from
+the last one sent, as PX4's Gazebo Classic bridge does. HIL_GPS, and HIL_STATE_QUATERNION with it, goes out with
+each new GPS sample.
+
 The autopilot itself is a peer of the run, not of this controller: the build starts the PX4
 Software In The Loop (SITL) container, :class:`~nexus_sim._src.peers.px4_sitl.runner.Px4Sitl`,
 when the vehicle declares that peer, and starts nothing when a layer drops the declaration, for an
@@ -46,13 +51,21 @@ from nexus_sim._src.peers.px4_sitl import HIL_PORT
 # ulog_path is None.
 PX4_ULOG_DIR = os.path.expanduser("~/.cache/nexus/px4-ulog")
 
-# What PX4 receives for a sensor the vehicle doesn't declare, as the sample its signal holds: an IMU and a
-# magnetometer that read zero, a barometer at 1013.25 hPa, 0 m and 25 degrees Celsius, and a
-# Global Positioning System (GPS) sample with no time, for which no HIL_GPS goes out.
-_NO_IMU = [(0.0, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))]
-_NO_MAG = [(0.0, (0.0, 0.0, 0.0))]
-_NO_BARO = [(0.0, 1013.25, 0.0, 25.0)]
+# What PX4 receives for a sensor the vehicle doesn't declare, as the sample its signal holds: a sample with no
+# time, which is never new, so HIL_SENSOR marks none of its fields updated and no HIL_GPS goes out. Its values
+# only fill HIL_SENSOR: an IMU and a magnetometer that read zero, and a barometer at 1013.25 hPa, 0 m and
+# 25 degrees Celsius.
+_NO_IMU = [(math.nan, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))]
+_NO_MAG = [(math.nan, (0.0, 0.0, 0.0))]
+_NO_BARO = [(math.nan, 1013.25, 0.0, 25.0)]
 _NO_GPS = [(math.nan, 0.0, 0.0, 0.0, (0.0, 0.0, 0.0), 0.0, 0)]
+
+# The bits of HIL_SENSOR's fields_updated that each sensor's sample fills, as MAVLink's HIL_SENSOR_UPDATED_FLAGS
+# number them: the IMU's accelerometer and gyroscope, the magnetometer, and the barometer's absolute and
+# differential pressure, pressure altitude and temperature. With all four new, the mask is 0x1FFF.
+_IMU_FIELDS = 0x003F
+_MAG_FIELDS = 0x01C0
+_BARO_FIELDS = 0x1E00
 
 
 def _listener(port: int) -> int | None:
@@ -86,7 +99,6 @@ class Px4MavlinkController:
         port: int = HIL_PORT,
         sysid: int = 1,
         compid: int = 200,
-        gps_rate_hz: float = 10.0,
         ulog_dir: str | None = None,
         target_system: int = 1,
     ):
@@ -99,7 +111,6 @@ class Px4MavlinkController:
             port: The TCP port the HIL server listens on, ``HIL_PORT`` plus the run's PX4 instance: PX4 dials it.
             sysid: This end's MAVLink system id.
             compid: This end's MAVLink component id.
-            gps_rate_hz: How often ``HIL_GPS`` and the ground-truth state go out.
             ulog_dir: Where PX4's ULog lands, ``PX4_ULOG_DIR`` by default.
             target_system: PX4's MAVLink system id: the run's PX4 instance plus 1.
         """
@@ -109,8 +120,6 @@ class Px4MavlinkController:
         self.sysid = sysid
         self.compid = compid
         self.target_system = target_system
-        self.gps_interval = 1.0 / gps_rate_hz
-        self._last_gps = 0.0
         self.gps_fix_type = 3
         self._attitude = (1.0, 0.0, 0.0, 0.0)  # the base body's true attitude on North East Down (NED), [w, x, y, z]
         self._rates = (0.0, 0.0, 0.0)  # its true body rates, Forward Right Down (FRD), rad/s
@@ -123,6 +132,8 @@ class Px4MavlinkController:
         self.mag = Signal("mag", MagSample, shape=(1,), default=_NO_MAG)
         self.baro = Signal("baro", BaroSample, shape=(1,), default=_NO_BARO)
         self.gps = Signal("gps", GpsSample, shape=(1,), default=_NO_GPS)
+        # The time of the last sample of each sensor the exchange sent; a sample with another time is new.
+        self._sent = dict.fromkeys(("imu", "mag", "baro", "gps"), math.nan)
 
     @property
     def ulog_path(self) -> str | None:
@@ -198,14 +209,29 @@ class Px4MavlinkController:
             float(x) for x in transform.world_to_body(q, omega_world)
         )  # the body's axes point forward, right and down
 
+    def _new(self, kind: str, sample) -> bool:
+        """Whether `sample` of the sensor `kind` is new: it has a time, and not the time of the last one sent.
+        A new sample becomes the last one sent.
+        """
+        t = float(sample["time"])
+        if math.isnan(t) or t == self._sent[kind]:
+            return False
+        self._sent[kind] = t
+        return True
+
     def exchange(self, t, timeout):
         time_usec = t.time_usec
         imu, mag, baro, gps = (signal.read()[0] for signal in (self.imu, self.mag, self.baro, self.gps))
         acc = [float(x) for x in imu["accel"]]
         gyro = [float(x) for x in imu["gyro"]]
         field = [float(x) for x in mag["field"]]
+        fields = 0
+        for kind, sample, bits in (("imu", imu, _IMU_FIELDS), ("mag", mag, _MAG_FIELDS), ("baro", baro, _BARO_FIELDS)):
+            if self._new(kind, sample):
+                fields |= bits
 
-        # HIL_SENSOR every tick.
+        # HIL_SENSOR every tick, which marks a sensor's fields updated only on a new sample of it, as PX4's Gazebo
+        # Classic bridge does: PX4 publishes a sensor only on a message that marks its fields, so at its rate.
         self.proto.hil_sensor_send(
             time_usec,
             *acc,
@@ -215,13 +241,12 @@ class Px4MavlinkController:
             0.0,
             float(baro["altitude"]),
             float(baro["temperature"]),
-            0x1FFF,
+            fields,
             0,
         )
 
-        # HIL_GPS, plus the ground-truth HIL_STATE_QUATERNION, at the receiver's sub-rate, when the vehicle declares one.
-        if not math.isnan(gps["time"]) and (t.sim_time - self._last_gps >= self.gps_interval):
-            self._last_gps = t.sim_time
+        # HIL_GPS, plus the ground-truth HIL_STATE_QUATERNION, with each new sample of the receiver, so at its rate.
+        if self._new("gps", gps):
             lat = int(float(gps["lat"]) * 1e7)
             lon = int(float(gps["lon"]) * 1e7)
             alt = int(float(gps["alt"]) * 1000)

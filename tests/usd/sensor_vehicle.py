@@ -5,7 +5,8 @@ collider, four rotor bodies with propellers on revolute joints, and the PX4 cont
 no mesh and no sensor. A test adds its own sensor prims. A run flies it in ``fixture_scene.usda``, an
 empty world, so a test reads no hosted asset. A stand-in controller answers at once with zero
 commands. A stand-in estimator, which the stand-in schema `StandInEstimatorAPI` declares on a scope of its
-own, keeps what each signal it reads holds, so a test reads what a sensor wrote.
+own, keeps what each signal it reads holds, so a test reads what a sensor wrote. A fake PX4 peer that keeps
+every message it receives lets a test read what PX4 receives.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from nexus_sim._src.core.registry import ComponentRegistry
 from nexus_sim._src.core.schema import Controls
 from nexus_sim._src.core.signals import Signal, wire
 from nexus_sim._src.core.stages import Bound, peer_stages
+from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
 from nexus_sim._src.usd import ENTRY_POINT_GROUP
 
 BASE = Path(__file__).with_name("fixture_vehicle.usda")
@@ -163,6 +165,26 @@ class StandInSensor:
 
     def stages(self):
         return [Stage("stand_in", "host", lambda tick: None)]
+
+
+class _Every(dict):
+    """The fake's last message of each kind, which also keeps, in order, every message the fake sets in it."""
+
+    def __init__(self):
+        super().__init__()
+        self.every: list = []
+
+    def __setitem__(self, kind, msg):
+        self.every.append(msg)
+        super().__setitem__(kind, msg)
+
+
+class KeepingFake(Px4Fake):
+    """The fake PX4 peer, which keeps every message it receives, in order, in `last.every`, beside the last of each kind."""
+
+    def __init__(self, **run):
+        super().__init__(**run)
+        self.last = _Every()
 
 
 def estimator(*reads: Signal) -> type:

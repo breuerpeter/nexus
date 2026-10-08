@@ -82,6 +82,8 @@ no container.
   mag, barometer, and Global Positioning System (GPS). Each is a prim under the body it rides that
   applies its sensor schema, such as `NexusImuAPI`. The vehicle USD is the single authority for all
   sensors, and the [schema reference](../reference/schemas.md) lists the attributes of each schema.
+  Each sensor declares the rate PX4's gz `x500` model flies, 250 Hz on the IMU, 100 on the mag, 50 on
+  the barometer and 30 on the GPS, and PX4 receives each at its rate.
 - A camera logs JPEG frames and a `Pinhole` frustum to `sim/vehicle/sensors/<name>`. A lidar logs
   world-frame `Points3D` to `sim/vehicle/sensors/<name>` too. `--debug` records the axes-only scene, which gives small `.rrd`s,
   and is the default for verification flights.

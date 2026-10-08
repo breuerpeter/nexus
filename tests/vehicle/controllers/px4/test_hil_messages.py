@@ -1,5 +1,8 @@
-"""PX4 receives what it received before each sensor's output became a signal: every Hardware In The Loop (HIL)
-message the fake PX4 peer receives equals, field for field, what it received from ``main``.
+"""PX4 still receives what it received before each sensor's output became a signal: every
+Hardware In The Loop (HIL) message the fake PX4 peer received from ``main``, it receives again at the same time,
+equal in every field but ``fields_updated``. A sensor sets its bits there only on a tick that brings it a new
+sample, and the Global Positioning System (GPS) receiver here declares no rate, so ``HIL_GPS`` goes out every
+tick, where ``main`` sent it at a 10 Hz sub-rate.
 
 Real builds on the Warp CPU backend of the fixture vehicle in ``tests/usd/sensor_vehicle.py``, flown by the PX4
 controller against the fake PX4 peer, which keeps every message it receives. Each sensor is quiet: the passes
@@ -17,7 +20,6 @@ pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
 from nexus_sim._src.core.registry import default_registry
-from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
 from tests.usd import sensor_vehicle as sv
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")
@@ -37,26 +39,6 @@ GPS = sv.prim("Gps0", "NexusGpsAPI")
 SUITES = {"imu_mag_baro_gps": IMU + MAG + BARO + GPS, "imu_gps": IMU + GPS, "imu": IMU}
 
 
-class _Every(dict):
-    """The fake's last message of each kind, which also keeps, in order, every message the fake sets in it."""
-
-    def __init__(self):
-        super().__init__()
-        self.every: list = []
-
-    def __setitem__(self, kind, msg):
-        self.every.append(msg)
-        super().__setitem__(kind, msg)
-
-
-class _KeepingFake(Px4Fake):
-    """The fake PX4 peer, which keeps every message it receives, in order, beside the last of each kind."""
-
-    def __init__(self, **run):
-        super().__init__(**run)
-        self.last = _Every()
-
-
 def _received(tmp_path: Path, body: str) -> list[dict]:
     """What the fake receives in a run of the fixture with the prims `body` under its base body: each message of
     the three kinds the test compares, as its fields, in the order it arrived, from the first 250 exchanges.
@@ -65,7 +47,10 @@ def _received(tmp_path: Path, body: str) -> list[dict]:
     answers before the run steps on, so the run steps one exchange more than the test compares.
     """
     loop = sv.build(
-        sv.vehicle(tmp_path, body, px4=True), seed=SEED, components=default_registry(), peers={"px4_sitl": _KeepingFake}
+        sv.vehicle(tmp_path, body, px4=True),
+        seed=SEED,
+        components=default_registry(),
+        peers={"px4_sitl": sv.KeepingFake},
     )
     fake = loop.peers[0]
     sv.steps(loop, EXCHANGES + 1)
@@ -79,19 +64,28 @@ def _received(tmp_path: Path, body: str) -> list[dict]:
     return kept
 
 
-def test_px4_receives_every_hil_message_field_for_field_as_it_did_from_main(tmp_path):
-    """PX4 receives what it receives today.
+def _unmasked(msg: dict) -> dict:
+    """A message's fields, but the bits of `fields_updated`."""
+    return {field: value for field, value in msg.items() if field != "fields_updated"}
+
+
+def test_px4_receives_every_hil_message_main_sent_at_its_time_field_for_field(tmp_path):
+    """PX4 receives every message it received from `main`, at the same time, field for field, but the bits each sensor sets.
 
     Given the fake PX4 peer, one seed and the fixture vehicle with an Inertial Measurement Unit (IMU), a
-    magnetometer, a barometer and a Global Positioning System (GPS) receiver, when the run steps 250 ticks, then
-    every `HIL_SENSOR`, `HIL_GPS` and `HIL_STATE_QUATERNION` the fake receives equals, field for field, what it
-    received from `main`; once more with only the IMU and the GPS, and once with only the IMU.
+    magnetometer, a barometer and a GPS receiver, none of which declares a rate, when the run steps 250 ticks,
+    then for every `HIL_SENSOR`, `HIL_GPS` and `HIL_STATE_QUATERNION` the fake received from `main`, it receives
+    one of the same kind at the same `time_usec`, equal in every field but `fields_updated`; once more with only
+    the IMU and the GPS, and once with only the IMU.
     """
     main = json.loads(gzip.decompress(MAIN.read_bytes()))
-    received = {}
+    missing = {}
     for name, body in SUITES.items():
         folder = tmp_path / name
         folder.mkdir()
-        received[name] = _received(folder, body)
+        received = {(msg["mavpackettype"], msg["time_usec"]): _unmasked(msg) for msg in _received(folder, body)}
+        missing[name] = [
+            msg for msg in main[name] if received.get((msg["mavpackettype"], msg["time_usec"])) != _unmasked(msg)
+        ]
 
-    assert received == main
+    assert missing == {name: [] for name in SUITES}

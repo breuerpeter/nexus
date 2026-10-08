@@ -8,15 +8,17 @@ the rest of the device step: no host NumPy / ``math`` in the per-tick path. The 
 canonical frame math from :mod:`nexus_sim._src.transform` **verbatim**.
 
 Each sensor's :meth:`sample_wp` launches its kernel, which writes the sample, stamped with the tick's sim
-time, to the sensor's output signal on the device, with no readback, so it joins a CUDA graph. A reader
-takes the sample there: an estimator, or the PX4 controller, which serialises it to MAVLink for its peer
-in a host stage.
+time, to the sensor's output signal on the device, with no readback, so it joins a CUDA graph. The kernel
+writes a sample only on a tick that the sensor's declared rate makes due, and the check runs on the device
+too, so between two samples the signal holds the last one, and its time marks a new one. A reader takes the
+sample there: an estimator, or the PX4 controller, which serialises it to MAVLink for its peer in a host
+stage.
 
 **Determinism, re-baselined onto the Warp RNG.** Noise comes from ``wp.rand_init(seed, step*16 + axis)``
 with a per-sensor seed, which the builder derives from the run's seed and the sensor's prim, and the
-per-tick ``step`` index: an
+sample's index ``step``, which the sensor counts on the device, so each graph replay draws fresh noise: an
 independent, reproducible noise field per sensor, the same bits run to run. Each sensor draws
-its own sequence, not one shared ``random.Random`` stream.
+its own sequence, not one shared ``random.Random`` stream, and a tick with no new sample draws none.
 """
 
 from __future__ import annotations
@@ -33,16 +35,31 @@ from nexus_sim._src.recording.sensor import SensorRecorder
 class DeviceSensor(SensorRecorder):
     """A sensor whose work is one device stage, named after the sensor, over ``sample_wp``. The stage reads
     the tick's sim time, the signal ``time``, and writes the sensor's sample, stamped with it, to its output
-    signal ``out``.
+    signal ``out`` on a tick that its rate makes due. On any other tick the kernel writes nothing, so the
+    signal holds the last sample.
 
     Args:
         output: The name of the output signal, such as ``imu``.
         sample: The output's type, a Warp struct whose first field is the sample's time.
+        run: The run's values, whose prim path an error names.
+        rate: How often the sensor gives a new sample, hertz: 0 gives one every tick, as does a rate faster
+            than the tick rate.
+
+    Raises:
+        ValueError: The rate is negative; the message names the prim.
     """
 
-    def __init__(self, output: str, sample):
+    def __init__(self, output: str, sample, run, rate: float = 0.0):
         self.time = Signal("time", wp.float64, shape=(1,))
         self.out = Signal(output, sample, shape=(1,))
+        self.rate = float(rate)
+        if not self.rate >= 0.0:  # a rate that's not a number fails too
+            raise ValueError(
+                f"{run.path}: the sensor's nexus:rate is {self.rate:g} Hz; a rate is 0, a sample every tick, or more"
+            )
+        self.period = 1.0 / self.rate if self.rate > 0.0 else 0.0  # seconds from one sample to the next
+        self._start = wp.zeros(1, dtype=wp.float64)  # the sim time of the first sample
+        self._taken = wp.zeros(1, dtype=int)  # how many samples the sensor has taken
 
     def stages(self) -> list[Stage]:
         return [
@@ -89,19 +106,33 @@ def _rigid_mount(run, kind: str) -> None:
 
 @wp.func
 def _noise(seed: int, step: int, axis: int, sigma: float) -> float:
-    """Reproducible Gaussian noise for one (sensor seed, tick, axis): ``sigma * N(0,1)``."""
+    """Reproducible Gaussian noise for one (sensor seed, sample, axis): ``sigma * N(0,1)``."""
     r = wp.rand_init(seed, step * 16 + axis)
     return sigma * wp.randn(r)
 
 
-@wp.kernel
-def increment_step(step: wp.array(dtype=int)):
-    """Advance the per-sensor tick counter. Launched inside a captured region so the noise field
-    varies per **graph replay**; without this the baked-at-capture step freezes the sensor stream,
-    which PX4's Extended Kalman Filter (EKF) flags as a stuck sensor: no GPS/position fusion, so it
-    won't arm.
+# A due time this close after a tick falls on it. The clock adds each tick to the sim time in float64, so a due
+# time that falls on a tick can land a rounding error after it, which would put the sample one tick late.
+_SLACK = wp.constant(wp.float64(1.0e-6))  # seconds
+
+
+@wp.func
+def _due(now: wp.float64, period: wp.float64, start: wp.array(dtype=wp.float64), taken: wp.array(dtype=int)) -> bool:
+    """Whether a sample is due at sim time ``now``; a due sample counts toward the next one's due time. The k-th
+    sample after the first is due at the first's time plus k periods: absolute due times, as the RTX sensors keep,
+    so a rate that doesn't divide the tick rate neither quantises nor drifts. A period of 0 makes every tick due.
+
+    The count ``taken`` lives on the device, so a graph replay counts too, and it indexes each sample's noise. A
+    count baked at capture would freeze the sensor stream, which PX4's Extended Kalman Filter (EKF) flags as a
+    stuck sensor: no GPS/position fusion, so it won't arm.
     """
-    step[0] = step[0] + 1
+    k = taken[0]
+    if k > 0 and period > wp.float64(0.0) and now < start[0] + wp.float64(k) * period - _SLACK:
+        return False
+    if k == 0:
+        start[0] = now
+    taken[0] = k + 1
+    return True
 
 
 @wp.kernel
@@ -115,24 +146,32 @@ def imu_kernel(
     dt: float,
     first: int,
     seed: int,
-    step: wp.array(dtype=int),
     sigma_acc: float,
     sigma_gyro: float,
     prev_lin: wp.array(dtype=wp.vec3),
     prev_ang: wp.array(dtype=wp.vec3),
     time: wp.array(dtype=wp.float64),
+    period: wp.float64,
+    start: wp.array(dtype=wp.float64),
+    taken: wp.array(dtype=int),
+    ticks: wp.array(dtype=int),  # the ticks since the last sample
     out: wp.array(dtype=float),  # [xacc,yacc,zacc, xgyro,ygyro,zgyro], in the mount's axes
     sample: wp.array(dtype=ImuSample),
 ):
-    st = step[0]
+    ticks[0] = ticks[0] + 1
+    if not _due(time[0], period, start, taken):
+        return
+    interval = dt * wp.float32(ticks[0])  # the time since the last sample, over which the velocity changed
+    ticks[0] = 0
+    st = taken[0]
     q = wp.transform_get_rotation(body_q[body])
     vlin = wp.spatial_top(body_qd[body])  # world, at COM
     vang = wp.spatial_bottom(body_qd[body])  # world
     if first == 1:  # first tick: seed the finite-diff so acceleration starts at zero
         prev_lin[0] = vlin
         prev_ang[0] = vang
-    acc_com = (vlin - prev_lin[0]) / dt
-    alpha = (vang - prev_ang[0]) / dt
+    acc_com = (vlin - prev_lin[0]) / interval
+    alpha = (vang - prev_ang[0]) / interval
     prev_lin[0] = vlin
     prev_ang[0] = vang
     # lever arm: a_mount = a_com + alpha x r + omega x (omega x r), r = R(q)*r_body
@@ -160,14 +199,18 @@ def mag_kernel(
     mag_ned: wp.vec3,
     offset: wp.vec3,
     seed: int,
-    step: wp.array(dtype=int),
     sigma: wp.vec3,
     body: int,  # the model body the sensor rides
     time: wp.array(dtype=wp.float64),
+    period: wp.float64,
+    start: wp.array(dtype=wp.float64),
+    taken: wp.array(dtype=int),
     out: wp.array(dtype=float),  # [xmag, ymag, zmag]
     sample: wp.array(dtype=MagSample),
 ):
-    st = step[0]
+    if not _due(time[0], period, start, taken):
+        return
+    st = taken[0]
     q = wp.transform_get_rotation(body_q[body])
     # NED -> world is a PROPER rotation: X=N, Y=-E, which is west, Z=-D; the frame contract lives in
     # ``nexus_sim._src.transform``. The old Y=+E map was a reflection, GH #61.
@@ -187,15 +230,19 @@ def baro_kernel(
     body_q: wp.array(dtype=wp.transform),
     pressure_msl: float,
     seed: int,
-    step: wp.array(dtype=int),
     sigma: float,
     body: int,  # the model body the sensor rides
     temperature: float,
     time: wp.array(dtype=wp.float64),
+    period: wp.float64,
+    start: wp.array(dtype=wp.float64),
+    taken: wp.array(dtype=int),
     out: wp.array(dtype=float),  # [abs_pressure, pressure_alt]
     sample: wp.array(dtype=BaroSample),
 ):
-    st = step[0]
+    if not _due(time[0], period, start, taken):
+        return
+    st = taken[0]
     alt = wp.transform_get_translation(body_q[body])[2]  # z up in sim
     out[0] = pressure_msl * wp.pow(1.0 - 2.25577e-5 * alt, 5.25588) + _noise(seed, st, 0, sigma)
     out[1] = alt + _noise(seed, st, 1, sigma)
@@ -218,9 +265,14 @@ def gps_kernel(
     body: int,  # the model body the sensor rides
     fix_type: int,
     time: wp.array(dtype=wp.float64),
+    period: wp.float64,
+    start: wp.array(dtype=wp.float64),
+    taken: wp.array(dtype=int),
     out: wp.array(dtype=wp.float64),  # [lat, lon, alt, vn, ve, vd, ground_speed]
     sample: wp.array(dtype=GpsSample),
 ):
+    if not _due(time[0], period, start, taken):
+        return
     p = wp.transform_get_translation(body_q[body])
     v = wp.spatial_top(body_qd[body])  # world linear vel
     # lat/lon/alt in float64: a float32 ``ref_lat (~47.6) + small offset`` would lose ~1e-5 deg,
@@ -254,10 +306,10 @@ class ImuSensor(DeviceSensor):
     accelerometer adds the lever arm ``alpha x r + omega x (omega x r)``, where ``r`` runs from the body's
     center of mass to the mount, as Newton's ``SensorIMU`` does.
 
-    The accelerometer finite-differences the body's velocity over the control tick, so it reports the
-    mean acceleration over the tick before, half a tick late, on purpose: PX4's estimator
-    integrates delta velocity over each sample interval, and a tick mean is that interval's average.
-    Newton's ``SensorIMU`` reads the solver's acceleration at the tick's end instead.
+    The accelerometer finite-differences the body's velocity over the ticks since its last sample, so it
+    reports the mean acceleration over the sample interval before, half an interval late, on purpose:
+    PX4's estimator integrates delta velocity over each sample interval, and the interval's mean is that
+    integral over its length. Newton's ``SensorIMU`` reads the solver's acceleration at the tick's end instead.
 
     The sensor reports no attitude: the vehicle's true state isn't a sensor reading.
 
@@ -265,22 +317,23 @@ class ImuSensor(DeviceSensor):
         run: The run's values: its seed, the tick, the site's gravity, the body and the mount.
         acc_noise: Standard deviation of the accelerometer's white noise, m/s^2.
         gyro_noise: Standard deviation of the gyroscope's white noise, rad/s.
-        rate: The declared sample rate, hertz. The sensor samples every tick whatever it says.
+        rate: How often the sensor gives a new sample, hertz: 0 gives one every tick, as does a rate faster
+            than the tick rate.
 
     Raises:
-        ValueError: The prim's transform scales, shears or mirrors the mount; the message names the prim.
+        ValueError: The prim's transform scales, shears or mirrors the mount, or the rate is negative; the
+            message names the prim.
     """
 
     name = "imu"  # sim.sensors key, the flat instance name
     fields = ("xacc", "yacc", "zacc", "xgyro", "ygyro", "zgyro")  # _out layout
 
     def __init__(self, run, acc_noise: float = 0.02, gyro_noise: float = 0.02, rate: float = 0.0):
-        super().__init__("imu", ImuSample)
+        super().__init__("imu", ImuSample, run, rate)
         _rigid_mount(run, "inertial measurement unit")
         self.seed = run.seed
         self.dt = float(run.dt)
         self.body = int(run.body)
-        self.rate = float(rate)
         # The site's gravity, along world -Z, the same value the physics applies; the accelerometer
         # reports specific force, so at rest it reads minus this.
         self.gravity_world = wp.vec3(0.0, 0.0, -float(run.site.gravity))
@@ -290,17 +343,16 @@ class ImuSensor(DeviceSensor):
         self.gyro_noise = float(gyro_noise)
         self._prev_lin = wp.zeros(1, dtype=wp.vec3)
         self._prev_ang = wp.zeros(1, dtype=wp.vec3)
+        self._ticks = wp.zeros(1, dtype=int)  # the ticks since the last sample, over which the velocity changed
         self._out = wp.zeros(6, dtype=float)
-        self._step = wp.zeros(1, dtype=int)  # per-tick counter, incremented in-graph so the noise varies
         self._first = True
 
     def sample_wp(self, state, t) -> None:
         """Launch the IMU kernel into the device buffer ``self._out``, with NO host readback, so it joins
-        a captured region. Increments the device step counter first so the noise field varies per
+        a captured region. The kernel counts its samples on the device, so the noise field varies per
         replay. For a captured region, call once eagerly first to seed the finite-diff ``prev``
         velocities, then capture with ``first`` already 0.
         """
-        wp.launch(increment_step, dim=1, inputs=(self._step,))
         wp.launch(
             imu_kernel,
             dim=1,
@@ -314,12 +366,15 @@ class ImuSensor(DeviceSensor):
                 self.dt,
                 1 if self._first else 0,
                 self.seed,
-                self._step,
                 self.acc_noise,
                 self.gyro_noise,
                 self._prev_lin,
                 self._prev_ang,
                 self.time.buffer,
+                self.period,
+                self._start,
+                self._taken,
+                self._ticks,
             ),
             outputs=(self._out, self.out.buffer),
         )
@@ -331,7 +386,7 @@ class MagSensor(DeviceSensor):
     fields = ("xmag", "ymag", "zmag")
 
     def __init__(self, run, offset=(0.0, 0.0, 0.0), noise=(0.02, 0.02, 0.03), rate: float = 0.0):
-        super().__init__("mag", MagSample)
+        super().__init__("mag", MagSample, run, rate)
         # The field is the site's, a North East Down (NED) vector in gauss, resolved at build.
         # ``noise`` is the per-axis Gaussian sigma in Gauss. The default, 0.02/0.02/0.03, is the
         # bridge value; note it's ~10x a real magnetometer and, against PX4's strict per-sample World
@@ -340,17 +395,14 @@ class MagSensor(DeviceSensor):
         _at_body_origin(run, "magnetometer")
         self.seed = run.seed
         self.body = int(run.body)
-        self.rate = float(rate)
         self.offset = tuple(float(x) for x in offset)
         self.noise = tuple(float(x) for x in noise)
         self.mag_ned = wp.vec3(*[float(x) for x in run.site.mag_ned])
         self._offset = wp.vec3(*self.offset)
         self._sigma = wp.vec3(*self.noise)
         self._out = wp.zeros(3, dtype=float)
-        self._step = wp.zeros(1, dtype=int)
 
     def sample_wp(self, state, t) -> None:
-        wp.launch(increment_step, dim=1, inputs=(self._step,))
         wp.launch(
             mag_kernel,
             dim=1,
@@ -359,10 +411,12 @@ class MagSensor(DeviceSensor):
                 self.mag_ned,
                 self._offset,
                 self.seed,
-                self._step,
                 self._sigma,
                 self.body,
                 self.time.buffer,
+                self.period,
+                self._start,
+                self._taken,
             ),
             outputs=(self._out, self.out.buffer),
         )
@@ -373,20 +427,17 @@ class BaroSensor(DeviceSensor):
     fields = ("abs_pressure", "pressure_alt")
 
     def __init__(self, run, noise: float = 0.02, rate: float = 0.0):
-        super().__init__("baro", BaroSample)
+        super().__init__("baro", BaroSample, run, rate)
         # The site's air pressure at mean sea level, hPa, and its temperature, degrees Celsius.
         _at_body_origin(run, "barometer")
         self.seed = run.seed
         self.body = int(run.body)
-        self.rate = float(rate)
         self.pressure_msl = float(run.site.pressure_msl)
         self.temperature = float(run.site.temperature)
         self.noise = float(noise)
         self._out = wp.zeros(2, dtype=float)
-        self._step = wp.zeros(1, dtype=int)
 
     def sample_wp(self, state, t) -> None:
-        wp.launch(increment_step, dim=1, inputs=(self._step,))
         wp.launch(
             baro_kernel,
             dim=1,
@@ -394,11 +445,13 @@ class BaroSensor(DeviceSensor):
                 state.body_q,
                 self.pressure_msl,
                 self.seed,
-                self._step,
                 self.noise,
                 self.body,
                 self.temperature,
                 self.time.buffer,
+                self.period,
+                self._start,
+                self._taken,
             ),
             outputs=(self._out, self.out.buffer),
         )
@@ -411,11 +464,10 @@ class GpsSensor(DeviceSensor):
     def __init__(self, run, fix_type: int = 3, rate: float = 0.0):
         import math
 
-        super().__init__("gps", GpsSample)
+        super().__init__("gps", GpsSample, run, rate)
         # The reference is the site's geodetic origin, where the world's origin sits on Earth.
         _at_body_origin(run, "GPS receiver")
         self.body = int(run.body)
-        self.rate = float(rate)
         self.ref_lat = float(run.site.lat)
         self.ref_lon = float(run.site.lon)
         self.ref_alt = float(run.site.alt)
@@ -437,6 +489,9 @@ class GpsSensor(DeviceSensor):
                 self.body,
                 self.fix_type,
                 self.time.buffer,
+                self.period,
+                self._start,
+                self._taken,
             ),
             outputs=(self._out, self.out.buffer),
         )

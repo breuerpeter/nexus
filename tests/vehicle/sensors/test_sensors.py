@@ -166,6 +166,15 @@ def test_a_barometer_whose_prim_sits_off_its_bodys_origin_fails_and_names_the_pr
         BaroSensor(run)
 
 
+@pytest.mark.parametrize("cls", [ImuSensor, MagSensor, BaroSensor, GpsSensor])
+def test_an_analytic_sensor_whose_rate_is_negative_fails_and_names_the_prim(cls):
+    """An analytic sensor whose declared rate is negative fails, and names the prim."""
+    run = SensorRun(seed=1, dt=0.004, site=_run().site, path="/Vehicle/body/Sensor")
+
+    with pytest.raises(ValueError, match="/Vehicle/body/Sensor"):
+        cls(run, rate=-1.0)
+
+
 def test_mag_known_attitude():
     """One hand-computed case, no oracle: 90° about world +z, so the map can't drift with it."""
     s2 = math.sqrt(2.0) / 2.0
@@ -208,3 +217,64 @@ def test_each_analytic_sensors_sample_carries_the_sim_time_the_signal_time_holds
     sensor.sample_wp(view, SimTime(1.25, 0))
 
     assert float(sensor.out.read()[0]["time"]) == 1.25
+
+
+def _sample_times(sensor, view, ticks: int) -> list[float]:
+    """The time of the sample `sensor`, wired, holds on each of `ticks` ticks of 4 ms from 0 s, as it samples `view`
+    on each. The tick's time grows by 4 ms a tick in float64, as the device clock adds it.
+    """
+    now, held = 0.0, []
+    for tick in range(ticks):
+        sensor.time.write([now])
+        sensor.sample_wp(view, SimTime(now, tick))
+        held.append(float(sensor.out.read()[0]["time"]))
+        now += 0.004
+    return held
+
+
+@pytest.mark.parametrize("cls", [ImuSensor, MagSensor, BaroSensor, GpsSensor])
+def test_each_analytic_sensor_at_a_declared_rate_samples_only_on_its_due_ticks(cls):
+    """Each analytic sensor at a declared rate takes a sample only on a due tick, and its signal holds it until the next.
+
+    Given an IMU, a magnetometer, a barometer or a GPS receiver at 50 Hz, wired alone, when it samples a body at
+    rest on ten 4 ms ticks from 0 s, then its signal holds the sample of 0 s on the first five ticks and the sample
+    of 0.02 s on the other five.
+    """
+    view = _WarpView((0.0, 0.0, 1.0), (0.0, 0.0, 0.0, 1.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
+
+    held = _sample_times(sv.wired(cls(_run(), rate=50.0)), view, 10)
+
+    assert held == pytest.approx([0.0] * 5 + [0.02] * 5, abs=1e-12)
+
+
+def test_a_sensor_whose_rate_divides_the_tick_rate_samples_every_nth_tick_though_the_clock_sums_in_float64():
+    """A sensor whose rate divides the tick rate samples every n-th tick, though the clock sums its ticks in float64.
+
+    Given a barometer at 50 Hz, wired alone, when it samples a body at rest on 2000 ticks of 4 ms, 8 s, then it
+    takes a new sample on every fifth tick and on no other. The summed tick time falls a rounding error short of
+    a due time first after about 4 s.
+    """
+    view = _WarpView((0.0, 0.0, 1.0), (0.0, 0.0, 0.0, 1.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
+
+    held = _sample_times(sv.wired(BaroSensor(_run(), rate=50.0)), view, 2000)
+
+    new = [tick for tick in range(len(held)) if tick == 0 or held[tick] != held[tick - 1]]
+    assert new == list(range(0, 2000, 5))
+
+
+def test_an_imu_slower_than_the_tick_differences_the_velocity_over_the_time_since_its_last_sample():
+    """An IMU slower than the tick finite-differences the velocity over the time since its last sample.
+
+    Given an IMU at 125 Hz with no noise, wired alone, on a level body that falls from rest, when it samples on
+    three 4 ms ticks, then its sample on the third reads zero specific force: the velocity change of two ticks
+    over the time of two ticks.
+    """
+    sensor = sv.wired(ImuSensor(_run(), acc_noise=0.0, gyro_noise=0.0, rate=125.0))
+    for tick in range(3):
+        fall = (0.0, 0.0, _GRAVITY_WORLD[2] * 0.004 * tick)  # the velocity after `tick` ticks of free fall
+        sensor.time.write([0.004 * tick])
+        sample = _sample(
+            sensor, _WarpView((0, 0, 1), (0.0, 0.0, 0.0, 1.0), fall, (0, 0, 0)), SimTime(0.004 * tick, tick)
+        )
+
+    np.testing.assert_allclose(sample["accel"], [0.0, 0.0, 0.0], atol=1e-4)

@@ -507,13 +507,12 @@ def test_a_run_whose_peer_mapping_sends_the_px4_sitl_peer_to_its_fake_starts_no_
     assert (daemon.runs, daemon.builds, fetched, stepped.count(True)) == ([], [], False, 500)
 
 
-def test_the_fake_px4_receives_each_tick_and_the_gps_at_its_sub_rate(daemon, warp_cpu, tmp_path):
+def test_the_fake_px4_receives_a_hil_sensor_each_tick_and_the_state_with_each_gps(daemon, warp_cpu, tmp_path):
     """The fake PX4 answers each `HIL_SENSOR` over the same lockstep.
 
     Given a run of the local fixture vehicle with an analytic sensor of each kind and the fake PX4, when
-    it steps 500 ticks, then the fake receives a `HIL_SENSOR` each tick, and `HIL_GPS` and
-    `HIL_STATE_QUATERNION` at the 10 Hz sub-rate of the Global Positioning System (GPS): 2 s of sim time
-    at 0.004 s a tick, so 20 of each, or 19 where the float clock lands a GPS tick one late.
+    it steps 500 ticks, then the fake receives a `HIL_SENSOR` each tick, and one `HIL_STATE_QUATERNION` with
+    each `HIL_GPS` of the Global Positioning System (GPS) receiver.
     """
     sensors = "".join(
         sv.prim(name, schema)
@@ -526,15 +525,49 @@ def test_the_fake_px4_receives_each_tick_and_the_gps_at_its_sub_rate(daemon, war
     )
     vehicle = sv.vehicle(tmp_path, sensors, px4=True)
     launch = LaunchConfig.from_dict({"vehicle": vehicle, "scene": sv.SCENE, "runtime": {"device": "cpu"}})
-    loop = launch_mod.build_from_launch(launch, preroll_timeout=10.0, peers=_FAKE_PX4)
+    loop = launch_mod.build_from_launch(launch, preroll_timeout=10.0, peers={"px4_sitl": sv.KeepingFake})
 
     _step(loop, 500)
-    received = dict(loop.peers[0].received)
+    kinds = [msg.get_type() for msg in list(loop.peers[0].last.every)]
     loop.close()
 
-    # The seed pass before the first tick exchanges once more, so 501 reach the fake.
-    gps, state = received.get("HIL_GPS", 0), received.get("HIL_STATE_QUATERNION", 0)
-    assert (received.get("HIL_SENSOR"), gps in (19, 20), state == gps) == (501, True, True), received
+    # The seed pass before the first tick exchanges once more, so 501 reach the fake. The messages before the
+    # last `HIL_SENSOR` are those of whole exchanges, which the fake has read to the end.
+    whole = kinds[: len(kinds) - kinds[::-1].index("HIL_SENSOR") - 1]
+    gps, state = whole.count("HIL_GPS"), whole.count("HIL_STATE_QUATERNION")
+    assert (kinds.count("HIL_SENSOR"), gps > 0, state == gps) == (501, True, True), (gps, state)
+
+
+def _shipped(monkeypatch) -> Orchestrator:
+    """Build a run of `astro_max_base` on the CPU with the PX4 SITL peer sent to the fake that keeps every message."""
+    monkeypatch.delenv("NEXUS_ASSET_CACHE")  # the shipped vehicle comes from the checkout's own cache
+    launch = LaunchConfig.from_dict({"vehicle": "astro_max_base", "scene": "empty", "runtime": {"device": "cpu"}})
+    return launch_mod.build_from_launch(launch, preroll_timeout=10.0, peers={"px4_sitl": sv.KeepingFake})
+
+
+def test_px4_receives_each_sensor_of_a_shipped_vehicle_at_its_declared_rate(daemon, monkeypatch, warp_cpu):
+    """PX4 receives each sensor of a shipped vehicle at its declared rate.
+
+    Given the fake PX4 peer and `astro_max_base` on a 250 Hz tick, when the run steps 1 s, then 250
+    `HIL_SENSOR` arrive, 100 with the magnetometer's bits and 50 with the barometer's, and 30 `HIL_GPS`,
+    each count give or take one. The window starts 10 ticks in and the run steps 10 more after it, so the
+    fake has read every message of the window.
+    """
+    mag, baro = 0b0000111000000, 0b1101000000000  # the bits PX4's `simulator_mavlink` tests for each sensor
+    loop = _shipped(monkeypatch)
+
+    _step(loop, 270)
+    every = list(loop.peers[0].last.every)
+    loop.close()
+
+    sensor = [msg for msg in every if msg.get_type() == "HIL_SENSOR"]
+    window = sensor[10:260]
+    start, end = window[0].time_usec, sensor[260].time_usec
+    mags = sum(msg.fields_updated & mag == mag for msg in window)
+    baros = sum(msg.fields_updated & baro == baro for msg in window)
+    fixes = sum(msg.get_type() == "HIL_GPS" and start <= msg.time_usec < end for msg in every)
+    within_one = all(abs(got - want) <= 1 for got, want in ((mags, 100), (baros, 50), (fixes, 30)))
+    assert (len(window), within_one) == (250, True), (mags, baros, fixes)
 
 
 def test_the_controller_gets_the_fake_px4s_hover_command_every_tick(daemon, catalog, monkeypatch, tmp_path):
