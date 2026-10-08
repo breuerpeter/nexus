@@ -12,8 +12,10 @@ import pytest
 pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
+import warp as wp
+
 from nexus_sim._src.core.interfaces import Stage
-from nexus_sim._src.core.schema import PoseTwist, PositionGoal
+from nexus_sim._src.core.schema import PoseTwist
 from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.core.stages import peer_stages
 from tests.usd import sensor_vehicle as sv
@@ -28,15 +30,17 @@ class _EstimateGuidance:
     """A guidance whose host stage keeps the estimate it reads on each tick, and writes no new setpoint."""
 
     def __init__(self):
-        self.estimate = Signal("estimate", PoseTwist, shape=(1, 13))
-        self.setpoint = Signal("setpoint", PositionGoal, shape=(1,))
+        self.estimate = Signal("estimate", PoseTwist, shape=(1,))
+        self.setpoint = Signal("setpoint", wp.vec3, shape=(1,))
         self.seen = []
 
     def stages(self):
         return [Stage("guide", "host", self._guide, warm=False, reads=(self.estimate,), writes=(self.setpoint,))]
 
     def _guide(self, tick):
-        self.seen.append([float(x) for x in self.estimate.read()[0]])
+        estimate = self.estimate.read()[0]
+        fields = ("position", "orientation", "linear_velocity", "angular_velocity")
+        self.seen.append([float(x) for name in fields for x in estimate[name]])
         return True
 
 
@@ -45,7 +49,7 @@ class _SetpointController(sv.Controller):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.setpoint = Signal("setpoint", PositionGoal, shape=(1,))
+        self.setpoint = Signal("setpoint", wp.vec3, shape=(1,))
 
     def stages(self):
         return peer_stages(self, reads=(self.setpoint,))

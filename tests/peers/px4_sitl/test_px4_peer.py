@@ -38,7 +38,7 @@ from nexus_sim._src.api.sim import Sim
 from nexus_sim._src.config import Catalog, LaunchConfig
 from nexus_sim._src.core.interfaces import Stage
 from nexus_sim._src.core.orchestrator import Orchestrator
-from nexus_sim._src.core.schema import Controls, SimTime
+from nexus_sim._src.core.schema import SimTime
 from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
 from nexus_sim._src.vehicle.controllers.px4 import controller as ctrl
@@ -457,7 +457,7 @@ class _Commands:
 
     def __init__(self):
         self.seen: list[tuple[float, ...]] = []
-        self.controls = Signal("controls", Controls, shape=(1, 16))
+        self.controls = Signal("controls", wp.float32, shape=(1, 16))
 
     def forces(self, controls, state):
         pass

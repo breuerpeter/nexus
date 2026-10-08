@@ -14,28 +14,31 @@ import warp as wp
 
 from nexus_sim._src.core.interfaces import Stage
 from nexus_sim._src.core.orchestrator import Orchestrator
-from nexus_sim._src.core.schema import Controls, ReferenceTrajectory, SimTime
-from nexus_sim._src.core.signals import DeviceType, Signal
+from nexus_sim._src.core.schema import ReferenceTrajectory, SimTime
+from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.guidance import TrackingGuidance
 
 DEVICES = ["cpu", pytest.param("cuda:0", marks=pytest.mark.gpu)]
 
 
-class Count(DeviceType):
+@wp.struct
+class Count:
     """A signal type this test defines and core doesn't name: one 32-bit count."""
 
-    dtype = wp.int32
+    n: wp.int32
 
 
 @wp.kernel
-def _count(n: wp.array(dtype=wp.int32), out: wp.array(dtype=wp.int32)):
+def _count(n: wp.array(dtype=wp.int32), out: wp.array(dtype=Count)):
     n[0] = n[0] + 1
-    out[0] = n[0]
+    c = Count()
+    c.n = n[0]
+    out[0] = c
 
 
 @wp.kernel
-def _copy(src: wp.array(dtype=wp.int32), dst: wp.array(dtype=wp.int32)):
-    dst[0] = src[0]
+def _copy(src: wp.array(dtype=Count), dst: wp.array(dtype=wp.int32)):
+    dst[0] = src[0].n
 
 
 class _Clock:
@@ -126,7 +129,7 @@ class _HostReader:
         return [Stage("read", "host", self._read, reads=(self.count,))]
 
     def _read(self, tick):
-        self.seen.append(int(self.count.buffer.numpy()[0]))
+        self.seen.append(int(self.count.buffer.numpy()[0]["n"]))
         return True
 
 
@@ -184,7 +187,7 @@ class _CountReader:
 
     def __init__(self):
         self.count = Signal("count", Count, shape=(1,))
-        self.controls = Signal("controls", Controls, shape=(1, 4))
+        self.controls = Signal("controls", wp.float32, shape=(1, 4))
 
     def connect(self):
         pass
@@ -291,7 +294,7 @@ def test_a_host_stage_keeps_the_copy_it_read_after_a_later_write(device):
         for _ in range(3):
             orch.step()
         orch.close()
-    assert [int(value[0]) for value in controller.kept[-3:]] == [1, 2, 3]
+    assert [int(value[0]["n"]) for value in controller.kept[-3:]] == [1, 2, 3]
 
 
 @pytest.mark.usefixtures("warp_cpu")

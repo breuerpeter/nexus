@@ -2,30 +2,21 @@
 
 A stage declares each signal it reads and each signal it writes, by name and type. The builder wires
 every input to the one output of its name before the capture, checks that the two agree, and hands the
-writer and each reader one buffer. A device type's buffer is a Warp array, which device stages read and
-write in their kernels and a host stage reads with a copy. Any other type is a host type, whose buffer
-holds one object.
+writer and each reader one buffer. A signal whose type is Warp's own, a struct or a value type such as
+``wp.float32`` or ``wp.vec3``, lives on the device: its buffer is a Warp array, which device stages read
+and write in their kernels and a host stage reads with a copy. Any other type is a host type, whose
+buffer holds one object.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import warp as wp
 
 if TYPE_CHECKING:
     from .stages import Bound
-
-
-class DeviceType:
-    """The base of a device signal's type: its buffer is a Warp array of ``dtype`` in the signal's shape.
-
-    A component subclasses it to declare its own device type, beside the types core ships. ``dtype`` is a
-    Warp dtype, or the name of one in ``warp`` for a type core declares, since core imports no Warp.
-    """
-
-    __slots__ = ()
-    dtype: ClassVar[Any]
 
 
 class HostBuffer:
@@ -42,7 +33,7 @@ class Signal:
 
     Args:
         name: The name that wires a reader to its writer.
-        type: A :class:`DeviceType` subclass, whose buffer lives on the device, or any other class, whose
+        type: A Warp struct or value type, whose buffer lives on the device, or any other class, whose
             buffer holds one object on the host.
         shape: The device buffer's shape. A reader reads the leading part of a wider buffer.
         default: The value a reader takes until a component writes the signal, and for good when no
@@ -61,8 +52,8 @@ class Signal:
 
     @property
     def device(self) -> bool:
-        """Whether the signal's buffer lives on the device: its type is a :class:`DeviceType`."""
-        return isinstance(self.type, type) and issubclass(self.type, DeviceType)
+        """Whether the signal's buffer lives on the device: its type is a Warp struct or value type."""
+        return wp.types.type_is_struct(self.type) or wp.types.type_is_value(self.type)
 
     def read(self) -> Any:
         """The signal's value on the host: a copy of a device buffer, or the object a host buffer holds.
@@ -73,20 +64,17 @@ class Signal:
     def write(self, value: Any) -> None:
         """Write the signal's value from the host, in place: a device buffer takes a copy of ``value``, an
         array of the signal's shape, so the next graph replay reads it, and a host buffer holds ``value``.
+        A struct's value is a record per element, its fields in order, such as ``[(time, accel, gyro)]``.
         """
         if self.device:
-            self.buffer.assign(np.asarray(value))
+            dtype = self.type.numpy_dtype() if wp.types.type_is_struct(self.type) else None
+            self.buffer.assign(np.asarray(value, dtype=dtype))
         else:
             self.buffer.value = value
 
     def _allocate(self) -> Any:
         """A new buffer from the signal's type: zeros on the current Warp device, or an empty host buffer."""
-        if not self.device:
-            return HostBuffer()
-        import warp as wp
-
-        dtype = self.type.dtype
-        return wp.zeros(self.shape, dtype=getattr(wp, dtype) if isinstance(dtype, str) else dtype)
+        return wp.zeros(self.shape, dtype=self.type) if self.device else HostBuffer()
 
 
 def _owner(bound: Bound) -> str:
@@ -178,4 +166,4 @@ def _hand(buffer: Any, signals: list[Signal], default: Any) -> None:
         signals[0].write(default)
 
 
-__all__ = ["DeviceType", "HostBuffer", "Signal", "wire"]
+__all__ = ["HostBuffer", "Signal", "wire"]

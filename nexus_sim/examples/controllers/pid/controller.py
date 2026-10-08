@@ -28,9 +28,10 @@ kernels on its own tape, so the gains stay the differentiable leaf.
 from __future__ import annotations
 
 import numpy as np
+import warp as wp
 
 from nexus_sim._src.core.interfaces import Stage
-from nexus_sim._src.core.schema import Controls, PositionGoal
+from nexus_sim._src.core.schema import Controls
 from nexus_sim._src.core.signals import Signal
 
 from .law import DEFAULT_GAINS, hover_action, pid_action_np
@@ -70,7 +71,7 @@ class PidController:
         self.goal_w = np.array(goal_w, dtype=np.float64)
         # The goal the loop flies to: the setpoint a guidance writes, `goal_w` until one does. The
         # observation sensor's kernel reads it, since the observation is still a sensor of its own.
-        self.setpoint = Signal("setpoint", PositionGoal, shape=(1,), default=[goal_w])
+        self.setpoint = Signal("setpoint", wp.vec3, shape=(1,), default=[goal_w])
         self.thrust_to_weight = float(thrust_to_weight)
         self.hover = hover_action(thrust_to_weight)
         self.body_index = int(body_index)
@@ -81,7 +82,7 @@ class PidController:
         self.moment_scale = float(moment_scale)
         self._moment_mixer = None
         # The per-rotor commands the loop flies, which the moment mixer writes: one per rotor of the airframe.
-        self.controls = Signal("controls", Controls, shape=(1, mixer.nr)) if mixer is not None else None
+        self.controls = Signal("controls", wp.float32, shape=(1, mixer.nr)) if mixer is not None else None
         # Device-native state, lazily allocated on first Warp use; keeps the host/eager-numpy path
         # warp-free to import. ``gains_wp`` is the differentiable leaf the optimizer descends,
         # and can replace; ``_action_wp`` is a persistent moment buffer, static address -> graph-safe.
@@ -117,8 +118,6 @@ class PidController:
 
     def _ensure_wp(self):
         """Create the Warp gains leaf + persistent moment buffer + the moment mixer on first device use."""
-        import warp as wp
-
         from nexus_sim.examples._lib import MomentMixer
 
         if self.gains_wp is None:
@@ -140,8 +139,6 @@ class PidController:
         swap the array. ``out_action_wp`` is caller-provided, so the eager loop passes a persistent
         buffer, graph-safe, and the differentiable rollout passes a per-step buffer, the tape history.
         """
-        import warp as wp  # lazy: keep the host path, eager and determinism, import-light
-
         from .law import pid_law
 
         self._ensure_wp()

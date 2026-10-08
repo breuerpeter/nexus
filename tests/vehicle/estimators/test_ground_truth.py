@@ -16,7 +16,7 @@ from nexus_sim._src.api.sim import Sim
 from nexus_sim._src.build.assembly import build_scenario
 from nexus_sim._src.core import Clock, Orchestrator
 from nexus_sim._src.core.interfaces import Stage, Tick
-from nexus_sim._src.core.schema import Measurement, PoseTwist, PositionGoal, SimTime
+from nexus_sim._src.core.schema import Measurement, PoseTwist, SimTime
 from nexus_sim._src.core.signals import Signal, wire
 from nexus_sim._src.core.stages import Bound
 from nexus_sim._src.guidance import MissionGuidance
@@ -46,8 +46,8 @@ class _KeepingController:
     """A controller whose host stage keeps each estimate it reads. It reads the guidance's setpoint too."""
 
     def __init__(self):
-        self.estimate = Signal("estimate", PoseTwist, shape=(1, 13))
-        self.setpoint = Signal("setpoint", PositionGoal, shape=(1,))
+        self.estimate = Signal("estimate", PoseTwist, shape=(1,))
+        self.setpoint = Signal("setpoint", wp.vec3, shape=(1,))
         self.kept = []
 
     def connect(self):
@@ -58,10 +58,16 @@ class _KeepingController:
 
     def stages(self):
         def keep(tick):
-            self.kept.append(self.estimate.read()[0])
+            self.kept.append(_row(self.estimate.read()[0]))
             return True
 
         return [Stage("keep", "host", keep, reads=(self.estimate, self.setpoint))]
+
+
+def _row(estimate) -> np.ndarray:
+    """An estimate as a body's row in the Recorder: position, quaternion, linear and angular velocity."""
+    fields = ("position", "orientation", "linear_velocity", "angular_velocity")
+    return np.concatenate([estimate[name] for name in fields])
 
 
 def _bits(values) -> np.ndarray:
@@ -133,4 +139,6 @@ def test_the_passthrough_writes_the_base_bodys_pose_and_twist_not_body_zeros():
     wire([Bound(stage, estimator, "estimator")])
     stage.run(Tick(state=_TwoBodies(), t=SimTime(), dt=0.004, meas=Measurement(), base=1))
 
-    assert estimator.estimate.read()[0].tolist() == [1.0, 2.0, 3.0, 0.5, -0.5, 0.5, 0.5, 4.0, 5.0, 6.0, 7.0, 8.0, 9.5]
+    row = _row(estimator.estimate.read()[0])
+
+    assert row.tolist() == [1.0, 2.0, 3.0, 0.5, -0.5, 0.5, 0.5, 4.0, 5.0, 6.0, 7.0, 8.0, 9.5]

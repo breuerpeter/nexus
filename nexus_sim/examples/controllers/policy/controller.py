@@ -28,8 +28,9 @@ train↔deploy parity surface. The rate loop needs only the body-frame rate ``ω
 from __future__ import annotations
 
 import numpy as np
+import warp as wp
 
-from nexus_sim._src.core.schema import Controls, PoseTwist, PositionGoal
+from nexus_sim._src.core.schema import Controls, PoseTwist
 from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.core.stages import peer_stages
 from nexus_sim.examples._lib.observation import ACTION_DIM, build_observation
@@ -68,9 +69,9 @@ class TrainedPolicyController:
         # In the loop each exchange copies it from the setpoint, which a guidance writes, `goal_w` until
         # one does.
         self.goal_w = np.array(goal_w, dtype=np.float64)
-        self.setpoint = Signal("setpoint", PositionGoal, shape=(1,), default=[goal_w])
+        self.setpoint = Signal("setpoint", wp.vec3, shape=(1,), default=[goal_w])
         # The vehicle's estimate, the base body's pose and twist an estimator writes: the observation's source.
-        self.estimate = Signal("estimate", PoseTwist, shape=(1, 13))
+        self.estimate = Signal("estimate", PoseTwist, shape=(1,))
         self.action_clip = float(action_clip)
         self.device = device
         self.body_index = int(body_index)
@@ -167,12 +168,12 @@ class TrainedPolicyController:
         """
         if self.setpoint.buffer is not None:  # wired by the loop: fly to the goal the guidance writes
             self.goal_w[:] = self.setpoint.read()[0]
-        est = self.estimate.read()[0]  # [pos(0:3), quat_xyzw(3:7), lin(7:10), ang(10:13)], world frame
+        est = self.estimate.read()[0]  # world frame
         obs = build_observation(
-            pos_w=est[0:3],
-            quat_xyzw=est[3:7],
-            lin_vel_w=est[7:10],
-            ang_vel_w=est[10:13],
+            pos_w=est["position"],
+            quat_xyzw=est["orientation"],
+            lin_vel_w=est["linear_velocity"],
+            ang_vel_w=est["angular_velocity"],
             goal_w=self.goal_w,
             prev_action=self._prev_action,
         )

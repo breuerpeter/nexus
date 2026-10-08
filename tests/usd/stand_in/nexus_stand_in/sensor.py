@@ -1,15 +1,16 @@
 """The stand-in project's sensor class, which `StandInSensorAPI` builds, and its output's type."""
 
-import numpy as np
+import warp as wp
 
 from nexus_sim._src.core.interfaces import Stage
-from nexus_sim._src.core.signals import DeviceType, Signal
+from nexus_sim._src.core.signals import Signal
 
 
-class Gain(DeviceType):
-    """The stand-in sensor's output, a signal type the stand-in project defines: its gain, one 32-bit float."""
+@wp.struct
+class Gain:
+    """The stand-in sensor's output, a signal type the stand-in project defines: its gain."""
 
-    dtype = "float32"
+    value: wp.float32
 
 
 class StandInSensor:
@@ -34,5 +35,5 @@ class StandInSensor:
         return [Stage("stand_in", "host", self._sample, writes=(self.out,))]
 
     def _sample(self, tick) -> None:
-        self.out.write(np.array([self.gain], dtype=np.float32))
+        self.out.write([(self.gain,)])
         tick.meas.eph = self.gain

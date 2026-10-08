@@ -18,7 +18,6 @@ from __future__ import annotations
 import warp as wp
 
 from nexus_sim._src.core.interfaces import Stage
-from nexus_sim._src.core.schema import Controls
 from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.vehicle.rotors import RPM_PER_RADS, find_rotor_joints
 
@@ -89,7 +88,7 @@ class RotorCommand:
         self._drag_ff = wp.zeros(self.nr, dtype=float)
         # The controller's commands, of which the first nr are the rotor motors: the builder checks that the
         # controller writes at least that many, as PX4 streams 16 HIL_ACTUATOR_CONTROLS channels.
-        self.controls = Signal("controls", Controls, shape=(1, self.nr))
+        self.controls = Signal("controls", wp.float32, shape=(1, self.nr))
 
     def _write(self, tick) -> None:
         """The device stage: the controller's ``(1, n)`` normalized commands → rotor-speed targets and the

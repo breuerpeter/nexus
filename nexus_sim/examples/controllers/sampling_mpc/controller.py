@@ -27,7 +27,7 @@ import warp as wp
 import warp.optim
 from newton.geometry import sdf_capsule  # warp-callable Signed Distance Field (SDF) for the collision-cost kernel
 
-from nexus_sim._src.core.schema import PoseTwist, PositionGoal
+from nexus_sim._src.core.schema import PoseTwist
 from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.core.stages import peer_stages
 from nexus_sim.examples._lib import build_rotor_mixer_from_layout, rigid_body_wrench_world
@@ -88,18 +88,14 @@ def increment_seed(seed: wp.array(dtype=int)):
 
 @wp.kernel
 def replicate_state(
-    estimate: wp.array2d(dtype=float),  # (1, 13): position, quaternion xyzw, linear and angular velocity
+    estimate: wp.array(dtype=PoseTwist),
     dst_q: wp.array(dtype=wp.transform),
     dst_qd: wp.array(dtype=wp.spatial_vector),
 ):
     w = wp.tid()
-    dst_q[w] = wp.transform(
-        wp.vec3(estimate[0, 0], estimate[0, 1], estimate[0, 2]),
-        wp.quat(estimate[0, 3], estimate[0, 4], estimate[0, 5], estimate[0, 6]),
-    )
-    dst_qd[w] = wp.spatial_vector(
-        estimate[0, 7], estimate[0, 8], estimate[0, 9], estimate[0, 10], estimate[0, 11], estimate[0, 12]
-    )
+    e = estimate[0]
+    dst_q[w] = wp.transform(e.position, e.orientation)
+    dst_qd[w] = wp.spatial_vector(e.linear_velocity, e.angular_velocity)
 
 
 @wp.kernel
@@ -261,9 +257,9 @@ class SamplingMPCController:
         # The ACTIVE target: the setpoint, a persistent (1,) vec3 buffer the rollout reads. The guidance
         # writes it in place without invalidating the captured CUDA graph, because the rollout reads its
         # current contents. The guidance owns mission sequencing, advance on arrival, uniform with policy/pid.
-        self.setpoint = Signal("setpoint", PositionGoal, shape=(1,), default=[goal_w])
+        self.setpoint = Signal("setpoint", wp.vec3, shape=(1,), default=[goal_w])
         # The vehicle's estimate, the base body's pose and twist an estimator writes: each plan starts there.
-        self.estimate = Signal("estimate", PoseTwist, shape=(1, 13))
+        self.estimate = Signal("estimate", PoseTwist, shape=(1,))
 
         self.model = batch_model
         self.solver = newton.solvers.SolverSemiImplicit(batch_model)

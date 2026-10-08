@@ -16,7 +16,7 @@ import warp as wp
 
 from nexus_sim._src.core.interfaces import Stage
 from nexus_sim._src.core.orchestrator import Orchestrator
-from nexus_sim._src.core.schema import PoseTwist, PositionGoal, ReferenceTrajectory, SimTime
+from nexus_sim._src.core.schema import PoseTwist, ReferenceTrajectory, SimTime
 from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.guidance import MissionGuidance, TrackingGuidance
 
@@ -81,11 +81,11 @@ class _Estimator:
     capturable = True
 
     def __init__(self):
-        self.estimate = Signal("estimate", PoseTwist, shape=(1, 13))
+        self.estimate = Signal("estimate", PoseTwist, shape=(1,))
 
     def stages(self):
         def estimate(tick):
-            self.estimate.write([[*tick.state.pos, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]])
+            self.estimate.write([(tuple(tick.state.pos), (0.0, 0.0, 0.0, 1.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))])
 
         return [Stage("estimate", "device", estimate, writes=(self.estimate,))]
 
@@ -113,9 +113,9 @@ class _ExchangeController:
     it reads.
     """
 
-    def __init__(self, state, setpoint=PositionGoal):
+    def __init__(self, state, setpoint=wp.vec3):
         self._state = state
-        self.setpoint = Signal("setpoint", setpoint, shape=(1,) if setpoint is PositionGoal else None)
+        self.setpoint = Signal("setpoint", setpoint, shape=(1,) if setpoint is wp.vec3 else None)
         self.exchanges = []
 
     def connect(self):
@@ -141,7 +141,7 @@ class _DeviceController:
     capturable = True
 
     def __init__(self):
-        self.setpoint = Signal("setpoint", PositionGoal, shape=(1,))
+        self.setpoint = Signal("setpoint", wp.vec3, shape=(1,))
         self.held = []
 
     def connect(self):
@@ -360,7 +360,7 @@ class _SetpointSensor:
     """A sensor whose device stage reads a signal named `setpoint`, as the guidance's is."""
 
     def __init__(self):
-        self.setpoint = Signal("setpoint", PositionGoal, shape=(1,))
+        self.setpoint = Signal("setpoint", wp.vec3, shape=(1,))
 
     def read(self, meas):
         pass

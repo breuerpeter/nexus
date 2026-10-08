@@ -19,6 +19,8 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
+import warp as wp
+
 from nexus_sim._src.diagnostics import diagnostics
 
 from .interfaces import Stage, Tick
@@ -48,22 +50,8 @@ if TYPE_CHECKING:
 
 
 def _on_cuda() -> bool:
-    """Whether the active Warp device captures graphs: a CUDA device. Warp stays a lazy import, so a
-    warp-free build of stand-in components runs the loop eagerly.
-    """
-    try:
-        import warp as wp
-
-        return bool(wp.get_device().is_cuda)
-    except Exception:
-        return False
-
-
-def _replay():
-    """The graph replay, bound once outside the loop."""
-    import warp as wp
-
-    return wp.capture_launch
+    """Whether the active Warp device captures graphs: a CUDA device."""
+    return bool(wp.get_device().is_cuda)
 
 
 def _instance(component) -> str:
@@ -619,8 +607,6 @@ class Orchestrator:
         other stream operation during a capture kills it, so the warm pass and the seed row complete
         first, and nothing else touches the device until the loop replays.
         """
-        import warp as wp
-
         wp.synchronize()  # complete the warm pass and the seed row before a capture opens
         graphs = []
         for seg in segments:
@@ -649,7 +635,7 @@ class Orchestrator:
         t_warm = None
         steps_warm = 0
         tick.timeout = self.exchange_timeout
-        replay = _replay() if graphs is not None else None
+        replay = wp.capture_launch if graphs is not None else None
         prof = self._make_profiler("graph" if graphs is not None else "eager")
         try:
             while not self._stop and not tick.done and (self.max_steps is None or count < self.max_steps):

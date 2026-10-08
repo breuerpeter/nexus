@@ -26,7 +26,6 @@ import numpy as np
 import warp as wp
 
 from nexus_sim._src.core.interfaces import Stage
-from nexus_sim._src.core.schema import Controls
 from nexus_sim._src.core.signals import Signal
 from nexus_sim.examples._lib.coupling import rigid_body_wrench_world
 from nexus_sim.examples._lib.mixer import RotorMixer
@@ -61,7 +60,7 @@ class Rotors:
         self._offsets = wp.array(np.asarray(mixer.rotor_offsets, dtype=np.float32), dtype=wp.vec3)  # (nr,) base-frame
         self._omega_state = wp.zeros((1, self.nr), dtype=float)  # (1, nr) per-rotor motor-speed state, updated in place
         # The controller's commands, of which the first nr are the rotor motors: the builder checks the width.
-        self.controls = Signal("controls", Controls, shape=(1, self.nr))
+        self.controls = Signal("controls", wp.float32, shape=(1, self.nr))
 
     def forces_wp(self, cmd, state) -> None:
         """The device stage: the controller's ``(1, n)`` command buffer → motor lag → propeller →

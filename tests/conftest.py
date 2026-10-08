@@ -306,12 +306,12 @@ class StandInController:
     name = "standin"
 
     def __init__(self):
-        from nexus_sim._src.core.schema import Controls, ReferenceTrajectory
+        from nexus_sim._src.core.schema import ReferenceTrajectory
         from nexus_sim._src.core.signals import Signal
 
         self._logger = None
         self.setpoint = Signal("setpoint", ReferenceTrajectory)
-        self.controls = Signal("controls", Controls, shape=(1, 16))  # every channel off: the vehicle rests
+        self.controls = Signal("controls", wp.float32, shape=(1, 16))  # every channel off: the vehicle rests
 
     def connect(self) -> None:
         pass

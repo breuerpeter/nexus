@@ -14,26 +14,17 @@ def copy_pose_twist(
     body_q: wp.array(dtype=wp.transform),
     body_qd: wp.array(dtype=wp.spatial_vector),
     i: int,
-    estimate: wp.array2d(dtype=float),
+    estimate: wp.array(dtype=PoseTwist),
 ):
-    """Copy body ``i``'s pose and twist into the estimate's one row, in the order of a body's row in the Recorder."""
+    """Copy body ``i``'s pose and twist into the estimate."""
     tf = body_q[i]
-    p = wp.transform_get_translation(tf)
-    q = wp.transform_get_rotation(tf)  # xyzw
-    vd = body_qd[i]  # [lin(0:3), ang(3:6)]
-    estimate[0, 0] = p[0]
-    estimate[0, 1] = p[1]
-    estimate[0, 2] = p[2]
-    estimate[0, 3] = q[0]
-    estimate[0, 4] = q[1]
-    estimate[0, 5] = q[2]
-    estimate[0, 6] = q[3]
-    estimate[0, 7] = vd[0]
-    estimate[0, 8] = vd[1]
-    estimate[0, 9] = vd[2]
-    estimate[0, 10] = vd[3]
-    estimate[0, 11] = vd[4]
-    estimate[0, 12] = vd[5]
+    vd = body_qd[i]  # [linear, angular]
+    e = PoseTwist()
+    e.position = wp.transform_get_translation(tf)
+    e.orientation = wp.transform_get_rotation(tf)
+    e.linear_velocity = wp.spatial_top(vd)
+    e.angular_velocity = wp.spatial_bottom(vd)
+    estimate[0] = e
 
 
 class GroundTruthEstimator:
@@ -43,7 +34,7 @@ class GroundTruthEstimator:
     """
 
     def __init__(self):
-        self.estimate = Signal("estimate", PoseTwist, shape=(1, 13))
+        self.estimate = Signal("estimate", PoseTwist, shape=(1,))
 
     def stages(self) -> list[Stage]:
         """One warm device stage, ``estimate``, which copies the base body's row of the physics state into the

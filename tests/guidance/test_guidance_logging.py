@@ -21,7 +21,7 @@ class _Estimator:
     """Stands in for the estimator: it writes the estimate the guidance reads, which each tick sets."""
 
     def __init__(self):
-        self.estimate = Signal("estimate", PoseTwist, shape=(1, 13))
+        self.estimate = Signal("estimate", PoseTwist, shape=(1,))
 
     def stages(self):
         return [Stage("estimate", "device", lambda tick: None, writes=(self.estimate,))]
@@ -67,7 +67,7 @@ def _wired(guidance):
 
 def _tick(guidance, pos, sim_time):
     """Run the guidance's stages once, as the loop does on one tick."""
-    guidance.estimate.write([[*pos, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]])  # the vehicle at `pos`
+    guidance.estimate.write([(pos, (0.0, 0.0, 0.0, 1.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))])  # the vehicle at `pos`
     tick = Tick(state=None, t=SimTime(sim_time, 0), dt=0.004, meas=None)
     for stage in guidance.stages():
         stage.run(tick)

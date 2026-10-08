@@ -364,7 +364,7 @@ with wp.ScopedDevice("cpu"):
     path = sv.vehicle(pathlib.Path({str(tmp_path)!r}), prims, estimator="")
     loop = sv.build(path, components=sv.components(StandInEstimatorAPI=reader))
     sv.steps(loop, 2)
-print(">", [[float(v) for v in gain.reshape(-1)] for _, gain in reader.kept])
+print(">", [[float(v) for v in gain["value"]] for _, gain in reader.kept])
 """
     env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(site), str(ROOT)])}
     r = subprocess.run([sys.executable, "-c", code], check=False, cwd=tmp_path, env=env, capture_output=True, text=True)

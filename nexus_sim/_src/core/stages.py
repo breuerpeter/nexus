@@ -16,9 +16,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
+import warp as wp
 
 from .interfaces import Stage
-from .schema import Controls
 from .signals import Signal
 
 if TYPE_CHECKING:
@@ -210,7 +210,7 @@ def peer_stages(controller, *, reads: tuple = ()) -> list[Stage]:
     ``False``. ``reads`` are the signals the controller's ``exchange`` reads, such as its setpoint, which
     the ``exchange`` stage declares.
     """
-    controls = Signal("controls", Controls, shape=(1, CHANNELS))
+    controls = Signal("controls", wp.float32, shape=(1, CHANNELS))
     cmd = np.zeros((1, CHANNELS), dtype=np.float32)
 
     def exchange(tick):

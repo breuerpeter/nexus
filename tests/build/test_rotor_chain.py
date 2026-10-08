@@ -74,7 +74,7 @@ class _Narrow:
     """A device-native controller whose controls hold three values, one short of the quad's four rotors."""
 
     def __init__(self):
-        self.controls = Signal("controls", Controls, shape=(1, 3))
+        self.controls = Signal("controls", wp.float32, shape=(1, 3))
 
     def connect(self):
         pass
@@ -115,7 +115,7 @@ class _ServoCommand:
         coord = self.control.joint_target_q.shape[0] == model.joint_coord_count
         self.index = int((model.joint_q_start if coord else model.joint_qd_start).numpy()[j])
         self.channel, self.scale = channel, scale
-        self.controls = Signal("controls", Controls, shape=(1, channel + 1))
+        self.controls = Signal("controls", wp.float32, shape=(1, channel + 1))
 
     def stages(self):
         return [Stage("servo", "device", self._write, reads=(self.controls,))]

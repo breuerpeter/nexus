@@ -99,11 +99,11 @@ def test_the_public_surface_names_the_vehicle_and_scene_catalog_catalog_and_no_r
     assert out.stdout.strip() == "['astro_max_base', 'astro_max_fpv'] False", out.stderr
 
 
-def test_importing_core_loads_neither_newton_nor_warp():
-    """Importing core loads neither `newton` nor `warp`."""
-    code = "import sys, nexus_sim._src.core; print('newton' in sys.modules, 'warp' in sys.modules)"
+def test_importing_core_loads_no_newton():
+    """Importing core loads no `newton`: core runs on Warp, never on a physics backend."""
+    code = "import sys, nexus_sim._src.core; print('newton' in sys.modules)"
     out = subprocess.run([sys.executable, "-c", code], check=True, capture_output=True, text=True)
-    assert out.stdout.split() == ["False", "False"]
+    assert out.stdout.split() == ["False"]
 
 
 def test_envsample_and_environment_are_no_longer_public_exports():
