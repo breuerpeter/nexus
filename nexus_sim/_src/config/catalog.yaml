@@ -13,7 +13,8 @@
 # its rotors, a `NexusPropellerAPI` propeller on each rotor body beside the `NewtonActuator` motor on its
 # joint, AND — for the FPV mods — an authored FpvCam the Kit render peer renders.
 #
-# Each vehicle USD declares PX4 with `NexusPx4API` on its root prim, and its `nexus:airframe` is the
+# Each vehicle USD declares PX4 with `NexusPx4API` on its controller's scope, the Scope
+# /astro_max/Controller, and its `nexus:airframe` is the
 # SITL airframe make target minus PX4's `none_` prefix: `astro_max` runs `make px4_sitl
 # none_astro_max`. Both vehicles fly `astro_max` until payload mass is modeled. Beside it, `NexusPx4SitlAPI`
 # declares the PX4 SITL peer, which the run starts; a run's override layer drops it to fly an
