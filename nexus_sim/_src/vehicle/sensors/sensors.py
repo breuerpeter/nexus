@@ -33,16 +33,23 @@ from nexus_sim._src.recording.sensor import SensorRecorder
 class DeviceSensor(SensorRecorder):
     """A sensor whose work is one device stage, named after the sensor, over ``sample_wp``. The stage reads
     the tick's sim time, the signal ``time``, and writes the sensor's sample, stamped with it, to its output
-    signal ``out``.
+    signal ``out`` on a tick that its rate makes due. On any other tick the kernel writes nothing, so the
+    signal holds the last sample.
 
     Args:
         output: The name of the output signal, such as ``imu``.
         sample: The output's type, a Warp struct whose first field is the sample's time.
+        rate: How often the sensor gives a new sample, hertz: 0 gives one every tick, as does a rate faster
+            than the tick rate.
     """
 
-    def __init__(self, output: str, sample):
+    def __init__(self, output: str, sample, rate: float = 0.0):
         self.time = Signal("time", wp.float64, shape=(1,))
         self.out = Signal(output, sample, shape=(1,))
+        self.rate = float(rate)
+        self.period = 1.0 / self.rate if self.rate > 0.0 else 0.0  # seconds from one sample to the next
+        self._start = wp.zeros(1, dtype=wp.float64)  # the sim time of the first sample
+        self._taken = wp.zeros(1, dtype=int)  # how many samples the sensor has taken
 
     def stages(self) -> list[Stage]:
         return [
@@ -94,6 +101,26 @@ def _noise(seed: int, step: int, axis: int, sigma: float) -> float:
     return sigma * wp.randn(r)
 
 
+# A due time this close after a tick falls on it. The clock adds each tick to the sim time in float64, so a due
+# time that falls on a tick can land a rounding error after it, which would put the sample one tick late.
+_SLACK = wp.constant(wp.float64(1.0e-6))  # seconds
+
+
+@wp.func
+def _due(now: wp.float64, period: wp.float64, start: wp.array(dtype=wp.float64), taken: wp.array(dtype=int)) -> bool:
+    """Whether a sample is due at sim time ``now``; a due sample counts toward the next one's due time. The k-th
+    sample after the first is due at the first's time plus k periods: absolute due times, as the RTX sensors keep,
+    so a rate that doesn't divide the tick rate neither quantises nor drifts. A period of 0 makes every tick due.
+    """
+    k = taken[0]
+    if k > 0 and period > wp.float64(0.0) and now < start[0] + wp.float64(k) * period - _SLACK:
+        return False
+    if k == 0:
+        start[0] = now
+    taken[0] = k + 1
+    return True
+
+
 @wp.kernel
 def increment_step(step: wp.array(dtype=int)):
     """Advance the per-sensor tick counter. Launched inside a captured region so the noise field
@@ -121,9 +148,18 @@ def imu_kernel(
     prev_lin: wp.array(dtype=wp.vec3),
     prev_ang: wp.array(dtype=wp.vec3),
     time: wp.array(dtype=wp.float64),
+    period: wp.float64,
+    start: wp.array(dtype=wp.float64),
+    taken: wp.array(dtype=int),
+    ticks: wp.array(dtype=int),  # the ticks since the last sample
     out: wp.array(dtype=float),  # [xacc,yacc,zacc, xgyro,ygyro,zgyro], in the mount's axes
     sample: wp.array(dtype=ImuSample),
 ):
+    ticks[0] = ticks[0] + 1
+    if not _due(time[0], period, start, taken):
+        return
+    interval = dt * wp.float32(ticks[0])  # the time since the last sample, over which the velocity changed
+    ticks[0] = 0
     st = step[0]
     q = wp.transform_get_rotation(body_q[body])
     vlin = wp.spatial_top(body_qd[body])  # world, at COM
@@ -131,8 +167,8 @@ def imu_kernel(
     if first == 1:  # first tick: seed the finite-diff so acceleration starts at zero
         prev_lin[0] = vlin
         prev_ang[0] = vang
-    acc_com = (vlin - prev_lin[0]) / dt
-    alpha = (vang - prev_ang[0]) / dt
+    acc_com = (vlin - prev_lin[0]) / interval
+    alpha = (vang - prev_ang[0]) / interval
     prev_lin[0] = vlin
     prev_ang[0] = vang
     # lever arm: a_mount = a_com + alpha x r + omega x (omega x r), r = R(q)*r_body
@@ -164,9 +200,14 @@ def mag_kernel(
     sigma: wp.vec3,
     body: int,  # the model body the sensor rides
     time: wp.array(dtype=wp.float64),
+    period: wp.float64,
+    start: wp.array(dtype=wp.float64),
+    taken: wp.array(dtype=int),
     out: wp.array(dtype=float),  # [xmag, ymag, zmag]
     sample: wp.array(dtype=MagSample),
 ):
+    if not _due(time[0], period, start, taken):
+        return
     st = step[0]
     q = wp.transform_get_rotation(body_q[body])
     # NED -> world is a PROPER rotation: X=N, Y=-E, which is west, Z=-D; the frame contract lives in
@@ -192,9 +233,14 @@ def baro_kernel(
     body: int,  # the model body the sensor rides
     temperature: float,
     time: wp.array(dtype=wp.float64),
+    period: wp.float64,
+    start: wp.array(dtype=wp.float64),
+    taken: wp.array(dtype=int),
     out: wp.array(dtype=float),  # [abs_pressure, pressure_alt]
     sample: wp.array(dtype=BaroSample),
 ):
+    if not _due(time[0], period, start, taken):
+        return
     st = step[0]
     alt = wp.transform_get_translation(body_q[body])[2]  # z up in sim
     out[0] = pressure_msl * wp.pow(1.0 - 2.25577e-5 * alt, 5.25588) + _noise(seed, st, 0, sigma)
@@ -218,9 +264,14 @@ def gps_kernel(
     body: int,  # the model body the sensor rides
     fix_type: int,
     time: wp.array(dtype=wp.float64),
+    period: wp.float64,
+    start: wp.array(dtype=wp.float64),
+    taken: wp.array(dtype=int),
     out: wp.array(dtype=wp.float64),  # [lat, lon, alt, vn, ve, vd, ground_speed]
     sample: wp.array(dtype=GpsSample),
 ):
+    if not _due(time[0], period, start, taken):
+        return
     p = wp.transform_get_translation(body_q[body])
     v = wp.spatial_top(body_qd[body])  # world linear vel
     # lat/lon/alt in float64: a float32 ``ref_lat (~47.6) + small offset`` would lose ~1e-5 deg,
@@ -275,12 +326,11 @@ class ImuSensor(DeviceSensor):
     fields = ("xacc", "yacc", "zacc", "xgyro", "ygyro", "zgyro")  # _out layout
 
     def __init__(self, run, acc_noise: float = 0.02, gyro_noise: float = 0.02, rate: float = 0.0):
-        super().__init__("imu", ImuSample)
+        super().__init__("imu", ImuSample, rate)
         _rigid_mount(run, "inertial measurement unit")
         self.seed = run.seed
         self.dt = float(run.dt)
         self.body = int(run.body)
-        self.rate = float(rate)
         # The site's gravity, along world -Z, the same value the physics applies; the accelerometer
         # reports specific force, so at rest it reads minus this.
         self.gravity_world = wp.vec3(0.0, 0.0, -float(run.site.gravity))
@@ -290,6 +340,7 @@ class ImuSensor(DeviceSensor):
         self.gyro_noise = float(gyro_noise)
         self._prev_lin = wp.zeros(1, dtype=wp.vec3)
         self._prev_ang = wp.zeros(1, dtype=wp.vec3)
+        self._ticks = wp.zeros(1, dtype=int)  # the ticks since the last sample, over which the velocity changed
         self._out = wp.zeros(6, dtype=float)
         self._step = wp.zeros(1, dtype=int)  # per-tick counter, incremented in-graph so the noise varies
         self._first = True
@@ -320,6 +371,10 @@ class ImuSensor(DeviceSensor):
                 self._prev_lin,
                 self._prev_ang,
                 self.time.buffer,
+                self.period,
+                self._start,
+                self._taken,
+                self._ticks,
             ),
             outputs=(self._out, self.out.buffer),
         )
@@ -331,7 +386,7 @@ class MagSensor(DeviceSensor):
     fields = ("xmag", "ymag", "zmag")
 
     def __init__(self, run, offset=(0.0, 0.0, 0.0), noise=(0.02, 0.02, 0.03), rate: float = 0.0):
-        super().__init__("mag", MagSample)
+        super().__init__("mag", MagSample, rate)
         # The field is the site's, a North East Down (NED) vector in gauss, resolved at build.
         # ``noise`` is the per-axis Gaussian sigma in Gauss. The default, 0.02/0.02/0.03, is the
         # bridge value; note it's ~10x a real magnetometer and, against PX4's strict per-sample World
@@ -340,7 +395,6 @@ class MagSensor(DeviceSensor):
         _at_body_origin(run, "magnetometer")
         self.seed = run.seed
         self.body = int(run.body)
-        self.rate = float(rate)
         self.offset = tuple(float(x) for x in offset)
         self.noise = tuple(float(x) for x in noise)
         self.mag_ned = wp.vec3(*[float(x) for x in run.site.mag_ned])
@@ -363,6 +417,9 @@ class MagSensor(DeviceSensor):
                 self._sigma,
                 self.body,
                 self.time.buffer,
+                self.period,
+                self._start,
+                self._taken,
             ),
             outputs=(self._out, self.out.buffer),
         )
@@ -373,12 +430,11 @@ class BaroSensor(DeviceSensor):
     fields = ("abs_pressure", "pressure_alt")
 
     def __init__(self, run, noise: float = 0.02, rate: float = 0.0):
-        super().__init__("baro", BaroSample)
+        super().__init__("baro", BaroSample, rate)
         # The site's air pressure at mean sea level, hPa, and its temperature, degrees Celsius.
         _at_body_origin(run, "barometer")
         self.seed = run.seed
         self.body = int(run.body)
-        self.rate = float(rate)
         self.pressure_msl = float(run.site.pressure_msl)
         self.temperature = float(run.site.temperature)
         self.noise = float(noise)
@@ -399,6 +455,9 @@ class BaroSensor(DeviceSensor):
                 self.body,
                 self.temperature,
                 self.time.buffer,
+                self.period,
+                self._start,
+                self._taken,
             ),
             outputs=(self._out, self.out.buffer),
         )
@@ -411,11 +470,10 @@ class GpsSensor(DeviceSensor):
     def __init__(self, run, fix_type: int = 3, rate: float = 0.0):
         import math
 
-        super().__init__("gps", GpsSample)
+        super().__init__("gps", GpsSample, rate)
         # The reference is the site's geodetic origin, where the world's origin sits on Earth.
         _at_body_origin(run, "GPS receiver")
         self.body = int(run.body)
-        self.rate = float(rate)
         self.ref_lat = float(run.site.lat)
         self.ref_lon = float(run.site.lon)
         self.ref_alt = float(run.site.alt)
@@ -437,6 +495,9 @@ class GpsSensor(DeviceSensor):
                 self.body,
                 self.fix_type,
                 self.time.buffer,
+                self.period,
+                self._start,
+                self._taken,
             ),
             outputs=(self._out, self.out.buffer),
         )
