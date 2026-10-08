@@ -1,7 +1,9 @@
 """The reader: the applied nexus schemas of a stage, as declarations.
 
 A nexus schema is an applied API schema whose attributes sit in the `nexus:` namespace, whichever plugin
-defines it, so a project's own schemas read the same way as the ones nexus ships.
+defines it, so a project's own schemas read the same way as the ones nexus ships. A component schema states
+the role its component fills by including a role schema, such as `NexusSensorRoleAPI`, as a built-in. A
+role schema defines no attribute, so the reader skips it.
 """
 
 from __future__ import annotations
@@ -11,6 +13,22 @@ from importlib.metadata import version
 from pathlib import Path
 
 _NAMESPACE = "nexus:"
+
+# Each role schema, which a component schema includes as a built-in, and the role it states.
+ROLES = {
+    "NexusSensorRoleAPI": "sensor",
+    "NexusEstimatorRoleAPI": "estimator",
+    "NexusControllerRoleAPI": "controller",
+    "NexusForceRoleAPI": "force",
+}
+
+
+def roles(schema: str) -> list[str]:
+    """The roles `schema` states: each role schema its definition includes, in the order it lists them."""
+    from pxr import Usd
+
+    definition = Usd.SchemaRegistry().FindAppliedAPIPrimDefinition(schema)
+    return [ROLES[name] for name in definition.GetAppliedAPISchemas() if name in ROLES] if definition else []
 
 
 def _keyword(name: str) -> str:

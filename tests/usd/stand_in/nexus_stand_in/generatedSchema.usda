@@ -4,7 +4,8 @@
 )
 
 class "StandInAPI" (
-    doc = "A stand-in component: one two-word number and one asset path."
+    doc = "A stand-in controller: one two-word number and one asset path."
+    prepend apiSchemas = ["NexusControllerRoleAPI"]
 )
 {
     float nexus:standInGain = 1.5 (
@@ -71,6 +72,7 @@ class "StandInTwoRolesAPI" (
 
 class "StandInGearAPI" (
     doc = "A stand-in family at two versions: this is the first."
+    prepend apiSchemas = ["NexusForceRoleAPI"]
 )
 {
     float nexus:ratio = 1 (
@@ -83,6 +85,7 @@ class "StandInGearAPI" (
 
 class "StandInGearAPI_1" (
     doc = "A stand-in family at two versions: this is the second."
+    prepend apiSchemas = ["NexusForceRoleAPI"]
 )
 {
     float nexus:gearRatio = 1 (

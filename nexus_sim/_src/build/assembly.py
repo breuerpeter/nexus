@@ -178,6 +178,7 @@ def build_orchestrator(
     vehicle_usd=None,
     *,
     controller,
+    estimator=None,
     rerun: bool = False,
     viewer: bool = True,
     debug: bool = False,
@@ -190,7 +191,7 @@ def build_orchestrator(
     components=None,
 ) -> Orchestrator:
     """The core orchestrator: the one ``NewtonPhysics`` + the one shared assembly around the
-    caller-supplied ``controller``; a run differs only in its renderer.
+    caller-supplied ``controller`` and ``estimator``, ``None`` for none; a run differs only in its renderer.
 
     ``renderer_factory`` is the one way rendering enters, from :func:`~nexus_sim._src.rendering.rtx_renderer`:
     used after the physics build, since the render poses stage prims from the model's bodies;
@@ -222,6 +223,7 @@ def build_orchestrator(
         forces=a.forces,
         sensors=a.sensors,
         controller=a.controller,
+        estimator=estimator,
         logger=a.logger,
         renderer=renderer,
         peers=peers,
