@@ -114,6 +114,7 @@ class Orchestrator:
         renderer: Renderer | None = None,
         peers: Iterable[Peer] = (),
         ports: Mapping[str, dict] | None = None,
+        connections: Mapping[str, Mapping[str, str]] | None = None,
         logger: Logger | None = None,
         on_tick: Callable[[newton.State, float, int], None] | None = None,
         preroll_timeout: float = 2.0,
@@ -170,6 +171,10 @@ class Orchestrator:
             ports: The run's port map, a :class:`~nexus_sim._src.core.ports.PortMap`: each link that
                 leaves the run, by name, to the address a script opens its client on. The run
                 owns every address, and the build names them here; ``None`` names no link.
+            connections: For a component's prim, each signal it reads and the prim whose component writes
+                it, from the vehicle's ``nexus:inputs:`` relationships: of several writers of one signal, a
+                reader takes the one its connection names. A component's prim is its ``prim_path``, which the
+                build sets. ``None`` connects nothing.
             logger: Optional :class:`~nexus_sim._src.logging.Logger`: the recording
                 sink + shared log calls. ``None`` ⇒ no recording and no per-tick log
                 fan-out, for max speed. When present, each loggable component's
@@ -203,6 +208,7 @@ class Orchestrator:
         self.renderer = renderer
         self.peers = list(peers)
         self.ports = PortMap() if ports is None else ports
+        self.connections = dict(connections or {})
         # The single logging switch: a `Logger`, the recording sink + the shared log_state/log_image
         # calls, or None. None ⇒ no recording and no per-tick log fan-out → max benchmark/CI speed.
         self.logger = logger
@@ -464,7 +470,7 @@ class Orchestrator:
             )
             self._check_estimator(ring)
             ring = self._with_clock(ring)
-            wire(ring)  # every signal a stage declares gets its buffer before any stage runs
+            wire(ring, self.connections)  # every signal a stage declares gets its buffer before any stage runs
             self._check_guidance(ring)
             segments = partition(ring)
             captured = _on_cuda()

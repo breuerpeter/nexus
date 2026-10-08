@@ -15,7 +15,8 @@ import warp as wp
 from nexus_sim._src.core.interfaces import Stage
 from nexus_sim._src.core.orchestrator import Orchestrator
 from nexus_sim._src.core.schema import ReferenceTrajectory, SimTime
-from nexus_sim._src.core.signals import Signal
+from nexus_sim._src.core.signals import Signal, wire
+from nexus_sim._src.core.stages import Bound
 from nexus_sim._src.guidance import TrackingGuidance
 
 DEVICES = ["cpu", pytest.param("cuda:0", marks=pytest.mark.gpu)]
@@ -324,3 +325,94 @@ def test_two_components_that_write_one_signal_a_third_reads_fail_the_run_naming_
     writers = [_Counter("first_counter"), _Counter("second_counter")]
     message, rows = _stopped(tmp_path, _CountReader(), sensors=writers)
     assert (all(name in message for name in ("first_counter", "second_counter")), rows) == (True, 0)
+
+
+class _Writer:
+    """A sensor on the prim `path` whose host stage writes `value` to the signal `count`."""
+
+    def __init__(self, path: str, value: int):
+        self.prim_path = path
+        self.value = value
+        self.count = Signal("count", Count, shape=(1,))
+
+    def stages(self):
+        return [Stage("write", "host", lambda tick: self.count.write([(self.value,)]), writes=(self.count,))]
+
+
+class _Reader:
+    """An estimator on the prim `/vehicle/Estimator` whose host stage reads the signal `count`, as `type`."""
+
+    prim_path = "/vehicle/Estimator"
+
+    def __init__(self, type=Count):
+        self.count = Signal("count", type, shape=(1,))
+
+    def stages(self):
+        return [Stage("read", "host", lambda tick: None, reads=(self.count,))]
+
+
+def _read(writers, reader, connections=None):
+    """What `reader` reads once `writers` have each written their value, wired as the loop wires them, with
+    `connections`, by the reader's prim, the signal and the prim it names.
+    """
+    pairs = [*((w, "sensor") for w in writers), (reader, "estimator")]
+    wire([Bound(stage, c, role) for c, role in pairs for stage in c.stages()], connections)
+    for w in writers:
+        w.count.write([(w.value,)])
+    return reader.count.read()
+
+
+@pytest.mark.usefixtures("warp_cpu")
+def test_of_two_writers_of_a_signal_a_reader_reads_the_one_a_connection_on_its_prim_names():
+    """Of two writers of a signal, a reader reads the one a connection on its prim names.
+
+    Given two stand-in sensors on the prims `A` and `B` that write 1 and 2 to the signal `count`, and a reader
+    whose prim connects `count` to `B`, when the loop wires them, then the reader reads 2.
+    """
+    writers = [_Writer("/vehicle/body/A", 1), _Writer("/vehicle/body/B", 2)]
+    read = _read(writers, _Reader(), {"/vehicle/Estimator": {"count": "/vehicle/body/B"}})
+
+    assert int(read[0]["n"]) == 2
+
+
+@pytest.mark.usefixtures("warp_cpu")
+def test_a_list_input_reads_every_writers_value_in_the_order_of_the_ring():
+    """A list input reads every writer's value, in the order of the ring.
+
+    Given two stand-in sensors on the prims `A` and `B` that write 1 and 2 to the signal `count`, in that
+    order, and a reader that reads `count` as a list, when the loop wires them, then the reader reads 1 and 2.
+    """
+    writers = [_Writer("/vehicle/body/A", 1), _Writer("/vehicle/body/B", 2)]
+    read = _read(writers, _Reader(list[Count]))
+
+    assert [int(value[0]["n"]) for value in read] == [1, 2]
+
+
+@pytest.mark.usefixtures("warp_cpu")
+def test_two_writers_a_reader_takes_through_neither_a_connection_nor_a_list_fail_the_wiring_naming_both():
+    """Two writers of a signal that a reader takes through neither a connection nor a list fail the wiring, and
+    the error names both writers' prims and the reader, and says a connection on the reader's prim picks one.
+
+    Given two stand-in sensors on the prims `A` and `B` that write the signal `count`, and a reader of it with
+    no connection, when the loop wires them, then it fails, naming both prims, the reader and a connection.
+    """
+    with pytest.raises(ValueError) as e:
+        _read([_Writer("/vehicle/body/A", 1), _Writer("/vehicle/body/B", 2)], _Reader())
+
+    named = [word in str(e.value) for word in ("/vehicle/body/A", "/vehicle/body/B", "_Reader", "connection")]
+    assert named == [True] * 4
+
+
+@pytest.mark.usefixtures("warp_cpu")
+def test_a_connection_to_a_prim_that_writes_no_such_signal_fails_the_wiring_naming_the_reader_prim_and_signal():
+    """A connection to a prim that writes none of the signal fails the wiring, and the error names the reader,
+    the prim and the signal.
+
+    Given a stand-in sensor on the prim `A` that writes the signal `count`, and a reader whose prim connects
+    `count` to the prim `C`, which writes nothing, when the loop wires them, then it fails, naming the reader,
+    `C` and `count`.
+    """
+    with pytest.raises(ValueError) as e:
+        _read([_Writer("/vehicle/body/A", 1)], _Reader(), {"/vehicle/Estimator": {"count": "/vehicle/body/C"}})
+
+    assert [word in str(e.value) for word in ("_Reader", "/vehicle/body/C", "'count'")] == [True] * 3
