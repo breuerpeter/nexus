@@ -26,10 +26,10 @@ assets:
 
 vehicles:
   astro_max_base:
-    usd: { name: astro_max_base, sha256: e2ef3cb3d9b5b6c18c1ac40f2c41c077b594e720c6e32863d0ca810575806f7c }
+    usd: { name: astro_max_base, sha256: 04452a6811f9172d7ce461fb8ec82cd988813a9434f703d3841e6a238c97bde8 }
 
   astro_max_fpv:
-    usd: { name: astro_max_fpv, sha256: 971b105e87972fbea29d9f054df812fe5032b50fc978e638074372344f2596fd }
+    usd: { name: astro_max_fpv, sha256: eb6a42f53c872e62985f1ede2c8d4bbb796de186d0e9f63990295fdaa327fc0b }
 
 # The scene USD is the single authority on what it is: authored UsdPhysics collision schemas ->
 # simulation geometry (ModelBuilder); no physics schemas -> visual-only; and since the stage-5
