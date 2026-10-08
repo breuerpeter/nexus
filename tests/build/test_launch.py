@@ -304,6 +304,117 @@ def test_a_px4_schema_with_no_airframe_authored_fails_the_build(tmp_path, daemon
     assert ("/vehicle" in str(err.value), daemon) == (True, [])
 
 
+# --- the controller's scope: a prim of its own, of type Scope, under the root -----------------------
+
+
+def _scoped(scopes: dict[str, str]) -> str:
+    """A vehicle root `/vehicle`, an `Xform`, holding one `Scope` per entry of `scopes`, each applying the
+    schemas its value lists, and the PX4 schema's airframe, `foo`, on the scope that applies it.
+    """
+    body = ""
+    for name, schemas in scopes.items():
+        airframe = '        string nexus:airframe = "foo"\n' if "NexusPx4API" in schemas else ""
+        body += f'    def Scope "{name}" (\n        prepend apiSchemas = [{schemas}]\n    )\n    {{\n{airframe}    }}\n'
+    return f'def Xform "vehicle"\n{{\n{body}}}\n'
+
+
+class _Px4Peer:
+    """The PX4 SITL peer in the peer mapping: it keeps the airframe the build hands it and starts no process."""
+
+    @staticmethod
+    def claim_instance():
+        return 0, None
+
+    def __init__(self, *, airframe: str, **run):
+        self.airframe = airframe
+
+    def start(self):
+        pass
+
+    def stop(self):
+        pass
+
+    def alive(self):
+        return True
+
+
+def _build_message(tmp_path, monkeypatch, prims: str) -> str:
+    """The error a run of a local vehicle defined by `prims` fails with, or `no error`; the assembly
+    step returns at once, so the vehicle needs no physics.
+    """
+    import nexus_sim._src.build.launch as L
+
+    monkeypatch.setattr(L, "build_orchestrator", lambda label, cfg, **kw: kw)
+    try:
+        _build(tmp_path, prims)
+    except ValueError as exc:
+        return str(exc)
+    return "no error"
+
+
+@pytest.mark.parametrize("scope", ["Controller", "Autopilot"])
+def test_a_vehicle_that_declares_px4_on_a_scope_flies_px4_and_starts_the_peer(tmp_path, monkeypatch, daemon, scope):
+    """A vehicle that declares PX4 and the PX4 SITL peer on a `Scope` flies PX4 and starts the peer.
+
+    Given a local vehicle whose `Scope` `/vehicle/Controller` applies `NexusPx4API` with airframe `foo`
+    and `NexusPx4SitlAPI`, its root `Xform` applying neither, and a stand-in PX4 SITL peer mapped, when
+    the run builds, then it flies PX4 with airframe `foo` and starts the peer once; and once with the
+    scope named `/vehicle/Autopilot`.
+    """
+    import nexus_sim._src.build.launch as L
+
+    monkeypatch.setattr(L, "build_orchestrator", lambda label, cfg, **kw: kw)
+    vehicle = _scoped({scope: '"NexusPx4API", "NexusPx4SitlAPI"'})
+
+    kw = _build(tmp_path, vehicle, peers={"px4_sitl": _Px4Peer})
+
+    assert (kw["controller"].airframe, [p.airframe for p in kw["peers"]]) == ("foo", ["foo"])
+
+
+@pytest.mark.parametrize(
+    "prims, prim",
+    [
+        ('def Xform "vehicle"\n{\n' + PX4_ROOT.replace('"vehicle"', '"Controller"') + "}\n", "/vehicle/Controller"),
+        (PX4_ROOT, "/vehicle"),
+    ],
+    ids=["xform-child", "root"],
+)
+def test_the_px4_schema_on_a_prim_that_is_not_a_scope_fails_the_build(tmp_path, monkeypatch, daemon, prims, prim):
+    """`NexusPx4API` on a prim that isn't a `Scope` fails the build and says it applies to a `Scope`.
+
+    Given a local vehicle whose `Xform` `/vehicle/Controller` applies `NexusPx4API` with airframe `foo`,
+    when the run builds, then it fails before any peer starts, and the error names the prim and
+    `NexusPx4API` and says the schema applies to a `Scope`; and once with the schema on the root `Xform`
+    `/vehicle`.
+    """
+    message = _build_message(tmp_path, monkeypatch, prims)
+
+    named = [f"{prim}:" in message, "NexusPx4API" in message, "Scope" in message]
+    assert (named, daemon) == ([True, True, True], []), message
+
+
+@pytest.mark.parametrize(
+    "scopes, prim",
+    [
+        ({"Controller": '"NexusPx4SitlAPI"'}, "/vehicle/Controller"),
+        ({"Controller": '"NexusPx4API"', "Peer": '"NexusPx4SitlAPI"'}, "/vehicle/Peer"),
+    ],
+    ids=["peer-alone", "peer-on-another-scope"],
+)
+def test_the_px4_sitl_peer_on_a_prim_with_no_px4_schema_fails_the_build(tmp_path, monkeypatch, daemon, scopes, prim):
+    """The PX4 SITL peer on a prim with no `NexusPx4API` fails the build and names the prim and the peer's schema.
+
+    Given a local vehicle whose `Scope` `/vehicle/Controller` applies `NexusPx4SitlAPI` alone, when the
+    run builds, then it fails before any peer starts, and the error names `/vehicle/Controller` and
+    `NexusPx4SitlAPI`; and once with `NexusPx4API` on `/vehicle/Controller` and `NexusPx4SitlAPI` on a
+    second `Scope` `/vehicle/Peer`, naming `/vehicle/Peer`.
+    """
+    message = _build_message(tmp_path, monkeypatch, _scoped(scopes))
+
+    named = [f"{prim}:" in message, "NexusPx4SitlAPI" in message]
+    assert (named, daemon) == ([True, True], []), message
+
+
 # --- the override layer a run composes over its vehicle --------------------------------------------
 
 # A vehicle that declares PX4 and the PX4 SITL peer on its root prim, and nothing else.

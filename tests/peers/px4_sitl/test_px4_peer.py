@@ -649,10 +649,27 @@ _DECLARED = (
 _DROP_PX4_SITL = '#usda 1.0\n\nover "vehicle" (\n    delete apiSchemas = ["NexusPx4SitlAPI"]\n)\n{\n}\n'
 
 
-def _declared_run(tmp_path, layer: str | None = None) -> Orchestrator:
-    """Build a run of a catalog vehicle that declares the PX4 SITL peer, over `layer` when the caller passes one."""
+# A vehicle that declares the PX4 controller and the PX4 SITL peer on its controller's scope.
+_SCOPED = (
+    '#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n\n'
+    'def Xform "vehicle"\n{\n'
+    '    def Scope "Controller" (\n        prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n    )\n'
+    '    {\n        string nexus:airframe = "astro_max"\n    }\n}\n'
+)
+
+# A layer that drops the PX4 SITL peer's declaration from the controller's scope.
+_DROP_PX4_SITL_FROM_SCOPE = (
+    '#usda 1.0\n\nover "vehicle"\n{\n'
+    '    over "Controller" (\n        delete apiSchemas = ["NexusPx4SitlAPI"]\n    )\n    {\n    }\n}\n'
+)
+
+
+def _declared_run(tmp_path, layer: str | None = None, vehicle: str = _DECLARED) -> Orchestrator:
+    """Build a run of a catalog vehicle that declares the PX4 SITL peer, `vehicle`, over `layer` when the
+    caller passes one.
+    """
     blob = tmp_path / "declared.usda"
-    blob.write_text(_DECLARED)
+    blob.write_text(vehicle)
     sha = hashlib.sha256(blob.read_bytes()).hexdigest()
     catalog = Catalog.from_dict(
         {
@@ -708,6 +725,27 @@ def test_a_layer_that_drops_the_px4_sitl_peer_starts_no_px4_and_waits_on_instanc
     and the run steps against the fake.
     """
     loop = _declared_run(tmp_path, _DROP_PX4_SITL)
+    autopilot = Px4Fake(instance=0)
+    autopilot.start()
+
+    stepped = loop.step()
+    loop.close()
+    autopilot.stop()
+
+    assert (daemon.runs, stepped) == ([], True)
+
+
+def test_a_layer_that_drops_the_px4_sitl_peer_from_the_controllers_scope_flies_an_autopilot_started_elsewhere(
+    daemon, assembly, tmp_path
+):
+    """A layer that drops the PX4 SITL peer from the controller's scope flies an autopilot started elsewhere.
+
+    Given a vehicle whose `Scope` `/vehicle/Controller` declares PX4 and the PX4 SITL peer, and a layer
+    whose `over "Controller"` under `/vehicle` deletes `NexusPx4SitlAPI`, when the run builds, then no
+    peer starts and PX4 dials instance 0's HIL port, 4560: the daemon records no container, and the run
+    steps against a fake PX4 the test starts there.
+    """
+    loop = _declared_run(tmp_path, _DROP_PX4_SITL_FROM_SCOPE, vehicle=_SCOPED)
     autopilot = Px4Fake(instance=0)
     autopilot.start()
 
