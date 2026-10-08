@@ -8,6 +8,11 @@ body's true state, which ``truth`` reads, into HIL_STATE_QUATERNION, then blocks
 run-ending timeout. The sensors already give their samples in their own axes; this layer only encodes wire units
 and moves bytes.
 
+PX4 receives each sensor at the rate its schema declares. HIL_SENSOR goes out every tick, and marks a sensor's
+fields updated in ``fields_updated`` only on a tick that brings a new sample of it, one whose time differs from
+the last one sent, as PX4's Gazebo Classic bridge does. HIL_GPS, and HIL_STATE_QUATERNION with it, goes out with
+each new GPS sample.
+
 The autopilot itself is a peer of the run, not of this controller: the build starts the PX4
 Software In The Loop (SITL) container, :class:`~nexus_sim._src.peers.px4_sitl.runner.Px4Sitl`,
 when the vehicle declares that peer, and starts nothing when a layer drops the declaration, for an

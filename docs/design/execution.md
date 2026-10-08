@@ -51,10 +51,12 @@ Any other type is a host type, whose buffer holds one object. Core ships the typ
   twist, and the guidance and the controller read it in place of the physics state.
 - Each sensor writes its sample to a signal of its own type. `ImuSample`, `MagSample`, `BaroSample` and
   `GpsSample` are structs on the device, the signals `imu`, `mag`, `baro` and `gps`. The first field of
-  each is the sim time of the tick that took the sample. A camera's frame is an `Image` and a lidar's
-  scan a `PointCloud`, on the host, each with the sim time it shows: the signals `camera`,
-  `thermal_camera` and `lidar`. An estimator reads them, and so does PX4's controller, which hands them to
-  PX4's estimator.
+  each is the sim time of the tick that took the sample. Each of the four samples only on a tick that
+  its declared rate makes due, or on every tick with no rate. Between two samples its signal holds the
+  last one, so the time marks a new sample. A camera's frame is an `Image` and a lidar's scan a
+  `PointCloud`, on the host, each with the sim time it shows: the signals `camera`, `thermal_camera`
+  and `lidar`. An estimator reads them, and so does PX4's controller, which hands them to PX4's
+  estimator.
 - The tick's sim time is the signal `time`, a `wp.float64` on the device. When a stage reads it, the
   loop's clock stage opens each tick and adds one control tick, in step with the host clock. So a sensor
   stamps its sample with the tick's time inside a captured graph too.
@@ -164,9 +166,10 @@ agreement.
 
 **Deterministic initialization.** Before the steady loop, initialization settles the vehicle at the
 North East Down (NED) origin and samples the sensors once to seed the finite-difference Inertial
-Measurement Unit (IMU). It also pins the Global Positioning System (GPS) sub-rate phase to the loop
-origin and computes the magnetic field from the scenario's GPS origin. An inconsistent field gives
-PX4 an invalid heading estimate, and it can't arm.
+Measurement Unit (IMU). That first sample also starts each sensor's due times: a sensor at a declared
+rate takes its next sample one period later. Initialization computes the magnetic field from the
+scenario's Global Positioning System (GPS) origin. An inconsistent field gives PX4 an invalid heading
+estimate, and it can't arm.
 
 **The PID law is the determinism authority.** The built-in PID, flown through the
 unchanged orchestrator on the CPU backend, reproduces bit-for-bit run-to-run. Real PX4 SITL is

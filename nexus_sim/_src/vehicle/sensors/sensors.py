@@ -8,9 +8,11 @@ the rest of the device step: no host NumPy / ``math`` in the per-tick path. The 
 canonical frame math from :mod:`nexus_sim._src.transform` **verbatim**.
 
 Each sensor's :meth:`sample_wp` launches its kernel, which writes the sample, stamped with the tick's sim
-time, to the sensor's output signal on the device, with no readback, so it joins a CUDA graph. A reader
-takes the sample there: an estimator, or the PX4 controller, which serialises it to MAVLink for its peer
-in a host stage.
+time, to the sensor's output signal on the device, with no readback, so it joins a CUDA graph. The kernel
+writes a sample only on a tick that the sensor's declared rate makes due, and the check runs on the device
+too, so between two samples the signal holds the last one, and its time marks a new one. A reader takes the
+sample there: an estimator, or the PX4 controller, which serialises it to MAVLink for its peer in a host
+stage.
 
 **Determinism, re-baselined onto the Warp RNG.** Noise comes from ``wp.rand_init(seed, step*16 + axis)``
 with a per-sensor seed, which the builder derives from the run's seed and the sensor's prim, and the
@@ -313,10 +315,10 @@ class ImuSensor(DeviceSensor):
     accelerometer adds the lever arm ``alpha x r + omega x (omega x r)``, where ``r`` runs from the body's
     center of mass to the mount, as Newton's ``SensorIMU`` does.
 
-    The accelerometer finite-differences the body's velocity over the control tick, so it reports the
-    mean acceleration over the tick before, half a tick late, on purpose: PX4's estimator
-    integrates delta velocity over each sample interval, and a tick mean is that interval's average.
-    Newton's ``SensorIMU`` reads the solver's acceleration at the tick's end instead.
+    The accelerometer finite-differences the body's velocity over the ticks since its last sample, so it
+    reports the mean acceleration over the sample interval before, half an interval late, on purpose:
+    PX4's estimator integrates delta velocity over each sample interval, and the interval's mean is that
+    integral over its length. Newton's ``SensorIMU`` reads the solver's acceleration at the tick's end instead.
 
     The sensor reports no attitude: the vehicle's true state isn't a sensor reading.
 
@@ -324,10 +326,12 @@ class ImuSensor(DeviceSensor):
         run: The run's values: its seed, the tick, the site's gravity, the body and the mount.
         acc_noise: Standard deviation of the accelerometer's white noise, m/s^2.
         gyro_noise: Standard deviation of the gyroscope's white noise, rad/s.
-        rate: The declared sample rate, hertz. The sensor samples every tick whatever it says.
+        rate: How often the sensor gives a new sample, hertz: 0 gives one every tick, as does a rate faster
+            than the tick rate.
 
     Raises:
-        ValueError: The prim's transform scales, shears or mirrors the mount; the message names the prim.
+        ValueError: The prim's transform scales, shears or mirrors the mount, or the rate is negative; the
+            message names the prim.
     """
 
     name = "imu"  # sim.sensors key, the flat instance name
