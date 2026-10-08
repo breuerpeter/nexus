@@ -179,7 +179,7 @@ class "NexusPropellerAPI" (
 }
 
 class "NexusPx4API" (
-    doc = "PX4 flies the vehicle over its Software In The Loop (SITL) link, on the vehicle's root prim."
+    doc = "PX4 flies the vehicle over its Software In The Loop (SITL) link, on the controller's `Scope`, a child of the vehicle's root prim named `Controller` by convention."
 )
 {
     string nexus:airframe = "" (
@@ -191,7 +191,7 @@ class "NexusPx4API" (
 }
 
 class "NexusPx4SitlAPI" (
-    doc = """The PX4 Software In The Loop (SITL) peer, on the vehicle's root prim beside `NexusPx4API`: the run starts PX4 SITL and stops it with the run. A layer that drops it flies an autopilot started elsewhere, which dials instance 0's Hardware In The Loop (HIL) port, 4560."""
+    doc = """The PX4 Software In The Loop (SITL) peer, on the controller's `Scope` beside `NexusPx4API`: the run starts PX4 SITL and stops it with the run. A layer that drops it flies an autopilot started elsewhere, which dials instance 0's Hardware In The Loop (HIL) port, 4560."""
 )
 {
 }

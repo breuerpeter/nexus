@@ -7,7 +7,7 @@ import pathlib
 from nexus_sim._src.core.components import ComponentSpec, resolve_components
 from nexus_sim._src.core.registry import ComponentRegistry
 
-__all__ = ["ComponentSpec", "declared_controller", "resolve_components", "root_schemas"]
+__all__ = ["ComponentSpec", "declared_controller", "prims_applying", "resolve_components"]
 
 
 def _is_controller(cls: type) -> bool:
@@ -16,35 +16,37 @@ def _is_controller(cls: type) -> bool:
 
 
 def declared_controller(usd_path: str | pathlib.Path, registry: ComponentRegistry | None = None) -> ComponentSpec:
-    """The one controller the vehicle file at `usd_path` declares on its root prim, its default prim.
+    """The one controller the vehicle file at `usd_path` declares, on the `Scope` that applies its schema.
 
     With no `registry`, the default one resolves each schema.
 
     Raises:
-        ValueError: The vehicle declares no controller, more than one, or one off its root prim; the
-            message names the prim, and for two or more, their schemas.
+        ValueError: The vehicle declares no controller, or more than one; the message names the
+            vehicle's root prim, its default prim, and for two or more, their schemas and prims.
     """
     from pxr import Usd
 
     root = str(Usd.Stage.Open(str(usd_path)).GetDefaultPrim().GetPath()) or str(usd_path)
     controllers = [spec for spec in resolve_components(usd_path, registry) if _is_controller(spec.cls)]
-    for spec in controllers:
-        if spec.prim != root:
-            raise ValueError(f"{spec.prim}: {spec.schema} declares a controller off the vehicle's root prim {root}")
     if not controllers:
-        raise ValueError(f"{root}: the vehicle declares no controller; apply one, such as NexusPx4API, to this prim")
+        raise ValueError(
+            f"{root}: the vehicle declares no controller; apply one, such as NexusPx4API, to a Scope under this prim"
+        )
     if len(controllers) > 1:
-        schemas = ", ".join(spec.schema for spec in controllers)
-        raise ValueError(f"{root}: the vehicle declares {len(controllers)} controllers, {schemas}; it flies one")
+        placed = ", ".join(f"{spec.schema} on {spec.prim}" for spec in controllers)
+        raise ValueError(f"{root}: the vehicle declares {len(controllers)} controllers, {placed}; it flies one")
     return controllers[0]
 
 
-def root_schemas(usd_path: str | pathlib.Path) -> tuple[str, list[str]]:
-    """The vehicle file's root prim, its default prim, and the API schemas applied to it, which a peer's
-    declaration is one of.
+def prims_applying(usd_path: str | pathlib.Path, schema: str) -> list[tuple[str, list[str]]]:
+    """Each active prim of the vehicle file that applies `schema`, as its path and every API schema it
+    applies, so a caller can check what sits beside `schema`, as a peer's declaration beside its controller.
     """
     from pxr import Usd
 
-    stage = Usd.Stage.Open(str(usd_path))
-    root = stage.GetDefaultPrim()
-    return str(root.GetPath()), list(root.GetAppliedSchemas())
+    stage = Usd.Stage.Open(str(usd_path), Usd.Stage.LoadAll)
+    return [
+        (str(prim.GetPath()), list(applied))
+        for prim in stage.Traverse(Usd.TraverseInstanceProxies())
+        if schema in (applied := prim.GetAppliedSchemas())
+    ]

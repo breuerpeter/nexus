@@ -1,7 +1,7 @@
 """The fixture vehicle of the sensor tests, and the stand-ins a run of it needs.
 
 The fixture is a local layer over ``fixture_vehicle.usda`` beside this module: a base body with a box
-collider, four rotor bodies with propellers on revolute joints, and the PX4 controller declared, with
+collider, four rotor bodies with propellers on revolute joints, and the PX4 controller declared on its scope, with
 no mesh and no sensor. A test adds its own sensor prims. A run flies it in ``fixture_scene.usda``, an
 empty world, so a test reads no hosted asset. A stand-in controller answers at once and keeps
 every `Measurement` it receives, so a test reads what a controller reads.
@@ -87,7 +87,11 @@ def vehicle(tmp_path: Path, body: str = "", *, mast: str | None = None, px4: boo
     run that maps it to its fake.
     """
     geometry = "" if mast is None else _MAST.replace("__MAST_PRIMS__", mast)
-    peer = ' (\n    prepend apiSchemas = ["NexusPx4SitlAPI"]\n)' if px4 else ""
+    peer = (
+        '    over "Controller" (\n        prepend apiSchemas = ["NexusPx4SitlAPI"]\n    )\n    {\n    }\n'
+        if px4
+        else ""
+    )
     joint = "" if mast is None else _MAST_JOINT
     path = tmp_path / "sensor_vehicle.usda"
     path.write_text(
@@ -101,9 +105,9 @@ def vehicle(tmp_path: Path, body: str = "", *, mast: str | None = None, px4: boo
     ]
 )
 
-over "vehicle"{peer}
+over "vehicle"
 {{
-{geometry}
+{peer}{geometry}
     over "body"
     {{
 {body}

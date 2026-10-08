@@ -5,11 +5,14 @@
     upAxis = "Z"
 )
 
-def Xform "vehicle" (
-    prepend apiSchemas = ["NexusPx4API"]
-)
+def Xform "vehicle"
 {
-    string nexus:airframe = "astro_max"
+    def Scope "Controller" (
+        prepend apiSchemas = ["NexusPx4API"]
+    )
+    {
+        string nexus:airframe = "astro_max"
+    }
 
     def Xform "body" (
         prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsArticulationRootAPI", "PhysicsMassAPI"]
