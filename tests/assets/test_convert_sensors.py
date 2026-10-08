@@ -18,7 +18,8 @@ def test_the_asset_converter_authors_the_sensor_schemas(tmp_path):
     """The asset converter authors the sensor schemas.
 
     Given `scripts/assets/convert.py` run on a source vehicle of one rigid body, when it has authored the
-    camera, then the camera prim applies the camera schema and no prim authors a `sensor:` attribute.
+    camera, then the camera prim applies the camera schema, with the sensor role it includes, and no prim
+    authors a `sensor:` attribute.
     """
     source = tmp_path / "source.usda"
     stage = Usd.Stage.CreateNew(str(source))
@@ -33,4 +34,4 @@ def test_the_asset_converter_authors_the_sensor_schemas(tmp_path):
     legacy = [
         str(a.GetPath()) for p in authored.Traverse() for a in p.GetAttributes() if a.GetName().startswith("sensor:")
     ]
-    assert (schemas, legacy) == (["NexusCameraAPI"], [])
+    assert (schemas, legacy) == (["NexusCameraAPI", "NexusSensorRoleAPI"], [])
