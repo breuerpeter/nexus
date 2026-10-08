@@ -79,10 +79,10 @@ def prim(name: str, schema: str | None, attrs: str = "", *, kind: str = "Xform",
     return f'def {kind} "{name}"{metadata}\n{{\n{body}}}\n'
 
 
-def vehicle(tmp_path: Path, body: str = "", *, mast: str | None = None, px4: bool = False) -> str:
+def vehicle(tmp_path: Path, body: str = "", *, root: str = "", mast: str | None = None, px4: bool = False) -> str:
     """Write the fixture vehicle under `tmp_path` and return its path.
 
-    `body` is the text of the prims under the base body. `mast`, when given, adds the second body and
+    `body` is the text of the prims under the base body, and `root` the text of more prims under the root prim. `mast`, when given, adds the second body and
     is the text of the prims under it. `px4` declares the PX4 Software In The Loop (SITL) peer, for a
     run that maps it to its fake.
     """
@@ -107,7 +107,7 @@ def vehicle(tmp_path: Path, body: str = "", *, mast: str | None = None, px4: boo
 
 over "vehicle"
 {{
-{peer}{geometry}
+{peer}{root}{geometry}
     over "body"
     {{
 {body}

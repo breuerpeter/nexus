@@ -41,7 +41,7 @@ from nexus_sim._src.rendering import rtx_renderer
 from nexus_sim._src.usd.reader import read_declarations
 
 from .assembly import build_orchestrator, build_scenario
-from .components import declared_controller, prims_applying
+from .components import declared_controller, declared_estimator, prims_applying
 
 # The schema a vehicle declares PX4 with; its `airframe` goes into the receipt.
 PX4_SCHEMA = "NexusPx4API"
@@ -160,9 +160,9 @@ def build_from_launch(
 
     Raises:
         ValueError: The vehicle declares no controller, two, one other than PX4, a PX4 schema on a
-            prim that isn't a ``Scope`` or with no airframe, or the PX4 SITL peer on a prim with no PX4
-            schema, or ``peers``
-            names a peer the build doesn't know; raised before any peer starts.
+            prim that isn't a ``Scope`` or with no airframe, two estimators or one off its ``Scope``,
+            a component schema that states no role or two, or the PX4 SITL peer on a prim with no PX4
+            schema, or ``peers`` names a peer the build doesn't know; raised before any peer starts.
         FileNotFoundError: The launch names an override layer with no file behind it.
         KitPeerError: The vehicle declares RTX sensors and the Kit peer couldn't start.
     """
@@ -189,6 +189,7 @@ def build_from_launch(
             f"{spec.prim}: {spec.schema} is not a core controller (PX4 is the one first-class controller); "
             "other controllers live in nexus_sim/examples/ and self-assemble via Sim.from_orchestrator"
         )
+    estimator_spec = declared_estimator(resolved.vehicle_usd_path, components)
     if not spec.kwargs["airframe"]:
         raise ValueError(
             f"{spec.prim}: {PX4_SCHEMA} authors no nexus:airframe; name the PX4 SITL airframe, such as astro_max"
@@ -204,6 +205,8 @@ def build_from_launch(
         # controller-agnostic. The schema gives its keywords, and the run gives the PX4 peer's addresses.
         instance, claim = peer_classes["px4_sitl"].claim_instance() if px4_sitl else (0, None)
         controller = spec.cls(**spec.kwargs, port=HIL_PORT + instance, target_system=instance + 1)
+        # The estimator the vehicle declares, if any, takes its schema's keywords alone.
+        estimator = estimator_spec.cls(**estimator_spec.kwargs) if estimator_spec else None
         if px4_sitl:
             # The peer starts here, before the assembly: its start builds PX4 incrementally, which must
             # stay outside the sim's preroll window, GH #39, and PX4 boots while the physics compiles.
@@ -215,6 +218,7 @@ def build_from_launch(
             cfg,
             vehicle_usd=vehicle_usd,
             controller=controller,
+            estimator=estimator,
             peers=started,
             ports=_ports(instance, started),
             rerun=launch.output.log or launch.output.view,

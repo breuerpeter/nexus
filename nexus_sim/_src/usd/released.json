@@ -28,6 +28,9 @@
       "units": "pixels"
     }
   },
+  "NexusControllerRoleAPI": {},
+  "NexusEstimatorRoleAPI": {},
+  "NexusForceRoleAPI": {},
   "NexusGpsAPI": {
     "nexus:fixType": {
       "fallback": "3",
@@ -111,6 +114,7 @@
     }
   },
   "NexusPx4SitlAPI": {},
+  "NexusSensorRoleAPI": {},
   "NexusThermalCameraAPI": {
     "nexus:height": {
       "fallback": "1024",

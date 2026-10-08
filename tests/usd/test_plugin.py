@@ -77,11 +77,11 @@ def test_every_sensor_schema_shares_one_rate_attribute():
     assert rates == {("float", "Units: hertz")}
 
 
-def test_the_conformance_fixture_applies_every_schema_the_plugin_defines():
-    """The conformance fixture applies every schema the plugin defines.
+def test_the_conformance_fixture_applies_every_component_and_peer_schema_the_plugin_defines():
+    """The conformance fixture applies every component and peer schema the plugin defines.
 
-    Given the plugin and the fixture, when a test lists the schemas each defines and applies, then the two
-    sets are equal.
+    Given the plugin and the fixture, when a test lists the schemas each defines and applies, leaving out
+    the role schemas, which a component schema includes as a built-in, then the two sets are equal.
     """
     from pxr import Usd
 
@@ -89,9 +89,10 @@ def test_the_conformance_fixture_applies_every_schema_the_plugin_defines():
     from nexus_sim._src.usd import schema_names
 
     stage = Usd.Stage.Open(str(FIXTURE))
-    applied = {name for prim in stage.Traverse() for name in prim.GetAppliedSchemas()}
+    roles = {f"Nexus{name}RoleAPI" for name in ("Sensor", "Estimator", "Controller", "Force")}
+    applied = {name for prim in stage.Traverse() for name in prim.GetAppliedSchemas()} - roles
     sensors = {f"Nexus{name}API" for name in ("Imu", "Mag", "Baro", "Gps", "Camera", "ThermalCamera", "Lidar")}
-    assert applied == set(schema_names()) == sensors | {"NexusPropellerAPI", "NexusPx4API", "NexusPx4SitlAPI"}
+    assert applied == set(schema_names()) - roles == sensors | {"NexusPropellerAPI", "NexusPx4API", "NexusPx4SitlAPI"}
 
 
 def test_the_script_beside_the_fixture_reproduces_it(tmp_path):

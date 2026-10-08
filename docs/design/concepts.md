@@ -90,7 +90,9 @@ argument, as it takes a guidance.
 
 What a component does in the tick. The role fixes where the component's stages run in the ring and
 who declares it. The vehicle's USD declares every role but the guidance, which the run takes as an
-argument.
+argument. The schema of a declared component states its role: it includes a role schema, such as
+`NexusSensorRoleAPI`, as a built-in. The builder places the component by that role, never by the
+methods of its class. The [schema reference](../reference/schemas.md) lists the role of each schema.
 
 | Role | What it does |
 |---|---|
