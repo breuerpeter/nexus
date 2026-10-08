@@ -89,21 +89,20 @@ def vehicle(
     root: str = "",
     mast: str | None = None,
     px4: bool = False,
+    controller: str = "",
     estimator: str | None = None,
 ) -> str:
     """Write the fixture vehicle under `tmp_path` and return its path.
 
     `body` is the text of the prims under the base body, and `root` the text of more prims under the root prim. `mast`, when given, adds the second body and
     is the text of the prims under it. `px4` declares the PX4 Software In The Loop (SITL) peer, for a
-    run that maps it to its fake. `estimator`, when given, declares the stand-in estimator with
-    `StandInEstimatorAPI` on the scope `Estimator`, and is the text that scope authors, such as a connection.
+    run that maps it to its fake. `controller` is more text the controller's scope authors, such as a
+    connection. `estimator`, when given, declares the stand-in estimator with `StandInEstimatorAPI` on the
+    scope `Estimator`, and is the text that scope authors, such as a connection.
     """
     geometry = "" if mast is None else _MAST.replace("__MAST_PRIMS__", mast)
-    peer = (
-        '    over "Controller" (\n        prepend apiSchemas = ["NexusPx4SitlAPI"]\n    )\n    {\n    }\n'
-        if px4
-        else ""
-    )
+    applied = ' (\n        prepend apiSchemas = ["NexusPx4SitlAPI"]\n    )' if px4 else ""
+    peer = f'    over "Controller"{applied}\n    {{\n        {controller}\n    }}\n' if px4 or controller else ""
     if estimator is not None:
         root += prim("Estimator", "StandInEstimatorAPI", estimator, kind="Scope")
     joint = "" if mast is None else _MAST_JOINT

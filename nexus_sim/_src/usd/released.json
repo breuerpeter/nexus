@@ -111,6 +111,26 @@
       "fallback": "",
       "type": "string",
       "units": "none"
+    },
+    "nexus:inputs:baro": {
+      "fallback": null,
+      "type": "relationship",
+      "units": ""
+    },
+    "nexus:inputs:gps": {
+      "fallback": null,
+      "type": "relationship",
+      "units": ""
+    },
+    "nexus:inputs:imu": {
+      "fallback": null,
+      "type": "relationship",
+      "units": ""
+    },
+    "nexus:inputs:mag": {
+      "fallback": null,
+      "type": "relationship",
+      "units": ""
     }
   },
   "NexusPx4SitlAPI": {},
