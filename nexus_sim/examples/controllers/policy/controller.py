@@ -107,7 +107,7 @@ class TrainedPolicyController:
         self._policy = None
 
     def stages(self):
-        """The ``read`` and ``exchange`` host stages: inference runs on the host between replays, over the
+        """The ``exchange`` host stage: inference runs on the host between replays, over the
         estimate and toward the setpoint the exchange reads.
         """
         return peer_stages(self, reads=(self.setpoint, self.estimate))

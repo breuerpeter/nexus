@@ -171,8 +171,8 @@ class Orchestrator:
                 leaves the run, by name, to the address a script opens its client on. The run
                 owns every address, and the build names them here; ``None`` names no link.
             connections: For a component's prim, each signal it reads and the prim whose component writes
-                it, from the vehicle's ``nexus:inputs:`` relationships: of several writers of one signal, a
-                reader takes the one its connection names. A component's prim is its ``prim_path``, which the
+                it, from the vehicle's ``nexus:inputs:`` relationships: where more than one component writes a
+                signal, a reader takes the one its connection names. A component's prim is its ``prim_path``, which the
                 build sets. ``None`` connects nothing.
             logger: Optional :class:`~nexus_sim._src.logging.Logger`: the recording
                 sink + shared log calls. ``None`` ⇒ no recording and no per-tick log

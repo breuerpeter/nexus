@@ -2,8 +2,8 @@
 orchestrator, SeedTree, Scenario loader, component registry.
 
 Core runs on Warp: its schema declares the device signals' types as Warp structs. It imports no physics
-backend, so ``newton`` stays out of it. The transform between the world frame and the North East Down
-(NED) and Forward Right Down (FRD) frames lives in ``nexus_sim._src.transform``.
+backend, so ``newton`` stays out of it. The transform between the world frame and the
+North East Down (NED) and Forward Right Down (FRD) frames lives in ``nexus_sim._src.transform``.
 """
 
 from . import interfaces

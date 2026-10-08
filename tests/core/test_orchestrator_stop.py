@@ -54,7 +54,7 @@ class _Actuator:
 
 class _Controller:
     """Lockstep stand-in: returns controls immediately, so preroll succeeds at once. Its work is the
-    PX4 shape, a ``read`` and an ``exchange`` host stage.
+    PX4 shape, a ``truth`` and an ``exchange`` host stage.
     """
 
     def __init__(self):
@@ -73,7 +73,7 @@ class _Controller:
         def exchange(tick):
             return self.exchange(tick.t, None) is not None
 
-        return [Stage("read", "host", lambda tick: None), Stage("exchange", "host", exchange)]
+        return [Stage("truth", "host", lambda tick: None), Stage("exchange", "host", exchange)]
 
 
 def _orch(sensors=(), **kw):

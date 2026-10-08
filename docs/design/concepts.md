@@ -48,9 +48,9 @@ run down.
 ### Tick
 
 One control step of the loop: each stage in the ring runs once, and the physics steps its
-substeps. `Tick` is the loop's own context, which it hands every stage: the time, the physics
-state and the sensors' measurement. A value one component passes to another is a
-[signal](#signal), not a field of the tick.
+substeps. `Tick` is the loop's own context, which it hands every stage: the time and the physics
+state. A value one component passes to another, such as a sensor's sample, is a [signal](#signal),
+not a field of the tick.
 
 ### Stage
 
@@ -75,8 +75,17 @@ segment. [Execution](execution.md#stages-and-segments) says how the loop cuts an
 
 A named, typed value that one component writes and others read on the tick, a `Signal`. Each
 stage declares the signals it reads and writes. Before any stage runs, the loop wires each input
-to the one output of its name and hands the writer and each reader one buffer.
+to an output of its name and hands the writer and each reader one buffer. Where more than one
+component writes a signal, a reader takes the one a [connection](#connection) names, and a list input
+takes every writer's.
 [Execution](execution.md#signals) says where a signal's buffer lives and what the loop checks.
+
+### Connection
+
+A relationship `nexus:inputs:<signal>` on a reader's prim, which the reader's schema declares. Its
+target is the prim of the component the reader takes that signal from, such as the one of two IMUs the
+estimator reads. Newton's `NewtonMimicAPI` names the joint it follows the same way, with
+`newton:mimicJoint`.
 
 ## The parts of a run
 
@@ -96,10 +105,10 @@ methods of its class. The [schema reference](../reference/schemas.md) lists the 
 
 | Role | What it does |
 |---|---|
-| Sensor | samples the plant into its own buffer: an Inertial Measurement Unit (IMU), a Global Positioning System (GPS) receiver, a camera |
+| Sensor | samples the plant and writes its sample, a signal of its own type stamped with its sim time: an Inertial Measurement Unit (IMU), a Global Positioning System (GPS) receiver, a camera |
 | Estimator | turns the sensors' values into the estimate, the vehicle's pose and twist that the guidance and the controller read in place of the physics state. The one that ships, `GroundTruthEstimator`, hands on the base body's true pose and twist |
 | Guidance | turns a mission into the setpoint a controller tracks |
-| Controller | turns the estimate, or the sensors' measurements, into the controls, one command per actuator |
+| Controller | turns the estimate, or the sensors' samples, into the controls, one command per actuator |
 | Command element | turns the controls into Newton's control inputs, such as the rotors' speed targets |
 | Force element | adds body wrenches to the shared `body_f` buffer from the current state, such as the propellers' thrust. It adds and never assigns, so two on one body both act |
 

@@ -5,8 +5,8 @@ in the script, and it records its flight `.rrd`. The launcher map is `_EXAMPLES`
   `assembly.py` and enters via `Sim.from_orchestrator`. Its flight file constructs its guidance,
   a `MissionGuidance` or a `TrackingGuidance` from `nexus_sim._src.guidance`, from the guidance's own
   parameters, and hands it over as `guidance=`. A guidance holds no controller and no stop. Its
-  stage writes the `setpoint` signal, a position goal as one `wp.vec3` or a `ReferenceTrajectory`, which
-  the controller declares it reads. The stage sets `tick.done` when its mission is over, which ends the
+  stage writes the `setpoint` signal, one `wp.vec3` for a position goal or a `ReferenceTrajectory`, which the
+  controller declares it reads. The stage sets `tick.done` when its mission is over, which ends the
   run. The policy example's `GeofenceGuidance` is the worked example of a guidance an example
   specialises. The example's assembly passes `GroundTruthEstimator` from `nexus_sim._src.vehicle.estimators` as
   the loop's `estimator`. The guidance and every controller that reads the vehicle's state read it
@@ -19,7 +19,7 @@ in the script, and it records its flight `.rrd`. The launcher map is `_EXAMPLES`
   takes a signal's `buffer`, and a host stage calls its `read()` and `write()`. A controller that
   solves on the host returns `peer_stages(self, reads=(self.setpoint, self.estimate))` from
   `nexus_sim._src.core.stages`: the Model Predictive Control (MPC), acados, and policy examples.
-  That is one host stage, `exchange`, over its `exchange(t, timeout)`, which writes the `(1, 16)`
+  That's one host stage, `exchange`, over its `exchange(t, timeout)`, which writes the `(1, 16)`
   `controls` signal. A device-native law, the Proportional Integral Derivative (PID) example, states a
   device stage that reads the signal `observation`, which its observation sensor writes, and writes its
   `(1, nr)` `controls` signal. The loop never calls `exchange` itself. A controller with a peer, one with an `attached`

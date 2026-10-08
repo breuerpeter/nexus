@@ -71,8 +71,8 @@ class PoseTwist:
 
 @wp.struct
 class ImuSample:
-    """The sample of an Inertial Measurement Unit (IMU), in the axes of its mount: body Forward Right Down
-    (FRD) on an unturned mount. The signal ``imu`` carries it, of shape ``(1,)``.
+    """The sample of an Inertial Measurement Unit (IMU), in the axes of its mount: body
+    Forward Right Down (FRD) on an unturned mount. The signal ``imu`` carries it, of shape ``(1,)``.
     """
 
     time: wp.float64

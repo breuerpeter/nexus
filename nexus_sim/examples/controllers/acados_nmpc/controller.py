@@ -242,7 +242,7 @@ class AcadosNMPCController:
         pass
 
     def stages(self):
-        """The ``read`` and ``exchange`` host stages: the per-tick solve runs on the host between replays,
+        """The ``exchange`` host stage: the per-tick solve runs on the host between replays,
         from the estimate, tracking the reference the exchange reads from the setpoint.
         """
         return peer_stages(self, reads=(self.setpoint, self.estimate))

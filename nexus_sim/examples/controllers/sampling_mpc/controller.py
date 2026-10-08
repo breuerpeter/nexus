@@ -313,7 +313,7 @@ class SamplingMPCController:
         pass
 
     def stages(self):
-        """The ``read`` and ``exchange`` host stages: the per-tick solve runs on the host between replays,
+        """The ``exchange`` host stage: the per-tick solve runs on the host between replays,
         from the estimate and toward the setpoint the exchange reads.
         """
         return peer_stages(self, reads=(self.setpoint, self.estimate))

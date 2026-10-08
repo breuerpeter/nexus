@@ -114,7 +114,7 @@ class _HostSensor:
 
 
 class _PeerController:
-    """A controller with a peer, the PX4 shape: two host stages, ``read`` and ``exchange``, plus one
+    """A controller with a peer, the PX4 shape: two host stages, ``truth`` and ``exchange``, plus one
     device stage that bumps its own buffer, which exists from construction because the loop captures
     before a peer connects. ``answers`` says which exchanges the peer answers; ``attached`` says when
     the peer dialed in. It keeps every exchange and device-stage call.
@@ -149,7 +149,7 @@ class _PeerController:
             return self.exchange(tick.t, None) is not None
 
         return [
-            Stage("read", "host", lambda tick: None),
+            Stage("truth", "host", lambda tick: None),
             Stage("exchange", "host", exchange),
             Stage("act", "device", self._act, warm=False),
         ]
@@ -286,14 +286,14 @@ def test_a_component_with_no_stages_fails_the_build_naming_it(controller):
 @pytest.mark.gpu
 def test_a_run_logs_its_stage_plan_with_its_host_stages(caplog):
     """A run logs its stage plan once at start: each captured segment and the host stages between them.
-    The PX4 shape: one line naming one segment and the ``read`` and ``exchange`` host stages.
+    The PX4 shape: one line naming one segment and the ``truth`` and ``exchange`` host stages.
     """
     with _cuda(), caplog.at_level(logging.INFO, logger="nexus"):
         orch = _orch(_PeerController())
         orch.step()
         orch.close()
     plans = [m for m in _messages(caplog) if m.startswith("stage plan:")]
-    assert len(plans) == 1 and plans[0].count("graph(") == 1 and "read" in plans[0] and "exchange" in plans[0]
+    assert len(plans) == 1 and plans[0].count("graph(") == 1 and "truth" in plans[0] and "exchange" in plans[0]
 
 
 @pytest.mark.gpu

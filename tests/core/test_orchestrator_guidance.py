@@ -105,7 +105,7 @@ class _Sensor:
 
 
 class _ExchangeController:
-    """A controller that reads a setpoint of type `setpoint` and solves on the host: a ``read`` and an
+    """A controller that reads a setpoint of type `setpoint` and solves on the host: a ``truth`` and an
     ``exchange`` host stage. It keeps, per exchange, the sim time, the vehicle's position and the setpoint
     it reads.
     """
@@ -126,7 +126,7 @@ class _ExchangeController:
             self.exchanges.append((tick.t.sim_time, tuple(self._state.pos), self.setpoint.read()))
             return True
 
-        return [Stage("read", "host", lambda tick: None), Stage("exchange", "host", exchange, reads=(self.setpoint,))]
+        return [Stage("truth", "host", lambda tick: None), Stage("exchange", "host", exchange, reads=(self.setpoint,))]
 
 
 class _DeviceController:
@@ -161,7 +161,7 @@ class _NoSetpointController:
         pass
 
     def stages(self):
-        return [Stage("read", "host", lambda tick: None), Stage("exchange", "host", lambda tick: True)]
+        return [Stage("truth", "host", lambda tick: None), Stage("exchange", "host", lambda tick: True)]
 
 
 class _Reference:

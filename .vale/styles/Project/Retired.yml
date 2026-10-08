@@ -26,3 +26,4 @@ tokens:
   - 'USDBuilder|BuilderBase|vehicle[ _]builders?'
   - 'RigidBodyRotors'
   - 'State ?Sensor'
+  - "sensors?'? (?:fan-in|measurements?)"

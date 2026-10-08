@@ -2,8 +2,8 @@
 
 A stage declares each signal it reads and each signal it writes, by name and type. The builder wires
 every input to an output of its name before the capture, checks that the two agree, and hands the writer
-and each reader one buffer. Where several components write one signal, a reader takes the one a connection
-on its prim names, or all of them as a list. A signal whose type is Warp's own, a struct or a value type
+and each reader one buffer. Where more than one component writes a signal, a reader takes the one a
+connection on its prim names, or every writer as a list. A signal whose type is Warp's own, a struct or a value type
 such as ``wp.float32`` or ``wp.vec3``, lives on the device: its buffer is a Warp array, which device stages
 read and write in their kernels and a host stage reads with a copy. Any other type is a host type, whose
 buffer holds one object.

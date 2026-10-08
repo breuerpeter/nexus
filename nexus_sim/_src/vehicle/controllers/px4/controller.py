@@ -2,8 +2,8 @@
 
 Its work is two host stages, ``truth`` and ``exchange``: ``exchange(t, timeout)`` is the blocking lockstep that
 paces the loop: opens a tcpin TCP server on :4560, which PX4 dials into as client with no HEARTBEAT, serializes the
-samples of the Inertial Measurement Unit (IMU), the magnetometer, the barometer and the Global Positioning System
-(GPS), which its stage reads as signals, into HIL_SENSOR and HIL_GPS, and the base body's true state, which
+samples of the Inertial Measurement Unit (IMU), the magnetometer, the barometer and the
+Global Positioning System (GPS), which its stage reads as signals, into HIL_SENSOR and HIL_GPS, and the base body's true state, which
 ``truth`` reads, into HIL_STATE_QUATERNION, then blocks on HIL_ACTUATOR_CONTROLS with a run-ending timeout. The
 sensors already give their samples in their own axes; this layer only encodes wire units and moves bytes.
 
@@ -46,8 +46,8 @@ from nexus_sim._src.peers.px4_sitl import HIL_PORT
 PX4_ULOG_DIR = os.path.expanduser("~/.cache/nexus/px4-ulog")
 
 # What PX4 receives for a sensor the vehicle doesn't declare, as the sample its signal holds: an IMU and a
-# magnetometer that read zero, a barometer at 1013.25 hPa, 0 m and 25 degrees Celsius, and a GPS sample with
-# no time, for which no HIL_GPS goes out.
+# magnetometer that read zero, a barometer at 1013.25 hPa, 0 m and 25 degrees Celsius, and a
+# Global Positioning System (GPS) sample with no time, for which no HIL_GPS goes out.
 _NO_IMU = [(0.0, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))]
 _NO_MAG = [(0.0, (0.0, 0.0, 0.0))]
 _NO_BARO = [(0.0, 1013.25, 0.0, 25.0)]
@@ -218,7 +218,7 @@ class Px4MavlinkController:
             0,
         )
 
-        # HIL_GPS, plus the ground-truth HIL_STATE_QUATERNION, at the GPS sub-rate, when the vehicle declares a GPS.
+        # HIL_GPS, plus the ground-truth HIL_STATE_QUATERNION, at the receiver's sub-rate, when the vehicle declares one.
         if not math.isnan(gps["time"]) and (t.sim_time - self._last_gps >= self.gps_interval):
             self._last_gps = t.sim_time
             lat = int(float(gps["lat"]) * 1e7)
