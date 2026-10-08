@@ -1,5 +1,5 @@
 """Sensors: Inertial Measurement Unit (IMU), Global Positioning System (GPS), barometer,
-magnetometer. Each yields a Measurement in the Forward Right Down (FRD) frame.
+magnetometer. Each writes its sample as a signal of its own type, stamped with the tick's sim time.
 """
 
 from .sensors import BaroSensor, GpsSensor, ImuSensor, MagSensor

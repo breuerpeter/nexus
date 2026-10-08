@@ -702,11 +702,12 @@ def test_a_px4_run_steps_the_physics_once_per_control_tick(tmp_path, warp_cpu, c
     assert (ticked, steps_per_tick) == ([True] * 5, [1])
 
 
-def test_a_px4_run_takes_no_estimator_and_its_stages_stay_the_same(tmp_path, warp_cpu, caplog):
-    """A PX4 run takes no estimator, and its stages stay the same.
+def test_a_px4_run_takes_no_estimator_stage(tmp_path, warp_cpu, caplog):
+    """A PX4 run takes no estimator stage.
 
-    Given the fixture vehicle on the PX4 fake, when the run takes its first tick, then its logged stage plan
-    equals today's, with no estimator stage.
+    Given the fixture vehicle, which declares no sensor, on the PX4 fake, when the run takes its first tick, then
+    its logged stage plan holds the device segment and PX4's `truth` and `exchange` host stages, with no
+    estimator stage.
     """
     loop, _ = _px4_run(tmp_path, "cpu")
     with caplog.at_level(logging.INFO, logger="nexus"):
@@ -714,9 +715,7 @@ def test_a_px4_run_takes_no_estimator_and_its_stages_stay_the_same(tmp_path, war
     loop.close()
 
     plans = [r.getMessage() for r in caplog.records if r.getMessage().startswith("stage plan:")]
-    assert plans == [
-        "stage plan: eager(clear -> rotors -> propellers -> step -> record) host(read) host(truth) host(exchange)"
-    ]
+    assert plans == ["stage plan: eager(clear -> rotors -> propellers -> step -> record) host(truth) host(exchange)"]
 
 
 def test_a_layer_path_that_does_not_exist_fails_before_any_peer_starts(tmp_path, daemon):

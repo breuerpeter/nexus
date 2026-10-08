@@ -7,8 +7,8 @@ controller -> [clear -> the command elements -> the force elements -> step] per 
 cuts the ring at its host stages and
 rotates it to start after the last cut, so each maximal run of device stages becomes one CUDA
 graph, the Real Time Factor (RTF) lever, and the host stages run between
-replays. One partition and one loop serve every arrangement: PX4, whose ``read`` and ``exchange``
-host stages block on its peer, a Model Predictive Control (MPC) solver that runs on the host, and a
+replays. One partition and one loop serve every arrangement: PX4, whose ``exchange`` host stage
+blocks on its peer, a Model Predictive Control (MPC) solver that runs on the host, and a
 device-native Proportional Integral Derivative (PID) law whose whole ring is one graph. On a CPU device the same segments run stage by stage, the bit-exact
 determinism gate. GPU physics is tolerance-gated, not bit-exact, so capture is an RTF optimization
 layered over the same component semantics.
@@ -19,15 +19,18 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
+import warp as wp
+
 from nexus_sim._src.diagnostics import diagnostics
 
+from .clock import DeviceClock
 from .interfaces import Stage, Tick
 from .logging import logger
 from .ports import PortMap
 from .profiling import LoopProfiler
-from .schema import Measurement, PoseTwist
+from .schema import PoseTwist
 from .signals import wire
-from .stages import build_ring, device_sensors, partition, plan_line, seed_stages, warm_stages
+from .stages import build_ring, opening, partition, plan_line, seed_stages, stages_of, warm_stages
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
@@ -48,22 +51,8 @@ if TYPE_CHECKING:
 
 
 def _on_cuda() -> bool:
-    """Whether the active Warp device captures graphs: a CUDA device. Warp stays a lazy import, so a
-    warp-free build of stand-in components runs the loop eagerly.
-    """
-    try:
-        import warp as wp
-
-        return bool(wp.get_device().is_cuda)
-    except Exception:
-        return False
-
-
-def _replay():
-    """The graph replay, bound once outside the loop."""
-    import warp as wp
-
-    return wp.capture_launch
+    """Whether the active Warp device captures graphs: a CUDA device."""
+    return bool(wp.get_device().is_cuda)
 
 
 def _instance(component) -> str:
@@ -125,6 +114,7 @@ class Orchestrator:
         renderer: Renderer | None = None,
         peers: Iterable[Peer] = (),
         ports: Mapping[str, dict] | None = None,
+        connections: Mapping[str, Mapping[str, str]] | None = None,
         logger: Logger | None = None,
         on_tick: Callable[[newton.State, float, int], None] | None = None,
         preroll_timeout: float = 2.0,
@@ -143,9 +133,8 @@ class Orchestrator:
                 the North East Down (NED) origin and returns the initial state; its ``clear``
                 and ``step`` stages zero the shared ``body_f`` and integrate: collide + solver step
                 + double-buffer.
-            sensors: Iterable of sensors producing the Forward Right Down (FRD) ``Measurement``,
-                each a device stage into its own buffer plus ``read(meas)``, or a host stage for a
-                sensor whose work leaves the process. Stored as a list.
+            sensors: Iterable of sensors, each a device stage that writes its sample to a signal of its
+                own type, or a host stage for a sensor whose work leaves the process. Stored as a list.
             controller: Control boundary. ``connect()`` binds and starts the peer, and the
                 seed pass waits for it; its stages set the command buffer; ``close()`` tears down.
                 A controller with a peer exposes ``attached``, false until the peer dials in,
@@ -181,6 +170,10 @@ class Orchestrator:
             ports: The run's port map, a :class:`~nexus_sim._src.core.ports.PortMap`: each link that
                 leaves the run, by name, to the address a script opens its client on. The run
                 owns every address, and the build names them here; ``None`` names no link.
+            connections: For a component's prim, each signal it reads and the prim whose component writes
+                it, from the vehicle's ``nexus:inputs:`` relationships: where more than one component
+                writes a signal, a reader takes the one its connection names. A component's prim is its
+                ``prim_path``, which the build sets. ``None`` connects nothing.
             logger: Optional :class:`~nexus_sim._src.logging.Logger`: the recording
                 sink + shared log calls. ``None`` ⇒ no recording and no per-tick log
                 fan-out, for max speed. When present, each loggable component's
@@ -214,6 +207,7 @@ class Orchestrator:
         self.renderer = renderer
         self.peers = list(peers)
         self.ports = PortMap() if ports is None else ports
+        self.connections = dict(connections or {})
         # The single logging switch: a `Logger`, the recording sink + the shared log_state/log_image
         # calls, or None. None ⇒ no recording and no per-tick log fan-out → max benchmark/CI speed.
         self.logger = logger
@@ -279,6 +273,8 @@ class Orchestrator:
         # coarse rate, for example 50 Hz, over finer physics integration, matching its training.
         self.physics_substeps = int(physics_substeps)
         self.settings = settings
+        # The tick's sim time on the device, for a run with a stage that reads it; the ring sets it.
+        self._device_clock: DeviceClock | None = None
 
     # -- component-owned logging --------------------------------------------------
     def _scoped(self, path: str):
@@ -472,7 +468,12 @@ class Orchestrator:
                 substeps=self.physics_substeps,
             )
             self._check_estimator(ring)
-            wire(ring)  # every signal a stage declares gets its buffer before any stage runs
+            # The tick's sim time on the device, for a stage that reads it: the clock's stage opens each tick.
+            reads_time = any(s.name == "time" for b in ring for s in b.stage.reads)
+            self._device_clock = DeviceClock(self.clock.dt) if reads_time else None
+            if self._device_clock is not None:
+                ring = opening(ring, stages_of(self._device_clock, "clock"))
+            wire(ring, self.connections)  # every signal a stage declares gets its buffer before any stage runs
             self._check_guidance(ring)
             segments = partition(ring)
             captured = _on_cuda()
@@ -481,10 +482,10 @@ class Orchestrator:
                 state=state,
                 t=self.clock.now(),
                 dt=self.clock.dt / self.physics_substeps,
-                meas=Measurement(),
-                sensors=device_sensors(ring),
                 base=getattr(self.physics, "base_index", 0),  # a physics that finds none has body 0 as base
             )
+            if self._device_clock is not None:
+                self._device_clock.time.write([tick.t.sim_time])
             # A controller without a peer connects first, which reserves its device buffers before the
             # warm pass. One with a peer connects after the capture, so every kernel the loop launches has
             # loaded before the peer is up: from the moment PX4 dials in, it logs a ``poll timeout``
@@ -579,10 +580,11 @@ class Orchestrator:
     def _seed(self, ring, tick, peer: bool) -> None:
         """The seed pass, for a controller with a host stage: one pass of the sensors' warm stages and
         the controller's stages over the settled state, whose final exchange writes the controls the
-        first tick applies. A controller with a peer holds the sim clock until the peer attaches, so
-        the peer's first stamp is near zero, and the pass repeats, re-sampling the static settled
-        state so noise dithers into a live feed, until the first controls arrive or the preroll times
-        out. A controller whose stages are all device stages gets no pass: the warm pass seeded it.
+        first tick applies. Each pass advances the sim clock, and its mirror on the device with it. A
+        controller with a peer holds the sim clock until the peer attaches, so the peer's first stamp is
+        near zero, and the pass repeats, re-sampling the static settled state so noise dithers into a
+        live feed, until the first controls arrive or the preroll times out. A controller whose stages
+        are all device stages gets no pass: the warm pass seeded it.
 
         Raises:
             ConnectionError: No controls arrived within ``preroll_timeout``.
@@ -598,7 +600,12 @@ class Orchestrator:
             # Hold the sim clock until the peer has dialed in: time spent waiting would start the peer's
             # clock late, and PX4 times its boot checks from its first stamp.
             attached = self.controller.attached if peer else True
-            tick.t = self.clock.advance() if attached else self.clock.now()
+            if attached:
+                tick.t = self.clock.advance()
+                if self._device_clock is not None:
+                    self._device_clock.advance()
+            else:
+                tick.t = self.clock.now()
             if all(st.run(tick) is not False for st in stages):
                 if peer:
                     logger.info("controller lockstep established")
@@ -619,8 +626,6 @@ class Orchestrator:
         other stream operation during a capture kills it, so the warm pass and the seed row complete
         first, and nothing else touches the device until the loop replays.
         """
-        import warp as wp
-
         wp.synchronize()  # complete the warm pass and the seed row before a capture opens
         graphs = []
         for seg in segments:
@@ -649,7 +654,7 @@ class Orchestrator:
         t_warm = None
         steps_warm = 0
         tick.timeout = self.exchange_timeout
-        replay = _replay() if graphs is not None else None
+        replay = wp.capture_launch if graphs is not None else None
         prof = self._make_profiler("graph" if graphs is not None else "eager")
         try:
             while not self._stop and not tick.done and (self.max_steps is None or count < self.max_steps):

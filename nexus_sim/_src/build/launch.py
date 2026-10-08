@@ -38,7 +38,7 @@ from nexus_sim._src.core.registry import ComponentRegistry
 from nexus_sim._src.peers.px4_sitl import HIL_PORT, OFFBOARD_PORT
 from nexus_sim._src.physics import VehicleUsd
 from nexus_sim._src.rendering import rtx_renderer
-from nexus_sim._src.usd.reader import read_declarations
+from nexus_sim._src.usd.reader import read_connections, read_declarations
 
 from .assembly import build_orchestrator, build_scenario
 from .components import declared_controller, declared_estimator, prims_applying
@@ -205,8 +205,11 @@ def build_from_launch(
         # controller-agnostic. The schema gives its keywords, and the run gives the PX4 peer's addresses.
         instance, claim = peer_classes["px4_sitl"].claim_instance() if px4_sitl else (0, None)
         controller = spec.cls(**spec.kwargs, port=HIL_PORT + instance, target_system=instance + 1)
+        controller.prim_path = spec.prim
         # The estimator the vehicle declares, if any, takes its schema's keywords alone.
         estimator = estimator_spec.cls(**estimator_spec.kwargs) if estimator_spec else None
+        if estimator is not None:
+            estimator.prim_path = estimator_spec.prim
         if px4_sitl:
             # The peer starts here, before the assembly: its start builds PX4 incrementally, which must
             # stay outside the sim's preroll window, GH #39, and PX4 boots while the physics compiles.
@@ -221,6 +224,7 @@ def build_from_launch(
             estimator=estimator,
             peers=started,
             ports=_ports(instance, started),
+            connections=read_connections(resolved.vehicle_usd_path),
             rerun=launch.output.log or launch.output.view,
             viewer=launch.output.view,
             debug=launch.output.debug,

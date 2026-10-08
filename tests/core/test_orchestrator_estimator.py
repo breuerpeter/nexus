@@ -13,31 +13,36 @@ import warp as wp
 from nexus_sim._src.core.interfaces import Stage
 from nexus_sim._src.core.orchestrator import Orchestrator
 from nexus_sim._src.core.schema import PoseTwist, SimTime
-from nexus_sim._src.core.signals import DeviceType, Signal
+from nexus_sim._src.core.signals import Signal
 
 DEVICES = ["cpu", pytest.param("cuda:0", marks=pytest.mark.gpu)]
 
 
-class Count(DeviceType):
+@wp.struct
+class Count:
     """A signal type this test defines: one 32-bit count."""
 
-    dtype = wp.int32
+    n: wp.int32
 
 
 @wp.kernel
-def _count(n: wp.array(dtype=wp.int32), out: wp.array(dtype=wp.int32)):
+def _count(n: wp.array(dtype=wp.int32), out: wp.array(dtype=Count)):
     n[0] = n[0] + 1
-    out[0] = n[0]
+    c = Count()
+    c.n = n[0]
+    out[0] = c
 
 
 @wp.kernel
-def _estimate(count: wp.array(dtype=wp.int32), estimate: wp.array2d(dtype=float)):
-    estimate[0, 0] = float(count[0])
+def _estimate(count: wp.array(dtype=Count), estimate: wp.array(dtype=PoseTwist)):
+    e = PoseTwist()
+    e.position = wp.vec3(float(count[0].n), 0.0, 0.0)
+    estimate[0] = e
 
 
 @wp.kernel
-def _copy_first(estimate: wp.array2d(dtype=float), seen: wp.array(dtype=float)):
-    seen[0] = estimate[0, 0]
+def _copy_first(estimate: wp.array(dtype=PoseTwist), seen: wp.array(dtype=float)):
+    seen[0] = estimate[0].position[0]
 
 
 class _Clock:
@@ -91,11 +96,11 @@ class _Counter:
 
 
 class _CountingEstimator:
-    """An estimator whose device stage writes the count it reads into the first value of its estimate."""
+    """An estimator whose device stage writes the count it reads into the estimate's first coordinate."""
 
     def __init__(self):
         self.count = Signal("count", Count, shape=(1,))
-        self.estimate = Signal("estimate", PoseTwist, shape=(1, 13))
+        self.estimate = Signal("estimate", PoseTwist, shape=(1,))
 
     def stages(self):
         return [Stage("estimate", "device", self._run, reads=(self.count,), writes=(self.estimate,))]
@@ -105,10 +110,10 @@ class _CountingEstimator:
 
 
 class _EstimateReader:
-    """A controller whose device stage copies the first value of the estimate into a buffer of its own, `seen`."""
+    """A controller whose device stage copies the estimate's first coordinate into a buffer of its own, `seen`."""
 
     def __init__(self):
-        self.estimate = Signal("estimate", PoseTwist, shape=(1, 13))
+        self.estimate = Signal("estimate", PoseTwist, shape=(1,))
         self.seen = wp.zeros(1, dtype=float)
 
     def connect(self):
@@ -155,7 +160,7 @@ class _EstimateSensor:
     """A sensor whose device stage writes the estimate, which is the estimator's to write. It counts its runs."""
 
     def __init__(self):
-        self.estimate = Signal("estimate", PoseTwist, shape=(1, 13))
+        self.estimate = Signal("estimate", PoseTwist, shape=(1,))
         self.runs = 0
 
     def stages(self):

@@ -185,6 +185,7 @@ def build_orchestrator(
     renderer_factory=None,
     peers=(),
     ports=None,
+    connections=None,
     preroll_timeout: float = 30.0,
     max_steps: int | None = None,
     settings: dict | None = None,
@@ -198,6 +199,7 @@ def build_orchestrator(
     ``None`` renders nothing. ``components`` resolves each sensor's schema to its class.
     ``peers`` are the processes the build started for this run, which the loop stops when the run ends.
     ``ports`` is the run's port map, the links that leave the run, which ``Sim.ports`` exposes.
+    ``connections`` are the vehicle's, which pick a reader's writer of a signal, by the reader's prim.
     ``settings`` is the run's effective configuration, which the loop keeps for a caller to read back
     and the logger shows in the viewer's Settings tab; the run's builder passes the tested-config receipt.
     ``preroll_timeout`` covers the boot of a controller with a peer, since an autopilot in a container
@@ -228,6 +230,7 @@ def build_orchestrator(
         renderer=renderer,
         peers=peers,
         ports=ports,
+        connections=connections,
         preroll_timeout=preroll_timeout,
         max_steps=max_steps,
         settings=settings,

@@ -3,23 +3,26 @@
 The fixture is a local layer over ``fixture_vehicle.usda`` beside this module: a base body with a box
 collider, four rotor bodies with propellers on revolute joints, and the PX4 controller declared on its scope, with
 no mesh and no sensor. A test adds its own sensor prims. A run flies it in ``fixture_scene.usda``, an
-empty world, so a test reads no hosted asset. A stand-in controller answers at once and keeps
-every `Measurement` it receives, so a test reads what a controller reads.
+empty world, so a test reads no hosted asset. A stand-in controller answers at once with zero
+commands. A stand-in estimator, which the stand-in schema `StandInEstimatorAPI` declares on a scope of its
+own, keeps what each signal it reads holds, so a test reads what a sensor wrote.
 """
 
 from __future__ import annotations
 
-import dataclasses
 from importlib.metadata import entry_points
 from pathlib import Path
+from typing import ClassVar
 
 import numpy as np
 
 from nexus_sim._src.config import LaunchConfig
+from nexus_sim._src.core.clock import DeviceClock
 from nexus_sim._src.core.interfaces import Stage
 from nexus_sim._src.core.registry import ComponentRegistry
 from nexus_sim._src.core.schema import Controls
-from nexus_sim._src.core.stages import peer_stages
+from nexus_sim._src.core.signals import Signal, wire
+from nexus_sim._src.core.stages import Bound, peer_stages
 from nexus_sim._src.usd import ENTRY_POINT_GROUP
 
 BASE = Path(__file__).with_name("fixture_vehicle.usda")
@@ -79,19 +82,29 @@ def prim(name: str, schema: str | None, attrs: str = "", *, kind: str = "Xform",
     return f'def {kind} "{name}"{metadata}\n{{\n{body}}}\n'
 
 
-def vehicle(tmp_path: Path, body: str = "", *, root: str = "", mast: str | None = None, px4: bool = False) -> str:
+def vehicle(
+    tmp_path: Path,
+    body: str = "",
+    *,
+    root: str = "",
+    mast: str | None = None,
+    px4: bool = False,
+    controller: str = "",
+    estimator: str | None = None,
+) -> str:
     """Write the fixture vehicle under `tmp_path` and return its path.
 
     `body` is the text of the prims under the base body, and `root` the text of more prims under the root prim. `mast`, when given, adds the second body and
     is the text of the prims under it. `px4` declares the PX4 Software In The Loop (SITL) peer, for a
-    run that maps it to its fake.
+    run that maps it to its fake. `controller` is more text the controller's scope authors, such as a
+    connection. `estimator`, when given, declares the stand-in estimator with `StandInEstimatorAPI` on the
+    scope `Estimator`, and is the text that scope authors, such as a connection.
     """
     geometry = "" if mast is None else _MAST.replace("__MAST_PRIMS__", mast)
-    peer = (
-        '    over "Controller" (\n        prepend apiSchemas = ["NexusPx4SitlAPI"]\n    )\n    {\n    }\n'
-        if px4
-        else ""
-    )
+    applied = ' (\n        prepend apiSchemas = ["NexusPx4SitlAPI"]\n    )' if px4 else ""
+    peer = f'    over "Controller"{applied}\n    {{\n        {controller}\n    }}\n' if px4 or controller else ""
+    if estimator is not None:
+        root += prim("Estimator", "StandInEstimatorAPI", estimator, kind="Scope")
     joint = "" if mast is None else _MAST_JOINT
     path = tmp_path / "sensor_vehicle.usda"
     path.write_text(
@@ -123,11 +136,10 @@ over "vehicle"
 
 
 class Controller:
-    """A stand-in controller: it answers at once with zero commands and keeps each `Measurement` it receives."""
+    """A stand-in controller: it answers at once with zero commands."""
 
     def __init__(self, **kwargs):
         self.airframe = kwargs.get("airframe")
-        self.received = []
 
     def connect(self):
         pass
@@ -138,8 +150,7 @@ class Controller:
     def stages(self):
         return peer_stages(self)
 
-    def exchange(self, meas, t, timeout=None):
-        self.received.append(dataclasses.replace(meas))
+    def exchange(self, t, timeout=None):
         return Controls(command=np.zeros(4))
 
 
@@ -154,32 +165,80 @@ class StandInSensor:
         return [Stage("stand_in", "host", lambda tick: None)]
 
 
+def estimator(*reads: Signal) -> type:
+    """A stand-in estimator class, for a registry to map `StandInEstimatorAPI` to: its host stage reads the signals `reads`.
+
+    Each tick the host stage keeps the tick's sim time and what each signal read gave, one tuple a tick,
+    in the class's `kept`. Its warm device stage launches nothing. Each of its two stages counts its runs in
+    the class's `runs`, so a run that stops before any stage runs leaves it at zero. Each call makes a
+    class of its own, for one run.
+    """
+
+    class StandInEstimator:
+        kept: ClassVar[list] = []
+        runs = 0
+
+        def __init__(self, **kwargs):
+            pass  # the stand-in schema's keyword arguments, which it doesn't read
+
+        def stages(self) -> list[Stage]:
+            cls = type(self)
+
+            def count(tick):
+                cls.runs += 1
+
+            def keep(tick):
+                cls.runs += 1
+                cls.kept.append((tick.t.sim_time, *(signal.read() for signal in reads)))
+
+            return [Stage("count", "device", count), Stage("estimate", "host", keep, reads=tuple(reads))]
+
+    return StandInEstimator
+
+
+def wired(sensor, time: float = 0.0):
+    """`sensor`, its signals wired as a run wires them and the tick's sim time on the device at `time`, for a
+    test that samples it outside a run.
+    """
+    clock = DeviceClock(0.004)
+    pairs = ((clock, "clock"), (sensor, "sensor"))
+    wire([Bound(stage, component, role) for component, role in pairs for stage in component.stages()])
+    clock.time.write([time])
+    return sensor
+
+
 def components(**entries) -> ComponentRegistry:
     """A registry of the test's own: every shipped entry, the stand-in controller for PX4, then `entries`."""
     shipped = {entry.name: entry for entry in entry_points(group=ENTRY_POINT_GROUP)}
     return ComponentRegistry({**shipped, "NexusPx4API": Controller, **entries})
 
 
-def build(vehicle_path: str, *, seed: int = 42, scene: str = SCENE, catalog=None, **kw):
-    """Build a run of the vehicle at `vehicle_path` on the CPU, flown by the stand-in controller.
+def build(
+    vehicle_path: str, *, seed: int = 42, scene: str = SCENE, catalog=None, device: str = "cpu", fall_from=None, **kw
+):
+    """Build a run of the vehicle at `vehicle_path` on `device`, `cpu` or `cuda`, flown by the stand-in controller.
 
-    `catalog` is the catalog, for a scene of the test's own. The rest goes to the build: `components`
-    replaces the registry of :func:`components`, and `peers` is the peer mapping.
+    `catalog` is the catalog, for a scene of the test's own. `fall_from`, a position, places the vehicle there
+    in free flight, where it falls, in place of resting on the ground. The rest goes to the build:
+    `components` replaces the registry of :func:`components`, and `peers` is the peer mapping.
     """
     import nexus_sim._src.build.launch as launch_mod
 
     launch = LaunchConfig.from_dict(
-        {"vehicle": vehicle_path, "scene": scene, "runtime": {"device": "cpu", "seed": seed}}
+        {"vehicle": vehicle_path, "scene": scene, "runtime": {"device": device, "seed": seed}}
     )
+    if fall_from is not None:
+        _, _, cfg = launch_mod.resolve_scenario(launch, catalog=catalog)
+        cfg["physics"]["spawn"] = {"pos": tuple(float(v) for v in fall_from)}
+        kw["cfg"] = cfg
     kw.setdefault("components", components())
     return launch_mod.build_from_launch(launch, catalog=catalog, preroll_timeout=10.0, **kw)
 
 
-def fly(loop, ticks: int) -> list:
-    """Step `loop` for `ticks` control ticks, close it, and return each `Measurement` its controller received in them."""
+def steps(loop, ticks: int) -> int:
+    """Step `loop` for `ticks` control ticks, close it, and return how many it ran."""
     n = 0
     while n < ticks and loop.step():
         n += 1
-    received = loop.controller.received[-n:] if n else []
     loop.close()
-    return received
+    return n

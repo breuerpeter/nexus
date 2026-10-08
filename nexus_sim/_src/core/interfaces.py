@@ -12,10 +12,10 @@ shape, a ``stages()`` list, so neither has a Protocol of its own here.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
-from .schema import Measurement, SimTime
+from .schema import SimTime
 
 if TYPE_CHECKING:
     import newton
@@ -26,12 +26,11 @@ if TYPE_CHECKING:
 @dataclass(slots=True)
 class Tick:
     """The context one control tick hands every stage: the loop's own state, which a stage reads and
-    writes in place. A value between two components is a signal the stages declare, not a field here.
-    ``dt`` is one physics step, the control timestep over
-    ``physics_substeps``. ``sensors`` are the sensors with device stages, whose ``read`` fills ``meas``
-    at a controller's ``read`` host stage. ``timeout`` bounds a host stage's wait on its peer. ``base`` is the
-    index of the vehicle's base body, its airframe, in ``state``: a stage that reads the vehicle's true
-    state reads that row.
+    writes in place. A value between two components is a signal the stages declare, not a field here, a
+    sensor's sample among them. ``dt`` is one physics step, the control timestep over
+    ``physics_substeps``. ``timeout`` bounds a host stage's wait on its peer. ``base`` is the index of the
+    vehicle's base body, its airframe, in ``state``: a stage that reads the vehicle's true state reads that
+    row.
 
     A stage sets ``done`` to end the run, a guidance's when its mission is over: the loop completes the
     tick and takes no further one.
@@ -40,8 +39,6 @@ class Tick:
     state: Any
     t: SimTime
     dt: float
-    meas: Measurement
-    sensors: list = field(default_factory=list)
     timeout: float | None = None
     base: int = 0
     done: bool = False
@@ -138,14 +135,9 @@ class Actuator(Protocol):
 
 class Sensor(Protocol):
     def stages(self) -> list[Stage]:
-        """The sensor's per-tick work: a device stage that samples the live ``newton.State`` into the
-        sensor's device buffer, or a host stage for a sensor whose work leaves the process, an RTX
-        camera's frame exchange with the Kit peer.
-        """
-
-    def read(self, out: Measurement) -> None:
-        """One D2H of the device buffer into the shared host ``Measurement``, Forward Right Down (FRD), at a controller's
-        ``read`` host stage. A sensor with a host stage never gets read.
+        """The sensor's per-tick work: a device stage that samples the live ``newton.State``, or a host stage
+        for a sensor whose work leaves the process, an RTX camera's frame exchange with the Kit peer. The
+        stage writes the sensor's output, a signal of its own type, which an estimator or a controller reads.
         """
 
 
@@ -155,9 +147,10 @@ class Controller(Protocol):
 
     def stages(self) -> list[Stage]:
         """The controller's per-tick work. A controller that blocks on a peer, PX4, or solves on the
-        host, a Model Predictive Control (MPC) solver, states a ``read`` host stage for the sensor fan-in and an ``exchange`` host
-        stage, :func:`nexus_sim._src.core.stages.peer_stages`; a device-native law, the Proportional Integral Derivative (PID) example, states device
-        stages. A stage of it writes the controls, a ``Controls`` signal the command elements read.
+        host, a Model Predictive Control (MPC) solver, states an ``exchange`` host stage,
+        :func:`nexus_sim._src.core.stages.peer_stages`, which declares the signals it reads, such as each
+        sensor's sample; a device-native law, the Proportional Integral Derivative (PID) example, states device
+        stages. A stage of it writes the controls, the signal the command elements read.
 
         A controller with a peer, one that exposes ``attached``, connects after the loop's warm pass
         and graph capture, so a peer that dials in early waits on no kernel load. Its device stages

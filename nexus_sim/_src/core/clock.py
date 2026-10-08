@@ -1,10 +1,14 @@
-"""Clock: fixed-step sim time + optional real-time scaling."""
+"""Clock: fixed-step sim time + optional real-time scaling, and its mirror on the device."""
 
 from __future__ import annotations
 
 import time
 
+import warp as wp
+
+from .interfaces import Stage
 from .schema import SimTime
+from .signals import Signal
 
 
 class Clock:
@@ -48,3 +52,34 @@ class Clock:
             time.sleep(self._deadline - now)
         elif now - self._deadline > 0.25:
             self._deadline = now - 0.25  # cap the catch-up debt: pace forward, don't sprint
+
+
+@wp.kernel
+def _add_tick(dt: wp.float64, now: wp.array(dtype=wp.float64)):
+    now[0] = now[0] + dt
+
+
+class DeviceClock:
+    """The tick's sim time on the device: the signal ``time``, which a device stage reads to stamp what it
+    writes, inside a captured graph too.
+
+    Its one device stage, ``clock``, adds one control tick at the start of each tick, as :class:`Clock` does on
+    the host, so the two hold the same time. The loop writes the start time before the first tick.
+
+    Args:
+        dt: The control tick, seconds.
+    """
+
+    name = "clock"
+
+    def __init__(self, dt: float):
+        self.dt = float(dt)
+        self.time = Signal("time", wp.float64, shape=(1,))
+
+    def stages(self) -> list[Stage]:
+        """The one device stage, ``clock``, which advances the time by one control tick."""
+        return [Stage("clock", "device", lambda tick: self.advance(), writes=(self.time,))]
+
+    def advance(self) -> None:
+        """Add one control tick to the time, on the device."""
+        wp.launch(_add_tick, dim=1, inputs=(self.dt,), outputs=(self.time.buffer,))

@@ -16,10 +16,10 @@ Each tick runs the same fixed sequence, and the order is what makes [runs](conce
 
 ```
 t = clock.advance()
-[sensor stages]                           # IMU, GPS, baro, mag into device buffers; a camera's host stage
+[sensor stages]                           # each sensor's sample, a signal of its own type; a camera's host stage
 [estimator stages]                        # the estimate: the base body's pose and twist; none on PX4
 [guidance stage]                          # the setpoint, from the mission and the estimate; none on PX4
-[controller stages]                       # PX4: read + exchange host stages; PID: one device stage
+[controller stages]                       # PX4: truth + exchange host stages; PID: one device stage
 [clear → command elements → force elements → step] × substeps
                                           # command buffer → Newton's control inputs; state → per-body
                                           # forces; step: Newton's actuators, then the solver
@@ -33,8 +33,9 @@ one CUDA graph. See [Execution](execution.md#stages-and-segments).
 The **site is resolved once at build**, not sampled per tick: the scene's geodetic origin gives the
 magnetic field, the air pressure and temperature, and gravity, and the sensors that read them take
 them as constructor arguments, the same way every other sensor parameter arrives. One gravity value
-reaches both the physics and the IMU. A **camera is a sensor**: it produces an image measurement through the renderer, so vision
-controllers simply read frames.
+reaches both the physics and the Inertial Measurement Unit (IMU). A **camera is a sensor**: each frame
+the Kit peer renders reaches its reader as a signal, an `Image`, so a vision estimator or controller
+reads frames as it reads any sensor.
 
 The framework uses a fixed-order loop. It doesn't use a message bus in the style of ProjectAirSim or
 Robot Operating System (ROS), nor a data-flow or Entity Component System (ECS) scheduler in the
@@ -44,10 +45,11 @@ multi-vehicle work.
 
 ## Shared data model
 
-A neutral, typed vocabulary flows between components, independent of any array library. Body frame
-is **Forward Right Down (FRD)**, see [Conventions](conventions.md). All hot-loop state lives in
-persistent, in-place device buffers with static shapes, so the device region can be
-[CUDA-graph-captured](execution.md).
+A typed vocabulary flows between components as [signals](concepts.md#signal). A value on the device
+takes a Warp struct that core declares, or a Warp value type such as `wp.float32`, and a value on the
+host takes a plain class. Body frame is **Forward Right Down (FRD)**, see [Conventions](conventions.md).
+All hot-loop state lives in persistent, in-place device buffers with static shapes, so the device region
+can be [CUDA-graph-captured](execution.md).
 
 | Type | Carries |
 |---|---|
@@ -55,7 +57,8 @@ persistent, in-place device buffers with static shapes, so the device region can
 | `Controls` | one normalized command per actuator, what the controller emits |
 | `PoseTwist` | the estimate: the base body's pose and twist in world axes, what the estimator writes and the guidance and the controller read |
 | `Wrench` | a **per-body** spatial force over the whole articulation, the base body plus each actuator's body, realized as the shared `body_f` buffer, not a single body-level force and torque pair |
-| `Measurement` | per-sensor output such as Inertial Measurement Unit (IMU) and Global Positioning System (GPS) samples, plus a free-form ground-truth `observation` slot the Proportional Integral Derivative (PID) example reads |
+| `ImuSample`, `MagSample`, `BaroSample`, `GpsSample` | each analytic sensor's sample, a Warp struct whose first field is the sim time of the tick that took it, which the sensor writes as its signal, `imu`, `mag`, `baro` or `gps` |
+| `Image`, `PointCloud` | a camera's frame and a lidar's scan, each with the sim time it shows, which the sensor writes as its host signal, `camera`, `thermal_camera` or `lidar` |
 | `SimTime` | sim-time and step index |
 
 ## Component interfaces
@@ -67,6 +70,12 @@ fault-wrappable. Every component states its work as [stages](concepts.md#stage) 
 writes. The fixed parts, the clock, the [physics](concepts.md#physics), the
 [Recorder](concepts.md#recorder) and the [Logger](concepts.md#logger), keep contracts of their own,
 such as `Clock` and `Physics`, and the Kit render [peer](concepts.md#peer)'s lifecycle rides the `Renderer` contract.
+
+**A sensor's output is a signal of its own type.** No sensor fills a shared bundle, and no reader holds
+a sensor: an estimator or a controller declares the signals it reads, and the loop wires them. Of two
+sensors of one kind, such as two IMUs, a reader picks one through a [connection](concepts.md#connection)
+on its prim, or reads both as a list. [Execution](execution.md#signals) shows how a vehicle file
+authors one.
 
 The **scene and the vehicle aren't code interfaces**: they come from
 Universal Scene Description (USD). A single `VehicleUsd` reads the vehicle model through
@@ -92,10 +101,11 @@ Every controller states its stages, and a peer's autopilot and a device-native l
 same loop:
 
 - **`Px4MavlinkController`**: runs the MAVLink lockstep handshake against a real PX4 Software In
-  The Loop (SITL) instance, its peer. It encodes the sensors' readings in `HIL_SENSOR` and `HIL_GPS`,
-  and the base body's true state in `HIL_STATE_QUATERNION`, then **blocks** for the returned actuator
-  commands. Its work is three **host stages**, `read`, `truth` and `exchange`, outside graph capture
-  and not differentiable, and a lost connection ends the run.
+  The Loop (SITL) instance, its peer. It reads each sensor's sample as a signal and encodes the samples
+  in `HIL_SENSOR` and `HIL_GPS`, and the base body's true state in `HIL_STATE_QUATERNION`, then
+  **blocks** for the returned actuator commands. Of two sensors of one kind, a connection on its prim,
+  such as `nexus:inputs:imu`, picks the one PX4 receives. Its work is two **host stages**, `truth` and
+  `exchange`, outside graph capture and not differentiable, and a lost connection ends the run.
 - **`PidController`**: the device-native, differentiable built-in, a
   PID controller whose gains are Warp arrays with gradients, so
   it doubles as the [design-optimization](../examples/design-optimization.md) parameter set and the
@@ -120,8 +130,8 @@ of its **guidance**, the outer loop of the control cascade, reached through
 [`sim.guidance`](../reference/api/guidance.md). The guidance is a component of the loop, and it
 holds no other component. Its stage runs each tick after the estimator's and before the controller's,
 and it reads the vehicle's position from the estimate.
-It writes the setpoint, a [signal](execution.md#signals) of one setpoint type, a `PositionGoal` or a
-`ReferenceTrajectory`, and the controller reads it on that same tick. The loop checks before any
+It writes the setpoint, a [signal](execution.md#signals) of one setpoint type, a position goal as one
+`wp.vec3` or a `ReferenceTrajectory`, and the controller reads it on that same tick. The loop checks before any
 stage runs that the controller reads the type the guidance writes. When the mission is over, the
 stage marks the tick done, and the loop ends the run. `MissionGuidance` sequences
 position goals and advances on arrival. `TrackingGuidance` plans one reference for a tracking

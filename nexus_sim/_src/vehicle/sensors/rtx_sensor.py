@@ -4,8 +4,8 @@ The prims are body children the vehicle's Universal Scene Description (USD) file
 declares its sensor with an applied schema. The Kit peer is a required peer: no vehicle names it, the
 sensor's class requires it, and the build starts it once. Each sensor decimates to its
 declared rate on sim time. At a due tick the render link sends the poses and the loop flies
-on; the frame comes back on a later tick, stamped with the sim time it shows, and the sensor logs
-it here on the host.
+on; the frame comes back on a later tick, stamped with the sim time it shows, and the sensor writes
+it to its output signal and logs it here on the host.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ import numpy as np
 
 from nexus_sim._src.core import logger
 from nexus_sim._src.core.interfaces import Stage
+from nexus_sim._src.core.signals import Signal
 
 
 class RtxMountedSensor:
@@ -29,13 +30,14 @@ class RtxMountedSensor:
         run: The run's values: the sensor's prim on the vehicle's own stage, the model body it rides,
             and the render link, :class:`~nexus_sim._src.rendering.KitRenderer`, whose ``tick`` sampling calls.
         rate: The sensor's physical rate, hertz.
+        out: The host signal each frame goes to, which its stage declares it writes.
     """
 
     KIND = "rtx"
     output = ""  # what the peer returns for it: "color", "radiance_depth" or "points"
     requires = ("kit",)  # the peers the build starts, once, for a vehicle that declares this sensor
 
-    def __init__(self, run, *, rate: float):
+    def __init__(self, run, *, rate: float, out: Signal):
         from pxr import UsdGeom
 
         from .rtx_stage import render_path
@@ -45,6 +47,7 @@ class RtxMountedSensor:
         body = run.body
         self._link = run.link
         self._logger = None
+        self.out = out
         self.path = path  # on the render stage, where the peer renders the prim
         self.name = path.rsplit("/", 1)[-1].lower()  # for example 'fpvcam' -> sim/vehicle/sensors/fpvcam
         self.rate = float(rate)
@@ -92,10 +95,10 @@ class RtxMountedSensor:
         return True
 
     def stages(self) -> list[Stage]:
-        """One host stage, named after the sensor, over :meth:`sample`."""
-        return [Stage(self.name, "host", lambda tick: self.sample(tick.state, tick.t, tick.meas))]
+        """One host stage, named after the sensor, over :meth:`sample`, which writes the output signal."""
+        return [Stage(self.name, "host", lambda tick: self.sample(tick.state, tick.t), writes=(self.out,))]
 
-    def sample(self, state, t, out) -> None:
+    def sample(self, state, t) -> None:
         """Host-stage sample: the link sends the due sensors' frame and hands back the one before.
 
         Decimation is on sim time, since ``rate`` is the sensor's physical rate: a 30 Hz camera
@@ -105,5 +108,5 @@ class RtxMountedSensor:
         self._link.tick(t, state)
 
     def emit(self, arrays: dict, t_shown: float) -> None:
-        """Log one frame; ``t_shown`` is the sim time the frame shows."""
+        """Write one frame to the output signal and log it; ``t_shown`` is the sim time the frame shows."""
         raise NotImplementedError

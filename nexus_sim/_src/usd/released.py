@@ -1,8 +1,9 @@
 """The check that a released schema version doesn't change in place.
 
 `released.json` beside this file records every schema version ever released: each attribute's type,
-fallback and unit. A version changes only by a new version, so an attribute in the record keeps its name,
-type, fallback and unit until its version retires, and a retired version stays in the record.
+fallback and unit, and each connection, a relationship. A version changes only by a new version, so an
+attribute in the record keeps its name, type, fallback and unit, and a connection its name, until its
+version retires, and a retired version stays in the record.
 
 Run `uv run python -m nexus_sim._src.usd.released` to rewrite the record from the plugin.
 """
@@ -20,9 +21,11 @@ _UNITS = re.compile(r"^\s*Units:\s*(.+?)\s*$", re.MULTILINE)
 
 
 def schema_record(plugin: Path) -> dict[str, dict[str, dict[str, str | None]]]:
-    """Each schema the plugin folder at `plugin` defines, with the type, fallback and unit of each of its attributes.
+    """Each schema the plugin folder at `plugin` defines, with the type, fallback and unit of each of its attributes,
+    and each of its connections, typed `relationship`.
 
-    A fallback is its text in the schema file, and `None` when the attribute has none.
+    A fallback is its text in the schema file, and `None` when the attribute has none or the property is a
+    relationship.
     """
     from pxr import Sdf
 
@@ -30,11 +33,14 @@ def schema_record(plugin: Path) -> dict[str, dict[str, dict[str, str | None]]]:
     record = {}
     for schema in layer.rootPrims:
         record[schema.name] = {}
-        for attribute in schema.properties:
-            units = _UNITS.search(attribute.documentation)
-            fallback = attribute.default
-            record[schema.name][attribute.name] = {
-                "type": str(attribute.typeName),
+        for prop in schema.properties:
+            if isinstance(prop, Sdf.RelationshipSpec):  # a connection: no type, fallback or unit of its own
+                record[schema.name][prop.name] = {"type": "relationship", "fallback": None, "units": ""}
+                continue
+            units = _UNITS.search(prop.documentation)
+            fallback = prop.default
+            record[schema.name][prop.name] = {
+                "type": str(prop.typeName),
                 "fallback": None
                 if fallback is None
                 else f"{fallback:g}"
@@ -55,8 +61,9 @@ def in_place_changes(plugin: Path) -> list[str]:
     """One message per released attribute the plugin folder at `plugin` lost, renamed, retyped, or gave another fallback or unit.
 
     Each message names the schema version and the attribute. An attribute that joins a released version
-    with a fallback is no change, and one that joins with none is. A released version the plugin no
-    longer defines is a change unless the plugin lists it as retired.
+    with a fallback is no change, and one that joins with none is. A connection that joins is no change: an
+    asset that authors none reads as before. A released version the plugin no longer defines is a change
+    unless the plugin lists it as retired.
     """
     now = schema_record(plugin)
     retired = _retired(plugin)
@@ -73,7 +80,7 @@ def in_place_changes(plugin: Path) -> list[str]:
             elif found != released:
                 changes.append(f"{schema}: {name} was {released}, and is now {found}")
         for name, found in now[schema].items():
-            if name not in attributes and found["fallback"] is None:
+            if name not in attributes and found["fallback"] is None and found["type"] != "relationship":
                 changes.append(f"{schema}: {name} joins with no fallback")
     return changes
 

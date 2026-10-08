@@ -22,10 +22,14 @@ _FIELD = re.compile(r"^\s*(Range|Units):\s*(.+?)\s*$", re.MULTILINE)
 
 
 def _attribute_row(definition, name: str) -> str:
-    """One table row: the attribute's name, type, default, units, range and description."""
+    """One table row: the property's name, type, default, units, range and description. A connection, a
+    relationship, has no default, units or range.
+    """
     doc = definition.GetPropertyMetadata(name, "documentation") or ""
     fields = dict(_FIELD.findall(doc))
     description = " ".join(_FIELD.sub("", doc).split())
+    if definition.GetRelationshipDefinition(name):
+        return f"| `{name}` | `relationship` | | | | {description} |"
     fallback = definition.GetAttributeFallbackValue(name)
     default = f"{fallback:g}" if isinstance(fallback, float) else str(fallback)
     type_name = definition.GetSchemaAttributeSpec(name).typeName
@@ -65,7 +69,7 @@ def schema_reference(schemas: list[str] | None = None) -> str:
         # A role schema states no role of its own, and a peer's schema none at all.
         role = "" if schema in ROLES else ", ".join(roles(schema))
         rows = [_attribute_row(definition, name) for name in definition.GetPropertyNames()]
-        header = ["| Attribute | Type | Default | Units | Range | Description |", "|---|---|---|---|---|---|"]
+        header = ["| Property | Type | Default | Units | Range | Description |", "|---|---|---|---|---|---|"]
         body = [f"## {schema}", "", definition.GetDocumentation(), "", f"Applies to: {applies_to}.", ""]
         body += [f"Role: {role}.", ""] if role else []
         sections.append("\n".join(body + _changes(registry, schema) + header + rows))

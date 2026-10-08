@@ -91,7 +91,8 @@ def test_a_guidance_whose_setpoint_type_its_controller_does_not_read_fails_the_r
 
     Given the PID example's run and a `TrackingGuidance`, which writes a `ReferenceTrajectory`, when the run
     starts, then it fails before any stage runs, and the error names `TrackingGuidance`, `PidController`,
-    `ReferenceTrajectory` and `PositionGoal`. No stage ran, so the recording holds no row.
+    `ReferenceTrajectory` and `vec3f`, Warp's name for the `wp.vec3` a position goal travels as. No stage
+    ran, so the recording holds no row.
     """
     guidance = TrackingGuidance(planner=lambda waypoints: _Reference())
     guidance.set_mission([(1.0, 0.0, 1.5)])
@@ -102,5 +103,5 @@ def test_a_guidance_whose_setpoint_type_its_controller_does_not_read_fails_the_r
         with pytest.raises(ValueError) as e:
             sim.run()
         rows = len(sim.physics[sim.base_body].history())
-    words = ("TrackingGuidance", "PidController", "ReferenceTrajectory", "PositionGoal")
+    words = ("TrackingGuidance", "PidController", "ReferenceTrajectory", "vec3f")
     assert (all(word in str(e.value) for word in words), rows) == (True, 0)

@@ -1,10 +1,12 @@
 """Px4MavlinkController: the component that speaks the PX4 peer's link.
 
-Its work is three host stages, ``read``, ``truth`` and ``exchange``: ``exchange(measurement, t)`` is the
-blocking lockstep that paces the loop: opens a tcpin TCP server on :4560, which PX4 dials into as client with no
-HEARTBEAT, serializes the typed Measurement into HIL_SENSOR and HIL_GPS, and the base body's true state, which
-``truth`` reads, into HIL_STATE_QUATERNION, then blocks on HIL_ACTUATOR_CONTROLS with a run-ending timeout. The
-sensors already derive the Measurement in their own axes; this layer only encodes wire units and moves bytes.
+Its work is two host stages, ``truth`` and ``exchange``: ``exchange(t, timeout)`` is the blocking lockstep that
+paces the loop: opens a tcpin TCP server on :4560, which PX4 dials into as client with no HEARTBEAT, serializes the
+samples of the Inertial Measurement Unit (IMU), the magnetometer, the barometer and the
+Global Positioning System (GPS), which its stage reads as signals, into HIL_SENSOR and HIL_GPS, and the base
+body's true state, which ``truth`` reads, into HIL_STATE_QUATERNION, then blocks on HIL_ACTUATOR_CONTROLS with a
+run-ending timeout. The sensors already give their samples in their own axes; this layer only encodes wire units
+and moves bytes.
 
 The autopilot itself is a peer of the run, not of this controller: the build starts the PX4
 Software In The Loop (SITL) container, :class:`~nexus_sim._src.peers.px4_sitl.runner.Px4Sitl`,
@@ -17,6 +19,7 @@ from __future__ import annotations
 
 import errno
 import glob
+import math
 import os
 
 import numpy as np
@@ -30,7 +33,8 @@ from pymavlink import mavutil
 from nexus_sim._src import transform
 from nexus_sim._src.core import logger
 from nexus_sim._src.core.interfaces import Stage
-from nexus_sim._src.core.schema import Controls
+from nexus_sim._src.core.schema import BaroSample, Controls, GpsSample, ImuSample, MagSample
+from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.core.stages import peer_stages
 from nexus_sim._src.peers.px4_sitl import HIL_PORT
 
@@ -41,6 +45,14 @@ from nexus_sim._src.peers.px4_sitl import HIL_PORT
 # the .rrd. When the dir is missing, because PX4 logs elsewhere or logging is off,
 # ulog_path is None.
 PX4_ULOG_DIR = os.path.expanduser("~/.cache/nexus/px4-ulog")
+
+# What PX4 receives for a sensor the vehicle doesn't declare, as the sample its signal holds: an IMU and a
+# magnetometer that read zero, a barometer at 1013.25 hPa, 0 m and 25 degrees Celsius, and a
+# Global Positioning System (GPS) sample with no time, for which no HIL_GPS goes out.
+_NO_IMU = [(0.0, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))]
+_NO_MAG = [(0.0, (0.0, 0.0, 0.0))]
+_NO_BARO = [(0.0, 1013.25, 0.0, 25.0)]
+_NO_GPS = [(math.nan, 0.0, 0.0, 0.0, (0.0, 0.0, 0.0), 0.0, 0)]
 
 
 def _listener(port: int) -> int | None:
@@ -105,6 +117,12 @@ class Px4MavlinkController:
         self.mav = None
         self.proto = None
         self._ulog_dir = ulog_dir if ulog_dir is not None else PX4_ULOG_DIR
+        # The sensors' samples the exchange serializes, each a signal that holds its default when the vehicle
+        # declares no such sensor.
+        self.imu = Signal("imu", ImuSample, shape=(1,), default=_NO_IMU)
+        self.mag = Signal("mag", MagSample, shape=(1,), default=_NO_MAG)
+        self.baro = Signal("baro", BaroSample, shape=(1,), default=_NO_BARO)
+        self.gps = Signal("gps", GpsSample, shape=(1,), default=_NO_GPS)
 
     @property
     def ulog_path(self) -> str | None:
@@ -162,11 +180,11 @@ class Px4MavlinkController:
         # connect forever, so the only real constraint is that it comes up inside the sim's preroll window.
 
     def stages(self):
-        """The ``read``, ``truth`` and ``exchange`` host stages: the MAVLink lockstep round-trip blocks on
-        the peer, so it runs between graph replays.
+        """The ``truth`` and ``exchange`` host stages: the MAVLink lockstep round-trip blocks on the peer, so
+        it runs between graph replays. The ``exchange`` stage reads the four sensors' samples.
         """
-        read, exchange = peer_stages(self)
-        return [read, Stage("truth", "host", self._truth), exchange]
+        (exchange,) = peer_stages(self, reads=(self.imu, self.mag, self.baro, self.gps))
+        return [Stage("truth", "host", self._truth), exchange]
 
     def _truth(self, tick) -> None:
         """Copy the base body's true attitude and rates to the host, in PX4's frames, for the ground truth
@@ -180,48 +198,42 @@ class Px4MavlinkController:
             float(x) for x in transform.world_to_body(q, omega_world)
         )  # the body's axes point forward, right and down
 
-    def exchange(self, meas, t, timeout):
+    def exchange(self, t, timeout):
         time_usec = t.time_usec
+        imu, mag, baro, gps = (signal.read()[0] for signal in (self.imu, self.mag, self.baro, self.gps))
+        acc = [float(x) for x in imu["accel"]]
+        gyro = [float(x) for x in imu["gyro"]]
+        field = [float(x) for x in mag["field"]]
 
         # HIL_SENSOR every tick.
         self.proto.hil_sensor_send(
             time_usec,
-            meas.xacc,
-            meas.yacc,
-            meas.zacc,
-            meas.xgyro,
-            meas.ygyro,
-            meas.zgyro,
-            meas.xmag,
-            meas.ymag,
-            meas.zmag,
-            meas.abs_pressure,
+            *acc,
+            *gyro,
+            *field,
+            float(baro["pressure"]),
             0.0,
-            meas.pressure_alt,
-            meas.temperature,
+            float(baro["altitude"]),
+            float(baro["temperature"]),
             0x1FFF,
             0,
         )
 
-        # HIL_GPS, plus the ground-truth HIL_STATE_QUATERNION, at the Global Positioning System (GPS) sub-rate.
-        if meas.gps_valid and (t.sim_time - self._last_gps >= self.gps_interval):
+        # HIL_GPS, plus the ground-truth HIL_STATE_QUATERNION, at the receiver's sub-rate, when the vehicle declares one.
+        if not math.isnan(gps["time"]) and (t.sim_time - self._last_gps >= self.gps_interval):
             self._last_gps = t.sim_time
-            lat = int(meas.lat_deg * 1e7)
-            lon = int(meas.lon_deg * 1e7)
-            alt = int(meas.alt_m * 1000)
-            vn = int(meas.vn * 100)
-            ve = int(meas.ve * 100)
-            vd = int(meas.vd * 100)
-            vel = int(meas.ground_speed * 100)
-            fix_type, eph, epv, sats = meas.fix_type, 100, 100, 10
+            lat = int(float(gps["lat"]) * 1e7)
+            lon = int(float(gps["lon"]) * 1e7)
+            alt = int(float(gps["alt"]) * 1000)
+            vn, ve, vd = (int(float(v) * 100) for v in gps["velocity"])
+            vel = int(float(gps["ground_speed"]) * 100)
+            fix_type, eph, epv, sats = int(gps["fix_type"]), 100, 100, 10
             if self.gps_fix_type < 2:
                 fix_type, eph, sats = 0, 9999, 0
             self.proto.hil_gps_send(
                 time_usec, fix_type, lat, lon, alt, eph, epv, vel, vn, ve, vd, 65535, sats, id=0, yaw=0
             )
-            xacc_mg = int(meas.xacc * 1000 / 9.81)
-            yacc_mg = int(meas.yacc * 1000 / 9.81)
-            zacc_mg = int(meas.zacc * 1000 / 9.81)
+            xacc_mg, yacc_mg, zacc_mg = (int(a * 1000 / 9.81) for a in acc)
             self.proto.hil_state_quaternion_send(
                 time_usec,
                 list(self._attitude),

@@ -42,7 +42,7 @@ class Guidance:
         self.setpoint = setpoint
         # The vehicle's estimate, the base body's pose and twist an estimator writes: the stage reads the
         # position there.
-        self.estimate = Signal("estimate", PoseTwist, shape=(1, 13))
+        self.estimate = Signal("estimate", PoseTwist, shape=(1,))
         self._mission: list[PositionGoal] = []
         self._active: int = 0
         # The two outputs: a setpoint commanded since the stage last ran, which the stage writes to the
@@ -63,7 +63,7 @@ class Guidance:
 
     def _run(self, tick: Tick) -> None:
         # One host copy of the estimate per tick, trivial next to a controller's host stage.
-        pos = self.estimate.read()[0][:3].astype(float)
+        pos = self.estimate.read()[0]["position"].astype(float)
         self._tick(pos, float(tick.t.sim_time))
         if self._commanded is not None:
             self._write(self._commanded)

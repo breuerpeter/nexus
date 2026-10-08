@@ -7,22 +7,18 @@ its host stages and rotates it to
 start after the last cut, so the ring's tail folds into the first run and each maximal run of
 device stages becomes one CUDA graph; with no host stage the whole ring is one segment in canonical
 order. :func:`peer_stages` is the one shape for a controller that blocks on a peer or solves on the
-host: a ``read`` host stage for the sensor fan-in and an ``exchange`` host stage.
+host: an ``exchange`` host stage.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 import numpy as np
+import warp as wp
 
 from .interfaces import Stage
-from .schema import Controls
 from .signals import Signal
-
-if TYPE_CHECKING:
-    from .interfaces import Tick
 
 KINDS = ("device", "host")
 CHANNELS = 16  # MAVLink's HIL_ACTUATOR_CONTROLS carries 16 channels, the widest command any controller sends
@@ -34,7 +30,7 @@ class Bound:
 
     stage: Stage
     component: object
-    role: str  # sensor, estimator, guidance, controller, physics, command, force, actuator or record
+    role: str  # clock, sensor, estimator, guidance, controller, physics, command, force, actuator or record
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,15 +58,6 @@ def stages_of(component, role: str) -> list[Bound]:
             raise ValueError(f"{name} stage {st.name!r} has kind {st.kind!r}, not one of {KINDS}")
         bound.append(Bound(st, component, role))
     return bound
-
-
-def device_sensors(ring: list[Bound]) -> list:
-    """The sensors with a device stage, in ring order, each once: the ones a ``read`` host stage reads."""
-    out = []
-    for b in ring:
-        if b.role == "sensor" and b.stage.kind == "device" and b.component not in out:
-            out.append(b.component)
-    return out
 
 
 def build_ring(
@@ -120,6 +107,15 @@ def build_ring(
         ring += [phys["clear"], *inner, phys["step"]]
     ring.append(Bound(record, None, "record"))
     return ring
+
+
+def opening(ring: list[Bound], bounds: list[Bound]) -> list[Bound]:
+    """The ring with ``bounds`` where each tick begins: after the ring's last host stage, which
+    :func:`partition` rotates to the front, or at the front of a ring with no host stage.
+    """
+    hosts = [i for i, b in enumerate(ring) if b.stage.kind == "host"]
+    at = hosts[-1] + 1 if hosts else 0
+    return [*ring[:at], *bounds, *ring[at:]]
 
 
 def partition(ring: list[Bound]) -> list[Segment]:
@@ -191,30 +187,19 @@ def plan_line(segments: list[Segment], captured: bool) -> str:
     return "stage plan: " + " ".join(parts)
 
 
-def read_sensors(tick: Tick) -> None:
-    """The sensor fan-in: one D2H per sensor with a device stage into the shared ``Measurement``.
-
-    The ``Measurement`` holds one slot per kind of sensor. The sensors read in reverse order, so of two
-    sensors of one kind the first declared writes last and fills the slot.
-    """
-    for s in reversed(tick.sensors):
-        s.read(tick.meas)
-
-
 def peer_stages(controller, *, reads: tuple = ()) -> list[Stage]:
-    """The stages of a controller that blocks on a peer or solves on the host: ``read`` fans the sensors
-    into the ``Measurement``, and ``exchange`` runs the controller's ``exchange`` and writes its commands
-    to the controls, a ``(1, 16)`` device signal, in place between graph replays. The builder allocates
-    that buffer before the capture, so the command elements' stages capture over it before the peer connects.
-    ``None`` from the exchange reads as the peer not answering, which the stage reports by returning
-    ``False``. ``reads`` are the signals the controller's ``exchange`` reads, such as its setpoint, which
-    the ``exchange`` stage declares.
+    """The stages of a controller that blocks on a peer or solves on the host: ``exchange`` runs the
+    controller's ``exchange(t, timeout)`` and writes its commands to the controls, a ``(1, 16)`` device
+    signal, in place between graph replays. The builder allocates that buffer before the capture, so the
+    command elements' stages capture over it before the peer connects. ``None`` from the exchange reads as
+    the peer not answering, which the stage reports by returning ``False``. ``reads`` are the signals the
+    controller's ``exchange`` reads, such as its setpoint or each sensor's sample, which the stage declares.
     """
-    controls = Signal("controls", Controls, shape=(1, CHANNELS))
+    controls = Signal("controls", wp.float32, shape=(1, CHANNELS))
     cmd = np.zeros((1, CHANNELS), dtype=np.float32)
 
     def exchange(tick):
-        out = controller.exchange(tick.meas, tick.t, tick.timeout)
+        out = controller.exchange(tick.t, tick.timeout)
         if out is None:
             return False
         command = np.asarray(out.command, dtype=np.float32).reshape(-1)
@@ -226,21 +211,17 @@ def peer_stages(controller, *, reads: tuple = ()) -> list[Stage]:
         controls.write(cmd)
         return True
 
-    return [
-        Stage("read", "host", read_sensors),
-        Stage("exchange", "host", exchange, reads=tuple(reads), writes=(controls,)),
-    ]
+    return [Stage("exchange", "host", exchange, reads=tuple(reads), writes=(controls,))]
 
 
 __all__ = [
     "Bound",
     "Segment",
     "build_ring",
-    "device_sensors",
+    "opening",
     "partition",
     "peer_stages",
     "plan_line",
-    "read_sensors",
     "seed_stages",
     "warm_stages",
 ]

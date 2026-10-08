@@ -197,6 +197,18 @@ class "NexusPx4API" (
         Range: a PX4 SITL airframe name
         Units: none"""
     )
+    rel nexus:inputs:imu (
+        doc = "The Inertial Measurement Unit (IMU) whose sample PX4 receives, where the vehicle declares more than one."
+    )
+    rel nexus:inputs:mag (
+        doc = "The magnetometer whose sample PX4 receives, where the vehicle declares more than one."
+    )
+    rel nexus:inputs:baro (
+        doc = "The barometer whose sample PX4 receives, where the vehicle declares more than one."
+    )
+    rel nexus:inputs:gps (
+        doc = "The Global Positioning System (GPS) receiver whose sample PX4 receives, where the vehicle declares more than one."
+    )
 }
 
 class "NexusPx4SitlAPI" (

@@ -54,7 +54,7 @@ class _Actuator:
 
 class _Controller:
     """Lockstep stand-in: returns controls immediately, so preroll succeeds at once. Its work is the
-    PX4 shape, a ``read`` and an ``exchange`` host stage.
+    PX4 shape, a ``truth`` and an ``exchange`` host stage.
     """
 
     def __init__(self):
@@ -63,7 +63,7 @@ class _Controller:
     def connect(self):
         pass
 
-    def exchange(self, meas, t, timeout):
+    def exchange(self, t, timeout):
         return Controls(command=[0.0, 0.0, 0.0, 0.0])
 
     def close(self):
@@ -71,9 +71,9 @@ class _Controller:
 
     def stages(self):
         def exchange(tick):
-            return self.exchange(tick.meas, tick.t, None) is not None
+            return self.exchange(tick.t, None) is not None
 
-        return [Stage("read", "host", lambda tick: None), Stage("exchange", "host", exchange)]
+        return [Stage("truth", "host", lambda tick: None), Stage("exchange", "host", exchange)]
 
 
 def _orch(sensors=(), **kw):
@@ -166,11 +166,11 @@ class _DyingSensor:
 
     host_rate = True
 
-    def sample(self, state, t, meas):
+    def sample(self, state, t):
         raise KitPeerError("the Kit render peer died while this run waited for a frame")
 
     def stages(self):
-        return [Stage("sample", "host", lambda tick: self.sample(tick.state, tick.t, tick.meas))]
+        return [Stage("sample", "host", lambda tick: self.sample(tick.state, tick.t))]
 
 
 def test_a_kit_peer_that_dies_mid_flight_ends_the_run_with_its_error():

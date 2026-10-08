@@ -1,10 +1,9 @@
 """The nexus core: schema, interfaces, capabilities, the eager
 orchestrator, SeedTree, Scenario loader, component registry.
 
-The transform between the world frame and the North East Down (NED) and Forward Right Down (FRD)
-frames lives in ``nexus_sim._src.transform``, not here: it's the one warp-dependent leaf, and
-keeping it out of ``core`` is what lets ``core``, and so ``import nexus_sim``, stay backend-agnostic
-and importable without warp.
+Core runs on Warp: its schema declares the device signals' types as Warp structs. It imports no physics
+backend, so ``newton`` stays out of it. The transform between the world frame and the
+North East Down (NED) and Forward Right Down (FRD) frames lives in ``nexus_sim._src.transform``.
 """
 
 from . import interfaces
@@ -14,7 +13,6 @@ from .logging import logger
 from .orchestrator import Orchestrator
 from .schema import (
     Controls,
-    Measurement,
     PositionGoal,
     ReferenceTrajectory,
     Setpoint,
@@ -26,7 +24,6 @@ from .seedtree import SeedTree
 __all__ = [
     "Clock",
     "Controls",
-    "Measurement",
     "Orchestrator",
     "PositionGoal",
     "ReferenceTrajectory",

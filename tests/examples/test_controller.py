@@ -92,6 +92,8 @@ def test_exchange_builds_obs_from_the_estimate(tmp_path):
     """
     import warp as wp
 
+    from nexus_sim._src.core.schema import PoseTwist
+
     class Echo(torch.nn.Module):
         def forward(self, x):
             return x[:, 12:16]
@@ -102,8 +104,8 @@ def test_exchange_builds_obs_from_the_estimate(tmp_path):
     c.connect()
     c._prev_action[:] = [0.5, -0.5, 0.25, 0.1]
     # The buffer the builder hands the controller: pos (0,0,1), an xyzw identity, at rest.
-    pose_twist = [[0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]]
-    c.estimate.buffer = wp.array(np.array(pose_twist, dtype=np.float32), dtype=float, device="cpu")
+    c.estimate.buffer = wp.zeros(1, dtype=PoseTwist, device="cpu")
+    c.estimate.write([((0.0, 0.0, 1.0), (0.0, 0.0, 0.0, 1.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))])
 
-    out = c.exchange(None, t=0.0)
+    out = c.exchange(t=0.0)
     np.testing.assert_allclose(np.asarray(out.command), [0.5, -0.5, 0.25, 0.1], atol=1e-6)

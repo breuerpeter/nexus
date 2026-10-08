@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import warp as wp
 
 from nexus_sim._src.core.schema import PositionGoal, Setpoint
 from nexus_sim._src.core.signals import Signal
@@ -30,7 +31,7 @@ class MissionGuidance(Guidance):
     """
 
     def __init__(self, *, reached_m: float = 0.3, final_hold_s: float = 2.0):
-        super().__init__(setpoint=Signal("setpoint", PositionGoal, shape=(1,)))
+        super().__init__(setpoint=Signal("setpoint", wp.vec3, shape=(1,)))
         self._reached_m = float(reached_m)
         self._final_hold_s = float(final_hold_s)
         self._end_at: float | None = None  # sim time at which the mission is over, set on the final goal

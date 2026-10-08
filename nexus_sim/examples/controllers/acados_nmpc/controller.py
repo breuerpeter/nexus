@@ -175,7 +175,7 @@ class AcadosNMPCController:
         # last read, so it notices a new reference by its identity.
         self.setpoint = Signal("setpoint", ReferenceTrajectory)
         # The vehicle's estimate, the base body's pose and twist an estimator writes: each solve starts there.
-        self.estimate = Signal("estimate", PoseTwist, shape=(1, 13))
+        self.estimate = Signal("estimate", PoseTwist, shape=(1,))
         self._read = None
         self.reference = None  # the tracked reference, from the setpoint
         self._ref_step0 = None  # the control step at which the active reference started, the time anchor
@@ -242,7 +242,7 @@ class AcadosNMPCController:
         pass
 
     def stages(self):
-        """The ``read`` and ``exchange`` host stages: the per-tick solve runs on the host between replays,
+        """The ``exchange`` host stage: the per-tick solve runs on the host between replays,
         from the estimate, tracking the reference the exchange reads from the setpoint.
         """
         return peer_stages(self, reads=(self.setpoint, self.estimate))
@@ -279,7 +279,7 @@ class AcadosNMPCController:
         throttle = float(np.sqrt(np.clip(self.hover, 0.0, self.t_max) / self.ct) / self.rpm_max)
         return np.full(self.n, throttle, dtype=np.float32)
 
-    def exchange(self, meas, t, timeout=None):
+    def exchange(self, t, timeout=None):
         from nexus_sim._src.core import Controls
 
         self._read_setpoint()
@@ -287,17 +287,15 @@ class AcadosNMPCController:
             self._step += 1
             return Controls(command=self._hover_throttle())
 
-        est = self.estimate.read()[0]  # [pos(0:3), quat_xyzw(3:7), lin(7:10), ang(10:13)], world frame
-        bq = est[0:7]
-        bqd = est[7:13]
+        est = self.estimate.read()[0]  # world frame
 
-        # measured state → NMPC state. Newton stores body_qd = (v_world, ω_world); the model uses a
+        # measured state → NMPC state. The estimate's angular velocity is in world axes; the model uses a
         # body-frame rate, so rotate ω into the body frame. Quaternion order: warp xyzw → model wxyz.
-        pos = bq[:3].astype(np.float64)
-        qw, qx, qy, qz = float(bq[6]), float(bq[3]), float(bq[4]), float(bq[5])
+        pos = est["position"].astype(np.float64)
+        qx, qy, qz, qw = (float(x) for x in est["orientation"])
         rot = _quat_to_rot_np(qw, qx, qy, qz)  # world ← real Forward Right Down (FRD) body
-        vel = bqd[:3].astype(np.float64)
-        omega_body = rot.T @ bqd[3:6].astype(np.float64)  # ω in the real FRD body frame
+        vel = est["linear_velocity"].astype(np.float64)
+        omega_body = rot.T @ est["angular_velocity"].astype(np.float64)  # ω in the real FRD body frame
         # FRD → NMPC-upright adapter. The framework's vehicle USDs carry the FRD convention, body +z down and
         # thrust along −body z, handled by the production aero kernel's sign, but the NMPC model stands
         # upright, thrust = +body z. Re-express the measured attitude/rate in the NMPC's frame via the fixed

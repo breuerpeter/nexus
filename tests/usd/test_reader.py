@@ -155,3 +155,26 @@ def test_an_authored_attribute_the_schema_does_not_define_fails_the_build_and_na
     with pytest.raises(ValueError) as e:
         resolve_components(vehicle, ComponentRegistry({"NexusImuAPI": StandIn}))
     assert IMU in str(e.value) and "nexus:bogus" in str(e.value)
+
+
+def test_a_connection_the_schema_declares_reads_as_its_signal_and_the_prim_it_names(tmp_path):
+    """A connection the schema declares reads as its signal and the prim it names, not as a keyword argument.
+
+    Given a scope applying the stand-in estimator schema, which declares the relationship `nexus:inputs:imu`,
+    authored to name the prim `/Vehicle/body/Imu`, when the reader reads the file, then the scope's connections
+    map `imu` to that prim, and its keyword arguments name no input.
+    """
+    from nexus_sim._src.usd.reader import read_connections, read_declarations
+
+    vehicle = tmp_path / "vehicle.usda"
+    stage = Usd.Stage.CreateNew(str(vehicle))
+    prim = UsdGeom.Scope.Define(stage, "/Vehicle/Estimator").GetPrim()
+    prim.ApplyAPI("StandInEstimatorAPI")
+    prim.GetRelationship("nexus:inputs:imu").SetTargets([Sdf.Path("/Vehicle/body/Imu")])
+    stage.GetRootLayer().Save()
+    (kwargs,) = [kw for path, _, kw in read_declarations(vehicle) if path == "/Vehicle/Estimator"]
+
+    assert (read_connections(vehicle), sorted(kwargs)) == (
+        {"/Vehicle/Estimator": {"imu": "/Vehicle/body/Imu"}},
+        ["position"],
+    )

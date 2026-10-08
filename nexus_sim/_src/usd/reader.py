@@ -3,7 +3,8 @@
 A nexus schema is an applied API schema whose attributes sit in the `nexus:` namespace, whichever plugin
 defines it, so a project's own schemas read the same way as the ones nexus ships. A component schema states
 the role its component fills by including a role schema, such as `NexusSensorRoleAPI`, as a built-in. A
-role schema defines no attribute, so the reader skips it.
+role schema defines no attribute, so the reader skips it. A component schema can also declare a connection,
+a relationship `nexus:inputs:<signal>` whose target picks which component's output its component reads.
 """
 
 from __future__ import annotations
@@ -13,6 +14,8 @@ from importlib.metadata import version
 from pathlib import Path
 
 _NAMESPACE = "nexus:"
+# A connection's namespace: the relationship `nexus:inputs:imu` picks the writer of the signal `imu`.
+_INPUTS = "nexus:inputs:"
 
 # Each role schema, which a component schema includes as a built-in, and the role it states.
 ROLES = {
@@ -103,7 +106,8 @@ def _check_type(prim, schema: str) -> None:
 def read_declarations(usd_path: str | Path) -> list[tuple[str, str, dict]]:
     """One `(prim path, schema, keyword arguments)` per applied nexus schema on the stage's active prims.
 
-    Each attribute the schema defines becomes the keyword of the same name in snake case.
+    Each attribute the schema defines becomes the keyword of the same name in snake case. A relationship it
+    declares is a connection, which :func:`read_connections` reads.
 
     Raises:
         ValueError: A prim authors a `nexus:` attribute that none of its applied schemas defines, an
@@ -131,9 +135,37 @@ def read_declarations(usd_path: str | Path) -> list[tuple[str, str, dict]]:
             if names:
                 _check_type(prim, schema)
                 defined.update(names)
-                kwargs = {_keyword(name): _value(prim, name) for name in names}
+                kwargs = {
+                    _keyword(name): _value(prim, name) for name in names if definition.GetAttributeDefinition(name)
+                }
                 declarations.append((str(prim.GetPath()), schema, kwargs))
         authored = [prop.GetName() for prop in prim.GetAuthoredPropertiesInNamespace(_NAMESPACE.rstrip(":"))]
         if undefined := [name for name in authored if name not in defined]:
             raise ValueError(f"{prim.GetPath()}: no applied schema defines {', '.join(undefined)}")
     return declarations
+
+
+def read_connections(usd_path: str | Path) -> dict[str, dict[str, str]]:
+    """Each connection the stage's active prims author, by prim: the signal a relationship `nexus:inputs:<signal>`
+    names, and the path of the prim it targets, whose component writes that signal.
+
+    The reader of :func:`read_declarations` fails a relationship no applied schema declares, so each
+    connection here is one a schema declares.
+
+    Raises:
+        ValueError: A connection targets more than one prim; the message names the prim and the connection.
+    """
+    from pxr import Usd
+
+    stage = Usd.Stage.Open(str(usd_path), Usd.Stage.LoadAll)
+    connections: dict[str, dict[str, str]] = {}
+    for prim in stage.Traverse(Usd.TraverseInstanceProxies()):
+        for rel in prim.GetRelationships():
+            targets = rel.GetTargets() if rel.GetName().startswith(_INPUTS) else []
+            if len(targets) > 1:
+                raise ValueError(
+                    f"{prim.GetPath()}: {rel.GetName()} targets {len(targets)} prims; a connection names one"
+                )
+            if targets:
+                connections.setdefault(str(prim.GetPath()), {})[rel.GetName().removeprefix(_INPUTS)] = str(targets[0])
+    return connections

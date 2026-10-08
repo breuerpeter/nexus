@@ -33,7 +33,7 @@ class "StandInSensorAPI" (
 }
 
 class "StandInEstimatorAPI" (
-    doc = "A stand-in estimator: the fixed position it estimates. It applies to any prim, so a build reaches the estimator's own check of where it sits."
+    doc = "A stand-in estimator: the fixed position it estimates, and the two inputs a vehicle can connect. It applies to any prim, so a build reaches the estimator's own check of where it sits."
     prepend apiSchemas = ["NexusEstimatorRoleAPI"]
 )
 {
@@ -42,6 +42,12 @@ class "StandInEstimatorAPI" (
 
         Range: (-inf, inf)
         Units: m"""
+    )
+    rel nexus:inputs:imu (
+        doc = "The Inertial Measurement Unit (IMU) whose sample the stand-in estimator reads, of the ones the vehicle declares."
+    )
+    rel nexus:inputs:mag (
+        doc = "The magnetometer whose sample the stand-in estimator reads, of the ones the vehicle declares."
     )
 }
 

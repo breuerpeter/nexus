@@ -12,7 +12,7 @@ of the public surface. Import from `nexus_sim`, never from `nexus_sim._src`.
 <div class="grid cards" markdown>
 
 -   **[Simulation](simulation.md)**: `Sim`, the top-level entry point for building and running a simulation, and the `BodyState`, `JointState` and `SensorSample` values it reports.
--   **[Core types](core.md)**: `Orchestrator`, `Controls`, `Measurement`, and `SimTime`, the runtime-agnostic state, control, and observation surfaces.
+-   **[Core types](core.md)**: `Orchestrator`, `Controls`, and `SimTime`, the runtime-agnostic loop, control, and time surfaces.
 -   **[Configuration](configuration.md)**: `LaunchConfig` for the launch configuration and `Catalog` for the vehicle and scene catalog.
 -   **[Estimator](estimator.md)**: the role that writes the estimate, the vehicle's pose and twist the guidance and the controllers read. Its classes are internal, as the guidance's are.
 -   **[Guidance](guidance.md)**: the role that turns a mission into a controller's setpoint, reached via `sim.guidance`. Its classes are internal, so the page is the one exception to importing from `nexus_sim`.

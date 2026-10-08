@@ -1,19 +1,19 @@
 """The neutral, typed vocabulary that flows between components.
 
-A *logical* schema independent of any array library. For the eager slice the
-hot-loop state is the physics backend's live ``newton.State``, typed under ``TYPE_CHECKING``
-so core never imports it at runtime; the shared ``state.body_f`` device buffer
-realizes ``Wrench``, see the shared-buffer contract, so this module doesn't re-express it
-as a value type. ``Controls``, ``Measurement`` and ``SimTime`` are the small marshalled values that
-cross component boundaries.
+A signal that lives on the device takes a Warp struct this module declares, or a Warp value type. The
+hot-loop state is the physics backend's live ``newton.State``, which core never imports; the shared
+``state.body_f`` device buffer realizes ``Wrench``, see the shared-buffer contract, so this module doesn't
+re-express it as a value type. ``Controls`` and ``SimTime`` are the small marshalled values that cross
+component boundaries on the host.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, ClassVar
+from typing import Any
 
-from .signals import DeviceType
+import numpy as np
+import warp as wp
 
 
 @dataclass(slots=True)
@@ -36,7 +36,7 @@ class SimTime:
 
 
 @dataclass(slots=True)
-class Controls(DeviceType):
+class Controls:
     """The controller→actuator command: always one command per actuator, normalized to ``[0, 1]``.
 
     This is the standardized actuator seam: the control law and the vehicle's mixer, the rate loop and
@@ -45,120 +45,130 @@ class Controls(DeviceType):
     controller emits and the actuator chain takes in. A length-``n`` host ``np.ndarray`` on the PX4 and
     eager deploy paths, or a device-native ``(1, n)`` Warp array in the captured loop.
 
-    As a signal, ``controls``, it lives on the device: a ``(1, n)`` array of floats, which the controller
-    writes and the command elements read.
+    The signal ``controls`` carries it on the device: a ``(1, n)`` array of ``wp.float32``, which the
+    controller writes and the command elements read. A row, not a struct, since its width differs by
+    controller.
     """
-
-    dtype: ClassVar[type] = float
 
     command: Any = None  # one entry per actuator: an np.ndarray of length n, or a (1, n) Warp array
 
 
-class PoseTwist(DeviceType):
+@wp.struct
+class PoseTwist:
     """The pose and twist of the vehicle's base body in world axes: the estimate an estimator writes, and
-    the guidance and the controllers read.
-
-    As a signal, ``estimate``, it lives on the device: a ``(1, 13)`` array of floats, which holds the
-    position (3), the orientation as a quaternion in ``(x, y, z, w)`` order (4), the linear velocity (3) and
-    the angular velocity (3), the order of a body's row in the Recorder.
+    the guidance and the controllers read, as the signal ``estimate`` of shape ``(1,)``.
     """
 
-    dtype: ClassVar[type] = float
+    position: wp.vec3
+    """The base body's origin, metres."""
+    orientation: wp.quat
+    """The base body's orientation, a quaternion in ``(x, y, z, w)`` order."""
+    linear_velocity: wp.vec3
+    """The velocity of the base body's center of mass, m/s."""
+    angular_velocity: wp.vec3
+    """The base body's angular velocity, rad/s."""
+
+
+@wp.struct
+class ImuSample:
+    """The sample of an Inertial Measurement Unit (IMU), in the axes of its mount: body
+    Forward Right Down (FRD) on an unturned mount. The signal ``imu`` carries it, of shape ``(1,)``.
+    """
+
+    time: wp.float64
+    """The sim time of the sample, seconds."""
+    accel: wp.vec3
+    """The specific force, m/s^2."""
+    gyro: wp.vec3
+    """The angular rate, rad/s."""
+
+
+@wp.struct
+class MagSample:
+    """A magnetometer's sample, in body Forward Right Down (FRD) axes. The signal ``mag`` carries it, of
+    shape ``(1,)``.
+    """
+
+    time: wp.float64
+    """The sim time of the sample, seconds."""
+    field: wp.vec3
+    """The magnetic field, gauss."""
+
+
+@wp.struct
+class BaroSample:
+    """A barometer's sample. The signal ``baro`` carries it, of shape ``(1,)``."""
+
+    time: wp.float64
+    """The sim time of the sample, seconds."""
+    pressure: wp.float32
+    """The static pressure, hPa."""
+    altitude: wp.float32
+    """The pressure altitude, metres."""
+    temperature: wp.float32
+    """The sensor's temperature, degrees Celsius."""
+
+
+@wp.struct
+class GpsSample:
+    """A Global Positioning System (GPS) receiver's sample, on WGS84. The signal ``gps`` carries it, of shape
+    ``(1,)``. Latitude, longitude and altitude are 64-bit: a 32-bit latitude loses about a metre.
+    """
+
+    time: wp.float64
+    """The sim time of the sample, seconds."""
+    lat: wp.float64
+    """The latitude, degrees."""
+    lon: wp.float64
+    """The longitude, degrees."""
+    alt: wp.float64
+    """The altitude over mean sea level, metres."""
+    velocity: wp.vec3
+    """The velocity in North East Down (NED) axes, m/s."""
+    ground_speed: wp.float32
+    """The horizontal speed, m/s."""
+    fix_type: wp.int32
+    """The fix, as MAVLink's ``GPS_FIX_TYPE`` numbers it: 3 is a 3D fix."""
 
 
 @dataclass(slots=True)
-class Measurement:
-    """Per-tick sensor bundle in the Forward Right Down (FRD) body frame / physical units.
+class Image:
+    """A camera's frame, the host signal a camera writes when a frame arrives."""
 
-    For the slice the sensors fill one shared Measurement in place, the Hardware In The Loop (HIL)
-    bundle PX4 consumes; the controller serializes it to MAVLink wire units.
-    A field left at its default is simply one no sensor overrode this tick.
-    """
+    time: float
+    """The sim time the frame shows, seconds."""
+    pixels: np.ndarray
+    """The image, ``(height, width, 3)`` 8-bit RGB."""
 
-    # --- Inertial Measurement Unit (IMU), HIL_SENSOR, in the axes of its mount: body FRD on an unturned one ---
-    xacc: float = 0.0
-    """Specific force (accelerometer) along the mount's X, forward on an unturned mount, m/s^2."""
-    yacc: float = 0.0
-    """Specific force (accelerometer) along the mount's Y, right on an unturned mount, m/s^2."""
-    zacc: float = 0.0  # specific force [m/s^2]
-    """Specific force (accelerometer) along the mount's Z, down on an unturned mount, m/s^2."""
-    xgyro: float = 0.0
-    """Angular rate about the mount's X, the roll axis on an unturned mount, rad/s."""
-    ygyro: float = 0.0
-    """Angular rate about the mount's Y, the pitch axis on an unturned mount, rad/s."""
-    zgyro: float = 0.0  # [rad/s]
-    """Angular rate about the mount's Z, the yaw axis on an unturned mount, rad/s."""
-    # --- Magnetometer, HIL_SENSOR, body FRD [gauss] ---
-    xmag: float = 0.0
-    """Magnetic field along body FRD X (forward), gauss."""
-    ymag: float = 0.0
-    """Magnetic field along body FRD Y (right), gauss."""
-    zmag: float = 0.0
-    """Magnetic field along body FRD Z (down), gauss."""
-    # --- Barometer, HIL_SENSOR ---
-    abs_pressure: float = 1013.25  # [hPa]
-    """Absolute (static) barometric pressure, hPa."""
-    pressure_alt: float = 0.0  # [m]
-    """Barometric pressure altitude, metres."""
-    temperature: float = 25.0  # [degC]
-    """Sensor temperature, degrees Celsius."""
-    # --- Global Positioning System (GPS), HIL_GPS, physical units ---
-    gps_valid: bool = False
-    """Whether the GPS fields hold a valid fix this tick."""
-    lat_deg: float = 0.0
-    """WGS84 latitude, degrees."""
-    lon_deg: float = 0.0
-    """WGS84 longitude, degrees."""
-    alt_m: float = 0.0  # altitude over mean sea level
-    """Altitude above mean sea level (AMSL), metres."""
-    vn: float = 0.0
-    """GPS velocity north component (NED frame), m/s."""
-    ve: float = 0.0
-    """GPS velocity east component (NED frame), m/s."""
-    vd: float = 0.0  # NED velocity [m/s]
-    """GPS velocity down component (NED frame), m/s."""
-    ground_speed: float = 0.0  # [m/s]
-    """Horizontal ground speed, m/s."""
-    fix_type: int = 3
-    """GPS fix type (MAVLink ``GPS_FIX_TYPE``; 3 = 3D fix)."""
-    eph: float = 1.0
-    """Horizontal position dilution of precision (dimensionless)."""
-    epv: float = 1.0
-    """Vertical position dilution of precision (dimensionless)."""
-    satellites: int = 10
-    """Number of satellites visible/used in the solution."""
-    # --- Perfect ground-truth kinematics for state-feedback consumers, cat-2 ---
-    # An optional slot a ground-truth Sensor fills, for example the RL policy observation, so a
-    # trained-policy Controller consumes it through the same exchange(meas) path as PX4.
-    # Left None when no such sensor runs; never serialized to MAVLink.
-    observation: Any = None
-    """Optional ground-truth observation for state-feedback consumers (cat-2).
 
-    A free-form slot a ground-truth ``Sensor`` fills (e.g. an RL policy observation
-    vector) so a trained-policy ``Controller`` reads it through the same
-    ``exchange(meas)`` path as PX4. ``None`` when no such sensor runs; never
-    serialized to MAVLink.
-    """
+@dataclass(slots=True)
+class PointCloud:
+    """A lidar's scan, the host signal a lidar writes when a scan arrives."""
+
+    time: float
+    """The sim time the scan shows, seconds."""
+    points: np.ndarray
+    """The points, ``(n, 3)``, in the frame the Kit peer sends: world axes."""
 
 
 # --- Setpoint: the guidance→controller command vocabulary ----------------
 #
-# Each setpoint is a type the signal `setpoint` takes, which a guidance writes and a controller reads, so
-# the builder checks that the two agree before the capture. A guidance writes it in place between graph
-# replays, never inside the captured region, so the next replay reads it with zero re-capture.
+# Each setpoint travels as the signal `setpoint`, which a guidance writes and a controller reads: a position
+# goal as one `wp.vec3`, a reference trajectory as itself on the host, so the builder checks that the two
+# agree before the capture. A guidance writes it in place between graph replays, never inside the captured
+# region, so the next replay reads it with zero re-capture.
 
 
 @dataclass(slots=True)
-class PositionGoal(DeviceType):
+class PositionGoal:
     """A single move-to / hold goal in the world frame, Newton FLU / Z-up. Consumed by the
     state-feedback controllers, policy and pid: the guidance feeds one ``PositionGoal`` at a time and
     sequences a mission by advancing it on arrival; the controller is goal-relative, so each is a
     fresh single-goal problem. ``yaw`` is the optional heading [rad]; ``None`` = don't command yaw.
 
-    As a signal it lives on the device, one ``vec3`` of the position, since no controller reads yaw.
+    The signal ``setpoint`` carries it on the device as one ``wp.vec3`` of the position, since no
+    controller reads yaw.
     """
-
-    dtype: ClassVar[str] = "vec3"
 
     pos: tuple[float, float, float]
     yaw: float | None = None
@@ -201,8 +211,6 @@ def as_position_goal(sp) -> PositionGoal:
     """
     if isinstance(sp, PositionGoal):
         return sp
-    import numpy as np
-
     arr = np.asarray(sp, dtype=float).reshape(-1)
     if arr.shape[0] != 3:
         raise TypeError(f"expected a PositionGoal or an (x, y, z) position, got {sp!r}")

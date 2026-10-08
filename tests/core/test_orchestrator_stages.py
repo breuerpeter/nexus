@@ -86,13 +86,10 @@ class _GraphSensor:
 
     capturable = True
 
-    def sample(self, state, t, meas):
+    def sample(self, state, t):
         pass
 
     def sample_wp(self, state, t):
-        pass
-
-    def read(self, meas):
         pass
 
     def stages(self):
@@ -109,15 +106,15 @@ class _HostSensor:
     def __init__(self):
         self.captured = []
 
-    def sample(self, state, t, meas):
+    def sample(self, state, t):
         self.captured.append(wp.get_device().is_capturing)
 
     def stages(self):
-        return [Stage("sample", "host", lambda tick: self.sample(tick.state, tick.t, tick.meas))]
+        return [Stage("sample", "host", lambda tick: self.sample(tick.state, tick.t))]
 
 
 class _PeerController:
-    """A controller with a peer, the PX4 shape: a ``read`` and an ``exchange`` host stage, plus one
+    """A controller with a peer, the PX4 shape: two host stages, ``truth`` and ``exchange``, plus one
     device stage that bumps its own buffer, which exists from construction because the loop captures
     before a peer connects. ``answers`` says which exchanges the peer answers; ``attached`` says when
     the peer dialed in. It keeps every exchange and device-stage call.
@@ -134,7 +131,7 @@ class _PeerController:
     def connect(self):
         pass
 
-    def exchange(self, meas, t, timeout):
+    def exchange(self, t, timeout):
         self.calls += 1
         if not self._answers(self.calls):
             return None
@@ -149,10 +146,10 @@ class _PeerController:
 
     def stages(self):
         def exchange(tick):
-            return self.exchange(tick.meas, tick.t, None) is not None
+            return self.exchange(tick.t, None) is not None
 
         return [
-            Stage("read", "host", lambda tick: None),
+            Stage("truth", "host", lambda tick: None),
             Stage("exchange", "host", exchange),
             Stage("act", "device", self._act, warm=False),
         ]
@@ -170,7 +167,7 @@ class _DeviceController:
     def connect(self):
         self.act = wp.zeros(1, dtype=wp.int32)
 
-    def exchange(self, meas, t, timeout):
+    def exchange(self, t, timeout):
         self.exchange_calls += 1
         return Controls(command=[0.0, 0.0, 0.0, 0.0])
 
@@ -289,14 +286,14 @@ def test_a_component_with_no_stages_fails_the_build_naming_it(controller):
 @pytest.mark.gpu
 def test_a_run_logs_its_stage_plan_with_its_host_stages(caplog):
     """A run logs its stage plan once at start: each captured segment and the host stages between them.
-    The PX4 shape: one line naming one segment and the ``read`` and ``exchange`` host stages.
+    The PX4 shape: one line naming one segment and the ``truth`` and ``exchange`` host stages.
     """
     with _cuda(), caplog.at_level(logging.INFO, logger="nexus"):
         orch = _orch(_PeerController())
         orch.step()
         orch.close()
     plans = [m for m in _messages(caplog) if m.startswith("stage plan:")]
-    assert len(plans) == 1 and plans[0].count("graph(") == 1 and "read" in plans[0] and "exchange" in plans[0]
+    assert len(plans) == 1 and plans[0].count("graph(") == 1 and "truth" in plans[0] and "exchange" in plans[0]
 
 
 @pytest.mark.gpu

@@ -150,7 +150,7 @@ class Commands:
     def stages(self):
         return peer_stages(self)
 
-    def exchange(self, meas, t, timeout=None):
+    def exchange(self, t, timeout=None):
         return Controls(command=self.values.copy())
 
     def close(self):

@@ -12,12 +12,15 @@ import pytest
 pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
+import warp as wp
+
 from nexus_sim._src.core.interfaces import Stage
-from nexus_sim._src.core.schema import PoseTwist, PositionGoal
+from nexus_sim._src.core.schema import PoseTwist
 from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.core.stages import peer_stages
 from tests.usd import sensor_vehicle as sv
 from tests.usd.stand_in.nexus_stand_in.estimator import StandInEstimator
+from tests.usd.stand_in.nexus_stand_in.sensor import Gain
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")
 
@@ -28,15 +31,17 @@ class _EstimateGuidance:
     """A guidance whose host stage keeps the estimate it reads on each tick, and writes no new setpoint."""
 
     def __init__(self):
-        self.estimate = Signal("estimate", PoseTwist, shape=(1, 13))
-        self.setpoint = Signal("setpoint", PositionGoal, shape=(1,))
+        self.estimate = Signal("estimate", PoseTwist, shape=(1,))
+        self.setpoint = Signal("setpoint", wp.vec3, shape=(1,))
         self.seen = []
 
     def stages(self):
         return [Stage("guide", "host", self._guide, warm=False, reads=(self.estimate,), writes=(self.setpoint,))]
 
     def _guide(self, tick):
-        self.seen.append([float(x) for x in self.estimate.read()[0]])
+        estimate = self.estimate.read()[0]
+        fields = ("position", "orientation", "linear_velocity", "angular_velocity")
+        self.seen.append([float(x) for name in fields for x in estimate[name]])
         return True
 
 
@@ -45,7 +50,7 @@ class _SetpointController(sv.Controller):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.setpoint = Signal("setpoint", PositionGoal, shape=(1,))
+        self.setpoint = Signal("setpoint", wp.vec3, shape=(1,))
 
     def stages(self):
         return peer_stages(self, reads=(self.setpoint,))
@@ -53,11 +58,12 @@ class _SetpointController(sv.Controller):
 
 class _ConnectingSensor:
     """A sensor whose class also states `connect` and `close`, as a controller's does. Its host stage writes
-    its gain into the `Measurement` the controller reads.
+    its gain to the signal `gain`.
     """
 
     def __init__(self, run, gain: float = 1.0):
         self.gain = float(gain)
+        self.out = Signal("gain", Gain, shape=(1,))
 
     def connect(self):
         pass
@@ -66,10 +72,10 @@ class _ConnectingSensor:
         pass
 
     def stages(self):
-        return [Stage("stand_in", "host", self._sample)]
+        return [Stage("stand_in", "host", self._sample, writes=(self.out,))]
 
     def _sample(self, tick):
-        tick.meas.eph = self.gain
+        self.out.write([(self.gain,)])
 
 
 def _on_root(tmp_path, vehicle: str, schema: str) -> str:
@@ -111,7 +117,7 @@ def test_an_estimator_the_vehicle_declares_runs_in_the_estimators_place_and_the_
     loop = sv.build(path, components=registry)
     guidance = _EstimateGuidance()
     loop.guidance = guidance
-    sv.fly(loop, 3)
+    sv.steps(loop, 3)
     pose = [1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     assert guidance.seen == [pose, pose, pose]
 
@@ -120,14 +126,17 @@ def test_a_component_builds_in_the_role_its_schema_states_whatever_methods_its_c
     """A component builds in the role its schema states, whatever methods its class has.
 
     Given the fixture vehicle with a stand-in schema that states the sensor role, on a mount prim under a body,
-    whose class states `connect`, `close` and `stages`, when the run steps 2 ticks, then the component runs in
-    the sensors' place in the tick, and the vehicle's PX4 controller still builds as its one controller.
+    whose class states `connect`, `close` and `stages`, and a stand-in estimator that reads its gain, when the
+    run steps 2 ticks, then the component runs in the sensors' place in the tick, before the estimator, and
+    the vehicle's PX4 controller still builds as its one controller.
     """
-    path = sv.vehicle(tmp_path, sv.prim("Own", "StandInSensorAPI", "float nexus:gain = 2.5"))
-    loop = sv.build(path, components=sv.components(StandInSensorAPI=_ConnectingSensor))
+    reader = sv.estimator(Signal("gain", Gain, shape=(1,)))
+    path = sv.vehicle(tmp_path, sv.prim("Own", "StandInSensorAPI", "float nexus:gain = 2.5"), estimator="")
+    loop = sv.build(path, components=sv.components(StandInSensorAPI=_ConnectingSensor, StandInEstimatorAPI=reader))
     controller = loop.controller
-    received = sv.fly(loop, 2)
-    assert ([meas.eph for meas in received], type(controller)) == ([2.5, 2.5], sv.Controller)
+    sv.steps(loop, 2)
+    gains = [float(gain["value"][0]) for _, gain in reader.kept]
+    assert (gains, type(controller)) == ([2.5, 2.5], sv.Controller)
 
 
 def test_a_component_schema_that_states_no_role_fails_the_build_and_names_the_schema(tmp_path):
