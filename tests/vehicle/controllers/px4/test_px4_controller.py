@@ -16,7 +16,7 @@ from nexus_sim._src.core.signals import wire
 from nexus_sim._src.core.stages import Bound
 from nexus_sim._src.scene import Site
 from nexus_sim._src.vehicle.controllers.px4 import controller as ctrl
-from nexus_sim._src.vehicle.sensors import BaroSensor, ImuSensor
+from nexus_sim._src.vehicle.sensors import BaroSensor, GpsSensor, ImuSensor
 
 
 class _FakeMav:
@@ -42,17 +42,24 @@ def bind(monkeypatch):
 
 
 class _Link:
-    """The far end of the HIL link, the network boundary: it keeps the arguments of each `HIL_SENSOR` the
-    controller sends, and answers each exchange with one `HIL_ACTUATOR_CONTROLS`.
+    """The far end of the HIL link, the network boundary: it keeps the arguments of each `HIL_SENSOR`, `HIL_GPS`
+    and `HIL_STATE_QUATERNION` the controller sends, by kind, and answers each exchange with one
+    `HIL_ACTUATOR_CONTROLS`.
     """
 
     def __init__(self):
         self.mav = self  # the protocol object the controller sends through
         self.target_system = self.target_component = 0
-        self.hil_sensor: list[tuple] = []
+        self.sent: dict[str, list[tuple]] = {"HIL_SENSOR": [], "HIL_GPS": [], "HIL_STATE_QUATERNION": []}
 
     def hil_sensor_send(self, *args):
-        self.hil_sensor.append(args)
+        self.sent["HIL_SENSOR"].append(args)
+
+    def hil_gps_send(self, *args, **kw):
+        self.sent["HIL_GPS"].append(args)
+
+    def hil_state_quaternion_send(self, *args):
+        self.sent["HIL_STATE_QUATERNION"].append(args)
 
     def recv_match(self, **kw):
         return types.SimpleNamespace(controls=[0.5] * 16)
@@ -69,15 +76,8 @@ def link(monkeypatch):
     return far
 
 
-def _wired(*sensors):
-    """A PX4 controller, connected, and `sensors`, their signals wired as a run wires them, with the tick's sim
-    time on the device in a clock's signal: the clock and the controller.
-    """
-    clock, controller = DeviceClock(0.004), ctrl.Px4MavlinkController()
-    pairs = [(clock, "clock"), *((sensor, "sensor") for sensor in sensors), (controller, "controller")]
-    wire([Bound(stage, component, role) for component, role in pairs for stage in component.stages()])
-    controller.connect()
-    return clock, controller
+# The run's values each sensor here takes: a 4 ms tick and a site at 47.6, -122.3, 5 m.
+_RUN = SensorRun(seed=1, dt=0.004, site=Site(lat=47.6, lon=-122.3, alt=5.0, mag_ned=(0.21, 0.05, 0.43)))
 
 
 class _AtRest:
@@ -88,6 +88,24 @@ class _AtRest:
         self.body_qd = wp.array(np.zeros((1, 6), dtype=np.float32), dtype=wp.spatial_vector)
 
 
+def _exchange(*sensors, ticks: int) -> None:
+    """Wire a PX4 controller, connected, to `sensors` as a run wires them, with the tick's sim time on the device
+    in a clock's signal, and run `ticks` ticks of 4 ms from 0 s: on each, every sensor samples a body at rest,
+    then the controller exchanges. The tick's time grows by 4 ms a tick in float64, as the device clock adds it.
+    """
+    clock, controller = DeviceClock(0.004), ctrl.Px4MavlinkController()
+    pairs = [(clock, "clock"), *((sensor, "sensor") for sensor in sensors), (controller, "controller")]
+    wire([Bound(stage, component, role) for component, role in pairs for stage in component.stages()])
+    controller.connect()
+    state, now = _AtRest(), 0.0
+    for tick in range(ticks):
+        clock.time.write([now])
+        for sensor in sensors:
+            sensor.sample_wp(state, SimTime(now, tick))
+        controller.exchange(SimTime(now, tick), timeout=0.1)
+        now += 0.004
+
+
 def test_hil_sensor_marks_a_sensors_fields_updated_only_on_an_exchange_with_a_new_sample_of_it(link, warp_cpu):
     """`HIL_SENSOR` marks a sensor's fields updated only on an exchange that brings a new sample of it.
 
@@ -96,18 +114,22 @@ def test_hil_sensor_marks_a_sensors_fields_updated_only_on_an_exchange_with_a_ne
     `HIL_SENSOR` mark the IMU's fields updated on each, and the barometer's pressure fields on the first and
     the third: `0x1E3F, 0x3F, 0x1E3F, 0x3F`.
     """
-    run = SensorRun(seed=1, dt=0.004, site=Site(lat=47.6, lon=-122.3, alt=5.0, mag_ned=(0.21, 0.05, 0.43)))
-    sensors = (ImuSensor(run), BaroSensor(run, rate=125.0))
-    clock, controller = _wired(*sensors)
-    state, now = _AtRest(), 0.0
-    for tick in range(4):
-        clock.time.write([now])
-        for sensor in sensors:
-            sensor.sample_wp(state, SimTime(now, tick))
-        controller.exchange(SimTime(now, tick), timeout=0.1)
-        now += 0.004
+    _exchange(ImuSensor(_RUN), BaroSensor(_RUN, rate=125.0), ticks=4)
 
-    assert [args[-2] for args in link.hil_sensor] == [0x1E3F, 0x3F, 0x1E3F, 0x3F]
+    assert [args[-2] for args in link.sent["HIL_SENSOR"]] == [0x1E3F, 0x3F, 0x1E3F, 0x3F]
+
+
+def test_hil_gps_and_the_true_state_go_out_with_each_new_gps_sample_and_on_no_other_exchange(link, warp_cpu):
+    """`HIL_GPS` and `HIL_STATE_QUATERNION` go out with each new sample of the GPS receiver, and on no other exchange.
+
+    Given the controller wired to a Global Positioning System (GPS) receiver at 125 Hz, when four 4 ms ticks each
+    sample it and exchange, then one `HIL_GPS` and one `HIL_STATE_QUATERNION` go out on the first and on the third,
+    stamped 0 and 8 ms.
+    """
+    _exchange(GpsSensor(_RUN, rate=125.0), ticks=4)
+
+    stamps = [[args[0] for args in link.sent[kind]] for kind in ("HIL_GPS", "HIL_STATE_QUATERNION")]
+    assert stamps == [[0, 8000], [0, 8000]]
 
 
 def test_connect_listens_on_the_runs_hil_port(bind):

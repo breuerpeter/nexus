@@ -94,7 +94,6 @@ class Px4MavlinkController:
         port: int = HIL_PORT,
         sysid: int = 1,
         compid: int = 200,
-        gps_rate_hz: float = 10.0,
         ulog_dir: str | None = None,
         target_system: int = 1,
     ):
@@ -107,7 +106,6 @@ class Px4MavlinkController:
             port: The TCP port the HIL server listens on, ``HIL_PORT`` plus the run's PX4 instance: PX4 dials it.
             sysid: This end's MAVLink system id.
             compid: This end's MAVLink component id.
-            gps_rate_hz: How often ``HIL_GPS`` and the ground-truth state go out.
             ulog_dir: Where PX4's ULog lands, ``PX4_ULOG_DIR`` by default.
             target_system: PX4's MAVLink system id: the run's PX4 instance plus 1.
         """
@@ -117,8 +115,6 @@ class Px4MavlinkController:
         self.sysid = sysid
         self.compid = compid
         self.target_system = target_system
-        self.gps_interval = 1.0 / gps_rate_hz
-        self._last_gps = 0.0
         self.gps_fix_type = 3
         self._attitude = (1.0, 0.0, 0.0, 0.0)  # the base body's true attitude on North East Down (NED), [w, x, y, z]
         self._rates = (0.0, 0.0, 0.0)  # its true body rates, Forward Right Down (FRD), rad/s
@@ -244,9 +240,8 @@ class Px4MavlinkController:
             0,
         )
 
-        # HIL_GPS, plus the ground-truth HIL_STATE_QUATERNION, at the receiver's sub-rate, when the vehicle declares one.
-        if not math.isnan(gps["time"]) and (t.sim_time - self._last_gps >= self.gps_interval):
-            self._last_gps = t.sim_time
+        # HIL_GPS, plus the ground-truth HIL_STATE_QUATERNION, with each new sample of the receiver, so at its rate.
+        if self._new("gps", gps):
             lat = int(float(gps["lat"]) * 1e7)
             lon = int(float(gps["lon"]) * 1e7)
             alt = int(float(gps["alt"]) * 1000)
