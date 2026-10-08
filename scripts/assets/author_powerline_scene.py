@@ -26,7 +26,7 @@ not the meshes' millions of triangles. The plants and rocks carry no colliders. 
 plane is the low ground's collider, 6 cm over the grass, level with the tarmac at the start.
 
     uv run python scripts/assets/author_powerline_scene.py /tmp/powerline.usdz
-then prepare it for upload, which prints the sha, the upload key, and the registry snippet:
+then prepare it for upload, which prints the sha, the upload key, and the catalog snippet:
     uv run python scripts/assets/prepare_asset_upload.py --scene /tmp/powerline.usdz
 """
 
@@ -70,7 +70,7 @@ FLOOR = ("aerial_grass_rock", 15.0)  # the ground everywhere: grass over rocky s
 # The line: its poles in order, on the inside of the road's turn.
 POLES = ((-22.0, 0.0), (-2.0, 0.0), (10.0, 0.0), (10.0, 12.0), (10.0, 24.0))
 # Open ground kept free of props: beside the pole at the foot of the drop, and beside the line's
-# far end pole on the high ground, where the inspection lands. The registry ``start`` is on the
+# far end pole on the high ground, where the inspection lands. The catalog ``start`` is on the
 # tarmac beside the line's other end pole, which the props keep clear of already. The physics adds
 # its own plane at world z = 0, where ``start`` goes, and a vehicle can't go below it, so the start
 # stands on the low ground and the inspection climbs. On the tarmac top, the start leaves the
@@ -427,7 +427,7 @@ def _road_colliders(stage, root: str, centre) -> None:
         xf = UsdGeom.Xformable(box)
         xf.AddTranslateOp().Set(centre_pt)
         xf.AddOrientOp().Set(Gf.Quatf(frame.ExtractRotation().GetQuat()))
-        # A little longer than its chord, so neighbouring boxes overlap and leave no seam in a turn.
+        # A little longer than its chord, so neighbouring boxes overlap and leave no gap in a turn.
         xf.AddScaleOp().Set(Gf.Vec3f((top_b - top_a).GetLength() + 0.2, 2.0 * ROAD_HALF_WIDTH, thick))
         box.CreateVisibilityAttr(UsdGeom.Tokens.invisible)
         UsdPhysics.CollisionAPI.Apply(box.GetPrim())

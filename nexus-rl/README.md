@@ -4,13 +4,13 @@ Trains a **multi-rotor RL hover policy** for the Freefly **Astro Max** on **Isaa
 Newton physics backend**. It runs without Kit and headless, with *no Isaac Sim and no PhysX*, and records
 the training as a Rerun `.rrd` showing the swarm of agents learning. The exported policy, `policy.pt` or
 `policy.onnx`, is what the `TrainedPolicyController` example in
-`nexus/examples/controllers/policy/controller.py` loads. Deploy it with
-[`nexus/examples/controllers/policy/goto/flight.py`](../nexus/examples/controllers/policy/goto/flight.py).
+`nexus_sim/examples/controllers/policy/controller.py` loads. Deploy it with
+[`nexus_sim/examples/controllers/policy/goto/flight.py`](../nexus_sim/examples/controllers/policy/goto/flight.py).
 
 This is a **separate `uv` project** with its own virtual environment, so Isaac Lab, a heavy,
 prerelease-pinned stack, stays **out of the core `nexus` environment**. It depends on `nexus`
-via an editable path source, so training and the core's deploy share the same Newton 1.3.0, which gives
-FR-7 parity. It follows the Isaac Lab external-project layout: a registered task package under
+via an editable path source, so training and the core's deploy share the same Newton 1.3.0, so a trained
+policy flies the same dynamics it trained on. It follows the Isaac Lab external-project layout: a registered task package under
 `src/nexus_rl/tasks/direct/<task>/`, holding the env, the config, and `agents/`, and task-agnostic
 runner scripts under `scripts/`.
 
@@ -29,7 +29,7 @@ nexus-rl/
 │   ├── goto_env.py                        # GoToEnv/Cfg: the single-body per-rotor model (no vehicle)
 │   ├── agents/rsl_rl_ppo_cfg.py           # GoToPPORunnerCfg (entropy_coef reliability fix)
 │   └── config/astro_max.py                # the Astro Max vehicle config (robot USD + FRD frame) + gym.register
-│                                          #   ("Newton-AstroMax-GoTo-Direct-v0"); a new vehicle = a new config
+│                                          #   ("Nexus-AstroMax-GoTo-Direct-v0"); a new vehicle = a new config
 └── scripts/
     ├── rsl_rl/train.py                     # kitless PPO trainer; exports policy.pt + policy.onnx
     ├── rsl_rl/record_demo.py              # records the swarm-improving Rerun .rrd (the demo below)
@@ -45,10 +45,10 @@ CUDA GPU, and runs on Linux-x86_64 only.
 
 > Isaac Lab `3.0.0b2` *declares* older Newton and Warp pins, but its code runs on the framework's newer
 > versions. So this project's `[tool.uv]` override co-resolves the whole stack into **one** Newton, and
-> training and the standalone deploy then share the same Newton, for better FR-7 parity.
+> training and the standalone deploy then share the same Newton.
 
-The Astro Max Universal Scene Description (USD) file is a content-addressed registry asset. It
-**auto-resolves** on the host, since the framework's pydantic and registry dependencies are present,
+The Astro Max Universal Scene Description (USD) file is a content-addressed catalog asset. It
+**auto-resolves** on the host, since the framework's pydantic and catalog dependencies are present,
 caching under `assets/cache/` in the repo, which `$NEXUS_ASSET_CACHE` overrides. Pass
 `--vehicle_usd /path/to/astro_max.usdz` to train.py only to override the lookup.
 
@@ -111,27 +111,27 @@ The stock `Isaac-Quadcopter-Direct-v0` is PhysX-only and doesn't learn on Newton
 
 The vehicle config, `config/astro_max.py`, supplies the Astro-Max-specific bits: the robot USD, the
 Forward Right Down (FRD) frame with `base_body="body_frd"` and `thrust_sign=-1`, and a custom spawner
-`func`. That `func` disables the world→base `PhysicsFixedJoint` the registry USD bakes in, which would
+`func`. That `func` disables the world→base `PhysicsFixedJoint` the catalog USD bakes in, which would
 otherwise pin the base, so thrust moves nothing. The thrust map, `ct`, `cd`, and `rpm_max`, comes from
 the rotors the USD declares, the propeller schema on each rotor body and its motor's no-load speed, the same
 source the core uses. A
 different vehicle is just another `config/<vehicle>.py`.
 
-## Deploy, the FR-7 round trip
+## Deploy, the train-to-flight round trip
 
 The `TrainedPolicyController` example loads the exported `policy.pt`, and
-[`nexus/examples/controllers/policy/goto/flight.py`](../nexus/examples/controllers/policy/goto/flight.py)
+[`nexus_sim/examples/controllers/policy/goto/flight.py`](../nexus_sim/examples/controllers/policy/goto/flight.py)
 flies it in the **standalone** runtime. That closes the loop: train on Isaac-Lab-on-Newton → deploy on
 the core. Two shared "single source of truth" pieces make it transfer with no convention change:
 
-- **Observation**: the same `observation_from_state`, in `nexus.examples._lib.observation`, builds
+- **Observation**: the same `observation_from_state`, in `nexus_sim.examples._lib.observation`, builds
   the 12-D kinematic obs plus the last action, and training and deploy both call it.
 - **Action**: the policy's action is **CTBR**, collective thrust plus commanded body rates, and the
   deploy actuator applies it. That actuator mirrors the `_pre_physics_step` of the training env: thrust
   along ±body-z and an inner P rate loop `τ = I·gain·(ω_des − ω)`.
 
 ```bash
-uv run --extra policy python nexus/examples/controllers/policy/goto/flight.py \
+uv run --extra policy python nexus_sim/examples/controllers/policy/goto/flight.py \
   --policy .rl-artifacts/rl/exported/policy.pt   # the waypoint tour is WAYPOINTS in the script
 # -> ~/.cache/nexus/logs/nexus-<timestamp>.rrd  (open with `rerun <path>`)
 ```

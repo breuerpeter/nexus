@@ -156,7 +156,7 @@ def author_vehicle_camera(usdz, out, *, mount=None, intrinsics=None) -> str:
     xf.AddTransformOp().Set(mtx)
     # The camera schema declares the prim a sensor, and its attributes carry the render size and the
     # rate: the vehicle USD is the single authority, so they live here, not in code. Applied by name,
-    # so this module needs no schema plugin: `import nexus` registers the one that defines the schema.
+    # so this module needs no schema plugin: `import nexus_sim` registers the one that defines the schema.
     from pxr import Sdf
 
     prim = cam.GetPrim()

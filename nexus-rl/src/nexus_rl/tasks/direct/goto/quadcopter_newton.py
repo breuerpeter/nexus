@@ -42,8 +42,8 @@ from isaaclab_newton.physics import MJWarpSolverCfg, NewtonCfg
 from isaaclab_tasks.direct.quadcopter.quadcopter_env import QuadcopterEnv
 from isaaclab_tasks.direct.quadcopter.quadcopter_env_cfg import QuadcopterEnvCfg
 
-from nexus.examples._lib import CtbrParams  # CTBR params struct for the per-rotor subclass's kernel
-from nexus.examples._lib.observation import (  # shared single source for train+deploy
+from nexus_sim.examples._lib import CtbrParams  # CTBR params struct for the per-rotor subclass's kernel
+from nexus_sim.examples._lib.observation import (  # shared single source for train+deploy
     observation_from_state,  # shared obs-from-state, the single source
 )
 
@@ -116,21 +116,22 @@ class QuadcopterNewtonEnv(QuadcopterEnv):
 
     def __init__(self, cfg, render_mode=None, **kwargs):
         # Bypass QuadcopterEnv.__init__, whose root_view.get_masses() is PhysX-only and raises on
-        # Newton, by running the grandparent setup and replicating the rest with data.body_mass.
+        # Newton, by running the grandparent setup and building the state the parent's step, reward and
+        # reset read here, with data.body_mass for the mass.
         DirectRLEnv.__init__(self, cfg, render_mode, **kwargs)
-        self._actions = torch.zeros(self.num_envs, gym.spaces.flatdim(self.single_action_space), device=self.device)
-        self._thrust = torch.zeros(self.num_envs, 1, 3, device=self.device)
-        self._moment = torch.zeros(self.num_envs, 1, 3, device=self.device)
-        self._desired_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
-        self._success_step_count = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
-        self._episode_sums = {
-            key: torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
-            for key in ["lin_vel", "ang_vel", "distance_to_goal"]
-        }
+        n, dev = self.num_envs, self.device
+        n_actions = gym.spaces.flatdim(self.single_action_space)
+        self._actions = torch.zeros((n, n_actions), device=dev)
+        # The world-frame wrench on the base body, which the subclass's _pre_physics_step writes.
+        self._thrust = torch.zeros((n, 1, 3), device=dev)
+        self._moment = torch.zeros((n, 1, 3), device=dev)
+        self._desired_pos_w = torch.zeros((n, 3), device=dev)  # goal
+        self._success_step_count = torch.zeros(n, dtype=torch.int64, device=dev)
+        self._episode_sums = {name: torch.zeros(n, device=dev) for name in ("lin_vel", "ang_vel", "distance_to_goal")}
         self._body_id = self._robot.find_bodies(self.cfg.base_body)[0]
         self._robot_mass = self._robot.data.body_mass.torch[0].sum()  # backend-portable, unlike get_masses
-        self._gravity_magnitude = torch.tensor(self.sim.cfg.gravity, device=self.device).norm()
-        self._robot_weight = (self._robot_mass * self._gravity_magnitude).item()
+        self._gravity_magnitude = torch.linalg.vector_norm(torch.tensor(self.sim.cfg.gravity, device=dev))
+        self._robot_weight = float(self._robot_mass * self._gravity_magnitude)
         # Base-body principal inertia, the diag of the 3x3, for the CTBR inner rate loop, torque = I*accel.
         # Reading it from the model makes the rate-loop gain inertia-independent, so it transfers from
         # the 28 g Crazyflie to the 9.2 kg Astro Max unchanged.
@@ -138,7 +139,7 @@ class QuadcopterNewtonEnv(QuadcopterEnv):
         self._body_inertia_diag = inertia[[0, 4, 8]].to(self.device).view(1, 3)
         # CTBR params for the per-rotor subclass's shared mixer, ctbr_to_cmd_batched: the same mixer the
         # deploy policy controller runs, so training and deploy meet the same dynamics, byte for byte, with no
-        # torch reimplementation, FR-7. Constants are the NUM_SUBSTEPS-diluted training twins of the deploy
+        # torch reimplementation. Constants are the NUM_SUBSTEPS-diluted training twins of the deploy
         # values, thrust_to_weight=1.9*NUM_SUBSTEPS and _RATE_GAIN; the solver integrates the wrench over
         # NUM_SUBSTEPS substeps.
         idiag = self._body_inertia_diag.flatten().tolist()
@@ -161,13 +162,13 @@ class QuadcopterNewtonEnv(QuadcopterEnv):
     # learn to fly to the goal. The rate-loop params live on the cfg: omega_max / rate_gain / gyro_ff.
     #
     # The concrete subclass provides the actuation, ``_pre_physics_step``, writing the world-frame wrench
-    # into self._thrust/self._moment: ``GoToEnv`` launches the single-body RigidBodyRotors kernel.
+    # into self._thrust/self._moment: ``GoToEnv`` launches the single-body Rotors kernel.
     # This Newton base only carries the backend-portable setup + CTBR params + NaN/reset robustness below.
 
     def _get_observations(self) -> dict:
-        # Reuse the single shared obs-from-state builder, nexus.examples._lib.observation, the same
+        # Reuse the single shared obs-from-state builder, nexus_sim.examples._lib.observation, the same
         # code the deploy controller/sensor calls, so the policy trains on observations that match those
-        # it gets in the standalone runtime bit for bit: FR-7 / C-1 round-trip parity.
+        # it gets in the standalone runtime, bit for bit.
         # root_quat_w is native Newton, in x, y, z, w order, the convention observation_from_state expects.
         d = self._robot.data
         obs = observation_from_state(

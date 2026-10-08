@@ -24,7 +24,7 @@ recording isn't uploaded yet: run the pipeline below, then `scripts/ci/evaluate_
 ## Deploy: flying waypoints on the framework
 
 The exported `policy.pt` flies through the **framework's own loop**, with `uv` and no container, on
-the single-body `RigidBodyRotors` actuator. That actuator is the **same** Collective Thrust and
+the single-body `Rotors` actuator. That actuator is the **same** Collective Thrust and
 Body Rate (CTBR) mixer and per-rotor motor model the policy trained against: byte-shared Warp
 kernels rather than a reimplementation. The drone tours a sequence of waypoints. The next sphere
 shows up only once the drone reaches the current one. **Gold** marks the active sphere and
@@ -76,11 +76,11 @@ uv run --project nexus-rl python nexus-rl/scripts/rsl_rl/record_demo.py \
   --log_dir .rl-artifacts/rl --out astromax_rl.rrd
 
 # --- 3) DEPLOY: flies the policy on the framework + records the waypoint tour ---
-uv run --extra policy -m nexus.examples goto_policy \
+uv run --extra policy -m nexus_sim.examples goto_policy \
   --policy .rl-artifacts/rl/exported/policy.pt
 ```
 
-Without `--policy`, `uv run --extra policy -m nexus.examples goto_policy` flies the hosted policy
+Without `--policy`, `uv run --extra policy -m nexus_sim.examples goto_policy` flies the hosted policy
 the example pins: a content-addressed `.pt` fetched from the catalog's `assets.base` into the asset
 cache, sha-verified, and offline after the first fetch.
 

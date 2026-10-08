@@ -29,13 +29,13 @@ def _author_vehicle_with_gravity(path: str, magnitude: float) -> None:
 
 def test_model_gravity_is_the_sites_whatever_the_vehicle_usd_authors(tmp_path):
     """A run's model gravity is the site's 9.81 whatever the vehicle USD's `PhysicsScene` authors."""
-    from nexus._src.physics.builders.usd import USDBuilder
-    from nexus._src.physics.physics import NewtonPhysics
+    from nexus_sim._src.physics.physics import NewtonPhysics
+    from nexus_sim._src.physics.vehicle import VehicleUsd
 
     usd = str(tmp_path / "grav5.usda")
     _author_vehicle_with_gravity(usd, 5.0)
     cfg = {"physics": {"dt": 0.004, "solver": "semi_implicit", "contacts": False}}
 
-    physics = NewtonPhysics(vehicle_builder=USDBuilder({"usd_path": usd}, None), cfg=cfg)
+    physics = NewtonPhysics(vehicle_usd=VehicleUsd({"usd_path": usd}), cfg=cfg)
 
     np.testing.assert_allclose(physics.model.gravity.numpy()[0], (0.0, 0.0, -9.81), atol=1e-6)

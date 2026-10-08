@@ -39,10 +39,10 @@ def test_the_reference_page_is_generated_from_the_plugin():
     Given the plugin, when the hook renders the page, then it carries each schema, the prim types it applies
     to, and each attribute with its unit, limit and default.
     """
-    import nexus  # noqa: F401  # registers the plugin
+    import nexus_sim  # noqa: F401  # registers the plugin
     from pxr import Usd
 
-    from nexus._src.usd import schema_names
+    from nexus_sim._src.usd import schema_names
 
     page = _hook().schema_reference()
     registry = Usd.SchemaRegistry()
@@ -58,3 +58,13 @@ def test_the_reference_page_is_generated_from_the_plugin():
                 expected.append(f"{fallback:g}")
             expected += re.findall(r"(?:Units|Range): (.+)", definition.GetPropertyMetadata(name, "documentation"))
     assert expected and [text for text in expected if text not in page] == []
+
+
+def test_the_reference_page_lists_a_connection_a_schema_declares():
+    """The schema reference lists a connection a schema declares, a relationship, beside its attributes.
+
+    Given the stand-in estimator schema, which declares the connection `nexus:inputs:imu`, when the hook renders
+    its section, then the section holds a row for the connection, typed as a relationship.
+    """
+    page = _hook().schema_reference(["StandInEstimatorAPI"])
+    assert "| `nexus:inputs:imu` | `relationship` |" in page

@@ -1,0 +1,10 @@
+# Prose writes the project's name in lowercase. A capital stays only inside an identifier whose own
+# case rule needs it, such as `NexusImuAPI` or the task `Nexus-AstroMax-GoTo-Direct-v0`, which this
+# rule skips. docs/design/conventions.md states the rule.
+extends: existence
+message: "Write the project's name in lowercase: '%s'."
+link: https://breuerpeter.github.io/nexus/design/conventions/#names
+level: error
+nonword: true
+tokens:
+  - '\b(?:Nexus|NEXUS)\b(?![-\w])'

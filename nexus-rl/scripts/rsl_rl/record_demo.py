@@ -39,9 +39,9 @@ from isaaclab_tasks.utils import load_cfg_from_registry
 from isaaclab_tasks.utils.sim_launcher import launch_simulation
 from rsl_rl.runners import OnPolicyRunner
 
-from nexus._src.logging import Logger
+from nexus_sim._src.logging import Logger
 
-TASK = "Newton-AstroMax-GoTo-Direct-v0"
+TASK = "Nexus-AstroMax-GoTo-Direct-v0"
 
 # Fractions of the full training run to show in the montage: one early "chaos" frame, then dense
 # through the 30–90% band where this task's success actually rises, since entropy + init-state
@@ -92,7 +92,7 @@ def main() -> None:
     ap.add_argument("--out", default="astromax_rl.rrd", help="output .rrd path")
     ap.add_argument(
         "--vehicle_usd", default=None,
-        help="local vehicle USD to spawn (default: the hosted, sha-verified registry asset)",
+        help="local vehicle USD to spawn (default: the hosted, sha-verified catalog asset)",
     )  # fmt: skip
     args, _ = ap.parse_known_args()
     log_dir, num_envs, n_show, out = args.log_dir, args.num_envs, args.num_agents, args.out
@@ -110,7 +110,7 @@ def main() -> None:
 
     task = TASK
     env_cfg = load_cfg_from_registry(task, "env_cfg_entry_point")
-    if args.vehicle_usd:  # load a local Universal Scene Description (USD) file instead of the resolved registry asset
+    if args.vehicle_usd:  # load a local Universal Scene Description (USD) file instead of the resolved catalog asset
         env_cfg.robot.spawn.usd_path = args.vehicle_usd
     env_cfg.scene.num_envs = num_envs
     env_cfg.sim.device = "cuda:0"

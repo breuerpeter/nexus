@@ -14,6 +14,7 @@ pytest.importorskip("rerun")
 pytest.importorskip("newton")
 
 from tests.conftest import fly_recorded
+from tests.usd import sensor_vehicle as sv
 
 # Rerun's kind number for the EntityPath column of a log view.
 ENTITY_PATH_COLUMN = 1
@@ -23,7 +24,7 @@ def test_every_row_the_sim_writes_sits_under_sim(recorded_flight, rrd_rows):
     """Every row the sim writes sits under `sim/`.
 
     Given a recorded flight of a vehicle with mesh shapes, a ground plane, rotor joints, an Inertial
-    Measurement Unit (IMU), cameras, a stand-in controller and an operator, when it ends, then every
+    Measurement Unit (IMU), cameras, a stand-in controller and a guidance, when it ends, then every
     entity path in the `.rrd` starts with `/sim/`. Rerun writes `/__properties` itself.
     """
     entities = {entity for entity, _, _ in rrd_rows(recorded_flight)}
@@ -34,15 +35,15 @@ def test_every_row_the_sim_writes_sits_under_sim(recorded_flight, rrd_rows):
 def test_a_log_record_lands_at_sim_logs_module_and_its_text_is_the_bare_message(tmp_path, rrd_rows):
     """A log record lands at `sim/logs/<module>`, and its text is the bare message.
 
-    Given a recording, when this module calls `nexus.logger.info("hello")`, then the `.rrd` holds a
+    Given a recording, when this module calls `nexus_sim.logger.info("hello")`, then the `.rrd` holds a
     `TextLog` row at `/sim/logs/test_entity_paths` whose text is `hello`.
     """
-    import nexus as na
-    from nexus._src.logging import Logger
+    import nexus_sim as nx
+    from nexus_sim._src.logging import Logger
 
     rrd = str(tmp_path / "log.rrd")
     sink = Logger(model=None, serve=False, record_to_rrd=rrd)
-    na.logger.info("hello")
+    nx.logger.info("hello")
     sink.close()
     texts = [
         text[0]
@@ -60,7 +61,7 @@ def test_the_runs_settings_profile_and_rtf_rows_sit_under_sim_run(tmp_path, rrd_
     Given a recording with settings, when the run logs its Real Time Factor (RTF) and its profile and
     ends, then the `.rrd` holds `/sim/run/settings`, `/sim/run/profile` and `/sim/run/rtf`.
     """
-    from nexus._src.logging import Logger
+    from nexus_sim._src.logging import Logger
 
     rrd = str(tmp_path / "run.rrd")
     sink = Logger(model=None, serve=False, record_to_rrd=rrd, settings={"seed": 42})
@@ -91,17 +92,17 @@ def test_the_vehicle_bodys_pose_sits_at_sim_vehicle_body(recorded_flight, rrd_ro
 def test_a_debug_run_writes_one_frame_per_body_at_sim_vehicle_body_label(tmp_path, rrd_rows):
     """A debug run writes one frame per body at `sim/vehicle/body/<label>`.
 
-    Given a debug recorded run of `astro_max_base`, whose bodies are `body_frd` and four rotors, when
+    Given a debug recorded run of the local fixture vehicle, whose bodies are `body` and four rotors, when
     it ends, then the `.rrd` holds a frame at `/sim/vehicle/body/<label>` for each body and no entity
     at a Universal Scene Description (USD) prim path.
     """
-    rows = rrd_rows(fly_recorded(tmp_path, "astro_max_base", ticks=20, debug=True))
+    rows = rrd_rows(fly_recorded(tmp_path, sv.vehicle(tmp_path), scene=sv.SCENE, ticks=20, debug=True))
     frames = sorted({entity for entity, _, columns in rows if "TransformAxes3D:axis_length" in columns})
-    at_prim_paths = sorted({entity for entity, _, _ in rows if entity.startswith("/astro_max")})
+    at_prim_paths = sorted({entity for entity, _, _ in rows if entity.startswith(sv.ROOT)})
 
     assert (frames, at_prim_paths) == (
         [
-            "/sim/vehicle/body/body_frd",
+            "/sim/vehicle/body/body",
             "/sim/vehicle/body/rotor_1",
             "/sim/vehicle/body/rotor_2",
             "/sim/vehicle/body/rotor_3",

@@ -9,9 +9,9 @@ them cost-only: present for the Signed Distance Field (SDF) avoidance cost + viz
 contact dynamics. No scene-specific loader code anywhere.
 
     uv run python scripts/assets/author_slalom_scene.py /tmp/slalom.usdz
-then prepare it for upload, which prints the sha, the upload key, and the registry snippet:
+then prepare it for upload, which prints the sha, the upload key, and the catalog snippet:
     uv run python scripts/assets/prepare_asset_upload.py --scene /tmp/slalom.usdz
-upload the file to its printed target and paste the snippet into registry.yaml under scenes.slalom.
+upload the file to its printed target and paste the snippet into catalog.yaml under scenes.slalom.
 """
 
 from __future__ import annotations

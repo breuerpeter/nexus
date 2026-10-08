@@ -26,8 +26,8 @@ on:
   push:
     branches: [main]
     paths:
-      - "nexus/examples/**"
-      - "nexus/_src/**"
+      - "nexus_sim/examples/**"
+      - "nexus_sim/_src/**"
       - "scripts/ci/evaluate_examples.py"
       - "scripts/ci/examples_baselines.json"
       - "scripts/ci/px4_image_cache.sh"
@@ -81,20 +81,20 @@ jobs:
             cache-path: ~/.cache/nexus/acados
             cache-name: acados
             cache-files: |
-              nexus/examples/controllers/acados_nmpc/acados.ref
-              nexus/examples/controllers/acados_nmpc/provision.py
+              nexus_sim/examples/controllers/acados_nmpc/acados.ref
+              nexus_sim/examples/controllers/acados_nmpc/provision.py
             setup: >-
               (command -v cmake >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq cmake)) &&
-              uv run --extra acados -m nexus.examples acados_nmpc --provision
+              uv run --locked --extra acados -m nexus_sim.examples acados_nmpc --provision
           - example: px4_sitl
             cache-path: |
               ~/.cache/nexus/px4
               ~/.cache/nexus/ci/px4-sitl.tar
             cache-name: px4
             cache-files: |
-              nexus/_src/peers/px4_sitl/px4.ref
-              nexus/_src/peers/px4_sitl/checkout.py
-              nexus/_src/peers/px4_sitl/image/Dockerfile
+              nexus_sim/_src/peers/px4_sitl/px4.ref
+              nexus_sim/_src/peers/px4_sitl/checkout.py
+              nexus_sim/_src/peers/px4_sitl/image/Dockerfile
             setup: bash scripts/ci/px4_image_cache.sh load
             teardown: bash scripts/ci/px4_image_cache.sh save
     uses: ./.github/workflows/gpu-runner.yml
@@ -105,7 +105,7 @@ jobs:
       cache-files: ${{ matrix.cache-files || '' }}
       command: >-
         ${{ matrix.setup || 'true' }} &&
-        uv run --group ci --extra examples python scripts/ci/evaluate_examples.py
+        uv run --locked --group ci --extra examples python scripts/ci/evaluate_examples.py
         --only ${{ matrix.example }}
         ${{ inputs.update-baselines && '--update-baselines' || '' }}
         ${{ (github.event_name == 'push' || inputs.upload) && '--upload' || '' }} &&
@@ -121,23 +121,27 @@ jobs:
     uses: ./.github/workflows/gpu-runner.yml
     with:
       cache-scope: shared
-      # The box's one cache entry holds the PX4 tree and image and the acados build together.
+      # The box's two entries are main's px4_sitl and acados_nmpc entries above, the same paths,
+      # names and key files: GitHub lets a pull request restore only its own entries and its base
+      # branch's, so a first run restores main's, and one that leaves those files alone saves none.
       cache-path: |
         ~/.cache/nexus/px4
         ~/.cache/nexus/ci/px4-sitl.tar
-        ~/.cache/nexus/acados
-      cache-name: px4-acados
+      cache-name: px4
       cache-files: |
-        nexus/_src/peers/px4_sitl/px4.ref
-        nexus/_src/peers/px4_sitl/checkout.py
-        nexus/_src/peers/px4_sitl/image/Dockerfile
-        nexus/examples/controllers/acados_nmpc/acados.ref
-        nexus/examples/controllers/acados_nmpc/provision.py
+        nexus_sim/_src/peers/px4_sitl/px4.ref
+        nexus_sim/_src/peers/px4_sitl/checkout.py
+        nexus_sim/_src/peers/px4_sitl/image/Dockerfile
+      second-cache-path: ~/.cache/nexus/acados
+      second-cache-name: acados
+      second-cache-files: |
+        nexus_sim/examples/controllers/acados_nmpc/acados.ref
+        nexus_sim/examples/controllers/acados_nmpc/provision.py
       command: >-
         (command -v cmake >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq cmake)) &&
         bash scripts/ci/px4_image_cache.sh load &&
-        uv sync --group ci --extra examples --extra acados --extra policy &&
-        uv run --no-sync -m nexus.examples acados_nmpc --provision &&
+        uv sync --locked --group ci --extra examples --extra acados --extra policy &&
+        uv run --no-sync -m nexus_sim.examples acados_nmpc --provision &&
         uv run --no-sync python scripts/ci/evaluate_examples.py --shared &&
         bash scripts/ci/px4_image_cache.sh save
       artifact-name: examples-eval

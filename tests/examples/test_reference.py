@@ -1,4 +1,4 @@
-"""FlatnessReference, the operator's ruckig + differential-flatness planner: plans a valid jerk-limited
+"""FlatnessReference, the guidance's ruckig + differential-flatness planner: plans a valid jerk-limited
 trajectory through the waypoints and lifts it to the full flat state. CPU-only, with ruckig + numpy.
 """
 
@@ -7,7 +7,7 @@ import pytest
 
 pytest.importorskip("ruckig")
 
-from nexus.examples._lib.reference import FlatnessReference
+from nexus_sim.examples._lib.reference import FlatnessReference
 
 
 def _ref():

@@ -22,7 +22,7 @@ Hardware In The Loop (HIL) link on `:4560`.
 | Flight | PX4 closed-loop: `AUTO.TAKEOFF` → arm → climb → 4 yaw sweeps, the one flight profile |
 | Takeoff | **confirmed**, climbed **+5.0 m**, yawed 90/180/270/0° |
 | PX4 warnings | **0**, gated: the run fails on any `WARN` or `ERROR` line about the sim |
-| Rotor chain | The rotors' command stage, USD-authored `newton.actuators` DC-motor servos on the real rotor joints, one `NewtonActuator` prim each, and the propellers' force element from each rotor body's `NexusPropellerAPI` |
+| Rotor chain | The rotors' command element, USD-authored `newton.actuators` DC-motor servos on the real rotor joints, one `NewtonActuator` prim each, and the propellers' force element from each rotor body's `NexusPropellerAPI` |
 | **Sim speed with PX4** | **~3.7×** real-time on the GPU with the captured strategy, RTX 5080, for the full takeoff+yaw profile with recording on |
 
 **Clean log gate.** The flight asserts **zero PX4 warnings**, the `px4_warnings` metric gated to 0.
@@ -38,7 +38,7 @@ forgives the line whatever topic it names. The gate caught a real fidelity bug. 
 fed the magnetometer a *Zurich* World Magnetic Model (WMM) field while the
 Global Positioning System (GPS) origin is *Seattle*, so PX4's strict mag check, `EKF2_MAG_CHK_STR`,
 intermittently failed with `Strong magnetic interference`. The fix computes the field at the GPS
-origin from PX4's own coarse WMM table, `nexus._src.core.geomag`, ported from PX4's
+origin from PX4's own coarse WMM table, `nexus_sim._src.core.geomag`, ported from PX4's
 `geo_mag_declination.cpp` as PegasusSimulator and `PX4-SITL_gazebo` do, plus a realistic
 magnetometer σ. The warning is now gone and arming is faster.
 
@@ -51,7 +51,7 @@ Predictive Control (NMPC) example **halved** when it switched to the same actuat
 The sim speed is the **real-time factor of the flight itself**: sim-time advanced divided by wall-time,
 with PX4 in the lockstep loop. The orchestrator reports it on exit. The loop runs on the
 **GPU**, which `--device auto` takes when one is present: one CUDA graph replays the device stages,
-and PX4's `read` and `exchange` host stages run between replays. The per-tick
+and PX4's `truth` and `exchange` host stages run between replays. The per-tick
 budget is roughly **53% GPU step**, **20% PX4 MAVLink exchange**, and **27% `.rrd` logging**. The GPU
 step is mujoco-warp at `batch=1`: a single drone is latency-bound, not throughput-bound, so this is the
 floor for one env on this solver. Logging decimates to 50 Hz. Logging the full scene at the 250 Hz sim
@@ -71,14 +71,14 @@ for non-flight throughput runs.
 
 ## Run it
 
-This is the decoupled workflow, headless and end-to-end. `docs/running.md` has the interactive
+This is the decoupled workflow, headless and end-to-end. [Running a SITL flight](../guide/running.md) has the interactive
 QGroundControl version:
 
 ```bash
-# closed-loop flight, one na.Sim run: nexus serves the HIL :4560 itself + records the .rrd +
+# closed-loop flight, one nx.Sim run: nexus serves the HIL :4560 itself + records the .rrd +
 # reports the with-PX4 RTF; PX4 SITL connects; the harness flies THE one PX4 flight profile
-# (a script against nexus.px4.OffboardClient over MAVLink :14540: arm + AUTO.TAKEOFF + yaw sweeps). Zero-arg.
-uv run -m nexus.examples px4_sitl
+# (a script against nexus_sim.px4.OffboardClient over MAVLink :14540: arm + AUTO.TAKEOFF + yaw sweeps). Zero-arg.
+uv run -m nexus_sim.examples px4_sitl
 
 # or the example + the evaluation/regression gates at once
 uv run --group ci python scripts/ci/evaluate_examples.py --only px4_sitl
@@ -91,7 +91,7 @@ run fetches and builds the PX4 tree the controller pins, and `PX4_DIR` names a c
 
 `scripts/ci/evaluate_examples.py` runs this example on a GPU box of its own, one box per example,
 in the `gpu-examples` workflow via the shared `gpu-runner.yml`. The box fetches and builds the PX4
-tree from the pin the controller ships, `nexus/_src/peers/px4_sitl/px4.ref`, the way a
+tree from the pin the controller ships, `nexus_sim/_src/peers/px4_sitl/px4.ref`, the way a
 user's first run does, and caches the tree and the `px4-sitl` image under that pin. The script then
 gates the fresh run against `scripts/ci/examples_baselines.json`. It fails if the closed-loop
 takeoff stops working,

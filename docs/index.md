@@ -1,11 +1,11 @@
 ---
-description: "nexus, a GPU-accelerated drone simulation framework on NVIDIA Newton, built for fast, batched, and differentiable flight simulation."
+description: "The nexus GPU-accelerated drone simulation framework on NVIDIA Newton, built for fast, batched, and differentiable flight simulation."
 hide:
   - navigation
   - toc
 ---
 
-![nexus: GPU-accelerated drone simulation](assets/lockup-banner.svg){ .hero }
+![The nexus logo: GPU-accelerated drone simulation](assets/lockup-banner.svg){ .hero }
 
 *nexus* is a GPU-accelerated drone simulation framework on NVIDIA Newton and Omniverse,
 built for fast, batched, and differentiable flight simulation.

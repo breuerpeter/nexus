@@ -45,7 +45,7 @@ def _python(code: str, *, cwd: Path, pythonpath: Path) -> list[str]:
 
 def test_a_registry_resolves_a_schema_to_the_class_it_maps():
     """A registry resolves a schema to the class it maps."""
-    from nexus._src.core.registry import ComponentRegistry
+    from nexus_sim._src.core.registry import ComponentRegistry
 
     class StandIn:
         """A stand-in component class."""
@@ -57,14 +57,14 @@ def test_a_registry_resolves_an_import_path_to_the_class_it_names():
     """A registry resolves an entry given as an import path, `module:Class`, to the class it names."""
     import json
 
-    from nexus._src.core.registry import ComponentRegistry
+    from nexus_sim._src.core.registry import ComponentRegistry
 
     assert ComponentRegistry({"JsonAPI": "json:JSONDecoder"}).resolve("JsonAPI") is json.JSONDecoder
 
 
 def test_a_registry_resolves_an_entry_added_after_its_creation():
     """A registry resolves an entry that `add` gives it after its creation."""
-    from nexus._src.core.registry import ComponentRegistry
+    from nexus_sim._src.core.registry import ComponentRegistry
 
     class StandIn:
         """A stand-in component class."""
@@ -88,8 +88,8 @@ def test_an_installed_package_with_an_entry_in_the_group_builds_its_class_with_n
     )
     vehicle = tmp_path / "vehicle.usda"
     code = f"""
-import nexus
-from nexus._src.build.components import resolve_components
+import nexus_sim
+from nexus_sim._src.build.components import resolve_components
 author_stand_in({str(vehicle)!r})
 (ai,) = resolve_components({str(vehicle)!r})
 print(">", ai.cls.__module__, ai.cls.__name__)
@@ -106,9 +106,9 @@ def test_a_project_adds_an_entry_to_the_default_registry_through_a_public_regist
     vehicle = tmp_path / "vehicle.usda"
     code = f"""
 import nexus_stand_in  # registers the stand-in schema plugin
-import nexus
-from nexus._src.core.registry import register_component
-from nexus._src.build.components import resolve_components
+import nexus_sim
+from nexus_sim._src.core.registry import register_component
+from nexus_sim._src.build.components import resolve_components
 from nexus_stand_in.heavy import StandIn
 register_component("StandInAPI", StandIn)
 author_stand_in({str(vehicle)!r})
@@ -125,10 +125,10 @@ def test_a_registry_handed_to_the_builder_replaces_the_default_and_leaves_it_unt
     when resolved, then the prim resolves to the stand-in, and a later build with the default resolves it
     to the IMU class.
     """
-    from nexus._src.build.components import resolve_components
-    from nexus._src.core.registry import ComponentRegistry
-    from nexus._src.usd import schema_names
-    from nexus._src.vehicle.sensors import ImuSensor
+    from nexus_sim._src.build.components import resolve_components
+    from nexus_sim._src.core.registry import ComponentRegistry
+    from nexus_sim._src.usd import schema_names
+    from nexus_sim._src.vehicle.sensors import ImuSensor
 
     class StandIn:
         """A stand-in component class."""
@@ -153,8 +153,8 @@ def test_the_default_registry_builds_a_propeller_from_its_schemas_keywords():
 
     import pytest
 
-    from nexus._src.build.components import resolve_components
-    from nexus._src.vehicle.forces.propellers import Propeller
+    from nexus_sim._src.build.components import resolve_components
+    from nexus_sim._src.vehicle.forces.propellers import Propeller
 
     (rotor,) = [spec for spec in resolve_components(FIXTURE) if spec.schema == "NexusPropellerAPI"]
     built = rotor.cls(**rotor.kwargs)
@@ -172,9 +172,9 @@ def test_the_build_imports_an_entry_class_only_when_a_run_declares_its_schema(tm
     code = f"""
 import sys
 import nexus_stand_in  # registers the stand-in schema plugin
-import nexus
-from nexus._src.core.registry import register_component
-from nexus._src.build.components import resolve_components
+import nexus_sim
+from nexus_sim._src.core.registry import register_component
+from nexus_sim._src.build.components import resolve_components
 register_component("StandInAPI", "nexus_stand_in.heavy:StandIn")
 author_bare({str(bare)!r})
 resolve_components({str(bare)!r})
@@ -186,14 +186,14 @@ print(">", "nexus_stand_in.heavy" in sys.modules)
     assert _python(code, cwd=tmp_path, pythonpath=STAND_IN) == ["False", "True"]
 
 
-def test_the_provider_registry_goes_and_nexus_registry_still_names_the_catalog():
-    """The provider registry nothing calls goes, and `nexus.Registry` still names the catalog.
+def test_the_provider_registry_goes_and_nexus_catalog_names_the_catalog():
+    """The provider registry nothing calls goes, and `nexus_sim.Catalog` names the catalog.
 
-    Given `import nexus`, when the test looks, then `nexus._src.core` exports no `Registry`
-    and `nexus.Registry` resolves the catalog.
+    Given `import nexus_sim`, when the test looks, then `nexus_sim._src.core` exports no `Registry`
+    and `nexus_sim.Catalog` resolves the catalog.
     """
-    import nexus as na
-    import nexus._src.core as core
-    from nexus._src.config import Registry as Catalog
+    import nexus_sim as nx
+    import nexus_sim._src.core as core
+    from nexus_sim._src.config import Catalog
 
-    assert (hasattr(core, "Registry"), na.Registry) == (False, Catalog)
+    assert (hasattr(core, "Registry"), nx.Catalog) == (False, Catalog)

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from nexus.examples.controllers.acados_nmpc import provision
+from nexus_sim.examples.controllers.acados_nmpc import provision
 
 PINNED = "f22001ac39773eb9988b9f04b4d38378818d10d6"
 

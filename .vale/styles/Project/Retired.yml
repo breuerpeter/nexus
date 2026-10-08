@@ -1,0 +1,29 @@
+# A word the framework retired, for a concept it renamed or removed. docs/design/concepts.md defines
+# each term the code uses, and a change that retires a word adds it here in the same pull request. A
+# word that keeps a live sense is matched only in the phrases of its retired one: "plugin" stays for
+# the schema plugin, "registry" for the component registry, "observation" for a controller's input,
+# "builder" for the run's builder, and "operator" for the ground operator, the person and the apps
+# that fly the aircraft.
+extends: existence
+message: "'%s' is a retired word: docs/design/concepts.md names the one to use."
+link: https://breuerpeter.github.io/nexus/design/concepts/
+level: error
+ignorecase: true
+tokens:
+  - 'command stages?'
+  - 'host[ -]boundar(?:y|ies)'
+  - '(?:loop|peer) faces?'
+  - 'control[ -]surfaces?'
+  - 'launch glue'
+  - 'in-process (?:[\w-]+ ){0,2}controllers?'
+  - '(?:physics|\w*sensor|\w*controller) plugins?'
+  - "run's operator"
+  - 'operator(?: seams?| objects?| protocols?| verbs?|-planned)'
+  - 'operator (?:feeds|plans|sequences|hands)'
+  - 'observation (?:channels?|sinks?|seams?|stores?|taps?)'
+  - 'registry (?:vehicles?|scenes?|assets?|rows?|snippets?)'
+  - '(?:nexus\.)?registry\.yaml'
+  - 'USDBuilder|BuilderBase|vehicle[ _]builders?'
+  - 'RigidBodyRotors'
+  - 'State ?Sensor'
+  - "sensors?'? (?:fan-in|measurements?)"

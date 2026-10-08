@@ -1,12 +1,15 @@
-"""The seams the loop drives take no ambient sample: physics, the actuator and each sensor read the
+"""The contracts the loop drives take no ambient sample: physics, the actuator and each sensor read the
 state and the clock, and nothing else. Warp-free stubs, as in test_orchestrator_stop.py.
 """
 
+from dataclasses import dataclass
+
 import pytest
 
-from nexus._src.core.interfaces import Stage
-from nexus._src.core.orchestrator import Orchestrator
-from nexus._src.core.schema import Controls, SimTime
+from nexus_sim._src.core.interfaces import Stage
+from nexus_sim._src.core.orchestrator import Orchestrator
+from nexus_sim._src.core.schema import Controls, SimTime
+from nexus_sim._src.core.signals import Signal
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")  # Python stand-ins run stage by stage, never as a graph
 
@@ -55,32 +58,41 @@ class _Actuator:
         state["q"] += 1
 
     def stages(self):
-        return [Stage("forces", "device", lambda tick: self.forces(tick.controls, tick.state))]
+        return [Stage("forces", "device", lambda tick: self.forces(None, tick.state))]
+
+
+@dataclass
+class _Reading:
+    """The state's one number, as the sensor sampled it: a host signal's value."""
+
+    q: int
 
 
 class _Sensor:
-    """Copies the state into the measurement, so what the controller receives shows the sensor ran."""
+    """Copies the state into the signal `q`, so what the controller reads shows the sensor ran."""
 
-    def sample(self, state, t, out):
-        out.temperature = state["q"]
+    def __init__(self):
+        self.out = Signal("q", _Reading)
+
+    def sample(self, state, t):
+        self.out.write(_Reading(state["q"]))
 
     def stages(self):
-        return [Stage("sample", "device", lambda tick: self.sample(tick.state, tick.t, tick.meas))]
+        return [Stage("sample", "host", lambda tick: self.sample(tick.state, tick.t), writes=(self.out,))]
 
 
 class _Controller:
-    """Answers the seed pass at once and keeps the last measurement it received: the read and
-    exchange host stages over ``exchange``.
-    """
+    """Answers the seed pass at once and keeps the last reading of the signal `q` its exchange read."""
 
     def __init__(self):
-        self.meas = None
+        self.q = Signal("q", _Reading)
+        self.last = None
 
     def connect(self):
         pass
 
-    def exchange(self, meas, t, timeout):
-        self.meas = meas
+    def exchange(self, t, timeout):
+        self.last = self.q.read()
         return Controls(command=[0.0, 0.0, 0.0, 0.0])
 
     def close(self):
@@ -88,16 +100,15 @@ class _Controller:
 
     def stages(self):
         def exchange(tick):
-            tick.controls = self.exchange(tick.meas, tick.t, None)
-            return tick.controls is not None
+            return self.exchange(tick.t, None) is not None
 
-        return [Stage("read", "host", lambda tick: None), Stage("exchange", "host", exchange)]
+        return [Stage("exchange", "host", exchange, reads=(self.q,))]
 
 
 def test_the_loop_runs_a_tick_on_seams_that_take_no_env():
-    """The loop runs a tick on seams that take no `env`: `Physics.step(state, dt)`,
-    `Actuator.forces(controls, state)` and `Sensor.sample(state, t, out)`. A tick's exchange follows
-    its step, so the second tick's measurement carries the state after two ticks.
+    """The loop runs a tick on contracts that take no `env`: `Physics.step(state, dt)`,
+    `Actuator.forces(controls, state)` and `Sensor.sample(state, t)`. A tick's exchange follows its step, so
+    the second tick's sample carries the state after two ticks.
     """
     controller = _Controller()
     orch = Orchestrator(
@@ -111,5 +122,5 @@ def test_the_loop_runs_a_tick_on_seams_that_take_no_env():
 
     orch.run()
 
-    # Sampled 0 at the seed pass; tick one actuates to 1 and steps to 10; tick two to 11 and 110.
-    assert controller.meas.temperature == 110
+    # Tick one actuates to 1 and steps to 10; tick two to 11 and 110, which the sensor samples.
+    assert controller.last == _Reading(110)

@@ -1,41 +1,22 @@
 """``nexus`` command-line tool parsing/validation: the command surface only, no run starts."""
 
-import hashlib
 import importlib
 
 import pytest
 
-cli = importlib.import_module("nexus._src.cli.main")
+cli = importlib.import_module("nexus_sim._src.cli.main")
 
-# A vehicle that declares PX4 and authors no camera.
+# A vehicle that declares PX4 on its controller's scope and authors no camera.
 PLAIN_USD = (
     '#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n'
-    'def Xform "vehicle" (\n    prepend apiSchemas = ["NexusPx4API"]\n)\n{\n    string nexus:airframe = "astro_max"\n}\n'
+    'def Xform "vehicle"\n{\n    def Scope "Controller" (\n        prepend apiSchemas = ["NexusPx4API"]\n    )\n'
+    '    {\n        string nexus:airframe = "astro_max"\n    }\n}\n'
 )
 
 
 def test_log_and_view_are_exclusive(monkeypatch):
     monkeypatch.setattr("sys.argv", ["nexus", "run", "--log", "--view"])
     with pytest.raises(SystemExit):
-        cli.main()
-
-
-def test_stream_on_a_vehicle_without_a_camera_fails_before_the_run(monkeypatch, tmp_path):
-    """--stream publishes the camera feeds, so a vehicle that authors no camera has nothing to stream."""
-    pytest.importorskip("pxr")
-    usd = tmp_path / "plain.usda"
-    usd.write_text(PLAIN_USD)
-    registry = tmp_path / "catalog.yaml"
-    registry.write_text(
-        "vehicles:\n  plain:\n"
-        f'    usd: {{ url: "{usd.as_uri()}", sha256: {hashlib.sha256(usd.read_bytes()).hexdigest()} }}\n'
-        "scenes:\n  empty: {}\n"
-    )
-    monkeypatch.setenv("NEXUS_ASSET_CACHE", str(tmp_path / "cache"))
-    monkeypatch.setattr(
-        "sys.argv", ["nexus", "run", "--stream", "--vehicle", "plain", "--scene", "empty", "--registry", str(registry)]
-    )
-    with pytest.raises(ValueError, match="camera"):
         cli.main()
 
 
@@ -75,6 +56,22 @@ def test_control_is_no_flag_of_the_command_line_tool(monkeypatch, tmp_path, caps
     with pytest.raises(SystemExit) as e:
         cli.main()
     assert (e.value.code, "unrecognized arguments: --control" in capsys.readouterr().err) == (2, True)
+
+
+def test_nexus_run_rejects_stream(monkeypatch, tmp_path, capsys):
+    """The `nexus run` command rejects `--stream`: a camera's feed has nowhere to publish until a vehicle
+    declares a companion.
+
+    Given `nexus run --stream`, when it parses, then it exits with argparse's unrecognized-argument
+    error. The vehicle names a file that doesn't exist and `DOCKER_HOST` points nowhere, so no run can
+    start if the tool still takes the flag.
+    """
+    monkeypatch.setenv("DOCKER_HOST", f"unix://{tmp_path / 'no-daemon.sock'}")
+    missing = tmp_path / "missing.usda"
+    monkeypatch.setattr("sys.argv", ["nexus", "run", "--stream", "--vehicle", str(missing), "--scene", "empty"])
+    with pytest.raises(SystemExit) as e:
+        cli.main()
+    assert (e.value.code, "unrecognized arguments: --stream" in capsys.readouterr().err) == (2, True)
 
 
 def _said_when_run(monkeypatch, capsys, tmp_path, *argv):
@@ -120,17 +117,47 @@ def test_a_run_on_a_catalog_with_a_defaults_block_fails_and_says_to_name_the_veh
     """A project catalog with a `defaults` block fails to load, and the error names the removal and
     says to name the vehicle and scene on the run.
 
-    Given a `nexus.registry.yaml` with `defaults: { vehicle: my_quad }`, when a run that names its
+    Given a `nexus.catalog.yaml` with `defaults: { vehicle: my_quad }`, when a run that names its
     vehicle and scene loads it, then it fails with an error that names `defaults` as removed and
     points at `--vehicle` and `--scene`.
     """
-    catalog = tmp_path / "nexus.registry.yaml"
+    catalog = tmp_path / "nexus.catalog.yaml"
     catalog.write_text(
         'vehicles:\n  my_quad:\n    usd: { url: "file:///my_quad.usda", sha256: abc }\ndefaults: { vehicle: my_quad }\n'
     )
-    argv = ("--registry", str(catalog), "--vehicle", "astro_max_base", "--scene", "empty")
+    argv = ("--catalog", str(catalog), "--vehicle", "astro_max_base", "--scene", "empty")
     failed, said = _said_when_run(monkeypatch, capsys, tmp_path, *argv)
     assert (failed, [w in said for w in ("defaults", "remov", "--vehicle", "--scene")]) == (True, [True] * 4)
+
+
+def test_a_run_told_its_catalog_flies_the_vehicles_of_that_file(monkeypatch, capsys, tmp_path):
+    """`nexus run --catalog <file>` and `Sim(..., catalog=<file>)` fly the vehicles of that file
+    beside the bundled ones.
+
+    Given a catalog file outside the working directory that lists a vehicle at a local Universal Scene
+    Description (USD) path, when the command line parses `--catalog <file>`, and when `Sim` takes
+    `catalog=<file>`, then the vehicle resolves from that file in both: each run goes on to fetch the
+    vehicle's file that the catalog lists, which stops it, since the entry's hash is a stand-in.
+    """
+    from nexus_sim import Sim
+
+    usd = tmp_path / "assets" / "project_vehicle.usda"
+    usd.parent.mkdir()
+    usd.write_text(PLAIN_USD)
+    catalog = tmp_path / "elsewhere" / "project.yaml"
+    catalog.parent.mkdir()
+    catalog.write_text(f'vehicles:\n  project_vehicle:\n    usd: {{ url: "file://{usd}", sha256: "0" }}\n')
+    work = tmp_path / "work"
+    work.mkdir()
+    monkeypatch.chdir(work)
+
+    argv = ("--catalog", str(catalog), "--vehicle", "project_vehicle", "--scene", "empty")
+    _, by_cli = _said_when_run(monkeypatch, capsys, tmp_path, *argv)
+    with pytest.raises(BaseException) as by_sim:
+        with Sim("project_vehicle", scene="empty", catalog=str(catalog), device="cpu"):
+            pass
+
+    assert (usd.name in by_cli, usd.name in str(by_sim.value)) == (True, True)
 
 
 # --- the override layer, and the PX4 flags that go -------------------------------------------------
@@ -175,8 +202,8 @@ def test_the_command_line_takes_the_layer(monkeypatch, tmp_path, warp_cpu):
     stand-in docker daemon, when `nexus run --vehicle … --scene empty --layer <layer>` runs, then PX4 Software
     In The Loop (SITL) starts on the layer's airframe, `PX4_SIM_MODEL=none_bar`, as the same run through `Sim` does.
     """
-    import nexus._src.peers.containers as containers
-    from nexus._src.api.sim import Sim
+    import nexus_sim._src.peers.containers as containers
+    from nexus_sim._src.api.sim import Sim
 
     daemon = _Daemon()
     monkeypatch.setattr(containers, "client", lambda: daemon)
@@ -192,7 +219,9 @@ def test_the_command_line_takes_the_layer(monkeypatch, tmp_path, warp_cpu):
         PLAIN_USD.replace('["NexusPx4API"]', '["NexusPx4API", "NexusPx4SitlAPI"]').replace('"astro_max"', '"foo"')
     )
     layer = tmp_path / "override.usda"
-    layer.write_text('#usda 1.0\n\nover "vehicle"\n{\n    string nexus:airframe = "bar"\n}\n')
+    layer.write_text(
+        '#usda 1.0\n\nover "vehicle"\n{\n    over "Controller"\n    {\n        string nexus:airframe = "bar"\n    }\n}\n'
+    )
 
     def started(run) -> list[str]:
         daemon.runs.clear()
@@ -223,7 +252,7 @@ def test_the_px4_flags_are_gone(monkeypatch, tmp_path, capsys):
     `TypeError`. The vehicle names a file that doesn't exist and `DOCKER_HOST` points nowhere, so no
     run can start if the tool still takes a flag.
     """
-    from nexus._src.api.sim import Sim
+    from nexus_sim._src.api.sim import Sim
 
     monkeypatch.setenv("DOCKER_HOST", f"unix://{tmp_path / 'no-daemon.sock'}")
     missing = str(tmp_path / "missing.usda")

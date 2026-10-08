@@ -73,15 +73,15 @@ jobs:
         ${{ matrix.cell.renders && '~/.cache/nexus/kit' || '' }}
       cache-name: ${{ matrix.cell.renders && 'px4-kit' || 'px4' }}
       cache-files: |
-        nexus/_src/peers/px4_sitl/px4.ref
-        nexus/_src/peers/px4_sitl/checkout.py
-        nexus/_src/peers/px4_sitl/image/Dockerfile
-        ${{ matrix.cell.renders && 'nexus/_src/peers/kit/peer-src/*' || '' }}
+        nexus_sim/_src/peers/px4_sitl/px4.ref
+        nexus_sim/_src/peers/px4_sitl/checkout.py
+        nexus_sim/_src/peers/px4_sitl/image/Dockerfile
+        ${{ matrix.cell.renders && 'nexus_sim/_src/peers/kit/peer-src/*' || '' }}
       cache-drop: ${{ matrix.cell.renders && '~/.cache/nexus/kit/home/.cache/ov/cesium-request-cache.sqlite*' || '' }}
       cache-scope: ${{ matrix.cell.tag }}
       command: >-
         bash scripts/ci/px4_image_cache.sh load &&
-        uv run python scripts/ci/benchmark_matrix.py --cell ${{ matrix.cell.tag }} --work .eval-artifacts/matrix &&
+        uv run --locked python scripts/ci/benchmark_matrix.py --cell ${{ matrix.cell.tag }} --work .eval-artifacts/matrix &&
         bash scripts/ci/px4_image_cache.sh save
       artifact-name: benchmark-cell-${{ matrix.cell.tag }}
       artifact-path: .eval-artifacts

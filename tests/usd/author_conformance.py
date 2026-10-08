@@ -9,19 +9,20 @@ from pathlib import Path
 
 from pxr import Gf, Usd, UsdGeom
 
-import nexus  # noqa: F401  # registers the nexus schema plugin
+import nexus_sim  # noqa: F401  # registers the nexus schema plugin
 
 
 def author(out: Path) -> None:
-    """Write the fixture to `out`: PX4 and its Software In The Loop (SITL) peer on the default prim, one body under it with an Inertial Measurement Unit (IMU) on a lever arm and one prim for each other sensor schema, and one rotor body with a propeller."""
+    """Write the fixture to `out`: PX4 and its Software In The Loop (SITL) peer on a scope under the default prim, one body under it with an Inertial Measurement Unit (IMU) on a lever arm and one prim for each other sensor schema, and one rotor body with a propeller."""
     stage = Usd.Stage.CreateNew(str(out))
     UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
     UsdGeom.SetStageMetersPerUnit(stage, 1.0)
     vehicle = UsdGeom.Xform.Define(stage, "/Vehicle")
     stage.SetDefaultPrim(vehicle.GetPrim())
-    vehicle.GetPrim().ApplyAPI("NexusPx4API")
-    vehicle.GetPrim().GetAttribute("nexus:airframe").Set("astro_max")
-    vehicle.GetPrim().ApplyAPI("NexusPx4SitlAPI")
+    controller = UsdGeom.Scope.Define(stage, "/Vehicle/Controller").GetPrim()
+    controller.ApplyAPI("NexusPx4API")
+    controller.GetAttribute("nexus:airframe").Set("astro_max")
+    controller.ApplyAPI("NexusPx4SitlAPI")
     UsdGeom.Xform.Define(stage, "/Vehicle/body")
     imu = UsdGeom.Xform.Define(stage, "/Vehicle/body/Imu")
     imu.AddTranslateOp().Set(Gf.Vec3d(0.01, -0.02, 0.03))

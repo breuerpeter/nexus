@@ -1,6 +1,6 @@
 """The loop runs each component's work as device and host stages: every component states its stages,
 each maximal run of device stages replays as one CUDA graph, and the host stages run between replays.
-Stand-in components at the loop's seams; the CUDA tests skip without a device and scope the one they
+Stand-in components in the loop's roles; the CUDA tests skip without a device and scope the one they
 use, so the default device is the same after them.
 """
 
@@ -12,9 +12,9 @@ pytest.importorskip("warp")
 
 import warp as wp
 
-from nexus._src.core.interfaces import Stage
-from nexus._src.core.orchestrator import Orchestrator
-from nexus._src.core.schema import Controls, SimTime
+from nexus_sim._src.core.interfaces import Stage
+from nexus_sim._src.core.orchestrator import Orchestrator
+from nexus_sim._src.core.schema import Controls, SimTime
 
 
 @wp.kernel
@@ -78,7 +78,7 @@ class _Actuator:
         pass
 
     def stages(self):
-        return [Stage("forces", "device", lambda tick: self.forces(tick.controls, tick.state))]
+        return [Stage("forces", "device", lambda tick: self.forces(None, tick.state))]
 
 
 class _GraphSensor:
@@ -86,13 +86,10 @@ class _GraphSensor:
 
     capturable = True
 
-    def sample(self, state, t, meas):
+    def sample(self, state, t):
         pass
 
     def sample_wp(self, state, t):
-        pass
-
-    def read(self, meas):
         pass
 
     def stages(self):
@@ -109,21 +106,19 @@ class _HostSensor:
     def __init__(self):
         self.captured = []
 
-    def sample(self, state, t, meas):
+    def sample(self, state, t):
         self.captured.append(wp.get_device().is_capturing)
 
     def stages(self):
-        return [Stage("sample", "host", lambda tick: self.sample(tick.state, tick.t, tick.meas))]
+        return [Stage("sample", "host", lambda tick: self.sample(tick.state, tick.t))]
 
 
 class _PeerController:
-    """A controller with a peer, the PX4 shape: a ``read`` and an ``exchange`` host stage, plus one
+    """A controller with a peer, the PX4 shape: two host stages, ``truth`` and ``exchange``, plus one
     device stage that bumps its own buffer, which exists from construction because the loop captures
     before a peer connects. ``answers`` says which exchanges the peer answers; ``attached`` says when
     the peer dialed in. It keeps every exchange and device-stage call.
     """
-
-    host_boundary = True
 
     def __init__(self, *, attached=True, answers=lambda n: True):
         self.attached = attached
@@ -136,7 +131,7 @@ class _PeerController:
     def connect(self):
         pass
 
-    def exchange(self, meas, t, timeout):
+    def exchange(self, t, timeout):
         self.calls += 1
         if not self._answers(self.calls):
             return None
@@ -151,11 +146,10 @@ class _PeerController:
 
     def stages(self):
         def exchange(tick):
-            tick.controls = self.exchange(tick.meas, tick.t, None)
-            return tick.controls is not None
+            return self.exchange(tick.t, None) is not None
 
         return [
-            Stage("read", "host", lambda tick: None),
+            Stage("truth", "host", lambda tick: None),
             Stage("exchange", "host", exchange),
             Stage("act", "device", self._act, warm=False),
         ]
@@ -173,7 +167,7 @@ class _DeviceController:
     def connect(self):
         self.act = wp.zeros(1, dtype=wp.int32)
 
-    def exchange(self, meas, t, timeout):
+    def exchange(self, t, timeout):
         self.exchange_calls += 1
         return Controls(command=[0.0, 0.0, 0.0, 0.0])
 
@@ -251,11 +245,10 @@ def _messages(caplog):
 
 
 def _cuda():
-    if not wp.is_cuda_available():
-        pytest.skip("no CUDA device")
     return wp.ScopedDevice("cuda:0")
 
 
+@pytest.mark.gpu
 def test_a_controllers_device_stages_replay_in_the_graph_and_its_host_stages_run_between():
     """A controller written against the stage contract flies: its device stages replay inside the graph
     and its host stages run once per tick between replays. Over two steady ticks the host stage ran
@@ -290,18 +283,20 @@ def test_a_component_with_no_stages_fails_the_build_naming_it(controller):
         _orch(controller).step()
 
 
+@pytest.mark.gpu
 def test_a_run_logs_its_stage_plan_with_its_host_stages(caplog):
     """A run logs its stage plan once at start: each captured segment and the host stages between them.
-    The PX4 shape: one line naming one segment and the ``read`` and ``exchange`` host stages.
+    The PX4 shape: one line naming one segment and the ``truth`` and ``exchange`` host stages.
     """
     with _cuda(), caplog.at_level(logging.INFO, logger="nexus"):
         orch = _orch(_PeerController())
         orch.step()
         orch.close()
     plans = [m for m in _messages(caplog) if m.startswith("stage plan:")]
-    assert len(plans) == 1 and plans[0].count("graph(") == 1 and "read" in plans[0] and "exchange" in plans[0]
+    assert len(plans) == 1 and plans[0].count("graph(") == 1 and "truth" in plans[0] and "exchange" in plans[0]
 
 
+@pytest.mark.gpu
 def test_a_run_logs_its_stage_plan_as_one_segment_for_device_stages_only(caplog):
     """A run logs its stage plan once at start. The Proportional Integral Derivative (PID) shape: one
     segment and no host stage.
@@ -357,6 +352,7 @@ def test_a_peer_that_stops_answering_mid_flight_ends_the_run_normally(caplog):
     )
 
 
+@pytest.mark.gpu
 def test_physics_substeps_run_that_many_physics_steps_per_tick_when_captured():
     """``physics_substeps`` greater than 1 runs that many physics steps per tick on the captured path, as eager
     does: with two substeps, five ticks add ten physics steps.
@@ -391,8 +387,8 @@ class _Noting(_Physics):
         return state
 
 
-class _CommandStage:
-    """A command stage: one device stage that notes when it runs."""
+class _CommandElement:
+    """A command element: one device stage that notes when it runs."""
 
     def __init__(self, notes):
         self.notes = notes
@@ -411,11 +407,11 @@ class _ForceElement:
         return [Stage("force", "device", lambda tick: self.notes.append("force"))]
 
 
-def test_a_tick_runs_clear_the_command_stages_the_force_stages_and_step_once_per_substep():
-    """A tick runs `clear`, the command stages, the force stages and `step`, in that order, once per
+def test_a_tick_runs_clear_the_command_elements_the_force_elements_and_step_once_per_substep():
+    """A tick runs `clear`, the command elements, the force elements and `step`, in that order, once per
     physics substep.
 
-    Given a loop with stand-in physics, a stand-in command stage and a stand-in force element that each
+    Given a loop with stand-in physics, a stand-in command element and a stand-in force element that each
     note when they run, when one tick runs with two physics substeps, then the notes read clear, command,
     force, step, twice over.
     """
@@ -424,7 +420,7 @@ def test_a_tick_runs_clear_the_command_stages_the_force_stages_and_step_once_per
         orch = Orchestrator(
             clock=_Clock(),
             physics=_Noting(notes),
-            commands=[_CommandStage(notes)],
+            commands=[_CommandElement(notes)],
             forces=[_ForceElement(notes)],
             sensors=[_GraphSensor()],
             controller=_DeviceController(),
@@ -436,10 +432,10 @@ def test_a_tick_runs_clear_the_command_stages_the_force_stages_and_step_once_per
 
 
 @pytest.mark.parametrize("role", ["commands", "forces"])
-def test_a_command_stage_or_a_force_element_that_states_no_stages_fails_the_build_naming_it(role):
-    """A command stage or a force element that states no stages fails the build and names it.
+def test_a_command_element_or_a_force_element_that_states_no_stages_fails_the_build_naming_it(role):
+    """A command element or a force element that states no stages fails the build and names it.
 
-    Given a run with a stand-in command stage that states no stages, and one with such a force element,
+    Given a run with a stand-in command element that states no stages, and one with such a force element,
     when each loop builds, then each fails and the error names the stand-in's class.
     """
     with wp.ScopedDevice("cpu"), pytest.raises(ValueError, match="_Stageless"):
@@ -452,8 +448,9 @@ def test_a_command_stage_or_a_force_element_that_states_no_stages_fails_the_buil
         ).step()
 
 
+@pytest.mark.gpu
 def test_a_host_stage_sensor_samples_once_per_tick_outside_the_graph():
-    """A sensor whose work is a host stage samples once per tick at the host seam, outside the graph:
+    """A sensor whose work is a host stage samples once per tick in a host stage, outside the graph:
     over three ticks it sampled three times, never under capture.
     """
     with _cuda():

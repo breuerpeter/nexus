@@ -7,7 +7,7 @@ description: "Fly the simulated vehicle from QGroundControl over PX4 Software In
 The first end-to-end nexus workflow: fly the simulated vehicle from a ground
 station, QGroundControl with virtual joysticks, over PX4 Software In The Loop (SITL).
 
-Everything runs on `127.0.0.1`. **nexus** runs the physics, hosts the Rerun
+Everything runs on `127.0.0.1`. The **nexus** sim runs the physics, hosts the Rerun
 recording, and starts **PX4 SITL** as a container that connects back over **TCP
 4560** for lockstep Hardware In The Loop (HIL). PX4 talks MAVLink over the User Datagram
 Protocol (UDP) to **QGroundControl** on **UDP 14550**. An optional **Rerun viewer** watches
@@ -30,7 +30,7 @@ and hands it its ports, see [PX4 as a peer](#px4-as-a-peer).
 **1. QGroundControl.** Launch it. It listens on UDP 14550 and auto-connects once
 PX4 sends a heartbeat.
 
-**2. nexus sim:**
+**2. The nexus sim:**
 
 ```bash
 uv run nexus run --vehicle astro_max_base --scene empty
@@ -62,7 +62,7 @@ no container.
 
 - The first RTX run on a machine pulls NVIDIA's `nvcr.io/nvidia/isaac-sim:6.0.1`, about 21 GB,
   with no NGC login. Later runs reuse it, and nexus builds nothing. The container runs the image
-  as pulled. The peer program ships in the package, in `nexus/_src/peers/kit/peer-src/`. It mounts
+  as pulled. The peer program ships in the package, in `nexus_sim/_src/peers/kit/peer-src/`. It mounts
   read-only, so an update to the peer takes effect on the next run.
 - A scene that declares a Cesium tileset, such as `--scene cesium`, fetches Cesium for Omniverse
   into the asset cache on its first run. No other scene fetches it.
@@ -75,8 +75,8 @@ no container.
 - A run whose Kit container can't start fails and names the cause, for example an unreachable
   Docker daemon. A Kit container that dies mid-flight ends the run the way a lost autopilot does.
 
-- `--vehicle` accepts a registry vehicle name, such as `astro_max_fpv`, **or a local `.usd`/`.usdz`
-  path**. `--scene` accepts a registry scene name, such as `empty`, or a local scene USD path.
+- `--vehicle` accepts a catalog vehicle name, such as `astro_max_fpv`, **or a local `.usd`/`.usdz`
+  path**. `--scene` accepts a catalog scene name, such as `empty`, or a local scene USD path.
   A run names both.
   Every Astro Max vehicle carries the analytic PX4 suite, an Inertial Measurement Unit (IMU),
   mag, barometer, and Global Positioning System (GPS). Each is a prim under the body it rides that
@@ -96,7 +96,7 @@ and p95, and the per-phase partition, plus the CUDA-event-timed GPU batch. In th
 in `Orchestrator.run_stats["profile"]`.
 
 Every entry point shares the deep-diagnostics flags below. `nexus run` and the
-examples launcher, `uv run -m nexus.examples <name> --profile`, spell them identically:
+examples launcher, `uv run -m nexus_sim.examples <name> --profile`, spell them identically:
 
 - `--profile`: periodic reports every 5 s. On an RTX run the detail spans `render.send` and
   `render.wait` show what a frame costs the loop: the pose send, and the wait for a frame the peer
@@ -121,7 +121,7 @@ Sim physics and PX4 state both appear in the Rerun viewer, because they share th
 ## Worlds for the FPV camera
 
 A vehicle whose USD declares RTX sensors, such as the `astro_max_fpv` variant's `FpvCam` with its
-`NexusCameraAPI` schema, renders them in the Kit peer. The FPV camera's world comes from the registry scene:
+`NexusCameraAPI` schema, renders them in the Kit peer. The FPV camera's world comes from the catalog scene:
 
 ```bash
 # photoreal geolocated globe: Google Photorealistic 3D Tiles streamed live at
@@ -130,9 +130,9 @@ export CESIUM_ION_TOKEN=<your ion access token>      # cesium.com/ion → Access
 uv run nexus run --vehicle astro_max_fpv --scene cesium --geo 37.7942,-122.3954,-32 --view   # SF
 ```
 
-A cesium scene is just a `geodetic_origin` in the registry: latitude, longitude, and the WGS84
+A cesium scene is just a `geodetic_origin` in the catalog: latitude, longitude, and the WGS84
 ellipsoidal height of the street, which sets the globe so the street sits on the physics ground.
-If it sits off, tweak the registry value, with no conversion. Tile selection runs one
+If it sits off, tweak the catalog value, with no conversion. Tile selection runs one
 hidden-cost viewport per camera, and the RTX lidar reflects off the tiles.
 [Benchmarking](../reference/benchmarking.md) lists the measured real-time factor of each vehicle
 on this scene. Without a token the run warns and falls back to a plain sky, and the flight continues.
@@ -142,7 +142,8 @@ The Cesium ion and Google Maps Platform terms govern the streamed tiles: see
 ## PX4 as a peer
 
 The PX4 autopilot is a **peer** of the run: a process the run starts, speaks to over MAVLink, and
-stops. The vehicle's USD declares it: `NexusPx4SitlAPI` on the root prim, beside `NexusPx4API`. A
+stops. The vehicle's USD declares it: `NexusPx4SitlAPI` on the controller's scope,
+`/astro_max/Controller`, beside `NexusPx4API`. A
 run of a vehicle that declares it starts the PX4 SITL container and stops it on exit.
 
 **An autopilot started elsewhere.** To fly a PX4 SITL of your own, or a real autopilot on a bench,
@@ -151,14 +152,18 @@ drop the declaration with an **override layer**, a small USD file the run compos
 ```usda
 #usda 1.0
 
-over "astro_max" (
-    delete apiSchemas = ["NexusPx4SitlAPI"]
-)
+over "astro_max"
 {
+    over "Controller" (
+        delete apiSchemas = ["NexusPx4SitlAPI"]
+    )
+    {
+    }
 }
 ```
 
-Name the vehicle's root prim in the `over`, and pass the file with `--layer`, or `Sim(layer=)`:
+Name the vehicle's root prim and its controller's scope in the `over`s, and pass the file with
+`--layer`, or `Sim(layer=)`:
 
 ```bash
 uv run nexus run --vehicle astro_max_base --scene empty --layer external_px4.usda
@@ -169,13 +174,13 @@ run's receipt records the layer's sha256 beside the vehicle's. The same kind of 
 declared value or selects a variant without re-authoring the hosted vehicle.
 
 **The PX4 tree.** The PX4 controller pins the PX4-Autopilot commit it flies, in
-`nexus/_src/peers/px4_sitl/px4.ref`, which ships in the package. The first managed run on
+`nexus_sim/_src/peers/px4_sitl/px4.ref`, which ships in the package. The first managed run on
 a machine fetches that commit into `~/.cache/nexus/px4/<commit>/` and builds it there, minutes
 once. Later runs rebuild only what changed. Two overrides:
 
 - `PX4_DIR` names a checkout of your own, for work on PX4 itself. The run builds and flies it and
   fetches nothing.
-- A project that keeps its own catalog, `nexus.registry.yaml`, keeps its own pin beside it in
+- A project that keeps its own catalog, `nexus.catalog.yaml`, keeps its own pin beside it in
   `nexus.px4.ref`, of the same form, `owner/repo@<commit>`. Every vehicle of the project then
   flies that tree, and a bump is one edit.
 
@@ -188,12 +193,12 @@ when the Dockerfile changes.
 picks the lowest instance free on this machine and derives its own addresses from the same number,
 so two runs on one machine take two instances and never collide. A script reads the address of a
 link it opens itself from the run's port map: `sim.ports["offboard"]` holds the offboard link's
-port and PX4's system id, which [`nexus.px4.OffboardClient`](../reference/api/px4.md) takes.
+port and PX4's system id, which [`nexus_sim.px4.OffboardClient`](../reference/api/px4.md) takes.
 
 | Port      | Protocol | Link |
 |-----------|----------|------|
 | 4560 + N  | TCP      | PX4 → nexus, lockstep HIL: sensors in, actuators back |
-| 14540 + N | UDP      | PX4 → a script's `nexus.px4.OffboardClient`, the offboard link `sim.ports["offboard"]` names |
+| 14540 + N | UDP      | PX4 → a script's `nexus_sim.px4.OffboardClient`, the offboard link `sim.ports["offboard"]` names |
 | 14550     | UDP      | MAVLink telemetry and commands from PX4 to QGroundControl, every instance |
 | 9876      | gRPC     | Rerun recording, which nexus **serves** and the viewer **connects** to |
 
@@ -207,17 +212,17 @@ Everything lands in **one** recording, app ID `nexus` and recording ID
 - **framework events**: the `nexus` logger, at `sim/logs/<module>`.
 - **PX4's own view of the flight**: not in the recording. PX4 keeps it in its console log,
   `~/.cache/nexus/logs/px4-*.log`, and in its `ULog`, both artifacts of the run.
-- **test and driver stages**: a driver in the sim's process logs each stage with `na.logger.info("…")`,
+- **test and driver stages**: a driver in the sim's process logs each stage with `nx.logger.info("…")`,
   which writes to the console and, when recording, the Logs pane.
 
 **Serve or file, never both: two flags, `--view` and `--log`, both off.** A run can't produce both
 a live gRPC server and a *complete* `.rrd` from one process, because rerun's serve and file sinks are
 mutually exclusive, so:
 
-- **`--view`** on the command line, or [`Sim(view=True)`][nexus.Sim]: serve the recording live on
+- **`--view`** on the command line, or [`Sim(view=True)`][nexus_sim.Sim]: serve the recording live on
   `:9876` and connect a viewer with `uv run rerun --connect rerun+http://127.0.0.1:9876/proxy`.
   It writes no file, so **save it from the viewer** to keep an `.rrd`.
-- **`--log`** on the command line, or [`Sim(log=True)`][nexus.Sim]: write the full `.rrd` to disk.
+- **`--log`** on the command line, or [`Sim(log=True)`][nexus_sim.Sim]: write the full `.rrd` to disk.
   `uv run nexus run` logs its path, and a driver reads it from `sim.artifacts()`. Use it for CI,
   or when something else holds `:9876`.
 

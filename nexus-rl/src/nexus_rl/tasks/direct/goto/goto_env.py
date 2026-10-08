@@ -1,4 +1,3 @@
-# Copyright 2026, Freefly Systems. SPDX-License-Identifier: BSD-3-Clause
 # Acronyms: Universal Scene Description (USD), Collective Thrust and Body Rates (CTBR).
 """GoTo task: fly a quadrotor to a sampled goal position and hold it, on the **single-body
 per-rotor model**. Vehicle-agnostic: the robot + frame come from the cfg, and a concrete vehicle config lives
@@ -18,8 +17,8 @@ allocation + saturation/yaw limit, while being numerically stable; the motor-spe
 spinning-rotor visuals.
 
 Deploy parity: the core runtime flies the same unified ``Rotors`` actuator, the same ``rigid_body_wrench``
-kernel with ``dim = 1``, over the same mixer, so train and deploy are byte-shared, FR-7, the gate being the
-policy-level transfer in ``nexus/examples/controllers/policy/goto/flight.py``.
+kernel with ``dim = 1``, over the same mixer, so train and deploy are byte-shared, the gate being the
+policy-level transfer in ``nexus_sim/examples/controllers/policy/goto/flight.py``.
 """
 
 from __future__ import annotations
@@ -29,15 +28,15 @@ import torch
 import warp as wp
 from isaaclab.utils.configclass import configclass
 
-from nexus._src.physics.builders.usd import parse_rotors  # the rotors the vehicle USD declares
-from nexus._src.vehicle.rotors import RPM_PER_RADS, quat_to_R  # shared rotor geometry, from the core
-from nexus.examples._lib import (  # the shared single-body model + mixer: train + deploy + diff
+from nexus_sim._src.physics.vehicle import parse_rotors  # the rotors the vehicle USD declares
+from nexus_sim._src.vehicle.rotors import RPM_PER_RADS, quat_to_R  # shared rotor geometry, from the core
+from nexus_sim.examples._lib import (  # the shared single-body model + mixer: train + deploy + diff
     build_allocation,  # the one allocation builder; replaces the hand-rolled torch B
     ctbr_to_cmd_batched,  # the same CTBR mixer the deploy policy controller runs, with dim=N here
     motor_alpha,  # first-order motor lag α from (τ, dt)
     rigid_body_wrench_batched,  # the same unified motor model the deploy actuator runs, with dim=N here
 )
-from nexus.examples._lib.observation import (  # shared single source for train+deploy obs
+from nexus_sim.examples._lib.observation import (  # shared single source for train+deploy obs
     OBS_DIM,  # kinematic obs dim, 12
     POLICY_OBS_DIM,  # kinematic + last-action obs dim, 16
     observation_from_state,  # shared obs-from-state, the single source
@@ -120,7 +119,7 @@ class GoToEnv(QuadcopterNewtonEnv):
         # Apply the same two ops the deploy seam runs, over zero-copy wp.from_torch views: the CTBR mixer,
         # ctbr_to_cmd_batched: inner rate loop → B⁻¹ → per-rotor command, then the single-body motor model,
         # rigid_body_wrench_batched: per-rotor command → motor lag/saturation → forward B → world wrench.
-        # So the policy trains on the exact seam it deploys against, FR-7, byte-shared: the deploy policy
+        # So the policy trains on the exact seam it deploys against, byte-shared: the deploy policy
         # controller launches the same ctbr_to_cmd_batched mixer and the deploy actuator the same motor model,
         # with no torch reimplementation. substeps = NUM_SUBSTEPS carries the substep-dilution convention: the
         # base env's thrust_to_weight/rate_gain are the ×NUM_SUBSTEPS-baked twins, so the mixer's ÷substeps
@@ -185,7 +184,7 @@ class GoToEnv(QuadcopterNewtonEnv):
         # The base obs, 12-D kinematic, body-frame, plus the policy's last applied action, so it can
         # infer the lagged motor state. The stock _reset_idx clears self._actions to 0 on reset, so the
         # first obs of an episode carries a zero last action, matching the deploy controller, which
-        # appends its own last action the same way: FR-7 parity via the shared observation_from_state.
+        # appends its own last action the same way, via the shared observation_from_state.
         d = self._robot.data
         obs = observation_from_state(
             d.root_pos_w.torch,

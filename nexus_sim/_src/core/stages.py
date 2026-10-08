@@ -1,0 +1,227 @@
+"""The ring of stages one control tick runs, and its partition into captured segments.
+
+A tick is an ordered ring of stages, per docs/design/execution.md. :func:`build_ring` lays every
+component's stages out in the canonical order, sensors, estimator, guidance, controller, ``clear`` -> the
+command elements -> the force elements -> ``step`` per physics substep, record. :func:`partition` cuts the ring at
+its host stages and rotates it to
+start after the last cut, so the ring's tail folds into the first run and each maximal run of
+device stages becomes one CUDA graph; with no host stage the whole ring is one segment in canonical
+order. :func:`peer_stages` is the one shape for a controller that blocks on a peer or solves on the
+host: an ``exchange`` host stage.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import numpy as np
+import warp as wp
+
+from .interfaces import Stage
+from .signals import Signal
+
+KINDS = ("device", "host")
+CHANNELS = 16  # MAVLink's HIL_ACTUATOR_CONTROLS carries 16 channels, the widest command any controller sends
+
+
+@dataclass(frozen=True, slots=True)
+class Bound:
+    """A stage bound to the component that states it and the role it fills in the ring."""
+
+    stage: Stage
+    component: object
+    role: str  # clock, sensor, estimator, guidance, controller, physics, command, force, actuator or record
+
+
+@dataclass(frozen=True, slots=True)
+class Segment:
+    """A maximal run of device stages, one captured graph, or one host stage."""
+
+    kind: str
+    stages: tuple[Stage, ...]
+
+
+def stages_of(component, role: str) -> list[Bound]:
+    """The stages a component states, each checked for a kind the loop knows.
+
+    Raises:
+        ValueError: The component states no stages, an empty list included, or a stage of an unknown
+            kind.
+    """
+    name = type(component).__name__
+    stages = component.stages() if hasattr(component, "stages") else []
+    if not stages:
+        raise ValueError(f"{name} states no stages: every {role} lists its per-tick work as Stage objects")
+    bound = []
+    for st in stages:
+        if st.kind not in KINDS:
+            raise ValueError(f"{name} stage {st.name!r} has kind {st.kind!r}, not one of {KINDS}")
+        bound.append(Bound(st, component, role))
+    return bound
+
+
+def build_ring(
+    *,
+    sensors,
+    controller,
+    physics,
+    commands=(),
+    forces=(),
+    actuator=None,
+    record: Stage,
+    substeps: int,
+    estimator=None,
+    guidance=None,
+) -> list[Bound]:
+    """Every component's stages in the canonical order the domain fixes: sensors, the estimator and the
+    guidance when the run has them, controller, then ``clear`` -> the command elements -> the force elements
+    -> ``step`` unrolled ``substeps`` times, then ``record``. The estimator sits after the sensors, so it
+    reads their values of that tick, and before the guidance and the controller, so they read its estimate
+    of that tick. The guidance sits before the controller, so the setpoint it writes is the one the
+    controller reads on that tick. The old actuator seam's one stage, the examples' single-body ``Rotors``,
+    runs with the force stages, since it writes the body forces too.
+
+    Raises:
+        ValueError: A component states no stages, a stage of an unknown kind, or physics states no
+            ``clear`` and ``step``.
+    """
+    ring = []
+    for s in sensors:
+        ring += stages_of(s, "sensor")
+    if estimator is not None:
+        ring += stages_of(estimator, "estimator")
+    if guidance is not None:
+        ring += stages_of(guidance, "guidance")
+    ring += stages_of(controller, "controller")
+    phys = {b.stage.name: b for b in stages_of(physics, "physics")}
+    if "clear" not in phys or "step" not in phys:
+        raise ValueError(f"{type(physics).__name__} states {sorted(phys)}, not the clear and step stages")
+    inner = []
+    for c in commands:
+        inner += stages_of(c, "command")
+    for f in forces:
+        inner += stages_of(f, "force")
+    if actuator is not None:
+        inner += stages_of(actuator, "actuator")
+    for _ in range(substeps):
+        ring += [phys["clear"], *inner, phys["step"]]
+    ring.append(Bound(record, None, "record"))
+    return ring
+
+
+def opening(ring: list[Bound], bounds: list[Bound]) -> list[Bound]:
+    """The ring with ``bounds`` where each tick begins: after the ring's last host stage, which
+    :func:`partition` rotates to the front, or at the front of a ring with no host stage.
+    """
+    hosts = [i for i, b in enumerate(ring) if b.stage.kind == "host"]
+    at = hosts[-1] + 1 if hosts else 0
+    return [*ring[:at], *bounds, *ring[at:]]
+
+
+def partition(ring: list[Bound]) -> list[Segment]:
+    """Cut the ring at its host stages and rotate it to start after the last cut."""
+    hosts = [i for i, b in enumerate(ring) if b.stage.kind == "host"]
+    if not hosts:
+        return [Segment("device", tuple(b.stage for b in ring))]
+    start = hosts[-1] + 1
+    rotated = ring[start:] + ring[:start]
+    segments: list[Segment] = []
+    run: list[Stage] = []
+    for b in rotated:
+        if b.stage.kind == "host":
+            if run:
+                segments.append(Segment("device", tuple(run)))
+                run = []
+            segments.append(Segment("host", (b.stage,)))
+        else:
+            run.append(b.stage)
+    if run:
+        segments.append(Segment("device", tuple(run)))
+    return segments
+
+
+def seed_stages(ring: list[Bound]) -> list[Stage]:
+    """The stages of one pass over the settled state: the sensors', the estimator's and the controller's
+    warm device stages, and the controller's host stages, in ring order. Physics, the command elements, the
+    force elements and the record stage never run here, so the settled state is the state the first tick starts from, and a
+    sensor's host stage never does, so a camera's frame exchange starts with the first tick.
+    """
+    out = []
+    for b in ring:
+        if b.role not in ("sensor", "estimator", "controller"):
+            continue
+        if b.stage.kind == "host":
+            if b.role == "controller":
+                out.append(b.stage)
+        elif b.stage.warm:
+            out.append(b.stage)
+    return out
+
+
+def warm_stages(ring: list[Bound]) -> list[Stage]:
+    """The stages of the warm pass, which runs once over the settled state before any capture, in ring
+    order and with no peer involved: the device stages of the seed pass, so every device buffer exists
+    and every kernel has loaded first, and a guidance's warm stage between the estimator's and the
+    controller's, so the guidance's first stage reads an estimate and the controller holds the guidance's
+    first setpoint before its own first stage.
+    """
+    out = []
+    for b in ring:
+        if b.role == "guidance":
+            if b.stage.warm:
+                out.append(b.stage)
+        elif b.role in ("sensor", "estimator", "controller") and b.stage.kind == "device" and b.stage.warm:
+            out.append(b.stage)
+    return out
+
+
+def plan_line(segments: list[Segment], captured: bool) -> str:
+    """The one line a run logs at start: each segment in run order, a device segment as
+    ``graph(...)`` when it captures and ``eager(...)`` when it runs stage by stage.
+    """
+    parts = []
+    for seg in segments:
+        names = " -> ".join(st.name for st in seg.stages)
+        label = ("graph" if captured else "eager") if seg.kind == "device" else "host"
+        parts.append(f"{label}({names})")
+    return "stage plan: " + " ".join(parts)
+
+
+def peer_stages(controller, *, reads: tuple = ()) -> list[Stage]:
+    """The stages of a controller that blocks on a peer or solves on the host: ``exchange`` runs the
+    controller's ``exchange(t, timeout)`` and writes its commands to the controls, a ``(1, 16)`` device
+    signal, in place between graph replays. The builder allocates that buffer before the capture, so the
+    command elements' stages capture over it before the peer connects. ``None`` from the exchange reads as
+    the peer not answering, which the stage reports by returning ``False``. ``reads`` are the signals the
+    controller's ``exchange`` reads, such as its setpoint or each sensor's sample, which the stage declares.
+    """
+    controls = Signal("controls", wp.float32, shape=(1, CHANNELS))
+    cmd = np.zeros((1, CHANNELS), dtype=np.float32)
+
+    def exchange(tick):
+        out = controller.exchange(tick.t, tick.timeout)
+        if out is None:
+            return False
+        command = np.asarray(out.command, dtype=np.float32).reshape(-1)
+        if command.shape[0] > CHANNELS:
+            raise ValueError(
+                f"{type(controller).__name__} sent {command.shape[0]} commands, over the {CHANNELS} channels"
+            )
+        cmd[0, : command.shape[0]] = command
+        controls.write(cmd)
+        return True
+
+    return [Stage("exchange", "host", exchange, reads=tuple(reads), writes=(controls,))]
+
+
+__all__ = [
+    "Bound",
+    "Segment",
+    "build_ring",
+    "opening",
+    "partition",
+    "peer_stages",
+    "plan_line",
+    "seed_stages",
+    "warm_stages",
+]

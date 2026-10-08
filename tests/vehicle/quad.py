@@ -11,11 +11,11 @@ import pytest
 import warp as wp
 from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics
 
-from nexus._src.api.sim import Sim
-from nexus._src.build.assembly import build_orchestrator, build_scenario
-from nexus._src.core.schema import Controls
-from nexus._src.core.stages import peer_stages
-from nexus._src.physics.builders.usd import USDBuilder
+from nexus_sim._src.api.sim import Sim
+from nexus_sim._src.build.assembly import build_orchestrator, build_scenario
+from nexus_sim._src.core.schema import Controls
+from nexus_sim._src.core.stages import peer_stages
+from nexus_sim._src.physics.vehicle import VehicleUsd
 
 ROOT = "/Vehicle"
 ARM = 0.2  # rotor offset from the airframe's center on each axis [m]
@@ -150,7 +150,7 @@ class Commands:
     def stages(self):
         return peer_stages(self)
 
-    def exchange(self, meas, t, timeout=None):
+    def exchange(self, t, timeout=None):
         return Controls(command=self.values.copy())
 
     def close(self):
@@ -162,7 +162,7 @@ def build(path, steps=0, controller=None):
     cfg = build_scenario()
     cfg["physics"]["force_cpu"] = True
     return build_orchestrator(
-        "quad", cfg, USDBuilder({"usd_path": str(path)}, None), controller=controller or Commands(), max_steps=steps
+        "quad", cfg, VehicleUsd({"usd_path": str(path)}), controller=controller or Commands(), max_steps=steps
     )
 
 

@@ -1,5 +1,5 @@
 [importlinter]
-root_package = nexus
+root_package = nexus_sim
 ; type-only imports (under TYPE_CHECKING) are annotations, not runtime layering
 exclude_type_checking_imports = True
 ; the Kit contract below names third-party packages, so they have to be in the graph
@@ -9,32 +9,32 @@ include_external_packages = True
 name = nexus layered architecture
 type = layers
 layers =
-    nexus._src.cli
-    nexus._src.api
-    nexus._src.build
-    nexus._src.rendering
-    nexus._src.physics : nexus._src.operator
-    nexus._src.scene
-    nexus._src.vehicle
-    nexus._src.recording
-    nexus._src.logging
-    nexus._src.config
-    nexus._src.peers
-    nexus._src.assets
-    nexus._src.transform
-    nexus._src.core
-    nexus._src.usd
+    nexus_sim._src.cli
+    nexus_sim._src.api
+    nexus_sim._src.build
+    nexus_sim._src.rendering
+    nexus_sim._src.physics : nexus_sim._src.guidance
+    nexus_sim._src.scene
+    nexus_sim._src.vehicle
+    nexus_sim._src.recording
+    nexus_sim._src.logging
+    nexus_sim._src.config
+    nexus_sim._src.peers
+    nexus_sim._src.assets
+    nexus_sim._src.transform
+    nexus_sim._src.core
+    nexus_sim._src.usd
 
 [importlinter:contract:src-never-examples]
 name = the core never imports the examples (examples depend on core, one-way)
 type = forbidden
 source_modules =
-    nexus._src
+    nexus_sim._src
 forbidden_modules =
-    nexus.examples
+    nexus_sim.examples
 
 ; No generic part names PX4: the loop, the seams and Sim carry no PX4 class, port or verb, so the
-; script that commands PX4 is what names it, through the public namespace nexus.px4. The imports that
+; script that commands PX4 is what names it, through the public namespace nexus_sim.px4. The imports that
 ; remain are the builder's, which starts the PX4 peer from its runner, numbers the links from its
 ; instance and tells the fake apart for the port map, and the argument parser's, which prints the
 ; HIL port in a help string. A new one fails here.
@@ -46,25 +46,25 @@ as_packages = False
 ; a failure names the one import to remove, not every chain that runs through it
 allow_indirect_imports = True
 source_modules =
-    nexus._src.**
+    nexus_sim._src.**
 forbidden_modules =
-    nexus._src.peers.px4_sitl
-    nexus._src.peers.px4_sitl.**
-    nexus._src.vehicle.controllers.px4
-    nexus._src.vehicle.controllers.px4.**
-    nexus.px4
+    nexus_sim._src.peers.px4_sitl
+    nexus_sim._src.peers.px4_sitl.**
+    nexus_sim._src.vehicle.controllers.px4
+    nexus_sim._src.vehicle.controllers.px4.**
+    nexus_sim.px4
 ignore_imports =
     ; PX4's own folders speak to each other
-    nexus._src.peers.px4_sitl.** -> nexus._src.peers.px4_sitl
-    nexus._src.peers.px4_sitl.** -> nexus._src.peers.px4_sitl.**
-    nexus._src.vehicle.controllers.px4 -> nexus._src.vehicle.controllers.px4.**
-    nexus._src.vehicle.controllers.px4.** -> nexus._src.peers.px4_sitl
+    nexus_sim._src.peers.px4_sitl.** -> nexus_sim._src.peers.px4_sitl
+    nexus_sim._src.peers.px4_sitl.** -> nexus_sim._src.peers.px4_sitl.**
+    nexus_sim._src.vehicle.controllers.px4 -> nexus_sim._src.vehicle.controllers.px4.**
+    nexus_sim._src.vehicle.controllers.px4.** -> nexus_sim._src.peers.px4_sitl
     ; the builder
-    nexus._src.build.launch -> nexus._src.peers.px4_sitl
-    nexus._src.build.launch -> nexus._src.peers.px4_sitl.runner
-    nexus._src.build.launch -> nexus._src.peers.px4_sitl.fake
+    nexus_sim._src.build.launch -> nexus_sim._src.peers.px4_sitl
+    nexus_sim._src.build.launch -> nexus_sim._src.peers.px4_sitl.runner
+    nexus_sim._src.build.launch -> nexus_sim._src.peers.px4_sitl.fake
     ; the argument parser
-    nexus._src.api.args -> nexus._src.peers.px4_sitl
+    nexus_sim._src.api.args -> nexus_sim._src.peers.px4_sitl
 
 ; Every Kit call lives in the Kit render peer's program, peers/kit/peer-src/, package data that no module
 ; imports, so Kit stays out of every tier with no exception.
@@ -72,7 +72,7 @@ ignore_imports =
 name = Kit stays out of every tier
 type = forbidden
 source_modules =
-    nexus
+    nexus_sim
 forbidden_modules =
     omni
     usdrt

@@ -1,7 +1,7 @@
 Third-party notices
 ===================
 
-nexus/_src/core/geomag.py
+nexus_sim/_src/core/geomag.py
 ------------------------------
 
 The World Magnetic Model tables and the lookup scheme come from PX4's geo_mag_declination.cpp
@@ -32,3 +32,78 @@ GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWE
 AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
 OF THE POSSIBILITY OF SUCH DAMAGE.
+
+scripts/ci/discover_aws_runner_config.py
+----------------------------------------
+
+Adapted from scripts/ci/discover_aws_runner_config.py in Newton
+(https://github.com/newton-physics/newton), distributed under the Apache License, Version 2.0, the
+license of this project, whose text is in LICENSE.
+
+Copyright (c) 2026 The Newton Developers
+
+docs/javascripts/model-viewer.min.js
+------------------------------------
+
+The minified bundle of Google's model-viewer (https://github.com/google/model-viewer), distributed
+under the Apache License, Version 2.0, whose text is in LICENSE. The bundle carries the notices of
+its parts in its own comments.
+
+Copyright 2019-2023 Google LLC. All Rights Reserved.
+
+It bundles Lit (https://github.com/lit/lit), distributed under the BSD-3-Clause license, whose
+notice follows verbatim.
+
+Copyright 2017-2021 Google LLC
+
+Redistribution and use in source and binary forms, with or without modification, are permitted
+provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this list of
+   conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright notice, this list of
+   conditions and the following disclaimer in the documentation and/or other materials
+   provided with the distribution.
+3. Neither the name of the copyright holder nor the names of its contributors may be used to
+   endorse or promote products derived from this software without specific prior written
+   permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS
+OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
+GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
+AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+OF THE POSSIBILITY OF SUCH DAMAGE.
+
+It bundles three.js r169 (https://github.com/mrdoob/three.js), distributed under the MIT license,
+whose notice follows verbatim.
+
+Copyright 2010-2024 Three.js Authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+scripts/logo/OFL.txt
+------------------
+
+The license of the Michroma font, scripts/logo/Michroma-Regular.ttf
+(https://github.com/googlefonts/Michroma-font), which the logo scripts render. The font is
+distributed under the SIL Open Font License, Version 1.1, whose text and copyright notice
+scripts/logo/OFL.txt holds.
+
+Copyright 2011 The Michroma Project Authors

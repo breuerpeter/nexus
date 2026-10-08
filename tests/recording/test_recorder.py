@@ -1,4 +1,4 @@
-"""Recorder seam: capturable per-entity taps write into device ring buffers the host reads on demand,
+"""Recorder: capturable per-entity taps write into device ring buffers the host reads on demand,
 the read-side twin of logging. Exercises the body channel, record_body → BodyState, the joint channel,
 record_joint → JointState with variable width, and the ChannelMap name view.
 """
@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 import warp as wp
 
-from nexus._src.recording import BodyState, ChannelMap, JointState, RecordChannel, Recorder
-from nexus._src.recording.state import (
+from nexus_sim._src.recording import BodyState, ChannelMap, JointState, RecordChannel, Recorder
+from nexus_sim._src.recording.state import (
     BODY_FIELDS,
     BODY_WIDTH,
     decode_body,

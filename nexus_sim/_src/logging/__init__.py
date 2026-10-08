@@ -1,0 +1,35 @@
+"""The one Rerun recording the whole sim logs to, as the Architecture page's "Observability and
+recording" section describes.
+
+`Logger` owns NVIDIA Newton's ``ViewerRerun``, which is the in-process scene logging, the
+gRPC server on :9876 and the ``.rrd``, and routes the ``newton`` logger's events into
+the same recording. It exposes the shared log calls ``log_state``, ``set_time`` and ``log_image``;
+each component logs its own quantities via its log step, through the ``ScopedLogger`` the
+orchestrator hands it, which puts the component's path before each row's name.
+"""
+
+from .rerun_logging import (
+    APP_ID,
+    GRPC_PORT,
+    RECORDING_ID,
+    SERVER_URI,
+    Logger,
+    ScopedLogger,
+    attach_log_handler,
+    build_logger,
+    recording_path,
+    scene_only_blueprint,
+)
+
+__all__ = [
+    "APP_ID",
+    "GRPC_PORT",
+    "RECORDING_ID",
+    "SERVER_URI",
+    "Logger",
+    "ScopedLogger",
+    "attach_log_handler",
+    "build_logger",
+    "recording_path",
+    "scene_only_blueprint",
+]

@@ -20,6 +20,7 @@ import time
 from pathlib import Path
 
 import pytest
+import warp as wp
 import yaml
 from docker.errors import ImageNotFound, NotFound
 
@@ -30,16 +31,18 @@ os.environ.setdefault("MAVLINK_DIALECT", "common")
 
 from pymavlink import mavutil
 
-import nexus
-import nexus._src.build.launch as launch_mod
-import nexus._src.peers.containers as containers
-from nexus._src.api.sim import Sim
-from nexus._src.config import LaunchConfig, Registry
-from nexus._src.core.interfaces import Stage
-from nexus._src.core.orchestrator import Orchestrator
-from nexus._src.core.schema import SimTime
-from nexus._src.peers.px4_sitl.fake import Px4Fake
-from nexus._src.vehicle.controllers.px4 import controller as ctrl
+import nexus_sim
+import nexus_sim._src.build.launch as launch_mod
+import nexus_sim._src.peers.containers as containers
+from nexus_sim._src.api.sim import Sim
+from nexus_sim._src.config import Catalog, LaunchConfig
+from nexus_sim._src.core.interfaces import Stage
+from nexus_sim._src.core.orchestrator import Orchestrator
+from nexus_sim._src.core.schema import SimTime
+from nexus_sim._src.core.signals import Signal
+from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
+from nexus_sim._src.vehicle.controllers.px4 import controller as ctrl
+from tests.usd import sensor_vehicle as sv
 
 # --- the stand-in docker daemon -------------------------------------------------------------------
 
@@ -143,11 +146,21 @@ class _Clock:
         pass
 
 
+class _State:
+    """One body at rest, level and nose north: the rows a stage that reads the vehicle's true state reads."""
+
+    def __init__(self):
+        self.body_q = wp.array(
+            [[0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]], dtype=wp.transform
+        )  # forward-right-down body, up world
+        self.body_qd = wp.zeros(1, dtype=wp.spatial_vector)
+
+
 class _Physics:
     base_body = "body_frd"
 
     def reset(self):
-        return {"q": 0}
+        return _State()
 
     def clear_forces(self, state):
         pass
@@ -167,7 +180,7 @@ class _Actuator:
         pass
 
     def stages(self):
-        return [Stage("forces", "device", lambda tick: self.forces(tick.controls, tick.state))]
+        return [Stage("forces", "device", lambda tick: self.forces(None, tick.state))]
 
 
 def _loop(controller, **kw):
@@ -202,16 +215,17 @@ def _vehicle(tmp_path) -> dict:
     blob = tmp_path / "vehicle.usda"
     blob.write_text(
         '#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n\n'
-        'def Xform "vehicle" (\n    prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n)\n'
-        '{\n    string nexus:airframe = "astro_max"\n}\n'
+        'def Xform "vehicle"\n{\n'
+        '    def Scope "Controller" (\n        prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n    )\n'
+        '    {\n        string nexus:airframe = "astro_max"\n    }\n}\n'
     )
     sha = hashlib.sha256(blob.read_bytes()).hexdigest()
     return {"astro": {"usd": {"url": blob.as_uri(), "sha256": sha, "filename": "vehicle.usda"}}}
 
 
 @pytest.fixture
-def catalog(tmp_path) -> Registry:
-    return Registry.from_dict({"vehicles": _vehicle(tmp_path), "scenes": {"empty": {}}})
+def catalog(tmp_path) -> Catalog:
+    return Catalog.from_dict({"vehicles": _vehicle(tmp_path), "scenes": {"empty": {}}})
 
 
 @pytest.fixture
@@ -225,7 +239,7 @@ def run(daemon, assembly, catalog, tmp_path):
             path.write_text(layer)
             spec["layer"] = str(path)
         launch = LaunchConfig.from_dict(spec)
-        return launch_mod.build_from_launch(launch, registry=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0)
+        return launch_mod.build_from_launch(launch, catalog=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0)
 
     return _run
 
@@ -361,10 +375,10 @@ def test_the_peers_console_log_stays_in_the_runs_artifacts(daemon, assembly, cat
     Given a PX4 run with a managed peer, when the run closes, then its artifacts list the peer's
     console log path.
     """
-    project = tmp_path / "nexus.registry.yaml"
+    project = tmp_path / "nexus.catalog.yaml"
     project.write_text(yaml.safe_dump({"vehicles": _vehicle(tmp_path)}))
 
-    with Sim("astro", scene="empty", registry=str(project), device="cpu", observe=False) as sim:
+    with Sim("astro", scene="empty", catalog=str(project), device="cpu", observe=False) as sim:
         pass
 
     log = Path(sim.artifacts()["px4_log"]).name
@@ -382,7 +396,7 @@ def test_the_px4_sitl_image_builds_once_from_the_packages_dockerfile(daemon, run
     run().close()
 
     built = [(b["tag"], Path(b["path"])) for b in daemon.builds]
-    package = Path(nexus.__file__).resolve().parent
+    package = Path(nexus_sim.__file__).resolve().parent
     assert [
         (tag, (path / "Dockerfile").is_file() and path.resolve().is_relative_to(package)) for tag, path in built
     ] == [(first, True)], (built, first)
@@ -422,12 +436,13 @@ def test_a_local_vehicle_usd_flies_the_airframe_its_px4_schema_declares(daemon, 
     usd = tmp_path / "local_vehicle.usda"
     usd.write_text(
         '#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n\n'
-        'def Xform "vehicle" (\n    prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n)\n'
-        '{\n    string nexus:airframe = "foo"\n}\n'
+        'def Xform "vehicle"\n{\n'
+        '    def Scope "Controller" (\n        prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n    )\n'
+        '    {\n        string nexus:airframe = "foo"\n    }\n}\n'
     )
     launch = LaunchConfig.from_dict({"vehicle": str(usd), "scene": "empty"})
 
-    launch_mod.build_from_launch(launch, registry=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0).close()
+    launch_mod.build_from_launch(launch, catalog=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0).close()
 
     assert _started_models(daemon) == ["none_foo"]
 
@@ -438,16 +453,20 @@ _FAKE_PX4 = {"px4_sitl": Px4Fake}
 
 
 class _Commands:
-    """An actuator that keeps the command it's handed each tick, the controls the controller received."""
+    """An actuator that keeps the controls it reads each tick, the commands the controller received."""
 
     def __init__(self):
         self.seen: list[tuple[float, ...]] = []
+        self.controls = Signal("controls", wp.float32, shape=(1, 16))
 
     def forces(self, controls, state):
         pass
 
     def stages(self):
-        return [Stage("forces", "host", lambda tick: self.seen.append(tuple(tick.controls.numpy()[0].tolist())))]
+        def keep(tick):
+            self.seen.append(tuple(self.controls.read()[0].tolist()))
+
+        return [Stage("forces", "host", keep, reads=(self.controls,))]
 
 
 def _step(loop, ticks: int) -> list[bool]:
@@ -462,7 +481,7 @@ def _faked(catalog, tmp_path) -> Orchestrator:
     """Build the catalog's vehicle with the PX4 SITL peer sent to its fake."""
     launch = LaunchConfig.from_dict({"vehicle": "astro", "scene": "empty"})
     return launch_mod.build_from_launch(
-        launch, registry=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0, peers=_FAKE_PX4
+        launch, catalog=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0, peers=_FAKE_PX4
     )
 
 
@@ -488,21 +507,26 @@ def test_a_run_whose_peer_mapping_sends_the_px4_sitl_peer_to_its_fake_starts_no_
     assert (daemon.runs, daemon.builds, fetched, stepped.count(True)) == ([], [], False, 500)
 
 
-def _shipped(monkeypatch) -> Orchestrator:
-    """Build a run of `astro_max_base` on the CPU with the PX4 SITL peer sent to its fake."""
-    monkeypatch.delenv("NEXUS_ASSET_CACHE")  # the shipped vehicle comes from the checkout's own cache
-    launch = LaunchConfig.from_dict({"vehicle": "astro_max_base", "scene": "empty", "runtime": {"device": "cpu"}})
-    return launch_mod.build_from_launch(launch, preroll_timeout=10.0, peers=_FAKE_PX4)
-
-
-def test_the_fake_px4_receives_a_hil_sensor_each_tick_and_the_state_with_each_gps(daemon, monkeypatch, warp_cpu):
+def test_the_fake_px4_receives_each_tick_and_the_gps_at_its_sub_rate(daemon, warp_cpu, tmp_path):
     """The fake PX4 answers each `HIL_SENSOR` over the same lockstep.
 
-    Given a run of `astro_max_base` with the fake PX4, when it steps 500 ticks, then the fake receives
-    a `HIL_SENSOR` each tick, and one `HIL_STATE_QUATERNION` with each `HIL_GPS` of the Global
-    Positioning System (GPS).
+    Given a run of the local fixture vehicle with an analytic sensor of each kind and the fake PX4, when
+    it steps 500 ticks, then the fake receives a `HIL_SENSOR` each tick, and `HIL_GPS` and
+    `HIL_STATE_QUATERNION` at the 10 Hz sub-rate of the Global Positioning System (GPS): 2 s of sim time
+    at 0.004 s a tick, so 20 of each, or 19 where the float clock lands a GPS tick one late.
     """
-    loop = _shipped(monkeypatch)
+    sensors = "".join(
+        sv.prim(name, schema)
+        for name, schema in (
+            ("Imu", "NexusImuAPI"),
+            ("Mag", "NexusMagAPI"),
+            ("Baro", "NexusBaroAPI"),
+            ("Gps", "NexusGpsAPI"),
+        )
+    )
+    vehicle = sv.vehicle(tmp_path, sensors, px4=True)
+    launch = LaunchConfig.from_dict({"vehicle": vehicle, "scene": sv.SCENE, "runtime": {"device": "cpu"}})
+    loop = launch_mod.build_from_launch(launch, preroll_timeout=10.0, peers=_FAKE_PX4)
 
     _step(loop, 500)
     received = dict(loop.peers[0].received)
@@ -510,32 +534,7 @@ def test_the_fake_px4_receives_a_hil_sensor_each_tick_and_the_state_with_each_gp
 
     # The seed pass before the first tick exchanges once more, so 501 reach the fake.
     gps, state = received.get("HIL_GPS", 0), received.get("HIL_STATE_QUATERNION", 0)
-    assert (received.get("HIL_SENSOR"), gps > 0, state == gps) == (501, True, True), received
-
-
-def test_px4_receives_each_sensor_of_a_shipped_vehicle_at_its_declared_rate(daemon, monkeypatch, warp_cpu):
-    """PX4 receives each sensor of a shipped vehicle at its declared rate.
-
-    Given the fake PX4 peer and `astro_max_base` on a 250 Hz tick, when the run steps 1 s, then 250
-    `HIL_SENSOR` arrive, 100 with the magnetometer's bits and 50 with the barometer's, and 30 `HIL_GPS`,
-    each count give or take one. The window starts 10 ticks in and the run steps 10 more after it, so the
-    fake has read every message of the window.
-    """
-    mag, baro = 0b0000111000000, 0b1101000000000  # the bits PX4's `simulator_mavlink` tests for each sensor
-    loop = _shipped(monkeypatch)
-
-    _step(loop, 270)
-    fake = loop.peers[0]
-    sensor, gps = list(fake.hil_sensor), list(fake.hil_gps)
-    loop.close()
-
-    window = sensor[10:260]
-    start, end = window[0][0], sensor[260][0]
-    mags = sum(mask & mag == mag for _, mask in window)
-    baros = sum(mask & baro == baro for _, mask in window)
-    fixes = sum(start <= t < end for t in gps)
-    within_one = all(abs(got - want) <= 1 for got, want in ((mags, 100), (baros, 50), (fixes, 30)))
-    assert (len(window), within_one) == (250, True), (mags, baros, fixes)
+    assert (received.get("HIL_SENSOR"), gps in (19, 20), state == gps) == (501, True, True), received
 
 
 def test_the_controller_gets_the_fake_px4s_hover_command_every_tick(daemon, catalog, monkeypatch, tmp_path):
@@ -587,7 +586,7 @@ def test_the_px4_controller_is_built_the_same_way_whichever_process_answers(
         return flew, lines
 
     flew, fake = plan(_faked(catalog, tmp_path))
-    _, external = plan(run(_DROP_PX4_SITL))
+    _, external = plan(run(_DROP_PX4_SITL_FROM_SCOPE))
 
     assert (flew, len(fake), fake) == (True, 1, external)
 
@@ -629,7 +628,7 @@ def test_a_peer_mapping_with_an_unknown_key_fails_the_build_before_any_peer_star
 
     try:
         launch_mod.build_from_launch(
-            launch, registry=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0, peers={"px4-sitl": Px4Fake}
+            launch, catalog=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0, peers={"px4-sitl": Px4Fake}
         ).close()
         message = "no error"
     except ValueError as exc:
@@ -641,23 +640,31 @@ def test_a_peer_mapping_with_an_unknown_key_fails_the_build_before_any_peer_star
 
 # --- the PX4 SITL peer the vehicle declares, and a layer that drops it -----------------------------
 
-# A vehicle root that declares the PX4 controller and the PX4 SITL peer.
-_DECLARED = (
+
+# A vehicle that declares the PX4 controller and the PX4 SITL peer on its controller's scope.
+_SCOPED = (
     '#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n\n'
-    'def Xform "vehicle" (\n    prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n)\n'
-    '{\n    string nexus:airframe = "astro_max"\n}\n'
+    'def Xform "vehicle"\n{\n'
+    '    def Scope "Controller" (\n        prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n    )\n'
+    '    {\n        string nexus:airframe = "astro_max"\n    }\n}\n'
 )
 
-# A layer that drops the PX4 SITL peer's declaration, so the run attaches to an autopilot started elsewhere.
-_DROP_PX4_SITL = '#usda 1.0\n\nover "vehicle" (\n    delete apiSchemas = ["NexusPx4SitlAPI"]\n)\n{\n}\n'
+# A layer that drops the PX4 SITL peer's declaration from the controller's scope, so the run attaches to an
+# autopilot started elsewhere.
+_DROP_PX4_SITL_FROM_SCOPE = (
+    '#usda 1.0\n\nover "vehicle"\n{\n'
+    '    over "Controller" (\n        delete apiSchemas = ["NexusPx4SitlAPI"]\n    )\n    {\n    }\n}\n'
+)
 
 
-def _declared_run(tmp_path, layer: str | None = None) -> Orchestrator:
-    """Build a run of a catalog vehicle that declares the PX4 SITL peer, over `layer` when the caller passes one."""
+def _declared_run(tmp_path, layer: str | None = None, vehicle: str = _SCOPED) -> Orchestrator:
+    """Build a run of a catalog vehicle that declares the PX4 SITL peer, `vehicle`, over `layer` when the
+    caller passes one.
+    """
     blob = tmp_path / "declared.usda"
-    blob.write_text(_DECLARED)
+    blob.write_text(vehicle)
     sha = hashlib.sha256(blob.read_bytes()).hexdigest()
-    catalog = Registry.from_dict(
+    catalog = Catalog.from_dict(
         {
             "vehicles": {"astro": {"usd": {"url": blob.as_uri(), "sha256": sha, "filename": blob.name}}},
             "scenes": {"empty": {}},
@@ -669,7 +676,7 @@ def _declared_run(tmp_path, layer: str | None = None) -> Orchestrator:
         path.write_text(layer)
         spec["layer"] = str(path)
     launch = LaunchConfig.from_dict(spec)
-    return launch_mod.build_from_launch(launch, registry=catalog, cache_dir=tmp_path / "cache", preroll_timeout=5.0)
+    return launch_mod.build_from_launch(launch, catalog=catalog, cache_dir=tmp_path / "cache", preroll_timeout=5.0)
 
 
 def test_a_vehicle_that_declares_the_px4_sitl_peer_starts_it(daemon, monkeypatch, tmp_path, warp_cpu):
@@ -679,15 +686,15 @@ def test_a_vehicle_that_declares_the_px4_sitl_peer_starts_it(daemon, monkeypatch
     sent to its fake, and the Kit peer to its own, then one fake PX4 starts and receives `HIL_SENSOR`
     over the HIL link as the run steps.
     """
-    from nexus._src.config.registry import load_registry
-    from nexus._src.peers.kit.fake import KitFake
+    from nexus_sim._src.config.catalog import load_catalog
+    from nexus_sim._src.peers.kit.fake import KitFake
 
     monkeypatch.delenv("NEXUS_ASSET_CACHE")  # the shipped vehicles come from the checkout's own cache
     monkeypatch.chdir(tmp_path)  # no project catalog: only the bundled one
     # The network is a boundary: a PX4 fetch this run must not make fails at once on an unreachable proxy.
     for var in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"):
         monkeypatch.setenv(var, "http://127.0.0.1:9")
-    names = list(load_registry().vehicles)
+    names = list(load_catalog().vehicles)
 
     flown = {}
     for name in names:
@@ -701,16 +708,17 @@ def test_a_vehicle_that_declares_the_px4_sitl_peer_starts_it(daemon, monkeypatch
     assert flown == dict.fromkeys(names, (1, True))
 
 
-def test_a_layer_that_drops_the_px4_sitl_peer_starts_no_px4_and_waits_on_instance_0s_hil_port(
+def test_a_layer_that_drops_the_px4_sitl_peer_from_the_controllers_scope_flies_an_autopilot_started_elsewhere(
     daemon, assembly, tmp_path
 ):
-    """A layer that drops the PX4 SITL peer starts no PX4 and waits on instance 0's HIL port.
+    """A layer that drops the PX4 SITL peer from the controller's scope flies an autopilot started elsewhere.
 
-    Given a stand-in docker daemon and a layer that drops the PX4 SITL peer, when the run enters and a
-    fake PX4 the test starts dials instance 0's HIL port, 4560, then the daemon records no container
-    and the run steps against the fake.
+    Given a vehicle whose `Scope` `/vehicle/Controller` declares PX4 and the PX4 SITL peer, and a layer
+    whose `over "Controller"` under `/vehicle` deletes `NexusPx4SitlAPI`, when the run builds, then no
+    peer starts and PX4 dials instance 0's HIL port, 4560: the daemon records no container, and the run
+    steps against a fake PX4 the test starts there.
     """
-    loop = _declared_run(tmp_path, _DROP_PX4_SITL)
+    loop = _declared_run(tmp_path, _DROP_PX4_SITL_FROM_SCOPE, vehicle=_SCOPED)
     autopilot = Px4Fake(instance=0)
     autopilot.start()
 
@@ -735,7 +743,7 @@ def test_a_second_external_run_on_one_machine_fails_and_names_the_holder(daemon,
 
     failed, said = False, ""
     try:
-        loop = _declared_run(tmp_path, _DROP_PX4_SITL)
+        loop = _declared_run(tmp_path, _DROP_PX4_SITL_FROM_SCOPE)
         failed = not loop.step()
         loop.close()
     except Exception as exc:
@@ -753,7 +761,7 @@ def test_a_managed_run_takes_a_free_px4_instance_itself(daemon, assembly, tmp_pa
     run of a vehicle that declares the PX4 SITL peer enters, then its PX4 container runs instance 1,
     `-i 1`, and the run listens on instance 1's HIL port, 4561.
     """
-    from nexus._src.peers import LABEL
+    from nexus_sim._src.peers import LABEL
 
     held = _Container(
         daemon, "nexus-px4-held-0", {LABEL: "px4", "nexus.px4.instance": "0", "nexus.owner": str(os.getpid())}

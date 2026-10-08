@@ -1,11 +1,11 @@
 ---
-description: "The vehicles and scenes nexus loads: the airframes it flies and the static worlds it flies them in, both resolved by name from the registry."
+description: "The vehicles and scenes nexus loads: the airframes it flies and the static worlds it flies them in, both resolved by name from the catalog."
 ---
 
 # Assets
 
-The named assets nexus loads at launch, both resolved from the registry
-at `nexus/_src/config/registry.yaml`: the **vehicles** it flies and the **scenes**
+The named assets nexus loads at launch, both resolved from the catalog
+at `nexus_sim/_src/config/catalog.yaml`: the **vehicles** it flies and the **scenes**
 it flies them in.
 
 <div class="grid cards" markdown>

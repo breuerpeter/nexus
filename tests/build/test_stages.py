@@ -1,6 +1,6 @@
-"""The Proportional Integral Derivative (PID) example on the stage loop: the trajectory main recorded
-and the seed row ``Sim.start()`` returns with. Auto-skips without a CUDA device; each test scopes the
-device it uses, so the default device is the same after it.
+"""The Proportional Integral Derivative (PID) example on the stage loop: the trajectory main recorded,
+the seed row ``Sim.start()`` returns with, and the run a guidance of another setpoint type stops. The
+CUDA tests are `gpu`; each test scopes the device it uses, so the default device is the same after it.
 """
 
 import hashlib
@@ -13,11 +13,13 @@ pytest.importorskip("warp")
 
 import warp as wp
 
-from nexus._src.api.sim import Sim
-from nexus._src.build.assembly import build_scenario
-from nexus._src.build.launch import resolve_to_vehicle_builder
-from nexus._src.config import LaunchConfig
-from nexus.examples.controllers.pid.assembly import build_pid_orchestrator
+from nexus_sim._src.api.sim import Sim
+from nexus_sim._src.build.assembly import build_scenario
+from nexus_sim._src.build.launch import resolve_vehicle_usd
+from nexus_sim._src.config import LaunchConfig
+from nexus_sim._src.guidance import TrackingGuidance
+from nexus_sim.examples.controllers.pid.assembly import build_pid_orchestrator
+from tests.usd import sensor_vehicle as sv
 
 # The Secure Hash Algorithm (SHA) 256 digest of main's 200-tick PID body poses, float32 (200, 5, 7),
 # per GPU model, flown through main's captured loop before the change: a CUDA trajectory repeats to the
@@ -30,20 +32,20 @@ _MAIN_TRAJECTORY = {
 }
 
 
-def _pid(*, cpu: bool, max_steps: int):
+def _pid(*, cpu: bool, max_steps: int, vehicle: str = "astro_max_base"):
+    """The PID example's orchestrator flying `vehicle`, a catalog name or a path, toward 1.5 m up."""
     cfg = build_scenario()
     cfg["physics"]["force_cpu"] = cpu
-    vb, _ = resolve_to_vehicle_builder(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
-    return build_pid_orchestrator(cfg, goal_w=(0.0, 0.0, 1.5), max_steps=max_steps, vehicle_builder=vb)
+    vehicle_usd, _ = resolve_vehicle_usd(LaunchConfig().set_vehicle(vehicle).set_scene(sv.SCENE))
+    return build_pid_orchestrator(cfg, goal_w=(0.0, 0.0, 1.5), max_steps=max_steps, vehicle_usd=vehicle_usd)
 
 
+@pytest.mark.gpu
 def test_pid_on_cuda_flies_the_trajectory_main_recorded():
     """The PID example on CUDA flies its whole tick as one graph, and its trajectory matches today's
     captured path: 200 ticks of body poses equal, to the byte, the ones main recorded through ``run()``
     before the change, on each GPU model main flew it on.
     """
-    if not wp.is_cuda_available():
-        pytest.skip("no CUDA device")
     gpu = wp.get_device("cuda:0").name
     if gpu not in _MAIN_TRAJECTORY:
         pytest.skip(f"main's trajectory was never recorded on {gpu!r}")
@@ -56,15 +58,50 @@ def test_pid_on_cuda_flies_the_trajectory_main_recorded():
     assert hashlib.sha256(body_q.tobytes()).hexdigest() == _MAIN_TRAJECTORY[gpu]
 
 
-@pytest.mark.parametrize("device", ["cpu", "cuda:0"])
-def test_start_returns_with_the_seed_row_and_the_first_tick_recorded(device):
+@pytest.mark.parametrize("device", ["cpu", pytest.param("cuda:0", marks=pytest.mark.gpu)])
+def test_start_returns_with_the_seed_row_and_the_first_tick_recorded(device, tmp_path):
     """``Sim.start()`` returns with one observation row recorded and the capture done, for every
     controller kind: the pid example's base body holds two rows after ``start()``, the settled seed row
-    and the first tick's.
+    and the first tick's. It flies the local fixture vehicle of ``tests/usd/sensor_vehicle.py``.
     """
-    if device != "cpu" and not wp.is_cuda_available():
-        pytest.skip("no CUDA device")
-    with wp.ScopedDevice(device), Sim.from_orchestrator(_pid(cpu=device == "cpu", max_steps=50)) as sim:
+    with (
+        wp.ScopedDevice(device),
+        Sim.from_orchestrator(_pid(cpu=device == "cpu", max_steps=50, vehicle=sv.vehicle(tmp_path))) as sim,
+    ):
         sim.start()
         rows = len(sim.physics[sim.base_body].history())
     assert rows == 2
+
+
+class _Reference:
+    """A planned reference, the shape a tracking guidance writes."""
+
+    duration = 4.0
+
+    def set_start(self, p0):
+        pass
+
+    def reference_path(self):
+        return []
+
+
+def test_a_guidance_whose_setpoint_type_its_controller_does_not_read_fails_the_run_naming_both(tmp_path):
+    """A guidance that writes a setpoint of another type than its controller reads fails the run before any
+    stage runs, and the error names both components and both types.
+
+    Given the PID example's run and a `TrackingGuidance`, which writes a `ReferenceTrajectory`, when the run
+    starts, then it fails before any stage runs, and the error names `TrackingGuidance`, `PidController`,
+    `ReferenceTrajectory` and `vec3f`, Warp's name for the `wp.vec3` a position goal travels as. No stage
+    ran, so the recording holds no row.
+    """
+    guidance = TrackingGuidance(planner=lambda waypoints: _Reference())
+    guidance.set_mission([(1.0, 0.0, 1.5)])
+    with (
+        wp.ScopedDevice("cpu"),
+        Sim.from_orchestrator(_pid(cpu=True, max_steps=50, vehicle=sv.vehicle(tmp_path)), guidance=guidance) as sim,
+    ):
+        with pytest.raises(ValueError) as e:
+            sim.run()
+        rows = len(sim.physics[sim.base_body].history())
+    words = ("TrackingGuidance", "PidController", "ReferenceTrajectory", "vec3f")
+    assert (all(word in str(e.value) for word in words), rows) == (True, 0)

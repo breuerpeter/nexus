@@ -10,9 +10,9 @@ import numpy as np
 import pytest
 import warp as wp
 
-import nexus._src.api.sim as sim_mod
-from nexus._src.recording import BodyState
-from nexus._src.recording.state import BODY_WIDTH, decode_body, record_body
+import nexus_sim._src.api.sim as sim_mod
+from nexus_sim._src.recording import BodyState
+from nexus_sim._src.recording.state import BODY_WIDTH, decode_body, record_body
 
 
 class _FakePhysics:
@@ -63,10 +63,10 @@ class _FakeOrch:
         while self.step():
             pass
 
-    def close(self):  # the step-driven teardown seam, which closes the tick generator
+    def close(self):  # the step-driven teardown, which closes the tick generator
         self.closed = True
 
-    def _close_logs(self):  # the logging-teardown seam for a Sim entered but never driven
+    def _close_logs(self):  # the logging teardown for a Sim entered but never driven
         self.logs_closed = True
 
     def stop(self):
@@ -158,15 +158,11 @@ def test_sim_passes_device_into_launch(monkeypatch):
 
 
 class _FakeController:
-    def __init__(self):
-        self.setpoints = []
-
-    def accept_setpoint(self, sp):
-        self.setpoints.append(sp)
+    pass
 
 
-class _InProcessOrch:
-    """An in-process orchestrator, whose controller has accept_setpoint: run() is synchronous, fires on_tick."""
+class _SetpointOrch:
+    """An orchestrator whose controller reads a setpoint: run() is synchronous, fires on_tick."""
 
     def __init__(self):
         self.sensors = []
@@ -178,21 +174,21 @@ class _InProcessOrch:
         self.ran = False
         self._stop = False
 
-    def _close_logs(self):  # the orchestrator's logging-teardown seam, a no-op: this mock has no Logger
+    def _close_logs(self):  # the orchestrator's logging teardown, a no-op: this mock has no Logger
         pass
 
-    def add_loggable(self, component, path):  # the orchestrator's loggable-registration seam, a no-op in the mock
+    def add_loggable(self, component, path):  # the orchestrator's loggable registration, a no-op in the mock
         pass
 
-    def attach_recorder(self, recorder):  # the observation seam: register the airframe channel Sim caches
+    def attach_recorder(self, recorder):  # recording: register the airframe channel Sim caches
         recorder.channel("vehicle/body/body_frd", width=BODY_WIDTH, decode=decode_body)
 
-    def close(self):  # the step/run teardown seam, a no-op in this mock
+    def close(self):  # the step and run teardown, a no-op in this mock
         pass
 
     def run(self):
         self.ran = True
-        # one host-seam tick at the goal, so the operator advances/ends, then stamp run_stats
+        # one host-stage tick at the goal, so the guidance advances or ends, then stamp run_stats
         if self.on_tick is not None:
             self.on_tick(_FakeView(), _T(), 1)
         self.run_stats = {"control_steps": 1, "rtf": 1.0}
@@ -205,26 +201,26 @@ class _InProcessOrch:
         self._stop = True
 
 
-def test_sim_in_process_wires_operator_controller_and_runs():
-    from nexus._src.operator import InProcessOperator
+def test_sim_hands_the_flights_guidance_to_the_orchestrator_and_runs():
+    from nexus_sim._src.guidance import MissionGuidance
 
-    fake = _InProcessOrch()
+    fake = _SetpointOrch()
+    guidance = MissionGuidance()
 
-    # A self-assembled in-process orchestrator enters via from_orchestrator, the examples' entry.
-    with sim_mod.Sim.from_orchestrator(fake) as sim:
-        assert isinstance(sim.operator, InProcessOperator)  # operator constructed over the controller
-        assert sim.controller is fake.controller  # thin surface, which has accept_setpoint
-        assert fake.on_tick is not None  # operator wired to the host seam
-        sim.operator.set_mission([(0.0, 0.0, 4.0)])  # the fake view sits at z=4 → reached immediately
-        assert fake.controller.setpoints  # accept_setpoint commanded the first goal
+    # A self-assembled orchestrator enters via from_orchestrator, the examples' entry, with its guidance.
+    with sim_mod.Sim.from_orchestrator(fake, guidance=guidance) as sim:
+        assert sim.guidance is guidance and fake.guidance is guidance  # the guidance joins the loop
+        assert fake.on_tick is None  # the hook stays the caller's: the guidance rides a stage
+        sim.guidance.set_mission([(0.0, 0.0, 4.0)])
+        assert tuple(guidance.active_setpoint.pos) == (0.0, 0.0, 4.0)  # its stage writes it, not Sim
         sim.run()
         assert fake.ran  # ran synchronously, no thread
         assert sim.results() == {"control_steps": 1, "rtf": 1.0}
     assert fake._stop  # __exit__ -> stop()
 
 
-def test_sim_step_drives_inprocess_tick_by_tick():
-    fake = _InProcessOrch()
+def test_sim_step_drives_a_self_assembled_run_tick_by_tick():
+    fake = _SetpointOrch()
     with sim_mod.Sim.from_orchestrator(fake) as sim:
         assert sim.step() is True  # advances one tick, delegating to orch.step()
         assert sim.step() is True
@@ -236,30 +232,22 @@ def test_sim_step_drives_px4_on_the_calling_thread(monkeypatch):
     fake = _FakeOrch()
     monkeypatch.setattr(sim_mod, "build_from_launch", lambda launch, **kw: fake)
     with sim_mod.Sim("astro_max_base", scene="empty", device="cpu") as sim:
-        assert sim.step() is True  # a host-boundary sim steps the same as any other
+        assert sim.step() is True  # a sim whose controller has a peer steps the same as any other
         assert sim.step() is True
         assert fake.threads == [threading.main_thread(), threading.main_thread()]
 
 
-def test_a_run_whose_controller_takes_no_setpoint_has_no_operator_and_the_error_names_the_port_map(monkeypatch):
-    """A run whose controller takes no setpoint, as PX4's does, has no controller surface and no
-    operator: the autopilot owns its mission in its own process, and a script commands it over a
-    link it opens itself.
+def test_sim_has_no_operator(tmp_path):
+    """`Sim` has no `operator`.
 
-    Given a `Sim` over a controller with no setpoint surface, when a script reads `sim.controller`
-    and `sim.operator`, then the controller is `None` and the operator raises `RuntimeError` that
-    names `sim.ports`.
+    Given a `Sim` on the fixture vehicle, when a script reads `sim.operator`, then it raises
+    `AttributeError`.
     """
-    fake = _FakeOrch()
-    monkeypatch.setattr(sim_mod, "build_from_launch", lambda launch, **kw: fake)
+    from tests.usd import sensor_vehicle as sv
 
-    with sim_mod.Sim("astro_max_base", scene="empty", device="cpu") as sim:
-        sim.start(timeout=30.0)
-        controller = sim.controller
-        with pytest.raises(RuntimeError, match=r"no operator.*sim\.ports"):
-            _ = sim.operator
-
-    assert controller is None
+    sim = sim_mod.Sim(sv.vehicle(tmp_path), scene="empty")
+    with pytest.raises(AttributeError):
+        _ = sim.operator
 
 
 def test_sim_takes_no_control_argument():
@@ -269,6 +257,17 @@ def test_sim_takes_no_control_argument():
     """
     with pytest.raises(TypeError, match="control"):
         sim_mod.Sim("astro_max_base", scene="empty", control="px4-sitl")
+
+
+def test_sim_takes_no_stream_argument():
+    """`Sim` takes no `stream` argument: a camera's feed has nowhere to publish until a vehicle declares a
+    companion.
+
+    Given `Sim("astro_max_fpv", scene="empty", stream=True)`, when constructed, then it raises `TypeError`
+    naming `stream`, and no run builds.
+    """
+    with pytest.raises(TypeError, match="stream"):
+        sim_mod.Sim("astro_max_fpv", scene="empty", stream=True)
 
 
 def test_a_sim_that_names_no_vehicle_fails_at_construction():
@@ -289,3 +288,13 @@ def test_a_sim_that_names_no_scene_fails_at_construction():
     """
     with pytest.raises((TypeError, ValueError), match="scene"):
         sim_mod.Sim(vehicle="astro_max_base")
+
+
+def test_reading_the_guidance_of_a_run_that_has_none_fails_with_the_way_to_construct_one():
+    """Reading the guidance of a run that has none fails with the way to construct one.
+
+    Given a `Sim` over a setpoint controller and no guidance, when a caller reads `sim.guidance`, then it
+    raises `RuntimeError` whose message shows how a flight constructs one.
+    """
+    with sim_mod.Sim.from_orchestrator(_SetpointOrch()) as sim, pytest.raises(RuntimeError, match="MissionGuidance"):
+        _ = sim.guidance

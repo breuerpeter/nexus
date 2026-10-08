@@ -1,8 +1,8 @@
 name: lint
 
-# Static checks — ruff (lint + format), typos, uv-lock freshness (the pre-commit hooks), and the
-# import-linter architecture contract. Free + fast; runs on every PR with no path filter (so it's a
-# clean required merge gate — see plan §4). No GPU.
+# Static checks — ruff (lint + format), typos, the freshness of both uv locks (the pre-commit
+# hooks), and the import-linter architecture contract. Free + fast; runs on every PR with no path
+# filter (so it's a clean required merge gate). No GPU.
 
 on:
   push:
@@ -23,6 +23,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
       # pre-commit.ci skips uv-lock (no network there); GitHub Actions has network, so this also
-      # doubles as the lockfile-freshness check.
+      # doubles as the freshness check for uv.lock and nexus-rl/uv.lock.
       - run: uvx pre-commit run --all-files --show-diff-on-failure
-      - run: uv run lint-imports
+      - run: uv run --locked lint-imports

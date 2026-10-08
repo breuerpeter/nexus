@@ -7,15 +7,16 @@ start. A test reads a run's frames back from the ``.rrd`` it writes, through Rer
 
 import functools
 import io
+import time
 
 from PIL import Image
 from rerun.experimental import RrdReader
 
-import nexus._src.build.launch as launch_mod
-from nexus._src.config import LaunchConfig
-from nexus._src.peers.kit.fake import KitFake
-from nexus._src.peers.kit.runner import KitPeerError
-from nexus._src.peers.px4_sitl.fake import Px4Fake
+import nexus_sim._src.build.launch as launch_mod
+from nexus_sim._src.config import LaunchConfig
+from nexus_sim._src.peers.kit.fake import KitFake
+from nexus_sim._src.peers.kit.runner import KitPeerError
+from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
 
 
 def _frames(rrd: str, camera: str) -> list[tuple[int, int]]:
@@ -83,3 +84,12 @@ def test_a_fake_kit_peer_that_sends_error_ends_the_run_with_that_error(daemon, w
         message = str(exc)
 
     assert ("Kit render peer" in message, "the render product died" in message) == (True, True), message
+
+
+def test_the_kit_fake_stops_at_once_when_no_run_connected_to_it():
+    """The Kit fake stops at once when no run connected to it."""
+    fake = KitFake()
+    fake.start()
+    began = time.monotonic()
+    fake.stop()
+    assert time.monotonic() - began < 1.0

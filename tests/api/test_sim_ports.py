@@ -13,13 +13,13 @@ import hashlib
 
 import pytest
 
-import nexus._src.build.launch as launch_mod
-from nexus._src.api.sim import Sim
-from nexus._src.config import LaunchConfig, Registry
-from nexus._src.core.interfaces import Stage
-from nexus._src.core.orchestrator import Orchestrator
-from nexus._src.core.schema import SimTime
-from nexus._src.peers.px4_sitl.fake import Px4Fake
+import nexus_sim._src.build.launch as launch_mod
+from nexus_sim._src.api.sim import Sim
+from nexus_sim._src.config import Catalog, LaunchConfig
+from nexus_sim._src.core.interfaces import Stage
+from nexus_sim._src.core.orchestrator import Orchestrator
+from nexus_sim._src.core.schema import SimTime
+from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
 
 # --- the stand-in core components, as tests/core builds the loop -----------------------------------
 
@@ -65,7 +65,7 @@ class _Actuator:
         pass
 
     def stages(self):
-        return [Stage("forces", "device", lambda tick: self.forces(tick.controls, tick.state))]
+        return [Stage("forces", "device", lambda tick: self.forces(None, tick.state))]
 
 
 @pytest.fixture
@@ -98,12 +98,17 @@ def assembly(monkeypatch, tmp_path):
 
 _DECLARED = (
     '#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n\n'
-    'def Xform "vehicle" (\n    prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n)\n'
-    '{\n    string nexus:airframe = "astro_max"\n}\n'
+    'def Xform "vehicle"\n{\n'
+    '    def Scope "Controller" (\n        prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n    )\n'
+    '    {\n        string nexus:airframe = "astro_max"\n    }\n}\n'
 )
 
-# A layer that drops the PX4 SITL peer's declaration, so the run attaches to an autopilot started elsewhere.
-_DROP_PX4_SITL = '#usda 1.0\n\nover "vehicle" (\n    delete apiSchemas = ["NexusPx4SitlAPI"]\n)\n{\n}\n'
+# A layer that drops the PX4 SITL peer's declaration from the controller's scope, so the run attaches to an
+# autopilot started elsewhere.
+_DROP_PX4_SITL = (
+    '#usda 1.0\n\nover "vehicle"\n{\n'
+    '    over "Controller" (\n        delete apiSchemas = ["NexusPx4SitlAPI"]\n    )\n    {\n    }\n}\n'
+)
 
 
 class _Px4OnInstance2:
@@ -135,7 +140,7 @@ def _run(tmp_path, *, layer: str | None = None, peers: dict | None = None) -> Or
     blob = tmp_path / "vehicle.usda"
     blob.write_text(_DECLARED)
     sha = hashlib.sha256(blob.read_bytes()).hexdigest()
-    catalog = Registry.from_dict(
+    catalog = Catalog.from_dict(
         {
             "vehicles": {"astro": {"usd": {"url": blob.as_uri(), "sha256": sha, "filename": blob.name}}},
             "scenes": {"empty": {}},
@@ -148,7 +153,7 @@ def _run(tmp_path, *, layer: str | None = None, peers: dict | None = None) -> Or
         spec["layer"] = str(path)
     launch = LaunchConfig.from_dict(spec)
     return launch_mod.build_from_launch(
-        launch, registry=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0, peers=peers
+        launch, catalog=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0, peers=peers
     )
 
 

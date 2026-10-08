@@ -2,7 +2,7 @@
 
 import re
 
-from nexus.examples.controllers.px4.log_warnings import WARN_ALLOWLIST, px4_warnings
+from nexus_sim.examples.controllers.px4.log_warnings import WARN_ALLOWLIST, px4_warnings
 
 # The airframe's boot-time line for a parameter this PX4 build lacks, as PX4's `param` command prints it.
 ABSENT_PARAM = "ERROR [param] Parameter MAV_0_CONFIG not found."

@@ -2,9 +2,9 @@
 
 import pytest
 
-from nexus._src.core.interfaces import Stage
-from nexus._src.core.orchestrator import Orchestrator
-from nexus._src.core.schema import Controls, SimTime
+from nexus_sim._src.core.interfaces import Stage
+from nexus_sim._src.core.orchestrator import Orchestrator
+from nexus_sim._src.core.schema import Controls, SimTime
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")  # Python stand-ins run stage by stage, never as a graph
 
@@ -48,16 +48,14 @@ class _Actuator:
         pass
 
     def stages(self):
-        return [Stage("forces", "device", lambda tick: self.forces(tick.controls, tick.state))]
+        return [Stage("forces", "device", lambda tick: self.forces(None, tick.state))]
 
 
 class _LatePeerController:
     """A controller with a peer that dials in on the preroll's hundredth try and answers the first
     message it gets. It keeps the stamp of every message that reached the peer. Its work is the PX4
-    shape, a ``read`` and an ``exchange`` host stage.
+    shape, a ``truth`` and an ``exchange`` host stage.
     """
-
-    host_boundary = True
 
     def __init__(self):
         self._tries = 0
@@ -70,7 +68,7 @@ class _LatePeerController:
     def connect(self):
         pass
 
-    def exchange(self, meas, t, timeout):
+    def exchange(self, t, timeout):
         reached = self.attached  # a message sent before the peer dials in reaches nobody
         self._tries += 1
         if not reached:
@@ -83,10 +81,9 @@ class _LatePeerController:
 
     def stages(self):
         def exchange(tick):
-            tick.controls = self.exchange(tick.meas, tick.t, None)
-            return tick.controls is not None
+            return self.exchange(tick.t, None) is not None
 
-        return [Stage("read", "host", lambda tick: None), Stage("exchange", "host", exchange)]
+        return [Stage("truth", "host", lambda tick: None), Stage("exchange", "host", exchange)]
 
 
 def test_a_peer_that_dials_in_late_gets_its_first_stamp_near_zero():

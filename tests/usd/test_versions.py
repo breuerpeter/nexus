@@ -10,11 +10,11 @@ from pathlib import Path
 
 import pytest
 
-from nexus._src.build.components import resolve_components
-from nexus._src.core.registry import ComponentRegistry
+from nexus_sim._src.build.components import resolve_components
+from nexus_sim._src.core.registry import ComponentRegistry
 
 FIXTURE = Path(__file__).with_name("conformance.usda")
-PLUGIN = Path(__file__).resolve().parents[2] / "nexus" / "_src" / "usd"
+PLUGIN = Path(__file__).resolve().parents[2] / "nexus_sim" / "_src" / "usd"
 IMU = "/Vehicle/body/Imu"
 ACC_NOISE = "float nexus:accNoise = 0.02"
 
@@ -77,7 +77,7 @@ def test_two_versions_of_one_family_build_side_by_side_each_its_own_class(tmp_pa
 def test_an_undefined_version_of_a_defined_family_fails_the_build(tmp_path):
     """A prim that applies an undefined version of a family a plugin defines fails the build, naming the prim, the version it applies and the framework version.
 
-    Given the fixture's root prim applying `NexusPx4SitlAPI_9` and authoring no `nexus:` attribute, when
+    Given the fixture's controller scope applying `NexusPx4SitlAPI_9` and authoring no `nexus:` attribute, when
     resolved, then the build fails and the message carries the prim path, `NexusPx4SitlAPI_9` and the
     version of the installed framework.
     """
@@ -137,7 +137,7 @@ def test_a_released_attribute_changed_in_place_fails_the_check(tmp_path, old, ne
     attribute renamed, then retyped, then given another unit, when the check runs on each copy, then each
     fails naming the schema version and the attribute.
     """
-    from nexus._src.usd.released import in_place_changes
+    from nexus_sim._src.usd.released import in_place_changes
 
     changes = in_place_changes(_plugin_with(tmp_path, old, new))
     assert [change for change in changes if "NexusImuAPI" in change and "nexus:accNoise" in change]
@@ -149,15 +149,40 @@ def test_an_attribute_that_joins_a_released_version_with_a_fallback_passes_the_c
     Given the committed record and a copy of the plugin with one new attribute with a fallback on a
     released version, when the check runs, then it passes.
     """
-    from nexus._src.usd.released import in_place_changes
+    from nexus_sim._src.usd.released import in_place_changes
 
     joined = f'float nexus:accBias = 0 (\n        doc = "A new attribute."\n    )\n    {ACC_NOISE}'
     assert in_place_changes(_plugin_with(tmp_path, ACC_NOISE, joined)) == []
 
 
+def test_a_connection_that_joins_a_released_version_passes_the_check(tmp_path):
+    """A connection, a relationship, that joins a released version passes the check: an asset that authors none reads
+    as before.
+
+    Given the committed record and a copy of the plugin whose released Inertial Measurement Unit (IMU) schema declares one new relationship
+    `nexus:inputs:time`, when the check runs, then it passes.
+    """
+    from nexus_sim._src.usd.released import in_place_changes
+
+    joined = f'rel nexus:inputs:time (\n        doc = "A new connection."\n    )\n    {ACC_NOISE}'
+    assert in_place_changes(_plugin_with(tmp_path, ACC_NOISE, joined)) == []
+
+
+def test_a_released_connection_that_goes_fails_the_check(tmp_path):
+    """A released connection that goes fails the check, which names the schema version and the relationship.
+
+    Given the committed record and a copy of the plugin whose PX4 schema no longer declares its connection
+    `nexus:inputs:imu`, when the check runs, then it fails naming `NexusPx4API` and the relationship.
+    """
+    from nexus_sim._src.usd.released import in_place_changes
+
+    changes = in_place_changes(_plugin_with(tmp_path, "rel nexus:inputs:imu (", "rel nexus:inputs:accel ("))
+    assert [change for change in changes if "NexusPx4API" in change and "nexus:inputs:imu" in change]
+
+
 def test_a_released_attribute_given_another_fallback_fails_the_check(tmp_path):
     """A released attribute given another fallback fails the check, which names the schema version and the attribute."""
-    from nexus._src.usd.released import in_place_changes
+    from nexus_sim._src.usd.released import in_place_changes
 
     changes = in_place_changes(_plugin_with(tmp_path, ACC_NOISE, "float nexus:accNoise = 0.05"))
     assert [change for change in changes if "NexusImuAPI" in change and "nexus:accNoise" in change]
@@ -165,7 +190,7 @@ def test_a_released_attribute_given_another_fallback_fails_the_check(tmp_path):
 
 def test_an_attribute_that_joins_a_released_version_with_no_fallback_fails_the_check(tmp_path):
     """An attribute that joins a released version with no fallback fails the check, which names the schema version and the attribute."""
-    from nexus._src.usd.released import in_place_changes
+    from nexus_sim._src.usd.released import in_place_changes
 
     joined = f'float nexus:accBias (\n        doc = "A new attribute."\n    )\n    {ACC_NOISE}'
     changes = in_place_changes(_plugin_with(tmp_path, ACC_NOISE, joined))
@@ -174,7 +199,7 @@ def test_an_attribute_that_joins_a_released_version_with_no_fallback_fails_the_c
 
 def test_a_released_version_removed_without_being_retired_fails_the_check(tmp_path):
     """A released version the plugin no longer defines and doesn't list as retired fails the check, which names it."""
-    from nexus._src.usd.released import in_place_changes
+    from nexus_sim._src.usd.released import in_place_changes
 
     changes = in_place_changes(_plugin_with(tmp_path, 'class "NexusPx4SitlAPI"', 'class "NexusOtherAPI"'))
     assert [change for change in changes if "NexusPx4SitlAPI" in change]
@@ -182,7 +207,7 @@ def test_a_released_version_removed_without_being_retired_fails_the_check(tmp_pa
 
 def test_a_released_version_the_plugin_lists_as_retired_passes_the_check(tmp_path):
     """A released version the plugin no longer defines passes the check when the plugin lists it as retired."""
-    from nexus._src.usd.released import in_place_changes
+    from nexus_sim._src.usd.released import in_place_changes
 
     plugin = _plugin_with(tmp_path, 'class "NexusPx4SitlAPI"', 'class "NexusOtherAPI"')
     info = plugin / "plugInfo.json"
@@ -192,13 +217,13 @@ def test_a_released_version_the_plugin_lists_as_retired_passes_the_check(tmp_pat
 
 def test_no_released_version_of_the_nexus_plugin_changed_in_place():
     """No released version of the nexus plugin lost or renamed an attribute, or changed one's type or unit."""
-    from nexus._src.usd.released import in_place_changes
+    from nexus_sim._src.usd.released import in_place_changes
 
     assert in_place_changes(PLUGIN) == []
 
 
 def test_the_released_record_is_what_its_command_writes_from_the_nexus_plugin():
-    """The committed record is what `python -m nexus._src.usd.released` writes, so it holds every schema and attribute the plugin defines."""
-    from nexus._src.usd.released import RECORD, record_text
+    """The committed record is what `python -m nexus_sim._src.usd.released` writes, so it holds every schema and attribute the plugin defines."""
+    from nexus_sim._src.usd.released import RECORD, record_text
 
     assert RECORD.read_text() == record_text(PLUGIN)

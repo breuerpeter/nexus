@@ -33,7 +33,7 @@ def test_each_recorded_series_sits_under_its_instance_in_a_series_child(recorded
         {
             "/sim/vehicle/body/body_frd": ["angular_velocity", "position", "quat_xyzw", "velocity"],
             "/sim/vehicle/joints/rotor_1_ccw_joint": ["q", "qd"],
-            "/sim/vehicle/sensors/imu": ["qw", "qx", "qy", "qz", "xacc", "xgyro", "yacc", "ygyro", "zacc", "zgyro"],
+            "/sim/vehicle/sensors/imu": ["xacc", "xgyro", "yacc", "ygyro", "zacc", "zgyro"],
         },
         [],
     )

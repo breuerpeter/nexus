@@ -25,7 +25,7 @@ def _single_body():
 
 
 def test_warp_obs_matches_torch_reference():
-    from nexus.examples._lib.observation import WarpObservationSensor, observation_from_state
+    from nexus_sim.examples._lib.observation import WarpObservationSensor, observation_from_state
 
     state = _single_body().state()
     bq = state.body_q.numpy()

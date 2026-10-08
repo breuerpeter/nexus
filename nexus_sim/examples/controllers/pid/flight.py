@@ -1,0 +1,87 @@
+"""Proportional Integral Derivative (PID) waypoint tour, the minimal controller example: the
+deterministic, differentiable PID, :mod:`law`, flying the collapsed single-body astro-max around a square,
+fully CUDA-graph captured.
+
+This controller is the framework's **determinism authority**, deterministic control over
+the bit-exact Newton CPU physics, the bit-reproducible CI gate real PX4 can't give, and the
+**design-optimization controller**: its gains are the differentiable parameters
+``design_opt/gain_tuning.py`` tunes, and this flight deploys that example's proven configuration,
+the collapsed single-body plant + stable gains. This flight is the smallest end-to-end demo of
+an example's shape: assemble the orchestrator, the example-owned :mod:`assembly`, host it via
+``Sim.from_orchestrator``, fly its mission through ``sim.guidance``.
+
+**The shape.** A zero-arg, self-contained script. On CUDA the whole tick captures into one CUDA
+graph, controller + actuator + physics + sensors; on CPU it runs
+eager and bit-exact.
+
+    uv run -m nexus_sim.examples pid                # flies + asserts + writes the .rrd
+"""
+
+from __future__ import annotations
+
+import numpy as np
+
+import nexus_sim as nx
+from nexus_sim._src.build.launch import resolve_scenario
+from nexus_sim._src.config import LaunchConfig
+from nexus_sim._src.guidance import MissionGuidance
+from nexus_sim._src.rendering import rtx_renderer
+from nexus_sim.examples._lib import dump_run
+from nexus_sim.examples.controllers.pid.assembly import build_pid_orchestrator
+
+# Everything this demo is, in one place: zero args by design, the configuration IS the example.
+VEHICLE = "astro_max_base"
+SCENE = "empty"  # flat ground
+MAX_STEPS = 8000  # safety cap; the guidance ends the run on mission completion
+# The proven single-body PID configuration: the collapsed semi_implicit plant + the gains
+# design_opt/gain_tuning.py's optimizer converges to; its deploy gate verifies they reach a far
+# waypoint and hold it, while the stable-but-undamped hand gains ring around a goal instead of settling.
+GAINS = [0.483, 0.464, 0.062, 0.099, 9.961, 3.103, 1.521]
+MOMENT_SCALE = 0.12
+# A square tour at altitude, from the free-flight start point at (0, 0, 2): four corners, back to start.
+# Leg length ~3-4 m, the goal scale the gain tuning targets; short hops excite under-damped ringing
+# when the guidance switches goals at arrival speed.
+WAYPOINTS = [(3.0, 0.0, 2.0), (3.0, 3.0, 2.5), (0.0, 3.0, 2.0), (0.0, 0.0, 2.0)]
+
+
+def main() -> None:
+    launch = LaunchConfig().set_vehicle(VEHICLE).set_scene(SCENE)
+    launch.runtime.device = "cuda"  # prefer CUDA; resolve_device falls back to CPU when there is none
+    launch.runtime.solver = "semi_implicit"  # the collapsed single-body plant this PID's tuning targets
+    vehicle_usd, _resolved, cfg = resolve_scenario(launch)
+    orch = build_pid_orchestrator(
+        cfg,
+        vehicle_usd=vehicle_usd,
+        goal_w=WAYPOINTS[0],
+        gains=GAINS,
+        moment_scale=MOMENT_SCALE,
+        max_steps=MAX_STEPS,
+        rerun=True,  # the .rrd is the demo's artifact
+        renderer_factory=rtx_renderer(vehicle_usd, cfg),  # the Kit peer, when the vehicle authors RTX sensors
+    )
+    guidance = MissionGuidance(reached_m=0.3, final_hold_s=2.0)
+    with nx.Sim.from_orchestrator(orch, guidance=guidance) as sim:
+        sim.guidance.set_mission(WAYPOINTS)  # the guidance sequences these, advances on arrival, ends the run
+        sim.run()
+
+    states = sim.physics[sim.base_body].history()
+    q = np.array([s.position for s in states])
+    reached = guidance.reached
+    final = float(np.linalg.norm(q[-1] - np.array(WAYPOINTS[-1])))
+    stats = {
+        "reached": reached,
+        "final_dist_m": round(final, 4),
+    }
+    nx.logger.info(
+        f"pid flight: {len(q)} steps, reached {reached}/{len(WAYPOINTS)} waypoints, final dist {final:.3f} m"
+    )
+    # Evaluation artifacts first: a failed run must still leave its trajectory for diagnosis.
+    dump_run(sim, "pid", stats=stats, waypoints=WAYPOINTS, arrival_times=guidance.arrival_times)
+    assert np.isfinite(q).all(), "trajectory diverged"
+    assert reached == len(WAYPOINTS), f"did not reach all waypoints (got {reached}/{len(WAYPOINTS)})"
+    assert final < 0.35, f"did not settle on the final waypoint (final dist {final:.3f} m)"
+    nx.logger.info("OK: flew the square, reached every waypoint and settled")
+
+
+if __name__ == "__main__":
+    main()

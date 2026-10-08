@@ -50,6 +50,39 @@ def pytest_make_collect_report(collector):
     return report
 
 
+# A `gpu` test needs a CUDA device. Without one it skips here, the one place a test skips for that, and
+# with `--require-cuda`, the GPU leg's setting, a `gpu` test that skips for any reason fails instead.
+_NO_CUDA = "no CUDA device"
+
+
+def pytest_addoption(parser):
+    """Add `--require-cuda`: fail a `gpu` test that skips, so a lost device reds the GPU leg."""
+    parser.addoption("--require-cuda", action="store_true", help="fail a `gpu` test that skips")
+
+
+def pytest_runtest_setup(item):
+    """Skip a `gpu` test on a machine with no CUDA device."""
+    if item.get_closest_marker("gpu") and not wp.is_cuda_available():
+        pytest.skip(_NO_CUDA)
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(item, call):
+    """Fail a `gpu` test that skips under `--require-cuda`, and a test with no `gpu` marker that skips for CUDA."""
+    report = yield
+    if not report.skipped or hasattr(report, "wasxfail"):
+        return report
+    reason = report.longrepr[2].removeprefix("Skipped: ") if isinstance(report.longrepr, tuple) else ""
+    if item.get_closest_marker("gpu"):
+        if item.config.getoption("require_cuda"):
+            report.outcome = "failed"
+            report.longrepr = f"a gpu test skipped under --require-cuda: {reason}"
+    elif "CUDA" in reason:
+        report.outcome = "failed"
+        report.longrepr = f"skipped for CUDA ({reason}): mark the test gpu, and the suite skips it without a device"
+    return report
+
+
 @pytest.fixture
 def warp_cpu():
     """Run the test with ``cpu`` as the Warp default device, and put the default back after it."""
@@ -265,15 +298,20 @@ class StandInReference:
 
 
 class StandInController:
-    """A controller named `standin` that commands nothing, takes a planned reference and logs one
-    row of its own, `horizon`, each tick through the logger the loop hands it.
+    """A controller named `standin` that commands nothing, its controls all zero, reads a planned
+    reference as its setpoint and logs one row of its own, `horizon`, each tick through the logger the
+    loop hands it.
     """
 
     name = "standin"
 
     def __init__(self):
+        from nexus_sim._src.core.schema import ReferenceTrajectory
+        from nexus_sim._src.core.signals import Signal
+
         self._logger = None
-        self._controls = None
+        self.setpoint = Signal("setpoint", ReferenceTrajectory)
+        self.controls = Signal("controls", wp.float32, shape=(1, 16))  # every channel off: the vehicle rests
 
     def connect(self) -> None:
         pass
@@ -281,55 +319,59 @@ class StandInController:
     def close(self) -> None:
         pass
 
-    def accept_setpoint(self, setpoint) -> None:
-        pass
-
     def set_logger(self, logger) -> None:
         self._logger = logger
 
     def _act(self, tick) -> None:
-        if self._controls is None:
-            self._controls = wp.zeros((1, 16), dtype=wp.float32)  # every channel off: the vehicle rests
-        tick.controls = self._controls
         if self._logger is not None:
             self._logger.log_strip("horizon", [[0.0, 0.0, 1.0], [1.0, 0.0, 1.0]], color=(255, 140, 0))
 
     def stages(self):
-        from nexus._src.core.interfaces import Stage
+        from nexus_sim._src.core.interfaces import Stage
 
-        return [Stage("act", "host", self._act)]
+        return [Stage("act", "host", self._act, reads=(self.setpoint,), writes=(self.controls,))]
 
 
-def fly_recorded(tmp, vehicle: str, *, layer: str | None = None, ticks: int = FLIGHT_TICKS, kit=None, debug=False):
+def fly_recorded(
+    tmp,
+    vehicle: str,
+    *,
+    scene: str = "empty",
+    layer: str | None = None,
+    ticks: int = FLIGHT_TICKS,
+    kit=None,
+    debug=False,
+):
     """Fly ``vehicle`` on the Warp CPU backend with recording on, and return the path of its ``.rrd``.
 
-    The run flies a :class:`StandInController` under an operator that plans a two-waypoint mission,
-    with a ``Recorder`` attached and the Kit peer sent to its fake, or to ``kit``. ``layer`` is an
-    override layer's text. The home folder is ``tmp`` for the run, so the recording lands there.
+    The run flies a :class:`StandInController` under a guidance that plans a two-waypoint mission, over
+    the passthrough estimator's estimate, with a ``Recorder`` attached and the Kit peer sent to its fake, or to ``kit``, in ``scene``, a catalog
+    name or a path. ``layer`` is an override layer's text. The home folder is ``tmp`` for the run, so the recording lands there.
     """
-    import nexus as na
-    from nexus._src.build.assembly import build_orchestrator
-    from nexus._src.build.launch import resolve_scenario
-    from nexus._src.config import LaunchConfig
-    from nexus._src.operator import InProcessOperator
-    from nexus._src.peers.kit.fake import KitFake
-    from nexus._src.rendering import rtx_renderer
+    import nexus_sim as nx
+    from nexus_sim._src.build.assembly import build_orchestrator
+    from nexus_sim._src.build.launch import resolve_scenario
+    from nexus_sim._src.config import LaunchConfig
+    from nexus_sim._src.guidance import TrackingGuidance
+    from nexus_sim._src.peers.kit.fake import KitFake
+    from nexus_sim._src.rendering import rtx_renderer
+    from nexus_sim._src.vehicle.estimators import GroundTruthEstimator
 
-    spec = {"vehicle": vehicle, "scene": "empty", "runtime": {"device": "cpu"}}
+    spec = {"vehicle": vehicle, "scene": scene, "runtime": {"device": "cpu"}}
     if layer is not None:
         path = tmp / "layer.usda"
         path.write_text(f"#usda 1.0\n\n{layer}")
         spec["layer"] = str(path)
     with pytest.MonkeyPatch.context() as patch, wp.ScopedDevice("cpu"):
         patch.setenv("HOME", str(tmp))
-        builder, _, cfg = resolve_scenario(LaunchConfig.from_dict(spec))
+        vehicle_usd, _, cfg = resolve_scenario(LaunchConfig.from_dict(spec))
         controller = StandInController()
-        renderer_factory = rtx_renderer(builder, cfg, peer=kit or KitFake)
+        renderer_factory = rtx_renderer(vehicle_usd, cfg, peer=kit or KitFake)
         try:
             orch = build_orchestrator(
                 "fixture",
                 cfg,
-                vehicle_builder=builder,
+                vehicle_usd=vehicle_usd,
                 controller=controller,
                 rerun=True,
                 viewer=False,
@@ -341,9 +383,10 @@ def fly_recorded(tmp, vehicle: str, *, layer: str | None = None, ticks: int = FL
             if renderer_factory is not None:
                 renderer_factory.close()  # the loop never took the Kit peer over, so it stops here
             raise
-        operator = InProcessOperator(controller, planner=StandInReference)
-        with na.Sim.from_orchestrator(orch, operator=operator) as sim:
-            sim.operator.set_mission([(1.0, 0.0, 2.0), (2.0, 0.0, 2.0)])
+        orch.estimator = GroundTruthEstimator()  # the guidance reads the vehicle's position from its estimate
+        guidance = TrackingGuidance(planner=StandInReference)
+        with nx.Sim.from_orchestrator(orch, guidance=guidance) as sim:
+            sim.guidance.set_mission([(1.0, 0.0, 2.0), (2.0, 0.0, 2.0)])
             sim.run()
         return orch.logger.rrd_path
 

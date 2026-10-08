@@ -41,7 +41,7 @@ dependencies = [
     "scipy>=1.11.0",
     "rerun-sdk>=0.34.1,<0.35",
     # The docker daemon client: the framework starts the PX4 SITL container it flies against and
-    # the Kit render peer (nexus/_src/peers/containers.py). Pure Python over requests/urllib3, which
+    # the Kit render peer (nexus_sim/_src/peers/containers.py). Pure Python over requests/urllib3, which
     # are already in the tree.
     "docker>=7.1.0",
 ]
@@ -58,20 +58,20 @@ acados   = ["casadi>=3.6,<=3.8.1", "ruckig>=0.14", "matplotlib", "Deprecated"]
 all      = ["nexus-sim[policy,examples]"]
 
 [project.scripts]
-nexus = "nexus._src.cli.main:main"
+nexus = "nexus_sim._src.cli.main:main"
 
 # The class each nexus schema resolves to, loaded only when a vehicle applies the schema. A project
 # beside nexus declares its own classes in the same group.
 [project.entry-points."nexus.components"]
-NexusImuAPI = "nexus._src.vehicle.sensors:ImuSensor"
-NexusMagAPI = "nexus._src.vehicle.sensors:MagSensor"
-NexusBaroAPI = "nexus._src.vehicle.sensors:BaroSensor"
-NexusGpsAPI = "nexus._src.vehicle.sensors:GpsSensor"
-NexusCameraAPI = "nexus._src.vehicle.sensors.rtx_camera:RtxCameraSensor"
-NexusThermalCameraAPI = "nexus._src.vehicle.sensors.rtx_thermal:RtxThermalSensor"
-NexusLidarAPI = "nexus._src.vehicle.sensors.rtx_lidar:RtxLidarSensor"
-NexusPropellerAPI = "nexus._src.vehicle.forces.propellers:Propeller"
-NexusPx4API = "nexus._src.vehicle.controllers.px4:Px4MavlinkController"
+NexusImuAPI = "nexus_sim._src.vehicle.sensors:ImuSensor"
+NexusMagAPI = "nexus_sim._src.vehicle.sensors:MagSensor"
+NexusBaroAPI = "nexus_sim._src.vehicle.sensors:BaroSensor"
+NexusGpsAPI = "nexus_sim._src.vehicle.sensors:GpsSensor"
+NexusCameraAPI = "nexus_sim._src.vehicle.sensors.rtx_camera:RtxCameraSensor"
+NexusThermalCameraAPI = "nexus_sim._src.vehicle.sensors.rtx_thermal:RtxThermalSensor"
+NexusLidarAPI = "nexus_sim._src.vehicle.sensors.rtx_lidar:RtxLidarSensor"
+NexusPropellerAPI = "nexus_sim._src.vehicle.forces.propellers:Propeller"
+NexusPx4API = "nexus_sim._src.vehicle.controllers.px4:Px4MavlinkController"
 
 [project.urls]
 Homepage = "https://github.com/breuerpeter/nexus"
@@ -91,8 +91,11 @@ environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
 build-constraint-dependencies = ["scikit-build-core<0.10"]
 
 [tool.uv.build-backend]
-module-name = "nexus"
+module-name = "nexus_sim"
 module-root = ""
+# Agent instruction files stay in the repo; neither artifact ships them.
+wheel-exclude = ["**/CLAUDE.md"]
+source-exclude = ["**/CLAUDE.md"]
 
 [tool.uv.sources]
 warp-lang = { index = "nvidia" }
@@ -123,9 +126,16 @@ docs = [
 ]
 
 [tool.pytest.ini_options]
-# pytest's default list also skips `build`, the name of the folder that mirrors `nexus/_src/build/`.
+# pytest's default list also skips `build`, the name of the folder that mirrors `nexus_sim/_src/build/`.
 norecursedirs = [".*", "dist", "node_modules", "venv"]
 testpaths = ["tests"]
+# A misspelled marker fails the run instead of moving a test to the wrong leg.
+addopts = ["--strict-markers"]
+# cpu-pytest runs `-m "not gpu and not px4_sitl"` and gpu-pytest `-m "gpu or px4_sitl" --require-cuda`.
+markers = [
+    "gpu: needs a CUDA device; skips without one, and fails when it does not run under --require-cuda",
+    "px4_sitl: flies a real PX4 SITL, built from the tree on this machine",
+]
 
 [tool.ruff]
 line-length = 120

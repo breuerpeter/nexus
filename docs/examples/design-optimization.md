@@ -4,7 +4,7 @@ description: "Back-propagate through a closed-loop flight to tune a Proportional
 
 # Differentiable design optimization
 
-`nexus/examples/design_opt/` back-propagates through a differentiable single-body simulation to
+`nexus_sim/examples/design_opt/` back-propagates through a differentiable single-body simulation to
 **tune a controller**, in `gain_tuning.py`, and **recover a physical parameter**, in
 `mass_recovery.py`.
 
@@ -25,8 +25,8 @@ settles in ~2.2 s with no overshoot, and holds. The rotors spin, as a visual. A 
 the recording isn't uploaded yet: run `scripts/ci/evaluate_examples.py --upload`.*
 
 ```bash
-uv run -m nexus.examples gain_tuning            # tunes + flies + writes the .rrd
-uv run -m nexus.examples mass_recovery          # assert the system-ID mass recovery
+uv run -m nexus_sim.examples gain_tuning            # tunes + flies + writes the .rrd
+uv run -m nexus_sim.examples mass_recovery          # assert the system-ID mass recovery
 ```
 
 ## Measured

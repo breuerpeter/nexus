@@ -4,7 +4,7 @@ description: "A real-time Nonlinear Model Predictive Control (NMPC) controller o
 
 # Nonlinear model predictive control with acados
 
-`nexus/examples/controllers/acados_nmpc/waypoint_tracking.py` flies the astro-max through a
+`nexus_sim/examples/controllers/acados_nmpc/waypoint_tracking.py` flies the astro-max through a
 **curving seven-waypoint course** with a **real-time nonlinear Model Predictive Control (MPC)**
 controller.
 
@@ -13,7 +13,8 @@ controller.
   rate, with the four single-rotor thrusts as inputs and an `N=20` horizon, re-solved every
   control tick.
 - **A min-snap reference, tracked as the full flat state:** the NMPC is a pure *tracking*
-  controller. The planner lives with the **operator**, in `sim.operator.set_mission(WAYPOINTS)`.
+  controller. The planner lives with the **guidance**, a `TrackingGuidance` the flight constructs, and
+  `sim.guidance.set_mission(WAYPOINTS)` hands it the waypoints.
   It fits a **min-snap polynomial** through the waypoints, in `examples/_lib/min_snap.py`.
   Differential flatness then lifts it
   to a full state reference of attitude and body rate plus thrust feed-forward. The
@@ -43,9 +44,9 @@ yet: run `scripts/ci/evaluate_examples.py --upload`.*
 
 ## How it works
 
-The controller, `nexus/examples/controllers/acados_nmpc/controller.py`, never plans: the
-operator hands it the whole-path reference once through `accept_setpoint(ReferenceTrajectory)`,
-and every control tick it solves a short optimal-control problem to stay on it.
+The controller, `nexus_sim/examples/controllers/acados_nmpc/controller.py`, never plans. The
+guidance writes the whole-path reference once to the setpoint, a `ReferenceTrajectory` the controller
+reads. Every control tick, the controller solves a short optimal-control problem to stay on it.
 
 ### The internal model
 
@@ -126,18 +127,18 @@ solve ~0.13 ms against the 4 ms control period. The first run compiles the gener
 
 Each `exchange()` tick:
 
-1. **Hold hover** until the operator has handed over a reference.
+1. **Hold hover** until the guidance has handed over a reference.
 2. **Read the measured state** from Newton's `body_q` and `body_qd` and adapt it. Rotate the
    world-frame $\omega$ into the body frame. Re-express the Forward Right Down (FRD) authored
    body, with thrust along $-z_b$, in the upright NMPC convention, with thrust along $+z_b$. That
    uses the fixed 180°-about-x flip $q_{\mathrm{nmpc}} = q_{\mathrm{meas}} \otimes q_{\mathrm{flip}}$,
    $\omega_{\mathrm{nmpc}} = \operatorname{diag}(1,-1,-1)\,\omega_{\mathrm{body}}$. Only the state
    read needs this. The emitted per-rotor thrusts are frame-independent.
-3. **Write the reference**: query the operator-planned min-snap reference at $t_0 + k \cdot 50$ ms
+3. **Write the reference**: query the guidance-planned min-snap reference at $t_0 + k \cdot 50$ ms
    for each node, as that node's $y^{\mathrm{ref}}_k$. Each node's reference holds position,
    quaternion, velocity, body rate, and collective thrust from the differential-flatness lift, with
    the collective split evenly across rotors as the input reference. The reference clock anchors
-   to the first exchange after `accept_setpoint`, so the trajectory plays from its own $t = 0$.
+   to the first exchange that reads a new reference, so the trajectory plays from its own $t = 0$.
 4. **Solve once, apply the first input**: take $u_0$, four thrusts in N, and invert the thrust map
    into the actuator's normalized command,
    $\mathrm{throttle}_i = \sqrt{T_i / c_T}\, /\, \mathrm{rpm}_{\max}$. That command drives
@@ -151,7 +152,7 @@ the current state and hover thrust. So a new trajectory never inherits a stale s
 ### Where it sits in the framework
 
 The orchestrator runs physics CUDA-graph-captured. The NMPC solve is the one per-tick host
-operation. It runs at the host-exchange seam between graph replays, the captured-host-exchange
+operation. It runs in a host stage between graph replays, the captured-host-exchange
 strategy. See [Execution](../design/execution.md). Two side channels feed the artifacts.
 `track_err` records the per-tick realized-versus-reference position error at node 0, the APE the
 example gates on. When recording, every sixth tick logs the predicted horizon positions as the
@@ -183,8 +184,8 @@ acados isn't a plain pip dependency. It's a C library your machine compiles, and
 compiles a C solver. Provision it once, then fly:
 
 ```bash
-uv run --extra acados -m nexus.examples acados_nmpc --provision   # fetches + builds acados
-uv run --extra acados -m nexus.examples acados_nmpc   # flies + asserts + writes the .rrd
+uv run --extra acados -m nexus_sim.examples acados_nmpc --provision   # fetches + builds acados
+uv run --extra acados -m nexus_sim.examples acados_nmpc   # flies + asserts + writes the .rrd
 ```
 
 The first command fetches the acados commit the example pins into `~/.cache/nexus/acados/`, builds
@@ -197,8 +198,8 @@ From an installed package, no checkout needed:
 
 ```bash
 pip install 'nexus-sim[acados]'
-python -m nexus.examples acados_nmpc --provision
-python -m nexus.examples acados_nmpc
+python -m nexus_sim.examples acados_nmpc --provision
+python -m nexus_sim.examples acados_nmpc
 ```
 
 Needs a CUDA device for the Newton sim, and `cmake` and a C compiler for acados and its code

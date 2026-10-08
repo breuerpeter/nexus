@@ -1,0 +1,40 @@
+"""`nexus run <vehicle>`: the thin command-line entry into a run.
+
+``run`` builds a :class:`~nexus_sim._src.api.sim.Sim` from the shared ``sim_argparser`` flags and
+drives it to completion. A vehicle whose Universal Scene Description (USD) file declares RTX sensors
+renders them in the Kit render peer, a container the run starts from this host.
+"""
+
+from __future__ import annotations
+
+from nexus_sim._src.api.args import sim_argparser  # import-light: parses before the run builds
+
+
+def _run(args) -> None:
+    """Build a ``Sim`` from the shared args and drive it to completion. A PX4 run feeds the peer
+    until it disconnects, the run hits ``max_steps``, or Ctrl-C.
+    """
+    from nexus_sim._src.api.sim import Sim
+
+    with Sim.from_args(args) as sim:
+        sim.run()  # drives setup, which binds the lockstep port PX4 dials, and then every tick, on this thread
+
+
+def main() -> None:
+    parser = sim_argparser(description="Fly a vehicle against PX4 SITL over the HIL link.")
+    parser.add_argument("command", nargs="?", default="run", choices=["run"], help="subcommand")
+    args = parser.parse_args()
+
+    if args.log and args.view:  # serve or file, never both: a live server and a complete .rrd can't coexist in-process
+        parser.error("--log (write .rrd) and --view (serve viewer) are mutually exclusive, pick one")
+
+    from nexus_sim._src.peers.kit.runner import KitPeerError
+
+    try:
+        _run(args)
+    except KitPeerError as exc:  # the Kit container couldn't start: say why, no traceback
+        raise SystemExit(f"nexus: {exc}") from None
+
+
+if __name__ == "__main__":
+    main()

@@ -47,7 +47,7 @@ def _fake_flight(monkeypatch, stats: dict, rtf: float = 2.0) -> None:
 
     def run(cmd, **kwargs):
         if cmd[:2] == ["uv", "run"]:
-            example = cmd[cmd.index("nexus.examples") + 1]
+            example = cmd[cmd.index("nexus_sim.examples") + 1]
             out = pathlib.Path(kwargs["env"]["NEXUS_EVAL_OUT"])
             (out / f"{example}.json").write_text(json.dumps({"stats": stats, "results": {"rtf": rtf}}))
         return subprocess.CompletedProcess(cmd, 0, "", "")
@@ -278,7 +278,7 @@ def _fake_flights(monkeypatch, recordings: pathlib.Path, flights: dict[str, tupl
 
     def run(cmd, **kwargs):
         if cmd[:2] == ["uv", "run"]:
-            example = cmd[cmd.index("nexus.examples") + 1]
+            example = cmd[cmd.index("nexus_sim.examples") + 1]
             stats, rc = flights[example]
             rrd = recordings / f"{example}.rrd"
             rrd.parent.mkdir(parents=True, exist_ok=True)

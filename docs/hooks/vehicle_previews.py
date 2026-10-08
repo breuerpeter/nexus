@@ -1,10 +1,10 @@
-"""mkdocs hook: inject <model-viewer> asset previews from the vehicle registry.
+"""mkdocs hook: inject <model-viewer> asset previews from the vehicle catalog.
 
 Replaces `<!-- model-preview: <name> -->` markers in any page with an interactive glTF
 preview of the vehicle whose Universal Scene Description (USD) filename stem is `<name>`,
 for example `astro_max_fpv`. The glb is the content-addressed `.glb` sibling of the
 vehicle's USD on CloudFront, under the flat scheme `usd/vehicles/<name>-<sha>.glb`, so the
-URL derives from `registry.yaml`: adding a vehicle there makes its preview available with
+URL derives from `catalog.yaml`: adding a vehicle there makes its preview available with
 no page edits.
 
 Preview-before-publish: if a local glb exists under `assets/local/<name>-<sha>.glb`, where
@@ -27,23 +27,23 @@ import yaml
 from mkdocs.structure.files import File
 from mkdocs.utils import get_relative_url
 
-from nexus._src.assets.resolver import hosted_url
+from nexus_sim._src.assets.resolver import hosted_url
 
 _REPO = Path(__file__).resolve().parents[2]
-_REGISTRY = _REPO / "nexus/_src/config/registry.yaml"
+_CATALOG = _REPO / "nexus_sim/_src/config/catalog.yaml"
 _LOCAL_ASSETS = _REPO / "assets/local"  # where prepare_asset_upload.py drops preview glbs
 _SITE_MODELS = "assets/models"  # where the built site serves a local glb
 _MARKER = re.compile(r"(?P<indent>[ \t]*)<!--\s*model-preview:\s*(?P<name>[\w.-]+)\s*-->")
 
 
 def _glb_targets() -> dict[str, tuple[str, str]]:
-    """Map asset name -> (cloudfront_glb_url, glb_basename) for every registry vehicle.
+    """Map asset name -> (cloudfront_glb_url, glb_basename) for every catalog vehicle.
 
     A compact entry stores ``{name, sha256}``; the glb is the content-addressed sibling of the
-    vehicle's USD, with the same key and the ``.glb`` suffix, derived against the registry's own base
+    vehicle's USD, with the same key and the ``.glb`` suffix, derived against the catalog's own base
     through the shared ``hosted_url`` scheme.
     """
-    data = yaml.safe_load(_REGISTRY.read_text())
+    data = yaml.safe_load(_CATALOG.read_text())
     base = (data.get("assets") or {}).get("base")
     targets: dict[str, tuple[str, str]] = {}
     for vehicle in (data.get("vehicles") or {}).values():
@@ -93,7 +93,7 @@ def on_page_markdown(markdown: str, *, page, config, files) -> str:
         name = match.group("name")
         target = targets.get(name)
         if target is None:
-            emitted = f"<!-- model-preview: no registry vehicle with USD stem '{name}' -->"
+            emitted = f"<!-- model-preview: no catalog vehicle with USD stem '{name}' -->"
         else:
             glb_url, glb_basename = target
             # Prefer a local copy, for preview-before-publish or offline use; else CloudFront.

@@ -1,7 +1,7 @@
 """Where PX4 Software In The Loop (SITL) starts its clock when it dials in late to the sim's
 Hardware In The Loop (HIL) server, as it can on a slow CI runner.
 
-The module fixture flies one run through ``na.Sim``, which builds and launches PX4 from the tree
+The module fixture flies one run through ``nx.Sim``, which builds and launches PX4 from the tree
 on this machine, so the test needs docker and a PX4 tree carrying the airframe the sim flies; it
 skips without one.
 """
@@ -21,18 +21,20 @@ os.environ.setdefault("MAVLINK_DIALECT", "common")
 
 from pymavlink import mavutil
 
-import nexus as na
-from nexus._src.peers.px4_sitl import checkout
+import nexus_sim as nx
+from nexus_sim._src.peers.px4_sitl import checkout
 
 # The tree the run would fly, with no fetch: $PX4_DIR, or the pinned tree once a run fetched it.
 _TREE = checkout.tree(fetch_missing=False)
-if _TREE is None or not list(
-    (_TREE / "ROMFS" / "px4fmu_common" / "init.d-posix" / "airframes").glob("*_none_astro_max")
-):
-    pytest.skip(
-        "needs docker and a PX4 tree on this machine, $PX4_DIR or the fetched pin, carrying the none_astro_max airframe",
-        allow_module_level=True,
-    )
+# A mark, not a skip at import, so a run that deselects `px4_sitl` lists none of these tests.
+pytestmark = [
+    pytest.mark.px4_sitl,
+    pytest.mark.skipif(
+        _TREE is None
+        or not list((_TREE / "ROMFS" / "px4fmu_common" / "init.d-posix" / "airframes").glob("*_none_astro_max")),
+        reason="needs docker and a PX4 tree on this machine, $PX4_DIR or the fetched pin, carrying the none_astro_max airframe",
+    ),
+]
 
 _DIAL_IN_S = 17.0  # how long after the sim starts waiting PX4's connection reaches it, as on a slow CI runner
 
@@ -66,7 +68,7 @@ def first_sensor_stamp_of_a_late_dial_in():
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(mavutil.mavtcpin, "recv", recv_once_px4_dialed_in)
         mp.setattr(mavutil.mavtcpin, "write", write_and_read_stamps)
-        with na.Sim("astro_max_base", scene="empty") as sim:
+        with nx.Sim("astro_max_base", scene="empty") as sim:
             sim.start(timeout=120.0)
     return stamps[0]
 

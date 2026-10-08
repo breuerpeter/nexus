@@ -6,8 +6,8 @@ Global Positioning System (GPS) uses a float64 channel so lat/lon survive.
 import numpy as np
 import warp as wp
 
-from nexus._src.recording import Recorder, SensorSample
-from nexus._src.recording.sensor import SensorRecorder
+from nexus_sim._src.recording import Recorder, SensorSample
+from nexus_sim._src.recording.sensor import SensorRecorder
 
 
 class _FakeImu(SensorRecorder):

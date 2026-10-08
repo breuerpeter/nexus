@@ -7,7 +7,7 @@ holds, so a script learns why before it opens a client on nothing.
 
 import pytest
 
-from nexus._src.core.ports import PortMap
+from nexus_sim._src.core.ports import PortMap
 
 
 def test_a_link_the_builder_left_out_fails_with_its_reason():

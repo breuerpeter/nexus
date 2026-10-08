@@ -1,0 +1,137 @@
+"""Trained-policy flight: fly an exported RL policy through the standalone runtime, recorded to a
+Rerun ``.rrd``. This is the **deploy half** of the round-trip: it takes an exported ``policy.pt``
+and flies it, no Isaac Lab involved.
+
+The training half lives in the separate ``nexus-rl`` Isaac Lab project, ``--project
+nexus-rl``; *this* runs on **standalone Newton** via ``uv``, with no Isaac Lab and no container. It
+loads the exported ``policy.pt`` and flies it with the single-body :class:`Rotors`, the
+same per-rotor model the policy trained against, closing the loop: train on Isaac-Lab-on-Newton →
+deploy on the core.
+
+**The shape.** A zero-arg, self-contained script: it assembles its own orchestrator, the
+example-owned :mod:`assembly`, and hosts it via ``Sim.from_orchestrator`` + ``sim.guidance``. The
+controller builds its observation from the estimate the passthrough estimator writes, the single
+train↔deploy obs source, and runs its TorchScript inference in a host stage; everything else runs CUDA-graph
+captured. A geofence guidance sequences the waypoints, advancing on arrival, since the policy is
+goal-relative, so each arrival hands it a fresh single-goal problem. It owns the run's end, and ends
+the run at once if the vehicle leaves the fence.
+
+The policy is the hosted, content-addressed :data:`POLICY_ASSET`, sha-verified into the asset
+cache as the vehicle Universal Scene Description (USD) files are; pass ``--policy`` to fly a fresh local
+export instead, which is how the RL CI deploys its just-trained checkpoint.
+
+    uv run --extra policy -m nexus_sim.examples goto_policy
+    uv run --extra policy -m nexus_sim.examples goto_policy --policy <path-to>/exported/policy.pt
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import time
+
+import numpy as np
+
+import nexus_sim as nx
+from nexus_sim._src.build.launch import resolve_scenario
+from nexus_sim._src.config import LaunchConfig
+from nexus_sim._src.rendering import rtx_renderer
+from nexus_sim.examples._lib import dump_run
+from nexus_sim.examples.controllers.policy.assembly import build_policy_orchestrator
+from nexus_sim.examples.controllers.policy.goto.geofence import GeofenceGuidance
+
+# Everything this demo is, in one place: zero required args, the configuration IS the example;
+# --policy optionally deploys a fresh local export instead of the hosted checkpoint.
+VEHICLE = "astro_max_base"
+SCENE = "empty"  # flat ground
+MAX_STEPS = 6000  # safety cap; the guidance ends the run on mission completion
+WAYPOINTS = [(1.5, 1.0, 1.5), (-1.5, 1.0, 2.0), (-0.5, -0.5, 1.8)]  # a small tour
+FENCE = ((-3.0, -3.0, 0.2), (3.0, 3.0, 4.0))  # the box the flight stays inside [m]; leaving it ends the run
+# The hosted default policy, content-addressed and sha-verified, trained by nexus-rl on this
+# vehicle's USD-authored thrust map; see docs/examples/isaac-lab-rl.md for the training recipe.
+POLICY_ASSET = {"name": "goto_policy", "sha256": "6b3edb018f540934bb0aa2c0a23be357684d3a911c9fd986978041a4473902d0"}
+
+
+def _resolve_policy(override: str | None, asset: dict = POLICY_ASSET) -> str:
+    """The exported TorchScript policy this flight deploys: the ``--policy`` override, a fresh
+    local export, when given, else the hosted *asset*, a ``{name, sha256}`` pin, fetched from the
+    catalog's ``assets.base`` and sha-verified into the asset cache, offline after the first fetch.
+    """
+    if override:
+        if not os.path.isfile(override):
+            raise SystemExit(f"--policy {override!r} is not a file (expected an exported policy.pt)")
+        return override
+    from nexus_sim._src.assets.resolver import fetch, hosted_url
+    from nexus_sim._src.config import load_catalog
+
+    name, sha = asset["name"], asset["sha256"]
+    try:
+        base = load_catalog().assets.base
+        if not base:
+            raise ValueError("the catalog names no assets.base to fetch the hosted policy from")
+        return str(fetch(hosted_url(base, "policies", name, sha, "pt"), sha, filename=f"{name}.pt"))
+    except Exception as exc:
+        raise SystemExit(
+            f"could not fetch the hosted policy ({exc}): pass --policy /path/to/exported/policy.pt "
+            "(train + export one: `uv run --project nexus-rl python nexus-rl/scripts/rsl_rl/train.py`)"
+        ) from exc
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="Fly the goto waypoint tour with a trained policy.")
+    ap.add_argument(
+        "--policy", default=None, metavar="PT",
+        help="exported TorchScript policy to deploy (default: the hosted, sha-verified checkpoint)",
+    )  # fmt: skip
+    # parse_known_args: the launcher passes the shared diagnostics flags (--profile/...) through.
+    args, _ = ap.parse_known_args()
+    policy = _resolve_policy(args.policy)
+    nx.logger.info(f"[policy] policy={policy}  {len(WAYPOINTS)} waypoints")
+    launch = LaunchConfig().set_vehicle(VEHICLE).set_scene(SCENE)
+    launch.runtime.device = "cuda"  # prefer CUDA; resolve_device falls back to CPU when there is none
+    vehicle_usd, _resolved, cfg = resolve_scenario(launch)
+    orch = build_policy_orchestrator(
+        cfg,
+        policy_path=policy,
+        vehicle_usd=vehicle_usd,
+        max_steps=MAX_STEPS,
+        rerun=True,  # the .rrd is the demo's artifact
+        renderer_factory=rtx_renderer(vehicle_usd, cfg),  # the Kit peer, when the vehicle authors RTX sensors
+    )
+    guidance = GeofenceGuidance(bounds=FENCE)
+    with nx.Sim.from_orchestrator(orch, guidance=guidance) as sim:
+        sim.guidance.set_mission(WAYPOINTS)  # the guidance sequences these, advances on arrival, ends the run
+        t0 = time.time()
+        sim.run()  # blocks until the mission completes, or the safety cap
+        wall = time.time() - t0
+
+    traj = sim.physics[sim.base_body].history()
+    final_pos = np.asarray(traj[-1].position) if traj else np.full(3, np.nan)
+    reached = guidance.reached
+    # Measure to the goal the policy is actively tracking, clamped to the last waypoint on completion,
+    # not the last one already passed, so a steps-truncated run reports the live tracking error.
+    target = np.asarray(WAYPOINTS[min(reached, len(WAYPOINTS) - 1)])
+    final_err = float(np.linalg.norm(final_pos - target))
+    control_steps = int(sim.results().get("control_steps", len(traj)))
+    throughput = round(control_steps / wall, 1) if wall > 0 else 0.0
+    stats = {
+        "waypoints": len(WAYPOINTS),
+        "reached": reached,
+        "geofence_breached": guidance.breached_at is not None,  # monitored only: a breach already fails `reached`
+        "control_steps": control_steps,
+        "deploy_steps_per_sec": throughput,  # control-loop throughput: sensors→policy→actuator→physics
+        "final_tracking_error_m": round(final_err, 4),
+    }
+    nx.logger.info(
+        f"[policy] reached {reached}/{len(WAYPOINTS)} waypoints; final pos={np.round(final_pos, 3)} "
+        f"err={final_err:.3f} m; {throughput:.0f} steps/s",
+    )
+    nx.logger.info(f"[policy] {json.dumps(stats)}")
+    # Evaluation artifacts: flown trajectory + the waypoint mission, with arrival times. The CI
+    # harness interpolates the position reference and scores Absolute Pose Error (APE) + the preceding stats.
+    dump_run(sim, "goto_policy", stats=stats, waypoints=WAYPOINTS, arrival_times=guidance.arrival_times)
+
+
+if __name__ == "__main__":
+    main()

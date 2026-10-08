@@ -4,7 +4,7 @@ import math
 
 import numpy as np
 
-from nexus.examples._lib.observation import (
+from nexus_sim.examples._lib.observation import (
     OBS_DIM,
     POLICY_OBS_DIM,
     build_observation,
@@ -22,7 +22,7 @@ def test_obs_dim():
 def test_prev_action_appended():
     """The policy obs = the 12-D kinematic obs with the last action appended, POLICY_OBS_DIM wide.
     This is the single-source rule: deploy concatenates exactly what training appends, so the
-    augmented obs can't drift across the FR-7 seam.
+    augmented obs can't drift between training and deploy.
     """
     prev = (0.1, -0.2, 0.3, 0.4)
     args = ((0, 0, 1), IDENT, (1, 2, 3), (0.1, 0.2, 0.3), (5, 0, 1))

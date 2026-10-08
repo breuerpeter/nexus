@@ -5,8 +5,8 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from nexus._src.core.schema import Controls  # noqa: E402
-from nexus.examples.controllers.policy.controller import TrainedPolicyController  # noqa: E402
+from nexus_sim._src.core.schema import Controls  # noqa: E402
+from nexus_sim.examples.controllers.policy.controller import TrainedPolicyController  # noqa: E402
 
 
 def _make_stub_policy(tmp_path):
@@ -53,17 +53,6 @@ def test_obs_from_state_goal_relative(tmp_path):
     np.testing.assert_allclose(o[12:16], 0.0, atol=1e-6)  # prev_action zeros at construction
 
 
-def test_exchange_requires_observation(tmp_path):
-    c = TrainedPolicyController(policy_path=_make_stub_policy(tmp_path))
-    c.connect()
-    with pytest.raises(RuntimeError):
-        c.exchange(object(), None, None)
-    # once a state provider binds, exchange runs
-    c.bind_state_provider(lambda: ((0, 0, 1), (0, 0, 0, 1), (0, 0, 0), (0, 0, 0)))
-    ctrl = c.exchange(object(), None, None)
-    assert np.asarray(ctrl.command).shape == (4,)
-
-
 def test_prev_action_folded_into_obs_by_the_obs_function(tmp_path):
     """The obs function folds the last Collective Thrust and Body Rates (CTBR) action into the obs at
     [12:16]. That's the single obs-construction site, obs_from_view / the sensor; act() does *not* reshape
@@ -95,3 +84,28 @@ def test_controller_builds_observation_from_state():
     # level attitude, pos (0,0,1), goal (0,0,2) -> goal_rel_b (0,0,1)
     np.testing.assert_allclose(obs[9:12], [0, 0, 1], atol=1e-6)
     np.testing.assert_allclose(obs[12:16], 0.0, atol=1e-6)  # default prev_action zeros
+
+
+def test_exchange_builds_obs_from_the_estimate(tmp_path):
+    """The exchange builds the observation from the estimate the loop hands the controller, the last action
+    folded in: an echo policy returns obs[12:16], the last action.
+    """
+    import warp as wp
+
+    from nexus_sim._src.core.schema import PoseTwist
+
+    class Echo(torch.nn.Module):
+        def forward(self, x):
+            return x[:, 12:16]
+
+    path = tmp_path / "echo.pt"
+    torch.jit.script(Echo()).save(str(path))
+    c = TrainedPolicyController(policy_path=str(path), goal_w=(0.0, 0.0, 2.0))
+    c.connect()
+    c._prev_action[:] = [0.5, -0.5, 0.25, 0.1]
+    # The buffer the builder hands the controller: pos (0,0,1), an xyzw identity, at rest.
+    c.estimate.buffer = wp.zeros(1, dtype=PoseTwist, device="cpu")
+    c.estimate.write([((0.0, 0.0, 1.0), (0.0, 0.0, 0.0, 1.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))])
+
+    out = c.exchange(t=0.0)
+    np.testing.assert_allclose(np.asarray(out.command), [0.5, -0.5, 0.25, 0.1], atol=1e-6)

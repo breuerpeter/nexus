@@ -3,10 +3,10 @@
 Supplies the robot, the astro-max Universal Scene Description (USD) ArticulationCfg, and its frame, the base
 link ``body_frd`` and the Forward Right Down (FRD) thrust sign, to the vehicle-agnostic
 :class:`~nexus_rl.tasks.direct.goto.goto_env.GoToEnv`, and registers the task
-``Newton-AstroMax-GoTo-Direct-v0``. A different vehicle is just another ``config/<vehicle>.py``, with no env
+``Nexus-AstroMax-GoTo-Direct-v0``. A different vehicle is just another ``config/<vehicle>.py``, with no env
 change. The env reads the thrust map, ct/cd/rpm_max, from the USD; it isn't set here.
 
-The USD is a content-addressed registry asset, served via CloudFront; pass ``--vehicle_usd`` to the
+The USD is a content-addressed catalog asset, served via CloudFront; pass ``--vehicle_usd`` to the
 train/play scripts to override the resolved path. They mutate ``env_cfg.robot.spawn.usd_path`` after
 loading the registry cfg, the idiomatic Isaac Lab override.
 """
@@ -25,12 +25,12 @@ _TASK = "nexus_rl.tasks.direct.goto"
 
 
 def _resolve_astro_max_usd() -> str:
-    """Resolve the Astro Max USD for Isaac Lab to load: the **hosted, content-addressed registry
+    """Resolve the Astro Max USD for Isaac Lab to load: the **hosted, content-addressed catalog
     asset**, the same source the standalone runtime resolves; cached, so offline after the first fetch.
     """
-    from nexus._src.config import LaunchConfig, resolve
+    from nexus_sim._src.config import LaunchConfig, resolve
 
-    # resolve() fetches with a bounded timeout, via newton-assets; a sha-mismatch raises ValueError so an
+    # resolve() fetches with a bounded timeout, via the asset resolver; a sha-mismatch raises ValueError so an
     # integrity failure surfaces loudly instead of silently using a stale local file.
     return str(resolve(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty")).vehicle_usd_path)
 
@@ -99,7 +99,7 @@ class AstroMaxGoToEnvCfg(GoToEnvCfg):
 
 
 gym.register(
-    id="Newton-AstroMax-GoTo-Direct-v0",
+    id="Nexus-AstroMax-GoTo-Direct-v0",
     entry_point=f"{_TASK}.goto_env:GoToEnv",
     disable_env_checker=True,
     kwargs={

@@ -4,7 +4,7 @@ Every generic, non-cesium, scene asset ships as one self-contained ``.usdz`` who
 
 * **One root prim**: a plain ``Xform`` with no xformOps, set as the ``defaultPrim``, holding
   everything: geometry / splat / obstacle prims / lights. The runtime opens the scene Universal
-  Scene Description (USD) as the root stage and applies the registry ``start`` as a single
+  Scene Description (USD) as the root stage and applies the catalog ``start`` as a single
   ``-start`` translate on this prim on the session layer, runtime-only, never dirtying the asset,
   while the vehicle composes in at the origin, the drone-spawns-at-origin convention.
 * **The sky lives in the asset**: a dome + sun authored under the root prim. The runtime's old

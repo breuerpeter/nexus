@@ -36,8 +36,8 @@ class _FakeChannel:
 
 def test_dump_writes_one_series_entity_per_declared_quantity(tmp_path, rrd_entities):
     """Every declared field of every channel lands at ``sim/<channel key>/series/<field>``."""
-    from nexus._src.logging import Logger
-    from nexus._src.recording.rerun_adapter import dump
+    from nexus_sim._src.logging import Logger
+    from nexus_sim._src.recording.rerun_adapter import dump
 
     rrd = str(tmp_path / "dump.rrd")
     rl = Logger(model=None, serve=False, record_to_rrd=rrd)
@@ -51,8 +51,8 @@ def test_dump_writes_one_series_entity_per_declared_quantity(tmp_path, rrd_entit
 
 def test_dump_draws_the_flown_path_from_the_airframe_channel(tmp_path, rrd_entities):
     """The trail is the base_body channel's recorded positions, not a producer's own accumulator."""
-    from nexus._src.logging import Logger
-    from nexus._src.recording.rerun_adapter import TRAJECTORY_ENTITY, dump
+    from nexus_sim._src.logging import Logger
+    from nexus_sim._src.recording.rerun_adapter import TRAJECTORY_ENTITY, dump
 
     rrd = str(tmp_path / "trail.rrd")
     rl = Logger(model=None, serve=False, record_to_rrd=rrd)
@@ -63,7 +63,7 @@ def test_dump_draws_the_flown_path_from_the_airframe_channel(tmp_path, rrd_entit
 
 
 class _Sink:
-    """A Logger stand-in that keeps what the dump handed it, the adapter's own output seam."""
+    """A Logger stand-in that keeps what the dump handed it, the adapter's own output."""
 
     def __init__(self):
         self.trail = None
@@ -80,7 +80,7 @@ def test_the_flown_path_carries_the_airframe_channel_positions():
     """Every trail point is the base_body channel's own recorded position, in its recorded order."""
     import numpy as np
 
-    from nexus._src.recording.rerun_adapter import dump
+    from nexus_sim._src.recording.rerun_adapter import dump
 
     base_body = _FakeChannel()
     sink = _Sink()
@@ -93,7 +93,7 @@ def test_the_flown_path_carries_the_recorded_times():
     """The trail rides the channel's own time column, so a point sits where the run flew it."""
     import numpy as np
 
-    from nexus._src.recording.rerun_adapter import dump
+    from nexus_sim._src.recording.rerun_adapter import dump
 
     base_body = _FakeChannel()
     sink = _Sink()

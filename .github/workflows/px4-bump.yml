@@ -1,13 +1,13 @@
 name: px4-bump
 
 # Keeps the PX4 pin fresh with attribution instead of floating: reads the pin the PX4 controller
-# ships, nexus/_src/peers/px4_sitl/px4.ref (line 1 = `repo@sha`, line 2 =
+# ships, nexus_sim/_src/peers/px4_sitl/px4.ref (line 1 = `repo@sha`, line 2 =
 # `track=<branch>`), checks the tracked branch's tip, and when
 # it moved opens a bump PR on `ci/px4-bump`. The `gpu` label is added by hand (never by the
 # workflow — GPU spend is a manual call): label the PR to make the flight gate fly the new
 # PX4 before the bump merges; merging is what records the tested pin. The pin
 # file is data, not policy: this checkout tracks breuerpeter/newton, and upstream main once
-# that work merges — #17/#18. Dispatch after
+# that work merges, tracked in #88. Dispatch after
 # pushing PX4 changes for an immediate bump; otherwise weekly.
 
 on:
@@ -38,7 +38,7 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
-          REF_FILE=nexus/_src/peers/px4_sitl/px4.ref
+          REF_FILE=nexus_sim/_src/peers/px4_sitl/px4.ref
           IFS=@ read -r REPO CUR_SHA < "$REF_FILE"
           TRACK=$(grep -oP '^track=\K.+' "$REF_FILE")
           URL="https://github.com/$REPO.git"

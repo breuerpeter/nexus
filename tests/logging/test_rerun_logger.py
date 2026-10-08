@@ -1,4 +1,4 @@
-"""newton-logging: the central Rerun recording, Logger: scene + events into one .rrd.
+"""The central Rerun recording, Logger: scene + events into one .rrd.
 
 Real end-to-end in file mode, serve=False, on the Warp CPU backend; skipped if rerun/newton/pxr
 are missing. File mode keeps the tests hermetic: no gRPC server/port, just an inspectable .rrd.
@@ -30,7 +30,7 @@ def _rrd_entities(path: str) -> list[str]:
 
 def test_recording_path_under_cache():
     """``recording_path`` keeps named recordings out of the working tree, in the newton cache."""
-    from nexus._src.logging import recording_path
+    from nexus_sim._src.logging import recording_path
 
     p = recording_path("demo")
     assert "recordings" in p and p.endswith("demo.rrd") and "/.cache/nexus/" in p
@@ -40,7 +40,7 @@ def test_scene_only_blueprint_has_no_logs_view():
     """The examples' blueprint shows only the 3D scene: no ``logs`` TextLog view."""
     import rerun.blueprint as rrb
 
-    from nexus._src.logging import scene_only_blueprint
+    from nexus_sim._src.logging import scene_only_blueprint
 
     bp = scene_only_blueprint()
     assert isinstance(bp, rrb.Blueprint)
@@ -57,7 +57,7 @@ def test_single_blueprint_owned_by_rerunlogger(tmp_path):
     import pathlib
     import re
 
-    from nexus._src.logging import Logger, scene_only_blueprint
+    from nexus_sim._src.logging import Logger, scene_only_blueprint
 
     rrd = str(tmp_path / "one_bp.rrd")
     Logger(model=None, serve=False, record_to_rrd=rrd, blueprint=scene_only_blueprint()).close()
@@ -67,11 +67,11 @@ def test_single_blueprint_owned_by_rerunlogger(tmp_path):
 
 def test_custom_blueprint_accepted(tmp_path):
     """``Logger(blueprint=...)`` plumbs through and still produces a valid recording."""
-    from nexus._src.logging import Logger, scene_only_blueprint
+    from nexus_sim._src.logging import Logger, scene_only_blueprint
 
     rrd = str(tmp_path / "bp.rrd")
     rl = Logger(model=None, serve=False, record_to_rrd=rrd, blueprint=scene_only_blueprint())
-    from nexus._src.core import logger
+    from nexus_sim._src.core import logger
 
     logger.info("event with a custom blueprint")
     rl.close()
@@ -83,7 +83,7 @@ def test_a_scoped_view_logs_a_named_row_under_its_path_and_an_unnamed_row_at_the
     """A scoped view of the Logger logs a named row under its path, and a row with an empty name at
     the path itself.
     """
-    from nexus._src.logging import Logger
+    from nexus_sim._src.logging import Logger
 
     rrd = str(tmp_path / "scoped.rrd")
     rl = Logger(model=None, serve=False, record_to_rrd=rrd)
@@ -102,7 +102,7 @@ def test_blueprint_layout_and_eye_tracking():
     the bottom row is the debug tab tree at *full* viewer width. Cameras are ordinary Sensors instance
     tabs, no special panel.
     """
-    from nexus._src.logging.rerun_logging import VEHICLE_SHAPE_ENTITY, _blueprint
+    from nexus_sim._src.logging.rerun_logging import VEHICLE_SHAPE_ENTITY, _blueprint
 
     cameras = {"sim/vehicle/sensors/fpvcam": "RtxCameraSensor", "sim/vehicle/sensors/lr1cam": None}
     bp = _blueprint(cameras=cameras, has_settings=True)
@@ -140,7 +140,7 @@ def test_blueprint_recording_tabs_mirror_channel_keys():
     mirrors the access surface, ``sim.physics["body_frd"]`` → Physics ▸ body_frd ▸ position …, with
     sensor instance tabs carrying the impl class.
     """
-    from nexus._src.logging.rerun_logging import _blueprint
+    from nexus_sim._src.logging.rerun_logging import _blueprint
 
     recording = {
         "vehicle/body/body_frd": ("NewtonPhysics", ["position", "velocity"]),
@@ -171,7 +171,7 @@ def test_settings_markdown_is_one_flat_dotted_table():
     "Property" header: every leaf keyed by its fully dotted
     config path; scalar lists inline comma-separated; empty sections stay visible.
     """
-    from nexus._src.logging.rerun_logging import _settings_markdown
+    from nexus_sim._src.logging.rerun_logging import _settings_markdown
 
     md = _settings_markdown(
         {
@@ -196,7 +196,7 @@ def test_settings_and_rtf_land_in_recording(tmp_path):
     """``settings=`` logs the one static run-settings doc; ``log_rtf`` logs the live readout, both
     under the ``run/`` namespace the right column's views read.
     """
-    from nexus._src.logging import Logger
+    from nexus_sim._src.logging import Logger
 
     rrd = str(tmp_path / "run_docs.rrd")
     rl = Logger(model=None, serve=False, record_to_rrd=rrd, settings={"runtime": {"dt": 0.004}, "seed": 42})
@@ -215,7 +215,7 @@ def test_default_blueprint_with_fpv_accepted(tmp_path):
     """A recording built with the default blueprint, with its FPV column, comes out without error."""
     import pathlib
 
-    from nexus._src.logging import Logger
+    from nexus_sim._src.logging import Logger
 
     rrd = str(tmp_path / "fpv_bp.rrd")
     Logger(model=None, serve=False, record_to_rrd=rrd).close()  # default _blueprint now has FPV col
@@ -226,7 +226,7 @@ def test_log_image_lands_in_recording(tmp_path):
     """``log_image`` writes the frame to its entity in the recording."""
     import numpy as np
 
-    from nexus._src.logging import Logger
+    from nexus_sim._src.logging import Logger
 
     rrd = str(tmp_path / "img.rrd")
     rl = Logger(model=None, serve=False, record_to_rrd=rrd)
@@ -242,7 +242,7 @@ def test_log_image_fault_isolated_and_warns_once(tmp_path, monkeypatch):
     import numpy as np
     import rerun as rr
 
-    from nexus._src.logging import Logger
+    from nexus_sim._src.logging import Logger
 
     rl = Logger(model=None, serve=False, record_to_rrd=str(tmp_path / "broken.rrd"))
 
@@ -272,7 +272,7 @@ def test_log_image_no_logger_side_throttle(tmp_path, monkeypatch):
     import numpy as np
     import rerun as rr
 
-    from nexus._src.logging import Logger
+    from nexus_sim._src.logging import Logger
 
     rl = Logger(model=None, serve=False, record_to_rrd=str(tmp_path / "dec.rrd"))
     n = {"c": 0}
@@ -298,8 +298,8 @@ def test_scene_logged_via_log_state(tmp_path):
     import newton
     from pxr import Usd, UsdGeom, UsdPhysics
 
-    from nexus._src.logging import Logger
-    from nexus._src.physics.builders.usd import USDBuilder
+    from nexus_sim._src.logging import Logger
+    from nexus_sim._src.physics.vehicle import VehicleUsd
 
     usd = str(tmp_path / "mini.usda")
     stage = Usd.Stage.CreateNew(usd)
@@ -312,7 +312,7 @@ def test_scene_logged_via_log_state(tmp_path):
     stage.GetRootLayer().Save()
 
     mb = newton.ModelBuilder()
-    USDBuilder({"usd_path": usd}, None).build(mb)
+    VehicleUsd({"usd_path": usd}).build(mb)
     model = mb.finalize()
     state = model.state()
     newton.eval_fk(model, model.joint_q, model.joint_qd, state)

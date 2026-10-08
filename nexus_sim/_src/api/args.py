@@ -1,0 +1,94 @@
+"""The shared command-line arg surface, import-light BY DESIGN and stdlib only.
+
+The ``nexus`` command-line tool parses args before the run builds, so the parser must not live with
+``Sim``, whose module pulls the whole physics stack: this module imports nothing but the stdlib. ``Sim``-side consumers get these via
+``nexus_sim._src.api`` / ``nx.sim_argparser`` as before.
+"""
+
+from __future__ import annotations
+
+import argparse
+from typing import TYPE_CHECKING
+
+from nexus_sim._src.diagnostics import add_diagnostics_args  # stdlib-only, as is this module
+from nexus_sim._src.peers.px4_sitl import HIL_PORT  # a constant only
+
+if TYPE_CHECKING:
+    from .sim import Sim
+
+
+def sim_argparser(description: str | None = None) -> argparse.ArgumentParser:
+    """The shared argument parser for ``Sim``-driven scripts and the ``nexus`` command-line tool.
+
+    Carries the common flags :meth:`Sim.from_args` reads, ``--vehicle`` / ``--device``
+    / ``--scene`` / ``--layer`` / ``--max-steps`` / ``--log`` / ``--view``, so the
+    command-line tool and any Sim-driven script share one arg surface. The bundled examples are zero-arg by design, and their configuration
+    lives in the script; this parser serves the ``nexus`` command-line tool.
+    """
+    p = argparse.ArgumentParser(description=description, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    p.add_argument(
+        "--vehicle", required=True,
+        help="catalog vehicle NAME (e.g. astro_max_fpv) or a local .usd path",
+    )  # fmt: skip
+    p.add_argument(
+        "--catalog", default=None,
+        help="path to a catalog that extends the bundled one; omit to take the nearest\n"
+        "nexus.catalog.yaml at or above the working directory, else only the bundled one",
+    )  # fmt: skip
+    p.add_argument(
+        "--device", default="auto", choices=["cpu", "cuda", "auto"], help="compute device (cpu=deterministic)"
+    )
+    p.add_argument(
+        "--scene", required=True,
+        help="catalog scene NAME (e.g. 'empty' or 'slalom') or a local scene .usdz path (a converted\n"
+        "mesh/splat, flown as the visual world)",
+    )  # fmt: skip
+    p.add_argument(
+        "--geo", default=None, metavar="LAT,LON[,ALT]",
+        help="override the scene's geodetic origin, e.g. 37.79,-122.40 (cesium: where the globe streams)",
+    )  # fmt: skip
+    p.add_argument(
+        "--solver", default=None, choices=["mujoco", "semi_implicit", "featherstone"],
+        help="physics integrator (default: catalog default, mujoco)",
+    )  # fmt: skip
+    p.add_argument("--max-steps", type=int, default=None, help="cap the run at N control steps")
+    p.add_argument(
+        "--rtf", type=float, default=0.0,
+        help="real-time-factor throttle: 0 = unthrottled (default); 1.0 = pace to wall-clock for interactive flying",
+    )  # fmt: skip
+    p.add_argument(
+        "--layer", default=None, metavar="PATH",
+        help="an override layer, a local USD file composed over the vehicle: it changes a declared value,\n"
+        "selects a variant, or drops a declaration; one that drops NexusPx4SitlAPI flies an autopilot\n"
+        f"started elsewhere, which dials the HIL port {HIL_PORT}",
+    )  # fmt: skip
+    p.add_argument("--log", action="store_true", help="write the Rerun .rrd to disk")
+    p.add_argument("--view", action="store_true", help="serve the live Rerun viewer on :9876")
+    p.add_argument(
+        "--debug", action="store_true",
+        help="axes-only scene: log each body's coordinate-frame triad instead of its mesh (much smaller .rrd)",
+    )  # fmt: skip
+    p.add_argument("--stats-json", default=None, help="write the run's stats dict to this JSON path")
+    p.add_argument("--rrd-out", default=None, help="copy the run's .rrd here (e.g. for a docs page)")
+    add_diagnostics_args(p)  # the shared --profile/--trace/--benchmark; Sim.from_args reads them
+    return p
+
+
+def save_run_artifacts(sim: Sim, args: argparse.Namespace, stats: dict | None = None) -> None:
+    """Honor the shared ``--stats-json`` / ``--rrd-out`` flags after a run.
+
+    Writes ``stats``, if given, to ``args.stats_json`` and copies the run's ``.rrd`` to ``args.rrd_out``.
+    Call it after the ``Sim`` context exits: the close flushes the ``.rrd``, and ``sim.artifacts()``
+    then reports its path. A no-op for flags the caller didn't set.
+    """
+    import json
+    import shutil
+
+    if stats is not None and getattr(args, "stats_json", None):
+        with open(args.stats_json, "w") as f:
+            json.dump(stats, f, indent=2)
+    dest = getattr(args, "rrd_out", None)
+    if dest:
+        rrd = (sim.artifacts() or {}).get("rrd")
+        if rrd:
+            shutil.copy2(rrd, dest)

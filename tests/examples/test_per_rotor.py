@@ -1,6 +1,6 @@
-"""Parity + invariants for the shared single-body RigidBodyRotors model in nexus.examples._lib.
+"""Parity + invariants for the shared single-body Rotors model in nexus_sim.examples._lib.
 
-The Collective Thrust and Body Rates (CTBR) pipeline splits across the seam: the controller's mixer,
+The Collective Thrust and Body Rates (CTBR) pipeline splits between the controller and the actuator: the controller's mixer,
 ``ctbr_to_cmd_batched``: inner rate loop → ``B⁻¹`` → per-rotor command, feeds the motor model,
 ``rigid_body_wrench_batched``: per-rotor command → motor lag/saturation → forward ``B`` → wrench. These
 tests pin that **the two composed reproduce the original all-in-one arithmetic**, the numpy golden, so the
@@ -23,7 +23,7 @@ import numpy as np
 import pytest
 import warp as wp
 
-from nexus.examples._lib import (
+from nexus_sim.examples._lib import (
     CtbrParams,
     build_allocation,
     ctbr_to_cmd_batched,
@@ -96,7 +96,7 @@ def _golden(action, quat, omega_w, B, B_inv, alpha, omega_state, *, t2w, rate_ga
 
 
 def _run_kernel(actions, quats, omega_ws, B, B_inv, alpha, omega_state0, *, params, substeps):
-    """Compose the seam, the CTBR mixer ctbr_to_cmd_batched then the motor model
+    """Compose both halves, the CTBR mixer ctbr_to_cmd_batched then the motor model
     rigid_body_wrench_batched on CPU, and return (force_w, torque_w, omega_state) as numpy. The
     composition reproducing the all-in-one golden is the byte-exact-split proof.
     """

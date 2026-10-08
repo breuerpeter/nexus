@@ -1,9 +1,12 @@
 """The suite passes in any order: no test leaves the Warp default device changed for a later one.
 
 Each test runs pytest in a subprocess, since the order bug is a segfault that would end this run.
-Skips without a CUDA device, where ``cpu`` is the only device and the default can't change.
+The tests are `gpu`: without a CUDA device ``cpu`` is the only device, and the default can't change.
+A run on the GPU machine fails the same tests as the same run with no CUDA device: a test of an issue
+that the code doesn't meet yet fails both, and the device changes no outcome.
 """
 
+import os
 import re
 import subprocess
 import sys
@@ -13,13 +16,16 @@ import pytest
 
 wp = pytest.importorskip("warp")
 
-pytestmark = pytest.mark.skipif(not wp.is_cuda_available(), reason="no CUDA device")
+pytestmark = pytest.mark.gpu
 
 _ROOT = Path(__file__).resolve().parents[2]
 
 
-def _pytest(*args: str) -> subprocess.CompletedProcess:
-    """Run pytest from the repo root in a fresh process, whose Warp default device is ``cuda:0``."""
+def _pytest(*args: str, cuda: bool = True) -> subprocess.CompletedProcess:
+    """Run pytest from the repo root in a fresh process, whose Warp default device is ``cuda:0``, or ``cpu``
+    with ``cuda`` false, which hides every CUDA device from it.
+    """
+    env = None if cuda else {**os.environ, "CUDA_VISIBLE_DEVICES": ""}
     return subprocess.run(
         [sys.executable, "-m", "pytest", "-vv", "-rfE", "-p", "no:cacheprovider", *args],
         check=False,
@@ -27,6 +33,7 @@ def _pytest(*args: str) -> subprocess.CompletedProcess:
         capture_output=True,
         text=True,
         timeout=600,
+        env=env,
     )
 
 
@@ -36,22 +43,22 @@ def _failures(run: subprocess.CompletedProcess) -> list[str]:
     return re.findall(r"^(?:FAILED|ERROR) .*?(?=\n(?:FAILED|ERROR) |\n=|\Z)", summary, re.M | re.S)
 
 
-def test_api_passes_after_logging():
-    """`pytest tests/logging tests/api` passes on a GPU machine."""
-    run = _pytest("tests/logging", "tests/api")
-    assert run.returncode == 0, run.stdout[-3000:] + run.stderr[-3000:]
+def _outcome(run: subprocess.CompletedProcess) -> tuple[int, list[str]]:
+    """The run's exit code and the test or file each entry of its short test summary names, sorted."""
+    return run.returncode, sorted(entry.split()[1] for entry in _failures(run))
 
 
 def test_api_passes_before_sensors():
-    """`pytest tests/api tests/vehicle/sensors/test_sensors.py` passes on a GPU machine."""
-    run = _pytest("tests/api", "tests/vehicle/sensors/test_sensors.py")
-    assert run.returncode == 0, run.stdout[-3000:] + run.stderr[-3000:]
+    """`pytest tests/api tests/vehicle/sensors/test_sensors.py` passes on a GPU machine as it does with no CUDA device."""
+    args = ("tests/api", "tests/vehicle/sensors/test_sensors.py")
+    run = _pytest(*args)
+    assert _outcome(run) == _outcome(_pytest(*args, cuda=False)), run.stdout[-3000:] + run.stderr[-3000:]
 
 
 def test_api_passes_alone():
-    """`pytest tests/api` alone still passes on a GPU machine."""
+    """`pytest tests/api` alone still passes on a GPU machine as it does with no CUDA device."""
     run = _pytest("tests/api")
-    assert run.returncode == 0, run.stdout[-3000:] + run.stderr[-3000:]
+    assert _outcome(run) == _outcome(_pytest("tests/api", cuda=False)), run.stdout[-3000:] + run.stderr[-3000:]
 
 
 def test_a_test_that_leaves_the_device_changed_fails_naming_the_device(tmp_path):

@@ -1,4 +1,4 @@
-"""The `python -m nexus.examples <name>` launcher, which mirrors NVIDIA Newton's."""
+"""The `python -m nexus_sim.examples <name>` launcher, which mirrors NVIDIA Newton's."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import importlib.util
 
 import pytest
 
-from nexus import examples
+from nexus_sim import examples
 
 
 def test_get_examples_names():
@@ -31,7 +31,7 @@ def test_every_example_module_resolves(module):
 
 
 def test_list_exits_zero(monkeypatch, capsys):
-    monkeypatch.setattr("sys.argv", ["nexus.examples", "--list"])
+    monkeypatch.setattr("sys.argv", ["nexus_sim.examples", "--list"])
     with pytest.raises(SystemExit) as exc:
         examples.main()
     assert exc.value.code == 0
@@ -39,7 +39,7 @@ def test_list_exits_zero(monkeypatch, capsys):
 
 
 def test_unknown_example_exits_one(monkeypatch):
-    monkeypatch.setattr("sys.argv", ["nexus.examples", "nope"])
+    monkeypatch.setattr("sys.argv", ["nexus_sim.examples", "nope"])
     with pytest.raises(SystemExit) as exc:
         examples.main()
     assert exc.value.code == 1
@@ -56,10 +56,10 @@ def test_known_example_dispatches_with_passthrough_args(monkeypatch):
         calls["argv"] = list(sys.argv)
 
     monkeypatch.setattr("runpy.run_module", fake_run_module)
-    monkeypatch.setattr("sys.argv", ["nexus.examples", "sampling_mpc", "--record"])
+    monkeypatch.setattr("sys.argv", ["nexus_sim.examples", "sampling_mpc", "--record"])
     examples.main()
 
-    assert calls["target"] == "nexus.examples.controllers.sampling_mpc.obstacle_slalom"
+    assert calls["target"] == "nexus_sim.examples.controllers.sampling_mpc.obstacle_slalom"
     assert calls["run_name"] == "__main__"
     # The example gets itself as argv[0] with only its own args after the name.
     assert calls["argv"] == [calls["target"], "--record"]
