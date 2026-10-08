@@ -3,9 +3,10 @@
 Its work is two host stages, ``truth`` and ``exchange``: ``exchange(t, timeout)`` is the blocking lockstep that
 paces the loop: opens a tcpin TCP server on :4560, which PX4 dials into as client with no HEARTBEAT, serializes the
 samples of the Inertial Measurement Unit (IMU), the magnetometer, the barometer and the
-Global Positioning System (GPS), which its stage reads as signals, into HIL_SENSOR and HIL_GPS, and the base body's true state, which
-``truth`` reads, into HIL_STATE_QUATERNION, then blocks on HIL_ACTUATOR_CONTROLS with a run-ending timeout. The
-sensors already give their samples in their own axes; this layer only encodes wire units and moves bytes.
+Global Positioning System (GPS), which its stage reads as signals, into HIL_SENSOR and HIL_GPS, and the base
+body's true state, which ``truth`` reads, into HIL_STATE_QUATERNION, then blocks on HIL_ACTUATOR_CONTROLS with a
+run-ending timeout. The sensors already give their samples in their own axes; this layer only encodes wire units
+and moves bytes.
 
 The autopilot itself is a peer of the run, not of this controller: the build starts the PX4
 Software In The Loop (SITL) container, :class:`~nexus_sim._src.peers.px4_sitl.runner.Px4Sitl`,

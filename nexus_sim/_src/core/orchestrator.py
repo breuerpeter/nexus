@@ -171,9 +171,9 @@ class Orchestrator:
                 leaves the run, by name, to the address a script opens its client on. The run
                 owns every address, and the build names them here; ``None`` names no link.
             connections: For a component's prim, each signal it reads and the prim whose component writes
-                it, from the vehicle's ``nexus:inputs:`` relationships: where more than one component writes a
-                signal, a reader takes the one its connection names. A component's prim is its ``prim_path``, which the
-                build sets. ``None`` connects nothing.
+                it, from the vehicle's ``nexus:inputs:`` relationships: where more than one component
+                writes a signal, a reader takes the one its connection names. A component's prim is its
+                ``prim_path``, which the build sets. ``None`` connects nothing.
             logger: Optional :class:`~nexus_sim._src.logging.Logger`: the recording
                 sink + shared log calls. ``None`` ⇒ no recording and no per-tick log
                 fan-out, for max speed. When present, each loggable component's
@@ -468,7 +468,11 @@ class Orchestrator:
                 substeps=self.physics_substeps,
             )
             self._check_estimator(ring)
-            ring = self._with_clock(ring)
+            # The tick's sim time on the device, for a stage that reads it: the clock's stage opens each tick.
+            reads_time = any(s.name == "time" for b in ring for s in b.stage.reads)
+            self._device_clock = DeviceClock(self.clock.dt) if reads_time else None
+            if self._device_clock is not None:
+                ring = opening(ring, stages_of(self._device_clock, "clock"))
             wire(ring, self.connections)  # every signal a stage declares gets its buffer before any stage runs
             self._check_guidance(ring)
             segments = partition(ring)
@@ -526,16 +530,6 @@ class Orchestrator:
         """The controller's class, so a run's end names the peer that left it: ``Px4MavlinkController``."""
         return type(self.controller).__name__
 
-    def _with_clock(self, ring):
-        """The ring, opened by the device clock's stage when a stage reads the tick's sim time on the device,
-        the signal ``time``.
-        """
-        self._device_clock = None
-        if not any(s.name == "time" for b in ring for s in b.stage.reads):
-            return ring
-        self._device_clock = DeviceClock(self.clock.dt)
-        return opening(ring, stages_of(self._device_clock, "clock"))
-
     def _check_estimator(self, ring) -> None:
         """Check that the run has an estimator when a guidance or a controller reads the estimate: a run takes
         an estimator for a guidance or a controller that reads the vehicle's state, and the estimate is the
@@ -589,7 +583,8 @@ class Orchestrator:
         first tick applies. Each pass advances the sim clock, and its mirror on the device with it. A
         controller with a peer holds the sim clock until the peer attaches, so the peer's first stamp is
         near zero, and the pass repeats, re-sampling the static settled state so noise dithers into a
-        live feed, until the first controls arrive or the preroll times out. A controller whose stages are all device stages gets no pass: the warm pass seeded it.
+        live feed, until the first controls arrive or the preroll times out. A controller whose stages
+        are all device stages gets no pass: the warm pass seeded it.
 
         Raises:
             ConnectionError: No controls arrived within ``preroll_timeout``.
