@@ -4,7 +4,7 @@ as a list, and a build whose reader can't tell which sensor it reads fails befor
 A connection is a relationship the reader's prim authors, named for the signal under ``nexus:inputs:``,
 whose target is the prim of the sensor it reads. Real builds on the Warp CPU backend of the fixture vehicle in
 ``tests/usd/sensor_vehicle.py``, with the sensor prims a test adds and a stand-in estimator that the vehicle
-declares on its root prim, beside the controller, and whose host stage keeps what each signal it reads holds.
+declares on a scope of its own, and whose host stage keeps what each signal it reads holds.
 Skipped without newton or pxr.
 """
 
@@ -51,12 +51,11 @@ def _zero(accel) -> bool:
 
 def _stopped(tmp_path, body: str, reader: type, *, estimator: str = "") -> str:
     """The message of the `ValueError` a run of the fixture with `body` under its base body stops with, when the
-    vehicle declares the stand-in estimator class `reader` and authors `estimator` on its root prim.
+    vehicle declares the stand-in estimator class `reader` and authors `estimator` on its scope.
     """
     with pytest.raises(ValueError) as e:
-        sv.steps(
-            sv.build(sv.vehicle(tmp_path, body, estimator=estimator), components=sv.components(StandInAPI=reader)), 1
-        )
+        path = sv.vehicle(tmp_path, body, estimator=estimator)
+        sv.steps(sv.build(path, components=sv.components(StandInEstimatorAPI=reader)), 1)
     return str(e.value)
 
 
@@ -79,7 +78,7 @@ def test_of_two_imus_a_reader_reads_the_one_that_a_connection_on_its_prim_names(
         folder.mkdir()
         reader = sv.estimator(Signal("imu", ImuSample, shape=(1,)))
         path = sv.vehicle(folder, IMUS, estimator=_connection("imu", target))
-        sv.steps(sv.build(path, fall_from=FALL_FROM, components=sv.components(StandInAPI=reader)), 10)
+        sv.steps(sv.build(path, fall_from=FALL_FROM, components=sv.components(StandInEstimatorAPI=reader)), 10)
         return [_accel(imu) for _, imu in reader.kept[1:]]
 
     quiet, noisy = readings("quiet", QUIET), readings("noisy", NOISY)
@@ -102,7 +101,7 @@ def test_a_reader_that_takes_every_imu_as_a_list_reads_each_ones_sample_on_every
     """
     reader = sv.estimator(Signal("imu", list[ImuSample], shape=(1,)))
     path = sv.vehicle(tmp_path, IMUS, estimator="")
-    sv.steps(sv.build(path, fall_from=FALL_FROM, components=sv.components(StandInAPI=reader)), 10)
+    sv.steps(sv.build(path, fall_from=FALL_FROM, components=sv.components(StandInEstimatorAPI=reader)), 10)
     read = [
         (len(imus), _zero(_accel(imus[0])), _zero(_accel(imus[1])) if len(imus) > 1 else None)
         for _, imus in reader.kept[1:]
@@ -125,7 +124,7 @@ def test_a_list_input_with_no_sensor_of_its_kind_reads_its_default_and_without_o
     message = _stopped(tmp_path / "strict", "", strict)
     lenient = sv.estimator(Signal("imu", list[ImuSample], shape=(1,), default=[]))
     path = sv.vehicle(tmp_path / "lenient", estimator="")
-    sv.steps(sv.build(path, components=sv.components(StandInAPI=lenient)), 3)
+    sv.steps(sv.build(path, components=sv.components(StandInEstimatorAPI=lenient)), 3)
 
     assert (_names(message, "imu"), strict.runs, [len(imus) for _, imus in lenient.kept]) == (True, 0, [0, 0, 0]), (
         message

@@ -215,8 +215,9 @@ def _vehicle(tmp_path) -> dict:
     blob = tmp_path / "vehicle.usda"
     blob.write_text(
         '#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n\n'
-        'def Xform "vehicle" (\n    prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n)\n'
-        '{\n    string nexus:airframe = "astro_max"\n}\n'
+        'def Xform "vehicle"\n{\n'
+        '    def Scope "Controller" (\n        prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n    )\n'
+        '    {\n        string nexus:airframe = "astro_max"\n    }\n}\n'
     )
     sha = hashlib.sha256(blob.read_bytes()).hexdigest()
     return {"astro": {"usd": {"url": blob.as_uri(), "sha256": sha, "filename": "vehicle.usda"}}}
@@ -435,8 +436,9 @@ def test_a_local_vehicle_usd_flies_the_airframe_its_px4_schema_declares(daemon, 
     usd = tmp_path / "local_vehicle.usda"
     usd.write_text(
         '#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n\n'
-        'def Xform "vehicle" (\n    prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n)\n'
-        '{\n    string nexus:airframe = "foo"\n}\n'
+        'def Xform "vehicle"\n{\n'
+        '    def Scope "Controller" (\n        prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n    )\n'
+        '    {\n        string nexus:airframe = "foo"\n    }\n}\n'
     )
     launch = LaunchConfig.from_dict({"vehicle": str(usd), "scene": "empty"})
 
@@ -584,7 +586,7 @@ def test_the_px4_controller_is_built_the_same_way_whichever_process_answers(
         return flew, lines
 
     flew, fake = plan(_faked(catalog, tmp_path))
-    _, external = plan(run(_DROP_PX4_SITL))
+    _, external = plan(run(_DROP_PX4_SITL_FROM_SCOPE))
 
     assert (flew, len(fake), fake) == (True, 1, external)
 
@@ -638,21 +640,29 @@ def test_a_peer_mapping_with_an_unknown_key_fails_the_build_before_any_peer_star
 
 # --- the PX4 SITL peer the vehicle declares, and a layer that drops it -----------------------------
 
-# A vehicle root that declares the PX4 controller and the PX4 SITL peer.
-_DECLARED = (
+
+# A vehicle that declares the PX4 controller and the PX4 SITL peer on its controller's scope.
+_SCOPED = (
     '#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n\n'
-    'def Xform "vehicle" (\n    prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n)\n'
-    '{\n    string nexus:airframe = "astro_max"\n}\n'
+    'def Xform "vehicle"\n{\n'
+    '    def Scope "Controller" (\n        prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n    )\n'
+    '    {\n        string nexus:airframe = "astro_max"\n    }\n}\n'
 )
 
-# A layer that drops the PX4 SITL peer's declaration, so the run attaches to an autopilot started elsewhere.
-_DROP_PX4_SITL = '#usda 1.0\n\nover "vehicle" (\n    delete apiSchemas = ["NexusPx4SitlAPI"]\n)\n{\n}\n'
+# A layer that drops the PX4 SITL peer's declaration from the controller's scope, so the run attaches to an
+# autopilot started elsewhere.
+_DROP_PX4_SITL_FROM_SCOPE = (
+    '#usda 1.0\n\nover "vehicle"\n{\n'
+    '    over "Controller" (\n        delete apiSchemas = ["NexusPx4SitlAPI"]\n    )\n    {\n    }\n}\n'
+)
 
 
-def _declared_run(tmp_path, layer: str | None = None) -> Orchestrator:
-    """Build a run of a catalog vehicle that declares the PX4 SITL peer, over `layer` when the caller passes one."""
+def _declared_run(tmp_path, layer: str | None = None, vehicle: str = _SCOPED) -> Orchestrator:
+    """Build a run of a catalog vehicle that declares the PX4 SITL peer, `vehicle`, over `layer` when the
+    caller passes one.
+    """
     blob = tmp_path / "declared.usda"
-    blob.write_text(_DECLARED)
+    blob.write_text(vehicle)
     sha = hashlib.sha256(blob.read_bytes()).hexdigest()
     catalog = Catalog.from_dict(
         {
@@ -698,16 +708,17 @@ def test_a_vehicle_that_declares_the_px4_sitl_peer_starts_it(daemon, monkeypatch
     assert flown == dict.fromkeys(names, (1, True))
 
 
-def test_a_layer_that_drops_the_px4_sitl_peer_starts_no_px4_and_waits_on_instance_0s_hil_port(
+def test_a_layer_that_drops_the_px4_sitl_peer_from_the_controllers_scope_flies_an_autopilot_started_elsewhere(
     daemon, assembly, tmp_path
 ):
-    """A layer that drops the PX4 SITL peer starts no PX4 and waits on instance 0's HIL port.
+    """A layer that drops the PX4 SITL peer from the controller's scope flies an autopilot started elsewhere.
 
-    Given a stand-in docker daemon and a layer that drops the PX4 SITL peer, when the run enters and a
-    fake PX4 the test starts dials instance 0's HIL port, 4560, then the daemon records no container
-    and the run steps against the fake.
+    Given a vehicle whose `Scope` `/vehicle/Controller` declares PX4 and the PX4 SITL peer, and a layer
+    whose `over "Controller"` under `/vehicle` deletes `NexusPx4SitlAPI`, when the run builds, then no
+    peer starts and PX4 dials instance 0's HIL port, 4560: the daemon records no container, and the run
+    steps against a fake PX4 the test starts there.
     """
-    loop = _declared_run(tmp_path, _DROP_PX4_SITL)
+    loop = _declared_run(tmp_path, _DROP_PX4_SITL_FROM_SCOPE, vehicle=_SCOPED)
     autopilot = Px4Fake(instance=0)
     autopilot.start()
 
@@ -732,7 +743,7 @@ def test_a_second_external_run_on_one_machine_fails_and_names_the_holder(daemon,
 
     failed, said = False, ""
     try:
-        loop = _declared_run(tmp_path, _DROP_PX4_SITL)
+        loop = _declared_run(tmp_path, _DROP_PX4_SITL_FROM_SCOPE)
         failed = not loop.step()
         loop.close()
     except Exception as exc:

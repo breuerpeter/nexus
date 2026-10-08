@@ -6,6 +6,7 @@
 
 class "NexusImuAPI" (
     doc = "An inertial measurement unit on its mount prim: an accelerometer and a gyroscope, each with white noise."
+    prepend apiSchemas = ["NexusSensorRoleAPI"]
 )
 {
     float nexus:accNoise = 0.02 (
@@ -30,6 +31,7 @@ class "NexusImuAPI" (
 
 class "NexusMagAPI" (
     doc = "A magnetometer on its mount prim, at the origin of the body it rides: the site's magnetic field in the body's axes, with an offset and white noise."
+    prepend apiSchemas = ["NexusSensorRoleAPI"]
 )
 {
     float3 nexus:offset = (0, 0, 0) (
@@ -54,6 +56,7 @@ class "NexusMagAPI" (
 
 class "NexusBaroAPI" (
     doc = "A barometer on its mount prim, at the origin of the body it rides: the standard atmosphere's pressure at the body's altitude, with white noise."
+    prepend apiSchemas = ["NexusSensorRoleAPI"]
 )
 {
     float nexus:noise = 0.02 (
@@ -72,6 +75,7 @@ class "NexusBaroAPI" (
 
 class "NexusGpsAPI" (
     doc = "A Global Positioning System (GPS) receiver on its mount prim, at the origin of the body it rides: the body's position and velocity from the scene's geodetic origin."
+    prepend apiSchemas = ["NexusSensorRoleAPI"]
 )
 {
     int nexus:fixType = 3 (
@@ -90,6 +94,7 @@ class "NexusGpsAPI" (
 
 class "NexusCameraAPI" (
     doc = "A color camera on a `Camera` prim, which gives its optics and its mount. The Kit render peer renders it, and no vehicle names that peer: the camera's class requires it."
+    prepend apiSchemas = ["NexusSensorRoleAPI"]
 )
 {
     int nexus:width = 1280 (
@@ -114,6 +119,7 @@ class "NexusCameraAPI" (
 
 class "NexusThermalCameraAPI" (
     doc = "A Long Wave Infrared (LWIR) camera on a `Camera` prim, which gives its optics and its mount. The Kit render peer renders it at half the declared size on each side, and the camera's class requires that peer."
+    prepend apiSchemas = ["NexusSensorRoleAPI"]
 )
 {
     int nexus:width = 1280 (
@@ -138,6 +144,7 @@ class "NexusThermalCameraAPI" (
 
 class "NexusLidarAPI" (
     doc = "A lidar on an `OmniLidar` prim, which gives its scan pattern and its mount. The Kit render peer renders it, and the lidar's class requires that peer."
+    prepend apiSchemas = ["NexusSensorRoleAPI"]
 )
 {
     float nexus:rate = 10 (
@@ -150,6 +157,7 @@ class "NexusLidarAPI" (
 
 class "NexusPropellerAPI" (
     doc = "A propeller on its rotor's rigid body, the child body of the rotor's revolute joint: its thrust, its reaction torque and its in-plane drag, from the rotor's speed and the airflow at its hub."
+    prepend apiSchemas = ["NexusForceRoleAPI"]
 )
 {
     float nexus:ct = 0 (
@@ -179,7 +187,8 @@ class "NexusPropellerAPI" (
 }
 
 class "NexusPx4API" (
-    doc = "PX4 flies the vehicle over its Software In The Loop (SITL) link, on the vehicle's root prim."
+    doc = "PX4 flies the vehicle over its Software In The Loop (SITL) link, on the controller's `Scope`, a child of the vehicle's root prim named `Controller` by convention."
+    prepend apiSchemas = ["NexusControllerRoleAPI"]
 )
 {
     string nexus:airframe = "" (
@@ -191,7 +200,31 @@ class "NexusPx4API" (
 }
 
 class "NexusPx4SitlAPI" (
-    doc = """The PX4 Software In The Loop (SITL) peer, on the vehicle's root prim beside `NexusPx4API`: the run starts PX4 SITL and stops it with the run. A layer that drops it flies an autopilot started elsewhere, which dials instance 0's Hardware In The Loop (HIL) port, 4560."""
+    doc = """The PX4 Software In The Loop (SITL) peer, on the controller's `Scope` beside `NexusPx4API`: the run starts PX4 SITL and stops it with the run. A layer that drops it flies an autopilot started elsewhere, which dials instance 0's Hardware In The Loop (HIL) port, 4560."""
+)
+{
+}
+
+class "NexusSensorRoleAPI" (
+    doc = "The sensor role, which a sensor's schema includes as a built-in. A sensor sits on its mount prim, whose parent is the rigid body it rides, and runs in the sensors' place in the tick."
+)
+{
+}
+
+class "NexusEstimatorRoleAPI" (
+    doc = "The estimator role, which an estimator's schema includes as a built-in. An estimator sits on a `Scope` of its own whose parent is the vehicle's root prim, named `Estimator` by convention, and writes the estimate after the sensors in the tick. A vehicle declares one estimator at most."
+)
+{
+}
+
+class "NexusControllerRoleAPI" (
+    doc = "The controller role, which a controller's schema includes as a built-in. A controller sits on a `Scope` of its own whose parent is the vehicle's root prim, named `Controller` by convention. A vehicle declares one controller."
+)
+{
+}
+
+class "NexusForceRoleAPI" (
+    doc = "The force element's role, which the schema of a part that applies a force includes as a built-in, as a propeller's does."
 )
 {
 }

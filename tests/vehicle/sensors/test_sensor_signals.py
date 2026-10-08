@@ -2,7 +2,7 @@
 the time of its sample, and holds no sensor.
 
 Real builds of the fixture vehicle in ``tests/usd/sensor_vehicle.py``, with the sensor prims a test adds and a
-stand-in estimator that the vehicle declares on its root prim and whose host stage keeps what each signal
+stand-in estimator that the vehicle declares on a scope of its own and whose host stage keeps what each signal
 it reads holds. The Kit peer maps to its fake, and the stand-in docker daemon keeps any container a run
 would start from reaching a real one. Each test scopes the device it uses, so the default device is the
 same after it. Skipped without newton or pxr.
@@ -99,7 +99,7 @@ def test_an_estimator_reads_the_imu_magnetometer_barometer_and_gps_each_as_a_sig
             sv.vehicle(tmp_path, QUIET, estimator=""),
             device="cpu" if device == "cpu" else "cuda",
             fall_from=FALL_FROM,
-            components=sv.components(StandInAPI=reader),
+            components=sv.components(StandInEstimatorAPI=reader),
         )
         sv.steps(loop, 10)
     read = [
@@ -144,7 +144,7 @@ def test_each_frame_of_a_camera_and_a_thermal_camera_and_each_lidar_scan_reaches
     loop = sv.build(
         sv.vehicle(tmp_path, RTX, estimator=""),
         peers={"kit": functools.partial(KitFake, points=[POINT])},
-        components=sv.components(StandInAPI=reader),
+        components=sv.components(StandInEstimatorAPI=reader),
     )
     sv.steps(loop, 250)  # 1 s of 0.004 s ticks
     cameras = [_firsts(reader.kept, column) for column in (1, 2)]

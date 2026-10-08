@@ -13,7 +13,8 @@
 # its rotors, a `NexusPropellerAPI` propeller on each rotor body beside the `NewtonActuator` motor on its
 # joint, AND — for the FPV mods — an authored FpvCam the Kit render peer renders.
 #
-# Each vehicle USD declares PX4 with `NexusPx4API` on its root prim, and its `nexus:airframe` is the
+# Each vehicle USD declares PX4 with `NexusPx4API` on its controller's scope, the Scope
+# /astro_max/Controller, and its `nexus:airframe` is the
 # SITL airframe make target minus PX4's `none_` prefix: `astro_max` runs `make px4_sitl
 # none_astro_max`. Both vehicles fly `astro_max` until payload mass is modeled. Beside it, `NexusPx4SitlAPI`
 # declares the PX4 SITL peer, which the run starts; a run's override layer drops it to fly an
@@ -25,10 +26,10 @@ assets:
 
 vehicles:
   astro_max_base:
-    usd: { name: astro_max_base, sha256: 0055c7851d3efe08306f7dcdb9d19e2e634701ca01a5221ded1dabffc9cadb8a }
+    usd: { name: astro_max_base, sha256: e2ef3cb3d9b5b6c18c1ac40f2c41c077b594e720c6e32863d0ca810575806f7c }
 
   astro_max_fpv:
-    usd: { name: astro_max_fpv, sha256: 3a6953cbba38210d904126d0e769ae301a8f05c4891d88359ba3b42ea5bd1e89 }
+    usd: { name: astro_max_fpv, sha256: 971b105e87972fbea29d9f054df812fe5032b50fc978e638074372344f2596fd }
 
 # The scene USD is the single authority on what it is: authored UsdPhysics collision schemas ->
 # simulation geometry (ModelBuilder); no physics schemas -> visual-only; and since the stage-5

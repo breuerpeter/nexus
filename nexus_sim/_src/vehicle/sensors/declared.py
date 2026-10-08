@@ -1,8 +1,8 @@
 """The sensors a vehicle declares: one applied schema on each sensor's mount prim, built into its class.
 
 The vehicle's Universal Scene Description (USD) file is the one authority for its sensors. A sensor's
-prim sits under the rigid body it rides, and that parent body is the mount. The registry maps the
-prim's schema to a class, the schema's attributes are the class's keyword arguments, and the class
+schema states the sensor role. Its prim sits under the rigid body it rides, and that parent body is the
+mount. The registry maps the prim's schema to a class, the schema's attributes are the class's keyword arguments, and the class
 takes the run's values, a :class:`~nexus_sim._src.core.interfaces.SensorRun`, as its first argument.
 
 A class states the peers it requires in a ``requires`` tuple, such as ``("kit",)`` on the RTX sensors.
@@ -18,21 +18,16 @@ from nexus_sim._src.core.interfaces import SensorRun
 from nexus_sim._src.core.registry import ComponentRegistry
 
 
-def _is_sensor(cls: type) -> bool:
-    """Whether `cls` implements the sensor seam: it states stages, and it isn't a controller, which connects."""
-    return callable(getattr(cls, "stages", None)) and not callable(getattr(cls, "connect", None))
-
-
 def sensor_specs(usd_path: str | Path, registry: ComponentRegistry | None = None) -> list[ComponentSpec]:
     """One record per sensor the vehicle file at `usd_path` declares, in the order of its prims.
 
     With no `registry`, the default one resolves each schema.
 
     Raises:
-        ValueError: A prim applies a schema no class claims, or a schema that doesn't apply to its
-            type; the message names the prim.
+        ValueError: A prim applies a schema no class claims, a schema that doesn't apply to its type, or
+            a schema that states no role or more than one; the message names the prim.
     """
-    return [spec for spec in resolve_components(usd_path, registry) if _is_sensor(spec.cls)]
+    return [spec for spec in resolve_components(usd_path, registry) if spec.role == "sensor"]
 
 
 def requires(spec: ComponentSpec, peer: str) -> bool:

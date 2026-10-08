@@ -6,10 +6,11 @@ import pytest
 
 cli = importlib.import_module("nexus_sim._src.cli.main")
 
-# A vehicle that declares PX4 and authors no camera.
+# A vehicle that declares PX4 on its controller's scope and authors no camera.
 PLAIN_USD = (
     '#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n'
-    'def Xform "vehicle" (\n    prepend apiSchemas = ["NexusPx4API"]\n)\n{\n    string nexus:airframe = "astro_max"\n}\n'
+    'def Xform "vehicle"\n{\n    def Scope "Controller" (\n        prepend apiSchemas = ["NexusPx4API"]\n    )\n'
+    '    {\n        string nexus:airframe = "astro_max"\n    }\n}\n'
 )
 
 
@@ -218,7 +219,9 @@ def test_the_command_line_takes_the_layer(monkeypatch, tmp_path, warp_cpu):
         PLAIN_USD.replace('["NexusPx4API"]', '["NexusPx4API", "NexusPx4SitlAPI"]').replace('"astro_max"', '"foo"')
     )
     layer = tmp_path / "override.usda"
-    layer.write_text('#usda 1.0\n\nover "vehicle"\n{\n    string nexus:airframe = "bar"\n}\n')
+    layer.write_text(
+        '#usda 1.0\n\nover "vehicle"\n{\n    over "Controller"\n    {\n        string nexus:airframe = "bar"\n    }\n}\n'
+    )
 
     def started(run) -> list[str]:
         daemon.runs.clear()

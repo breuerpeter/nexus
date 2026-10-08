@@ -121,16 +121,20 @@ jobs:
     uses: ./.github/workflows/gpu-runner.yml
     with:
       cache-scope: shared
-      # The box's one cache entry holds the PX4 tree and image and the acados build together.
+      # The box's two entries are main's px4_sitl and acados_nmpc entries above, the same paths,
+      # names and key files: GitHub lets a pull request restore only its own entries and its base
+      # branch's, so a first run restores main's, and one that leaves those files alone saves none.
       cache-path: |
         ~/.cache/nexus/px4
         ~/.cache/nexus/ci/px4-sitl.tar
-        ~/.cache/nexus/acados
-      cache-name: px4-acados
+      cache-name: px4
       cache-files: |
         nexus_sim/_src/peers/px4_sitl/px4.ref
         nexus_sim/_src/peers/px4_sitl/checkout.py
         nexus_sim/_src/peers/px4_sitl/image/Dockerfile
+      second-cache-path: ~/.cache/nexus/acados
+      second-cache-name: acados
+      second-cache-files: |
         nexus_sim/examples/controllers/acados_nmpc/acados.ref
         nexus_sim/examples/controllers/acados_nmpc/provision.py
       command: >-

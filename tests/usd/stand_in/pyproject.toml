@@ -15,6 +15,7 @@ requires-python = "==3.12.*"
 [project.entry-points."nexus.components"]
 StandInAPI = "nexus_stand_in.heavy:StandIn"
 StandInSensorAPI = "nexus_stand_in.sensor:StandInSensor"
+StandInEstimatorAPI = "nexus_stand_in.estimator:StandInEstimator"
 
 [tool.uv.build-backend]
 module-name = "nexus_stand_in"

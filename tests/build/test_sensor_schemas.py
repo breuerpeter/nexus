@@ -361,9 +361,8 @@ from tests.usd import sensor_vehicle as sv
 prims = sv.prim("Own", "StandInSensorAPI", "float nexus:gain = 2.5")
 reader = sv.estimator(Signal("gain", Gain, shape=(1,)))
 with wp.ScopedDevice("cpu"):
-    loop = sv.build(
-        sv.vehicle(pathlib.Path({str(tmp_path)!r}), prims, estimator=""), components=sv.components(StandInAPI=reader)
-    )
+    path = sv.vehicle(pathlib.Path({str(tmp_path)!r}), prims, estimator="")
+    loop = sv.build(path, components=sv.components(StandInEstimatorAPI=reader))
     sv.steps(loop, 2)
 print(">", [[float(v) for v in gain.reshape(-1)] for _, gain in reader.kept])
 """
