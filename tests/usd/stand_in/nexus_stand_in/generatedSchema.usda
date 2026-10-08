@@ -20,10 +20,49 @@ class "StandInAPI" (
 
 class "StandInSensorAPI" (
     doc = "A stand-in sensor on its mount prim: one gain."
+    prepend apiSchemas = ["NexusSensorRoleAPI"]
 )
 {
     float nexus:gain = 1 (
         doc = """The value the stand-in sensor reports.
+
+        Range: [0, inf)
+        Units: dimensionless"""
+    )
+}
+
+class "StandInEstimatorAPI" (
+    doc = "A stand-in estimator: the fixed position it estimates. It applies to any prim, so a build reaches the estimator's own check of where it sits."
+    prepend apiSchemas = ["NexusEstimatorRoleAPI"]
+)
+{
+    float3 nexus:position = (0, 0, 0) (
+        doc = """The position the stand-in estimator writes, in world axes.
+
+        Range: (-inf, inf)
+        Units: m"""
+    )
+}
+
+class "StandInNoRoleAPI" (
+    doc = "A stand-in component schema that states no role: one gain."
+)
+{
+    float nexus:gain = 1 (
+        doc = """The gain the stand-in applies.
+
+        Range: [0, inf)
+        Units: dimensionless"""
+    )
+}
+
+class "StandInTwoRolesAPI" (
+    doc = "A stand-in component schema that states two roles, the sensor's and the estimator's: one gain."
+    prepend apiSchemas = ["NexusSensorRoleAPI", "NexusEstimatorRoleAPI"]
+)
+{
+    float nexus:gain = 1 (
+        doc = """The gain the stand-in applies.
 
         Range: [0, inf)
         Units: dimensionless"""
