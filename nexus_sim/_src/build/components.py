@@ -21,13 +21,21 @@ def declared_controller(usd_path: str | pathlib.Path, registry: ComponentRegistr
     With no `registry`, the default one resolves each schema.
 
     Raises:
-        ValueError: The vehicle declares no controller, or more than one; the message names the
-            vehicle's root prim, its default prim, and for two or more, their schemas and prims.
+        ValueError: The vehicle declares no controller, more than one, or one outside its root prim,
+            its default prim; the message names the root prim, and for two or more, their schemas and
+            prims, or the prim outside the root.
     """
-    from pxr import Usd
+    from pxr import Sdf, Usd
 
-    root = str(Usd.Stage.Open(str(usd_path)).GetDefaultPrim().GetPath()) or str(usd_path)
+    default = Usd.Stage.Open(str(usd_path)).GetDefaultPrim().GetPath()  # empty with no default prim
+    root = str(default) or str(usd_path)
     controllers = [spec for spec in resolve_components(usd_path, registry) if _is_controller(spec.cls)]
+    for spec in controllers:
+        if not default.isEmpty and not Sdf.Path(spec.prim).HasPrefix(default):
+            raise ValueError(
+                f"{spec.prim}: {spec.schema} declares a controller outside the vehicle's root prim {root}; "
+                "put its Scope under the root prim"
+            )
     if not controllers:
         raise ValueError(
             f"{root}: the vehicle declares no controller; apply one, such as NexusPx4API, to a Scope under this prim"

@@ -421,6 +421,25 @@ def test_the_px4_sitl_peer_on_a_prim_with_no_px4_schema_fails_the_build(tmp_path
     assert (named, daemon) == ([True, True], []), message
 
 
+def test_a_controller_scope_outside_the_vehicles_root_prim_fails_the_build(tmp_path, monkeypatch, daemon):
+    """A controller's scope outside the vehicle's root prim fails the build and names the prim and the root.
+
+    Given a local vehicle whose root `Xform` `/vehicle` applies nothing and a `Scope` `/Controller`, a
+    sibling of the root, that applies `NexusPx4API` and `NexusPx4SitlAPI`, when the run builds, then it
+    fails before any peer starts, and the error names `/Controller` and `/vehicle`.
+    """
+    sibling = (
+        'def Xform "vehicle"\n{\n}\n\n'
+        'def Scope "Controller" (\n    prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n)\n'
+        '{\n    string nexus:airframe = "foo"\n}\n'
+    )
+
+    message = _build_message(tmp_path, monkeypatch, sibling)
+
+    named = ["/Controller:" in message, "/vehicle" in message]
+    assert (named, daemon) == ([True, True], []), message
+
+
 # --- the override layer a run composes over its vehicle --------------------------------------------
 
 # A vehicle that declares PX4 and the PX4 SITL peer on its controller's scope, and nothing else.
