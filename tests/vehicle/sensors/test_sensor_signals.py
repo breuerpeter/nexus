@@ -136,9 +136,10 @@ def test_each_frame_of_a_camera_and_a_thermal_camera_and_each_lidar_scan_reaches
 
     Given the fixture vehicle with a camera, a thermal camera and a lidar at 25 Hz each, the Kit peer mapped
     to its fake scanning the one point `(1, 2, 3)`, and a stand-in estimator whose host stage reads the three
-    sensors' signals, when the run steps 1 s of sim time, then the estimator reads 25 frames of each camera,
-    give or take one, each of its camera's width and height, and 25 scans that hold `(1, 2, 3)`, give or take
-    one, each with the sim time it shows, no later than the tick that hands it over.
+    sensors' signals, when the run steps 1 s of sim time, then the estimator reads 23 frames of each camera,
+    every one the run asked for but the two still in flight when it ends, give or take one, each of its
+    camera's width and height, and 23 scans that hold `(1, 2, 3)`, give or take one, each with the sim time it
+    shows, no later than the tick that hands it over.
     """
     reader = sv.estimator(Signal("camera", Image), Signal("thermal_camera", Image), Signal("lidar", PointCloud))
     loop = sv.build(
@@ -152,14 +153,14 @@ def test_each_frame_of_a_camera_and_a_thermal_camera_and_each_lidar_scan_reaches
     read = [
         *(
             (
-                24 <= len(frames) <= 26,
+                22 <= len(frames) <= 24,
                 all(frame.pixels.shape[:2] == (HEIGHT, WIDTH) for _, frame in frames),
                 all(frame.time <= t for t, frame in frames),
             )
             for frames in cameras
         ),
         (
-            24 <= len(scans) <= 26,
+            22 <= len(scans) <= 24,
             all(_close(scan.points, [POINT], 1e-6) for _, scan in scans),
             all(scan.time <= t for t, scan in scans),
         ),

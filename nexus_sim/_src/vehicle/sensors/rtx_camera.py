@@ -1,19 +1,21 @@
 """The RTX camera: the electro-optical (EO) feed over a ``Camera`` prim the vehicle USD authored.
 
 The Kit peer renders it into one render product with an ``LdrColor`` annotator; here on the host the
-sensor logs the frame as the First Person View image.
+sensor writes the frame to its signal ``camera`` and logs it as the First Person View image.
 """
 
 from __future__ import annotations
 
 from nexus_sim._src.core import logger
+from nexus_sim._src.core.schema import Image
+from nexus_sim._src.core.signals import Signal
 
 from .rtx_sensor import RtxMountedSensor
 
 
 class RtxCameraSensor(RtxMountedSensor):
-    """RTX camera sensor: the peer's color output -> ``Logger.log_image`` at the sensor's own entity,
-    ``sim/vehicle/sensors/<name>``.
+    """RTX camera sensor: the peer's color output -> the signal ``camera``, an :class:`Image`, and
+    ``Logger.log_image`` at the sensor's own entity, ``sim/vehicle/sensors/<name>``.
 
     Args:
         run: The run's values: the ``Camera`` prim, the model body it rides and the render link.
@@ -33,7 +35,7 @@ class RtxCameraSensor(RtxMountedSensor):
         self._focal_mm = float(prim.GetAttribute("focalLength").Get() or 12.0)
         self._h_aperture_mm = float(prim.GetAttribute("horizontalAperture").Get() or 36.0)
         self._v_aperture_mm = float(prim.GetAttribute("verticalAperture").Get() or 0.0) or None
-        super().__init__(run, rate=rate)
+        super().__init__(run, rate=rate, out=Signal("camera", Image))
 
     def set_logger(self, logger_) -> None:
         super().set_logger(logger_)
@@ -58,6 +60,7 @@ class RtxCameraSensor(RtxMountedSensor):
         rgb = arrays.get("color")
         if rgb is None:
             return
+        self.out.write(Image(t_shown, rgb))
         if self._logger is not None:
             # the camera rides the body's pose through its one static transform; no per-frame transform needed
             self._logger.log_image("", rgb, sim_time=t_shown)

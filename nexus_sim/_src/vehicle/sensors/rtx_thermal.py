@@ -2,7 +2,8 @@
 
 The Kit peer renders the same kind of render product as the electro-optical camera and returns its
 radiance and depth; here on the host the radiance turns into kelvin, then into the operator's 8-bit
-image, through the one invertible band law in :mod:`nexus_sim._src.vehicle.sensors.lwir`.
+image, through the one invertible band law in :mod:`nexus_sim._src.vehicle.sensors.lwir`, which the
+sensor writes to its signal ``thermal_camera`` and logs.
 """
 
 from __future__ import annotations
@@ -10,14 +11,16 @@ from __future__ import annotations
 import numpy as np
 
 from nexus_sim._src.core import logger
+from nexus_sim._src.core.schema import Image
+from nexus_sim._src.core.signals import Signal
 
 from .rtx_sensor import RtxMountedSensor
 
 
 class RtxThermalSensor(RtxMountedSensor):
     """RTX thermal sensor, Long Wave Infrared (LWIR): the peer's radiance, the ``PtSelfIllumination``
-    Arbitrary Output Variable (AOV) on the authored camera prim, -> an 8-bit white-hot image via
-    ``Logger.log_image``, at ``cameras/<name>``.
+    Arbitrary Output Variable (AOV) on the authored camera prim, -> an 8-bit white-hot image, which goes
+    to the signal ``thermal_camera``, an :class:`Image`, and to ``Logger.log_image`` at ``cameras/<name>``.
 
     The scene encodes temperature as OmniPBR emission, the band law in
     :mod:`~nexus_sim._src.vehicle.sensors.lwir`, with ``emissive_color.r = 1.0`` so red
@@ -68,7 +71,7 @@ class RtxThermalSensor(RtxMountedSensor):
         self._v_aperture_mm = float(prim.GetAttribute("verticalAperture").Get() or 0.0) or None
         self._frustum_logged = False
         self._rng = np.random.default_rng(0)
-        super().__init__(run, rate=rate)
+        super().__init__(run, rate=rate, out=Signal("thermal_camera", Image))
 
     def set_logger(self, logger_) -> None:
         """Take the Logger, but defer the pinhole: it needs the emitted image size, and no frame
@@ -102,11 +105,13 @@ class RtxThermalSensor(RtxMountedSensor):
 
     def emit(self, arrays: dict, t_shown: float) -> None:
         rad = arrays.get("radiance")
-        if rad is None or self._logger is None:
-            return  # the image only goes to the recording, so a run that records nothing skips the post
-        self._emit_size(rad.shape)
+        if rad is None:
+            return
         img = self._post(rad, self._sky_mask(rad.shape, arrays.get("depth")))
-        self._logger.log_image("", img, sim_time=t_shown)
+        self.out.write(Image(t_shown, img))
+        if self._logger is not None:
+            self._emit_size(rad.shape)
+            self._logger.log_image("", img, sim_time=t_shown)
 
     def _sky_mask(self, shape, depth) -> np.ndarray:
         """Dome pixels on the AOV grid, True = sky, from the full-res depth buffer, strided down."""
