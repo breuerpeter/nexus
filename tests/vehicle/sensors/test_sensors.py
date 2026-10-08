@@ -166,6 +166,15 @@ def test_a_barometer_whose_prim_sits_off_its_bodys_origin_fails_and_names_the_pr
         BaroSensor(run)
 
 
+@pytest.mark.parametrize("cls", [ImuSensor, MagSensor, BaroSensor, GpsSensor])
+def test_an_analytic_sensor_whose_rate_is_negative_fails_and_names_the_prim(cls):
+    """An analytic sensor whose declared rate is negative fails, and names the prim."""
+    run = SensorRun(seed=1, dt=0.004, site=_run().site, path="/Vehicle/body/Sensor")
+
+    with pytest.raises(ValueError, match="/Vehicle/body/Sensor"):
+        cls(run, rate=-1.0)
+
+
 def test_mag_known_attitude():
     """One hand-computed case, no oracle: 90° about world +z, so the map can't drift with it."""
     s2 = math.sqrt(2.0) / 2.0

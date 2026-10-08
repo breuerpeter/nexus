@@ -39,14 +39,22 @@ class DeviceSensor(SensorRecorder):
     Args:
         output: The name of the output signal, such as ``imu``.
         sample: The output's type, a Warp struct whose first field is the sample's time.
+        run: The run's values, whose prim path an error names.
         rate: How often the sensor gives a new sample, hertz: 0 gives one every tick, as does a rate faster
             than the tick rate.
+
+    Raises:
+        ValueError: The rate is negative; the message names the prim.
     """
 
-    def __init__(self, output: str, sample, rate: float = 0.0):
+    def __init__(self, output: str, sample, run, rate: float = 0.0):
         self.time = Signal("time", wp.float64, shape=(1,))
         self.out = Signal(output, sample, shape=(1,))
         self.rate = float(rate)
+        if not self.rate >= 0.0:  # a rate that's not a number fails too
+            raise ValueError(
+                f"{run.path}: the sensor's nexus:rate is {self.rate:g} Hz; a rate is 0, a sample every tick, or more"
+            )
         self.period = 1.0 / self.rate if self.rate > 0.0 else 0.0  # seconds from one sample to the next
         self._start = wp.zeros(1, dtype=wp.float64)  # the sim time of the first sample
         self._taken = wp.zeros(1, dtype=int)  # how many samples the sensor has taken
@@ -326,7 +334,7 @@ class ImuSensor(DeviceSensor):
     fields = ("xacc", "yacc", "zacc", "xgyro", "ygyro", "zgyro")  # _out layout
 
     def __init__(self, run, acc_noise: float = 0.02, gyro_noise: float = 0.02, rate: float = 0.0):
-        super().__init__("imu", ImuSample, rate)
+        super().__init__("imu", ImuSample, run, rate)
         _rigid_mount(run, "inertial measurement unit")
         self.seed = run.seed
         self.dt = float(run.dt)
@@ -386,7 +394,7 @@ class MagSensor(DeviceSensor):
     fields = ("xmag", "ymag", "zmag")
 
     def __init__(self, run, offset=(0.0, 0.0, 0.0), noise=(0.02, 0.02, 0.03), rate: float = 0.0):
-        super().__init__("mag", MagSample, rate)
+        super().__init__("mag", MagSample, run, rate)
         # The field is the site's, a North East Down (NED) vector in gauss, resolved at build.
         # ``noise`` is the per-axis Gaussian sigma in Gauss. The default, 0.02/0.02/0.03, is the
         # bridge value; note it's ~10x a real magnetometer and, against PX4's strict per-sample World
@@ -430,7 +438,7 @@ class BaroSensor(DeviceSensor):
     fields = ("abs_pressure", "pressure_alt")
 
     def __init__(self, run, noise: float = 0.02, rate: float = 0.0):
-        super().__init__("baro", BaroSample, rate)
+        super().__init__("baro", BaroSample, run, rate)
         # The site's air pressure at mean sea level, hPa, and its temperature, degrees Celsius.
         _at_body_origin(run, "barometer")
         self.seed = run.seed
@@ -470,7 +478,7 @@ class GpsSensor(DeviceSensor):
     def __init__(self, run, fix_type: int = 3, rate: float = 0.0):
         import math
 
-        super().__init__("gps", GpsSample, rate)
+        super().__init__("gps", GpsSample, run, rate)
         # The reference is the site's geodetic origin, where the world's origin sits on Earth.
         _at_body_origin(run, "GPS receiver")
         self.body = int(run.body)
