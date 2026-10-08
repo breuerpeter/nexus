@@ -1,9 +1,8 @@
 """What PX4 receives over the Hardware In The Loop (HIL) link follows each sensor's declared rate.
 
-Real builds of the fixture vehicle in ``tests/usd/sensor_vehicle.py`` on the Warp CPU backend and a 250 Hz
-tick, flown by the PX4 controller with the PX4 Software In The Loop (SITL) peer sent to its fake. The fake
-keeps the time and the ``fields_updated`` mask of each ``HIL_SENSOR`` and the time of each ``HIL_GPS``, so a
-test counts what PX4 receives in a window of ticks. Skipped without newton or pxr.
+Real builds of the fixture vehicle in ``tests/usd/sensor_vehicle.py`` on the Warp CPU backend and a 250 Hz tick,
+flown by the PX4 controller with the PX4 Software In The Loop (SITL) peer sent to the fake that keeps every
+message it receives, so a test counts what PX4 receives in a window of ticks. Skipped without newton or pxr.
 """
 
 import pytest
@@ -11,7 +10,7 @@ import pytest
 pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
-from nexus._src.peers.px4_sitl.fake import Px4Fake
+from nexus_sim._src.core.registry import default_registry
 from tests.usd import sensor_vehicle as sv
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")
@@ -35,17 +34,16 @@ def _receive(tmp_path, prims: str, ticks: int) -> tuple[list[int], int]:
     Returns:
         The `fields_updated` mask of each `HIL_SENSOR` of the window, and how many `HIL_GPS` came in it.
     """
-    path = sv.vehicle(tmp_path, prims, px4_sitl=True)
-    loop = sv.build(path, components=None, peers={"px4_sitl": Px4Fake})
+    loop = sv.build(
+        sv.vehicle(tmp_path, prims, px4=True), components=default_registry(), peers={"px4_sitl": sv.KeepingFake}
+    )
     fake = loop.peers[0]
-    stepped = 0
-    while stepped < ticks + 2 * MARGIN and loop.step():
-        stepped += 1
-    sensor, gps = list(fake.hil_sensor), list(fake.hil_gps)
-    loop.close()
+    sv.steps(loop, ticks + 2 * MARGIN)
+    sensor = [msg for msg in fake.last.every if msg.get_type() == "HIL_SENSOR"]
     window = sensor[MARGIN : MARGIN + ticks]
-    start, end = window[0][0], sensor[MARGIN + ticks][0]
-    return [mask for _, mask in window], sum(start <= t < end for t in gps)
+    start, end = window[0].time_usec, sensor[MARGIN + ticks].time_usec
+    gps = sum(msg.get_type() == "HIL_GPS" and start <= msg.time_usec < end for msg in fake.last.every)
+    return [msg.fields_updated for msg in window], gps
 
 
 def _with(masks: list[int], bits: int) -> int:
