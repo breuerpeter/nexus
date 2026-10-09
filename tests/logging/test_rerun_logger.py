@@ -136,27 +136,28 @@ def test_blueprint_layout_and_eye_tracking():
 
 
 def test_blueprint_recording_tabs_mirror_history_keys():
-    """The debug tab tree derives from the histories' keys: group ▸ instance ▸ quantity
+    """The debug tab tree derives from the histories' writer paths: group ▸ instance ▸ quantity
     mirrors the access surface, ``sim.physics["body_frd"]`` → Physics ▸ body_frd ▸ position …, with
-    sensor instance tabs carrying the impl class.
+    sensor instance tabs carrying the impl class, and a signal's quantities under its key.
     """
     from nexus_sim._src.logging.rerun_logging import _blueprint
 
     recording = {
-        "vehicle/body/body_frd": ("NewtonPhysics", ["position", "velocity"]),
-        "vehicle/joints/rotor_1_joint": ("NewtonPhysics", ["q", "qd"]),
-        "vehicle/sensors/imu": ("ImuSensor", ["xacc", "ygyro"]),
+        "vehicle/body/body_frd": ("vehicle/body/body_frd", "NewtonPhysics", ["position", "velocity"]),
+        "vehicle/joints/rotor_1_joint": ("vehicle/joints/rotor_1_joint", "NewtonPhysics", ["q", "qd"]),
+        "vehicle/sensors/imu/imu": ("vehicle/sensors/imu", "ImuSensor", ["time", "accel"]),
+        "vehicle/controllers/px4/controls": ("vehicle/controllers/px4", "Px4Controller", ["controls"]),
     }
     bp = _blueprint(recording=recording, cameras={"sim/vehicle/sensors/fpvcam": "RtxCameraSensor"})
     _top, bottom = bp.root_container.contents  # the debug tabs are the full-width bottom row
     groups = {getattr(g, "name", None): g for g in bottom.contents}
-    assert list(groups) == ["Physics", "Sensors"]
+    assert list(groups) == ["Physics", "Sensors", "Controllers"]
     body = groups["Physics"].contents[0]
     assert getattr(body, "name", None) == "body_frd"  # instance tab = the sim.physics[...] key
     assert [v.name for v in body.contents] == ["position", "velocity"]  # quantity tabs = the fields
     assert [str(v.origin) for v in body.contents] == [
-        "sim/vehicle/body/body_frd/series/position",
-        "sim/vehicle/body/body_frd/series/velocity",
+        "sim/vehicle/body/body_frd/position",
+        "sim/vehicle/body/body_frd/velocity",
     ]
     assert getattr(groups["Physics"].contents[1], "name", None) == "rotor_1_joint"
     # scalar sensors and the camera feed are SIBLING instance tabs under Sensors
@@ -164,6 +165,16 @@ def test_blueprint_recording_tabs_mirror_history_keys():
         "imu (ImuSensor)",
         "fpvcam (RtxCameraSensor)",
     ]
+    imu = groups["Sensors"].contents[0]
+    assert [str(v.origin) for v in imu.contents] == [
+        "sim/vehicle/sensors/imu/imu/time",
+        "sim/vehicle/sensors/imu/imu/accel",
+    ]
+    px4 = groups["Controllers"].contents[0]
+    assert (getattr(px4, "name", None), [str(v.origin) for v in px4.contents]) == (
+        "px4",
+        ["sim/vehicle/controllers/px4/controls/controls"],
+    )
 
 
 def test_settings_markdown_is_one_flat_dotted_table():
@@ -294,6 +305,7 @@ class _FakeHistory:
 
     fields = (("position", 3), ("quat_xyzw", 4), ("q", 1))
     source = "NewtonPhysics"
+    path = "vehicle/body/body_frd"
     dt = 0.004
 
     def __init__(self, rows: int = 3):
@@ -318,7 +330,7 @@ def _timed_rows(rrd: str, entity: str) -> int:
 
 
 def test_write_lands_one_series_entity_per_declared_quantity(tmp_path, rrd_entities):
-    """Every declared field of every history lands at ``sim/<key>/series/<field>``."""
+    """Every declared field of every history lands at ``sim/<key>/<field>``."""
     from nexus_sim._src.logging import Logger
 
     rrd = str(tmp_path / "series.rrd")
@@ -327,7 +339,7 @@ def test_write_lands_one_series_entity_per_declared_quantity(tmp_path, rrd_entit
     rl.close()
 
     paths = rrd_entities(rrd)
-    series = {"/sim/vehicle/body/body_frd/series/position", "/sim/vehicle/body/body_frd/series/q"}
+    series = {"/sim/vehicle/body/body_frd/position", "/sim/vehicle/body/body_frd/q"}
     assert series <= set(paths), paths
 
 
@@ -344,7 +356,7 @@ def test_write_appends_each_block_after_the_one_before(tmp_path):
     rl.write({"vehicle/body/body_frd": h}, 4)
     rl.close()
 
-    assert _timed_rows(rrd, "/sim/vehicle/body/body_frd/series/q") == 7
+    assert _timed_rows(rrd, "/sim/vehicle/body/body_frd/q") == 7
 
 
 def test_write_draws_the_flown_path_as_one_segment_per_row(tmp_path):

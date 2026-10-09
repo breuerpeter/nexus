@@ -188,16 +188,18 @@ Observability is cross-cutting, split into a **write** side and a **read** side:
   Recorder's histories in blocks. A component logs live only a value with no fixed width, such as a
   camera's frame or a guidance's markers.
 - **The [Recorder](concepts.md#recorder).** The Recorder keeps a [history](concepts.md#history) of
-  every body, every joint and every sensor's output: body poses and velocities as `BodyState` and
-  `JointState`, and sensor outputs as `SensorSample`. A device kernel writes each tick's row into a
-  small staging buffer. The buffer drains onto host blocks that grow with the run, so device memory
-  stays fixed and the Recorder drops no row. A caller reads a history on demand through
-  [`sim.physics`](../reference/api/simulation.md) and `sim.sensors`. A history's key is its
-  instance's path below the process root: `vehicle/body/…`, `vehicle/joints/…` and
-  `vehicle/sensors/…`. The instance has the same path in the recording, so the Recorder and the
-  recording use one name for one thing. This is the capture-safe way to read a run without a host
-  round-trip each tick. Each time the staging buffers drain, the Logger writes the block as
-  time-series entities at `sim/<key>/series/<field>`, and the scene's poses with it. So you can
+  every body, every joint and every device signal a component writes. Body poses and velocities
+  read as `BodyState` and `JointState`. A signal's rows read as records of `t` then the quantities
+  its type declares. No component records itself: once the loop wires the ring, it hands the
+  Recorder every device signal, and the Recorder taps each buffer in the record stage. A device kernel writes each
+  tick's row into a small staging buffer. The buffer drains onto host blocks that grow with the run,
+  so device memory stays fixed and the Recorder drops no row. A caller reads a history on demand
+  through [`sim.physics`](../reference/api/simulation.md) and `sim.sensors`. A history's key is its
+  writer's path below the process root, then the signal's name for a signal: `vehicle/body/…`,
+  `vehicle/joints/…` and `vehicle/sensors/imu/imu`. The key is the same path in the recording, so the
+  Recorder and the recording use one name for one thing. This is the capture-safe way to read a run
+  without a host round-trip each tick. Each time the staging buffers drain, the Logger writes the
+  block as time-series entities at `sim/<key>/<field>`, and the scene's poses with it. So you can
   inspect the whole history in the viewer's debug tabs.
 
 Each PX4 run also produces PX4's native `.ulg` flight log alongside the `.rrd`, both surfaced as run

@@ -24,16 +24,21 @@ The framework itself logs the same way, so example output sits alongside the fra
 
 ## What the recording holds
 
-Every value with a fixed width comes from the Recorder's histories: each body's and joint's state
-and each sensor's output, one row per tick. The `Logger` writes them in blocks. Each time the
-Recorder's staging buffers drain, every 4096 ticks, it appends that block of every history to the
-file as columns. A block holds each quantity's series, the base body's pose, the scene's poses and
-the flown path. The last block goes out at teardown. The `Logger` logs the scene's meshes once, at
-the start. A viewer that follows a live run shows each block as it lands.
+Every value with a fixed width comes from the Recorder's histories, one row per tick. Those are
+each body's and joint's state, and each device signal a component writes: a sensor's sample, the
+estimate, a setpoint, or the controls. No component records itself: the Recorder taps the plant's
+state and each signal's buffer. A signal's row is a record of `t`, the tick's sim time, then the
+quantities the signal's type declares. Those are the fields of a struct, or one quantity named after
+a value-typed signal. The
+`Logger` writes them in blocks. Each time the Recorder's staging buffers drain, every 4096 ticks, it
+appends that block of every history to the file as columns. A block holds each quantity's series,
+the base body's pose, the scene's poses and the flown path. The last block goes out at teardown. The
+`Logger` logs the scene's meshes once, at the start. A viewer that follows a live run shows each
+block as it lands.
 
 A component logs a value with no fixed width live, as it produces it, through the scoped `Logger`
-the loop hands it with `set_logger`. A camera logs its frames, a lidar its points, a guidance its
-waypoints and reference, and a controller its horizon.
+the loop hands it with `set_logger`, at the row named after its signal. A camera logs its frames,
+a lidar its points, a guidance its waypoints and reference, and a controller its horizon.
 
 Every stop that reaches Python writes the recording. Teardown writes the last block and closes the
 file before it closes the controller and stops the peers. SIGTERM and SIGHUP stop a run as Ctrl-C
@@ -58,7 +63,10 @@ and that the instance is `imu`. A vehicle's Universal Scene Description (USD) fi
 and the recording read the same.
 
 A component names only its own row, such as `horizon` or `reference`. The loop resolves the
-component's path once, when it wires the component, and puts that path before the row's name.
+component's path once, when it wires the component, and puts that path before the row's name. A
+signal's row takes the signal's name. The Recorder keeps a device signal's history at
+`sim/<path>/<signal>`, with one child per quantity. A component logs a value with no fixed width
+at the same row, a camera's frames at `sim/vehicle/sensors/<name>/camera`.
 
 A path says who wrote a row. It doesn't say where the row sits in space: the row's transform does.
 A camera at `sim/vehicle/sensors/<name>` rides the vehicle through one static transform that names
@@ -70,10 +78,11 @@ path.
 | `sim/logs/<module>` | The log records of one module |
 | `sim/run/settings`, `sim/run/profile`, `sim/run/rtf` | The run's settings, its end-of-run profile and its live Real Time Factor (RTF) |
 | `sim/vehicle/body` | The base body's pose, every tick |
-| `sim/vehicle/body/<name>/series/<field>` | A body's recorded series |
-| `sim/vehicle/joints/<name>/series/<field>` | A joint's recorded series |
-| `sim/vehicle/sensors/<name>/series/<field>` | A sensor's recorded series |
-| `sim/vehicle/sensors/<name>` | A camera's frames and frustum, or a lidar's points |
+| `sim/vehicle/body/<name>/<field>` | A body's recorded series, one per quantity |
+| `sim/vehicle/joints/<name>/<field>` | A joint's recorded series, one per quantity |
+| `sim/<path>/<signal>/<field>` | A signal's recorded series, one per quantity, under its writer's path: `sim/vehicle/sensors/imu/imu/accel`, `sim/vehicle/controllers/<name>/controls/controls` |
+| `sim/vehicle/sensors/<name>` | A camera's frustum |
+| `sim/vehicle/sensors/<name>/camera`, `.../thermal_camera`, `.../lidar` | A camera's frames, a thermal camera's frames, or a lidar's points: the signal logged live |
 | `sim/vehicle/controllers/<name>/<row>` | A controller's own rows, such as its `horizon` |
 | `sim/vehicle/trajectory` | The flown path |
 | `sim/guidance/waypoints/wp_<i>`, `sim/guidance/reference` | The guidance's mission: its waypoints and its tracked reference |

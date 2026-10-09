@@ -15,7 +15,8 @@ from .rtx_sensor import RtxMountedSensor
 
 class RtxCameraSensor(RtxMountedSensor):
     """RTX camera sensor: the peer's color output -> the signal ``camera``, an :class:`Image`, and
-    ``Logger.log_image`` at the sensor's own entity, ``sim/vehicle/sensors/<name>``.
+    ``Logger.log_image`` at the row named after the signal, ``sim/vehicle/sensors/<name>/camera``, under
+    the frustum at the sensor's own entity.
 
     Args:
         run: The run's values: the ``Camera`` prim, the model body it rides and the render link.
@@ -40,7 +41,7 @@ class RtxCameraSensor(RtxMountedSensor):
     def set_logger(self, logger_) -> None:
         super().set_logger(logger_)
         if logger_ is not None:
-            try:  # a frustum that fails to log costs the frustum alone: the frames still land at this entity
+            try:  # a frustum that fails to log costs the frustum alone: the frames still land at their row
                 loc = self._local
                 q = loc.ExtractRotationQuat()
                 logger_.log_camera(
@@ -63,4 +64,4 @@ class RtxCameraSensor(RtxMountedSensor):
         self.out.write(Image(t_shown, rgb))
         if self._logger is not None:
             # the camera rides the body's pose through its one static transform; no per-frame transform needed
-            self._logger.log_image("", rgb, sim_time=t_shown)
+            self._logger.log_image(self.out.name, rgb, sim_time=t_shown)

@@ -28,36 +28,45 @@ def test_two_instances_of_one_class_write_under_their_own_names(recorded_flight,
 
     Given a flight with two cameras of one class, `a` and `b`, and the Kit peer's fake, when the
     recorded flight steps past one frame of each, then the `.rrd` holds image rows at
-    `/sim/vehicle/sensors/a` and at `/sim/vehicle/sensors/b`.
+    `/sim/vehicle/sensors/a/camera` and at `/sim/vehicle/sensors/b/camera`.
     """
     framed = sorted(
         {
             entity
             for entity, _, columns in rrd_rows(recorded_flight)
-            if "EncodedImage:blob" in columns and entity.rsplit("/", 1)[-1] in ("a", "b")
+            if "EncodedImage:blob" in columns and entity.split("/")[-2] in ("a", "b")
         }
     )
 
-    assert framed == ["/sim/vehicle/sensors/a", "/sim/vehicle/sensors/b"]
+    assert framed == ["/sim/vehicle/sensors/a/camera", "/sim/vehicle/sensors/b/camera"]
 
 
-def test_a_cameras_or_thermal_cameras_frames_and_frustum_sit_at_sim_vehicle_sensors(recorded_flight, rrd_rows):
-    """A camera's or thermal camera's frames and frustum sit at `sim/vehicle/sensors/<n>`.
+def test_a_cameras_or_thermal_cameras_frustum_sits_at_its_entity_and_its_frames_at_its_signals_row(
+    recorded_flight, rrd_rows
+):
+    """A camera's or thermal camera's frustum sits at `sim/vehicle/sensors/<n>`, and its frames at the row
+    named after its signal below it.
 
     Given a flight with the camera `fpvcam`, the thermal camera `ir` and the Kit peer's fake, when the
-    recorded flight steps past one frame of each, then each sensor's entity holds its image rows and
-    one `Pinhole` row, and the `.rrd` holds no entity under `/vehicle/body/cameras/` or `/cameras/`.
+    recorded flight steps past one frame of each, then each sensor's entity holds one `Pinhole` row, its
+    image rows sit at `.../fpvcam/camera` and `.../ir/thermal_camera`, and the `.rrd` holds no entity
+    under `/vehicle/body/cameras/` or `/cameras/`.
     """
     rows = rrd_rows(recorded_flight)
     held = {}
-    for sensor in ("/sim/vehicle/sensors/fpvcam", "/sim/vehicle/sensors/ir"):
-        columns = [columns for entity, _, columns in rows if entity == sensor]
-        frames = sum(len(c["EncodedImage:blob"]) for c in columns if "EncodedImage:blob" in c)
-        frustums = sum(len(c["Pinhole:image_from_camera"]) for c in columns if "Pinhole:image_from_camera" in c)
-        held[sensor] = (frames > 0, frustums)
+    for sensor, signal in (("/sim/vehicle/sensors/fpvcam", "camera"), ("/sim/vehicle/sensors/ir", "thermal_camera")):
+        at_sensor = [columns for entity, _, columns in rows if entity == sensor]
+        at_row = [columns for entity, _, columns in rows if entity == f"{sensor}/{signal}"]
+        frames = sum(len(c["EncodedImage:blob"]) for c in at_row if "EncodedImage:blob" in c)
+        misplaced = sum(len(c["EncodedImage:blob"]) for c in at_sensor if "EncodedImage:blob" in c)
+        frustums = sum(len(c["Pinhole:image_from_camera"]) for c in at_sensor if "Pinhole:image_from_camera" in c)
+        held[sensor] = (frames > 0, misplaced, frustums)
     old = sorted({entity for entity, _, _ in rows if entity.startswith(("/vehicle/body/cameras/", "/cameras/"))})
 
-    assert (held, old) == ({"/sim/vehicle/sensors/fpvcam": (True, 1), "/sim/vehicle/sensors/ir": (True, 1)}, [])
+    assert (held, old) == (
+        {"/sim/vehicle/sensors/fpvcam": (True, 0, 1), "/sim/vehicle/sensors/ir": (True, 0, 1)},
+        [],
+    )
 
 
 def test_a_camera_or_thermal_camera_rides_the_body_through_one_static_transform_with_no_transform_row_per_tick(
@@ -88,7 +97,7 @@ def test_a_camera_whose_frustum_fails_to_log_still_records_its_frames_at_its_own
     """A camera whose frustum fails to log still records its frames at its own path.
 
     Given the fixture vehicle with the camera `fpvcam`, whose `Pinhole` row raises when logged, when a recorded run steps past
-    one frame, then the image rows sit at `/sim/vehicle/sensors/fpvcam` and the log holds one warning.
+    one frame, then the image rows sit at `/sim/vehicle/sensors/fpvcam/camera` and the log holds one warning.
     """
     import rerun as rr
 
@@ -106,32 +115,32 @@ def test_a_camera_whose_frustum_fails_to_log_still_records_its_frames_at_its_own
     framed = sorted({entity for entity, _, columns in rrd_rows(rrd) if "EncodedImage:blob" in columns})
     warnings = [record.getMessage() for record in caplog.records if record.levelno == logging.WARNING]
 
-    assert (framed, len(warnings)) == (["/sim/vehicle/sensors/fpvcam"], 1), warnings
+    assert (framed, len(warnings)) == (["/sim/vehicle/sensors/fpvcam/camera"], 1), warnings
 
 
-def test_a_lidars_points_sit_at_sim_vehicle_sensors_in_the_world_frame_as_today_with_no_transform_row(
-    tmp_path, rrd_rows
-):
-    """A lidar's points sit at `sim/vehicle/sensors/<n>`, in the world frame as today, with no transform row.
+def test_a_lidars_points_sit_at_its_signals_row_in_the_world_frame_as_today_with_no_transform_row(tmp_path, rrd_rows):
+    """A lidar's points sit at `sim/vehicle/sensors/<n>/lidar`, the row named after its signal, in the world
+    frame as today, with no transform row on the way.
 
     Given the fixture vehicle with the lidar `scan` and the Kit peer's fake scanning one known world point,
     `(1, 2, 3)`, when a recorded run steps past one scan, then the points row at
-    `/sim/vehicle/sensors/scan` holds that world point, the entity holds no transform row, and the
-    `.rrd` holds no entity under `/lidar/`.
+    `/sim/vehicle/sensors/scan/lidar` holds that world point, neither it nor the sensor's entity holds a
+    transform row, and the `.rrd` holds no entity under `/lidar/`.
     """
     from nexus_sim._src.peers.kit.fake import KitFake
 
     kit = functools.partial(KitFake, points=[[1.0, 2.0, 3.0]])
     rows = rrd_rows(fly_recorded(tmp_path, sv.vehicle(tmp_path, LIDAR), scene=sv.SCENE, ticks=30, kit=kit))
-    at_lidar = [columns for entity, _, columns in rows if entity == "/sim/vehicle/sensors/scan"]
+    at_row = [columns for entity, _, columns in rows if entity == "/sim/vehicle/sensors/scan/lidar"]
+    at_sensor = [columns for entity, _, columns in rows if entity == "/sim/vehicle/sensors/scan"]
     points = {
         tuple(point)
-        for c in at_lidar
+        for c in at_row
         if "Points3D:positions" in c
         for scan in c["Points3D:positions"].to_pylist()
         for point in scan
     }
-    transforms = sorted({name for c in at_lidar for name in c if name.startswith("Transform3D:")})
+    transforms = sorted({name for c in (*at_row, *at_sensor) for name in c if name.startswith("Transform3D:")})
     old = sorted({entity for entity, _, _ in rows if entity.startswith("/lidar/")})
 
     assert (points, transforms, old) == ({(1.0, 2.0, 3.0)}, [], [])

@@ -142,3 +142,23 @@ def test_the_public_surface_names_no_measurement():
     )
     out = subprocess.run([sys.executable, "-c", code], check=False, capture_output=True, text=True)
     assert out.stdout.strip() == "False True", out.stderr
+
+
+def test_sensor_sample_leaves_the_public_surface():
+    """`SensorSample` leaves the public surface.
+
+    Given a fresh interpreter, when it imports `nexus_sim`, then `SensorSample` isn't in `nexus_sim.__all__`
+    and `nexus_sim.SensorSample` raises `AttributeError`.
+    """
+    code = (
+        "import nexus_sim as nx\n"
+        "try:\n"
+        "    nx.SensorSample\n"
+        "    raised = False\n"
+        "except AttributeError:\n"
+        "    raised = True\n"
+        "print('SensorSample' in nx.__all__, raised)"
+    )
+    out = subprocess.run([sys.executable, "-c", code], check=False, capture_output=True, text=True)
+
+    assert out.stdout.strip() == "False True", out.stderr

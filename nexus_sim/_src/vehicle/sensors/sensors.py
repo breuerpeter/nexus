@@ -29,14 +29,13 @@ import warp as wp
 from nexus_sim._src.core.interfaces import Stage
 from nexus_sim._src.core.schema import BaroSample, GpsSample, ImuSample, MagSample
 from nexus_sim._src.core.signals import Signal
-from nexus_sim._src.recording.sensor import SensorRecorder
 
 
-class DeviceSensor(SensorRecorder):
+class DeviceSensor:
     """A sensor whose work is one device stage, named after the sensor, over ``sample_wp``. The stage reads
     the tick's sim time, the signal ``time``, and writes the sensor's sample, stamped with it, to its output
     signal ``out`` on a tick that its rate makes due. On any other tick the kernel writes nothing, so the
-    signal holds the last sample.
+    signal holds the last sample. The sensor records nothing itself: the Recorder keeps the signal's history.
 
     Args:
         output: The name of the output signal, such as ``imu``.
@@ -155,7 +154,6 @@ def imu_kernel(
     start: wp.array(dtype=wp.float64),
     taken: wp.array(dtype=int),
     ticks: wp.array(dtype=int),  # the ticks since the last sample
-    out: wp.array(dtype=float),  # [xacc,yacc,zacc, xgyro,ygyro,zgyro], in the mount's axes
     sample: wp.array(dtype=ImuSample),
 ):
     ticks[0] = ticks[0] + 1
@@ -180,16 +178,18 @@ def imu_kernel(
     q_sensor = q * q_mount  # the mount's axes in the world
     acc_s = wp.quat_rotate_inv(q_sensor, acc_mount - gravity_world)  # specific force
     gyro_s = wp.quat_rotate_inv(q_sensor, vang)
-    out[0] = acc_s[0] + _noise(seed, st, 0, sigma_acc)
-    out[1] = acc_s[1] + _noise(seed, st, 1, sigma_acc)
-    out[2] = acc_s[2] + _noise(seed, st, 2, sigma_acc)
-    out[3] = gyro_s[0] + _noise(seed, st, 3, sigma_gyro)
-    out[4] = gyro_s[1] + _noise(seed, st, 4, sigma_gyro)
-    out[5] = gyro_s[2] + _noise(seed, st, 5, sigma_gyro)
     s = ImuSample()
     s.time = time[0]
-    s.accel = wp.vec3(out[0], out[1], out[2])
-    s.gyro = wp.vec3(out[3], out[4], out[5])
+    s.accel = wp.vec3(
+        acc_s[0] + _noise(seed, st, 0, sigma_acc),
+        acc_s[1] + _noise(seed, st, 1, sigma_acc),
+        acc_s[2] + _noise(seed, st, 2, sigma_acc),
+    )
+    s.gyro = wp.vec3(
+        gyro_s[0] + _noise(seed, st, 3, sigma_gyro),
+        gyro_s[1] + _noise(seed, st, 4, sigma_gyro),
+        gyro_s[2] + _noise(seed, st, 5, sigma_gyro),
+    )
     sample[0] = s
 
 
@@ -205,7 +205,6 @@ def mag_kernel(
     period: wp.float64,
     start: wp.array(dtype=wp.float64),
     taken: wp.array(dtype=int),
-    out: wp.array(dtype=float),  # [xmag, ymag, zmag]
     sample: wp.array(dtype=MagSample),
 ):
     if not _due(time[0], period, start, taken):
@@ -216,12 +215,13 @@ def mag_kernel(
     # ``nexus_sim._src.transform``. The old Y=+E map was a reflection, GH #61.
     mag_world = wp.vec3(mag_ned[0], -mag_ned[1], -mag_ned[2])
     mag_b = wp.quat_rotate_inv(q, mag_world)
-    out[0] = mag_b[0] + offset[0] + _noise(seed, st, 0, sigma[0])
-    out[1] = mag_b[1] + offset[1] + _noise(seed, st, 1, sigma[1])
-    out[2] = mag_b[2] + offset[2] + _noise(seed, st, 2, sigma[2])
     s = MagSample()
     s.time = time[0]
-    s.field = wp.vec3(out[0], out[1], out[2])
+    s.field = wp.vec3(
+        mag_b[0] + offset[0] + _noise(seed, st, 0, sigma[0]),
+        mag_b[1] + offset[1] + _noise(seed, st, 1, sigma[1]),
+        mag_b[2] + offset[2] + _noise(seed, st, 2, sigma[2]),
+    )
     sample[0] = s
 
 
@@ -237,19 +237,16 @@ def baro_kernel(
     period: wp.float64,
     start: wp.array(dtype=wp.float64),
     taken: wp.array(dtype=int),
-    out: wp.array(dtype=float),  # [abs_pressure, pressure_alt]
     sample: wp.array(dtype=BaroSample),
 ):
     if not _due(time[0], period, start, taken):
         return
     st = taken[0]
     alt = wp.transform_get_translation(body_q[body])[2]  # z up in sim
-    out[0] = pressure_msl * wp.pow(1.0 - 2.25577e-5 * alt, 5.25588) + _noise(seed, st, 0, sigma)
-    out[1] = alt + _noise(seed, st, 1, sigma)
     s = BaroSample()
     s.time = time[0]
-    s.pressure = out[0]
-    s.altitude = out[1]
+    s.pressure = pressure_msl * wp.pow(1.0 - 2.25577e-5 * alt, 5.25588) + _noise(seed, st, 0, sigma)
+    s.altitude = alt + _noise(seed, st, 1, sigma)
     s.temperature = temperature
     sample[0] = s
 
@@ -268,7 +265,6 @@ def gps_kernel(
     period: wp.float64,
     start: wp.array(dtype=wp.float64),
     taken: wp.array(dtype=int),
-    out: wp.array(dtype=wp.float64),  # [lat, lon, alt, vn, ve, vd, ground_speed]
     sample: wp.array(dtype=GpsSample),
 ):
     if not _due(time[0], period, start, taken):
@@ -280,19 +276,12 @@ def gps_kernel(
     # World -> geodetic uses the same axis map as everything else: north = +x, east = -y, down =
     # -z, the frame contract in ``nexus_sim._src.transform``. Position and velocity must share
     # it; when they disagreed, PX4's EKF reset in a loop and east guidance ran away, GH #61.
-    out[0] = ref_lat + wp.float64(p[0]) / wp.float64(111000.0)
-    out[1] = ref_lon - wp.float64(p[1]) * inv_lon_scale
-    out[2] = ref_alt + wp.float64(p[2])
-    out[3] = wp.float64(v[0])  # vn
-    out[4] = wp.float64(-v[1])  # ve, since world +y = West
-    out[5] = wp.float64(-v[2])  # vd
-    out[6] = wp.float64(wp.sqrt(v[0] * v[0] + v[1] * v[1]))  # ground speed
     s = GpsSample()
     s.time = time[0]
-    s.lat = out[0]
-    s.lon = out[1]
-    s.alt = out[2]
-    s.velocity = wp.vec3(v[0], -v[1], -v[2])
+    s.lat = ref_lat + wp.float64(p[0]) / wp.float64(111000.0)
+    s.lon = ref_lon - wp.float64(p[1]) * inv_lon_scale
+    s.alt = ref_alt + wp.float64(p[2])
+    s.velocity = wp.vec3(v[0], -v[1], -v[2])  # north, east and down: world +y is west
     s.ground_speed = wp.sqrt(v[0] * v[0] + v[1] * v[1])
     s.fix_type = fix_type
     sample[0] = s
@@ -325,8 +314,7 @@ class ImuSensor(DeviceSensor):
             message names the prim.
     """
 
-    name = "imu"  # sim.sensors key, the flat instance name
-    fields = ("xacc", "yacc", "zacc", "xgyro", "ygyro", "zgyro")  # _out layout
+    name = "imu"  # the instance name, which the builder sets from the prim for a declared sensor
 
     def __init__(self, run, acc_noise: float = 0.02, gyro_noise: float = 0.02, rate: float = 0.0):
         super().__init__("imu", ImuSample, run, rate)
@@ -344,12 +332,11 @@ class ImuSensor(DeviceSensor):
         self._prev_lin = wp.zeros(1, dtype=wp.vec3)
         self._prev_ang = wp.zeros(1, dtype=wp.vec3)
         self._ticks = wp.zeros(1, dtype=int)  # the ticks since the last sample, over which the velocity changed
-        self._out = wp.zeros(6, dtype=float)
         self._first = True
 
     def sample_wp(self, state, t) -> None:
-        """Launch the IMU kernel into the device buffer ``self._out``, with NO host readback, so it joins
-        a captured region. The kernel counts its samples on the device, so the noise field varies per
+        """Launch the IMU kernel into the sample signal's buffer, with NO host readback, so it joins a
+        captured region. The kernel counts its samples on the device, so the noise field varies per
         replay. For a captured region, call once eagerly first to seed the finite-diff ``prev``
         velocities, then capture with ``first`` already 0.
         """
@@ -376,14 +363,13 @@ class ImuSensor(DeviceSensor):
                 self._taken,
                 self._ticks,
             ),
-            outputs=(self._out, self.out.buffer),
+            outputs=(self.out.buffer,),
         )
         self._first = False
 
 
 class MagSensor(DeviceSensor):
     name = "mag"
-    fields = ("xmag", "ymag", "zmag")
 
     def __init__(self, run, offset=(0.0, 0.0, 0.0), noise=(0.02, 0.02, 0.03), rate: float = 0.0):
         super().__init__("mag", MagSample, run, rate)
@@ -400,7 +386,6 @@ class MagSensor(DeviceSensor):
         self.mag_ned = wp.vec3(*[float(x) for x in run.site.mag_ned])
         self._offset = wp.vec3(*self.offset)
         self._sigma = wp.vec3(*self.noise)
-        self._out = wp.zeros(3, dtype=float)
 
     def sample_wp(self, state, t) -> None:
         wp.launch(
@@ -418,13 +403,12 @@ class MagSensor(DeviceSensor):
                 self._start,
                 self._taken,
             ),
-            outputs=(self._out, self.out.buffer),
+            outputs=(self.out.buffer,),
         )
 
 
 class BaroSensor(DeviceSensor):
     name = "baro"
-    fields = ("abs_pressure", "pressure_alt")
 
     def __init__(self, run, noise: float = 0.02, rate: float = 0.0):
         super().__init__("baro", BaroSample, run, rate)
@@ -435,7 +419,6 @@ class BaroSensor(DeviceSensor):
         self.pressure_msl = float(run.site.pressure_msl)
         self.temperature = float(run.site.temperature)
         self.noise = float(noise)
-        self._out = wp.zeros(2, dtype=float)
 
     def sample_wp(self, state, t) -> None:
         wp.launch(
@@ -453,13 +436,12 @@ class BaroSensor(DeviceSensor):
                 self._start,
                 self._taken,
             ),
-            outputs=(self._out, self.out.buffer),
+            outputs=(self.out.buffer,),
         )
 
 
 class GpsSensor(DeviceSensor):
     name = "gps"
-    fields = ("lat", "lon", "alt", "vn", "ve", "vd", "ground_speed")  # _out is float64 for lat/lon precision
 
     def __init__(self, run, fix_type: int = 3, rate: float = 0.0):
         import math
@@ -473,7 +455,6 @@ class GpsSensor(DeviceSensor):
         self.ref_alt = float(run.site.alt)
         self.inv_lon_scale = 1.0 / (111000.0 * math.cos(math.radians(self.ref_lat)))
         self.fix_type = int(fix_type)
-        self._out = wp.zeros(7, dtype=wp.float64)
 
     def sample_wp(self, state, t) -> None:
         wp.launch(
@@ -493,5 +474,5 @@ class GpsSensor(DeviceSensor):
                 self._start,
                 self._taken,
             ),
-            outputs=(self._out, self.out.buffer),
+            outputs=(self.out.buffer,),
         )

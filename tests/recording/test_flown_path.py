@@ -93,4 +93,4 @@ def test_run_records_the_flown_path(flight_paths):
 
 def test_run_records_the_airframe_position_series(flight_paths):
     """The history that draws the flown path is in the recording too."""
-    assert "/sim/vehicle/body/body/series/position" in flight_paths, flight_paths
+    assert "/sim/vehicle/body/body/position" in flight_paths, flight_paths

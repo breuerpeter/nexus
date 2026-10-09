@@ -50,12 +50,12 @@ def test_captured_sensor_noise_dithers_per_replay():
             s.sample_wp(view, SimTime(0.0, 0))
         wp.capture_launch(cap.graph)
         wp.synchronize()
-        a = s._out.numpy().copy()
+        a = s.out.read()[0]
         wp.capture_launch(cap.graph)
         wp.synchronize()
-        b = s._out.numpy().copy()
-        assert not np.allclose(a[:6], b[:6])  # acc+gyro noise dithers across replays
-        np.testing.assert_allclose(a[6:], b[6:], atol=1e-6)  # quat stable, static state
+        b = s.out.read()[0]
+        # the accelerometer's and the gyro's noise dithers across replays
+        assert not np.allclose([*a["accel"], *a["gyro"]], [*b["accel"], *b["gyro"]])
 
 
 def test_captured_px4_sensors_match_eager():
