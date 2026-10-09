@@ -1,5 +1,5 @@
-"""The stops a run sees from outside: SIGTERM and SIGHUP end a run as Ctrl-C does, and a stop that
-lands while the recording is written waits until the file is closed.
+"""The stops that reach a run from outside: SIGTERM and SIGHUP end a run as Ctrl-C does, and a stop
+that lands during the recording's write waits until the file closes.
 
 Both are context managers over the process's signal handlers. Python delivers a signal to the main
 thread alone and refuses a handler from any other, so off the main thread each is a no-op: a run
@@ -13,7 +13,7 @@ import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-# The signals that end a run as Ctrl-C does: a `kill`, a container's stop, a closed terminal.
+# The signals that end a run as Ctrl-C does: a termination request, a container's stop, a closed terminal.
 STOP_SIGNALS = (signal.SIGTERM, signal.SIGHUP)
 
 
@@ -43,9 +43,9 @@ def stop_signals() -> Iterator[None]:
 
 @contextmanager
 def hold_interrupts() -> Iterator[None]:
-    """Hold SIGINT, SIGTERM and SIGHUP for the span of the block: a signal that lands inside is noted,
-    the block runs to its end, and one ``KeyboardInterrupt`` is raised once it has. So a second Ctrl-C
-    during the recording's write waits until the file is closed.
+    """Hold SIGINT, SIGTERM and SIGHUP for the span of the block: the handler notes a signal that lands
+    inside, the block runs to its end, and then one ``KeyboardInterrupt`` goes up. So a second Ctrl-C
+    during the recording's write waits until the file closes.
     """
     if not _on_main_thread():
         yield

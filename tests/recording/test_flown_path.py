@@ -13,7 +13,7 @@ pytest.importorskip("pxr")
 from nexus_sim._src.core.interfaces import Stage
 
 DT = 0.004  # 250 Hz control ticks
-STEPS = 30  # ticks, well above the trail's two-point floor
+STEPS = 30  # ticks, well past the trail's two-point floor
 
 
 def _author_min_usd(path: str) -> None:

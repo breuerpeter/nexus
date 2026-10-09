@@ -1,4 +1,4 @@
-"""The stops a run sees from outside: SIGTERM and SIGHUP as Ctrl-C, and a stop held through a write.
+"""The stops that reach a run from outside: SIGTERM and SIGHUP as Ctrl-C, and a stop held through a write.
 
 The tests send the signals to their own process, with the handlers under test installed, so none
 reaches the default action.
@@ -32,7 +32,7 @@ def test_the_stop_handlers_go_back_after_the_block():
 
 def test_a_held_interrupt_lets_the_block_finish_and_raises_once_after_it():
     """A Ctrl-C that lands inside the held block waits: the block runs to its end, then one
-    `KeyboardInterrupt` is raised.
+    `KeyboardInterrupt` goes up.
     """
     finished = []
     with pytest.raises(KeyboardInterrupt):
@@ -52,7 +52,7 @@ def test_a_block_with_no_interrupt_raises_nothing_and_puts_the_handlers_back():
 
 def test_off_the_main_thread_both_are_no_ops():
     """Python delivers signals to the main thread alone, so a run stepped from another thread leaves the
-    process's handling as it is.
+    process's handling as it stands.
     """
     before = signal.getsignal(signal.SIGTERM)
     seen = []
