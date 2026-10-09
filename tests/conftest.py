@@ -64,6 +64,22 @@ def _fresh_url_opener():
     urllib.request.install_opener(None)
 
 
+@pytest.fixture
+def cut_network(monkeypatch):
+    """Cut the network when called: from then on, a fetch fails at once on an unreachable proxy.
+
+    A test fetches the hosted assets it flies before the cut, since no earlier test in its worker
+    need have fetched them.
+    """
+
+    def cut():
+        for var in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"):
+            monkeypatch.setenv(var, "http://127.0.0.1:9")  # the discard port: no proxy answers
+        urllib.request.install_opener(None)  # the next fetch reads the proxy
+
+    return cut
+
+
 # A `gpu` test needs a CUDA device. Without one it skips here, the one place a test skips for that, and
 # with `--require-cuda`, the GPU leg's setting, a `gpu` test that skips for any reason fails instead.
 _NO_CUDA = "no CUDA device"
