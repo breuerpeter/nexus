@@ -9,6 +9,7 @@ import functools
 import io
 import time
 
+import pytest
 from PIL import Image
 from rerun.experimental import RrdReader
 
@@ -17,6 +18,9 @@ from nexus_sim._src.config import LaunchConfig
 from nexus_sim._src.peers.kit.fake import KitFake
 from nexus_sim._src.peers.kit.runner import KitPeerError
 from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
+
+# PX4's ports are the machine's, so the tests that bind or dial them run on one worker, one at a time.
+pytestmark = pytest.mark.xdist_group("px4_ports")
 
 
 def _frames(rrd: str, camera: str) -> list[tuple[int, int]]:
@@ -34,7 +38,7 @@ def _frames(rrd: str, camera: str) -> list[tuple[int, int]]:
 
 
 def test_a_run_whose_peer_mapping_sends_the_kit_peer_to_its_fake_starts_no_container_and_gets_frames_at_the_declared_rate(
-    daemon, warp_cpu, monkeypatch
+    daemon, warp_cpu, cut_network
 ):
     """A run whose peer mapping sends the Kit peer to its fake starts no container and gets frames at the
     declared rate.
@@ -44,12 +48,12 @@ def test_a_run_whose_peer_mapping_sends_the_kit_peer_to_its_fake_starts_no_conta
     then the daemon records no container, and the camera yields 24 frames, give or take the one in flight
     at either end, each 1280x720. The PX4 peer maps to its fake too, so nothing else starts a container.
     """
-    # The network is a boundary: a PX4 fetch this run must not make fails at once on an unreachable proxy.
-    for var in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"):
-        monkeypatch.setenv(var, "http://127.0.0.1:9")
     launch = LaunchConfig.from_dict(
         {"vehicle": "astro_max_fpv", "scene": "empty", "runtime": {"device": "cpu"}, "output": {"log": True}}
     )
+    launch_mod.resolve_vehicle_usd(launch)  # the hosted vehicle and scene, fetched before the cut
+    # The network is a boundary: a PX4 fetch this run must not make fails at once.
+    cut_network()
     loop = launch_mod.build_from_launch(launch, preroll_timeout=10.0, peers={"px4_sitl": Px4Fake, "kit": KitFake})
 
     ticks = 0
@@ -61,18 +65,18 @@ def test_a_run_whose_peer_mapping_sends_the_kit_peer_to_its_fake_starts_no_conta
     assert (daemon.runs, 23 <= len(frames) <= 25, set(frames)) == ([], True, {(1280, 720)}), len(frames)
 
 
-def test_a_fake_kit_peer_that_sends_error_ends_the_run_with_that_error(daemon, warp_cpu, monkeypatch):
+def test_a_fake_kit_peer_that_sends_error_ends_the_run_with_that_error(daemon, warp_cpu, cut_network):
     """A fake Kit peer that sends `error` ends the run with that error.
 
     Given a run of `astro_max_fpv` whose fake Kit peer answers a `frame` request with `error` after 10
     frames, when the run steps on, then it stops with an error naming the Kit peer and carrying the
     peer's message.
     """
-    # The network is a boundary: a PX4 fetch this run must not make fails at once on an unreachable proxy.
-    for var in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"):
-        monkeypatch.setenv(var, "http://127.0.0.1:9")
     kit = functools.partial(KitFake, error_after=10, error="the render product died")
     launch = LaunchConfig.from_dict({"vehicle": "astro_max_fpv", "scene": "empty", "runtime": {"device": "cpu"}})
+    launch_mod.resolve_vehicle_usd(launch)  # the hosted vehicle and scene, fetched before the cut
+    # The network is a boundary: a PX4 fetch this run must not make fails at once.
+    cut_network()
     loop = launch_mod.build_from_launch(launch, preroll_timeout=10.0, peers={"px4_sitl": Px4Fake, "kit": kit})
 
     ticks = 0

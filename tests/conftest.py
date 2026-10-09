@@ -1,18 +1,46 @@
 """Shared test helpers."""
 
+import os
+import platform
 import re
 import subprocess
 import sys
+import urllib.request
 
 import newton_usd_schemas  # noqa: F401
 import pytest
 import warp as wp
+
+# Warp builds a CPU kernel for the host's own CPU, `-march=native`, and names the object file after
+# the host's instruction set, so a kernel cache from one CPU model misses on another. CI's hosted
+# runners are a mix of models. The suite builds for x86-64-v2, the SSE4.2 baseline every x86-64 CPU
+# and virtual machine since 2009 runs, so cpu-pytest's cache hits whatever runner it lands on, and no
+# machine the suite meets lacks an instruction the kernels use. The tests are compute-light, so the
+# low baseline costs them no measurable time.
+if platform.machine() == "x86_64":
+    wp.config.cpu_compiler_flags = "-march=x86-64-v2"
 
 # The schema plugins the tests apply, registered here, before any test module opens a stage: OpenUSD
 # builds its schema registry once, on first use, and a plugin registered after that never shows in it.
 # Newton's plugin backs the test that applies a Newton schema, and the stand-in project's backs the tests
 # that apply `StandInAPI`.
 import tests.usd.stand_in.nexus_stand_in  # noqa: F401
+
+# A worker's resident memory settles near 2.8 GiB over the suite, 5.2 GiB when one worker runs it all:
+# the flights keep the memory they take. One worker per logical CPU would want 56 GiB on a 20-CPU laptop.
+_WORKER_MIB = 3 * 1024
+
+
+def pytest_xdist_auto_num_workers(config):
+    """One worker per logical CPU, and no more than the free memory holds at 3 GiB each."""
+    cpus = os.cpu_count() or 1
+    try:
+        with open("/proc/meminfo") as f:
+            available = next(int(line.split()[1]) // 1024 for line in f if line.startswith("MemAvailable:"))
+    except (OSError, StopIteration):
+        return cpus
+    return max(1, min(cpus, available // _WORKER_MIB))
+
 
 # Warp's default device when the session starts. A test that leaves it changed makes a later test's
 # kernels run on another device than its arrays, so test order would matter; the guards below fail it.
@@ -48,6 +76,35 @@ def pytest_make_collect_report(collector):
                 f"{collector.path.name} sets the Warp default device to {left} at import: scope it in its tests"
             )
     return report
+
+
+@pytest.fixture(autouse=True)
+def _fresh_url_opener():
+    """Give each test an opener that reads the proxy settings it sets.
+
+    `urllib.request.urlopen` builds its opener on its first call and keeps that call's proxy settings for
+    the whole process. A test that points the proxy at the discard port to prove it fetches nothing would
+    then fail every later fetch, and an earlier fetch would let that test reach the network.
+    """
+    urllib.request.install_opener(None)
+    yield
+    urllib.request.install_opener(None)
+
+
+@pytest.fixture
+def cut_network(monkeypatch):
+    """Cut the network when called: from then on, a fetch fails at once on an unreachable proxy.
+
+    A test fetches the hosted assets it flies before the cut, since no earlier test in its worker
+    need have fetched them.
+    """
+
+    def cut():
+        for var in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"):
+            monkeypatch.setenv(var, "http://127.0.0.1:9")  # the discard port: no proxy answers
+        urllib.request.install_opener(None)  # the next fetch reads the proxy
+
+    return cut
 
 
 # A `gpu` test needs a CUDA device. Without one it skips here, the one place a test skips for that, and

@@ -44,6 +44,9 @@ from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
 from nexus_sim._src.vehicle.controllers.px4 import controller as ctrl
 from tests.usd import sensor_vehicle as sv
 
+# PX4's ports are the machine's, so the tests that bind or dial them run on one worker, one at a time.
+pytestmark = pytest.mark.xdist_group("px4_ports")
+
 # --- the stand-in docker daemon -------------------------------------------------------------------
 
 
@@ -486,7 +489,7 @@ def _faked(catalog, tmp_path) -> Orchestrator:
 
 
 def test_a_run_whose_peer_mapping_sends_the_px4_sitl_peer_to_its_fake_starts_no_process_and_needs_no_px4_tree(
-    daemon, assembly, catalog, monkeypatch, tmp_path
+    daemon, assembly, catalog, monkeypatch, tmp_path, cut_network
 ):
     """A run whose peer mapping sends the PX4 SITL peer to its fake starts no process and needs no PX4 tree.
 
@@ -495,9 +498,8 @@ def test_a_run_whose_peer_mapping_sends_the_px4_sitl_peer_to_its_fake_starts_no_
     daemon records no container, no fetch or build runs, and every tick completes.
     """
     monkeypatch.delenv("PX4_DIR")
-    # The network is a boundary: a fetch this run must not make fails at once on an unreachable proxy.
-    for var in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"):
-        monkeypatch.setenv(var, "http://127.0.0.1:9")
+    # The network is a boundary: a fetch this run must not make fails at once.
+    cut_network()
     loop = _faked(catalog, tmp_path)
 
     stepped = _step(loop, 500)
@@ -712,7 +714,7 @@ def _declared_run(tmp_path, layer: str | None = None, vehicle: str = _SCOPED) ->
     return launch_mod.build_from_launch(launch, catalog=catalog, cache_dir=tmp_path / "cache", preroll_timeout=5.0)
 
 
-def test_a_vehicle_that_declares_the_px4_sitl_peer_starts_it(daemon, monkeypatch, tmp_path, warp_cpu):
+def test_a_vehicle_that_declares_the_px4_sitl_peer_starts_it(daemon, monkeypatch, tmp_path, warp_cpu, cut_network):
     """A vehicle that declares the PX4 SITL peer starts it.
 
     Given each vehicle of the bundled catalog and no layer, when the run builds with the PX4 SITL peer
@@ -724,14 +726,17 @@ def test_a_vehicle_that_declares_the_px4_sitl_peer_starts_it(daemon, monkeypatch
 
     monkeypatch.delenv("NEXUS_ASSET_CACHE")  # the shipped vehicles come from the checkout's own cache
     monkeypatch.chdir(tmp_path)  # no project catalog: only the bundled one
-    # The network is a boundary: a PX4 fetch this run must not make fails at once on an unreachable proxy.
-    for var in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"):
-        monkeypatch.setenv(var, "http://127.0.0.1:9")
     names = list(load_catalog().vehicles)
+    launches = {
+        n: LaunchConfig.from_dict({"vehicle": n, "scene": "empty", "runtime": {"device": "cpu"}}) for n in names
+    }
+    for launch in launches.values():
+        launch_mod.resolve_vehicle_usd(launch)  # each hosted vehicle and the scene, fetched before the cut
+    # The network is a boundary: a PX4 fetch this run must not make fails at once.
+    cut_network()
 
     flown = {}
-    for name in names:
-        launch = LaunchConfig.from_dict({"vehicle": name, "scene": "empty", "runtime": {"device": "cpu"}})
+    for name, launch in launches.items():
         loop = launch_mod.build_from_launch(launch, preroll_timeout=10.0, peers={"px4_sitl": Px4Fake, "kit": KitFake})
         _step(loop, 10)
         fakes = [p for p in loop.peers if isinstance(p, Px4Fake)]

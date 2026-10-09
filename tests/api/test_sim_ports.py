@@ -181,6 +181,7 @@ def test_a_run_attached_to_a_px4_started_elsewhere_lists_instance_0s_offboard_li
     assert (link["protocol"], link["port"], link["system_id"]) == ("udp", 14540, 1)
 
 
+@pytest.mark.xdist_group("px4_ports")  # binds or dials PX4's ports, with the other tests that do
 def test_on_a_fake_px4_run_the_offboard_lookup_fails_at_once_and_names_the_fake(assembly, tmp_path):
     """On a fake PX4 run the offboard lookup fails at once and names the fake.
 
