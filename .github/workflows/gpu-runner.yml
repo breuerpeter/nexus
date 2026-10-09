@@ -105,7 +105,7 @@ on:
         type: string
         default: ""
       cache-scope:
-        description: "The name of this call's kernel-cache entry: a matrix passes its cell, and calls that share a scope share an entry"
+        description: "The name of this call's kernel-cache entries: a matrix passes its cell, and a call restores the newest entry its scope saved"
         type: string
         default: ""
       read-repositories:
@@ -272,11 +272,17 @@ jobs:
       # setup-uv would otherwise compute a literal "undefined/.cache/uv" cache dir.
       - uses: astral-sh/setup-uv@v6
         with: { enable-cache: true, cache-local-path: /tmp/setup-uv-cache }
-      # The kernel cache is keyed on the versions that shape the kernels, read from uv.lock, and on
-      # the caller's cache-scope. A key is written once and the first saver wins, so boxes saving
-      # under one key would keep the first box's kernels only; a scope with no entry yet restores
-      # another scope's on the same versions, which shares most kernels, and compiles the
-      # difference. A key over every nexus module missed on any Python edit.
+      # The kernel cache is keyed on the versions that shape the kernels, read from uv.lock, on the
+      # caller's cache-scope and on the run's id, as cpu-pytest's is. An entry is written once, so
+      # the run's id gives each run its own entry: it saves what it restored plus what it compiled,
+      # and the scope's entry grows until it holds every kernel the scope builds. A run restores its
+      # own scope's newest entry; `-run-` ends the scope's name, so a scope whose name starts another's
+      # never reads the longer one's. Then another GPU scope's newest entry on the same versions,
+      # which shares most kernels; `gpu-` keeps cpu-pytest's CPU-only entry out of that. Each restore
+      # key is a prefix that no saved key equals: in run 37941834607 a restore key equal to a saved
+      # key won over a prefix match on an earlier restore key. Old entries are never restored again,
+      # so the cache evicts them first, before the entries every run reads. A key over every nexus
+      # module missed on any Python edit.
       - name: Compute the Warp cache key
         id: warp-key
         run: |
@@ -286,8 +292,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/warp
-          key: ${{ steps.warp-key.outputs.versions }}-${{ inputs.cache-scope }}
-          restore-keys: ${{ steps.warp-key.outputs.versions }}-
+          key: ${{ steps.warp-key.outputs.versions }}-gpu-${{ inputs.cache-scope }}-run-${{ github.run_id }}
+          restore-keys: |
+            ${{ steps.warp-key.outputs.versions }}-gpu-${{ inputs.cache-scope }}-run-
+            ${{ steps.warp-key.outputs.versions }}-gpu-
       # The caller's cache entries: this runner knows no component, so the caller names the paths,
       # the entry's name and the tracked files that shape it, and the key hashes those files here: a
       # reusable workflow's `with` cannot call hashFiles, and hashFiles takes one pattern per
