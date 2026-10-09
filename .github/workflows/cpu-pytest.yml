@@ -27,6 +27,19 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+      # Warp's compiled kernels, keyed as in gpu-runner.yml on the versions that shape them: a cold
+      # cache makes each worker compile the same kernels before its first build.
+      - name: Compute the Warp cache key
+        id: warp-key
+        run: |
+          v() { awk -v n="$1" '$0 == "name = \"" n "\"" { f = 1 } f && /^version = / { gsub(/"/, "", $3); print $3; exit }' uv.lock; }
+          echo "versions=warp-$(v warp-lang)-newton-$(v newton)-mujoco-warp-$(v mujoco-warp)" >> "$GITHUB_OUTPUT"
+      - name: Restore Warp kernel cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/warp
+          key: ${{ steps.warp-key.outputs.versions }}-cpu-pytest
+          restore-keys: ${{ steps.warp-key.outputs.versions }}-
       - run: uv run --locked --extra policy pytest -m "not gpu and not px4_sitl" --cov=nexus_sim --cov-report=xml --durations=25
       - uses: codecov/codecov-action@v5
         with:
