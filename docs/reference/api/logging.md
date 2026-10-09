@@ -38,8 +38,11 @@ waypoints and reference, and a controller its horizon.
 Every stop that reaches Python writes the recording. Teardown writes the last block and closes the
 file before it closes the controller and stops the peers. SIGTERM and SIGHUP stop a run as Ctrl-C
 does, and a Ctrl-C that lands during the write waits until the file closes. A stop that reaches no
-handler loses at most the rows since the last drain, about 16 s at 250 Hz. Such a stop is a SIGKILL,
-the kernel ending the process for lack of memory, or a crash in native code.
+handler loses the rows since the last drain, about 16 s at 250 Hz, plus the block a writer thread
+still has in flight. The writer sends a block within tens of milliseconds of its drain. The loop
+hands it the next one only once that block is in the file, so a stalled disk costs a second block at
+most. Such a stop is a SIGKILL, the kernel ending the process for lack of memory, or a crash in native
+code.
 
 ## Entity paths
 

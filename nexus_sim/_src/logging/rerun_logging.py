@@ -787,8 +787,9 @@ class Logger:
         once more at teardown with the rows still staged. This reads the rows on the calling thread
         and hands them to the writer thread, which sends them and flushes the sink, so the loop never
         waits on the encode. One block is in flight at a time: this waits for the block before, so a
-        SIGKILL loses at most that block and the rows since the last drain; :meth:`close` waits for
-        every block. Each history's declared quantities go out as series at
+        SIGKILL loses the rows since the last drain plus that block, sent within tens of milliseconds
+        of its drain unless the sink stalls; :meth:`close` waits for every block. Each history's
+        declared quantities go out as series at
         ``sim/<key>/series/<field>``; the base body's rows pose it at ``sim/vehicle/body``, pose the
         scene's batches, or its debug frames, and extend the flown path by one segment per row. The
         first block builds the debug tab tree. Fault-isolated: a write that fails warns once and never
