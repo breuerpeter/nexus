@@ -5,4 +5,4 @@ import pytest
 
 @pytest.mark.gpu
 def test_red_gpu_leg_blocks_merge():
-    assert False, "deliberate failure: proves a red gpu-pytest blocks the merge"
+    pytest.fail("deliberate failure: proves a red gpu-pytest blocks the merge")
