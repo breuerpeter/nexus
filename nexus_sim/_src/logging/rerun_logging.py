@@ -454,6 +454,10 @@ class Logger:
         self._axes_static_done = False
         self._trail_end: np.ndarray | None = None  # the last position written: where the next segment starts
         self._dynamic: list[tuple[str, np.ndarray, np.ndarray, np.ndarray]] = []  # batches posed per block
+        # The blocks wait here for the writer thread, which encodes and sends them: a block's send takes
+        # tens of milliseconds, a stall the lockstep thread must not take every drain.
+        self._writes: queue.Queue | None = None
+        self._writer = None
 
         # The one recording: app and recording IDs fixed, so every producer in the process shares it.
         # The one timeline is duration-typed, so it reads as 14.2 s rather than an epoch date, and every
@@ -780,12 +784,15 @@ class Logger:
         """Write the rows ``[start, stop)`` of every history into the recording, as columns.
 
         The loop calls this each time the Recorder's staging buffers drain, with the drained block, and
-        once more at teardown with the rows still staged. Each history's declared quantities go out as
-        series at ``sim/<key>/series/<field>``; the base body's rows pose it at ``sim/vehicle/body``,
-        pose the scene's batches, or its debug frames, and extend the flown path by one segment per
-        row. The first block builds the debug tab tree. This flushes the block to the sink before it
-        returns, so a SIGKILL loses at most the rows since the last drain. Fault-isolated: a write
-        that fails warns once and never costs the run.
+        once more at teardown with the rows still staged. This reads the rows on the calling thread
+        and hands them to the writer thread, which sends them and flushes the sink, so the loop never
+        waits on the encode. One block is in flight at a time: this waits for the block before, so a
+        SIGKILL loses at most that block and the rows since the last drain; :meth:`close` waits for
+        every block. Each history's declared quantities go out as series at
+        ``sim/<key>/series/<field>``; the base body's rows pose it at ``sim/vehicle/body``, pose the
+        scene's batches, or its debug frames, and extend the flown path by one segment per row. The
+        first block builds the debug tab tree. Fault-isolated: a write that fails warns once and never
+        costs the run.
 
         Args:
             histories: The Recorder's histories, by key.
@@ -793,37 +800,73 @@ class Logger:
             stop: One past the last row to write; ``None`` writes to the newest row.
         """
         try:
-            tree: dict[str, tuple[str | None, list[str]]] = {}
-            bodies: dict[str, dict[str, np.ndarray]] = {}
+            block: list[tuple[str, str | None, tuple, dict[str, np.ndarray]]] = []
             for key, h in histories.items():
                 fields = getattr(h, "fields", None)
                 if not fields:
                     continue  # no declared schema: nothing to plot
                 arrays = h.arrays(start, stop)
-                t = np.asarray(arrays.pop("t"), dtype=np.float64)
-                if t.size == 0:
+                if np.asarray(arrays["t"]).size == 0:
                     continue
-                for name, width in fields:
-                    entity = f"{ROOT}/{key}/{SERIES}/{name}"
-                    if width > 1 and not self._written.get(key):  # one series per column, named once for the legend
-                        rr.log(entity, rr.SeriesLines(names=_series_names(name, width)), static=True)
-                    rr.send_columns(
-                        entity,
-                        indexes=[rr.TimeColumn("time", duration=t)],
-                        columns=rr.Scalars.columns(scalars=arrays[name]),
-                    )
-                self._written[key] = True
-                tree[key] = (getattr(h, "source", None), [n for n, _ in fields])
-                if key.startswith("vehicle/body/"):
-                    bodies[key.rsplit("/", 1)[-1]] = {"t": t, **arrays}
-            if tree and self._recording is None:
-                self.show_recording(tree)
-            self._write_poses(bodies)
-            rr.get_global_data_recording().flush()
+                block.append((key, getattr(h, "source", None), tuple(fields), arrays))
+            if not block:
+                return
+            if self._recording is None:
+                self.show_recording({key: (source, [n for n, _ in fields]) for key, source, fields, _ in block})
+            if self._writer is None:
+                self._writes = queue.Queue()
+                self._writer = threading.Thread(target=self._write_loop, name="rrd-write", daemon=True)
+                self._writer.start()
+            self._writes.join()  # the block before is in the file: at most one in flight
+            self._writes.put(block)
         except Exception as exc:
-            if not getattr(self, "_write_warned", False):
-                self._write_warned = True
-                logger.warning(f"Rerun recording write failed: {exc}")
+            self._warn_write(exc)
+
+    def _warn_write(self, exc: Exception) -> None:
+        if not getattr(self, "_write_warned", False):
+            self._write_warned = True
+            logger.warning(f"Rerun recording write failed: {exc}")
+
+    def _write_loop(self) -> None:
+        while True:
+            block = self._writes.get()
+            try:
+                if block is None:
+                    return
+                self._send_block(block)
+            except Exception as exc:
+                self._warn_write(exc)
+            finally:
+                self._writes.task_done()
+
+    def _send_block(self, block) -> None:
+        """Send one block, on the writer thread: each history's series, then the poses, then a flush,
+        so the block is in the file before the next one.
+        """
+        bodies: dict[str, dict[str, np.ndarray]] = {}
+        for key, _source, fields, arrays in block:
+            t = np.asarray(arrays["t"], dtype=np.float64)
+            for name, width in fields:
+                entity = f"{ROOT}/{key}/{SERIES}/{name}"
+                if width > 1 and not self._written.get(key):  # one series per column, named once for the legend
+                    rr.log(entity, rr.SeriesLines(names=_series_names(name, width)), static=True)
+                rr.send_columns(
+                    entity,
+                    indexes=[rr.TimeColumn("time", duration=t)],
+                    columns=rr.Scalars.columns(scalars=arrays[name]),
+                )
+            self._written[key] = True
+            if key.startswith("vehicle/body/"):
+                bodies[key.rsplit("/", 1)[-1]] = {**arrays, "t": t}
+        self._write_poses(bodies)
+        rr.get_global_data_recording().flush()
+
+    def _drain_writes(self) -> None:
+        """Wait for the writer thread to send every block handed to it, then end it."""
+        if self._writer is not None:
+            self._writes.put(None)
+            self._writer.join()
+            self._writer = None
 
     def _write_poses(self, bodies: dict[str, dict[str, np.ndarray]]) -> None:
         """Pose the scene from the bodies' rows: the base body's ``Transform3D`` columns at
@@ -984,9 +1027,11 @@ class Logger:
             self._img_worker = None
 
     def close(self) -> None:
-        """Close the recording: drain the image encoder, then flush and close the sink, the ``.rrd``
-        or the server. Every row written before this call is in the file when it returns.
+        """Close the recording: wait for the writer thread's blocks, drain the image encoder, then
+        flush and close the sink, the ``.rrd`` or the server. Every row written before this call is in
+        the file when it returns.
         """
+        self._drain_writes()
         self._drain_images()
         try:
             rr.disconnect()
