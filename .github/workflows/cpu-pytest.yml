@@ -28,7 +28,10 @@ jobs:
         with:
           enable-cache: true
       # Warp's compiled kernels, keyed as in gpu-runner.yml on the versions that shape them: a cold
-      # cache makes each worker compile the same kernels before its first build.
+      # cache makes each worker compile the same kernels before its first build, about 45 s on 4 vCPUs.
+      # The key ends in the run's id, so every run saves what it restored plus what it compiled, and the
+      # entry grows until it holds every kernel the suite builds; an entry saved once under a fixed key
+      # kept only its first run's kernels. A CPU-only entry is a few MB.
       - name: Compute the Warp cache key
         id: warp-key
         run: |
@@ -38,8 +41,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/warp
-          key: ${{ steps.warp-key.outputs.versions }}-cpu-pytest
-          restore-keys: ${{ steps.warp-key.outputs.versions }}-
+          key: ${{ steps.warp-key.outputs.versions }}-cpu-pytest-${{ github.run_id }}
+          restore-keys: |
+            ${{ steps.warp-key.outputs.versions }}-cpu-pytest-
+            ${{ steps.warp-key.outputs.versions }}-
       - run: uv run --locked --extra policy pytest -m "not gpu and not px4_sitl" --cov=nexus_sim --cov-report=xml --durations=25
       - uses: codecov/codecov-action@v5
         with:
