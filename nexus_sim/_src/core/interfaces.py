@@ -164,16 +164,3 @@ class Controller(Protocol):
 
 class Renderer(Protocol):
     def render(self, state: newton.State, t: SimTime) -> None: ...
-
-
-class Recorder(Protocol):
-    def log(self, t: SimTime, state: newton.State) -> None:
-        """Hand one tick's state to the logger. Output-only.
-
-        The one per-tick call: the core loop calls this so something can log the
-        evolving state, for example :mod:`nexus_sim._src.logging` drives NVIDIA Newton's ``ViewerRerun.log_state``,
-        without core depending on Rerun. Components log their own *events* through the
-        ``newton`` logger directly.
-        """
-
-    def close(self) -> None: ...

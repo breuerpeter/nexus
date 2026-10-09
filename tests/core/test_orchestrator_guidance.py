@@ -181,8 +181,6 @@ class _Recording:
     logs through the view the loop scopes for it.
     """
 
-    log_interval = 0.0
-
     def __init__(self):
         self.entities = []
 

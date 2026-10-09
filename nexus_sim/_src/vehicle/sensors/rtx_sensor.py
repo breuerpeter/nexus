@@ -64,7 +64,7 @@ class RtxMountedSensor:
 
         In debug mode, non-camera sensors log their coordinate frame once, statically, at their own row
         ``frame``, with the fixed local mount transform and the body's frame as its parent: the body's
-        entity gets a ``Transform3D`` every logged tick, so the frame rides the body pose and nothing
+        entity gets a ``Transform3D`` every tick, so the frame rides the body pose and nothing
         re-logs per sample. The frame has a row of its own because a lidar's points sit at the sensor's
         entity in world coordinates. Cameras carry their own Pinhole frustum instead.
         """

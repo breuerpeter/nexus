@@ -236,7 +236,7 @@ def test_the_command_line_takes_the_layer(monkeypatch, tmp_path, warp_cpu):
     by_cli = started(cli.main)
 
     def through_sim():
-        with Sim(str(vehicle), scene="empty", device="cpu", layer=str(layer), observe=False):
+        with Sim(str(vehicle), scene="empty", device="cpu", layer=str(layer)):
             pass
 
     by_sim = started(through_sim)

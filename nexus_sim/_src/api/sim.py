@@ -5,8 +5,7 @@ Owns the sim: builds it from a ``LaunchConfig`` via ``build_from_launch`` and dr
 script steps the sim, with ``step``, ``run``, ``wait_until`` or ``sleep``, whether the controller
 takes setpoints or is PX4: the orchestrator's tick generator yields once per
 control tick either way, so a PX4 run is something you drive, not something you watch. Tears down
-cooperatively. ``observe=True`` attaches a ``Recorder`` so ``physics`` and ``sensors`` read sim
-ground truth.
+cooperatively. Every run has a ``Recorder``, so ``physics`` and ``sensors`` read sim ground truth.
 """
 
 from __future__ import annotations
@@ -19,7 +18,7 @@ from nexus_sim._src.api.args import save_run_artifacts, sim_argparser  # noqa: F
 from nexus_sim._src.build.launch import build_from_launch
 from nexus_sim._src.config import LaunchConfig
 from nexus_sim._src.core import logger
-from nexus_sim._src.recording import ChannelMap, Recorder
+from nexus_sim._src.recording import Histories, Recorder
 
 if TYPE_CHECKING:
     from nexus_sim._src.core import Orchestrator
@@ -36,9 +35,9 @@ class Sim:
     predicate or a sim-time budget. Use it as a context manager: ``__enter__`` builds,
     ``__exit__`` calls :meth:`stop` to tear the run down cooperatively.
 
-    With ``observe=True`` the handle attaches a :class:`~nexus_sim._src.recording.Recorder`,
-    making :attr:`physics` and :attr:`sensors` read sim ground truth, in the world frame,
-    Z-up Forward-Left-Up (FLU), off the components' recorded channels.
+    Every run has a :class:`~nexus_sim._src.recording.Recorder`, so :attr:`physics` and
+    :attr:`sensors` read sim ground truth, in the world frame, Z-up Forward-Left-Up (FLU), off the
+    recorded histories.
 
     Args:
         vehicle: Catalog vehicle *name*, for example ``"astro_max_fpv"``, or a local .usd path.
@@ -49,8 +48,7 @@ class Sim:
             ``"slalom"`` obstacle pillars, or a local scene .usd path.
         device: Compute device for the runtime: ``"auto"``, the default, which picks CUDA when
             present, or an explicit ``"cpu"``, for bit-exact determinism, or ``"cuda"``.
-        observe: Attach a ``Recorder`` so :attr:`physics` and :attr:`sensors` read ground truth.
-        log: Record the run to a ``.rrd``; ``False`` runs headless with no recorder, at max speed.
+        log: Record the run to a ``.rrd``; ``False`` writes no recording, at max speed.
         view: Serve the Rerun recording live on ``:9876`` instead of writing a ``.rrd`` file.
         cache_dir: Override the asset cache directory; ``None`` = the framework default.
         max_steps: Cap the run at this many control steps; ``None`` = the launch-config default.
@@ -76,7 +74,6 @@ class Sim:
         catalog: str | None = None,
         geo: str | None = None,
         device: str = "auto",
-        observe: bool = True,
         log: bool = False,
         view: bool = False,
         debug: bool = False,
@@ -116,11 +113,8 @@ class Sim:
         self._launch.output.view = view
         self._launch.output.debug = debug  # axes-only scene: coordinate triads, no meshes → a small .rrd
         self._cache_dir = cache_dir
-        self._observe = observe
         self._orch = None
         self._guidance = None  # a launch-built run has none: a flight hands one to from_orchestrator
-        self._recorder: Recorder | None = None
-        self._base_ch = None  # cached base body channel: the default "vehicle" entity, for wait_until/sleep
         self._ran = False
         self._stopped = False
         self._prebuilt_orch = None  # set by from_orchestrator, the self-assembled-example entry
@@ -131,15 +125,14 @@ class Sim:
         orch: Orchestrator,
         *,
         guidance: object | None = None,
-        observe: bool = True,
     ) -> Sim:
         """Host a self-assembled :class:`~nexus_sim._src.core.Orchestrator`: the examples' entry.
 
         An example builds its own orchestrator, its controller plus actuator plus sensors around
         the core components, see ``nexus_sim/examples/controllers/*/assembly.py``, and hands it
-        over; the ``Sim`` adds what a script reads and drives: the ``Recorder``, ``sim.physics``
-        and ``sim.sensors``; the guidance the flight constructed, which joins the loop; and the run
-        lifecycle, ``run``, ``step``, ``stop``, ``results`` and ``artifacts``.
+        over; the ``Sim`` adds what a script reads and drives: the ``Recorder``, when the loop has
+        none, ``sim.physics`` and ``sim.sensors``; the guidance the flight constructed, which joins
+        the loop; and the run lifecycle, ``run``, ``step``, ``stop``, ``results`` and ``artifacts``.
 
         Args:
             orch: The built orchestrator; its components already carry the renderer and logger.
@@ -147,7 +140,6 @@ class Sim:
                 ``MissionGuidance(reached_m=0.3)``. Its stage runs each tick before the controller's
                 and writes the setpoint the controller reads. ``None`` flies the controller to the
                 setpoint's default.
-            observe: Attach the ``Recorder`` behind ``sim.physics`` and ``sim.sensors``.
 
         Returns:
             The ``Sim`` handle: use as a context manager, then ``sim.guidance.set_mission`` plus
@@ -156,12 +148,9 @@ class Sim:
         sim = cls.__new__(cls)
         sim._launch = None
         sim._cache_dir = None
-        sim._observe = observe
         sim._orch = None
         sim._prebuilt_orch = orch
         sim._guidance = guidance
-        sim._recorder = None
-        sim._base_ch = None
         sim._ran = False
         sim._stopped = False
         return sim
@@ -171,7 +160,7 @@ class Sim:
         """Construct a ``Sim`` from a :func:`sim_argparser` namespace, ignoring script-specific extras.
 
         ``overrides`` win over the namespace, for the ``Sim`` kwargs the shared parser doesn't cover.
-        So a script does ``Sim.from_args(args, observe=False)``.
+        So a script does ``Sim.from_args(args, max_steps=500)``.
         """
         from nexus_sim._src.diagnostics import diagnostics
 
@@ -204,24 +193,10 @@ class Sim:
         else:
             # A vehicle that authors RTX sensors starts the Kit render peer here, from the host.
             self._orch = build_from_launch(self._launch, cache_dir=self._cache_dir)
-        if self._observe:
-            # Attach the Recorder: each recordable component registers its device-only channels;
-            # physics → one per body plus per joint. dt → the per-row snapshot time, counter × dt.
-            # The ring must cover the *whole* run, since post-run evaluation reads the full trajectory, so
-            # size it from max_steps when the launch sets one, plus margin for the pre-flight seed rows.
-            if self._launch is not None:
-                max_steps, dt = self._launch.runtime.max_steps, self._launch.runtime.dt
-            else:  # a self-assembled orchestrator carries its own bounds/clock
-                max_steps = getattr(self._orch, "max_steps", None)
-                dt = getattr(getattr(self._orch, "clock", None), "dt", 0.004)
-            # Unbounded runs, interactive PX4 with max_steps=None, get ~2 min at 250 Hz: enough that the
-            # end-of-run debug dump covers a whole interactive flight, ~40-80 MB device total across
-            # the usual ~15 channels; the dump warns when the ring still wrapped.
-            maxlen = max(4096, int(max_steps) + 64) if max_steps else 30_000
-            self._recorder = Recorder(dt=dt, maxlen=maxlen)
-            self._orch.attach_recorder(self._recorder)
-            # Cache the base body channel, the discovered base, for the wait_until/sleep sim clock.
-            self._base_ch = self._recorder.channels[f"vehicle/body/{self._orch.physics.base_body}"]
+        if self._orch.recorder is None:
+            # A self-assembled loop that brought no Recorder gets one: the loop hands it the plant and
+            # each sensor at its first step. dt → the per-row sim time, counter × dt.
+            self._orch.recorder = Recorder(dt=self._orch.clock.dt)
         # A run whose controller takes no setpoint, as PX4's does, wires nothing here: a script opens
         # its own client on the offboard link, from sim.ports, after start(), and the run is
         # step-driven the same way as any other.
@@ -345,41 +320,40 @@ class Sim:
     def __exit__(self, *exc) -> None:
         self.stop()
 
-    # -- ground-truth observation: North-East-Down (NED) free; world Z-up --
+    # -- ground truth: North-East-Down (NED) free; world Z-up --
     @property
-    def physics(self) -> ChannelMap:
-        """Name-keyed view over the full recorded model state: every body and joint, by the model's
-        labels. Component-kind access: what the *physics* component records.
+    def physics(self) -> Histories:
+        """Name-keyed view over the recorded model state: every body and joint, by the model's labels.
 
-        ``sim.physics["body_frd"]`` or ``sim.physics["rotor_1"]`` → a body channel, whose ``.latest()``
+        ``sim.physics["body_frd"]`` or ``sim.physics["rotor_1"]`` → a body's history, whose ``.latest()``
         and ``.history()`` give :class:`~nexus_sim._src.recording.BodyState`;
-        ``sim.physics["rotor_1_joint"]`` → a joint channel,
+        ``sim.physics["rotor_1_joint"]`` → a joint's history,
         :class:`~nexus_sim._src.recording.JointState`. Ground truth in the world frame, Z-up FLU, not an
         autopilot's Extended Kalman Filter (EKF) estimate. Use :attr:`base_body` for the base body
         without hardcoding a name: ``sim.physics[sim.base_body].latest()``.
 
         Raises:
-            RuntimeError: ``observe=False``, so no ``Recorder`` attached.
+            RuntimeError: Accessed before entering the ``Sim`` context.
         """
-        if self._recorder is None:
-            raise RuntimeError("Sim(observe=False): no Recorder attached")
-        return ChannelMap(self._recorder.channels, ("vehicle/body/", "vehicle/joints/"))
+        if self._orch is None:
+            raise RuntimeError("enter the Sim context first (`with nx.Sim(...) as sim:`)")
+        return Histories(self._orch.recorder.histories, ("vehicle/body/", "vehicle/joints/"))
 
     @property
-    def sensors(self) -> ChannelMap:
-        """Name-keyed view over the recorded sensor channels: ``sim.sensors["imu"]`` and so on.
-        Component-kind access: what each *sensor* instance records; keys are flat instance names,
-        so a future redundant setup reads ``sim.sensors["imu_bosch"]`` beside ``sim.sensors["imu_murata"]``.
+    def sensors(self) -> Histories:
+        """Name-keyed view over the sensors' histories: ``sim.sensors["imu"]`` and so on. Keys are flat
+        instance names, so a redundant setup reads ``sim.sensors["imu_bosch"]`` beside
+        ``sim.sensors["imu_murata"]``.
 
-        Each value is a :class:`~nexus_sim._src.recording.RecordChannel`, with ``.latest()`` and ``.history()``,
+        Each value is a :class:`~nexus_sim._src.recording.History`, with ``.latest()`` and ``.history()``,
         of that sensor's recorded measurement stream.
 
         Raises:
-            RuntimeError: ``observe=False``, so no ``Recorder`` attached.
+            RuntimeError: Accessed before entering the ``Sim`` context.
         """
-        if self._recorder is None:
-            raise RuntimeError("Sim(observe=False): no Recorder attached")
-        return ChannelMap(self._recorder.channels, ("vehicle/sensors/",))
+        if self._orch is None:
+            raise RuntimeError("enter the Sim context first (`with nx.Sim(...) as sim:`)")
+        return Histories(self._orch.recorder.histories, ("vehicle/sensors/",))
 
     @property
     def base_body(self) -> str:
@@ -394,18 +368,12 @@ class Sim:
 
         Read straight off the orchestrator's ``Clock``, which holds it host-side, so this is free:
         :meth:`wait_until` and :meth:`sleep` call it *every* control tick, and reading it off the
-        recorder's base body channel instead meant a device-to-host copy per tick, ~0.08 ms against
-        a 4 ms budget, 6% of a PX4 run's wall time. Same quantity either way: the recorder writes
-        ``t = dt × row counter`` and the clock advances ``dt`` per tick, and both waits use it
-        differentially, as ``t - t0``, so the one-row offset between them cancels.
-
-        The Recorder is still required, unchanged: waiting on a sim you can't observe is a
-        programming error, and the predicate almost always reads ``sim.physics[...]``.
+        base body's history instead meant a device-to-host copy per tick, ~0.08 ms against a 4 ms
+        budget, 6% of a PX4 run's wall time. Same quantity either way: the Recorder stamps
+        ``t = dt × row counter`` and the clock advances ``dt`` per tick.
 
         Returns 0.0 before the first tick; sim time starts at 0.
         """
-        if self._base_ch is None:
-            raise RuntimeError("Sim(observe=False): no Recorder attached (wait_until/sleep need observation)")
         return self._orch.clock.now().sim_time
 
     def wait_until(self, predicate: Callable[[], bool], sim_timeout: float) -> None:

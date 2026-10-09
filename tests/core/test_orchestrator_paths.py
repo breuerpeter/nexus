@@ -19,8 +19,6 @@ class _Clock:
 class _Sink:
     """A Logger stand-in whose scoped view is the path the loop asked for."""
 
-    log_interval = 0.0
-
     def scoped(self, path):
         return path
 

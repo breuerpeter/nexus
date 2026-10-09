@@ -3,11 +3,13 @@
 This package owns the entire Rerun stack so the rest of the framework stays
 logging-agnostic:
 
-* **the scene**: NVIDIA Newton's ``ViewerRerun`` logs the physics ``Model``/``State``,
-  geometry + how it evolves, via ``log_state``. This module reuses it rather than reinvent
-  scene logging, and crucially it logs **in-process** to the recording it also
-  serves, so the physics state never round-trips over a gRPC socket to a server in
-  the same process.
+* **the histories**: the Logger writes the recording from the Recorder's histories, in blocks. Each
+  time the loop drains the staging buffers it hands the Logger the drained rows, and the Logger
+  appends them as columns: every declared quantity's series, the base body's pose, the scene's
+  instance poses and the flown path. The last rows go out at teardown.
+* **the scene**: the Logger logs each mesh once, at start, through NVIDIA Newton's viewer base class,
+  which turns the physics ``Model``'s shapes into meshes and batches. Each body's pose then rides the
+  histories as columns, so the scene costs nothing per tick and a static scene costs one write.
 * **events**: a `TextLog` handler attached to the ``newton`` logger, the one every
   component already uses via ``from nexus_sim._src.core import logger``, routes all log
   records into the same recording, each at ``sim/logs/<module>``. Components need no changes:
@@ -22,11 +24,9 @@ over gRPC on :9876, where a native Rerun viewer connects with
 ``rerun --connect rerun+http://127.0.0.1:9876/proxy``, or goes to an
 ``.rrd`` file for replay/forensics. Every producer writes through this one Logger,
 in-process, through the component-owned logging, so serve and file mode carry the same
-content: no second producer, no sidecar files, no merge.
-
-`RerunLogger` fills the orchestrator's optional ``recorder`` slot: the core loop
-hands it each tick's state, and it drives ``ViewerRerun.log_state``. It's
-output-only and so can't perturb determinism.
+content: no second producer, no sidecar files, no merge. A component logs a value with no fixed
+width, a camera's frame or a guidance's markers, live, through the scoped Logger the loop hands it.
+The Logger is output-only and so can't perturb determinism.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ import time
 import numpy as np
 import rerun as rr
 import rerun.blueprint as rrb
-from newton.viewer import ViewerRerun
+from newton.viewer import ViewerBase
 from rerun.archetypes import TextLog
 
 from nexus_sim._src.core import logger
@@ -49,7 +49,6 @@ from nexus_sim._src.core.labels import leaf_keys
 APP_ID = "nexus"
 RECORDING_ID = "nexus"
 GRPC_PORT = 9876
-WEB_PORT = 9090
 SERVER_URI = f"rerun+http://127.0.0.1:{GRPC_PORT}/proxy"
 # The sim's root: every row this process writes sits under it. A peer writes under the name of its
 # folder in nexus_sim/_src/peers/.
@@ -58,13 +57,18 @@ LOG_ENTITY = f"{ROOT}/logs"  # a log record lands at <LOG_ENTITY>/<module>
 RTF_ENTITY = f"{ROOT}/run/rtf"  # live real-time-factor readout: a small markdown doc, re-logged ~1 Hz
 SETTINGS_ENTITY = f"{ROOT}/run/settings"  # the run's effective config: one static markdown doc
 PROFILE_ENTITY = f"{ROOT}/run/profile"  # end-of-run stats: steps, Real Time Factor (RTF), the loop profiler's breakdown
-# The reserved child of an instance that holds its recorded series: the Recorder's dump writes each
-# declared quantity at sim/<channel key>/series/<field>, a Scalars time series via send_columns,
-# at zero per-tick cost.
+# The reserved child of an instance that holds its recorded series: the Logger writes each declared
+# quantity of a history at sim/<key>/series/<field>, a Scalars time series, one block of columns at a
+# time, so a series costs nothing per tick.
 SERIES = "series"
-# The base body's pose, a Transform3D every logged tick. A camera sits at its own entity, under
-# SENSORS_ENTITY, and rides this pose through one static transform that names BODY_FRAME as its
-# parent: no transform row per tick, and no camera-rate world transform, which visibly lags the mesh.
+# The flown path: one segment per row of the base body's history, from the row before to it, which the
+# Scene view accumulates from the start of the run to the time cursor, so the trail grows with the
+# vehicle and its data grows linearly with the run.
+TRAJECTORY_ENTITY = f"{ROOT}/vehicle/trajectory"
+TRAIL_COLOR = (40, 160, 255)
+# The base body's pose, a Transform3D every tick, as columns with each block. A camera sits at its own
+# entity, under SENSORS_ENTITY, and rides this pose through one static transform that names BODY_FRAME
+# as its parent: no transform row per tick, and no camera-rate world transform, which visibly lags the mesh.
 BODY_ENTITY = f"{ROOT}/vehicle/body"
 BODY_FRAME = f"tf#/{BODY_ENTITY}"  # Rerun's name for the transform frame of BODY_ENTITY
 SENSORS_ENTITY = f"{ROOT}/vehicle/sensors"  # a sensor's rows sit at <SENSORS_ENTITY>/<name>
@@ -73,6 +77,19 @@ SENSORS_ENTITY = f"{ROOT}/vehicle/sensors"  # a sensor's rows sit at <SENSORS_EN
 DEBUG_BASE_AXIS_LENGTH = 0.3  # m: base-body triad length
 DEBUG_LIMB_AXIS_LENGTH = 0.16  # m: other bodies' triad length, a bit shorter
 DEBUG_LABEL_RADIUS = 0.02  # m: the body-name label marker, a dot at each body origin, same for every body
+
+
+def _series_names(field: str, width: int) -> list[str]:
+    """Legend names for a multi-column quantity's series, one per column: kinematic vectors get
+    their conventional component names; anything else gets an index.
+    """
+    if field in ("position", "velocity"):
+        return ["x", "y", "z"]
+    if field == "angular_velocity":
+        return ["wx", "wy", "wz"]
+    if field == "quat_xyzw":
+        return ["qx", "qy", "qz", "qw"]
+    return [f"{field}[{i}]" for i in range(width)]
 
 
 def _default_rrd_path() -> str:
@@ -86,12 +103,13 @@ def recording_path(name: str) -> str:
     return os.path.expanduser(f"~/.cache/nexus/recordings/{name}.rrd")
 
 
-# The vehicle's mesh entity in NVIDIA Newton's ViewerRerun scene: shape_0 is the ground plane,
-# excluded; shape_1 is the base body. The 3D eye tracks it so the vehicle stays centered.
+# The vehicle's mesh entity in the scene, named as NVIDIA Newton's viewer base class names its shape
+# batches: shape_0 is the ground plane, excluded; shape_1 is the base body. The 3D eye tracks it so the
+# vehicle stays centered.
 VEHICLE_SHAPE_ENTITY = f"/{ROOT}/model/shapes/shape_1"
 
 
-# A channel key's role segment → the debug group tab title. Any other role a future component
+# A history key's role segment → the debug group tab title. Any other role a future component
 # records under, for example actuators/, becomes its own capitalized group tab automatically.
 _GROUP_TITLES = {"body": "Physics", "joints": "Physics", "sensors": "Sensors"}
 
@@ -113,10 +131,10 @@ def _peer_roots() -> list[str]:
 
 def _recording_tabs(recording: dict | None, cameras: dict | None) -> list:
     """The component-kind debug tab tree, group ▸ instance ▸ quantity, derived from the Recorder's
-    channel keys, ``vehicle/body/<name>``, ``vehicle/sensors/<name>``, and so on, so the tabs mirror the
+    histories' keys, ``vehicle/body/<name>``, ``vehicle/sensors/<name>``, and so on, so the tabs mirror the
     access surface: ``sim.physics["body_frd"]`` → Physics ▸ body_frd; ``sim.sensors["imu"]`` → Sensors ▸ imu.
 
-    ``recording`` maps channel key → ``(source, [field names])``, from the recorder's Rerun adapter; each
+    ``recording`` maps a history's key → ``(source, [field names])``, from the Logger's first block; each
     quantity tab is a ``TimeSeriesView`` on its ``sim/<key>/series/<field>`` entity. ``cameras`` maps a
     registered camera's entity → its source class: cameras are sensors whose one "quantity" is the live
     feed, since frames can't ride the device ring, they're already logged at sensor rate, so each becomes
@@ -168,7 +186,8 @@ def _blueprint(
     that's embedded within the 2D view" as the error. Registrations arrive over the run, via
     ``log_camera`` and ``show_recording``, so the Logger re-sends the blueprint then; before any, a plain
     First Person View (FPV) placeholder keeps the layout for the standalone path. The scene's 3D eye
-    TRACKS the vehicle mesh, so the flight stays centered.
+    TRACKS the vehicle mesh, so the flight stays centered, and the flown path's entity shows every
+    segment from the start of the run to the time cursor, so the trail grows with the vehicle.
     """
     tabs = _recording_tabs(recording, cameras)
     bottom = rrb.Tabs(*tabs) if tabs else rrb.Spatial2DView(origin=SENSORS_ENTITY, name="FPV")
@@ -206,6 +225,15 @@ def _blueprint(
                             f"- /{ROOT}/run/**",
                         ],
                         eye_controls=rrb.archetypes.EyeControls3D(tracking_entity=VEHICLE_SHAPE_ENTITY),
+                        overrides={
+                            f"/{TRAJECTORY_ENTITY}": [
+                                rrb.VisibleTimeRanges(
+                                    timeline="time",
+                                    start=rrb.TimeRangeBoundary.infinite(),
+                                    end=rrb.TimeRangeBoundary.cursor_relative(),
+                                )
+                            ]
+                        },
                     ),
                     row_shares=[1, 8],
                 ),
@@ -223,13 +251,6 @@ def _blueprint(
 def scene_only_blueprint() -> rrb.Blueprint:
     """Just the 3D scene: no event-log panel, side panels collapsed. A clean layout for
     docs/example recordings where the timeline scene is the whole story.
-
-    Known cosmetic noise, upstream and not fixable here: NVIDIA Newton's ``ViewerRerun`` caches each
-    geometry asset at ``/geometry/{kind}_N`` then clears it, since the mesh inlines under ``/model``,
-    leaving dangling transform-less entities. The viewer spams a "failed to query transformations:
-    missing transform on entity '/geometry/{kind}_N'" warning. Scoping this view away from
-    ``/geometry`` doesn't silence the warning, because it's emitted recording-wide, not per view, so
-    this view no longer scopes it away. The fix belongs upstream, in NVIDIA Newton.
     """
     return rrb.Blueprint(
         rrb.Spatial3DView(origin="/", name="Scene"),
@@ -237,32 +258,86 @@ def scene_only_blueprint() -> rrb.Blueprint:
     )
 
 
-class _SimViewer(ViewerRerun):
-    """NVIDIA Newton's Rerun viewer, with every entity it names under the sim's root.
+def _vertex_normals(points: np.ndarray, indices: np.ndarray) -> np.ndarray:
+    """Per-vertex normals of a triangle mesh: each face's normal summed onto its vertices, normalized."""
+    tri = points[indices]  # (T, 3, 3)
+    face = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
+    out = np.zeros_like(points, dtype=np.float64)
+    for k in range(3):
+        np.add.at(out, indices[:, k], face)
+    norm = np.linalg.norm(out, axis=1, keepdims=True)
+    norm[norm == 0.0] = 1.0
+    return (out / norm).astype(np.float32)
 
-    The base ``Viewer`` builds the scene's names, ``/model/shapes/shape_<n>`` and ``/geometry/mesh_<n>``,
-    and hands each to one of these methods, which logs whatever name it gets. Each override puts the
-    root before the name. A name that reaches Rerun through a method with no override here stays at
-    the old root.
+
+def _quat_mul(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """The product ``a ⊗ b`` of two ``(N, 4)`` quaternion arrays in x, y, z, w order."""
+    ax, ay, az, aw = a[:, 0], a[:, 1], a[:, 2], a[:, 3]
+    bx, by, bz, bw = b[:, 0], b[:, 1], b[:, 2], b[:, 3]
+    return np.stack(
+        [
+            aw * bx + ax * bw + ay * bz - az * by,
+            aw * by - ax * bz + ay * bw + az * bx,
+            aw * bz + ax * by - ay * bx + az * bw,
+            aw * bw - ax * bx - ay * by - az * bz,
+        ],
+        axis=1,
+    )
+
+
+def _quat_rotate(q: np.ndarray, v: np.ndarray) -> np.ndarray:
+    """Each of the ``(N, 3)`` vectors rotated by its ``(N, 4)`` quaternion, x, y, z, w order."""
+    u, w = q[:, :3], q[:, 3:4]
+    return v + 2.0 * w * np.cross(u, v) + 2.0 * np.cross(u, np.cross(u, v))
+
+
+def _quat_conj(q: np.ndarray) -> np.ndarray:
+    return q * np.array([-1.0, -1.0, -1.0, 1.0], dtype=q.dtype)
+
+
+class _Scene(ViewerBase):
+    """NVIDIA Newton's viewer base class with a store in place of a backend: ``set_model`` turns the
+    model's shapes into meshes and instance batches, and the base class hands each mesh here once. The
+    Logger logs each mesh once from the store and poses the batches from the bodies' histories, so no
+    scene call runs per tick. The other backend calls do nothing: the Logger never draws a state.
     """
 
-    def log_mesh(self, name, *args, **kwargs):
-        return super().log_mesh(_under_root(name), *args, **kwargs)
+    def __init__(self):
+        super().__init__()
+        self.meshes: dict[str, dict[str, np.ndarray]] = {}
 
-    def log_instances(self, name, mesh, *args, **kwargs):
-        return super().log_instances(_under_root(name), _under_root(mesh), *args, **kwargs)
+    def log_mesh(self, name, points, indices, normals=None, uvs=None, texture=None, hidden=False, **kwargs):
+        pts = np.asarray(points.numpy() if hasattr(points, "numpy") else points, dtype=np.float32)
+        idx = np.asarray(indices.numpy() if hasattr(indices, "numpy") else indices, dtype=np.uint32).reshape(-1, 3)
+        if normals is not None:
+            nrm = np.asarray(normals.numpy() if hasattr(normals, "numpy") else normals, dtype=np.float32)
+        else:
+            nrm = _vertex_normals(pts, idx)
+        self.meshes[name] = {"points": pts, "indices": idx, "normals": nrm}
 
-    def log_lines(self, name, *args, **kwargs):
-        return super().log_lines(_under_root(name), *args, **kwargs)
+    def log_instances(self, name, mesh, xforms, scales, colors, materials, hidden=False):
+        pass
 
-    def log_points(self, name, *args, **kwargs):
-        return super().log_points(_under_root(name), *args, **kwargs)
+    def end_frame(self):
+        pass
 
-    def log_array(self, name, *args, **kwargs):
-        return super().log_array(_under_root(name), *args, **kwargs)
+    def log_lines(self, name, starts, ends, colors, width=0.01, hidden=False):
+        pass
 
-    def log_scalar(self, name, *args, **kwargs):
-        return super().log_scalar(_under_root(name), *args, **kwargs)
+    def log_points(self, name, points, radii=None, colors=None, hidden=False, width=None):
+        pass
+
+    def log_array(self, name, array):
+        pass
+
+    def log_scalar(self, name, value, *, clear=False, smoothing=1):
+        pass
+
+    def apply_forces(self, state):
+        pass
+
+    def close(self):
+        pass
 
 
 class _RerunHandler(rr.LoggingHandler):
@@ -291,13 +366,14 @@ class Logger:
     """The recording apparatus + the shared log calls: infra, owns no semantic quantity.
 
     Two roles. First, it owns the one Rerun **recording** every component writes into: serve or file
-    but never both, the blueprint, and routing the ``newton`` logger's events into ``sim/logs``. Second,
-    it exposes the **shared** log calls components use directly: :meth:`log_state`, the generic scene
-    via NVIDIA ``ViewerRerun``, :meth:`set_time`, :meth:`log_image`. Semantic overlays such as the
-    guidance's reference or a controller's horizon live in each component's own log step, not here,
-    and a component reaches these calls through its :meth:`scoped` view. The orchestrator holds one
-    ``Logger | None``; ``None`` is the single, clean off-switch: no recording, no per-tick log fan-out,
-    max benchmark/CI speed.
+    but never both, the blueprint, and routing the ``newton`` logger's events into ``sim/logs``, and it
+    writes the Recorder's histories into it, a block at a time, through :meth:`write`: the series, the
+    base body's pose, the scene's instance poses and the flown path. Second, it exposes the **shared**
+    log calls components use directly: :meth:`set_time`, :meth:`log_image`, :meth:`log_strip` and the
+    rest. Semantic overlays such as the guidance's reference or a controller's horizon live in each
+    component's own code, not here, and a component reaches these calls through its :meth:`scoped`
+    view. The orchestrator holds one ``Logger | None``; ``None`` is the single, clean off-switch: no
+    recording, max benchmark/CI speed.
 
     **serve or file, never both**: a live gRPC server and a *complete* ``.rrd`` can't both come out
     of one process, because rerun's serve and file sinks are mutually exclusive. The public surface is
@@ -312,12 +388,15 @@ class Logger:
     Every producer writes through this one Logger, in-process through it, so both modes
     carry the same content.
 
-    The scene logs **in-process**, with no self-gRPC, via NVIDIA Newton's
-    ``ViewerRerun.log_state`` and every ``newton`` logger event lands under ``sim/logs``.
+    The scene logs **in-process**, with no self-gRPC: each mesh once at start, through NVIDIA
+    Newton's viewer base class, and each body's pose as columns with each block. Every ``newton``
+    logger event lands under ``sim/logs``.
 
     Parameters
     ----------
     model: NVIDIA Newton ``Model`` to visualise; ``None`` → events only, no scene.
+    base: the index of the vehicle's base body in ``model``: its pose sits at ``sim/vehicle/body``
+        and its history draws the flown path.
     serve: ``True`` serves live on :9876; ``False`` writes the ``.rrd``.
     record_to_rrd: the ``.rrd`` path when ``serve=False``; defaults to a timestamped path
         under ``~/.cache/nexus/logs/``.
@@ -333,20 +412,13 @@ class Logger:
         self,
         model=None,
         *,
+        base: int = 0,
         serve: bool = True,
         record_to_rrd: str | None = None,
         blueprint: rrb.Blueprint | None = None,
-        log_hz: float | None = 50.0,
         debug: bool = False,
         settings=None,
     ):
-        # log_hz, default 50 Hz, caps the per-tick log rate: the orchestrator decimates its per-tick log
-        # fan-out, physics' scene + trail, to this interval, so every per-tick logger rides one clock. The
-        # full scene serialize + state read is the dominant per-tick cost and a human scrubs an .rrd at
-        # human rates, so full-rate logging just bloats the recording + tanks recorded-run RTF, PX4
-        # lockstep most visibly. ``None`` = no cap. The horizon keeps its own snapshot_every; markers are
-        # event-driven.
-        self.log_interval = (1.0 / log_hz) if log_hz else 0.0
         # Camera frames: the producing SENSOR owns the rate, by sim-time decimation; log_image just hands
         # the frame to a background encode worker: the JPEG compress, ~10-20 ms at 720p, must never run
         # on the lockstep thread, and a newest-wins mailbox drops frames if the encoder falls behind.
@@ -357,9 +429,8 @@ class Logger:
         self._serve = serve
         # serve or file, never both: a live gRPC server and a *complete* .rrd can't both come out of
         # one process. Rerun's serve and file sinks are mutually exclusive: `set_sinks` replaces
-        # `serve_grpc`, and a serving endpoint isn't a `set_sinks` sink; ViewerRerun's serve-mode
-        # record_to_rrd writes only a stub. So serve=True serves only; serve=False writes the
-        # .rrd. To keep a file of a live session, save it from the connected viewer.
+        # `serve_grpc`, and a serving endpoint isn't a `set_sinks` sink. So serve=True serves only;
+        # serve=False writes the .rrd. To keep a file of a live session, save it from the connected viewer.
         self._rrd_path: str | None = None
         self._blueprint = blueprint  # None -> built after set_model, with exclusions read from the viewer
         self._auto_blueprint = blueprint is None
@@ -372,53 +443,45 @@ class Logger:
         # Debug, axes-only, mode: log each body's coordinate-frame triad instead of its mesh. The meshes make
         # up nearly the whole of an .rrd's size, the astro-max geometry, so a debug recording is a small
         # fraction the size, for quick flight-shape inspection where the frames tell the story. This skips
-        # ViewerRerun.set_model, so no geometry gets registered, and log_state draws a Red Green Blue (RGB)
-        # axis triad per body from the state, in _log_axes.
+        # the scene, so no geometry gets registered, and each block writes a Red Green Blue (RGB) axis
+        # triad's pose per body from the histories, in _write_axes.
         self._debug = bool(debug)
-        # Each body's label for the debug scene: its key on the Recorder, the leaf of Newton's
-        # ``body_label``, so a body's frame sits at the entity its recorded series hang off.
-        self._body_labels = (
-            leaf_keys([str(k) for k in (getattr(model, "body_label", None) or [])])
-            if (debug and model is not None)
-            else None
-        )
+        # Each body's label: its key on the Recorder, the leaf of Newton's ``body_label``, so the Logger
+        # finds a body's history, and a body's debug frame sits at the entity its series hang off.
+        self._body_labels = leaf_keys([str(k) for k in (getattr(model, "body_label", None) or [])])
+        self._base = int(base)
+        self._written: dict[str, bool] = {}  # the histories whose legend went out, by key
+        self._axes_static_done = False
+        self._trail_end: np.ndarray | None = None  # the last position written: where the next segment starts
+        self._dynamic: list[tuple[str, np.ndarray, np.ndarray, np.ndarray]] = []  # batches posed per block
+        # The blocks wait here for the writer thread, which encodes and sends them: a block's send takes
+        # tens of milliseconds, a stall the lockstep thread must not take every drain.
+        self._writes: queue.Queue | None = None
+        self._writer = None
 
+        # The one recording: app and recording IDs fixed, so every producer in the process shares it.
         # The one timeline is duration-typed, so it reads as 14.2 s rather than an epoch date, and every
-        # producer stamps it. NVIDIA Newton's ViewerRerun hardcodes
-        # timestamp-typed stamps on the same "time" timeline, in the viewer_rerun.py ctor + begin_frame,
-        # and mixed types malform the stream when it closes, so shim rr.set_time to rewrite them: the
-        # same neuter-the-side-channel pattern as _build_viewer; the real fix belongs upstream: a
-        # parametrizable timeline.
-        if not getattr(rr.set_time, "_nexus_duration_shim", False):
-            _orig_set_time = rr.set_time
-
-            def _set_time(timeline, *args, **kwargs):
-                if timeline == "time" and "timestamp" in kwargs:
-                    kwargs["duration"] = kwargs.pop("timestamp")
-                return _orig_set_time(timeline, *args, **kwargs)
-
-            _set_time._nexus_duration_shim = True
-            rr.set_time = _set_time
-
+        # producer stamps it.
+        rr.init(APP_ID, recording_id=RECORDING_ID)
         if serve:
-            # ViewerRerun(serve_web_viewer=True) starts the in-process gRPC server *and* a web
-            # viewer on :9090, which opens a browser. The sim wants only the native-viewer gRPC server,
-            # since the web viewer is "too slow at these data rates" per §10, so neuter the web-viewer
-            # leg: serve_grpc(:9876) still runs, in-process, no self-gRPC.
-            self._viewer = self._build_viewer("serve_web_viewer", record_to_rrd=None)
+            # The in-process gRPC server alone, for a native viewer: the web viewer is too slow at
+            # these data rates.
+            rr.serve_grpc(grpc_port=GRPC_PORT)
         else:
-            # serve_web_viewer=False would launch a native viewer, which needs a display; neuter the native-viewer launch
-            # so ViewerRerun only does rr.init + rr.save(.rrd): the full recording on disk.
             self._rrd_path = record_to_rrd or _default_rrd_path()
             os.makedirs(os.path.dirname(self._rrd_path), exist_ok=True)
-            self._viewer = self._build_viewer("spawn", record_to_rrd=self._rrd_path)
+            rr.save(self._rrd_path)
+        rr.set_time("time", duration=0.0)
 
+        self._scene = None
         if model is not None and not self._debug:
-            self._viewer.set_model(model)  # register the geometry, the meshes; skipped in debug → axes-only
+            self._scene = _Scene()
+            self._scene.set_model(model)  # the meshes and the shape batches; skipped in debug → axes-only
+            self._log_scene()  # each mesh once, and each static batch's poses once
         if settings is not None:
             self._log_settings(settings)  # one static markdown doc: the Settings tab's content
         if self._blueprint is None:
-            self._exclusions = _viewer_static_exclusions(self._viewer) if self._viewer else None
+            self._exclusions = _viewer_static_exclusions(self._scene) if self._scene else None
             self._blueprint = _blueprint(self._exclusions, has_settings=self._has_settings)
         rr.send_blueprint(self._blueprint, make_active=True)
         attach_log_handler()  # all later `newton` logger events land under sim/logs
@@ -435,54 +498,41 @@ class Logger:
         """
         return self._rrd_path
 
-    def _build_viewer(self, neuter: str, *, record_to_rrd):
-        """Construct ViewerRerun with its side-channels neutered, so it does exactly one clean thing.
-
-        This neuters two things, both by temporarily swapping a ``rerun`` module attribute that
-        ViewerRerun's ctor calls; ViewerRerun looks these up on ``rr`` at call time, so the swap takes:
-
-        * ``neuter``: the ``serve_web_viewer`` web leg or the native-viewer launch, replaced
-          with a no-op so ViewerRerun doesn't open a window / web server.
-        * the **blueprint**: ViewerRerun's ctor logs its own ``_get_blueprint()``, an ``origin="/"`` 3D
-          view, as ``default_blueprint`` on ``rr.init`` and ``rr.save``. RerunLogger *owns* the blueprint,
-          it sends ``self._blueprint`` immediately after, so this strips ``default_blueprint`` from those
-          calls. Otherwise the recording carries two competing blueprints, ViewerRerun's default plus
-          RerunLogger's, and a viewer that honours the default re-introduces the panels/entities, the
-          event log and the ``/geometry`` cache husks, that RerunLogger deliberately scoped out.
+    def _log_scene(self) -> None:
+        """Log the scene once: each shape batch's mesh, static, at the name NVIDIA Newton's viewer base
+        class gave the batch, under the sim's root, and the poses of each static batch, the ground plane
+        and the scene's colliders, once. A batch on bodies keeps its instances' local transforms, and
+        :meth:`write` poses it from the bodies' rows with each block. The Logger skips a batch the
+        viewer would hide, a collision-only shape.
         """
-        import inspect
-
-        orig_neuter = getattr(rr, neuter)
-        orig_init, orig_save = rr.init, rr.save
-
-        def _drop_default_blueprint(fn):
-            def wrapped(*a, **k):
-                k.pop("default_blueprint", None)
-                return fn(*a, **k)
-
-            return wrapped
-
-        setattr(rr, neuter, lambda *a, **k: None)
-        rr.init, rr.save = _drop_default_blueprint(orig_init), _drop_default_blueprint(orig_save)
-        try:
-            kwargs = {
-                "app_id": APP_ID,
-                "rec_id": RECORDING_ID,
-                "grpc_port": GRPC_PORT,
-                "web_port": WEB_PORT,
-                "serve_web_viewer": (neuter == "serve_web_viewer"),
-                "keep_historical_data": True,  # keep history so the timeline is scrubbable
-                "record_to_rrd": record_to_rrd,
-            }
-            # NVIDIA Newton's ViewerRerun signature varies by version: the workspace pins one
-            # version, but the Isaac Sim runtime uses Kit's bundled Newton, 1.2.0, whose ctor
-            # drops some kwargs, for example ``rec_id``. Pass only what this build accepts; it still
-            # serves grpc on :9876.
-            supported = set(inspect.signature(ViewerRerun.__init__).parameters)
-            return _SimViewer(**{k: v for k, v in kwargs.items() if k in supported})
-        finally:
-            setattr(rr, neuter, orig_neuter)
-            rr.init, rr.save = orig_init, orig_save
+        for batch in self._scene._shape_instances.values():
+            if not self._scene._should_show_shape(batch.flags, batch.static):
+                continue
+            entity = _under_root(batch.name)
+            mesh = self._scene.meshes[batch.mesh]
+            colors = batch.colors.numpy()  # one color per instance; Rerun takes one per mesh: the first
+            rgb = np.tile(np.clip(colors[0] * 255.0, 0, 255).astype(np.uint8), (len(mesh["points"]), 1))
+            rr.log(
+                entity,
+                rr.Mesh3D(
+                    vertex_positions=mesh["points"],
+                    triangle_indices=mesh["indices"],
+                    vertex_normals=mesh["normals"],
+                    vertex_colors=rgb,
+                ),
+                static=True,
+            )
+            xforms = batch.xforms.numpy().astype(np.float32)  # (n, 7): translation, then quaternion x, y, z, w
+            scales = batch.scales.numpy().astype(np.float32)
+            if batch.static:
+                rr.log(
+                    entity,
+                    rr.InstancePoses3D(translations=xforms[:, :3], quaternions=xforms[:, 3:7], scales=scales),
+                    static=True,
+                )
+            else:
+                rr.log(entity, rr.InstancePoses3D(scales=scales), static=True)
+                self._dynamic.append((entity, batch.parents.numpy().astype(int), xforms, scales))
 
     def scoped(self, path: str) -> ScopedLogger:
         """A component's view of this Logger: every row it logs lands under ``sim/<path>``.
@@ -565,11 +615,9 @@ class Logger:
                 logger.warning(f"Rerun RTF logging disabled: {exc}")
 
     def show_recording(self, tree) -> None:
-        """Show the recorder's dumped channels in the viewer: the debug tab tree, Physics ▸ instance ▸
-        quantity, Sensors ▸ …, rebuilt into the blueprint.
-
-        The recorder's Rerun adapter dumps the rings and hands the tree over, ``channel key →
-        (source, [field names])``; the rows themselves are the adapter's, not the Logger's.
+        """Show the histories in the viewer: the debug tab tree, Physics ▸ instance ▸ quantity,
+        Sensors ▸ …, rebuilt into the blueprint. ``tree`` maps a history's key → ``(source, [field
+        names])``; :meth:`write` builds it from the histories' schemas on the first block.
         """
         if not tree:
             return
@@ -586,7 +634,7 @@ class Logger:
         ``Transform3D`` whose parent is the body's frame, with fixed-length dedicated frame axes plus
         an origin dot carrying the centered label.
 
-        Logged once at setup: the body's entity gets a ``Transform3D`` every logged tick, and this
+        Logged once at setup: the body's entity gets a ``Transform3D`` every tick, and this
         frame names it as its parent, so a rigidly mounted sensor frame needs no re-logging.
         ``local_mat3_rows`` is the row-vector local rotation, with rows = axes in the parent frame.
         """
@@ -634,7 +682,7 @@ class Logger:
         body, the camera also gets one static ``Transform3D`` whose parent is the body's frame: it
         then rides the body's per-tick pose with zero per-frame transform traffic, though its entity
         sits outside the body's. ``source`` names the registering sensor class: the camera's
-        instance tab under Sensors carries it, as every recorded sensor channel's does.
+        instance tab under Sensors carries it, as every recorded sensor's does.
 
         USD cameras look down -Z with +Y up = Rerun's Right Up Back (RUB) view coordinates. Pixel focal lengths:
         ``fx = width * focalLength / horizontalAperture`` and ``fy = height * focalLength /
@@ -731,117 +779,203 @@ class Logger:
         """
         rr.log(entity, rr.LineStrips3D([points], colors=None if color is None else [color], radii=radius))
 
-    def log_trail(self, entity: str, positions, times, *, color, stride: int = 4) -> None:
-        """Emit a GROWING flown-path trail: one columnar ``send_columns`` where each timeline row's strip is
-        one segment longer, so as the viewer shows the newest strip, scrubbing grows the trail with the
-        vehicle. The data grows linearly with the path, against re-logging the whole path every tick. A
-        no-op below 2 points.
-        """
-        import numpy as np
+    # ----- the recording's rows: the Recorder's histories, a block at a time -----
+    def write(self, histories, start: int, stop: int | None = None) -> None:
+        """Write the rows ``[start, stop)`` of every history into the recording, as columns.
 
-        pos = np.asarray(positions, dtype=np.float32)
-        t = np.asarray(times)
-        if len(pos) < 2:
-            return
-        idx = list(range(0, len(pos), stride))  # stride the growing-strip vertices to bound the data
-        if idx[-1] != len(pos) - 1:
-            idx.append(len(pos) - 1)  # anchor the final point so the trail reaches the last pose
-        # ``.partition([1]*n)`` puts one strip per timeline row; else all strips collapse into one row.
-        rr.send_columns(
-            entity,
-            indexes=[rr.TimeColumn("time", duration=t[idx])],
-            columns=rr.LineStrips3D.columns(
-                strips=[pos[: i + 1] for i in idx], colors=[list(color)] * len(idx)
-            ).partition([1] * len(idx)),
-        )
+        The loop calls this each time the Recorder's staging buffers drain, with the drained block, and
+        once more at teardown with the rows still staged. This reads the rows on the calling thread
+        and hands them to the writer thread, which sends them and flushes the sink, so the loop never
+        waits on the encode. One block is in flight at a time: this waits for the block before, so a
+        SIGKILL loses the rows since the last drain plus that block, sent within tens of milliseconds
+        of its drain unless the sink stalls; :meth:`close` waits for every block. Each history's
+        declared quantities go out as series at
+        ``sim/<key>/series/<field>``; the base body's rows pose it at ``sim/vehicle/body``, pose the
+        scene's batches, or its debug frames, and extend the flown path by one segment per row. The
+        first block builds the debug tab tree. Fault-isolated: a write that fails warns once and never
+        costs the run.
 
-    def log_state(self, state, sim_time: float) -> None:
-        """Draw the generic 3D scene, every body's mesh at its current pose, via NVIDIA Newton's
-        ``ViewerRerun``: the one reused scene logger. Logs on every call; the orchestrator decimates the
-        per-tick fan-out via ``log_hz``, so this stays dumb. Output-only + fault-isolated: a scene hiccup,
-        for example a ViewerRerun API drift against Kit's bundled Newton, must never break the loop.
+        Args:
+            histories: The Recorder's histories, by key.
+            start: The first row to write.
+            stop: One past the last row to write; ``None`` writes to the newest row.
         """
         try:
-            if self._debug:
-                self._log_axes(state, float(sim_time))  # coordinate-frame triads, no meshes, small .rrd
-            else:
-                self._viewer.begin_frame(float(sim_time))
-                self._viewer.log_state(state)
-                self._viewer.end_frame()
-            # the base body's entity: cameras, and other rigidly mounted frames, name its frame as their parent
-            bq0 = state.body_q.numpy()[0]
-            rr.set_time("time", duration=float(sim_time))
-            try:  # axis_length=0: no frame-axes visual on the body anchor; SDK versions differ
-                tf = rr.Transform3D(
-                    translation=[float(v) for v in bq0[:3]],
-                    rotation=rr.Quaternion(xyzw=[float(v) for v in bq0[3:7]]),
-                    axis_length=0.0,
-                )
-            except TypeError:
-                tf = rr.Transform3D(
-                    translation=[float(v) for v in bq0[:3]],
-                    rotation=rr.Quaternion(xyzw=[float(v) for v in bq0[3:7]]),
-                )
-            rr.log(BODY_ENTITY, tf)
+            block: list[tuple[str, str | None, tuple, dict[str, np.ndarray]]] = []
+            for key, h in histories.items():
+                fields = getattr(h, "fields", None)
+                if not fields:
+                    continue  # no declared schema: nothing to plot
+                arrays = h.arrays(start, stop)
+                if np.asarray(arrays["t"]).size == 0:
+                    continue
+                block.append((key, getattr(h, "source", None), tuple(fields), arrays))
+            if not block:
+                return
+            if self._recording is None:
+                self.show_recording({key: (source, [n for n, _ in fields]) for key, source, fields, _ in block})
+            if self._writer is None:
+                self._writes = queue.Queue()
+                self._writer = threading.Thread(target=self._write_loop, name="rrd-write", daemon=True)
+                self._writer.start()
+            self._writes.join()  # the block before is in the file: at most one in flight
+            self._writes.put(block)
         except Exception as exc:
-            if not getattr(self, "_log_warned", False):
-                self._log_warned = True
-                logger.warning(f"Rerun scene logging disabled (viewer API mismatch): {exc}")
+            self._warn_write(exc)
 
-    def _log_axes(self, state, sim_time: float) -> None:
+    def _warn_write(self, exc: Exception) -> None:
+        if not getattr(self, "_write_warned", False):
+            self._write_warned = True
+            logger.warning(f"Rerun recording write failed: {exc}")
+
+    def _write_loop(self) -> None:
+        while True:
+            block = self._writes.get()
+            try:
+                if block is None:
+                    return
+                self._send_block(block)
+            except Exception as exc:
+                self._warn_write(exc)
+            finally:
+                self._writes.task_done()
+
+    def _send_block(self, block) -> None:
+        """Send one block, on the writer thread: each history's series, then the poses, then a flush,
+        so the block is in the file before the next one.
+        """
+        bodies: dict[str, dict[str, np.ndarray]] = {}
+        for key, _source, fields, arrays in block:
+            t = np.asarray(arrays["t"], dtype=np.float64)
+            for name, width in fields:
+                entity = f"{ROOT}/{key}/{SERIES}/{name}"
+                if width > 1 and not self._written.get(key):  # one series per column, named once for the legend
+                    rr.log(entity, rr.SeriesLines(names=_series_names(name, width)), static=True)
+                rr.send_columns(
+                    entity,
+                    indexes=[rr.TimeColumn("time", duration=t)],
+                    columns=rr.Scalars.columns(scalars=arrays[name]),
+                )
+            self._written[key] = True
+            if key.startswith("vehicle/body/"):
+                # The label after the prefix: a leaf when unique, else the full model label, with its
+                # slashes, as the Recorder keys it and as `_body_labels` names it.
+                bodies[key[len("vehicle/body/") :]] = {**arrays, "t": t}
+        self._write_poses(bodies)
+        rr.get_global_data_recording().flush()
+
+    def _drain_writes(self) -> None:
+        """Wait for the writer thread to send every block handed to it, then end it."""
+        if self._writer is not None:
+            self._writes.put(None)
+            self._writer.join()
+            self._writer = None
+
+    def _write_poses(self, bodies: dict[str, dict[str, np.ndarray]]) -> None:
+        """Pose the scene from the bodies' rows: the base body's ``Transform3D`` columns at
+        ``sim/vehicle/body``, which the cameras' static transforms name as their parent, each batch
+        on bodies as ``InstancePoses3D`` columns, in debug mode each body's frame instead, and the
+        flown path's segments.
+        """
+        rows = [bodies.get(label) for label in self._body_labels]
+        if not rows or rows[self._base] is None:
+            return
+        base = rows[self._base]
+        t = base["t"]
+        pos, quat = base["position"].astype(np.float32), base["quat_xyzw"].astype(np.float32)
+        rr.send_columns(
+            BODY_ENTITY,
+            indexes=[rr.TimeColumn("time", duration=t)],
+            columns=rr.Transform3D.columns(translation=pos, quaternion=quat),
+        )
+        if self._debug:
+            self._write_axes(rows, base)
+        for entity, parents, xforms, _scales in self._dynamic:
+            n = len(parents)
+            tr = np.empty((len(t) * n, 3), dtype=np.float32)
+            qu = np.empty((len(t) * n, 4), dtype=np.float32)
+            for k, (parent, xf) in enumerate(zip(parents, xforms, strict=True)):
+                body = rows[parent] if 0 <= parent < len(rows) else None
+                if body is None:
+                    continue
+                bp, bq = body["position"].astype(np.float64), body["quat_xyzw"].astype(np.float64)
+                sp, sq = (
+                    np.tile(xf[:3].astype(np.float64), (len(t), 1)),
+                    np.tile(xf[3:7].astype(np.float64), (len(t), 1)),
+                )
+                tr[k::n] = bp + _quat_rotate(bq, sp)
+                qu[k::n] = _quat_mul(bq, sq)
+            rr.send_columns(
+                entity,
+                indexes=[rr.TimeColumn("time", duration=t)],
+                columns=rr.InstancePoses3D.columns(translations=tr, quaternions=qu).partition([n] * len(t)),
+            )
+        self._write_trail(t, pos)
+
+    def _write_axes(self, rows: list, base: dict[str, np.ndarray]) -> None:
         """Debug scene: one fixed-length RGB coordinate frame per body, at ``sim/vehicle/body/<label>``.
 
-        The frame visual, the dedicated axes archetype + an origin dot with the body's label, logs
-        once, statically, at each body's entity; per tick only a ``Transform3D`` per body moves it.
-        Every body's entity sits under the base body's, ``sim/vehicle/body``, which :meth:`log_state`
-        poses in the world each logged tick. So the base body's own frame needs no transform, and
-        every other body gets its pose RELATIVE to the base: rerun composes parent∘child, so its
-        world pose is exact. No mesh geometry ⇒ the recording is a small fraction of the full-mesh scene.
+        The frame visual, the dedicated axes archetype + an origin dot with the body's label, logs once,
+        statically, at each body's entity; per block only each body's ``Transform3D`` columns move it.
+        Every body's entity sits under the base body's, ``sim/vehicle/body``, which
+        :meth:`_write_poses` poses in the world. So the base body's own frame needs no transform, and
+        every other body gets its pose RELATIVE to the base: rerun composes parent∘child, so its world
+        pose is exact. No mesh geometry ⇒ the recording is a small fraction of the full-mesh scene.
         """
-        import numpy as np
-
-        rr.set_time("time", duration=sim_time)
-        bq = np.asarray(state.body_q.numpy(), dtype=np.float32)  # (nbodies, 7): translation(3) + quat xyzw(4)
-
-        def pose_mat(i):  # column-vector homogeneous world transform of body i
-            x, y, z, w = (float(v) for v in bq[i, 3:7])
-            m = np.eye(4, dtype=np.float64)
-            m[:3, :3] = np.array([
-                [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)],
-                [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)],
-                [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)],
-            ])  # fmt: skip
-            m[:3, 3] = bq[i, :3]
-            return m
-
-        labels = [
-            (self._body_labels[i].strip("/") if self._body_labels and i < len(self._body_labels) else f"body_{i}")
-            for i in range(len(bq))
-        ]
-        paths = [f"{BODY_ENTITY}/{label}" for label in labels]
-        if not getattr(self, "_axes_static_done", False):
+        paths = [f"{BODY_ENTITY}/{label.strip('/')}" for label in self._body_labels]
+        if not self._axes_static_done:
             self._axes_static_done = True
             for i, path in enumerate(paths):
                 # the DEDICATED axes archetype draws the fixed-length RGB frame, see _log_frame_axes;
                 # the origin dot carries the centered body-name label
-                _log_frame_axes(path, DEBUG_BASE_AXIS_LENGTH if i == 0 else DEBUG_LIMB_AXIS_LENGTH)
+                _log_frame_axes(path, DEBUG_BASE_AXIS_LENGTH if i == self._base else DEBUG_LIMB_AXIS_LENGTH)
                 rr.log(
                     path,
                     rr.Points3D(
                         [[0.0, 0.0, 0.0]],
-                        labels=[labels[i].rsplit("/", 1)[-1]],
+                        labels=[self._body_labels[i].rsplit("/", 1)[-1]],
                         show_labels=True,
                         radii=[DEBUG_LABEL_RADIUS],
                     ),
                     static=True,
                 )
-        base_inv = np.linalg.inv(pose_mat(0))
-        for i, path in enumerate(paths[1:], start=1):
-            m = base_inv @ pose_mat(i)  # the entity sits under the base body's -> log the RELATIVE pose
-            rr.log(
+        bp, bq = base["position"].astype(np.float64), base["quat_xyzw"].astype(np.float64)
+        inv = _quat_conj(bq)
+        for i, path in enumerate(paths):
+            if i == self._base or rows[i] is None:
+                continue
+            p, q = rows[i]["position"].astype(np.float64), rows[i]["quat_xyzw"].astype(np.float64)
+            rr.send_columns(
                 path,
-                _transform3d(m[:3, 3].astype(np.float32), m[:3, :3].astype(np.float32), DEBUG_LIMB_AXIS_LENGTH),
+                indexes=[rr.TimeColumn("time", duration=base["t"])],
+                columns=rr.Transform3D.columns(
+                    translation=_quat_rotate(inv, p - bp).astype(np.float32),
+                    quaternion=_quat_mul(inv, q).astype(np.float32),
+                ),
             )
+
+    def _write_trail(self, t: np.ndarray, pos: np.ndarray) -> None:
+        """Extend the flown path: one two-point segment per row, from the row before to it, at the
+        row's time. The Scene view accumulates the segments up to the time cursor, so the trail grows
+        with the vehicle, and the data grows linearly with the run. The first row of a run starts the
+        path and draws no segment.
+        """
+        starts = pos if self._trail_end is None else np.vstack([self._trail_end, pos])
+        if self._trail_end is None:
+            starts, t, pos = pos[:-1], t[1:], pos[1:]
+        else:
+            starts = starts[:-1]
+        self._trail_end = pos[-1] if len(pos) else self._trail_end
+        if not len(pos):
+            return
+        n = len(pos)
+        rr.send_columns(
+            TRAJECTORY_ENTITY,
+            indexes=[rr.TimeColumn("time", duration=t)],
+            columns=rr.LineStrips3D.columns(
+                strips=[np.stack([a, b]) for a, b in zip(starts, pos, strict=True)], colors=[list(TRAIL_COLOR)] * n
+            ).partition([1] * n),
+        )
 
     def log_image(self, entity: str, rgb, *, sim_time: float | None = None) -> None:
         """Log one rendered frame, an (H,W,3) uint8 RGB array, to *entity*, the camera's own.
@@ -896,9 +1030,14 @@ class Logger:
             self._img_worker = None
 
     def close(self) -> None:
+        """Close the recording: wait for the writer thread's blocks, drain the image encoder, then
+        flush and close the sink, the ``.rrd`` or the server. Every row written before this call is in
+        the file when it returns.
+        """
+        self._drain_writes()
         self._drain_images()
         try:
-            self._viewer.close()
+            rr.disconnect()
         except Exception:
             pass
         if self._rrd_path:
@@ -932,10 +1071,6 @@ class ScopedLogger:
     def set_time(self, sim_time: float) -> None:
         """Set the shared timeline, as :meth:`Logger.set_time`."""
         self._logger.set_time(sim_time)
-
-    def log_state(self, state, sim_time: float) -> None:
-        """Draw the scene, as :meth:`Logger.log_state`: its rows are the Logger's own."""
-        self._logger.log_state(state, sim_time)
 
     def log_points(self, name: str, positions, **kwargs) -> None:
         """Log marker points at the row ``name``, as :meth:`Logger.log_points`."""
@@ -1015,11 +1150,11 @@ def _log_frame_axes(entity: str, axis_length: float) -> None:
         rr.log(entity, rr.TransformAxes3D(axis_length=float(axis_length)), static=True)
 
 
-def _viewer_static_exclusions(viewer) -> list[str] | None:
+def _viewer_static_exclusions(scene) -> list[str] | None:
     """Blueprint exclusions for every STATIC shape batch, chiefly the ground plane.
 
-    Read from the ViewerRerun instance itself after ``set_model``: the viewer names entities per
-    INSTANCING batch, ``/model/shapes/shape_N``, which the viewer logs under the sim's root, where
+    Read from the scene itself after ``set_model``: NVIDIA Newton's viewer base class names entities
+    per INSTANCING batch, ``/model/shapes/shape_N``, which the Logger logs under the sim's root, where
     N = order of first appearance of a unique
     geometry, static, flags batch, not per model shape index: 18 model shapes become ~9 batches,
     so any index computed from the model is wrong; the isaac ground landed at batch 8 while its model
@@ -1027,7 +1162,7 @@ def _viewer_static_exclusions(viewer) -> list[str] | None:
     source of truth.
     """
     try:
-        batches = getattr(viewer, "_shape_instances", None)
+        batches = getattr(scene, "_shape_instances", None)
         if not batches:
             return None
         out = [f"- /{_under_root(b.name)}" for b in batches.values() if getattr(b, "static", False)]
@@ -1040,6 +1175,7 @@ def build_logger(
     model,
     *,
     viewer: bool,
+    base: int = 0,
     record_to_rrd: str | None = None,
     debug: bool = False,
     sink=None,
@@ -1057,4 +1193,4 @@ def build_logger(
     """
     if sink is not None:
         return sink
-    return Logger(model, serve=viewer, record_to_rrd=record_to_rrd, debug=debug, settings=settings)
+    return Logger(model, base=base, serve=viewer, record_to_rrd=record_to_rrd, debug=debug, settings=settings)

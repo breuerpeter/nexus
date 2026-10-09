@@ -1,8 +1,7 @@
 """The flown path: a run's recording carries the trail beside the airframe's recorded series.
 
 Real end-to-end on the Warp CPU backend: a one-body Universal Scene Description (USD) vehicle in
-free fall, the orchestrator driving a short run with a Recorder attached, then the ``.rrd`` it
-wrote. Skipped if rerun, newton or pxr are missing.
+free fall, the orchestrator driving a short run with its Recorder, then the ``.rrd`` it wrote. Skipped if rerun, newton or pxr are missing.
 """
 
 import pytest
@@ -14,7 +13,7 @@ pytest.importorskip("pxr")
 from nexus_sim._src.core.interfaces import Stage
 
 DT = 0.004  # 250 Hz control ticks
-STEPS = 30  # at the Logger's 50 Hz log rate that is 6 logged ticks, above the trail's two-point floor
+STEPS = 30  # ticks, well past the trail's two-point floor
 
 
 def _author_min_usd(path: str) -> None:
@@ -80,9 +79,9 @@ def flight_paths(tmp_path_factory, rrd_entities):
             sensors=[],
             controller=_Controller(),
             logger=Logger(model, serve=False, record_to_rrd=rrd),
+            recorder=Recorder(dt=DT),
             max_steps=STEPS,
         )
-        orch.attach_recorder(Recorder(dt=DT))
         orch.run()
     return rrd_entities(rrd)
 
@@ -93,5 +92,5 @@ def test_run_records_the_flown_path(flight_paths):
 
 
 def test_run_records_the_airframe_position_series(flight_paths):
-    """The channel the flown path is drawn from is in the recording too."""
+    """The history that draws the flown path is in the recording too."""
     assert "/sim/vehicle/body/body/series/position" in flight_paths, flight_paths
