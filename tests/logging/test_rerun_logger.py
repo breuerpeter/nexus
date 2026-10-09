@@ -135,8 +135,8 @@ def test_blueprint_layout_and_eye_tracking():
     assert [getattr(v, "name", None) for v in top0.contents[1].contents] == ["Logs"]
 
 
-def test_blueprint_recording_tabs_mirror_channel_keys():
-    """The debug tab tree derives from the Recorder's channel keys: group ▸ instance ▸ quantity
+def test_blueprint_recording_tabs_mirror_history_keys():
+    """The debug tab tree derives from the histories' keys: group ▸ instance ▸ quantity
     mirrors the access surface, ``sim.physics["body_frd"]`` → Physics ▸ body_frd ▸ position …, with
     sensor instance tabs carrying the impl class.
     """
@@ -289,14 +289,89 @@ def test_log_image_no_logger_side_throttle(tmp_path, monkeypatch):
     assert n["c"] == 2  # both frames logged: no logger-side throttle
 
 
+class _FakeHistory:
+    """Three rows of a body's history: a three-column quantity, a quaternion and a scalar one."""
+
+    fields = (("position", 3), ("quat_xyzw", 4), ("q", 1))
+    source = "NewtonPhysics"
+    dt = 0.004
+
+    def __init__(self, rows: int = 3):
+        self.rows = rows
+
+    def arrays(self, start=0, stop=None):
+        import numpy as np
+
+        stop = self.rows if stop is None else min(stop, self.rows)
+        t = np.arange(start, stop) * self.dt
+        pos = np.stack([t * 10.0, np.zeros_like(t), np.ones_like(t)], axis=1).astype(np.float32)
+        quat = np.tile(np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float32), (len(t), 1))
+        return {"t": t, "position": pos, "quat_xyzw": quat, "q": np.zeros(len(t), dtype=np.float32)}
+
+
+def _timed_rows(rrd: str, entity: str) -> int:
+    from rerun.experimental import RrdReader
+
+    return sum(
+        c.to_record_batch().num_rows for c in RrdReader(rrd).stream() if c.entity_path == entity and not c.is_static
+    )
+
+
+def test_write_lands_one_series_entity_per_declared_quantity(tmp_path, rrd_entities):
+    """Every declared field of every history lands at ``sim/<key>/series/<field>``."""
+    from nexus_sim._src.logging import Logger
+
+    rrd = str(tmp_path / "series.rrd")
+    rl = Logger(model=None, serve=False, record_to_rrd=rrd)
+    rl.write({"vehicle/body/body_frd": _FakeHistory()}, 0)
+    rl.close()
+
+    paths = rrd_entities(rrd)
+    series = {"/sim/vehicle/body/body_frd/series/position", "/sim/vehicle/body/body_frd/series/q"}
+    assert series <= set(paths), paths
+
+
+def test_write_appends_each_block_after_the_one_before(tmp_path):
+    """Two writes of consecutive row ranges leave every row in the series, in order: a run's recording
+    grows block by block.
+    """
+    from nexus_sim._src.logging import Logger
+
+    rrd = str(tmp_path / "blocks.rrd")
+    rl = Logger(model=None, serve=False, record_to_rrd=rrd)
+    h = _FakeHistory(rows=7)
+    rl.write({"vehicle/body/body_frd": h}, 0, 4)
+    rl.write({"vehicle/body/body_frd": h}, 4)
+    rl.close()
+
+    assert _timed_rows(rrd, "/sim/vehicle/body/body_frd/series/q") == 7
+
+
+def test_write_draws_the_flown_path_as_one_segment_per_row(tmp_path):
+    """The flown path is the base body's own rows: one segment per row after the first, across blocks."""
+    from nexus_sim._src.logging import Logger
+    from nexus_sim._src.logging.rerun_logging import TRAJECTORY_ENTITY
+
+    rrd = str(tmp_path / "trail.rrd")
+    rl = Logger(model=None, serve=False, record_to_rrd=rrd)
+    h = _FakeHistory(rows=7)
+    rl._body_labels = ["body_frd"]  # the model's one body, as a Logger built on a model would know it
+    rl.write({"vehicle/body/body_frd": h}, 0, 4)
+    rl.write({"vehicle/body/body_frd": h}, 4)
+    rl.close()
+
+    assert _timed_rows(rrd, f"/{TRAJECTORY_ENTITY}") == 6
+
+
 @pytest.mark.usefixtures("warp_cpu")
-def test_scene_logged_via_log_state(tmp_path):
-    """Logger.log(t, state) drives NVIDIA Newton's ViewerRerun.log_state, so the vehicle
-    geometry + its evolving pose land in the recording.
+def test_the_scene_is_logged_once_and_the_body_rides_the_rows_written(tmp_path):
+    """The Logger logs each shape batch's mesh once, at construction, through NVIDIA Newton's viewer
+    base class, and each write poses the base body and the batch from the body's rows.
     """
     pytest.importorskip("pxr")
     import newton
     from pxr import Usd, UsdGeom, UsdPhysics
+    from rerun.experimental import RrdReader
 
     from nexus_sim._src.logging import Logger
     from nexus_sim._src.physics.vehicle import VehicleUsd
@@ -314,14 +389,22 @@ def test_scene_logged_via_log_state(tmp_path):
     mb = newton.ModelBuilder()
     VehicleUsd({"usd_path": usd}).build(mb)
     model = mb.finalize()
-    state = model.state()
-    newton.eval_fk(model, model.joint_q, model.joint_qd, state)
 
     rrd = str(tmp_path / "scene.rrd")
     rl = Logger(model, serve=False, record_to_rrd=rrd)
-    for i in range(3):
-        rl.log_state(state, i * 0.01)
+    rl.write({"vehicle/body/body": _FakeHistory(rows=5)}, 0)
     rl.close()
 
-    paths = _rrd_entities(rrd)
-    assert any(p.startswith(("/sim/model/", "/sim/geometry/")) for p in paths), paths
+    meshes = 0
+    poses = 0
+    body_rows = 0
+    for c in RrdReader(rrd).stream():
+        batch = c.to_record_batch()
+        if "Mesh3D:vertex_positions" in batch.schema.names:
+            meshes += batch.num_rows
+        if c.entity_path.startswith("/sim/model/shapes/") and "InstancePoses3D:translations" in batch.schema.names:
+            poses += batch.num_rows
+        if c.entity_path == "/sim/vehicle/body" and "Transform3D:translation" in batch.schema.names:
+            body_rows += batch.num_rows
+
+    assert (meshes, poses, body_rows) == (1, 5, 5)

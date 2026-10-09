@@ -52,14 +52,6 @@ import warp as wp
 from nexus_sim._src.core import logger
 from nexus_sim._src.core.interfaces import Stage
 from nexus_sim._src.core.labels import leaf_keys
-from nexus_sim._src.recording.state import (
-    BODY_FIELDS,
-    BODY_WIDTH,
-    decode_body,
-    make_decode_joint,
-    record_body,
-    record_joint,
-)
 from nexus_sim._src.vehicle.rotors import RPM_PER_RADS, find_rotor_joints
 
 from ..scene.ingest import add_scene  # ingestion only: the handlers are the renderer's side
@@ -107,19 +99,6 @@ def make_solver(name: str, model, *, njmax: int = 224):
 class NewtonPhysics:
     def __init__(self, *, vehicle_usd=None, model=None, cfg: dict, njmax: int = 224, step_actuators: bool = True):
         self.cfg = cfg
-        # Component-owned groundtruth logging, since physics owns the true state: log() draws the generic
-        # scene via the shared logger. The orchestrator hands over the Logger, self._logger, None when off,
-        # and calls log() between graph replays, outside the captured graph, only when recording. The flown path
-        # is not logged here: it is the base body's recorded position series, drawn by the recorder's
-        # Rerun adapter at teardown.
-        self._logger = None
-        # Component-owned record taps, the read-side twin of logging: when Sim observes, the
-        # orchestrator hands over a Recorder and physics registers one channel per body + per joint, the
-        # full model state by label. record_wp() then snapshots them each tick INSIDE the captured graph
-        # with no D2H, so observing never forces the eager strategy. Empty when not observing.
-        self._body_taps: list = []  # (channel, body_index)
-        self._joint_taps: list = []  # (channel, q_start, nq, qd_start, nqd)
-        self.base_body = None  # the base body's label, discovered: Sim's default "vehicle" entity
         phys = cfg["physics"]
         self.sim_dt = phys["dt"]
         self.vehicle_usd = vehicle_usd
@@ -171,6 +150,9 @@ class NewtonPhysics:
         ]
         self.contacts = self.model.collide(self.state0) if self.contacts_on else None
         self.base_index = self._find_base()
+        # The base body's label, the leaf of its model label when unique: Sim's default vehicle entity,
+        # ``sim.physics[sim.base_body]``, and the Recorder's key for its history.
+        self.base_body = leaf_keys([str(k) for k in self.model.body_label])[self.base_index]
         logger.info(f"control dim {self.model.joint_dof_count}")
 
         # Free-placement rotor pre-spin: start the articulated vehicle at the hover rotor speed so it's in
@@ -202,18 +184,6 @@ class NewtonPhysics:
             self._spawn_single_body()
         return self.state0
 
-    def set_logger(self, logger) -> None:
-        """The orchestrator hands over the Logger, ``None`` when off: the gate for the scene physics draws."""
-        self._logger = logger
-
-    def log(self, t) -> None:
-        """Component log step, which the orchestrator calls between graph replays, outside the captured graph, at
-        the decimated per-tick rate, since the orchestrator throttles its fan-out to ``log_hz``, only when
-        recording. Physics owns the groundtruth state, so it draws the generic scene via the shared
-        ``self._logger.log_state``. ``step`` mutates ``self.state0`` in place, so it's always current.
-        """
-        self._logger.log_state(self.state0, float(t.sim_time))
-
     def _find_base(self) -> int:
         """The index of the base body, the vehicle's airframe: the declared rotor joints' shared parent, else body 0."""
         try:  # articulated: the declared rotor joints' shared parent
@@ -221,61 +191,6 @@ class NewtonPhysics:
             return find_rotor_joints(self.model, joints)[3]
         except ValueError:
             return 0  # single body, no rotor joints: body 0 is the base body
-
-    def set_recorder(self, recorder) -> None:
-        """The orchestrator hands over the Recorder, gated by Sim's ``observe``. Physics owns the full
-        model state, so it registers one channel per body, ``vehicle/body/<label>``, and per joint,
-        ``vehicle/joints/<label>``, from the finalized model's labels: every body/joint addressable by
-        name. The base body's label, ``base_body``, is the label of ``base_index``, found at build,
-        for Sim's default vehicle entity: nothing hardcoded; it works for whatever model loads. That body's
-        channel is also the Recorder's ``base_body``, the source of the flown path.
-        """
-        m = self.model
-        src = type(self).__name__
-        base = self.base_index
-        body_keys = leaf_keys(list(m.body_label))  # friendly names: leaf when unique, else the full path
-        self.base_body = body_keys[base]
-        self._body_taps = [
-            (
-                recorder.channel(
-                    f"vehicle/body/{key}", width=BODY_WIDTH, decode=decode_body, fields=BODY_FIELDS, source=src
-                ),
-                i,
-            )
-            for i, key in enumerate(body_keys)
-        ]
-        recorder.base_body = self._body_taps[base][0]  # the flown path is this channel's position series
-        self._joint_taps = []
-        if m.joint_count and self.state0.joint_q is not None:
-            joint_keys = leaf_keys(list(m.joint_label))
-            qs = m.joint_q_start.numpy()  # length joint_count+1, with a sentinel, → clean per-joint slices
-            qds = m.joint_qd_start.numpy()
-            for j, key in enumerate(joint_keys):
-                nq, nqd = int(qs[j + 1] - qs[j]), int(qds[j + 1] - qds[j])
-                ch = recorder.channel(
-                    f"vehicle/joints/{key}",
-                    width=1 + nq + nqd,
-                    decode=make_decode_joint(nq, nqd),
-                    fields=(("q", nq), ("qd", nqd)),
-                    source=src,
-                )
-                self._joint_taps.append((ch, int(qs[j]), nq, int(qds[j]), nqd))
-
-    def record_wp(self) -> None:
-        """Device-only record tap, the read-side twin of :meth:`log`: snapshot every body + joint of
-        the live ``state0``, the persistent buffers the graph advances, into their Recorder channels with
-        NO host readback, so it joins the captured graph. Launched each tick by the orchestrator inside the
-        device region. A no-op when not observing.
-        """
-        if not self._body_taps:
-            return
-        bq, bqd = self.state0.body_q, self.state0.body_qd
-        for ch, i in self._body_taps:
-            wp.launch(record_body, dim=1, inputs=(bq, bqd, i, ch.dt, ch.maxlen, ch.buf, ch.counter))
-        if self._joint_taps:
-            jq, jqd = self.state0.joint_q, self.state0.joint_qd
-            for ch, qs, nq, qds, nqd in self._joint_taps:
-                wp.launch(record_joint, dim=1, inputs=(jq, jqd, qs, nq, qds, nqd, ch.dt, ch.maxlen, ch.buf, ch.counter))
 
     def clear_forces(self, state) -> None:
         state.clear_forces()

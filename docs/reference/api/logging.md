@@ -20,9 +20,26 @@ in the terminal, including in headless CI where no recording exists, *and* in th
 No bare `print` needed.
 
 The framework itself logs the same way, so example output sits alongside the framework's own
-`[sim/…]` lines. Components log their own *quantities*: the scene, the flown path, the guidance's
-reference and waypoints, and a controller's horizon. Each logs through its own component log step,
-which the central `Logger` fans out only when recording.
+`[sim/…]` lines.
+
+## What the recording holds
+
+Every value with a fixed width comes from the Recorder's histories: each body's and joint's state
+and each sensor's output, one row per tick. The `Logger` writes them in blocks. Each time the
+Recorder's staging buffers drain, every 4096 ticks, it appends that block of every history to the
+file as columns. A block holds each quantity's series, the base body's pose, the scene's poses and
+the flown path. The last block goes out at teardown. The `Logger` logs the scene's meshes once, at
+the start. A viewer that follows a live run shows each block as it lands.
+
+A component logs a value with no fixed width live, as it produces it, through the scoped `Logger`
+the loop hands it with `set_logger`. A camera logs its frames, a lidar its points, a guidance its
+waypoints and reference, and a controller its horizon.
+
+Every stop that reaches Python writes the recording. Teardown writes the last block and closes the
+file before it closes the controller and stops the peers. SIGTERM and SIGHUP stop a run as Ctrl-C
+does, and a Ctrl-C that lands during the write waits until the file closes. A stop that reaches no
+handler loses at most the rows since the last drain, about 16 s at 250 Hz. Such a stop is a SIGKILL,
+the kernel ending the process for lack of memory, or a crash in native code.
 
 ## Entity paths
 
@@ -49,7 +66,7 @@ path.
 |---|---|
 | `sim/logs/<module>` | The log records of one module |
 | `sim/run/settings`, `sim/run/profile`, `sim/run/rtf` | The run's settings, its end-of-run profile and its live Real Time Factor (RTF) |
-| `sim/vehicle/body` | The base body's pose, every logged tick |
+| `sim/vehicle/body` | The base body's pose, every tick |
 | `sim/vehicle/body/<name>/series/<field>` | A body's recorded series |
 | `sim/vehicle/joints/<name>/series/<field>` | A joint's recorded series |
 | `sim/vehicle/sensors/<name>/series/<field>` | A sensor's recorded series |
@@ -57,5 +74,5 @@ path.
 | `sim/vehicle/controllers/<name>/<row>` | A controller's own rows, such as its `horizon` |
 | `sim/vehicle/trajectory` | The flown path |
 | `sim/guidance/waypoints/wp_<i>`, `sim/guidance/reference` | The guidance's mission: its waypoints and its tracked reference |
-| `sim/model/…`, `sim/geometry/…` | The scene that NVIDIA Newton's viewer logs |
+| `sim/model/shapes/…` | The scene: each shape's mesh once, posed from the bodies' histories |
 | `<peer>/logs` | A peer's log rows, under the name of its folder |

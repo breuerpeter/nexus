@@ -165,17 +165,22 @@ entry-point group, and a test hands the builder one of its own.
 
 ### Logger
 
-The fixed part that writes a run's recording to Rerun, a `.rrd` file or a live viewer. The loop
-hands each component a scoped Logger, which puts the component's path before each row it logs,
-[Logging](../reference/api/logging.md#entity-paths).
+The fixed part that writes a run's recording to Rerun, a `.rrd` file or a live viewer. It writes the
+Recorder's histories a block at a time: each time their staging buffers drain, and once more at
+teardown. A block holds every quantity's series, the base body's pose, the scene's poses and the
+flown path. The loop hands each component a scoped Logger, which puts the component's path before
+each row the component logs live, [Logging](../reference/api/logging.md#entity-paths).
 
 ### Recorder
 
 The fixed part that keeps a history of what a run records each tick: each body, each joint, and each
-sensor's output, on the device. A script reads it during and after a run, and at teardown its
-histories go into the recording.
+sensor's output. A script reads it during and after a run, and the Logger writes it into the
+recording.
 
 ### History
 
-The rows the Recorder keeps for one body, joint or sensor, each stamped with its sim time: `history()`
-reads them oldest first, and `latest()` reads the newest.
+The rows the Recorder keeps for one body, joint or sensor over a run, each stamped with its sim time:
+`history()` reads them oldest first, and `latest()` reads the newest. A device kernel writes each
+tick's row into the history's staging buffer, a few thousand rows. Each time the buffer fills, the
+rows drain onto host blocks that grow with the run. So device memory stays fixed and the Recorder
+drops no row.

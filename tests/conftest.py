@@ -235,8 +235,7 @@ def rrd_layout():
     return _layout
 
 
-# The ticks the recorded flight steps: 0.4 s of sim time at 0.004 s a tick, which the Logger's 50 Hz
-# log rate makes 20 logged ticks.
+# The ticks the recorded flight steps: 0.4 s of sim time at 0.004 s a tick.
 FLIGHT_TICKS = 100
 
 # The sensors the recorded flight adds to the shipped camera vehicle, all on its base body: two

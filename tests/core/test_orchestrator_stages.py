@@ -217,8 +217,6 @@ class _UnknownKind:
 class _Logger:
     """The recording sink, the shape the loop calls: it keeps whether the run closed it."""
 
-    log_interval = 0.0
-
     def __init__(self):
         self.closed = False
 

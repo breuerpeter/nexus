@@ -25,6 +25,7 @@ from nexus_sim._src.diagnostics import diagnostics
 
 from .clock import DeviceClock
 from .interfaces import Stage, Tick
+from .interrupts import hold_interrupts, stop_signals
 from .logging import logger
 from .ports import PortMap
 from .profiling import LoopProfiler
@@ -39,6 +40,7 @@ if TYPE_CHECKING:
 
     from nexus_sim._src.logging import Logger
     from nexus_sim._src.peers import Peer
+    from nexus_sim._src.recording import Recorder
 
     from .interfaces import (
         Actuator,
@@ -116,6 +118,7 @@ class Orchestrator:
         ports: Mapping[str, dict] | None = None,
         connections: Mapping[str, Mapping[str, str]] | None = None,
         logger: Logger | None = None,
+        recorder: Recorder | None = None,
         on_tick: Callable[[newton.State, float, int], None] | None = None,
         preroll_timeout: float = 2.0,
         exchange_timeout: float = 2.0,
@@ -175,9 +178,12 @@ class Orchestrator:
                 writes a signal, a reader takes the one its connection names. A component's prim is its
                 ``prim_path``, which the build sets. ``None`` connects nothing.
             logger: Optional :class:`~nexus_sim._src.logging.Logger`: the recording
-                sink + shared log calls. ``None`` ⇒ no recording and no per-tick log
-                fan-out, for max speed. When present, each loggable component's
-                ``log(t, logger)`` / ``flush(logger)`` runs between graph replays, §10.
+                sink + shared log calls. ``None`` ⇒ no recording, for max speed. When present, the
+                loop hands each component that states ``set_logger`` a view scoped to its path, and
+                writes the Recorder's histories into it, a block at a time.
+            recorder: The run's :class:`~nexus_sim._src.recording.Recorder`, which keeps every row of
+                the plant's state and of each sensor's output. The loop reads the attribute at the first
+                step, so a host can set it after construction; ``None`` records nothing.
             on_tick: Optional post-step observer called as ``on_tick(state, t, steps)``
                 after recording: an output-only hook for demos and tests to read the live state,
                 for example to capture a trajectory.
@@ -208,8 +214,8 @@ class Orchestrator:
         self.peers = list(peers)
         self.ports = PortMap() if ports is None else ports
         self.connections = dict(connections or {})
-        # The single logging switch: a `Logger`, the recording sink + the shared log_state/log_image
-        # calls, or None. None ⇒ no recording and no per-tick log fan-out → max benchmark/CI speed.
+        # The single logging switch: a `Logger`, the recording sink + the shared log calls, or None.
+        # None ⇒ no recording → max benchmark/CI speed.
         self.logger = logger
         # Each component's path under the sim's root, resolved once, here, where the loop wires it:
         # its role folder, then its instance name. A recorded row's path ends in that name, so two
@@ -228,31 +234,26 @@ class Orchestrator:
         ]
         # Logging components expose `set_logger(logger)`. The orchestrator hands each a view of the one
         # Logger scoped to the component's path, so no call site names an entity; None when off, the
-        # single switch. Physics has a per-tick `log(t)` + a teardown `flush()`; its
-        # scene/trail change every tick and it's captured, so the orchestrator must call it from outside the
-        # graph. The guidance + MPC controllers log their overlays event-driven in their own methods, at a
-        # mission event / when the horizon refreshes, gated on the handed-over logger; they just need it
-        # set, the guidance via `add_loggable` when the loop builds its ring, since a flight can hand it over
-        # after construction.
+        # single switch. A component logs a value with no fixed width live, in its own code: the
+        # guidance its markers at a mission event, an MPC controller its horizon when it refreshes, a
+        # camera its frames; the guidance via `add_loggable` when the loop builds its ring, since a
+        # flight can hand it over after construction. The scene and every fixed-width value come from
+        # the Recorder's histories, which the loop writes a block at a time.
         self._loggables = [c for c, _ in wired if hasattr(c, "set_logger")]
         for c, path in wired:
             if hasattr(c, "set_logger"):
                 c.set_logger(self._scoped(path))
-        # The per-tick log fan-out decimates to the Logger's log_hz; people scrub an .rrd at human rates, and
-        # full-rate scene logging tanks recorded-run RTF, esp. PX4 lockstep. The clock lives here: one
-        # throttle for every per-tick logger, not per-component. Event-driven overlays self-rate, untouched.
-        self._log_interval = logger.log_interval if logger is not None else 0.0
-        self._last_log_t: float | None = None
         # Live-RTF anchors, wall and sim: a rolling window the width of the ~1 s emission interval.
         # Distinct from _last_log_t, the sim-time scene decimation, and from run_stats' post-hoc RTF.
         self._rtf_wall_prev: float | None = None
         self._rtf_sim_prev = 0.0
-        # Component-owned recording, the read-side twin of logging: a recordable component exposes
-        # a device-only `record_wp()` that snapshots its quantities into a Recorder channel. Sim's `observe`
-        # attaches the Recorder post-build, via `attach_recorder`, since recording is Sim's
-        # concern. The taps are device stages, so recording never adds a host stage.
+        # The Recorder records the plant itself; a sensor still exposes a device-only `record_wp()` that
+        # snapshots its output into its own history, until #250 moves that into the Recorder. The taps
+        # are device stages, so recording never adds a host stage. The loop reads the attribute at the
+        # first step, so `Sim` can hand a self-assembled loop its Recorder after construction.
         self._recordables = [c for c, _ in wired if hasattr(c, "record_wp")]
-        self._recorder = None
+        self.recorder = recorder
+        self._written = 0  # rows of every history the Logger has written
         # Hosting hooks; Sim drives these. on_tick is the per-tick observer,
         # post-step, fired as on_tick(state, t, steps) after recording: a demo and test hook to read the
         # live state, output-only. _stop is the cooperative teardown the host sets to end the steady loop.
@@ -290,27 +291,39 @@ class Orchestrator:
             self._loggables.append(component)
         component.set_logger(self._scoped(path))
 
-    # -- component-owned recording, the read-side twin of logging -----------------
-    def attach_recorder(self, recorder) -> None:
-        """Attach the Recorder, Sim's ``observe=True``, and hand each recordable component the
-        Recorder, so it registers its channel. The read-side mirror of the Logger wiring; the taps are
-        device-only, so observing never adds a host stage. Call before ``run()``; a captured graph
-        records the taps at capture time.
+    # -- recording, the read-side twin of logging -----------------------------------
+    def _wire_recorder(self) -> None:
+        """Hand the Recorder the plant, so it registers one history per body and joint, and each sensor
+        with a record tap, so it registers its own. At setup, before the warm pass, so every history's
+        buffer exists before any capture.
         """
-        self._recorder = recorder
+        if self.recorder is None:
+            return
+        self.recorder.watch(self.physics)
         for c in self._recordables:
-            c.set_recorder(recorder)
+            c.set_recorder(self.recorder)
 
     def _record_tick(self) -> None:
-        """The record stage: each recordable's tap snapshots its own device buffers, physics'
-        ``state0``, a sensor's measurement, into its Recorder channels. A device stage, no D2H, so it
-        replays with its graph. A no-op when not observing, leaving the not-observing graph the same
-        byte for byte.
+        """The record stage: the Recorder snapshots the plant's state, and each sensor's tap its output,
+        into their histories. A device stage, no D2H, so it replays with its graph. A no-op with no
+        Recorder, leaving that graph the same byte for byte.
         """
-        if self._recorder is None:
+        if self.recorder is None:
             return
+        self.recorder.record()
         for c in self._recordables:
             c.record_wp()
+
+    def _commit(self) -> None:
+        """Count the row the record stage wrote this tick. When that fills the staging buffers, the
+        Recorder drains them onto its host blocks, and the Logger writes the drained block.
+        """
+        if self.recorder is None:
+            return
+        block = self.recorder.commit()
+        if block is not None and self.logger is not None:
+            self.logger.write(self.recorder.histories, *block)
+            self._written = block[1]
 
     def _begin_log(self, t) -> None:
         """Set the shared ``time`` timeline once at the start of each tick, right after the clock advances
@@ -321,30 +334,12 @@ class Orchestrator:
         if self.logger is not None:
             self.logger.set_time(float(t.sim_time))
 
-    def _log_tick(self, t) -> None:
-        """Per-tick log fan-out between graph replays, outside any captured graph: call each loggable that has a
-        per-tick ``log(t)``, physics' scene + trail. Decimated to the Logger's ``log_hz`` here, so every
-        per-tick logger rides one clock. The single off-switch: a no-op when ``logger is None``. The
-        guidance + controllers log event-driven in their own methods, not here.
-        """
-        if self.logger is None:
-            return
-        st = float(t.sim_time)
-        self._log_rtf(st)  # wall-clock gated; must run BEFORE the sim-time decimation early return
-        if self._last_log_t is not None and self._log_interval and (st - self._last_log_t) < self._log_interval:
-            return  # decimated to log_hz
-        self._last_log_t = st
-        for c in self._loggables:
-            log = getattr(c, "log", None)
-            if log is not None:
-                log(t)
-
     def _log_rtf(self, st: float) -> None:
         """Emit the live real-time factor ~1 Hz wall-clock: sim seconds over wall seconds since the
         last emission, a rolling window exactly one emission interval wide. Only completed ticks reach
         this call, so a stalled exchange shows as a *low* next reading, not a live countdown.
         """
-        log_rtf = getattr(self.logger, "log_rtf", None)  # a custom sink might not have it
+        log_rtf = getattr(self.logger, "log_rtf", None)  # a custom sink might not have it, and None is off
         if log_rtf is None:
             return
         now = time.monotonic()
@@ -358,16 +353,13 @@ class Orchestrator:
         self._rtf_wall_prev, self._rtf_sim_prev = now, st
 
     def _close_logs(self) -> None:
-        """Teardown: flush each loggable's accumulated emission, dump the Recorder's ring buffers as debug
-        time series plus the flown path when observing, *then* close the sink, so every ``send_columns``
-        lands before the ``.rrd`` finalizes. Fault-isolated: a dump hiccup must never eat the teardown.
+        """Teardown: write the rows still staged, the last block of every history, the run's profile,
+        *then* close the sink, so every row lands before the ``.rrd`` finalizes.
         """
         if self.logger is None:
             return
-        for c in self._loggables:
-            flush = getattr(c, "flush", None)
-            if flush is not None:
-                flush()
+        if self.recorder is not None and hasattr(self.logger, "write"):
+            self.logger.write(self.recorder.histories, self._written)  # the last block: the staged rows
         # The final steady RTF from run_stats, whose loop's finally ran first, stamped at end-of-run
         # sim time; a run faster than the ~1 s live cadence would otherwise never show a reading.
         stats = getattr(self, "run_stats", None) or {}  # missing until a run has looped
@@ -376,12 +368,6 @@ class Orchestrator:
             self.logger.log_rtf(float(stats["rtf"]))
         if stats and hasattr(self.logger, "log_profile"):
             self.logger.log_profile(stats)  # steps + RTF + the loop profiler's breakdown, for the Profile tab
-        dump_to = getattr(self._recorder, "dump_to", None)
-        if dump_to is not None:
-            try:
-                dump_to(self.logger)  # the Recorder's own Rerun adapter: the rings + the flown path
-            except Exception as exc:
-                logger.warning(f"recorder debug dump failed: {exc}")
         self.logger.close()
 
     def _record_rtf(self, steps: int, t0: float, t_warm: float | None, steps_warm: int) -> None:
@@ -440,13 +426,19 @@ class Orchestrator:
         ``next()``. Teardown, renderer,
         controller and logs, runs in the ``finally``, whether the generator runs out, on run to
         completion or peer disconnect, or closes early, via :meth:`close` on ``stop()`` mid-step.
-        The live RTF lands in ``run_stats``.
+        The live RTF lands in ``run_stats``. For the span of the run SIGTERM and SIGHUP end it as
+        Ctrl-C does, so each reaches this teardown.
         """
+        with stop_signals():
+            yield from self._run()
+
+    def _run(self):
         try:
             # Inside the try from the first line: the renderer's peer started at build, so a reset or a
             # peer start that fails must still reach the `finally`, which removes its container, and
             # from the connect on the controller owns a live peer too, the PX4 container it launches.
             state = self.physics.reset()  # build + settle the vehicle at the NED origin
+            self._wire_recorder()
             # Renderer warm-up hook, before the peer's lockstep starts: the Kit peer connects and warms
             # its stage here, which takes seconds and would stall the lockstep.
             if self.renderer is not None and hasattr(self.renderer, "on_physics_ready"):
@@ -502,6 +494,7 @@ class Orchestrator:
             for st in warm_stages(ring):
                 st.run(tick)
             self._record_tick()  # the settled pre-flight row, the datum every climb measures against
+            self._commit()
             graphs = self._capture(segments, tick) if captured else None
             if peer:
                 self.controller.connect()  # bind the peer's port and start it
@@ -514,17 +507,22 @@ class Orchestrator:
         finally:
             if self.renderer is not None and hasattr(self.renderer, "close"):
                 self.renderer.close()  # take the last frame, then stop the Kit peer
-            # Lifecycle teardown of the controller, then the logging teardown: _close_logs flushes each
-            # loggable's accumulated emission, the Model Predictive Control (MPC) horizon, into the recording, dumps the Recorder's
-            # rings and closes the sink last, so every send_columns lands before the .rrd finalizes. The recording is
-            # what a failed run is *for*, so a controller that raises on the way out must not lose it.
+            self._teardown()
+
+    def _teardown(self) -> None:
+        """The recording first: write the last block of every history and close the file, with a stop
+        that lands meanwhile held until the file closes, then close the controller and stop the
+        peers. The recording is what a failed run is *for*, so a controller or a peer that raises on
+        the way out never costs it, and a second Ctrl-C never cuts it.
+        """
+        try:
+            with hold_interrupts():
+                self._close_logs()
+        finally:
             try:
                 self.controller.close()
             finally:
-                try:
-                    self._stop_peers()
-                finally:
-                    self._close_logs()
+                self._stop_peers()
 
     def _controller_name(self) -> str:
         """The controller's class, so a run's end names the peer that left it: ``Px4MavlinkController``."""
@@ -687,7 +685,8 @@ class Orchestrator:
                         for st in seg.stages:
                             st.run(tick)
                         prof.mark("stages")
-                self._log_tick(tick.t)  # log fan-out between graph replays: scene+trail, …; no-op if logging off
+                self._commit()  # the tick's row landed in every history; a full staging buffer drains
+                self._log_rtf(float(tick.t.sim_time))  # the live RTF, about once a second of wall time
                 if self.on_tick is not None:
                     self.on_tick(tick.state, tick.t, count)  # post-step observer, a demo and test hook
                 self.clock.throttle()  # no-op unless rtf>0, the interactive real-time throttle
@@ -728,9 +727,9 @@ class Orchestrator:
 
     def close(self) -> None:
         """Tear down the run, ``Sim.stop()``. A partially stepped run closes its tick generator, running
-        its ``finally``, RTF stamp + renderer/controller/peers/logs teardown. A run that never stepped
-        closes the renderer and stops the peers, which started at build, and closes the logs. Idempotent: a no-op once the run has
-        finished, ``run()`` completed / ``step()`` returned ``False``, or closed.
+        its ``finally``, RTF stamp + renderer/logs/controller/peers teardown. A run that never stepped
+        closes the renderer, closes the logs, then stops the peers, which started at build. Idempotent:
+        a no-op once the run has finished, ``run()`` completed / ``step()`` returned ``False``, or closed.
         """
         if self._ticks_iter is not None:
             self._ticks_iter.close()  # GeneratorExit → the loop's finally, RTF, + _ticks' finally, close
@@ -742,6 +741,7 @@ class Orchestrator:
                     self.renderer.close()
             finally:
                 try:
-                    self._stop_peers()
+                    with hold_interrupts():
+                        self._close_logs()
                 finally:
-                    self._close_logs()
+                    self._stop_peers()

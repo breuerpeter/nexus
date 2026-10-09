@@ -1,11 +1,10 @@
-"""The physics-state channels: every body → ``BodyState``, every joint → ``JointState``.
+"""The plant's histories: every body → ``BodyState``, every joint → ``JointState``.
 
-Physics registers one channel per body, ``vehicle/body/<label>``, and one per joint,
+The Recorder registers one history per body, ``vehicle/body/<label>``, and one per joint,
 ``vehicle/joints/<label>``, from the finalized model's labels, so the full Newton model state is
 addressable by name: ``sim.physics["body_frd"]`` is the base body, ``sim.physics["rotor_1_joint"]``
-an actuator joint. Each tick a device-only kernel
-snapshots that entity into its channel's device ring buffer, with no D2H, and the decode reconstructs the
-typed state at read time.
+an actuator joint. Each tick a device-only kernel snapshots that entity into its history's staging
+buffer, with no D2H, and the decode reconstructs the typed state at read time.
 
 Layouts match Newton's native arrays:
 * body: ``body_q[i]`` = ``[px,py,pz, qx,qy,qz,qw]``, world frame, quaternion in x, y, z, w order;

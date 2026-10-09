@@ -26,6 +26,7 @@ import warp as wp
 
 from nexus_sim._src.core import Clock, Orchestrator, SeedTree, logger
 from nexus_sim._src.physics import NewtonPhysics
+from nexus_sim._src.recording import Recorder
 from nexus_sim._src.scene import Site
 
 
@@ -120,7 +121,7 @@ def assemble(
         try:
             from nexus_sim._src.logging import build_logger
 
-            sink = build_logger(physics.model, viewer=viewer, debug=debug, settings=settings)
+            sink = build_logger(physics.model, viewer=viewer, base=physics.base_index, debug=debug, settings=settings)
         except Exception as exc:
             from nexus_sim._src.core import logger
 
@@ -227,6 +228,7 @@ def build_orchestrator(
         controller=a.controller,
         estimator=estimator,
         logger=a.logger,
+        recorder=Recorder(dt=a.clock.dt),
         renderer=renderer,
         peers=peers,
         ports=ports,
