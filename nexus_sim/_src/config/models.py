@@ -82,7 +82,7 @@ class Runtime(_Base):
 class Output(_Base):
     """The Rerun recording a run produces. Rerun logging is two mutually exclusive flags, serve or
     file but not both: a live server and a complete ``.rrd`` can't both come out of one process. Omitting
-    both means the sim builds no ``Logger`` at all: no recording, no per-tick log fan-out, max benchmark/CI speed.
+    both means the sim builds no ``Logger`` at all: no recording, max benchmark/CI speed.
     """
 
     log: bool = False  # write the full .rrd to disk, no server

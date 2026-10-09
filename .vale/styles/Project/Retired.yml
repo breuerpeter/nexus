@@ -3,7 +3,8 @@
 # word that keeps a live sense is matched only in the phrases of its retired one: "plugin" stays for
 # the schema plugin, "registry" for the component registry, "observation" for a controller's input,
 # "builder" for the run's builder, and "operator" for the ground operator, the person and the apps
-# that fly the aircraft.
+# that fly the aircraft. "channel" stays for an actuator channel, PX4's 16 controls, and goes for
+# what the Recorder keeps: a history.
 extends: existence
 message: "'%s' is a retired word: docs/design/concepts.md names the one to use."
 link: https://breuerpeter.github.io/nexus/design/concepts/
@@ -27,3 +28,7 @@ tokens:
   - 'RigidBodyRotors'
   - 'State ?Sensor'
   - "sensors?'? (?:fan-in|measurements?)"
+  - "(?:record(?:ed|ing)?|recorder'?s?|body|joint|sensor|device|named|per-entity) channels?"
+  - "channels?'? (?:keys?|rings?|histor(?:y|ies)|device buffers?)"
+  - "channel keys?"
+  - "RecordChannel|ChannelMap"

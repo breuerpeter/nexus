@@ -1,7 +1,7 @@
 """Record the Astro Max RL training as a Rerun ``.rrd``: a **swarm of the real Astro Max model**
-improving over training. It logs the actual Newton geometry through the same ``ViewerRerun`` the
-framework's ``Logger`` drives, so you see the real multirotor meshes, not markers, flying to their goals,
-and replays progressively trained policies so the swarm goes from crashing to clean convergence.
+improving over training. It logs the actual Newton geometry through NVIDIA Newton's ``ViewerRerun``,
+so you see the real multirotor meshes, not markers, flying to their goals, and replays progressively
+trained policies so the swarm goes from crashing to clean convergence.
 
 Two Rerun timelines:
 * ``time``: play it to watch the swarm fly. The takes follow one another: early take = chaos, late
@@ -37,9 +37,8 @@ import torch
 from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper, handle_deprecated_rsl_rl_cfg
 from isaaclab_tasks.utils import load_cfg_from_registry
 from isaaclab_tasks.utils.sim_launcher import launch_simulation
+from newton.viewer import ViewerRerun
 from rsl_rl.runners import OnPolicyRunner
-
-from nexus_sim._src.logging import Logger
 
 TASK = "Nexus-AstroMax-GoTo-Direct-v0"
 
@@ -69,6 +68,20 @@ def _blueprint() -> rrb.Blueprint:
         rrb.TimePanel(state="collapsed"),
         collapse_panels=True,
     )
+
+
+def _file_viewer(out: str) -> ViewerRerun:
+    """NVIDIA Newton's Rerun viewer writing ``out`` and nothing else. Its constructor also opens a
+    native viewer window, which a headless box has no display for, and that would replace the file
+    sink. So the call that opens it does nothing for the constructor's span. Upstream has no file-only
+    mode yet.
+    """
+    spawn = rr.spawn
+    rr.spawn = lambda *args, **kwargs: None
+    try:
+        return ViewerRerun(app_id="nexus", serve_web_viewer=False, keep_historical_data=True, record_to_rrd=out)
+    finally:
+        rr.spawn = spawn
 
 
 def _centered_worlds(env_origins: torch.Tensor, n: int) -> torch.Tensor:
@@ -135,9 +148,11 @@ def main() -> None:
         # whose add_usd already stores shape_color in sRGB. ViewerRerun logs it straight through, so the
         # dark body renders correctly, as the deploy path proves. The old linear→sRGB fixup was for the
         # container's Newton 1.2.x; applying it here would double-encode and wash the black body to grey.
-        rec = Logger(model, serve=False, record_to_rrd=out, blueprint=_blueprint())
-        rec._viewer.set_visible_worlds(vis.tolist())
-        rec._viewer.set_world_offsets((0.0, 0.0, 0.0))
+        rec = _file_viewer(out)
+        rr.send_blueprint(_blueprint(), make_active=True)  # over the viewer's own default: one 3D view
+        rec.set_model(model)
+        rec.set_visible_worlds(vis.tolist())
+        rec.set_world_offsets((0.0, 0.0, 0.0))
 
         dt = float(u.step_dt)
         t_global = 0.0
@@ -171,7 +186,9 @@ def main() -> None:
                         rotor_angle = SPIN_RATE * t_global * spin_dirs  # cosmetic fallback for the lumped env
                     u._robot.write_joint_position_to_sim(rotor_angle)
                     pm.forward()  # refresh body poses via eval_fk before reading the state
-                    rec.log_state(pm.get_state(), t_global)  # logs the real swarm geometry
+                    rec.begin_frame(t_global)  # logs the real swarm geometry at t_global
+                    rec.log_state(pm.get_state())
+                    rec.end_frame()
                     t_global += dt
                     pos = u._robot.data.root_pos_w.torch[vis]
                     near += (torch.norm(pos - goals, dim=1) < 0.5).float()

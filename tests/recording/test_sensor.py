@@ -1,6 +1,6 @@
-"""Sensor-measurement channels: the SensorRecorder mixin copies a sensor's device ``_out`` into a
-``vehicle/sensors/<name>`` channel each tick, capturable; the host reads a SensorSample by field name.
-Global Positioning System (GPS) uses a float64 channel so lat/lon survive.
+"""The sensors' histories: the SensorRecorder mixin copies a sensor's device ``_out`` into a
+``vehicle/sensors/<name>`` history each tick, capturable; the host reads a SensorSample by field name.
+Global Positioning System (GPS) uses a float64 history so lat/lon survive.
 """
 
 import numpy as np
@@ -32,7 +32,7 @@ def test_sensor_records_fields_by_name():
     s.set_recorder(rec)
     s.record_wp()
     s.record_wp()  # two ticks
-    ch = rec.channels["vehicle/sensors/imu"]
+    ch = rec.histories["vehicle/sensors/imu"]
     samp = ch.latest()
     assert isinstance(samp, SensorSample)
     assert samp.fields == {"ax": 1.0, "ay": 2.0, "az": 3.0}
@@ -40,12 +40,12 @@ def test_sensor_records_fields_by_name():
     assert len(ch.history()) == 2
 
 
-def test_sensor_f64_channel_preserves_gps_precision():
+def test_sensor_f64_history_preserves_gps_precision():
     rec = Recorder(dt=0.004)
     s = _FakeGps()
     s.set_recorder(rec)
     s.record_wp()
-    ch = rec.channels["vehicle/sensors/gps"]
+    ch = rec.histories["vehicle/sensors/gps"]
     assert ch.dtype == wp.float64  # not f32: lat/lon would lose ~metres in f32
     f = ch.latest().fields
     assert abs(f["lat"] - 47.3977) < 1e-9
@@ -57,10 +57,10 @@ def test_sensor_declares_schema_and_source():
     s = _FakeGps()
     s.set_recorder(rec)
     s.record_wp()
-    ch = rec.channels["vehicle/sensors/gps"]
+    ch = rec.histories["vehicle/sensors/gps"]
     assert ch.fields == (("lat", 1), ("lon", 1))  # per-field schema, auto-derived from the sensor
     assert ch.source == "_FakeGps"  # the registering impl class: kind metadata for tools
     arrays = ch.history_arrays()
-    assert arrays["lat"].dtype == np.float64  # vectorized readback keeps the channel dtype
+    assert arrays["lat"].dtype == np.float64  # vectorized readback keeps the history's dtype
     assert abs(arrays["lat"][0] - 47.3977) < 1e-9
     assert arrays["lon"].shape == (1,)  # width-1 quantities come back 1-D

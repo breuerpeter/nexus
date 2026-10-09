@@ -381,7 +381,7 @@ def test_the_peers_console_log_stays_in_the_runs_artifacts(daemon, assembly, cat
     project = tmp_path / "nexus.catalog.yaml"
     project.write_text(yaml.safe_dump({"vehicles": _vehicle(tmp_path)}))
 
-    with Sim("astro", scene="empty", catalog=str(project), device="cpu", observe=False) as sim:
+    with Sim("astro", scene="empty", catalog=str(project), device="cpu") as sim:
         pass
 
     log = Path(sim.artifacts()["px4_log"]).name
@@ -424,7 +424,7 @@ def test_a_shipped_vehicle_flies_px4_sitl_on_its_own_airframe_with_no_control_fl
     monkeypatch.delenv("NEXUS_ASSET_CACHE")  # the shipped vehicle comes from the checkout's own cache
     monkeypatch.chdir(tmp_path)  # no project catalog: only the bundled one
 
-    with Sim("astro_max_base", scene="empty", device="cpu", observe=False):
+    with Sim("astro_max_base", scene="empty", device="cpu"):
         pass
 
     assert _started_models(daemon) == ["none_astro_max"]

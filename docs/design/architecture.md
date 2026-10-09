@@ -184,17 +184,21 @@ Observability is cross-cutting, split into a **write** side and a **read** side:
   viewer over gRPC on port `9876` or write a durable `.rrd`. A peer writes under its own root, the
   name of its folder, so one recording can hold more than one producer. Today the camera sensors log the
   Kit render peer's frames on the host, under `sim/`. Logging is **output-only**: nothing reads it back
-  into the loop, so it can't perturb determinism. It decimates to a configurable rate, 50 Hz by
-  default, so it doesn't cap the real-time factor.
-- **The [Recorder](concepts.md#recorder).** Components record typed samples into device-side ring buffers: body
-  poses and velocities as `BodyState` and `JointState`, and sensor outputs as `SensorSample`. A
-  caller reads them on demand through [`sim.physics`](../reference/api/simulation.md) and
-  `sim.sensors`. A channel's key is its instance's path below the process root: `vehicle/body/…`,
-  `vehicle/joints/…` and `vehicle/sensors/…`. The instance has the same path in the recording, so
-  the recorder and the recording use one name for one thing. This is the capture-safe way
-  to read a run without a host round-trip each tick. At the end of a recorded run the Logger
-  dumps every channel's ring as time-series entities at `sim/<key>/series/<field>`. So you can inspect the
-  whole [history](concepts.md#history) in the viewer's debug tabs.
+  into the loop, so it can't perturb determinism. Nothing logs per tick. The Logger writes the
+  Recorder's histories in blocks. A component logs live only a value with no fixed width, such as a
+  camera's frame or a guidance's markers.
+- **The [Recorder](concepts.md#recorder).** The Recorder keeps a [history](concepts.md#history) of
+  every body, every joint and every sensor's output: body poses and velocities as `BodyState` and
+  `JointState`, and sensor outputs as `SensorSample`. A device kernel writes each tick's row into a
+  small staging buffer. The buffer drains onto host blocks that grow with the run, so device memory
+  stays fixed and the Recorder drops no row. A caller reads a history on demand through
+  [`sim.physics`](../reference/api/simulation.md) and `sim.sensors`. A history's key is its
+  instance's path below the process root: `vehicle/body/…`, `vehicle/joints/…` and
+  `vehicle/sensors/…`. The instance has the same path in the recording, so the Recorder and the
+  recording use one name for one thing. This is the capture-safe way to read a run without a host
+  round-trip each tick. Each time the staging buffers drain, the Logger writes the block as
+  time-series entities at `sim/<key>/series/<field>`, and the scene's poses with it. So you can
+  inspect the whole history in the viewer's debug tabs.
 
 Each PX4 run also produces PX4's native `.ulg` flight log alongside the `.rrd`, both surfaced as run
 artifacts.

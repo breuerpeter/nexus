@@ -77,8 +77,8 @@ def test_the_runs_settings_profile_and_rtf_rows_sit_under_sim_run(tmp_path, rrd_
 def test_the_vehicle_bodys_pose_sits_at_sim_vehicle_body(recorded_flight, rrd_rows):
     """The vehicle body's pose sits at `sim/vehicle/body`.
 
-    Given a recorded flight of 100 ticks of 0.004 s, which the Logger's 50 Hz log rate makes 20 logged
-    ticks, when it ends, then `/sim/vehicle/body` holds one transform row per logged tick.
+    Given a recorded flight of 100 ticks of 0.004 s, when it ends, then `/sim/vehicle/body` holds one
+    transform row per row of the body's history: the start row and the 100 ticks.
     """
     poses = sum(
         len(columns["Transform3D:translation"])
@@ -86,7 +86,7 @@ def test_the_vehicle_bodys_pose_sits_at_sim_vehicle_body(recorded_flight, rrd_ro
         if entity == "/sim/vehicle/body" and "Transform3D:translation" in columns
     )
 
-    assert poses == 20
+    assert poses == 101
 
 
 def test_a_debug_run_writes_one_frame_per_body_at_sim_vehicle_body_label(tmp_path, rrd_rows):
@@ -112,17 +112,20 @@ def test_a_debug_run_writes_one_frame_per_body_at_sim_vehicle_body_label(tmp_pat
     )
 
 
-def test_nvidia_newtons_scene_rows_sit_under_sim_model_and_sim_geometry(recorded_flight, rrd_rows):
-    """NVIDIA Newton's scene rows sit under `sim/model/` and `sim/geometry/`.
+def test_the_scene_rows_sit_under_sim_model(recorded_flight, rrd_rows):
+    """The scene's rows sit under `sim/model/`, named as NVIDIA Newton's viewer base class names the
+    shape batches.
 
     Given a recorded flight of a vehicle with mesh shapes over a ground plane, when it ends, then the
-    `.rrd` holds its shapes under `/sim/model/` and its mesh and plane under `/sim/geometry/`, and no
-    entity under `/model/` or `/geometry/`.
+    `.rrd` holds its shapes under `/sim/model/`, each with its mesh, and no entity under `/model/` or
+    `/geometry/`.
     """
-    entities = {entity for entity, _, _ in rrd_rows(recorded_flight)}
-    scene = {"/sim/model/shapes/shape_0", "/sim/model/shapes/shape_1", "/sim/geometry/mesh_1", "/sim/geometry/plane_0"}
+    rows = rrd_rows(recorded_flight)
+    entities = {entity for entity, _, _ in rows}
+    meshed = {entity for entity, _, columns in rows if "Mesh3D:vertex_positions" in columns}
+    scene = {"/sim/model/shapes/shape_0", "/sim/model/shapes/shape_1"}
 
-    assert (sorted(scene - entities), sorted(e for e in entities if e.startswith(("/model/", "/geometry/")))) == (
+    assert (sorted(scene - meshed), sorted(e for e in entities if e.startswith(("/model/", "/geometry/")))) == (
         [],
         [],
     )

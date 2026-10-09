@@ -19,6 +19,10 @@ class _FakePhysics:
     base_body = "body_frd"  # the discovered airframe label Sim reads for the default vehicle entity
 
 
+class _FakeClock:
+    dt = 0.004
+
+
 class _FakeOrch:
     """A step-driven orchestrator stand-in, the shape ``Orchestrator.step()`` presents: setup runs
     inside the first ``step()``, each call advances one tick and records the airframe row, and
@@ -31,32 +35,31 @@ class _FakeOrch:
         self.sensors = []
         self._stop = False
         self.physics = _FakePhysics()
+        self.clock = _FakeClock()
         self.preroll_timeout = 2.0  # Sim.start(timeout=) overrides this before the first step
-        self._rec = None
+        self.recorder = None  # Sim hands a loop with none its Recorder before the first step
         self.steps = 0
         self.threads = []  # the thread each step() ran on, the affinity this issue is about
         self.closed = False
         self.logs_closed = False
-
-    def attach_recorder(self, recorder):
-        # mimic the orchestrator handing physics the Recorder: register the airframe body channel
-        self._rec = recorder.channel("vehicle/body/body_frd", width=BODY_WIDTH, decode=decode_body)
 
     def step(self):
         self.threads.append(threading.current_thread())
         if self._stop or self.steps >= self.STEPS:
             return False
         self.steps += 1
-        if self._rec is not None:  # the physics tap snapshots the airframe, as the real loop does per tick
-            device = self._rec.buf.device  # record where the channel lives, whatever the default device is now
+        if self.recorder is not None:  # the plant's tap snapshots the airframe, as the real loop does per tick
+            rec = self.recorder.history("vehicle/body/body_frd", width=BODY_WIDTH, decode=decode_body)
+            device = rec.buf.device  # record where the history lives, whatever the default device is now
             v = _FakeView(device)
             wp.launch(
                 record_body,
                 dim=1,
-                inputs=(v.body_q, v.body_qd, 0, self._rec.dt, self._rec.maxlen, self._rec.buf, self._rec.counter),
+                inputs=(v.body_q, v.body_qd, 0, rec.dt, rec.staging, rec.buf, rec.counter),
                 device=device,
             )
             wp.synchronize()
+            self.recorder.commit()
         return True
 
     def run(self):
@@ -106,7 +109,7 @@ def test_sim_start_drives_setup_observes_and_stops(monkeypatch):
         assert fake.preroll_timeout == 30.0  # start(timeout=) caps the wait for the peer
         assert fake.steps == 1  # start() returns after one full control tick
         assert fake.threads == [threading.main_thread()]  # driven here, not on a sim thread
-        assert fake._rec is not None  # observe=True attached a Recorder + physics channel
+        assert fake.recorder is not None  # Sim handed the loop its Recorder
         st = sim.physics[sim.base_body].latest()  # name-keyed: the discovered airframe entity
         assert isinstance(st, BodyState)
         assert st.altitude_m == 4.0
@@ -168,7 +171,9 @@ class _SetpointOrch:
         self.sensors = []
         self.controller = _FakeController()
         self.physics = _FakePhysics()
+        self.clock = _FakeClock()
         self.logger = None
+        self.recorder = None
         self.on_tick = None
         self.run_stats = {}
         self.ran = False
@@ -179,9 +184,6 @@ class _SetpointOrch:
 
     def add_loggable(self, component, path):  # the orchestrator's loggable registration, a no-op in the mock
         pass
-
-    def attach_recorder(self, recorder):  # recording: register the airframe channel Sim caches
-        recorder.channel("vehicle/body/body_frd", width=BODY_WIDTH, decode=decode_body)
 
     def close(self):  # the step and run teardown, a no-op in this mock
         pass

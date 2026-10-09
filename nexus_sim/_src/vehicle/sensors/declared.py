@@ -85,7 +85,7 @@ def build_sensors(specs: list[ComponentSpec], *, usd_path: str | Path, model, se
         )
         sensor = spec.cls(run, **spec.kwargs)
         # The instance is the prim that declares it: its name, in lower case, ends a recorded row's path
-        # and keys the Recorder's channel, and its path is what a shared-name error names.
+        # and keys the Recorder's history, and its path is what a shared-name error names.
         sensor.name = spec.prim.rsplit("/", 1)[-1].lower()
         sensor.prim_path = spec.prim
         sensors.append(sensor)

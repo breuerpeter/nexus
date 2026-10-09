@@ -58,7 +58,13 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
   then the component's role folder, then the instance, as in `sim/vehicle/sensors/imu`.
   `docs/reference/api/logging.md` states the rule. A component never spells its path: the
   orchestrator hands it a `ScopedLogger` at `set_logger`, and the component logs only its own
-  row's name, such as `horizon`. The Recorder's channel keys are the same paths below the root.
+  row's name, such as `horizon`. The Recorder's histories take the same keys below the root.
+- **The Recorder keeps every row of a run, and the Logger writes it in blocks.** Each history has
+  a staging buffer on the device, which the loop drains onto host blocks when full, and the Logger
+  writes each drained block and the last at teardown, `docs/reference/api/logging.md`. A component
+  logs live, through `set_logger`, only a value with no fixed width, such as a camera's frame. No
+  component states a per-tick log step, and `Sim` takes no `observe`. The Logger logs the scene's
+  meshes once through NVIDIA Newton's viewer base class, never `ViewerRerun`.
 - **Every script lives under `scripts/`**, and `docs/guide/contributing/scripts.md` or another page
   names each one a reader runs, `tests/docs/test_scripts.py`. `scripts/ground/` is the one
   exception: #43 deletes it.
