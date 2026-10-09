@@ -70,12 +70,12 @@ def record_body(
     body_qd: wp.array(dtype=wp.spatial_vector),
     i: int,
     dt: float,
-    maxlen: int,
+    staging: int,
     buf: wp.array(dtype=float, ndim=2),
     counter: wp.array(dtype=int),
 ):
     c = counter[0]  # total rows so far; advances per graph replay, on-device, not a frozen kernel arg
-    s = c % maxlen
+    s = c % staging  # the staging slot: the host drains the buffer before the slot comes round again
     tf = body_q[i]
     p = wp.transform_get_translation(tf)
     q = wp.transform_get_rotation(tf)  # xyzw
@@ -106,12 +106,12 @@ def record_joint(
     qd_start: int,
     nqd: int,
     dt: float,
-    maxlen: int,
+    staging: int,
     buf: wp.array(dtype=float, ndim=2),
     counter: wp.array(dtype=int),
 ):
     c = counter[0]
-    s = c % maxlen
+    s = c % staging
     buf[s, 0] = dt * wp.float32(c)
     for k in range(nq):  # generalized coords: variable width per joint type, a runtime loop
         buf[s, 1 + k] = joint_q[q_start + k]

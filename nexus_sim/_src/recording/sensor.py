@@ -38,12 +38,12 @@ def record_sensor(
     src: wp.array(dtype=float),
     n: int,
     dt: float,
-    maxlen: int,
+    staging: int,
     buf: wp.array(dtype=float, ndim=2),
     counter: wp.array(dtype=int),
 ):
     c = counter[0]  # advances per graph replay: on-device, not a frozen kernel arg
-    s = c % maxlen  # the staging slot
+    s = c % staging  # the staging slot
     buf[s, 0] = dt * wp.float32(c)
     for k in range(n):
         buf[s, 1 + k] = src[k]
@@ -55,12 +55,12 @@ def record_sensor_f64(
     src: wp.array(dtype=wp.float64),
     n: int,
     dt: float,
-    maxlen: int,
+    staging: int,
     buf: wp.array(dtype=wp.float64, ndim=2),
     counter: wp.array(dtype=int),
 ):
     c = counter[0]
-    s = c % maxlen
+    s = c % staging
     buf[s, 0] = wp.float64(dt) * wp.float64(c)
     for k in range(n):
         buf[s, 1 + k] = src[k]

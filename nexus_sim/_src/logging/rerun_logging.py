@@ -630,7 +630,7 @@ class Logger:
         ``Transform3D`` whose parent is the body's frame, with fixed-length dedicated frame axes plus
         an origin dot carrying the centered label.
 
-        Logged once at setup: the body's entity gets a ``Transform3D`` every logged tick, and this
+        Logged once at setup: the body's entity gets a ``Transform3D`` every tick, and this
         frame names it as its parent, so a rigidly mounted sensor frame needs no re-logging.
         ``local_mat3_rows`` is the row-vector local rotation, with rows = axes in the parent frame.
         """
