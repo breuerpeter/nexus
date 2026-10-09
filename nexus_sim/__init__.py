@@ -19,7 +19,6 @@ _LAZY_EXPORTS = {
     "save_run_artifacts": "nexus_sim._src.api",
     "BodyState": "nexus_sim._src.api",
     "JointState": "nexus_sim._src.api",
-    "SensorSample": "nexus_sim._src.api",
     "Catalog": "nexus_sim._src.config",
     "LaunchConfig": "nexus_sim._src.config",
     "Controls": "nexus_sim._src.core",
@@ -39,7 +38,6 @@ __all__ = [
     "JointState",
     "LaunchConfig",
     "Orchestrator",
-    "SensorSample",
     "Sim",
     "SimTime",
     "logger",
@@ -54,7 +52,6 @@ if TYPE_CHECKING:
     from nexus_sim._src.api import (
         BodyState,
         JointState,
-        SensorSample,
         Sim,
         save_run_artifacts,
         sim_argparser,

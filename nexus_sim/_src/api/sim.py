@@ -343,10 +343,12 @@ class Sim:
     def sensors(self) -> Histories:
         """Name-keyed view over the sensors' histories: ``sim.sensors["imu"]`` and so on. Keys are flat
         instance names, so a redundant setup reads ``sim.sensors["imu_bosch"]`` beside
-        ``sim.sensors["imu_murata"]``.
+        ``sim.sensors["imu_murata"]``, each the history of the one signal its sensor writes.
 
-        Each value is a :class:`~nexus_sim._src.recording.History`, with ``.latest()`` and ``.history()``,
-        of that sensor's recorded measurement stream.
+        Each value is a :class:`~nexus_sim._src.recording.History`, with ``.latest()``, ``.history()`` and
+        ``.arrays()``, of that sensor's recorded sample stream: a row is a record of ``t``, the tick's sim
+        time, then the sample's fields as its type declares them, ``row["accel"]`` for an Inertial
+        Measurement Unit (IMU).
 
         Raises:
             RuntimeError: Accessed before entering the ``Sim`` context.

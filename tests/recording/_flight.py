@@ -22,8 +22,8 @@ from pathlib import Path
 
 DT = 0.004  # 250 Hz control ticks
 READY_TICKS = 50  # the ticks the script flies before it prints ready
-# The base body's recorded position series, and its pose, as #47 places them.
-POSITION = "/sim/vehicle/body/body/series/position"
+# The base body's recorded position series, one child of its history's key, and its pose.
+POSITION = "/sim/vehicle/body/body/position"
 POSE = "/sim/vehicle/body"
 
 

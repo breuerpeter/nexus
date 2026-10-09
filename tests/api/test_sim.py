@@ -50,12 +50,12 @@ class _FakeOrch:
         self.steps += 1
         if self.recorder is not None:  # the plant's tap snapshots the airframe, as the real loop does per tick
             rec = self.recorder.history("vehicle/body/body_frd", width=BODY_WIDTH, decode=decode_body)
-            device = rec.buf.device  # record where the history lives, whatever the default device is now
+            device = rec.values.device  # record where the history lives, whatever the default device is now
             v = _FakeView(device)
             wp.launch(
                 record_body,
                 dim=1,
-                inputs=(v.body_q, v.body_qd, 0, rec.dt, rec.staging, rec.buf, rec.counter),
+                inputs=(v.body_q, v.body_qd, 0, rec.dt, rec.staging, rec.values, rec.times, rec.counter),
                 device=device,
             )
             wp.synchronize()

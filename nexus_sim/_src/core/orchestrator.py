@@ -31,7 +31,7 @@ from .ports import PortMap
 from .profiling import LoopProfiler
 from .schema import PoseTwist
 from .signals import wire
-from .stages import build_ring, opening, partition, plan_line, seed_stages, stages_of, warm_stages
+from .stages import Bound, build_ring, opening, partition, plan_line, seed_stages, stages_of, warm_stages
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
@@ -218,8 +218,8 @@ class Orchestrator:
         # None ⇒ no recording → max benchmark/CI speed.
         self.logger = logger
         # Each component's path under the sim's root, resolved once, here, where the loop wires it:
-        # its role folder, then its instance name. A recorded row's path ends in that name, so two
-        # sensors that share one fail the build.
+        # its role folder, then its instance name. A recorded row's path starts with it, a signal's
+        # history sits under it, so two sensors that share one fail the build.
         wired = [
             (physics, "vehicle"),
             *((c, f"vehicle/commands/{_instance(c)}") for c in self.commands),
@@ -232,6 +232,7 @@ class Orchestrator:
                 for s, name in zip(self.sensors, _sensor_names(self.sensors), strict=True)
             ),
         ]
+        self._paths = {id(c): path for c, path in wired}
         # Logging components expose `set_logger(logger)`. The orchestrator hands each a view of the one
         # Logger scoped to the component's path, so no call site names an entity; None when off, the
         # single switch. A component logs a value with no fixed width live, in its own code: the
@@ -247,11 +248,10 @@ class Orchestrator:
         # Distinct from _last_log_t, the sim-time scene decimation, and from run_stats' post-hoc RTF.
         self._rtf_wall_prev: float | None = None
         self._rtf_sim_prev = 0.0
-        # The Recorder records the plant itself; a sensor still exposes a device-only `record_wp()` that
-        # snapshots its output into its own history, until #250 moves that into the Recorder. The taps
-        # are device stages, so recording never adds a host stage. The loop reads the attribute at the
-        # first step, so `Sim` can hand a self-assembled loop its Recorder after construction.
-        self._recordables = [c for c, _ in wired if hasattr(c, "record_wp")]
+        # The Recorder records everything itself: the plant's state and every device signal a component
+        # writes, which the loop hands it once it wires the ring. Its taps are device launches in the record
+        # stage, so recording never adds a host stage. The loop reads the attribute at the first step, so
+        # `Sim` can hand a self-assembled loop its Recorder after construction.
         self.recorder = recorder
         self._written = 0  # rows of every history the Logger has written
         # Hosting hooks; Sim drives these. on_tick is the per-tick observer,
@@ -289,30 +289,43 @@ class Orchestrator:
         """
         if component not in self._loggables:
             self._loggables.append(component)
+        self._paths[id(component)] = path
         component.set_logger(self._scoped(path))
 
     # -- recording, the read-side twin of logging -----------------------------------
-    def _wire_recorder(self) -> None:
-        """Hand the Recorder the plant, so it registers one history per body and joint, and each sensor
-        with a record tap, so it registers its own. At setup, before the warm pass, so every history's
-        buffer exists before any capture.
+    def _watch_plant(self) -> None:
+        """Hand the Recorder the plant, so it registers one history per body and joint. At setup, right after
+        the reset, so a script reads the plant's histories even when the wiring stops the run.
+        """
+        if self.recorder is not None:
+            self.recorder.watch(self.physics)
+
+    def _tap_signals(self, ring: list[Bound]) -> None:
+        """Hand the Recorder every device signal a component's stage writes, with the writer's path, so it
+        registers one history each. After the loop wires the ring and before the warm pass, so every history's
+        buffer exists before any capture. The loop's own clock has no path, so its ``time`` keeps no history: every
+        row carries the tick's time.
         """
         if self.recorder is None:
             return
-        self.recorder.watch(self.physics)
-        for c in self._recordables:
-            c.set_recorder(self.recorder)
+        seen: set[int] = set()
+        for bound in ring:
+            path = self._paths.get(id(bound.component))
+            if path is None or id(bound.stage) in seen:  # the ring repeats the stages of each physics substep
+                continue
+            seen.add(id(bound.stage))
+            for signal in bound.stage.writes:
+                if signal.device:
+                    self.recorder.tap(path, signal, source=type(bound.component).__name__)
 
     def _record_tick(self) -> None:
-        """The record stage: the Recorder snapshots the plant's state, and each sensor's tap its output,
-        into their histories. A device stage, no D2H, so it replays with its graph. A no-op with no
-        Recorder, leaving that graph the same byte for byte.
+        """The record stage: the Recorder snapshots the plant's state and every tapped signal into their
+        histories. A device stage, no D2H, so it replays with its graph. A no-op with no Recorder, leaving
+        that graph the same byte for byte.
         """
         if self.recorder is None:
             return
         self.recorder.record()
-        for c in self._recordables:
-            c.record_wp()
 
     def _commit(self) -> None:
         """Count the row the record stage wrote this tick. When that fills the staging buffers, the
@@ -438,15 +451,20 @@ class Orchestrator:
             # peer start that fails must still reach the `finally`, which removes its container, and
             # from the connect on the controller owns a live peer too, the PX4 container it launches.
             state = self.physics.reset()  # build + settle the vehicle at the NED origin
-            self._wire_recorder()
+            self._watch_plant()
             # Renderer warm-up hook, before the peer's lockstep starts: the Kit peer connects and warms
             # its stage here, which takes seconds and would stall the lockstep.
             if self.renderer is not None and hasattr(self.renderer, "on_physics_ready"):
                 self.renderer.on_physics_ready()
             record = Stage("record", "device", lambda tick: self._record_tick())
-            if self.guidance is not None and hasattr(self.guidance, "set_logger"):
+            if self.estimator is not None and id(self.estimator) not in self._paths:
+                # Handed over after construction, as a flight can do: the loop resolves its path here.
+                self._paths[id(self.estimator)] = f"vehicle/estimators/{_instance(self.estimator)}"
+            if self.guidance is not None:
                 # Here, since a flight can hand the guidance over after construction.
-                self.add_loggable(self.guidance, "guidance")
+                self._paths[id(self.guidance)] = "guidance"
+                if hasattr(self.guidance, "set_logger"):
+                    self.add_loggable(self.guidance, "guidance")
             ring = build_ring(
                 sensors=self.sensors,
                 estimator=self.estimator,
@@ -466,6 +484,7 @@ class Orchestrator:
             if self._device_clock is not None:
                 ring = opening(ring, stages_of(self._device_clock, "clock"))
             wire(ring, self.connections)  # every signal a stage declares gets its buffer before any stage runs
+            self._tap_signals(ring)  # one history per device signal the ring's stages write
             self._check_guidance(ring)
             segments = partition(ring)
             captured = _on_cuda()

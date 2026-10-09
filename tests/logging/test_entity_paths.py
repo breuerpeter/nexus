@@ -135,16 +135,15 @@ def test_the_scene_view_still_tracks_the_vehicle_and_hides_the_ground_plane_and_
     """The Scene view still tracks the vehicle and hides the ground plane and the series.
 
     Given a recorded flight, when the run sends its default layout, then the Scene's eye tracks
-    `/sim/model/shapes/shape_1` and its contents leave out `/sim/model/shapes/shape_0` and `/**/series/**`.
+    `/sim/model/shapes/shape_1` and its contents leave out `/sim/model/shapes/shape_0` and each history's
+    subtree, the base body's and the IMU's among them.
     """
     layout = rrd_layout(recorded_flight)
+    rules = {"/sim/model/shapes/shape_0", "/sim/vehicle/body/body_frd/**", "/sim/vehicle/sensors/imu/imu/**"}
 
-    assert (
-        layout.view("Scene")["eye"],
-        sorted(layout.hidden("Scene") & {"/sim/model/shapes/shape_0", "/**/series/**"}),
-    ) == (
+    assert (layout.view("Scene")["eye"], sorted(layout.hidden("Scene") & rules)) == (
         "/sim/model/shapes/shape_1",
-        ["/**/series/**", "/sim/model/shapes/shape_0"],
+        sorted(rules),
     )
 
 
@@ -173,15 +172,15 @@ def test_the_debug_tabs_show_one_tab_per_recorded_body_joint_and_sensor_rooted_a
 
     Given a recorded flight with bodies, joints, an Inertial Measurement Unit (IMU) and a camera, when
     the run sends its default layout, then each instance has one tab, named as today, whose
-    origin is its `/sim/vehicle/` path.
+    origin is its `/sim/vehicle/` path, the IMU's its sample's key under it.
     """
     layout = rrd_layout(recorded_flight)
     tabs = ("body_frd", "rotor_1_ccw_joint", "imu (ImuSensor)", "fpvcam (RtxCameraSensor)")
 
     assert {tab: os.path.commonpath(layout.origins(tab)) for tab in tabs} == {
-        "body_frd": "/sim/vehicle/body/body_frd/series",
-        "rotor_1_ccw_joint": "/sim/vehicle/joints/rotor_1_ccw_joint/series",
-        "imu (ImuSensor)": "/sim/vehicle/sensors/imu/series",
+        "body_frd": "/sim/vehicle/body/body_frd",
+        "rotor_1_ccw_joint": "/sim/vehicle/joints/rotor_1_ccw_joint",
+        "imu (ImuSensor)": "/sim/vehicle/sensors/imu/imu",
         "fpvcam (RtxCameraSensor)": "/sim/vehicle/sensors/fpvcam",
     }
 

@@ -152,7 +152,9 @@ def test_every_device_signal_a_component_writes_keeps_a_history_and_no_component
     stage writes its tick count into its 16 controls, when the run steps 5 ticks, eagerly on the CPU device
     and captured on a CUDA device, then the Recorder holds a history for the IMU's sample, the estimate and
     the controls, each of 6 rows whose `t` runs from 0 to `5 * dt`, the controls' rows hold 0 then 1 to 5,
-    and each estimate row equals, to the bit, the base body's position and velocity of that tick.
+    and each estimate row equals, to the bit, the base body's position and velocity of that tick: the state
+    the tick's flight stack read, which is the settled state for the seed row and the body's row before for
+    each tick, since the estimator runs before the physics steps and the record stage after.
     """
     with wp.ScopedDevice(device):
         loop = _build(tmp_path, IMU, device="cpu" if device == "cpu" else "cuda", controller=_TickWriter)
@@ -160,7 +162,8 @@ def test_every_device_signal_a_component_writes_keeps_a_history_and_no_component
             imu, estimate, controls = (
                 _history(loop.recorder.histories, signal) for signal in ("imu", "estimate", "controls")
             )
-            truth = [[*r.position, *r.velocity] for r in sim.physics[sim.base_body].history()]
+            rows = sim.physics[sim.base_body].history()
+            truth = [[*r.position, *r.velocity] for r in (rows[0], *rows[:-1])]
     read = (
         [_column(rows, "t").tolist() for rows in (imu, estimate, controls)],
         [row[0] for row in _flat(controls, "controls")],

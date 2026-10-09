@@ -20,7 +20,8 @@ from .rtx_sensor import RtxMountedSensor
 class RtxThermalSensor(RtxMountedSensor):
     """RTX thermal sensor, Long Wave Infrared (LWIR): the peer's radiance, the ``PtSelfIllumination``
     Arbitrary Output Variable (AOV) on the authored camera prim, -> an 8-bit white-hot image, which goes
-    to the signal ``thermal_camera``, an :class:`Image`, and to ``Logger.log_image`` at ``cameras/<name>``.
+    to the signal ``thermal_camera``, an :class:`Image`, and to ``Logger.log_image`` at the row named after
+    the signal, ``sim/vehicle/sensors/<name>/thermal_camera``.
 
     The scene encodes temperature as OmniPBR emission, the band law in
     :mod:`~nexus_sim._src.vehicle.sensors.lwir`, with ``emissive_color.r = 1.0`` so red
@@ -111,7 +112,7 @@ class RtxThermalSensor(RtxMountedSensor):
         self.out.write(Image(t_shown, img))
         if self._logger is not None:
             self._emit_size(rad.shape)
-            self._logger.log_image("", img, sim_time=t_shown)
+            self._logger.log_image(self.out.name, img, sim_time=t_shown)
 
     def _sky_mask(self, shape, depth) -> np.ndarray:
         """Dome pixels on the AOV grid, True = sky, from the full-res depth buffer, strided down."""

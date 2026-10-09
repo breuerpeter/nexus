@@ -57,10 +57,9 @@ LOG_ENTITY = f"{ROOT}/logs"  # a log record lands at <LOG_ENTITY>/<module>
 RTF_ENTITY = f"{ROOT}/run/rtf"  # live real-time-factor readout: a small markdown doc, re-logged ~1 Hz
 SETTINGS_ENTITY = f"{ROOT}/run/settings"  # the run's effective config: one static markdown doc
 PROFILE_ENTITY = f"{ROOT}/run/profile"  # end-of-run stats: steps, Real Time Factor (RTF), the loop profiler's breakdown
-# The reserved child of an instance that holds its recorded series: the Logger writes each declared
-# quantity of a history at sim/<key>/series/<field>, a Scalars time series, one block of columns at a
-# time, so a series costs nothing per tick.
-SERIES = "series"
+# The Logger writes each declared quantity of a history at sim/<key>/<field>, a Scalars time series, one
+# block of columns at a time, so a series costs nothing per tick: a key is the plant's instance path,
+# or a signal's writer path then the signal's name, so the quantities sit beside a component's own rows.
 # The flown path: one segment per row of the base body's history, from the row before to it, which the
 # Scene view accumulates from the start of the run to the time cursor, so the trail grows with the
 # vehicle and its data grows linearly with the run.
@@ -131,18 +130,19 @@ def _peer_roots() -> list[str]:
 
 def _recording_tabs(recording: dict | None, cameras: dict | None) -> list:
     """The component-kind debug tab tree, group ▸ instance ▸ quantity, derived from the Recorder's
-    histories' keys, ``vehicle/body/<name>``, ``vehicle/sensors/<name>``, and so on, so the tabs mirror the
+    histories' paths, ``vehicle/body/<name>``, ``vehicle/sensors/<name>``, and so on, so the tabs mirror the
     access surface: ``sim.physics["body_frd"]`` → Physics ▸ body_frd; ``sim.sensors["imu"]`` → Sensors ▸ imu.
 
-    ``recording`` maps a history's key → ``(source, [field names])``, from the Logger's first block; each
-    quantity tab is a ``TimeSeriesView`` on its ``sim/<key>/series/<field>`` entity. ``cameras`` maps a
+    ``recording`` maps a history's key → ``(path, source, [field names])``, from the Logger's first block:
+    the writer's path, whose folder before the instance names the group, and the writing class. Each
+    quantity tab is a ``TimeSeriesView`` on its ``sim/<key>/<field>`` entity. ``cameras`` maps a
     registered camera's entity → its source class: cameras are sensors whose one "quantity" is the live
     feed, since frames can't ride the device ring, they're already logged at sensor rate, so each becomes
     an instance tab under Sensors holding its 2D view.
     """
     groups: dict[str, dict[str, object]] = {}
-    for key, (source, fields) in (recording or {}).items():
-        parts = key.split("/")
+    for key, (path, source, fields) in (recording or {}).items():
+        parts = path.split("/")
         role = parts[-2] if len(parts) > 1 else parts[0]
         group = _GROUP_TITLES.get(role, role.capitalize())
         # Sensor instance tabs carry the impl class, as in imu followed by ImuSensor in parentheses:
@@ -153,7 +153,7 @@ def _recording_tabs(recording: dict | None, cameras: dict | None) -> list:
         if title in inst:  # a body and a joint sharing a leaf name: disambiguate by the role segment
             title = f"{parts[-1]} ({role})"
         inst[title] = rrb.Tabs(
-            *[rrb.TimeSeriesView(origin=f"{ROOT}/{key}/{SERIES}/{f}", name=f) for f in fields],
+            *[rrb.TimeSeriesView(origin=f"{ROOT}/{key}/{f}", name=f) for f in fields],
             name=title,
         )
     for entity, source in (cameras or {}).items():
@@ -213,15 +213,15 @@ def _blueprint(
                     # Static, world-attached shapes, chiefly the ground plane, are large flat
                     # sheets that occlude the vehicle; exclude them from the Scene view. Their entity
                     # names differ per runtime, by batch ordinals, so the exclusions come from a read
-                    # back off the viewer. The run docs and every instance's series are non-spatial,
-                    # so they're scoped out too.
+                    # back off the viewer. The run docs and every history's series are non-spatial,
+                    # so they're scoped out too, each history's subtree by its key.
                     rrb.Spatial3DView(
                         origin="/",
                         name="Scene",
                         contents=[
                             "+ $origin/**",
                             *(exclude or [f"- /{ROOT}/model/shapes/shape_0"]),
-                            f"- /**/{SERIES}/**",
+                            *(f"- /{ROOT}/{key}/**" for key in (recording or {})),
                             f"- /{ROOT}/run/**",
                         ],
                         eye_controls=rrb.archetypes.EyeControls3D(tracking_entity=VEHICLE_SHAPE_ENTITY),
@@ -616,7 +616,7 @@ class Logger:
 
     def show_recording(self, tree) -> None:
         """Show the histories in the viewer: the debug tab tree, Physics ▸ instance ▸ quantity,
-        Sensors ▸ …, rebuilt into the blueprint. ``tree`` maps a history's key → ``(source, [field
+        Sensors ▸ …, rebuilt into the blueprint. ``tree`` maps a history's key → ``(path, source, [field
         names])``; :meth:`write` builds it from the histories' schemas on the first block.
         """
         if not tree:
@@ -790,7 +790,7 @@ class Logger:
         SIGKILL loses the rows since the last drain plus that block, sent within tens of milliseconds
         of its drain unless the sink stalls; :meth:`close` waits for every block. Each history's
         declared quantities go out as series at
-        ``sim/<key>/series/<field>``; the base body's rows pose it at ``sim/vehicle/body``, pose the
+        ``sim/<key>/<field>``; the base body's rows pose it at ``sim/vehicle/body``, pose the
         scene's batches, or its debug frames, and extend the flown path by one segment per row. The
         first block builds the debug tab tree. Fault-isolated: a write that fails warns once and never
         costs the run.
@@ -801,7 +801,7 @@ class Logger:
             stop: One past the last row to write; ``None`` writes to the newest row.
         """
         try:
-            block: list[tuple[str, str | None, tuple, dict[str, np.ndarray]]] = []
+            block: list[tuple[str, str, str | None, tuple, dict[str, np.ndarray]]] = []
             for key, h in histories.items():
                 fields = getattr(h, "fields", None)
                 if not fields:
@@ -809,11 +809,13 @@ class Logger:
                 arrays = h.arrays(start, stop)
                 if np.asarray(arrays["t"]).size == 0:
                     continue
-                block.append((key, getattr(h, "source", None), tuple(fields), arrays))
+                block.append((key, getattr(h, "path", None) or key, getattr(h, "source", None), tuple(fields), arrays))
             if not block:
                 return
             if self._recording is None:
-                self.show_recording({key: (source, [n for n, _ in fields]) for key, source, fields, _ in block})
+                self.show_recording(
+                    {key: (path, source, [n for n, _ in fields]) for key, path, source, fields, _ in block}
+                )
             if self._writer is None:
                 self._writes = queue.Queue()
                 self._writer = threading.Thread(target=self._write_loop, name="rrd-write", daemon=True)
@@ -845,10 +847,10 @@ class Logger:
         so the block is in the file before the next one.
         """
         bodies: dict[str, dict[str, np.ndarray]] = {}
-        for key, _source, fields, arrays in block:
+        for key, _path, _source, fields, arrays in block:
             t = np.asarray(arrays["t"], dtype=np.float64)
             for name, width in fields:
-                entity = f"{ROOT}/{key}/{SERIES}/{name}"
+                entity = f"{ROOT}/{key}/{name}"
                 if width > 1 and not self._written.get(key):  # one series per column, named once for the legend
                     rr.log(entity, rr.SeriesLines(names=_series_names(name, width)), static=True)
                 rr.send_columns(
@@ -1047,9 +1049,10 @@ class Logger:
 class ScopedLogger:
     """A component's view of the :class:`Logger`: every row the component logs lands under its path.
 
-    The component names only its own row, ``horizon`` or ``waypoints/wp_0``. An empty name is the
-    component's own entity, where a camera's frames and frustum sit. The shared calls that name no
-    entity, the timeline and the scene, pass through to the Logger.
+    The component names only its own row, ``horizon`` or ``waypoints/wp_0``, and a value with no fixed
+    width goes at the row named after its signal, a camera's frames at ``camera``. An empty name is the
+    component's own entity, where a camera's frustum sits. The shared calls that name no entity, the
+    timeline and the scene, pass through to the Logger.
 
     Args:
         logger: The run's Logger.

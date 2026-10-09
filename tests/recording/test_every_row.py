@@ -62,7 +62,7 @@ def test_the_recording_holds_every_row_of_every_history_at_the_tick_rate(tmp_pat
     _fly(orch, TICKS)
 
     expected = pytest.approx([k * DT for k in range(TICKS + 1)])
-    assert (times(rrd, POSITION), times(rrd, "/sim/vehicle/joints/rotor_1_joint/series/q")) == (expected, expected)
+    assert (times(rrd, POSITION), times(rrd, "/sim/vehicle/joints/rotor_1_joint/q")) == (expected, expected)
 
 
 def test_a_hard_kill_loses_at_most_one_block(tmp_path):

@@ -24,14 +24,15 @@ pytestmark = pytest.mark.xdist_group("px4_ports")
 
 
 def _frames(rrd: str, camera: str) -> list[tuple[int, int]]:
-    """The width and height of every frame the recording holds for ``camera``, one entry per frame.
+    """The width and height of every frame the recording holds for ``camera``, one entry per frame, at the
+    row named after its signal.
 
     The logger stores a camera frame as an encoded image, so this decodes each one for its size.
     """
     sizes = []
     for chunk in RrdReader(rrd).stream():
         batch = chunk.to_record_batch()
-        if chunk.entity_path == f"/sim/vehicle/sensors/{camera}" and "EncodedImage:blob" in batch.schema.names:
+        if chunk.entity_path == f"/sim/vehicle/sensors/{camera}/camera" and "EncodedImage:blob" in batch.schema.names:
             for cell in batch.column("EncodedImage:blob").to_pylist():
                 sizes.append(Image.open(io.BytesIO(bytes(cell[0]))).size)
     return sizes

@@ -11,29 +11,29 @@ pytest.importorskip("rerun")
 pytest.importorskip("newton")
 
 
-def test_each_recorded_series_sits_under_its_instance_in_a_series_child(recorded_flight, rrd_rows):
-    """Each recorded series sits under its instance, in a `series` child.
+def test_each_recorded_series_sits_under_its_historys_key(recorded_flight, rrd_rows):
+    """Each recorded series sits under its history's key, one child per declared quantity.
 
     Given a recorded flight of a vehicle with rotor joints and an Inertial Measurement Unit (IMU), the
     recorder on, when it ends, then the `.rrd` holds each declared field of the base body at
-    `/sim/vehicle/body/body_frd/series/<field>`, of a rotor joint at
-    `/sim/vehicle/joints/rotor_1_ccw_joint/series/<field>` and of the IMU at
-    `/sim/vehicle/sensors/imu/series/<field>`, and no entity under `/recording/`.
+    `/sim/vehicle/body/body_frd/<field>`, of a rotor joint at
+    `/sim/vehicle/joints/rotor_1_ccw_joint/<field>` and of the IMU's sample at
+    `/sim/vehicle/sensors/imu/imu/<field>`, and no entity under `/recording/`.
     """
     rows = rrd_rows(recorded_flight)
     fields: dict[str, set[str]] = {}
     for entity, _, columns in rows:
-        if "/series/" in entity and "Scalars:scalars" in columns:
-            instance, field = entity.split("/series/")
-            fields.setdefault(instance, set()).add(field)
-    instances = ("/sim/vehicle/body/body_frd", "/sim/vehicle/joints/rotor_1_ccw_joint", "/sim/vehicle/sensors/imu")
+        if "Scalars:scalars" in columns:
+            key, field = entity.rsplit("/", 1)
+            fields.setdefault(key, set()).add(field)
+    keys = ("/sim/vehicle/body/body_frd", "/sim/vehicle/joints/rotor_1_ccw_joint", "/sim/vehicle/sensors/imu/imu")
     old = sorted({entity for entity, _, _ in rows if entity.startswith("/recording/")})
 
-    assert ({instance: sorted(fields.get(instance, ())) for instance in instances}, old) == (
+    assert ({key: sorted(fields.get(key, ())) for key in keys}, old) == (
         {
             "/sim/vehicle/body/body_frd": ["angular_velocity", "position", "quat_xyzw", "velocity"],
             "/sim/vehicle/joints/rotor_1_ccw_joint": ["q", "qd"],
-            "/sim/vehicle/sensors/imu": ["xacc", "xgyro", "yacc", "ygyro", "zacc", "zgyro"],
+            "/sim/vehicle/sensors/imu/imu": ["accel", "gyro", "time"],
         },
         [],
     )

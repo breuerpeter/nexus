@@ -4,7 +4,7 @@ The Recorder registers one history per body, ``vehicle/body/<label>``, and one p
 ``vehicle/joints/<label>``, from the finalized model's labels, so the full Newton model state is
 addressable by name: ``sim.physics["body_frd"]`` is the base body, ``sim.physics["rotor_1_joint"]``
 an actuator joint. Each tick a device-only kernel snapshots that entity into its history's staging
-buffer, with no D2H, and the decode reconstructs the typed state at read time.
+buffers, its values and its time, with no D2H, and the decode reconstructs the typed state at read time.
 
 Layouts match Newton's native arrays:
 * body: ``body_q[i]`` = ``[px,py,pz, qx,qy,qz,qw]``, world frame, quaternion in x, y, z, w order;
@@ -21,11 +21,11 @@ from dataclasses import dataclass
 import numpy as np
 import warp as wp
 
-# Body row layout, 14 floats: t, pos(3), quat xyzw(4), lin vel(3), ang vel(3).
-BODY_WIDTH = 14
-# The declared quantity schema, name → column count after the implicit t. The registration passes
-# it so every downstream consumer, history_arrays and the Rerun debug dump and tabs, derives from one
-# source. Names match the BodyState dataclass attributes.
+# Body row layout, 13 floats: pos(3), quat xyzw(4), lin vel(3), ang vel(3); the time rides beside the row.
+BODY_WIDTH = 13
+# The declared quantity schema, name → column count. The registration passes it so every downstream
+# consumer, history_arrays and the Rerun debug dump and tabs, derives from one source. Names match the
+# BodyState dataclass attributes.
 BODY_FIELDS = (("position", 3), ("quat_xyzw", 4), ("velocity", 3), ("angular_velocity", 3))
 
 
@@ -69,9 +69,10 @@ def record_body(
     body_q: wp.array(dtype=wp.transform),
     body_qd: wp.array(dtype=wp.spatial_vector),
     i: int,
-    dt: float,
+    dt: wp.float64,
     staging: int,
-    buf: wp.array(dtype=float, ndim=2),
+    values: wp.array(dtype=float, ndim=2),
+    times: wp.array(dtype=wp.float64),
     counter: wp.array(dtype=int),
 ):
     c = counter[0]  # total rows so far; advances per graph replay, on-device, not a frozen kernel arg
@@ -80,20 +81,20 @@ def record_body(
     p = wp.transform_get_translation(tf)
     q = wp.transform_get_rotation(tf)  # xyzw
     vd = body_qd[i]  # [lin(0:3), ang(3:6)]
-    buf[s, 0] = dt * wp.float32(c)
-    buf[s, 1] = p[0]
-    buf[s, 2] = p[1]
-    buf[s, 3] = p[2]
-    buf[s, 4] = q[0]
-    buf[s, 5] = q[1]
-    buf[s, 6] = q[2]
-    buf[s, 7] = q[3]
-    buf[s, 8] = vd[0]
-    buf[s, 9] = vd[1]
-    buf[s, 10] = vd[2]
-    buf[s, 11] = vd[3]
-    buf[s, 12] = vd[4]
-    buf[s, 13] = vd[5]
+    times[s] = dt * wp.float64(c)
+    values[s, 0] = p[0]
+    values[s, 1] = p[1]
+    values[s, 2] = p[2]
+    values[s, 3] = q[0]
+    values[s, 4] = q[1]
+    values[s, 5] = q[2]
+    values[s, 6] = q[3]
+    values[s, 7] = vd[0]
+    values[s, 8] = vd[1]
+    values[s, 9] = vd[2]
+    values[s, 10] = vd[3]
+    values[s, 11] = vd[4]
+    values[s, 12] = vd[5]
     counter[0] = c + 1
 
 
@@ -105,40 +106,41 @@ def record_joint(
     nq: int,
     qd_start: int,
     nqd: int,
-    dt: float,
+    dt: wp.float64,
     staging: int,
-    buf: wp.array(dtype=float, ndim=2),
+    values: wp.array(dtype=float, ndim=2),
+    times: wp.array(dtype=wp.float64),
     counter: wp.array(dtype=int),
 ):
     c = counter[0]
     s = c % staging
-    buf[s, 0] = dt * wp.float32(c)
+    times[s] = dt * wp.float64(c)
     for k in range(nq):  # generalized coords: variable width per joint type, a runtime loop
-        buf[s, 1 + k] = joint_q[q_start + k]
+        values[s, k] = joint_q[q_start + k]
     for k in range(nqd):  # generalized velocities
-        buf[s, 1 + nq + k] = joint_qd[qd_start + k]
+        values[s, nq + k] = joint_qd[qd_start + k]
     counter[0] = c + 1
 
 
-def decode_body(r) -> BodyState:
-    """Decode one body ring-buffer row, 14 floats, into a :class:`BodyState`."""
+def decode_body(t: float, r: np.ndarray) -> BodyState:
+    """Decode one body row, its time and 13 floats, into a :class:`BodyState`."""
     return BodyState(
-        t=float(r[0]),
-        position=(float(r[1]), float(r[2]), float(r[3])),
-        quat_xyzw=(float(r[4]), float(r[5]), float(r[6]), float(r[7])),
-        velocity=(float(r[8]), float(r[9]), float(r[10])),
-        angular_velocity=(float(r[11]), float(r[12]), float(r[13])),
+        t=float(t),
+        position=(float(r[0]), float(r[1]), float(r[2])),
+        quat_xyzw=(float(r[3]), float(r[4]), float(r[5]), float(r[6])),
+        velocity=(float(r[7]), float(r[8]), float(r[9])),
+        angular_velocity=(float(r[10]), float(r[11]), float(r[12])),
     )
 
 
-def make_decode_joint(nq: int, nqd: int) -> Callable[[np.ndarray], JointState]:
+def make_decode_joint(nq: int, nqd: int) -> Callable[[float, np.ndarray], JointState]:
     """Build the row→:class:`JointState` decode for a joint of width ``nq`` coords + ``nqd`` vels."""
 
-    def decode(r) -> JointState:
+    def decode(t: float, r: np.ndarray) -> JointState:
         return JointState(
-            t=float(r[0]),
-            q=tuple(float(x) for x in r[1 : 1 + nq]),
-            qd=tuple(float(x) for x in r[1 + nq : 1 + nq + nqd]),
+            t=float(t),
+            q=tuple(float(x) for x in r[:nq]),
+            qd=tuple(float(x) for x in r[nq : nq + nqd]),
         )
 
     return decode

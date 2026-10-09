@@ -1,13 +1,17 @@
 """Recorder: capturable taps write into device staging buffers that drain onto host blocks, the
 read-side twin of logging. Exercises a body's history, record_body → BodyState, a joint's history,
-record_joint → JointState with variable width, the drain past the staging buffer, and the Histories
-name view.
+record_joint → JointState with variable width, a signal's history, tap → records of `t` then the
+signal's quantities, the drain past the staging buffer, and the Histories name view.
 """
 
 import numpy as np
 import pytest
 import warp as wp
 
+from nexus_sim._src.core.interfaces import Stage
+from nexus_sim._src.core.schema import ImuSample
+from nexus_sim._src.core.signals import Signal, wire
+from nexus_sim._src.core.stages import Bound
 from nexus_sim._src.recording import BodyState, Histories, History, JointState, Recorder
 from nexus_sim._src.recording.state import (
     BODY_FIELDS,
@@ -27,10 +31,31 @@ class _FakeView:
         self.body_qd = wp.array(np.array([[0.0, 0.0, 0.5, 0.0, 0.0, 0.0]], dtype=np.float32), dtype=wp.spatial_vector)
 
 
+def _body(ch: History, view: _FakeView) -> None:
+    """Launch the body kernel once on `view` into `ch`, as the record stage does."""
+    wp.launch(
+        record_body,
+        dim=1,
+        inputs=(view.body_q, view.body_qd, 0, ch.dt, ch.staging, ch.values, ch.times, ch.counter),
+    )
+
+
 def _rec_body(ch: History, view: _FakeView) -> None:
     """Record one row of `view` into `ch`, as the loop does: the kernel, then the host's commit."""
-    wp.launch(record_body, dim=1, inputs=(view.body_q, view.body_qd, 0, ch.dt, ch.staging, ch.buf, ch.counter))
+    _body(ch, view)
     ch.commit()
+
+
+def _joint(ch: History, jq, jqd) -> None:
+    """Launch the joint kernel once for a revolute joint at index 0 into `ch`."""
+    wp.launch(record_joint, dim=1, inputs=(jq, jqd, 0, 1, 0, 1, ch.dt, ch.staging, ch.values, ch.times, ch.counter))
+
+
+def _wired(*signals: Signal) -> tuple[Signal, ...]:
+    """`signals`, each with the buffer a run's wiring gives an output: one stand-in stage writes them all."""
+    stage = Stage("write", "device", lambda tick: None, writes=signals)
+    wire([Bound(stage, object(), "sensor")])
+    return signals
 
 
 def test_body_history_records_latest_and_history():
@@ -51,11 +76,11 @@ def test_body_history_records_latest_and_history():
 
 
 def test_joint_history_records_variable_width():
-    # A revolute joint: nq=1, the angle, nqd=1, the rate. width = 1(t) + 1 + 1.
-    ch = History(width=3, dt=0.004, decode=make_decode_joint(1, 1))
+    # A revolute joint: nq=1, the angle, nqd=1, the rate. width = 1 + 1.
+    ch = History(width=2, dt=0.004, decode=make_decode_joint(1, 1))
     jq = wp.array(np.array([0.25, 9.9], dtype=np.float32), dtype=float)  # angle at index 0; 9.9 = other dof
     jqd = wp.array(np.array([1.5, 9.9], dtype=np.float32), dtype=float)
-    wp.launch(record_joint, dim=1, inputs=(jq, jqd, 0, 1, 0, 1, ch.dt, ch.staging, ch.buf, ch.counter))
+    _joint(ch, jq, jqd)
     js = ch.latest()
     assert isinstance(js, JointState)
     assert js.q == (0.25,)
@@ -77,13 +102,9 @@ def test_a_commit_that_fills_the_staging_buffer_reports_the_drain():
     ch = History(width=BODY_WIDTH, dt=0.004, decode=decode_body, staging=3)
     drains = []
     for z in range(1, 8):
-        wp.launch(
-            record_body,
-            dim=1,
-            inputs=(_FakeView(float(z)).body_q, _FakeView(float(z)).body_qd, 0, ch.dt, ch.staging, ch.buf, ch.counter),
-        )
+        _body(ch, _FakeView(float(z)))
         drains.append(ch.commit())
-    assert (drains, ch.buf.shape) == ([False, False, True, False, False, True, False], (3, BODY_WIDTH))
+    assert (drains, ch.values.shape) == ([False, False, True, False, False, True, False], (3, BODY_WIDTH))
 
 
 def test_arrays_reads_a_row_range_across_blocks_and_the_staged_rows():
@@ -121,17 +142,12 @@ def test_the_recorder_commits_every_history_and_reports_the_drained_block():
     """
     rec = Recorder(dt=0.004, staging=2)
     a = rec.history("vehicle/body/body_frd", width=BODY_WIDTH, decode=decode_body)
-    b = rec.history("vehicle/joints/rotor_1_joint", width=3, decode=make_decode_joint(1, 1))
+    b = rec.history("vehicle/joints/rotor_1_joint", width=2, decode=make_decode_joint(1, 1))
     blocks = []
     for z in (1.0, 2.0, 3.0, 4.0, 5.0):
-        for ch in (a, b):
-            wp.launch(
-                record_body,
-                dim=1,
-                inputs=(_FakeView(z).body_q, _FakeView(z).body_qd, 0, ch.dt, ch.staging, ch.buf, ch.counter),
-            ) if ch is a else None
+        _body(a, _FakeView(z))
         jq = wp.array(np.array([z, 0.0], dtype=np.float32), dtype=float)
-        wp.launch(record_joint, dim=1, inputs=(jq, jq, 0, 1, 0, 1, b.dt, b.staging, b.buf, b.counter))
+        _joint(b, jq, jq)
         blocks.append(rec.commit())
     assert (blocks, len(a.history()), len(b.history())) == ([None, (0, 2), None, (2, 4), None], 5, 5)
 
@@ -183,7 +199,7 @@ def test_duplicate_name_with_different_shape_raises():
 def test_histories_resolve_bare_names_across_namespaces():
     rec = Recorder(dt=0.004)
     rec.history("vehicle/body/body_frd", width=BODY_WIDTH, decode=decode_body)
-    rec.history("vehicle/joints/rotor_1_joint", width=3, decode=make_decode_joint(1, 1))
+    rec.history("vehicle/joints/rotor_1_joint", width=2, decode=make_decode_joint(1, 1))
     rec.history("vehicle/sensors/imu", width=11, decode=lambda r: r)
     state = Histories(rec.histories, ("vehicle/body/", "vehicle/joints/"))
     meas = Histories(rec.histories, ("vehicle/sensors/",))
@@ -194,3 +210,65 @@ def test_histories_resolve_bare_names_across_namespaces():
     assert set(meas) == {"imu"}
     with pytest.raises(KeyError):
         state["imu"]  # not in body/ or joint/
+
+
+def test_the_recorder_taps_a_signal_under_its_writers_path_with_the_quantities_its_type_declares():
+    """`tap` registers a signal's history as `<path>/<signal>`, its quantities those of the signal's type: a
+    struct's fields, each with its width, or one quantity named after a value-typed signal, of its width.
+    """
+    rec = Recorder(dt=0.004)
+    imu, controls = _wired(Signal("imu", ImuSample, shape=(1,)), Signal("controls", wp.float32, shape=(1, 16)))
+    a = rec.tap("vehicle/sensors/imu", imu, source="ImuSensor")
+    b = rec.tap("vehicle/controllers/px4", controls, source="Px4Controller")
+
+    assert (sorted(rec.histories), a.fields, b.fields, a.source) == (
+        ["vehicle/controllers/px4/controls", "vehicle/sensors/imu/imu"],
+        (("time", 1), ("accel", 3), ("gyro", 3)),
+        (("controls", 16),),
+        "ImuSensor",
+    )
+
+
+def test_the_record_stage_copies_each_tapped_signals_value_into_a_row_of_t_then_its_quantities():
+    """Each record copies what every tapped signal holds into its history, and the history reads as records of
+    `t` then the signal's quantities, with the struct's own types, across a drain.
+    """
+    rec = Recorder(dt=0.004, staging=2)
+    imu, controls = _wired(Signal("imu", ImuSample, shape=(1,)), Signal("controls", wp.float32, shape=(1, 16)))
+    rec.tap("vehicle/sensors/imu", imu)
+    rec.tap("vehicle/controllers/px4", controls)
+    for k in (1, 2, 3):
+        imu.write([(0.5 * k, (k, 0.0, 0.0), (0.0, k, 0.0))])
+        controls.write(np.full((1, 16), k, dtype=np.float32))
+        rec.record()
+        rec.commit()
+    rows = rec.histories["vehicle/sensors/imu/imu"].history()
+    newest = rec.histories["vehicle/controllers/px4/controls"].latest()
+
+    assert (
+        rows["t"].tolist(),
+        rows["time"].tolist(),
+        rows["accel"][:, 0].tolist(),
+        str(rows["time"].dtype),
+        str(rows["accel"].dtype),
+        float(newest["t"]),
+        newest["controls"].tolist(),
+    ) == (
+        pytest.approx([0.0, 0.004, 0.008]),
+        [0.5, 1.0, 1.5],
+        [1.0, 2.0, 3.0],
+        "float64",
+        "float32",
+        pytest.approx(0.008),
+        [3.0] * 16,
+    )
+
+
+def test_histories_resolve_an_instance_to_the_one_history_under_its_path():
+    """The view resolves an instance name to the one signal's history under its path, and lists the instance."""
+    rec = Recorder(dt=0.004)
+    (imu,) = _wired(Signal("imu", ImuSample, shape=(1,)))
+    h = rec.tap("vehicle/sensors/imu_a", imu)
+    sensors = Histories(rec.histories, ("vehicle/sensors/",))
+
+    assert (sensors["imu_a"] is h, set(sensors)) == (True, {"imu_a"})
