@@ -58,6 +58,32 @@ def test_teardown_writes_the_last_block_and_closes_the_file_before_the_controlle
     assert seen == [TICKS + 1]
 
 
+class _Renderer:
+    """A renderer whose close a second Ctrl-C lands in, as the Kit peer's can while it waits for its
+    last frame: the loop closes it first at teardown.
+    """
+
+    def on_physics_ready(self):
+        pass
+
+    def close(self):
+        raise KeyboardInterrupt
+
+
+def test_a_stop_that_lands_in_the_renderers_close_still_writes_the_recording(tmp_path):
+    """Teardown writes the last block and closes the file before the controller closes and the peers stop.
+
+    Given a recorded run whose renderer's `close`, the first step of the teardown, raises
+    `KeyboardInterrupt`, when it ends after 50 ticks, then the interrupt propagates and the `.rrd` holds
+    all 51 rows of the base body's history.
+    """
+    orch, rrd = _flight.build(tmp_path, staging=8, max_steps=TICKS, renderer=_Renderer())
+    with pytest.raises(KeyboardInterrupt):
+        orch.run()
+
+    assert rows(rrd, POSITION) == TICKS + 1
+
+
 def test_a_python_exception_in_a_stage_still_writes_the_recording(tmp_path):
     """A Python exception in a stage still writes the recording.
 

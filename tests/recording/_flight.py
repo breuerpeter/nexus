@@ -70,13 +70,21 @@ class Controller:
 
 
 def build(
-    tmp, *, staging: int | None = 8, max_steps: int | None = None, controller=None, peers=(), usd: str | None = None
+    tmp,
+    *,
+    staging: int | None = 8,
+    max_steps: int | None = None,
+    controller=None,
+    peers=(),
+    usd: str | None = None,
+    renderer=None,
 ):
     """Build the run in ``tmp`` and return it with the path of its ``.rrd``.
 
     ``staging`` is the rows the Recorder's staging buffer holds; ``None`` leaves the loop its own
-    Recorder. ``controller`` replaces the stand-in, ``peers`` are the peers the loop stops, and ``usd``
-    a vehicle in place of the one-body one.
+    Recorder. ``controller`` replaces the stand-in, ``peers`` are the peers the loop stops, ``usd`` a
+    vehicle in place of the one-body one, and ``renderer`` the loop's renderer, which it closes first
+    at teardown.
     """
     import newton
 
@@ -103,6 +111,7 @@ def build(
         sensors=[],
         controller=controller or Controller(),
         logger=Logger(model, serve=False, record_to_rrd=rrd),
+        renderer=renderer,
         peers=list(peers),
         max_steps=max_steps,
         **recorder,

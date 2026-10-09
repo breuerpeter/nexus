@@ -505,9 +505,11 @@ class Orchestrator:
                 str(e)
             )  # the autopilot's disconnect: a run's normal end. A dying Kit peer raises KitPeerError, which ends the run with it
         finally:
-            if self.renderer is not None and hasattr(self.renderer, "close"):
-                self.renderer.close()  # take the last frame, then stop the Kit peer
-            self._teardown()
+            try:
+                if self.renderer is not None and hasattr(self.renderer, "close"):
+                    self.renderer.close()  # take the last frame, then stop the Kit peer
+            finally:
+                self._teardown()  # whatever the renderer's close did: a stop that lands in it, or an error
 
     def _teardown(self) -> None:
         """The recording first: write the last block of every history and close the file, with a stop
