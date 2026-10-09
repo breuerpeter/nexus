@@ -5,7 +5,8 @@ name: gpu-pytest
 # fails a `gpu` test that skips, so a lost device, or a GPU model with no recorded trajectory, reds
 # the leg instead of passing it. The command fetches and builds the PX4 tree the controller pins
 # first, the way a user's first run does, cached per pin with the px4-sitl image as in gpu-examples.
-# The 25 slowest tests print at the end.
+# The tests run in one process, `-n 0`: no run has checked the CUDA and real-PX4 tests on parallel
+# workers. The 25 slowest tests print at the end.
 # Advisory (not a required check). Offered on EVERY PR; runs only once the `gpu` label is applied —
 # the label IS the GPU-spend approval. A labeled fork PR flies through pull_request_target, each
 # run approved by a maintainer on the external-pr-approval environment; main pushes fly. The gate
@@ -50,7 +51,7 @@ jobs:
       command: >-
         bash scripts/ci/px4_image_cache.sh load &&
         uv run --locked python -c "from nexus_sim._src.peers.px4_sitl.runner import prepare; prepare()" &&
-        uv run --locked --extra policy pytest -m "gpu or px4_sitl" --require-cuda --cov=nexus_sim --cov-report=xml -q --durations=25 &&
+        uv run --locked --extra policy pytest -m "gpu or px4_sitl" --require-cuda -n 0 --cov=nexus_sim --cov-report=xml -q --durations=25 &&
         bash scripts/ci/px4_image_cache.sh save
       coverage-flags: gpu
     secrets: inherit

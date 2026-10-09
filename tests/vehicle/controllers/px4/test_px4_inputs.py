@@ -25,6 +25,7 @@ IMUS = sv.prim("ImuQuiet", "NexusImuAPI", "float nexus:accNoise = 0\nfloat nexus
 )
 
 
+@pytest.mark.xdist_group("px4_ports")  # binds or dials PX4's ports, with the other tests that do
 def test_px4_reads_the_imu_a_connection_on_its_prim_names_of_two(tmp_path):
     """PX4 reads the IMU a connection on its prim names, of two.
 

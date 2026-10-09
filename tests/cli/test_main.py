@@ -195,6 +195,7 @@ class _Daemon:
         self.containers = Containers()
 
 
+@pytest.mark.xdist_group("px4_ports")  # binds or dials PX4's ports, with the other tests that do
 def test_the_command_line_takes_the_layer(monkeypatch, tmp_path, warp_cpu):
     """The command line takes the layer.
 

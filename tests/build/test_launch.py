@@ -17,6 +17,9 @@ from nexus_sim._src.config import Catalog, LaunchConfig
 from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
 from tests.usd import sensor_vehicle as sv
 
+# PX4's ports are the machine's, so the tests that bind or dial them run on one worker, one at a time.
+pytestmark = pytest.mark.xdist_group("px4_ports")
+
 
 @pytest.fixture(autouse=True)
 def daemon(monkeypatch, tmp_path):

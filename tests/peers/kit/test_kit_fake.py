@@ -9,6 +9,7 @@ import functools
 import io
 import time
 
+import pytest
 from PIL import Image
 from rerun.experimental import RrdReader
 
@@ -17,6 +18,9 @@ from nexus_sim._src.config import LaunchConfig
 from nexus_sim._src.peers.kit.fake import KitFake
 from nexus_sim._src.peers.kit.runner import KitPeerError
 from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
+
+# PX4's ports are the machine's, so the tests that bind or dial them run on one worker, one at a time.
+pytestmark = pytest.mark.xdist_group("px4_ports")
 
 
 def _frames(rrd: str, camera: str) -> list[tuple[int, int]]:

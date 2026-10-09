@@ -150,6 +150,7 @@ def test_a_vehicle_with_rtx_sensors_starts_the_kit_peer_once_and_stops_it_with_t
     assert [peer.alive() for peer in started] == [False]
 
 
+@pytest.mark.xdist_group("px4_ports")  # binds or dials PX4's ports, with the other tests that do
 def test_a_vehicle_with_no_rtx_sensor_schema_starts_no_kit_peer(tmp_path):
     """A vehicle with no RTX sensor schema starts no Kit peer.
 

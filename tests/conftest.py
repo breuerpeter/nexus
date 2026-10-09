@@ -3,6 +3,7 @@
 import re
 import subprocess
 import sys
+import urllib.request
 
 import newton_usd_schemas  # noqa: F401
 import pytest
@@ -48,6 +49,19 @@ def pytest_make_collect_report(collector):
                 f"{collector.path.name} sets the Warp default device to {left} at import: scope it in its tests"
             )
     return report
+
+
+@pytest.fixture(autouse=True)
+def _fresh_url_opener():
+    """Give each test an opener that reads the proxy settings it sets.
+
+    `urllib.request.urlopen` builds its opener on its first call and keeps that call's proxy settings for
+    the whole process. A test that points the proxy at the discard port to prove it fetches nothing would
+    then fail every later fetch, and an earlier fetch would let that test reach the network.
+    """
+    urllib.request.install_opener(None)
+    yield
+    urllib.request.install_opener(None)
 
 
 # A `gpu` test needs a CUDA device. Without one it skips here, the one place a test skips for that, and

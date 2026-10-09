@@ -230,6 +230,7 @@ def test_an_imu_prim_whose_transform_scales_fails_the_build_and_names_the_prim(t
     assert f"{sv.BODY}/Imu0" in str(err.value)
 
 
+@pytest.mark.xdist_group("px4_ports")  # binds or dials PX4's ports, with the other tests that do
 def test_the_ground_truth_px4_receives_is_the_base_bodys_whatever_the_imus_mount_and_body(tmp_path):
     """The ground truth PX4 receives is the base body's attitude and rates in PX4's frames, whatever the Inertial Measurement Unit's (IMU) mount and body.
 

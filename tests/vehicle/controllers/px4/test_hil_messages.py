@@ -22,7 +22,8 @@ pytest.importorskip("pxr")
 from nexus_sim._src.core.registry import default_registry
 from tests.usd import sensor_vehicle as sv
 
-pytestmark = pytest.mark.usefixtures("warp_cpu")
+# PX4's ports are the machine's, so the tests that bind or dial them run on one worker, one at a time.
+pytestmark = [pytest.mark.usefixtures("warp_cpu"), pytest.mark.xdist_group("px4_ports")]
 
 # What the fake received from main at b4443f7, before each sensor's output became a signal: for each set of
 # sensors, `_received` of a run of the fixture with it, as JSON, compressed. Never re-record it after the change.

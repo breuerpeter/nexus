@@ -13,7 +13,8 @@ pytest.importorskip("pxr")
 from nexus_sim._src.core.registry import default_registry
 from tests.usd import sensor_vehicle as sv
 
-pytestmark = pytest.mark.usefixtures("warp_cpu")
+# PX4's ports are the machine's, so the tests that bind or dial them run on one worker, one at a time.
+pytestmark = [pytest.mark.usefixtures("warp_cpu"), pytest.mark.xdist_group("px4_ports")]
 
 # The bits of `fields_updated` that PX4's `simulator_mavlink` tests for each sensor, its `SensorSource`:
 # the accelerometer and the gyroscope of the Inertial Measurement Unit (IMU), the magnetometer, and the

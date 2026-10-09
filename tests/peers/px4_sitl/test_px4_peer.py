@@ -44,6 +44,9 @@ from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
 from nexus_sim._src.vehicle.controllers.px4 import controller as ctrl
 from tests.usd import sensor_vehicle as sv
 
+# PX4's ports are the machine's, so the tests that bind or dial them run on one worker, one at a time.
+pytestmark = pytest.mark.xdist_group("px4_ports")
+
 # --- the stand-in docker daemon -------------------------------------------------------------------
 
 
