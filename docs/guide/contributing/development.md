@@ -73,6 +73,10 @@ loop = build_from_launch(launch, peers={"px4_sitl": Px4Fake, "kit": KitFake})
 
 The controller, the renderer and the loop then run as they do against the real process. So a fake proves the loop's side of the link, its encoding, its stage order and its error paths, and nothing about the process behind it. A run against `Px4Fake` has no offboard link, so `sim.ports["offboard"]` raises and names the fake.
 
+## Merging to main
+
+A ruleset on `main` refuses a direct push. A change lands only by pull request, and only by squash merge, so each commit on `main` is one conventional commit that release-please reads. The branch must be up to date with `main`, and six checks must pass: `lint`, `cpu-pytest`, `vale-changed`, `examples`, `gpu-pytest` and `rl`. The last three are the GPU legs. A pull request without the `gpu` label runs no GPU leg, so those three report skipped, and a skipped check counts as passed. GitHub deletes a pull request's branch once it merges. The repo administrator can merge a pull request past a red check, but can't push to `main` either.
+
 ## What CI flies
 
 A pull request with the `gpu` label flies every example at once on one GPU box. It gates each example on its correctness rows in `scripts/ci/examples_baselines.json`, so it pays for one box and still proves the change. Main flies each example on a box of its own. It gates the same rows plus each `rtf` row, and it uploads the recordings the docs embed. The weekly schedule flies the benchmark matrix, one cell per box. The Real-Time Factor (RTF) gates run on main, because an RTF is only comparable when a flight has the box to itself. Flights that share a box share its CPUs, and each one's RTF drops. So a speed regression shows on the merge commit, not on the pull request.
