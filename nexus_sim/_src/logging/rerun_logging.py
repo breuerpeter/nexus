@@ -857,7 +857,9 @@ class Logger:
                 )
             self._written[key] = True
             if key.startswith("vehicle/body/"):
-                bodies[key.rsplit("/", 1)[-1]] = {**arrays, "t": t}
+                # The label after the prefix: a leaf when unique, else the full model label, with its
+                # slashes, as the Recorder keys it and as `_body_labels` names it.
+                bodies[key[len("vehicle/body/") :]] = {**arrays, "t": t}
         self._write_poses(bodies)
         rr.get_global_data_recording().flush()
 

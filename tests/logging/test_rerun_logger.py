@@ -363,6 +363,25 @@ def test_write_draws_the_flown_path_as_one_segment_per_row(tmp_path):
     assert _timed_rows(rrd, f"/{TRAJECTORY_ENTITY}") == 6
 
 
+def test_write_poses_a_body_whose_label_is_a_full_path(tmp_path):
+    """Two bodies of one leaf name keep their full model labels as keys, slashes included, as the
+    fixture with a mast does: the base body's rows still pose it at `sim/vehicle/body` and draw the
+    trail.
+    """
+    from nexus_sim._src.logging import Logger
+    from nexus_sim._src.logging.rerun_logging import TRAJECTORY_ENTITY
+
+    rrd = str(tmp_path / "mast.rrd")
+    rl = Logger(model=None, serve=False, record_to_rrd=rrd)
+    rl._body_labels = ["/vehicle/body", "/vehicle/Mast/body"]  # what leaf_keys gives two bodies named body
+    rl.write(
+        {"vehicle/body//vehicle/body": _FakeHistory(rows=5), "vehicle/body//vehicle/Mast/body": _FakeHistory(rows=5)}, 0
+    )
+    rl.close()
+
+    assert (_timed_rows(rrd, "/sim/vehicle/body"), _timed_rows(rrd, f"/{TRAJECTORY_ENTITY}")) == (5, 4)
+
+
 @pytest.mark.usefixtures("warp_cpu")
 def test_the_scene_is_logged_once_and_the_body_rides_the_rows_written(tmp_path):
     """The Logger logs each shape batch's mesh once, at construction, through NVIDIA Newton's viewer
