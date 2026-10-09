@@ -1,6 +1,7 @@
 """Shared test helpers."""
 
 import os
+import platform
 import re
 import subprocess
 import sys
@@ -9,6 +10,13 @@ import urllib.request
 import newton_usd_schemas  # noqa: F401
 import pytest
 import warp as wp
+
+# Warp builds a CPU kernel for the host's own CPU, `-march=native`, and names the object file after
+# the host's instruction set, so a kernel cache from one CPU model misses on another. CI's hosted
+# runners are a mix of models. The suite builds for x86-64-v3, the AVX2 baseline every runner and
+# every x86 developer machine since 2013 runs, so cpu-pytest's cache hits whatever runner it lands on.
+if platform.machine() == "x86_64":
+    wp.config.cpu_compiler_flags = "-march=x86-64-v3"
 
 # The schema plugins the tests apply, registered here, before any test module opens a stage: OpenUSD
 # builds its schema registry once, on first use, and a plugin registered after that never shows in it.

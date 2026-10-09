@@ -31,7 +31,9 @@ jobs:
       # cache makes each worker compile the same kernels before its first build, about 45 s on 4 vCPUs.
       # The key ends in the run's id, so every run saves what it restored plus what it compiled, and the
       # entry grows until it holds every kernel the suite builds; an entry saved once under a fixed key
-      # kept only its first run's kernels. A CPU-only entry is a few MB.
+      # kept only its first run's kernels. A CPU-only entry is a few MB. The hosted runners are a mix
+      # of CPU models, so tests/conftest.py builds the kernels for x86-64-v3, not the host's own CPU,
+      # and one runner's objects load on the next.
       - name: Compute the Warp cache key
         id: warp-key
         run: |
