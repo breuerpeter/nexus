@@ -131,13 +131,18 @@ docs = [
 norecursedirs = [".*", "dist", "node_modules", "venv"]
 testpaths = ["tests"]
 # A misspelled marker fails the run instead of moving a test to the wrong leg. The tests run on one
-# worker per CPU, and the tests of one `xdist_group` all run on one worker, one after another.
-addopts = ["--strict-markers", "-n", "auto", "--dist", "loadgroup"]
+# worker per logical CPU, and the tests of one `xdist_group` all run on one worker, one after another.
+addopts = ["--strict-markers", "-n", "logical", "--dist", "loadgroup"]
 # cpu-pytest runs `-m "not gpu and not px4_sitl"` and gpu-pytest `-m "gpu or px4_sitl" --require-cuda -n 0`.
 markers = [
     "gpu: needs a CUDA device; skips without one, and fails when it does not run under --require-cuda",
     "px4_sitl: flies a real PX4 SITL, built from the tree on this machine",
 ]
+
+[tool.coverage.run]
+# Python's sys.monitoring traces the lines: on 4 CPUs the suite takes 182 s under it, against 285 s
+# under coverage's default C tracer.
+core = "sysmon"
 
 [tool.ruff]
 line-length = 120

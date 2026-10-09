@@ -4,7 +4,8 @@ name: cpu-pytest
 # a CUDA device, and the `px4_sitl` tests, which fly a real PX4 SITL; gpu-pytest.yml runs those.
 # No path filter so it's a clean required check (a path-filtered required check stays stuck-pending
 # on PRs that don't match).
-# The tests run on one worker per vCPU, as pyproject.toml sets, and the 25 slowest print at the end.
+# The tests run on one worker per vCPU, as pyproject.toml sets: the log names the workers and the
+# 25 slowest tests.
 
 on:
   push:
@@ -26,7 +27,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - run: uv run --locked --extra policy pytest -m "not gpu and not px4_sitl" --cov=nexus_sim --cov-report=xml -q --durations=25
+      - run: uv run --locked --extra policy pytest -m "not gpu and not px4_sitl" --cov=nexus_sim --cov-report=xml --durations=25
       - uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}

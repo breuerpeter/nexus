@@ -44,3 +44,4 @@ CLAUDE.local.md
 
 # coverage.py data, written by the pytest --cov run CI uses
 .coverage
+coverage.xml
