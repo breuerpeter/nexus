@@ -1,5 +1,6 @@
 """Shared test helpers."""
 
+import os
 import re
 import subprocess
 import sys
@@ -14,6 +15,22 @@ import warp as wp
 # Newton's plugin backs the test that applies a Newton schema, and the stand-in project's backs the tests
 # that apply `StandInAPI`.
 import tests.usd.stand_in.nexus_stand_in  # noqa: F401
+
+# A worker's resident memory settles near 2.8 GiB over the suite, 5.2 GiB when one worker runs it all:
+# the flights keep the memory they take. One worker per logical CPU would want 56 GiB on a 20-CPU laptop.
+_WORKER_MIB = 3 * 1024
+
+
+def pytest_xdist_auto_num_workers(config):
+    """One worker per logical CPU, and no more than the free memory holds at 3 GiB each."""
+    cpus = os.cpu_count() or 1
+    try:
+        with open("/proc/meminfo") as f:
+            available = next(int(line.split()[1]) // 1024 for line in f if line.startswith("MemAvailable:"))
+    except (OSError, StopIteration):
+        return cpus
+    return max(1, min(cpus, available // _WORKER_MIB))
+
 
 # Warp's default device when the session starts. A test that leaves it changed makes a later test's
 # kernels run on another device than its arrays, so test order would matter; the guards below fail it.
