@@ -47,3 +47,10 @@ def register_component(schema: str, target: type | str) -> None:
     here.
     """
     default_registry().add(schema, target)
+
+
+class Registry(ComponentRegistry):
+    """The registry on the public surface: the value `Sim` takes beside the catalog and the layer.
+
+    A stub with the signature the tests call, #44: its body comes with the change.
+    """

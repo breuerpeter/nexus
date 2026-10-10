@@ -5,6 +5,7 @@ controller through the objects it built, and a PX4 script imports its client fro
 ``Pilot``, ``Px4Pilot`` and ``wait_until`` exports on ``nx`` no longer exist.
 """
 
+import json
 import re
 import subprocess
 import sys
@@ -61,8 +62,63 @@ def test_a_script_imports_the_px4_client_and_the_mission_plan_types_from_nexus_p
 # The API reference pages: a `::: nexus.<Name>` directive with one dotted segment documents a
 # public export; the `_src` directives in guidance.md have more segments and stay out.
 _API_REFERENCE = Path(__file__).resolve().parents[2] / "docs" / "reference" / "api"
-_DIRECTIVE = re.compile(r"^::: nexus\.(\w+)$", re.MULTILINE)
+_DIRECTIVE = re.compile(r"^::: nexus_sim\.(\w+)$", re.MULTILINE)
 _IMPORT_LINE = re.compile(r"^from nexus_sim import (.+)$", re.MULTILINE)
+
+# The public surface, pinned: every name `import nexus_sim` exports, sorted. A removed name needs no test of its
+# absence: it leaves this list. The run's entry and its helpers, the component contract with its stage, tick,
+# signal and sensor-run types, the registry and its registration call, the peer contract, the catalog and the
+# launch config, the plant's read types, the signal value types a component reads or writes, and the logger.
+PINNED = [
+    "BaroSample",
+    "BodyState",
+    "Catalog",
+    "Component",
+    "Controls",
+    "GpsSample",
+    "Image",
+    "ImuSample",
+    "JointState",
+    "LaunchConfig",
+    "MagSample",
+    "Peer",
+    "PointCloud",
+    "PoseTwist",
+    "PositionGoal",
+    "ReferenceTrajectory",
+    "Registry",
+    "SensorRun",
+    "Signal",
+    "Sim",
+    "SimTime",
+    "Stage",
+    "Tick",
+    "Waypoints",
+    "logger",
+    "register",
+    "save_run_artifacts",
+    "sim_argparser",
+]
+
+
+def test_the_public_surface_is_the_pinned_list_and_the_reference_documents_each_name():
+    """`import nexus_sim` exports exactly the pinned list, and the API reference documents each name.
+
+    Given a fresh interpreter, when it imports `nexus_sim`, then `__all__` equals the pinned literal, each name
+    resolves, and the API reference holds a `::: nexus_sim.<Name>` directive for each.
+    """
+    code = (
+        "import json, nexus_sim as nx\n"
+        "print('>', json.dumps([sorted(nx.__all__), [n for n in nx.__all__ if not hasattr(nx, n)]]))"
+    )
+    out = subprocess.run([sys.executable, "-c", code], check=False, capture_output=True, text=True)
+    marked = [line[2:] for line in out.stdout.splitlines() if line.startswith("> ")]
+    exported, unresolved = json.loads(marked[0]) if marked else ([], ["no output"])
+    documented = set()
+    for page in sorted(_API_REFERENCE.glob("*.md")):
+        documented |= set(_DIRECTIVE.findall(page.read_text()))
+
+    assert (exported, unresolved, [n for n in PINNED if n not in documented]) == (PINNED, [], []), out.stderr
 
 
 def test_state_is_no_longer_a_public_export():
@@ -88,15 +144,15 @@ def test_api_reference_documents_no_state():
     assert "State" not in names
 
 
-def test_the_public_surface_names_the_vehicle_and_scene_catalog_catalog_and_no_registry():
-    """The public surface names the vehicle and scene catalog `Catalog`, and no name `Registry`.
+def test_nexus_catalog_loads_the_bundled_catalog():
+    """`nexus_sim.Catalog` names the vehicle and scene catalog.
 
-    Given a fresh interpreter, when it imports `nexus_sim`, then `nexus_sim.Catalog` loads the bundled
-    catalog with its two vehicles, and `Registry` isn't in `nexus_sim.__all__`.
+    Given a fresh interpreter, when it imports `nexus_sim`, then `nexus_sim.Catalog` loads the bundled catalog
+    with its two vehicles.
     """
-    code = "import nexus_sim as nx; print(sorted(nx.Catalog.from_yaml().vehicles), 'Registry' in nx.__all__)"
+    code = "import nexus_sim as nx; print(sorted(nx.Catalog.from_yaml().vehicles))"
     out = subprocess.run([sys.executable, "-c", code], check=False, capture_output=True, text=True)
-    assert out.stdout.strip() == "['astro_max_base', 'astro_max_fpv'] False", out.stderr
+    assert out.stdout.strip() == "['astro_max_base', 'astro_max_fpv']", out.stderr
 
 
 def test_importing_core_loads_no_newton():
@@ -141,24 +197,4 @@ def test_the_public_surface_names_no_measurement():
         "print('Measurement' in nx.__all__, raised)"
     )
     out = subprocess.run([sys.executable, "-c", code], check=False, capture_output=True, text=True)
-    assert out.stdout.strip() == "False True", out.stderr
-
-
-def test_sensor_sample_leaves_the_public_surface():
-    """`SensorSample` leaves the public surface.
-
-    Given a fresh interpreter, when it imports `nexus_sim`, then `SensorSample` isn't in `nexus_sim.__all__`
-    and `nexus_sim.SensorSample` raises `AttributeError`.
-    """
-    code = (
-        "import nexus_sim as nx\n"
-        "try:\n"
-        "    nx.SensorSample\n"
-        "    raised = False\n"
-        "except AttributeError:\n"
-        "    raised = True\n"
-        "print('SensorSample' in nx.__all__, raised)"
-    )
-    out = subprocess.run([sys.executable, "-c", code], check=False, capture_output=True, text=True)
-
     assert out.stdout.strip() == "False True", out.stderr

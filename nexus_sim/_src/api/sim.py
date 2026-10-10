@@ -82,7 +82,9 @@ class Sim:
         max_steps: int | None = None,
         rtf: float = 0.0,
         layer: str | None = None,
+        registry=None,
     ):
+        self._registry = registry  # the registry the build resolves each schema with, or None for the default
         self._launch = LaunchConfig()
         self._launch.set_vehicle(vehicle)  # a catalog *name* or a local .usd path
         self._launch.layer = layer  # an override layer the run composes over the vehicle, or None
@@ -192,7 +194,7 @@ class Sim:
                 self._orch.guidance = self._guidance
         else:
             # A vehicle that authors RTX sensors starts the Kit render peer here, from the host.
-            self._orch = build_from_launch(self._launch, cache_dir=self._cache_dir)
+            self._orch = build_from_launch(self._launch, cache_dir=self._cache_dir, components=self._registry)
         if self._orch.recorder is None:
             # A self-assembled loop that brought no Recorder gets one: the loop hands it the plant and
             # each sensor at its first step. dt → the per-row sim time, counter × dt.
@@ -338,6 +340,13 @@ class Sim:
         if self._orch is None:
             raise RuntimeError("enter the Sim context first (`with nx.Sim(...) as sim:`)")
         return Histories(self._orch.recorder.histories, ("vehicle/body/", "vehicle/joints/"))
+
+    @property
+    def histories(self):
+        """One view over every recorded history, keyed by its path below the run's root.
+
+        A stub with the signature the tests call, #44: its body comes with the change.
+        """
 
     @property
     def sensors(self) -> Histories:

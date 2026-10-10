@@ -23,6 +23,7 @@ _LAZY_EXPORTS = {
     "LaunchConfig": "nexus_sim._src.config",
     "Controls": "nexus_sim._src.core",
     "Orchestrator": "nexus_sim._src.core",
+    "Registry": "nexus_sim._src.core.registry",
     "SimTime": "nexus_sim._src.core",
     # The framework logger. Examples report results through it, with no bare prints: always the
     # console on stderr, plus the recording's Logs pane, at sim/logs/<module>, when a Logger is active,
@@ -38,6 +39,7 @@ __all__ = [
     "JointState",
     "LaunchConfig",
     "Orchestrator",
+    "Registry",
     "Sim",
     "SimTime",
     "logger",
@@ -63,6 +65,7 @@ if TYPE_CHECKING:
         SimTime,
         logger,
     )
+    from nexus_sim._src.core.registry import Registry
 
 
 def __getattr__(name: str):

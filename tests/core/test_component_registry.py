@@ -197,3 +197,38 @@ def test_the_provider_registry_goes_and_nexus_catalog_names_the_catalog():
     from nexus_sim._src.config import Catalog
 
     assert (hasattr(core, "Registry"), nx.Catalog) == (False, Catalog)
+
+
+def test_a_package_with_an_entry_in_nexus_registry_and_a_plugin_at_its_root_is_registered_at_import(tmp_path):
+    """The registry is named for what it does: a package with an entry in the `nexus.registry` entry-point group
+    and a `plugInfo.json` at its root is registered at import, its schema with OpenUSD and its entry in the
+    default registry.
+
+    Given a stand-in distribution with one `nexus.registry` entry and a `plugInfo.json` at its root, when a fresh
+    interpreter imports `nexus_sim`, then OpenUSD knows its schema and the default registry resolves the entry to
+    its class.
+    """
+    import shutil
+
+    project = tmp_path / "project"
+    shutil.copytree(STAND_IN, project, ignore=shutil.ignore_patterns("__pycache__"))
+    pyproject = project / "pyproject.toml"
+    pyproject.write_text(
+        pyproject.read_text().replace(
+            '[project.entry-points."nexus.components"]', '[project.entry-points."nexus.registry"]'
+        )
+    )
+    site = tmp_path / "site"
+    subprocess.run(
+        ["uv", "pip", "install", "--python", sys.executable, "--no-deps", "--target", str(site), str(project)],
+        check=True,
+        capture_output=True,
+    )
+    code = """
+import nexus_sim
+from pxr import Usd
+print(">", Usd.SchemaRegistry().FindAppliedAPIPrimDefinition("StandInAPI") is not None)
+cls = nexus_sim.Registry().resolve("StandInAPI")
+print(">", getattr(cls, "__module__", None), getattr(cls, "__name__", None))
+"""
+    assert _python(code, cwd=tmp_path, pythonpath=site) == ["True", "nexus_stand_in.heavy", "StandIn"]
