@@ -66,7 +66,8 @@ def _layer(path: str | None) -> tuple[pathlib.Path, AssetRef] | None:
 def _stack(layer: pathlib.Path, layer_sha: str, asset: pathlib.Path, asset_sha: str, cache_dir) -> pathlib.Path:
     """A root file in the asset cache that stacks *layer* over *asset*, the vehicle or the scene, so each
     reader of the asset opens the composed asset by one path. USD composes the two; the file only lists
-    them, strongest first, and carries the asset's default prim.
+    them, strongest first, and carries the asset's stage metadata: its default prim, units, up axis and
+    layer data, such as a scene's render recipe, which a stage reads from its root file alone.
     """
     from pxr import Sdf
 
@@ -76,7 +77,10 @@ def _stack(layer: pathlib.Path, layer_sha: str, asset: pathlib.Path, asset_sha: 
     out.parent.mkdir(parents=True, exist_ok=True)
     root = Sdf.Layer.CreateAnonymous(".usda")
     root.subLayerPaths = [str(layer), str(asset)]
-    root.defaultPrim = Sdf.Layer.FindOrOpen(str(asset)).defaultPrim
+    source = Sdf.Layer.FindOrOpen(str(asset))  # held, so its spec outlives the read
+    for key in source.pseudoRoot.ListInfoKeys():
+        if not key.startswith("subLayer"):  # its own sublayers and their offsets stay the asset's
+            root.pseudoRoot.SetInfo(key, source.pseudoRoot.GetInfo(key))
     root.Export(str(out))
     return out
 

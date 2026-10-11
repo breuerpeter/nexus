@@ -226,3 +226,32 @@ def test_a_launch_that_names_an_unknown_vehicle_fails_and_lists_the_catalogs_veh
         resolve(LaunchConfig().set_vehicle("nope").set_scene("empty"), fetch=False)
 
     assert [name in str(e.value) for name in ("astro_max_base", "astro_max_fpv")] == [True, True]
+
+
+def test_a_layered_scene_opens_with_the_scenes_units_up_axis_and_render_recipe(tmp_path):
+    """A layered scene opens with the scene's units, up axis and render recipe.
+
+    Given a local scene in metres, Z-up, with a render recipe in its layer data, and an override layer,
+    when the run resolves, then the stage it opens for the scene has the scene's metres, Z axis and recipe.
+    """
+    pytest.importorskip("pxr")
+    from pxr import Usd, UsdGeom
+
+    scene = tmp_path / "scene.usda"
+    scene.write_text(
+        "#usda 1.0\n(\n    customLayerData = {\n        dictionary renderSettings = {\n"
+        '            bool "rtx:post:lensFlares:enabled" = 1\n        }\n    }\n'
+        '    defaultPrim = "World"\n    metersPerUnit = 1\n    upAxis = "Z"\n)\n\ndef Xform "World"\n{\n}\n'
+    )
+    layer = tmp_path / "layer.usda"
+    layer.write_text("#usda 1.0\n")
+    reg = _fpv_reg(_file_asset(tmp_path, "veh.usdz", b"USD-VEH"), _file_asset(tmp_path, "stage.usdz", b"USD-STAGE"))
+    launch = LaunchConfig().set_vehicle("black").set_scene(str(scene))
+    launch.layer = str(layer)
+    stage = Usd.Stage.Open(resolve(launch, reg, fetch=False, cache_dir=tmp_path / "cache").scene_usd_path)
+
+    assert (
+        UsdGeom.GetStageMetersPerUnit(stage),
+        UsdGeom.GetStageUpAxis(stage),
+        dict(stage.GetRootLayer().customLayerData.get("renderSettings", {})),
+    ) == (1.0, "Z", {"rtx:post:lensFlares:enabled": True})
