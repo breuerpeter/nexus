@@ -177,8 +177,8 @@ class Loop:
                 loop hands each component a view scoped to its path, and writes the Recorder's
                 histories into it, a block at a time.
             recorder: The run's :class:`~nexus_sim._src.recording.Recorder`, which keeps every row of
-                the plant's state and of each sensor's output. The loop reads the attribute at the first
-                step, so a host can set it after construction; ``None`` records nothing.
+                each device signal a component writes, the plant's outputs among them. The loop reads the
+                attribute at the first step, so a host can set it after construction; ``None`` records nothing.
             on_tick: Optional post-step observer called as ``on_tick(state, t, steps)``
                 after recording: an output-only hook for demos and tests to read the live state,
                 for example to capture a trajectory.
