@@ -121,8 +121,10 @@ def wire(ring: list[Bound], connections: Iterable[tuple[object, str, object]] | 
 
     Args:
         ring: The stages of one tick.
-        connections: Triples of a reader, a signal's name and the writer the reader takes that signal from,
-            which the builder resolves from the relationships ``nexus:inputs:<signal>`` the vehicle authors.
+        connections: Quadruples of a reader, an input's name, the writer the reader takes it from and the
+            name of that writer's output: the input's own name for a component's signal, and ``body/<label>`` or
+            ``joints/<label>`` for the plant's, which the builder resolves from the relationships
+            ``nexus:inputs:<signal>`` the vehicle authors, a body's or joint's prim among the targets.
 
     Raises:
         ValueError: A device stage declares a host signal, a device signal has no shape, two components
@@ -138,13 +140,13 @@ def wire(ring: list[Bound], connections: Iterable[tuple[object, str, object]] | 
     defaulted: set[int] = set()  # the outputs a reader's default already fills
     links = list(connections or ())
     for name, readers in reads.items():
-        written = writes.get(name, [])
         for bound, signal in readers:
             if typing.get_origin(signal.type) is list:
-                _take_all(bound, signal, written)
+                _take_all(bound, signal, writes.get(name, []))
             else:
-                connected = next((w for r, s, w in links if r is bound.component and s == name), None)
-                _take_one(bound, signal, written, connected, defaulted)
+                link = next((link for link in links if link[0] is bound.component and link[1] == name), None)
+                writer, output = (link[2], link[3]) if link is not None else (None, name)
+                _take_one(bound, signal, output, writes.get(output, []), writer, defaulted)
 
 
 def _declared(ring: list[Bound]) -> tuple[dict, dict]:
@@ -174,16 +176,19 @@ def _declared(ring: list[Bound]) -> tuple[dict, dict]:
     return writes, reads
 
 
-def _take_one(bound: Bound, signal: Signal, written: list, connected: object | None, defaulted: set[int]) -> None:
+def _take_one(
+    bound: Bound, signal: Signal, output: str, written: list, connected: object | None, defaulted: set[int]
+) -> None:
     """Hand an input the buffer of its writer: the one its connection names, else the one there is, else a
-    buffer of its own that holds its default.
+    buffer of its own that holds its default. ``written`` are the writers of ``output``, the input's own name
+    or the output its connection names.
     """
     name = signal.name
     if connected is not None:
-        picked = [(writer, output) for writer, output in written if writer.component is connected]
+        picked = [(writer, written) for writer, written in written if writer.component is connected]
         if not picked:
             raise ValueError(
-                f"{_owner(bound)} connects {name!r} to {_name(connected)}, which writes no {name!r}: a connection "
+                f"{_owner(bound)} connects {name!r} to {_name(connected)}, which writes no {output!r}: a connection "
                 "names a component that writes the signal"
             )
         writer, output = picked[0]
@@ -237,16 +242,16 @@ def _check(writer: Bound, output: Signal, bound: Bound, signal: Signal, expected
     Raises:
         ValueError: The two disagree; the message names both ends and the signal.
     """
-    name = signal.name
+    name = output.name
     if output.type is not expected:
         raise ValueError(
-            f"{_owner(writer)} writes {name!r} as {_type(output.type)}, and {_owner(bound)} reads it as "
-            f"{_type(signal.type)}: a reader and its writer agree on the type"
+            f"{_owner(writer)} writes {name!r} as {_type(output.type)}, and {_owner(bound)} reads {signal.name!r} "
+            f"as {_type(signal.type)}: a reader and its writer agree on the type"
         )
     if output.device and not _fits(output.shape, signal.shape or ()):
         raise ValueError(
             f"{_owner(writer)} writes {name!r} with shape {output.shape}, and {_owner(bound)} reads "
-            f"{signal.shape}: a reader reads the leading part of its writer's buffer"
+            f"{signal.name!r} as {signal.shape}: a reader reads the leading part of its writer's buffer"
         )
 
 

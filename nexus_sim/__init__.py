@@ -18,9 +18,6 @@ _LAZY_EXPORTS = {
     "Sim": "nexus_sim._src.api",
     "sim_argparser": "nexus_sim._src.api",
     "save_run_artifacts": "nexus_sim._src.api",
-    # What a script reads back for the plant: a body's and a joint's row types.
-    "BodyState": "nexus_sim._src.api",
-    "JointState": "nexus_sim._src.api",
     # Configuration: the vehicle and scene catalog, and the launch config.
     "Catalog": "nexus_sim._src.config",
     "LaunchConfig": "nexus_sim._src.config",
@@ -56,13 +53,11 @@ _LAZY_EXPORTS = {
 # Literal mirror of _LAZY_EXPORTS keys, kept sorted: ruff PLE0605 wants a list/tuple literal.
 __all__ = [
     "BaroSample",
-    "BodyState",
     "Catalog",
     "Component",
     "GpsSample",
     "Image",
     "ImuSample",
-    "JointState",
     "LaunchConfig",
     "MagSample",
     "Peer",
@@ -88,8 +83,6 @@ __all__ = [
 # runtime, because TYPE_CHECKING is False, so the preceding import-light PEP 562 behavior stays.
 if TYPE_CHECKING:
     from nexus_sim._src.api import (
-        BodyState,
-        JointState,
         Sim,
         save_run_artifacts,
         sim_argparser,

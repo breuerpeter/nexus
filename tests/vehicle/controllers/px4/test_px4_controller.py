@@ -10,9 +10,9 @@ import pytest
 import warp as wp
 
 from nexus_sim._src.core.clock import DeviceClock
-from nexus_sim._src.core.interfaces import SensorRun
-from nexus_sim._src.core.schema import SimTime
-from nexus_sim._src.core.signals import wire
+from nexus_sim._src.core.interfaces import Component, SensorRun, Stage
+from nexus_sim._src.core.schema import PoseTwist, SimTime
+from nexus_sim._src.core.signals import Signal, wire
 from nexus_sim._src.core.stages import Bound
 from nexus_sim._src.scene import Site
 from nexus_sim._src.vehicle.controllers.px4 import controller as ctrl
@@ -88,14 +88,34 @@ class _AtRest:
         self.body_qd = wp.array(np.zeros((1, 6), dtype=np.float32), dtype=wp.spatial_vector)
 
 
+class _Plant(Component):
+    """A stand-in plant whose `state` stage writes the base body's pose, `body/body`: at rest, level, 1 m up."""
+
+    base_body = "body"
+
+    def __init__(self):
+        self.body = Signal("body/body", PoseTwist, shape=(1,))
+
+    def stages(self):
+        return [Stage("state", "device", lambda tick: None, writes=(self.body,))]
+
+
 def _exchange(*sensors, ticks: int) -> None:
     """Wire a PX4 controller, connected, to `sensors` as a run wires them, with the tick's sim time on the device
     in a clock's signal, and run `ticks` ticks of 4 ms from 0 s: on each, every sensor samples a body at rest,
     then the controller exchanges. The tick's time grows by 4 ms a tick in float64, as the device clock adds it.
     """
-    clock, controller = DeviceClock(0.004), ctrl.Px4MavlinkController()
-    pairs = [(clock, "clock"), *((sensor, "sensor") for sensor in sensors), (controller, "controller")]
-    wire([Bound(stage, component, role) for component, role in pairs for stage in component.stages()])
+    clock, plant, controller = DeviceClock(0.004), _Plant(), ctrl.Px4MavlinkController()
+    pairs = [
+        (clock, "clock"),
+        (plant, "physics"),
+        *((sensor, "sensor") for sensor in sensors),
+        (controller, "controller"),
+    ]
+    ring = [Bound(stage, component, role) for component, role in pairs for stage in component.stages()]
+    wire(ring, [(controller, "pose", plant, "body/body")])  # the link the loop adds for an unconnected pose
+    plant.body.write([((0.0, 0.0, 1.0), (0.0, 0.0, 0.0, 1.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))])
+    next(stage for stage in controller.stages() if stage.name == "truth").run(None)
     controller.connect()
     state, now = _AtRest(), 0.0
     for tick in range(ticks):

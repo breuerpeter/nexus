@@ -56,6 +56,7 @@ from nexus_sim._src.vehicle.rotors import RPM_PER_RADS, find_rotor_joints
 
 from ..scene.ingest import add_scene  # ingestion only: the handlers are the renderer's side
 from ..scene.site import GRAVITY
+from .outputs import Outputs
 
 STABILIZE_VEL_THRESHOLD = 0.01  # m/s
 STABILIZE_MIN_STEPS = 10
@@ -137,6 +138,8 @@ class NewtonPhysics:
         newton.eval_fk(self.model, self.model.joint_q, self.model.joint_qd, self.state0)
         self.state1 = self.model.state()
         self.control = self.model.control() if self.articulated else None
+        # The plant's outputs, a PoseTwist per body and a struct per joint, which the state stage writes.
+        self.outputs = Outputs(self.model, self.state0)
         # Every Newton actuator the vehicle declares, rotor motor or not, stepped before the solver. Each
         # keeps two copies of its state, because ControllerPID is stateful and a Python swap would freeze at
         # the binding a CUDA graph captured: step() copies next → current in place after each step.
@@ -213,10 +216,14 @@ class NewtonPhysics:
         return state
 
     def stages(self) -> list[Stage]:
-        """The ``clear`` and ``step`` device stages; the loop runs the command and force stages between them."""
+        """The ``clear``, ``step`` and ``state`` device stages: the loop runs the command and force stages
+        between ``clear`` and ``step`` once per substep, and ``state`` once per tick after the last substep,
+        which writes the plant's outputs, one signal per body and per joint, from the stepped state.
+        """
         return [
             Stage("clear", "device", lambda tick: self.clear_forces(tick.state)),
             Stage("step", "device", lambda tick: self.step(tick.state, tick.dt)),
+            Stage("state", "device", lambda tick: self.outputs.write(tick.state), writes=self.outputs.signals),
         ]
 
     def _spawn_single_body(self) -> None:

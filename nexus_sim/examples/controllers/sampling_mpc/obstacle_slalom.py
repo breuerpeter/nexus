@@ -68,8 +68,8 @@ def main() -> None:
         sim.run()
 
     traj = sim[f"vehicle/body/{sim.base_body}"].history()
-    q = np.array([s.position for s in traj])
-    quats = np.array([s.quat_xyzw for s in traj])  # xyzw order
+    q = np.asarray(traj["position"], dtype=float)
+    quats = np.asarray(traj["orientation"], dtype=float)  # xyzw order
     reached = guidance.reached
 
     # Clearance to the nearest pillar axis in xy → must exceed the pillar radius, so it cleared every pillar.

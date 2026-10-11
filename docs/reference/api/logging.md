@@ -78,8 +78,8 @@ path.
 | `sim/logs/<module>` | The log records of one module |
 | `sim/run/settings`, `sim/run/profile`, `sim/run/rtf` | The run's settings, its end-of-run profile and its live Real Time Factor (RTF) |
 | `sim/vehicle/body` | The base body's pose, every tick |
-| `sim/vehicle/body/<name>/<field>` | A body's recorded series, one per quantity |
-| `sim/vehicle/joints/<name>/<field>` | A joint's recorded series, one per quantity |
+| `sim/vehicle/body/<name>/<field>` | A body's recorded series, `position`, `orientation`, `linear_velocity` and `angular_velocity`: the plant writes its outputs under `vehicle`, named `body/<name>` |
+| `sim/vehicle/joints/<name>/<field>` | A joint's recorded series, `q` and `qd`: the plant's output `joints/<name>` |
 | `sim/<path>/<signal>/<field>` | A signal's recorded series, one per quantity, under its writer's path: `sim/vehicle/sensors/imu/imu/accel`, `sim/vehicle/controllers/<name>/controls/controls` |
 | `sim/vehicle/sensors/<name>` | A camera's frustum |
 | `sim/vehicle/sensors/<name>/camera`, `.../thermal_camera`, `.../lidar` | A camera's frames, a thermal camera's frames, or a lidar's points: the signal logged live |

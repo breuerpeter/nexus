@@ -31,7 +31,7 @@ def test_each_recorded_series_sits_under_its_historys_key(recorded_flight, rrd_r
 
     assert ({key: sorted(fields.get(key, ())) for key in keys}, old) == (
         {
-            "/sim/vehicle/body/body_frd": ["angular_velocity", "position", "quat_xyzw", "velocity"],
+            "/sim/vehicle/body/body_frd": ["angular_velocity", "linear_velocity", "orientation", "position"],
             "/sim/vehicle/joints/rotor_1_ccw_joint": ["q", "qd"],
             "/sim/vehicle/sensors/imu/imu": ["accel", "gyro", "time"],
         },
@@ -114,8 +114,8 @@ def test_the_recording_holds_a_bodys_four_fields_a_joints_q_and_qd_and_the_base_
 
     Given the session's recorded flight of the camera vehicle, when it ends, then the `.rrd` holds `position`,
     `orientation`, `linear_velocity` and `angular_velocity` under `sim/vehicle/body/body_frd`, `q` and `qd`
-    under each rotor joint's entity, `Transform3D` columns at `sim/vehicle/body`, and no entity ending in
-    `quat_xyzw` or `velocity`.
+    under each rotor joint's entity, `Transform3D` columns at `sim/vehicle/body`, and no body's or joint's
+    entity ending in `quat_xyzw` or `velocity`.
     """
     rows = rrd_rows(recorded_flight)
     fields: dict[str, set[str]] = {}
@@ -128,7 +128,10 @@ def test_the_recording_holds_a_bodys_four_fields_a_joints_q_and_qd_and_the_base_
         entity == "/sim/vehicle/body" and any(column.startswith("Transform3D") for column in columns)
         for entity, _, columns in rows
     )
-    old = sorted(f"{key}/{f}" for key, held in fields.items() for f in held if f in ("quat_xyzw", "velocity"))
+    plant = {
+        key: held for key, held in fields.items() if key.startswith(("/sim/vehicle/body/", "/sim/vehicle/joints/"))
+    }
+    old = sorted(f"{key}/{f}" for key, held in plant.items() for f in held if f in ("quat_xyzw", "velocity"))
     body = sorted(fields.get("/sim/vehicle/body/body_frd", ()))
 
     assert (body, set(joints.values()), len(joints) > 0, posed, old) == (

@@ -24,7 +24,7 @@ pytestmark = pytest.mark.usefixtures("warp_cpu")
 TICKS = 5
 # The quad's base body is a cube of 0.2 m, so at rest on the ground its origin sits 0.1 m over it.
 REST_HEIGHT = 0.1
-BODY_FIELDS = {"t", "position", "orientation", "linear_velocity", "angular_velocity"}
+FIELDS = {"t", "position", "orientation", "linear_velocity", "angular_velocity"}
 
 
 def _shapes(rows) -> dict[str, tuple[int, ...]]:
@@ -72,7 +72,7 @@ def test_a_bodys_history_reads_as_a_signals_does_one_structured_array_one_record
     ) == (
         TICKS + 1,
         {"t": (), "position": (3,), "orientation": (4,), "linear_velocity": (3,), "angular_velocity": (3,)},
-        dict.fromkeys(BODY_FIELDS - {"t"}, "float32"),
+        dict.fromkeys(FIELDS - {"t"}, "float32"),
         pytest.approx(REST_HEIGHT, abs=5e-3),
         (TICKS + 1, 3),
     )

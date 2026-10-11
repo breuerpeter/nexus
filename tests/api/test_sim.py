@@ -11,8 +11,9 @@ import pytest
 import warp as wp
 
 import nexus_sim._src.api.sim as sim_mod
-from nexus_sim._src.recording import BodyState
-from nexus_sim._src.recording.state import BODY_WIDTH, decode_body, record_body
+from nexus_sim._src.core.schema import PoseTwist
+from nexus_sim._src.core.signals import Signal
+from nexus_sim._src.physics.outputs import write_body
 
 
 class _FakePhysics:
@@ -49,15 +50,14 @@ class _FakeOrch:
             return False
         self.steps += 1
         if self.recorder is not None:  # the plant's tap snapshots the airframe, as the real loop does per tick
-            rec = self.recorder.history("vehicle/body/body_frd", width=BODY_WIDTH, decode=decode_body)
-            device = rec.values.device  # record where the history lives, whatever the default device is now
+            if not self.recorder.histories:
+                self.body = Signal("body/body_frd", PoseTwist, shape=(1,))
+                self.body.buffer = self.body._allocate()
+                self.recorder.tap("vehicle", self.body, source="_FakePhysics")
+            device = self.body.buffer.device  # record where the history lives, whatever the default device is now
             v = _FakeView(device)
-            wp.launch(
-                record_body,
-                dim=1,
-                inputs=(v.body_q, v.body_qd, 0, rec.dt, rec.staging, rec.values, rec.times, rec.counter),
-                device=device,
-            )
+            wp.launch(write_body, dim=1, inputs=(v.body_q, v.body_qd, 0), outputs=(self.body.buffer,), device=device)
+            self.recorder.record()
             wp.synchronize()
             self.recorder.commit()
         return True
@@ -111,8 +111,7 @@ def test_sim_start_drives_setup_observes_and_stops(monkeypatch):
         assert fake.threads == [threading.main_thread()]  # driven here, not on a sim thread
         assert fake.recorder is not None  # Sim handed the loop its Recorder
         st = sim[f"vehicle/body/{sim.base_body}"].latest()  # name-keyed: the discovered airframe entity
-        assert isinstance(st, BodyState)
-        assert st.altitude_m == 4.0
+        assert st["position"][2] == 4.0
     # __exit__ -> stop() ended the run and closed the tick generator
     assert fake._stop
     assert fake.closed

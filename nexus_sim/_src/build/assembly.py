@@ -205,15 +205,17 @@ def build_loop(
     ``peers`` are the processes the build started for this run, which the loop stops when the run ends.
     ``ports`` is the run's port map, the links that leave the run, which ``Sim.ports`` exposes.
     ``connections`` are the vehicle's, by prim: for a reader's prim, each signal it reads and the prim
-    whose component writes it; ``prims`` names the controller and the estimator by their prims, as the
-    assembly names each sensor, so the loop takes each connection between the two components.
+    whose component writes it, or the body's or joint's prim whose output the plant writes; ``prims`` names
+    the controller and the estimator by their prims, as the assembly names each sensor, so the loop takes each
+    connection between the two components, or between the reader and the plant's output.
     ``settings`` is the run's effective configuration, which the loop keeps for a caller to read back
     and the logger shows in the viewer's Settings tab; the run's builder passes the tested-config receipt.
     ``preroll_timeout`` covers the boot of a controller with a peer, since an autopilot in a container
     needs a generous window.
 
     Raises:
-        ValueError: A connection names a prim that declares no component; the message names both prims.
+        ValueError: A connection names a prim that declares no component and is no body or joint of the
+            model; the message names both prims.
     """
     logger.info(f"device: {resolve_device(cfg)}")
     if vehicle_usd is None:
@@ -234,10 +236,16 @@ def build_loop(
         for signal, writer in inputs.items():
             if reader not in by_prim:
                 raise ValueError(f"{reader} connects {signal!r} to {writer}, and declares no component itself")
-            if writer not in by_prim:
+            if writer in by_prim:
+                links.append((by_prim[reader], signal, by_prim[writer], signal))
+            elif writer in physics.outputs.by_label:
+                links.append((by_prim[reader], signal, physics, physics.outputs.by_label[writer].name))
+            else:
                 who = type(by_prim[reader]).__name__
-                raise ValueError(f"{who} on {reader} connects {signal!r} to {writer}, which declares no component")
-            links.append((by_prim[reader], signal, by_prim[writer]))
+                raise ValueError(
+                    f"{who} on {reader} connects {signal!r} to {writer}, which declares no component and is no "
+                    "body or joint of the model"
+                )
     return Loop(
         clock=a.clock,
         physics=a.physics,

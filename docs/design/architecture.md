@@ -23,6 +23,7 @@ t = clock.advance()
 [clear → command elements → force elements → step] × substeps
                                           # command buffer → Newton's control inputs; state → per-body
                                           # forces; step: Newton's actuators, then the solver
+[state]                                   # the plant's outputs: a PoseTwist per body, a struct per joint
 [record]                                  # the recorder's device taps
 ```
 
@@ -187,9 +188,9 @@ Observability is cross-cutting, split into a **write** side and a **read** side:
   Recorder's histories in blocks. A component logs live only a value with no fixed width, such as a
   camera's frame or a guidance's markers.
 - **The [Recorder](concepts.md#recorder).** The Recorder keeps a [history](concepts.md#history) of
-  every body, every joint and every device signal a component writes. Body poses and velocities
-  read as `BodyState` and `JointState`. A signal's rows read as records of `t` then the quantities
-  its type declares. No component records itself: once the loop wires the ring, it hands the
+  every device signal a component writes, the plant's bodies and joints among them, which the physics
+  writes as signals, as every component does. Every history's rows read as records of `t` then the
+  quantities its type declares. No component records itself: once the loop wires the ring, it hands the
   Recorder every device signal, and the Recorder taps each buffer in the record stage. A device kernel writes each
   tick's row into a small staging buffer. The buffer drains onto host blocks that grow with the run,
   so device memory stays fixed and the Recorder drops no row. A caller reads a history on demand

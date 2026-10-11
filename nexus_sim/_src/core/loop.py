@@ -30,7 +30,7 @@ from .logging import logger
 from .ports import PortMap
 from .profiling import LoopProfiler
 from .schema import PoseTwist
-from .signals import wire
+from .signals import _declared, wire
 from .stages import Bound, build_ring, opening, partition, plan_line, seed_stages, stages_of, warm_stages
 
 if TYPE_CHECKING:
@@ -166,10 +166,12 @@ class Loop:
             ports: The run's port map, a :class:`~nexus_sim._src.core.ports.PortMap`: each link that
                 leaves the run, by name, to the address a script opens its client on. The run
                 owns every address, and the build names them here; ``None`` names no link.
-            connections: Triples of a reader, a signal's name and the writer it reads that signal from,
-                which the build resolves from the vehicle's ``nexus:inputs:`` relationships: where more
-                than one component writes a signal, a reader takes the one its connection names.
-                ``None`` connects nothing.
+            connections: Quadruples of a reader, an input's name, the writer it reads that input from and
+                the name of the writer's output, which the build resolves from the vehicle's
+                ``nexus:inputs:`` relationships: where more than one component writes a signal, a reader
+                takes the one its connection names, and a reader of a body's or joint's prim takes that
+                output of the plant. An input of the vehicle's pose type that no component writes and no
+                connection names takes the plant's base body. ``None`` connects nothing.
             logger: Optional :class:`~nexus_sim._src.logging.Logger`: the recording
                 sink + shared log calls. ``None`` ⇒ no recording, for max speed. When present, the
                 loop hands each component a view scoped to its path, and writes the Recorder's
@@ -243,8 +245,8 @@ class Loop:
         # Distinct from _last_log_t, the sim-time scene decimation, and from run_stats' post-hoc RTF.
         self._rtf_wall_prev: float | None = None
         self._rtf_sim_prev = 0.0
-        # The Recorder records everything itself: the plant's state and every device signal a component
-        # writes, which the loop hands it once it wires the ring. Its taps are device launches in the record
+        # The Recorder records everything itself: every device signal a component writes, the plant's
+        # outputs among them, which the loop hands it once it wires the ring. Its taps are device launches in the record
         # stage, so recording never adds a host stage. The loop reads the attribute at the first step, so
         # `Sim` can hand a self-assembled loop its Recorder after construction.
         self.recorder = recorder
@@ -288,13 +290,6 @@ class Loop:
         component.set_logger(self._scoped(path))
 
     # -- recording, the read-side twin of logging -----------------------------------
-    def _watch_plant(self) -> None:
-        """Hand the Recorder the plant, so it registers one history per body and joint. At setup, right after
-        the reset, so a script reads the plant's histories even when the wiring stops the run.
-        """
-        if self.recorder is not None:
-            self.recorder.watch(self.physics)
-
     def _tap_signals(self, ring: list[Bound]) -> None:
         """Hand the Recorder every device signal a component's stage writes, with the writer's path, so it
         registers one history each. After the loop wires the ring and before the warm pass, so every history's
@@ -313,9 +308,31 @@ class Loop:
                 if signal.device:
                     self.recorder.tap(path, signal, source=type(bound.component).__name__)
 
+    def _default_links(self, ring: list[Bound]) -> list[tuple]:
+        """A link for each input of the vehicle's pose type that no component writes and no connection names:
+        the plant's base body output, ``body/<label>``. So a component that reads the vehicle's pose, the
+        passthrough estimator or PX4's ground truth, needs no connection on its prim, and a run that hands its
+        estimator over with no prim, as the examples do, reads the base body.
+        """
+        writes, reads = _declared(ring)
+        named = {(id(reader), name) for reader, name, *_ in self.connections}
+        return [
+            (bound.component, name, self.physics, f"body/{self.physics.base_body}")
+            for name, readers in reads.items()
+            if name not in writes
+            for bound, signal in readers
+            if signal.type is PoseTwist and (id(bound.component), name) not in named
+        ]
+
+    def _publish_settled(self, ring: list[Bound], tick) -> None:
+        """Run the physics' ``state`` stage once over the settled state, before the warm pass, so the plant's
+        outputs hold that state when the estimator's warm stage and the seed row read them. The ring runs it
+        again at each tick's end.
+        """
+        next(b.stage for b in ring if b.role == "physics" and b.stage.name == "state").run(tick)
+
     def _record_tick(self) -> None:
-        """The record stage: the Recorder snapshots the plant's state and every tapped signal into their
-        histories. A device stage, no D2H, so it replays with its graph. A no-op with no Recorder, leaving
+        """The record stage: the Recorder snapshots every tapped signal into its history. A device stage, no D2H, so it replays with its graph. A no-op with no Recorder, leaving
         that graph the same byte for byte.
         """
         if self.recorder is None:
@@ -445,7 +462,6 @@ class Loop:
             # peer start that fails must still reach the `finally`, which removes its container, and
             # from the connect on the controller owns a live peer too, the PX4 container it launches.
             state = self.physics.reset()  # build + settle the vehicle at the NED origin
-            self._watch_plant()
             # Renderer warm-up hook, before the peer's lockstep starts: the Kit peer connects and warms
             # its stage here, which takes seconds and would stall the lockstep.
             if self.renderer is not None and hasattr(self.renderer, "on_physics_ready"):
@@ -475,7 +491,8 @@ class Loop:
             self._device_clock = DeviceClock(self.clock.dt) if reads_time else None
             if self._device_clock is not None:
                 ring = opening(ring, stages_of(self._device_clock, "clock"))
-            wire(ring, self.connections)  # every signal a stage declares gets its buffer before any stage runs
+            # Every signal a stage declares gets its buffer before any stage runs.
+            wire(ring, [*self.connections, *self._default_links(ring)])
             self._tap_signals(ring)  # one history per device signal the ring's stages write
             self._check_guidance(ring)
             segments = partition(ring)
@@ -489,6 +506,7 @@ class Loop:
             )
             if self._device_clock is not None:
                 self._device_clock.time.write([tick.t.sim_time])
+            self._publish_settled(ring, tick)
             # A component attached from the start has no peer: it connects first, which reserves its
             # device buffers before the warm pass. One that waits on a peer connects after the capture,
             # so every kernel the loop launches has loaded before the peer is up: from the moment PX4
@@ -583,7 +601,7 @@ class Loop:
         if any(b.role == "estimator" for b in ring):
             return
         readers = list(
-            dict.fromkeys(type(b.component).__name__ for b in ring for s in b.stage.reads if s.type is PoseTwist)
+            dict.fromkeys(type(b.component).__name__ for b in ring for s in b.stage.reads if s.name == "estimate")
         )
         if readers:
             raise ValueError(

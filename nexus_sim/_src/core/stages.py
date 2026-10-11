@@ -2,7 +2,7 @@
 
 A tick is an ordered ring of stages, per docs/design/execution.md. :func:`build_ring` lays every
 component's stages out in the canonical order, sensors, estimator, guidance, controller, ``clear`` -> the
-command elements -> the force elements -> ``step`` per physics substep, record. :func:`partition` cuts the ring at
+command elements -> the force elements -> ``step`` per physics substep, ``state``, record. :func:`partition` cuts the ring at
 its host stages and rotates it to
 start after the last cut, so the ring's tail folds into the first run and each maximal run of
 device stages becomes one CUDA graph; with no host stage the whole ring is one segment in canonical
@@ -70,7 +70,8 @@ def build_ring(
 ) -> list[Bound]:
     """Every component's stages in the canonical order the domain fixes: sensors, the estimator and the
     guidance when the run has them, controller, then ``clear`` -> the command elements -> the force elements
-    -> ``step`` unrolled ``substeps`` times, then ``record``. The estimator sits after the sensors, so it
+    -> ``step`` unrolled ``substeps`` times, then ``state``, which writes the plant's outputs from the stepped
+    state, then ``record``. The estimator sits after the sensors, so it
     reads their values of that tick, and before the guidance and the controller, so they read its estimate
     of that tick. The guidance sits before the controller, so the setpoint it writes is the one the
     controller reads on that tick. The old actuator stage, the examples' single-body ``Rotors``,
@@ -78,7 +79,7 @@ def build_ring(
 
     Raises:
         ValueError: A component states no stages, a stage of an unknown kind, or physics states no
-            ``clear`` and ``step``.
+            ``clear``, ``step`` and ``state``.
     """
     ring = []
     for s in sensors:
@@ -89,8 +90,8 @@ def build_ring(
         ring += stages_of(guidance, "guidance")
     ring += stages_of(controller, "controller")
     phys = {b.stage.name: b for b in stages_of(physics, "physics")}
-    if "clear" not in phys or "step" not in phys:
-        raise ValueError(f"{type(physics).__name__} states {sorted(phys)}, not the clear and step stages")
+    if any(name not in phys for name in ("clear", "step", "state")):
+        raise ValueError(f"{type(physics).__name__} states {sorted(phys)}, not the clear, step and state stages")
     inner = []
     for c in commands:
         inner += stages_of(c, "command")
@@ -100,6 +101,7 @@ def build_ring(
         inner += stages_of(actuator, "actuator")
     for _ in range(substeps):
         ring += [phys["clear"], *inner, phys["step"]]
+    ring.append(phys["state"])
     ring.append(Bound(record, None, "record"))
     return ring
 

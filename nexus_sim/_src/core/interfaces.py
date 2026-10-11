@@ -160,10 +160,17 @@ class Clock(Protocol):
 
 
 class Physics(Protocol):
+    base_body: str
+    """The base body's label, the leaf of its model label when unique: the body a reader of the vehicle's pose
+    takes with no connection, and the key of its history under ``vehicle/body/``."""
+
     def reset(self) -> newton.State: ...
     def clear_forces(self, state: newton.State) -> None: ...
     def step(self, state: newton.State, dt: float) -> newton.State: ...
     def stages(self) -> list[Stage]:
-        """The ``clear`` and ``step`` stages; the loop runs ``clear``, the command elements, the force
-        elements and ``step`` once per physics substep, and ``step`` steps Newton's actuators before the solver.
+        """The ``clear``, ``step`` and ``state`` stages; the loop runs ``clear``, the command elements, the force
+        elements and ``step`` once per physics substep, ``step`` steps Newton's actuators before the solver, and
+        ``state`` runs once per tick after the last substep and writes the plant's outputs, one signal per body,
+        ``body/<label>``, and per joint, ``joints/<label>``, from the stepped state; the loop runs it once more
+        over the settled state before the warm pass.
         """

@@ -409,7 +409,7 @@ def main():
         with nx.Sim._from_loop(orch, guidance=guidance) as sim:
             guidance.set_mission([GOAL])
             sim.run()
-            q = np.array([s.position for s in sim[f"vehicle/body/{sim.base_body}"].history()])
+            q = np.asarray(sim[f"vehicle/body/{sim.base_body}"].history()["position"], dtype=float)
             rrd = sim.artifacts().get("rrd")
         d = np.linalg.norm(q - np.array(GOAL, dtype=float), axis=1)
         reached = bool(d.min() < 0.2)  # got to the goal

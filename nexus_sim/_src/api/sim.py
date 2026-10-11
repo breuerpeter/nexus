@@ -68,7 +68,8 @@ class Sim:
     Example:
         >>> with Sim("astro_max_base", scene="empty") as sim:
         ...     sim.start()
-        ...     sim.wait_until(lambda: sim[f"vehicle/body/{sim.base_body}"].latest().altitude_m > 1.0, sim_timeout=30.0)
+        ...     body = sim[f"vehicle/body/{sim.base_body}"]
+        ...     sim.wait_until(lambda: body.latest()["position"][2] > 1.0, sim_timeout=30.0)
     """
 
     def __init__(
@@ -316,11 +317,13 @@ class Sim:
         ``sim["vehicle/controllers/px4/controls"]``
         the controls PX4 wrote, ``sim["vehicle/body/body_frd"]`` the base body's pose and twist and
         ``sim["vehicle/joints/rotor_1_joint"]`` a joint's, ground truth in the world frame, Z-up FLU. Each is a
-        :class:`~nexus_sim._src.recording.History`, with ``.latest()``, ``.history()`` and ``.arrays()``. A
-        signal's row is a record of ``t``, the tick's sim time, then the fields its type declares,
-        ``row["accel"]``; a body's reads as a :class:`~nexus_sim._src.recording.BodyState` and a joint's as a
-        :class:`~nexus_sim._src.recording.JointState`. Use :attr:`base_body` for the base body without
-        hardcoding its name: ``sim[f"vehicle/body/{sim.base_body}"].latest()``.
+        :class:`~nexus_sim._src.recording.History`, with ``.latest()``, ``.history()`` and ``.arrays()``.
+        Every history reads one way: a row is a record of ``t``, the tick's sim time, then the fields the
+        signal's type declares, ``row["accel"]`` for the IMU and ``row["position"]``, ``row["orientation"]``,
+        ``row["linear_velocity"]`` and ``row["angular_velocity"]`` for a body, ``row["q"]`` and ``row["qd"]``
+        for a joint; ``history()`` gives every row as one structured array, ``rows["position"][:, 2]``. Use
+        :attr:`base_body` for the base body without hardcoding its name:
+        ``sim[f"vehicle/body/{sim.base_body}"].latest()``.
 
         Raises:
             RuntimeError: Accessed before entering the ``Sim`` context.

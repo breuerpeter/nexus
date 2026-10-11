@@ -69,12 +69,12 @@ def test_a_reader_of_the_estimate_on_a_run_with_no_estimator_fails_before_any_st
     when the run starts, then it fails before any stage runs, and the error names its controller,
     `TrainedPolicyController` or `SamplingMPCController`, and says no estimator writes the estimate; once more
     with the PID example's run, a `MissionGuidance` and no estimator, where the error names `MissionGuidance`.
-    No stage ran, so the recording holds no row.
+    No stage ran, so the recording holds no history.
     """
     orch, guidance = build(torchscript_policy)
     orch.estimator = None
     with Sim._from_loop(orch, guidance=guidance) as sim:
         with pytest.raises(ValueError) as e:
             sim.run()
-        rows = len(sim[f"vehicle/body/{sim.base_body}"].history())
-    assert (reader in str(e.value), "estimator" in str(e.value), rows) == (True, True, 0)
+        histories = len(sim)
+    assert (reader in str(e.value), "estimator" in str(e.value), histories) == (True, True, 0)

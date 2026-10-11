@@ -94,7 +94,7 @@ def _fly_tour(policy: str, steps: int) -> tuple[np.ndarray, np.ndarray]:
         guidance.set_mission(flight.WAYPOINTS)
         sim.run()
     traj = sim[f"vehicle/body/{sim.base_body}"].history()
-    return np.array([s.position for s in traj]), np.array([s.quat_xyzw for s in traj])
+    return traj["position"], traj["orientation"]
 
 
 @pytest.mark.usefixtures("warp_cpu")  # the build's force_cpu sets the device; the scope puts it back

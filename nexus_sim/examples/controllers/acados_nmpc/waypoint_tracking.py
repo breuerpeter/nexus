@@ -102,8 +102,8 @@ def main() -> None:
         sim.run()
 
     states = sim[f"vehicle/body/{sim.base_body}"].history()
-    traj = np.array([s.position for s in states])
-    quats = np.array([s.quat_xyzw for s in states])  # xyzw order
+    traj = np.asarray(states["position"], dtype=float)
+    quats = np.asarray(states["orientation"], dtype=float)  # xyzw order
     qx, qy, qz, qw = quats[:, 0], quats[:, 1], quats[:, 2], quats[:, 3]
     # thrust/up axis · world +z: −body z, since the vehicle's Universal Scene Description (USD) has
     # Forward Right Down (FRD) authoring
