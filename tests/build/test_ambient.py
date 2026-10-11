@@ -132,6 +132,84 @@ def gravity_five_vehicle(tmp_path_factory):
     return _settled(LaunchConfig().set_vehicle(str(path)).set_scene(sv.SCENE), _catalog(tmp))
 
 
+# A scene of the test's own whose PhysicsScene prim authors the world's values: the magnetic field in the world
+# frame, X north, Y west, Z up, in gauss; the pressure at mean sea level, hPa; the temperature, degrees Celsius.
+AUTHORED_FIELD_WORLD = (0.2, -0.05, -0.45)
+AUTHORED_FIELD_BODY = (0.2, 0.05, 0.45)  # the same field in the FRD body axes of the level vehicle, nose north
+AUTHORED_PRESSURE = 950.0
+AUTHORED_TEMPERATURE = 31.0
+
+
+def _scene(tmp, authored: bool) -> str:
+    """Write an empty scene under `tmp` and return its path; its PhysicsScene authors the world's values when
+    `authored`, and nothing otherwise.
+    """
+    values = (
+        (
+            f"    custom float3 newton:nexus:magnetic = {AUTHORED_FIELD_WORLD}\n"
+            f"    custom float newton:nexus:pressure = {AUTHORED_PRESSURE}\n"
+            f"    custom float newton:nexus:temperature = {AUTHORED_TEMPERATURE}\n"
+        )
+        if authored
+        else ""
+    )
+    path = tmp / ("authored_scene.usda" if authored else "plain_scene.usda")
+    path.write_text(
+        '#usda 1.0\n(\n    defaultPrim = "World"\n    metersPerUnit = 1\n    upAxis = "Z"\n)\n\n'
+        'def Xform "World"\n{\n}\n\n'
+        f'def PhysicsScene "PhysicsScene"\n{{\n{values}}}\n'
+    )
+    return str(path)
+
+
+@pytest.fixture(scope="module")
+def authored_scene(tmp_path_factory):
+    tmp = tmp_path_factory.mktemp("authored")
+    return _settled(LaunchConfig().set_vehicle(sv.vehicle(tmp, SENSORS)).set_scene(_scene(tmp, True)), _catalog(tmp))
+
+
+@pytest.fixture(scope="module")
+def plain_scene(tmp_path_factory):
+    tmp = tmp_path_factory.mktemp("plain")
+    return _settled(LaunchConfig().set_vehicle(sv.vehicle(tmp, SENSORS)).set_scene(_scene(tmp, False)), _catalog(tmp))
+
+
+def test_a_scene_that_authors_its_field_flies_with_it_and_one_that_authors_none_with_its_origins(
+    authored_scene, plain_scene
+):
+    """A scene whose `PhysicsScene` authors its magnetic field flies with that field, and one that authors
+    none flies with the field of its origin.
+
+    Given two copies of a scene, one authoring the field, when a vehicle flies each, then the magnetometer
+    reports the authored field in the body's axes on the first and the origin's World Magnetic Model field
+    on the second.
+    """
+    _, authored = authored_scene
+    _, plain = plain_scene
+
+    np.testing.assert_allclose(
+        (_field(authored), _field(plain)), (AUTHORED_FIELD_BODY, WOODINVILLE_NED), atol=FIELD_TOL
+    )
+
+
+def test_a_scene_that_authors_its_pressure_and_temperature_flies_with_them_and_one_that_authors_none_with_the_standard_atmosphere(
+    authored_scene, plain_scene
+):
+    """A scene that authors its pressure at sea level and its temperature flies with them, and one that
+    authors none flies with the standard atmosphere.
+
+    Given two copies of a scene, one authoring both values, when a vehicle flies each, then the barometer
+    reports the authored pressure and temperature on the first and 1013.25 hPa and 25 °C on the second.
+    """
+    _, authored = authored_scene
+    _, plain = plain_scene
+    read = lambda samples: (float(samples["baro"]["pressure"]), float(samples["baro"]["temperature"]))  # noqa: E731
+
+    # The vehicle rests a few centimetres over the ground, where the pressure is within 0.1 hPa of its
+    # sea-level value.
+    assert (*read(authored), *read(plain)) == pytest.approx((950.0, 31.0, 1013.25, 25.0), abs=0.1)
+
+
 def test_the_magnetometer_reports_the_field_at_the_catalog_scenes_origin(zurich_scene):
     """The magnetometer of a run built on a catalog scene reports the WMM field at that scene's origin."""
     _, samples = zurich_scene
