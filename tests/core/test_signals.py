@@ -104,7 +104,7 @@ class _DeviceReader(Component):
         self.count = Signal("count", Count, shape=(1,))
         self.seen = wp.zeros(1, dtype=wp.int32)
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):
@@ -124,7 +124,7 @@ class _HostReader(Component):
         self.count = Signal("count", Count, shape=(1,))
         self.seen = []
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):
@@ -145,7 +145,7 @@ class _KeepingReader(Component):
         self.count = Signal("count", Count, shape=(1,))
         self.kept = []
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):
@@ -177,7 +177,7 @@ class _SteerOnDevice(Component):
     def __init__(self):
         self.setpoint = Signal("setpoint", ReferenceTrajectory)
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):
@@ -194,7 +194,7 @@ class _CountReader(Component):
         self.count = Signal("count", Count, shape=(1,))
         self.controls = Signal("controls", wp.float32, shape=(1, 4))
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):

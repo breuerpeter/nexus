@@ -132,7 +132,7 @@ class _PeerController(Component):
         self.act = wp.zeros(1, dtype=wp.int32)
         self.closed = False
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def exchange(self, t, timeout):
@@ -168,7 +168,7 @@ class _DeviceController(Component):
         self.exchange_calls = 0
         self.act = None
 
-    def connect(self):
+    def connect(self, links):
         self.act = wp.zeros(1, dtype=wp.int32)
 
     def exchange(self, t, timeout):
@@ -185,7 +185,7 @@ class _DeviceController(Component):
 class _Stageless(Component):
     """A controller that states no stages."""
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):
@@ -195,7 +195,7 @@ class _Stageless(Component):
 class _EmptyStages(Component):
     """A controller whose stage list is empty."""
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):
@@ -208,7 +208,7 @@ class _EmptyStages(Component):
 class _UnknownKind(Component):
     """A controller whose one stage misspells its kind."""
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):

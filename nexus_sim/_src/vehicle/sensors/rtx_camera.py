@@ -19,7 +19,9 @@ class RtxCameraSensor(RtxMountedSensor):
     the frustum at the sensor's own entity.
 
     Args:
-        run: The run's values: the ``Camera`` prim, the model body it rides and the render link.
+        model: Newton's model, whose body the ``Camera`` prim sits under the sensor rides.
+        path: The path of the ``Camera`` prim on the vehicle's stage.
+        seed: The sensor's noise seed, which a camera doesn't draw on.
         width: Width of the image, pixels.
         height: Height of the image, pixels.
         rate: How often the camera gives a frame, hertz.
@@ -28,23 +30,26 @@ class RtxCameraSensor(RtxMountedSensor):
     KIND = "cameras"
     output = "color"
 
-    def __init__(self, run, width: int = 1280, height: int = 720, rate: float = 24.0):
-        prim = run.prim
+    def __init__(self, model, path: str, *, seed: int = 0, width: int = 1280, height: int = 720, rate: float = 24.0):
         self.width = int(width)
         self.height = int(height)
-        # authored intrinsics -> the Rerun Pinhole for the frustum / field-of-view visualization; logged once on set_logger
+        self._focal_mm = 12.0
+        self._h_aperture_mm = 36.0
+        self._v_aperture_mm: float | None = None
+        super().__init__(model, path, seed=seed, rate=rate, out=Signal("camera", Image))
+
+    def _read_prim(self, prim) -> None:
+        """The authored intrinsics -> the Rerun Pinhole for the frustum / field-of-view visualization, logged
+        once, here at connect, where the mount is known too.
+        """
         self._focal_mm = float(prim.GetAttribute("focalLength").Get() or 12.0)
         self._h_aperture_mm = float(prim.GetAttribute("horizontalAperture").Get() or 36.0)
         self._v_aperture_mm = float(prim.GetAttribute("verticalAperture").Get() or 0.0) or None
-        super().__init__(run, rate=rate, out=Signal("camera", Image))
-
-    def set_logger(self, logger_) -> None:
-        super().set_logger(logger_)
-        if logger_ is not None:
+        if self._logger is not None:
             try:  # a frustum that fails to log costs the frustum alone: the frames still land at their row
                 loc = self._local
                 q = loc.ExtractRotationQuat()
-                logger_.log_camera(
+                self._logger.log_camera(
                     width=self.width,
                     height=self.height,
                     focal_length_mm=self._focal_mm,

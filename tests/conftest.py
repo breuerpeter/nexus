@@ -370,7 +370,7 @@ class StandInController(Component):
         self.setpoint = Signal("setpoint", ReferenceTrajectory)
         self.controls = Signal("controls", wp.float32, shape=(1, 16))  # every channel off: the vehicle rests
 
-    def connect(self) -> None:
+    def connect(self, links) -> None:
         pass
 
     def close(self) -> None:

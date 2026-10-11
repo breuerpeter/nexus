@@ -15,17 +15,20 @@ class Gain:
 
 
 class StandInSensor(Component):
-    """A sensor that keeps the seed and the tick the run hands it, and writes its gain where a reader reads it:
-    the signal `gain`, of the project's own type `Gain`.
+    """A sensor that keeps the model, its prim's path and the seed the build hands it, and writes its gain where
+    a reader reads it: the signal `gain`, of the project's own type `Gain`.
 
     Args:
-        run: The run's values for this sensor; it reads `seed` and `dt`.
+        model: Newton's model.
+        path: The path of the prim that declares the sensor.
+        seed: The sensor's noise seed, from the run's seed and the prim.
         gain: The schema's `nexus:gain`.
     """
 
-    def __init__(self, run, gain: float = 1.0):
-        self.seed = run.seed
-        self.dt = run.dt
+    def __init__(self, model, path: str, *, seed: int = 0, gain: float = 1.0):
+        self.model = model
+        self.path = path
+        self.seed = seed
         self.gain = float(gain)
         self.out = Signal("gain", Gain, shape=(1,))
 

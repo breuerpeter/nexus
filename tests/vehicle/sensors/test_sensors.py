@@ -13,10 +13,8 @@ import warp as wp
 
 # the canonical host reference / oracle
 from nexus_sim._src import transform
-from nexus_sim._src.core.interfaces import SensorRun
 from nexus_sim._src.core.schema import SimTime
 from nexus_sim._src.core.seedtree import SeedTree
-from nexus_sim._src.scene import Site
 from nexus_sim._src.vehicle.sensors import BaroSensor, GpsSensor, ImuSensor, MagSensor
 from tests.usd import sensor_vehicle as sv
 
@@ -35,35 +33,40 @@ class _WarpView:
 
 # a non-trivial, normalized attitude so the world<->body rotation is actually exercised
 _Q = list(np.array([0.1, -0.2, 0.3, 0.9], dtype=np.float64) / np.linalg.norm([0.1, -0.2, 0.3, 0.9]))
-# The site values every sensor here is built with: gravity along world -Z, a field in NED gauss.
+# The world's values every sensor here is built with: gravity along world -Z, a field in NED gauss.
 _GRAVITY_WORLD = (0.0, 0.0, -9.81)
-_MAG_NED = (0.21, 0.05, 0.43)
+_MAG_NED = sv.FIELD_NED
+_SEED = SeedTree(42).seed_for("sensor")
 
 
-def _run(mag_ned=_MAG_NED, body: int = 0) -> SensorRun:
-    """The run's values each sensor here takes: seed 42, a 4 ms tick and a site at 47.6, -122.3, 5 m."""
-    site = Site(lat=47.6, lon=-122.3, alt=5.0, mag_ned=mag_ned)
-    return SensorRun(seed=SeedTree(42).seed_for("sensor"), dt=0.004, site=site, body=body)
+def _on(body: int = 0, **world) -> tuple:
+    """The model each sensor here is built on, with the world's values `world` set by hand, and the label of
+    the site on body `body`: ``cls(*_on(), ...)``.
+    """
+    model, sites = sv.model(bodies=body + 1, **world)
+    return model, sites[body]
 
 
 def _sample(sensor, view, t: SimTime | None = None):
     """What `sensor`, wired, writes to its output signal when it samples the state `view` at sim time `t`, the
-    start by default.
+    start by default: the signal `time` holds `t` when it samples.
     """
+    if t is not None:
+        sensor.time.write([t.sim_time])
     sensor.sample_wp(view, t or SimTime(0.0, 0))
     return sensor.out.read()[0]
 
 
 def test_imu_gyro_parity():
     view = _WarpView((0.0, 0.0, 1.0), _Q, (0.0, 0.0, 0.0), (0.3, -0.4, 0.5))
-    sample = _sample(sv.wired(ImuSensor(_run(), acc_noise=0.0, gyro_noise=0.0)), view)
+    sample = _sample(sv.wired(ImuSensor(*_on(), seed=_SEED, acc_noise=0.0, gyro_noise=0.0)), view)
     q = transform.quat_from_xyzw(_Q)
     gyro_ref = transform.world_to_body(q, (0.3, -0.4, 0.5))
     np.testing.assert_allclose(sample["gyro"], gyro_ref, atol=1e-5)
 
 
 def test_imu_accel_finite_diff_parity():
-    s = sv.wired(ImuSensor(_run(), acc_noise=0.0, gyro_noise=0.0))
+    s = sv.wired(ImuSensor(*_on(), seed=_SEED, acc_noise=0.0, gyro_noise=0.0))
     v1, v2 = (0.0, 0.0, 0.0), (0.04, -0.02, 0.06)  # velocity change over one tick
     _sample(s, _WarpView((0, 0, 1), _Q, v1, (0.3, -0.4, 0.5)))  # first: accel 0
     sample = _sample(s, _WarpView((0, 0, 1), _Q, v2, (0.3, -0.4, 0.5)), SimTime(0.004, 1))
@@ -77,7 +80,7 @@ def test_imu_accel_finite_diff_parity():
 
 def test_mag_parity():
     view = _WarpView((0, 0, 1), _Q, (0, 0, 0), (0, 0, 0))
-    sample = _sample(sv.wired(MagSensor(_run(), offset=(0.01, -0.02, 0.0), noise=(0.0, 0.0, 0.0))), view)
+    sample = _sample(sv.wired(MagSensor(*_on(), seed=_SEED, offset=(0.01, -0.02, 0.0), noise=(0.0, 0.0, 0.0))), view)
     q = transform.quat_from_xyzw(_Q)
     mag_b = transform.world_to_body(q, transform.mag_ned_to_world(_MAG_NED))
     ref = [mag_b[0] + 0.01, mag_b[1] - 0.02, mag_b[2] + 0.0]
@@ -87,8 +90,8 @@ def test_mag_parity():
 def test_baro_and_gps_parity():
     pos = (12.0, -7.0, 30.0)
     view = _WarpView(pos, _Q, (1.5, -0.5, 0.2), (0, 0, 0))
-    baro = _sample(sv.wired(BaroSensor(_run(), noise=0.0)), view)
-    gps = _sample(sv.wired(GpsSensor(_run())), view)
+    baro = _sample(sv.wired(BaroSensor(*_on(), seed=_SEED, noise=0.0)), view)
+    gps = _sample(sv.wired(GpsSensor(*_on(), seed=_SEED)), view)
     assert float(baro["pressure"]) == pytest.approx(1013.25 * (1 - 2.25577e-5 * 30.0) ** 5.25588, abs=1e-3)
     assert float(baro["altitude"]) == pytest.approx(30.0, abs=1e-4)
     lat, lon, alt = transform.gps_from_local(47.6, -122.3, 5.0, pos)
@@ -109,7 +112,7 @@ def test_world_to_ned_is_a_proper_rotation():
     inv_lon_scale = 1.0 / (111000.0 * math.cos(math.radians(ref_lat)))
 
     def gps_at(pos, vel=(0.0, 0.0, 0.0)):
-        return _sample(sv.wired(GpsSensor(_run())), _WarpView(pos, (0.0, 0.0, 0.0, 1.0), vel, (0, 0, 0)))
+        return _sample(sv.wired(GpsSensor(*_on(), seed=_SEED)), _WarpView(pos, (0.0, 0.0, 0.0, 1.0), vel, (0, 0, 0)))
 
     # The world offset that moves one metre along each NED axis, read out of the position map.
     assert float(gps_at((1.0, 0.0, 0.0))["lat"]) == pytest.approx(ref_lat + 1.0 / 111000.0, abs=1e-12)  # n = +x
@@ -123,19 +126,19 @@ def test_world_to_ned_is_a_proper_rotation():
 
     # The mag map's basis images, read out of the magnetometer at identity attitude.
     for ned, want in ((n_world, n_world), ((0.0, 1.0, 0.0), e_world), ((0.0, 0.0, 1.0), d_world)):
-        mag = sv.wired(MagSensor(_run(mag_ned=ned), noise=(0.0, 0.0, 0.0)))
+        mag = sv.wired(MagSensor(*_on(field_ned=ned), seed=_SEED, noise=(0.0, 0.0, 0.0)))
         sample = _sample(mag, _WarpView((0, 0, 1), (0.0, 0.0, 0.0, 1.0), (0, 0, 0), (0, 0, 0)))
         np.testing.assert_allclose(sample["field"], want, atol=1e-6)
 
     np.testing.assert_allclose(np.cross(n_world, e_world), d_world, atol=1e-12)
 
 
-def test_a_magnetometer_barometer_and_gps_read_the_body_the_run_names():
-    """A magnetometer, a barometer and a GPS receiver read the body the run's values name, not body 0.
+def test_a_magnetometer_barometer_and_gps_read_the_body_their_site_sits_on():
+    """A magnetometer, a barometer and a GPS receiver read the body their site sits on, not body 0.
 
     Given two bodies, the first at the origin and level, the second 30 m up and yawed 90 degrees, and each
-    sensor built for body 1, when sampled, then the barometer and the receiver report 30 m, and the
-    magnetometer the field in the second body's axes.
+    sensor built on the second body's site, when sampled, then the barometer and the receiver report 30 m,
+    and the magnetometer the field in the second body's axes.
     """
     s2 = math.sqrt(2.0) / 2.0
     view = _WarpView((0, 0, 0), (0.0, 0.0, 0.0, 1.0), (0, 0, 0), (0, 0, 0))
@@ -146,9 +149,9 @@ def test_a_magnetometer_barometer_and_gps_read_the_body_the_run_names():
     mag, baro, gps = (
         _sample(sensor, view)
         for sensor in (
-            sv.wired(MagSensor(_run(body=1), noise=(0.0, 0.0, 0.0))),
-            sv.wired(BaroSensor(_run(body=1), noise=0.0)),
-            sv.wired(GpsSensor(_run(body=1))),
+            sv.wired(MagSensor(*_on(body=1), seed=_SEED, noise=(0.0, 0.0, 0.0))),
+            sv.wired(BaroSensor(*_on(body=1), seed=_SEED, noise=0.0)),
+            sv.wired(GpsSensor(*_on(body=1), seed=_SEED)),
         )
     )
 
@@ -158,28 +161,41 @@ def test_a_magnetometer_barometer_and_gps_read_the_body_the_run_names():
     )
 
 
-def test_a_barometer_whose_prim_sits_off_its_bodys_origin_fails_and_names_the_prim():
-    """A sensor that models no mount offset fails when its prim sits off its body's origin, and names the prim."""
-    run = SensorRun(seed=1, dt=0.004, site=_run().site, mount=(0.1, 0.0, 0.0), path="/Vehicle/body/Baro")
+def test_a_barometer_whose_site_sits_off_its_bodys_origin_fails_and_names_the_site():
+    """A sensor that models no mount offset fails when its site sits off its body's origin, and names the site."""
+    model, site = _on(mount=(0.1, 0.0, 0.0))
 
-    with pytest.raises(ValueError, match="/Vehicle/body/Baro"):
-        BaroSensor(run)
+    with pytest.raises(ValueError, match=site):
+        BaroSensor(model, site)
 
 
 @pytest.mark.parametrize("cls", [ImuSensor, MagSensor, BaroSensor, GpsSensor])
-def test_an_analytic_sensor_whose_rate_is_negative_fails_and_names_the_prim(cls):
-    """An analytic sensor whose declared rate is negative fails, and names the prim."""
-    run = SensorRun(seed=1, dt=0.004, site=_run().site, path="/Vehicle/body/Sensor")
+def test_an_analytic_sensor_whose_rate_is_negative_fails_and_names_the_site(cls):
+    """An analytic sensor whose declared rate is negative fails, and names the site."""
+    model, site = _on()
 
-    with pytest.raises(ValueError, match="/Vehicle/body/Sensor"):
-        cls(run, rate=-1.0)
+    with pytest.raises(ValueError, match=site):
+        cls(model, site, rate=-1.0)
+
+
+@pytest.mark.parametrize("cls", [ImuSensor, MagSensor, BaroSensor, GpsSensor])
+def test_an_analytic_sensor_on_a_label_that_is_no_site_of_the_model_fails_and_names_it(cls):
+    """An analytic sensor built on a label no site of the model carries fails, and names the label.
+
+    Given a one-body model with one site, when a sensor is built on the label of a prim the model never loaded,
+    then it fails and the message names that label.
+    """
+    model, _ = _on()
+
+    with pytest.raises(ValueError, match="/vehicle/body/Nowhere"):
+        cls(model, "/vehicle/body/Nowhere")
 
 
 def test_mag_known_attitude():
     """One hand-computed case, no oracle: 90° about world +z, so the map can't drift with it."""
     s2 = math.sqrt(2.0) / 2.0
     view = _WarpView((0, 0, 1), (0.0, 0.0, s2, s2), (0, 0, 0), (0, 0, 0))  # yaw 90° about +z
-    sample = _sample(sv.wired(MagSensor(_run(), noise=(0.0, 0.0, 0.0))), view)
+    sample = _sample(sv.wired(MagSensor(*_on(), seed=_SEED, noise=(0.0, 0.0, 0.0))), view)
     # mag_ned (0.21, 0.05, 0.43) -> world (n, -e, -d) = (0.21, -0.05, -0.43); R(q)^-1 maps
     # (x, y, z) -> (y, -x, z), giving body (-0.05, -0.21, -0.43).
     np.testing.assert_allclose(sample["field"], [-0.05, -0.21, -0.43], atol=1e-6)
@@ -196,7 +212,7 @@ def test_imu_noise_is_run_to_run_bit_identical():
     view = _WarpView((0, 0, 1), _Q, (0.04, 0.0, 0.0), (0.3, -0.4, 0.5))
 
     def run():
-        s = sv.wired(ImuSensor(_run()))  # default noise on
+        s = sv.wired(ImuSensor(*_on(), seed=_SEED))  # default noise on
         _sample(s, view)
         sample = _sample(s, view, SimTime(0.004, 1))
         return (*sample["accel"].tolist(), *sample["gyro"].tolist())
@@ -213,7 +229,7 @@ def test_each_analytic_sensors_sample_carries_the_sim_time_the_signal_time_holds
     time is 1.25 s.
     """
     view = _WarpView((0.0, 0.0, 1.0), (0.0, 0.0, 0.0, 1.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
-    sensor = sv.wired(cls(_run()), time=1.25)
+    sensor = sv.wired(cls(*_on(), seed=_SEED), time=1.25)
     sensor.sample_wp(view, SimTime(1.25, 0))
 
     assert float(sensor.out.read()[0]["time"]) == 1.25
@@ -242,7 +258,7 @@ def test_each_analytic_sensor_at_a_declared_rate_samples_only_on_its_due_ticks(c
     """
     view = _WarpView((0.0, 0.0, 1.0), (0.0, 0.0, 0.0, 1.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
 
-    held = _sample_times(sv.wired(cls(_run(), rate=50.0)), view, 10)
+    held = _sample_times(sv.wired(cls(*_on(), seed=_SEED, rate=50.0)), view, 10)
 
     assert held == pytest.approx([0.0] * 5 + [0.02] * 5, abs=1e-12)
 
@@ -256,7 +272,7 @@ def test_a_sensor_whose_rate_divides_the_tick_rate_samples_every_nth_tick_though
     """
     view = _WarpView((0.0, 0.0, 1.0), (0.0, 0.0, 0.0, 1.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
 
-    held = _sample_times(sv.wired(BaroSensor(_run(), rate=50.0)), view, 2000)
+    held = _sample_times(sv.wired(BaroSensor(*_on(), seed=_SEED, rate=50.0)), view, 2000)
 
     new = [tick for tick in range(len(held)) if tick == 0 or held[tick] != held[tick - 1]]
     assert new == list(range(0, 2000, 5))
@@ -269,7 +285,7 @@ def test_an_imu_slower_than_the_tick_differences_the_velocity_over_the_time_sinc
     three 4 ms ticks, then its sample on the third reads zero specific force: the velocity change of two ticks
     over the time of two ticks.
     """
-    sensor = sv.wired(ImuSensor(_run(), acc_noise=0.0, gyro_noise=0.0, rate=125.0))
+    sensor = sv.wired(ImuSensor(*_on(), seed=_SEED, acc_noise=0.0, gyro_noise=0.0, rate=125.0))
     for tick in range(3):
         fall = (0.0, 0.0, _GRAVITY_WORLD[2] * 0.004 * tick)  # the velocity after `tick` ticks of free fall
         sensor.time.write([0.004 * tick])

@@ -288,12 +288,12 @@ def test_a_registry_handed_to_the_builder_decides_an_analytic_and_an_rtx_sensors
     assert built == ["ImuSensor", "StandInSensor", "StandInSensor"]
 
 
-def test_a_projects_own_sensor_schema_builds_its_class_with_the_runs_values_and_the_loop_samples_it(tmp_path):
-    """A project's own sensor schema builds its class with the run's values, and the loop samples it.
+def test_a_projects_own_sensor_schema_builds_its_class_on_the_model_and_its_prim_and_the_loop_samples_it(tmp_path):
+    """A project's own sensor schema builds its class on the model and its prim's path, with its seed, and the loop samples it.
 
     Given the stand-in package under `tests/usd/stand_in`, installed with a sensor schema and an entry
     in the entry-point group, when runs with seeds 7, 7 and 8 build a fixture applying the schema with a
-    gain of 2.5 and step two ticks, then the class gets a tick of 0.004 s, the same seed in the first two
+    gain of 2.5 and step two ticks, then the class gets the prim's path, the same seed in the first two
     runs and another in the third, and its stage writes the gain, which a stand-in estimator reads. A child
     process, so the installed package changes no module state here.
     """
@@ -312,7 +312,7 @@ from nexus_stand_in.sensor import Gain
 from tests.usd import sensor_vehicle as sv
 
 prims = sv.prim("Own", "StandInSensorAPI", "float nexus:gain = 2.5")
-seeds, ticks, gains = [], [], []
+seeds, paths, gains = [], [], []
 with wp.ScopedDevice("cpu"):
     for name, seed in (("a", 7), ("b", 7), ("c", 8)):
         folder = pathlib.Path({str(tmp_path)!r}) / name
@@ -322,17 +322,20 @@ with wp.ScopedDevice("cpu"):
         loop = sv.build(path, seed=seed, components=sv.components(StandInEstimatorAPI=reader))
         (own,) = loop.sensors
         seeds.append(own.seed)
-        ticks.append(own.dt)
+        paths.append(own.path)
         sv.steps(loop, 2)
         gains.append(float(reader.kept[-1][1]["value"][0]))
-print(">", type(own).__module__, seeds[0] == seeds[1], seeds[0] != seeds[2], ticks, gains)
+print(">", type(own).__module__, seeds[0] == seeds[1], seeds[0] != seeds[2], paths, gains)
 """
     env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(site), str(ROOT)])}
     r = subprocess.run([sys.executable, "-c", code], check=False, cwd=tmp_path, env=env, capture_output=True, text=True)
     assert r.returncode == 0, r.stderr[-2000:]
     (line,) = [line[2:] for line in r.stdout.splitlines() if line.startswith("> ")]
 
-    assert line == "nexus_stand_in.sensor True True [0.004, 0.004, 0.004] [2.5, 2.5, 2.5]"
+    assert (
+        line
+        == "nexus_stand_in.sensor True True ['/vehicle/body/Own', '/vehicle/body/Own', '/vehicle/body/Own'] [2.5, 2.5, 2.5]"
+    )
 
 
 def test_a_projects_own_sensor_writes_its_output_as_a_signal_of_the_projects_own_type_and_an_estimator_reads_it(

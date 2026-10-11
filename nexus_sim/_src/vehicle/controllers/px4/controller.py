@@ -172,7 +172,7 @@ class Px4MavlinkController(Component):
         """
         return {"ulog": self.ulog_path}
 
-    def connect(self) -> None:
+    def connect(self, links) -> None:
         conn_string = f"tcpin:{self.ip}:{self.port}"
         logger.info(f"Waiting for PX4 connection on {conn_string}...")
         try:

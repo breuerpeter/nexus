@@ -31,7 +31,7 @@ class _Wide(Component):
     def __init__(self, **kwargs):
         self.controls = Signal("controls", wp.float32, shape=(1, WIDTH))
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):

@@ -54,8 +54,9 @@ from nexus_sim._src.core.interfaces import Stage
 from nexus_sim._src.core.labels import leaf_keys
 from nexus_sim._src.vehicle.rotors import RPM_PER_RADS, find_rotor_joints
 
+from ..scene import world
 from ..scene.ingest import add_scene  # ingestion only: the handlers are the renderer's side
-from ..scene.site import GRAVITY
+from ..scene.world import GRAVITY
 from .outputs import Outputs
 
 STABILIZE_VEL_THRESHOLD = 0.01  # m/s
@@ -114,12 +115,16 @@ class NewtonPhysics:
         else:
             logger.info(f"Default warp device: {wp.get_device()}")
             builder = newton.ModelBuilder()
+            # The world's values the scene's PhysicsScene authors, which the sensors read from the model:
+            # declared before any add_usd, so the importer reads them, and derived after the last.
+            world.declare(builder)
             builder.add_ground_plane()
             add_scene(builder, cfg)  # scene USD -> builder, exactly as for the vehicle USD
             vehicle_usd.build(builder)
-            # The site's gravity, the one value the IMU reports too. add_usd resets the builder's gravity
+            # The world's gravity, the one value the IMU reports too. add_usd resets the builder's gravity
             # from any PhysicsScene the USD holds, authored or not, so it is set after the last add.
             builder.gravity = -GRAVITY
+            world.derive(builder)
             # The vehicle USD authors the motors as NewtonActuator prims on the actuator joints, and add_usd
             # parses them onto model.actuators, which step() steps before the solver. A collapsed single
             # body has no joints, so no motors.

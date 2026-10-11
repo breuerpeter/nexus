@@ -17,12 +17,11 @@ from pathlib import Path
 from nexus_sim._src.core import logger
 from nexus_sim._src.core.registry import Registry
 from nexus_sim._src.peers.kit.runner import KitPeer
+from nexus_sim._src.vehicle.sensors.rtx_sensor import PEER
 
 from .link import KitRenderer
 
-__all__ = ["KitRenderer", "RtxConfig", "rtx_renderer"]
-
-PEER = "kit"  # the name an RTX sensor's class requires the Kit peer by
+__all__ = ["PEER", "KitRenderer", "RtxConfig", "rtx_renderer"]
 
 
 class RtxConfig:
@@ -43,9 +42,9 @@ class RtxRendererFactory:
     """The renderer for a started Kit peer, called after the physics build.
 
     :meth:`link` maps the model's bodies onto the render stage and returns the :class:`KitRenderer`
-    the RTX sensors ride. :meth:`finish` hands that renderer the built sensors. Calling the factory
-    does both and builds the sensors between them, for an assembly that builds no other sensor from
-    the vehicle's file.
+    the RTX sensors ride, which the loop hands each of them at ``connect``. :meth:`finish` hands that
+    renderer the built sensors. Calling the factory does both and builds the sensors between them, for
+    an assembly that builds no other sensor from the vehicle's file.
     """
 
     def __init__(self, peer: KitPeer, *, components: Registry | None = None):
@@ -53,7 +52,9 @@ class RtxRendererFactory:
         self._components = components
 
     def link(self, physics, vehicle_usd) -> KitRenderer:
-        """The render link for this run: each model body paired with its prim on the render stage."""
+        """The render link for this run: each model body paired with its prim on the render stage, over
+        the vehicle's stage, which an RTX sensor reads its prim from at ``connect``.
+        """
         from pxr import Usd
 
         from nexus_sim._src.vehicle.sensors.rtx_stage import render_path
@@ -67,10 +68,12 @@ class RtxRendererFactory:
         missing = [label for label in labels if not stage.GetPrimAtPath(label)]
         if missing:
             logger.warning(f"no vehicle prim for model bodies {missing}: they don't render")
-        return KitRenderer(self._peer, bodies=bodies)
+        return KitRenderer(self._peer, bodies=bodies, stage=stage)
 
-    def finish(self, renderer: KitRenderer, sensors: list, vehicle_usd, cfg: dict) -> None:
-        """Hand `renderer` the RTX sensors built over it, and fill its setup message."""
+    def finish(self, renderer: KitRenderer, sensors: list, vehicle_usd, cfg: dict, model) -> None:
+        """Hand `renderer` the RTX sensors built over it, and fill its setup message, which anchors the
+        streamed world at the origin `model` holds.
+        """
         from nexus_sim._src.diagnostics import diagnostics
 
         rtx = RtxConfig(cfg.get("rtx"))
@@ -81,9 +84,11 @@ class RtxRendererFactory:
         renderer.setup = {
             "scene": cfg.get("scene_usd_path"),
             "scene_start": list(cfg.get("scene_start") or (0.0, 0.0, 0.0)),
-            # The streamed world's anchor is the scene's geodetic origin, which the sensors read too, so the
+            # The streamed world's anchor is the model's geodetic origin, which the sensors read too, so the
             # globe and the Global Positioning System (GPS) sensor agree on where local (0,0,0) is on Earth.
-            "georef": dict(zip(("lat", "lon", "alt"), cfg["geodetic_origin"], strict=True)),
+            "georef": dict(
+                zip(("lat", "lon", "alt"), (float(v) for v in model.nexus.geodetic_origin.numpy()[0]), strict=True)
+            ),
             "vehicle": str(vehicle_usd.cfg["usd_path"]),
             "spawn": {"pos": [float(v) for v in pos], "quat_xyzw": [float(v) for v in att]},
             # The highest declared camera rate; the vehicle's file is the authority.
@@ -102,11 +107,8 @@ class RtxRendererFactory:
             usd_path=usd,
             model=physics.model,
             seedtree=SeedTree(cfg.get("seed", 42)),
-            dt=cfg["physics"]["dt"],
-            site=None,
-            link=renderer,
         )
-        self.finish(renderer, sensors, vehicle_usd, cfg)
+        self.finish(renderer, sensors, vehicle_usd, cfg, physics.model)
         return renderer, sensors
 
     def close(self) -> None:

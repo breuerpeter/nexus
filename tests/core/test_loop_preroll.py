@@ -66,7 +66,7 @@ class _LatePeerController(Component):
     def attached(self):
         return self._tries >= 100
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def exchange(self, t, timeout):

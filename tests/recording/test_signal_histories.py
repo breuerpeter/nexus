@@ -54,7 +54,7 @@ class _TickWriter(Component):
     def __init__(self, **kwargs):
         self.controls = Signal("controls", wp.float32, shape=(1, 16))
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):
