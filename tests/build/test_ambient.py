@@ -7,6 +7,7 @@ flights are module-scoped. Skipped without newton or pxr.
 """
 
 import math
+import re
 
 import numpy as np
 import pytest
@@ -25,6 +26,9 @@ from tests.usd.sensor_vehicle import HostController
 
 ZURICH = (47.3769, 8.5417, 408.0)
 WOODINVILLE = (47.747944, -122.163917)
+SEATTLE_CENTER = (47.6205, -122.3493, 20.0)
+# The attribute a scene's PhysicsScene prim authors its origin in: latitude and longitude in degrees, altitude in metres.
+ORIGIN_ATTR = "newton:nexus:geodetic_origin"
 # The World Magnetic Model (WMM) field at each origin as a North East Down (NED) vector in gauss, from
 # PX4's coarse table: Zurich D 2.6°, I 63.2°, F 0.481; Woodinville D 15.5°, I 69.4°, F 0.539. The
 # vehicle rests level with its nose north, so its Forward Right Down (FRD) body axes are the NED axes.
@@ -93,6 +97,42 @@ def _field(samples):
     return samples["mag"]["field"]
 
 
+def _gps(samples):
+    gps = samples["gps"]
+    return float(gps["lat"]), float(gps["lon"]), float(gps["alt"])
+
+
+def _near(origin):
+    """What a Global Positioning System (GPS) receiver at rest at `origin` reports: its latitude and longitude, and its altitude within a metre,
+    since the base body rests a quarter of a metre over the ground.
+    """
+    lat, lon, alt = origin
+    return pytest.approx(lat, abs=1e-4), pytest.approx(lon, abs=1e-4), pytest.approx(alt, abs=1.0)
+
+
+def _scene(tmp_path, physics_scene: str | None) -> str:
+    """Write a local scene, an empty world the catalog doesn't list, and return its path.
+
+    `physics_scene`, when given, is the text the scene's ``/World/PhysicsScene`` prim authors; ``None``
+    writes no ``PhysicsScene`` prim.
+    """
+    prim = (
+        ""
+        if physics_scene is None
+        else f'    def PhysicsScene "PhysicsScene"\n    {{\n        {physics_scene}\n    }}\n'
+    )
+    path = tmp_path / "local_scene.usda"
+    path.write_text(
+        f'#usda 1.0\n(\n    defaultPrim = "World"\n    metersPerUnit = 1\n    upAxis = "Z"\n)\n\n'
+        f'def Xform "World"\n{{\n{prim}}}\n'
+    )
+    return str(path)
+
+
+def _origin(origin) -> str:
+    return f"double3 {ORIGIN_ATTR} = {tuple(origin)}"
+
+
 @pytest.fixture(scope="module")
 def zurich_scene(tmp_path_factory):
     tmp = tmp_path_factory.mktemp("zurich")
@@ -110,6 +150,27 @@ def geo_override(tmp_path_factory):
 def empty_scene(tmp_path_factory):
     tmp = tmp_path_factory.mktemp("empty")
     return _settled(LaunchConfig().set_vehicle(sv.vehicle(tmp, SENSORS)).set_scene("bare"), _catalog(tmp))
+
+
+@pytest.fixture(scope="module")
+def local_zurich_scene(tmp_path_factory):
+    """A run on a local scene whose ``PhysicsScene`` prim authors Zurich as its origin."""
+    tmp = tmp_path_factory.mktemp("local_zurich")
+    launch = LaunchConfig().set_vehicle(sv.vehicle(tmp, SENSORS)).set_scene(_scene(tmp, _origin(ZURICH)))
+    return _settled(launch, _catalog(tmp))
+
+
+@pytest.fixture(scope="module")
+def layer_moved_origin(tmp_path_factory):
+    """A run on that scene under an override layer that moves its origin to Seattle Center."""
+    tmp = tmp_path_factory.mktemp("layer_origin")
+    layer = tmp / "origin_layer.usda"
+    layer.write_text(
+        f'#usda 1.0\n\nover "World"\n{{\n    over "PhysicsScene"\n    {{\n        {_origin(SEATTLE_CENTER)}\n    }}\n}}\n'
+    )
+    launch = LaunchConfig().set_vehicle(sv.vehicle(tmp, SENSORS)).set_scene(_scene(tmp, _origin(ZURICH)))
+    launch.layer = str(layer)
+    return _settled(launch, _catalog(tmp))
 
 
 @pytest.fixture(scope="module")
@@ -159,6 +220,52 @@ def test_a_scene_with_no_origin_reports_the_default_origin_on_gps(empty_scene):
     gps = samples["gps"]
 
     assert (float(gps["lat"]), float(gps["lon"])) == pytest.approx(WOODINVILLE, abs=1e-4)
+
+
+def test_a_run_flies_at_the_origin_its_scenes_physics_scene_authors(local_zurich_scene):
+    """A run flies at the geodetic origin its scene's `PhysicsScene` prim authors, for a local scene the catalog doesn't list too.
+
+    Given a local scene whose `PhysicsScene` authors an origin in Zurich, when a vehicle with a GPS flies
+    on it, then the GPS reports Zurich's latitude, longitude and altitude at the start.
+    """
+    _, samples = local_zurich_scene
+
+    assert _gps(samples) == _near(ZURICH)
+
+
+def test_an_override_layer_moves_the_scenes_origin(layer_moved_origin):
+    """An override layer moves the scene's origin.
+
+    Given a local scene whose `PhysicsScene` authors Zurich and a layer that authors Seattle Center on
+    that prim, when the run flies with the layer, then the GPS reports Seattle Center at the start.
+    """
+    _, samples = layer_moved_origin
+
+    assert _gps(samples) == _near(SEATTLE_CENTER)
+
+
+def test_a_scene_whose_physics_scene_authors_no_origin_fails_the_build(tmp_path):
+    """A scene whose `PhysicsScene` authors no origin fails the build and names the prim.
+
+    Given a local scene whose `PhysicsScene` authors no origin, when the run builds, then it fails, and
+    the message names the scene's `PhysicsScene` prim.
+    """
+    launch = LaunchConfig().set_vehicle(sv.vehicle(tmp_path, SENSORS)).set_scene(_scene(tmp_path, ""))
+
+    with pytest.raises(ValueError, match="/World/PhysicsScene"):
+        _settled(launch, _catalog(tmp_path))
+
+
+def test_a_scene_with_no_physics_scene_fails_the_build(tmp_path):
+    """A scene with no `PhysicsScene` prim fails the build and names the scene.
+
+    Given a local scene with no `PhysicsScene` prim, when the run builds, then it fails, and the message
+    names the scene's file.
+    """
+    launch = LaunchConfig().set_vehicle(sv.vehicle(tmp_path, SENSORS)).set_scene(_scene(tmp_path, None))
+
+    with pytest.raises(ValueError, match=re.escape("local_scene.usda")):
+        _settled(launch, _catalog(tmp_path))
 
 
 def test_the_imu_reports_the_gravity_the_physics_applies(gravity_five_vehicle):
