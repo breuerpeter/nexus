@@ -32,7 +32,11 @@ def geodetic_origin(scene_usd: str | Path) -> tuple[float, float, float]:
             "nexus:geodeticOrigin"
         )
     (path,) = scenes
-    origins = [kwargs["geodetic_origin"] for prim, schema, kwargs in read_declarations(scene_usd) if (prim, schema) == (path, SCENE_SCHEMA)]
+    origins = [
+        kwargs["geodetic_origin"]
+        for prim, schema, kwargs in read_declarations(scene_usd)
+        if (prim, schema) == (path, SCENE_SCHEMA)
+    ]
     origin = origins[0] if origins else None
     if origin is None:
         raise ValueError(

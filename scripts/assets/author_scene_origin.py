@@ -4,9 +4,9 @@ A run fails on a scene whose ``PhysicsScene`` authors no origin. This adds the p
 ``/World/PhysicsScene`` with ``NexusSceneAPI``, to a scene ``.usdz`` that has none, such as a converted
 scan, and writes a new package beside it, every other file unchanged:
 
-    uv run python scripts/assets/author_scene_origin.py <scene.usdz> <out.usdz> --origin LAT,LON,ALT
+    uv run python scripts/assets/author_scene_origin.py <scene.usdz> <out.usdz> --origin <lat>,<lon>,<alt>
 
-``LAT`` and ``LON`` are degrees, and ``ALT`` is the altitude over mean sea level in metres, or for a
+The latitude and the longitude are degrees, and the altitude is metres over mean sea level, or for a
 streamed globe the surface's WGS84 ellipsoidal height. ``spawn_site.py --geo`` gives a scan's origin at
 its start. Then prepare the package for upload with ``prepare_asset_upload.py --scene``.
 """
@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))  # `scene_root` beside this file, run from any folder
 
-from scene_root import author_origin  # noqa: E402
+from scene_root import author_origin
 
 
 def author(scene: Path, out: Path, origin: tuple[float, float, float]) -> None:
