@@ -16,31 +16,35 @@ def Xform "Vehicle"
 
     def Xform "body"
     {
-        def Xform "Imu" (
+        def Sphere "Imu" (
             prepend apiSchemas = ["NexusImuAPI"]
         )
         {
             float nexus:accNoise = 0.05
+            double radius = 0.01
             double3 xformOp:translate = (0.01, -0.02, 0.03)
             uniform token[] xformOpOrder = ["xformOp:translate"]
         }
 
-        def Xform "Mag" (
+        def Sphere "Mag" (
             prepend apiSchemas = ["NexusMagAPI"]
         )
         {
+            double radius = 0.01
         }
 
-        def Xform "Baro" (
+        def Sphere "Baro" (
             prepend apiSchemas = ["NexusBaroAPI"]
         )
         {
+            double radius = 0.01
         }
 
-        def Xform "Gps" (
+        def Sphere "Gps" (
             prepend apiSchemas = ["NexusGpsAPI"]
         )
         {
+            double radius = 0.01
         }
 
         def Camera "Cam" (

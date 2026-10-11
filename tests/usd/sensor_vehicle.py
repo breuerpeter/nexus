@@ -72,13 +72,16 @@ _MAST_JOINT = f"""
 """
 
 
-def prim(name: str, schema: str | None, attrs: str = "", *, kind: str = "Xform", translate=None) -> str:
+def prim(name: str, schema: str | None, attrs: str = "", *, kind: str = "Sphere", translate=None) -> str:
     """The text of one prim named `name` of type `kind` that applies `schema`, or none, and authors `attrs`.
 
     `attrs` is one attribute per line, such as `float nexus:noise = 0.09`. `translate` moves the prim
-    from its parent's origin.
+    from its parent's origin. The default kind is a `Sphere` of 1 cm, the geometry prim an analytic
+    sensor's schema sits on, which Newton loads as a site.
     """
     lines = [line.strip() for line in attrs.strip().splitlines() if line.strip()]
+    if kind == "Sphere" and not any(line.startswith("double radius") for line in lines):
+        lines.insert(0, "double radius = 0.01")
     if translate is not None:
         lines += [
             f"double3 xformOp:translate = {tuple(translate)}",
