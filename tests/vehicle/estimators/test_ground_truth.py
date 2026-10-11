@@ -13,7 +13,6 @@ pytest.importorskip("pxr")
 import warp as wp
 
 from nexus_sim._src.api.sim import Sim
-from nexus_sim._src.build.assembly import build_scenario
 from nexus_sim._src.core import Clock, Loop
 from nexus_sim._src.core.interfaces import Component, Stage, Tick
 from nexus_sim._src.core.schema import PoseTwist, SimTime
@@ -23,6 +22,7 @@ from nexus_sim._src.guidance import MissionGuidance
 from nexus_sim._src.physics import NewtonPhysics
 from nexus_sim._src.physics.vehicle import VehicleUsd
 from nexus_sim._src.vehicle.estimators import GroundTruthEstimator
+from tests.usd.sensor_vehicle import scenario
 from tests.vehicle import quad
 
 DEVICES = ["cpu", pytest.param("cuda:0", marks=pytest.mark.gpu)]
@@ -86,7 +86,7 @@ def test_each_reader_gets_the_base_bodys_true_pose_and_twist_with_no_noise_and_n
     the bit, the base body's row the Recorder holds for that tick, and the seed row in the pass before the first
     tick.
     """
-    cfg = build_scenario()
+    cfg = scenario()
     cfg["physics"]["force_cpu"] = device == "cpu"
     cfg["physics"]["spawn"] = {"pos": (0.0, 0.0, 2.0)}
     guidance = _KeepingGuidance()

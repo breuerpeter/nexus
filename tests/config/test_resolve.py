@@ -10,12 +10,15 @@ import pytest
 import nexus_sim
 from nexus_sim._src.config import Catalog, LaunchConfig, NoMatchError, TestedConfig, resolve
 
+# A scene's file, which a test that resolves with no fetch never reads.
+EMPTY = {"url": "file:///empty.usdz", "sha256": "0"}
+
 
 def _reg(vehicle_usd):
     return Catalog.from_dict(
         {
             "vehicles": {"black": {"usd": vehicle_usd}},
-            "scenes": {"empty": {}},
+            "scenes": {"empty": {"usd": EMPTY}},
         }
     )
 
@@ -27,7 +30,7 @@ def test_resolve_no_fetch_builds_fully_specified_receipt():
     # the named variant, fully specified
     assert tc.vehicle == "black"
     assert tc.vehicle_usd.sha256 == "deadbeef"
-    assert tc.scene == "empty" and tc.scene_usd is None
+    assert tc.scene == "empty" and tc.scene_usd.url == EMPTY["url"]
     assert rl.vehicle_usd_path is None  # fetch off
 
 
@@ -36,9 +39,12 @@ def test_resolve_fetches_and_verifies_file_asset(tmp_path):
     blob = tmp_path / "astro.usdz"
     blob.write_bytes(b"USD-PLACEHOLDER-BYTES")
     sha = hashlib.sha256(blob.read_bytes()).hexdigest()
-    reg = _reg({"url": blob.as_uri(), "sha256": sha, "filename": "astro.usdz"})
+    reg = _fpv_reg(
+        {"url": blob.as_uri(), "sha256": sha, "filename": "astro.usdz"},
+        _file_asset(tmp_path, "stage.usdz", b"USD-STAGE"),
+    )
 
-    rl = resolve(LaunchConfig().set_vehicle("black").set_scene("empty"), reg, fetch=True, cache_dir=tmp_path / "cache")
+    rl = resolve(LaunchConfig().set_vehicle("black").set_scene("fpv"), reg, fetch=True, cache_dir=tmp_path / "cache")
 
     assert rl.vehicle_usd_path is not None
     assert Path(rl.vehicle_usd_path).read_bytes() == b"USD-PLACEHOLDER-BYTES"
@@ -52,17 +58,14 @@ def test_receipt_round_trips_json():
 
 
 def _fpv_reg(vehicle_usd, scene_usd, **scene_extra):
-    """A catalog with a synthetic 'fpv' scene, a Universal Scene Description (USD) file plus a geo
-    origin, which a launch names.
-    """
+    """A catalog with a synthetic 'fpv' scene, a Universal Scene Description (USD) file, which a launch names."""
     return Catalog.from_dict(
         {
             "vehicles": {"black": {"usd": vehicle_usd}},
             "scenes": {
-                "empty": {},
+                "empty": {"usd": EMPTY},
                 "fpv": {
                     "usd": scene_usd,
-                    "geodetic_origin": {"lat": 37.5, "lon": -122.3},
                     **scene_extra,
                 },
             },
@@ -76,10 +79,10 @@ def _file_asset(tmp_path, name, body):
     return {"url": blob.as_uri(), "sha256": hashlib.sha256(blob.read_bytes()).hexdigest(), "filename": name}
 
 
-def test_scene_surfaces_usd_path_and_geo(tmp_path):
-    """A scene resolves with scene_usd_path populated *and* the geo origin surfaced so the
-    environment can anchor. What the USD *is*, simulation geometry or the visual world, is the
-    USD's own business: the run's builder reads its authored physics schemas, not the catalog.
+def test_scene_surfaces_usd_path(tmp_path):
+    """A scene resolves with scene_usd_path populated. What the USD *is*, simulation geometry or the
+    visual world, and where it sits on Earth, is the USD's own business: the run's builder reads its
+    authored schemas, not the catalog.
     """
     reg = _fpv_reg(
         _file_asset(tmp_path, "veh.usdz", b"USD-VEH"),
@@ -90,9 +93,6 @@ def test_scene_surfaces_usd_path_and_geo(tmp_path):
 
     assert rl.scene_usd_path is not None
     assert Path(rl.scene_usd_path).read_bytes() == b"USD-STAGE"  # carried for the consumer
-    # geo origin surfaces: it must reach ConstantEnvironment.from_gps even though physics is empty
-    geo = rl.tested_config.geodetic_origin
-    assert geo is not None and (geo.lat, geo.lon) == (37.5, -122.3)
 
 
 def test_scene_start_surfaces_on_the_receipt(tmp_path):
@@ -131,14 +131,6 @@ def test_local_scene_usd_path(tmp_path):
     assert Path(rl.scene_usd_path).read_bytes() == b"USD-LOCAL-SCENE"
 
 
-def test_the_empty_scene_resolves_without_usd():
-    """The `empty` scene has no USD: nothing to route; flat ground."""
-    reg = _reg({"url": "https://x/astro.usdz", "sha256": "deadbeef"})
-    rl = resolve(LaunchConfig().set_vehicle("black").set_scene("empty"), reg, fetch=False)
-    assert rl.tested_config.scene == "empty"
-    assert rl.scene_usd_path is None
-
-
 def test_a_vehicle_still_resolves_by_name():
     """A vehicle still resolves by name: a run that names a vehicle of the shipped catalog resolves it.
 
@@ -153,7 +145,9 @@ def _catalog(vehicle: str) -> str:
     return (
         "vehicles:\n"
         f"  {vehicle}:\n"
-        '    usd: { url: "file:///' + '{v}.usdz", sha256: "0" }\n'.replace("{v}", vehicle) + "scenes:\n  empty: {}\n"
+        '    usd: { url: "file:///'
+        + '{v}.usdz", sha256: "0" }\n'.replace("{v}", vehicle)
+        + 'scenes:\n  empty:\n    usd: { url: "file:///empty.usdz", sha256: "0" }\n'
     )
 
 

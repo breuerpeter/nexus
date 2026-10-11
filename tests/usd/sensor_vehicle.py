@@ -11,6 +11,7 @@ every message it receives lets a test read what PX4 receives.
 
 from __future__ import annotations
 
+from hashlib import sha256
 from pathlib import Path
 from typing import ClassVar
 
@@ -28,6 +29,12 @@ from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
 BASE = Path(__file__).with_name("fixture_vehicle.usda")
 # The scene a fixture run flies in: an empty world, local, so a test fetches nothing.
 SCENE = str(Path(__file__).with_name("fixture_scene.usda"))
+# The fixture scene as a catalog entry's file, for a test catalog that names a scene: `{"usd": SCENE_REF}`.
+SCENE_REF = {
+    "url": Path(SCENE).as_uri(),
+    "sha256": sha256(Path(SCENE).read_bytes()).hexdigest(),
+    "filename": "fixture_scene.usda",
+}
 ROOT = "/vehicle"
 # The base body, model body 0.
 BODY = f"{ROOT}/body"
@@ -248,6 +255,18 @@ def wired(sensor, time: float = 0.0):
 def components(**entries) -> Registry:
     """A registry of the test's own: the stand-in controller for PX4, then `entries`; the install answers the rest."""
     return Registry({"NexusPx4API": Controller, **entries})
+
+
+def scenario() -> dict:
+    """The default scenario at the fixture scene's geodetic origin, for a test that builds its run's cfg by hand
+    and adds no scene to the model.
+    """
+    from nexus_sim._src.build.assembly import build_scenario
+    from nexus_sim._src.scene.origin import geodetic_origin
+
+    cfg = build_scenario()
+    cfg["geodetic_origin"] = geodetic_origin(SCENE)
+    return cfg
 
 
 def build(

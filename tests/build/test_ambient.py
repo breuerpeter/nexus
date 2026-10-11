@@ -1,4 +1,4 @@
-"""The ambient values a run's sensors read resolve at build from the scene's geodetic origin.
+"""The ambient values a run's sensors read resolve at build from the geodetic origin the scene's `PhysicsScene` authors.
 
 Beside the launch tests, since pytest skips a directory named ``build``. Real builds on the Warp CPU
 backend: the local fixture vehicle in ``tests/usd/sensor_vehicle.py`` with an analytic sensor of each kind, a stand-in controller
@@ -25,15 +25,13 @@ from tests.usd import sensor_vehicle as sv
 from tests.usd.sensor_vehicle import HostController
 
 ZURICH = (47.3769, 8.5417, 408.0)
-WOODINVILLE = (47.747944, -122.163917)
 SEATTLE_CENTER = (47.6205, -122.3493, 20.0)
 # The attribute a scene's PhysicsScene prim authors its origin in: latitude and longitude in degrees, altitude in metres.
-ORIGIN_ATTR = "newton:nexus:geodetic_origin"
+ORIGIN_ATTR = "nexus:geodeticOrigin"
 # The World Magnetic Model (WMM) field at each origin as a North East Down (NED) vector in gauss, from
-# PX4's coarse table: Zurich D 2.6°, I 63.2°, F 0.481; Woodinville D 15.5°, I 69.4°, F 0.539. The
-# vehicle rests level with its nose north, so its Forward Right Down (FRD) body axes are the NED axes.
+# PX4's coarse table: Zurich declination 2.6°, inclination 63.2°, strength 0.481. The vehicle rests level
+# with its nose north, so its Forward Right Down (FRD) body axes are the NED axes.
 ZURICH_NED = (0.216, 0.010, 0.429)
-WOODINVILLE_NED = (0.182, 0.051, 0.504)
 FIELD_TOL = 0.015  # five sigma of the vehicle's authored magnetometer noise, 0.003 per axis
 # An analytic sensor of each kind on the base body, with the noise the shipped vehicle authors.
 SENSORS = (
@@ -62,14 +60,9 @@ class _Controller(HostController):
 
 
 def _catalog(tmp_path):
-    """A project catalog over the bundled one: two scenes with an origin each, and `bare` with none. None names a scene file, so no build fetches one."""
+    """A project catalog that adds nothing to the bundled one: every run here flies a local scene."""
     path = tmp_path / "nexus.catalog.yaml"
-    path.write_text(
-        "scenes:\n"
-        f"  zurich:\n    geodetic_origin: {{ lat: {ZURICH[0]}, lon: {ZURICH[1]}, alt: {ZURICH[2]} }}\n"
-        f"  woodinville:\n    geodetic_origin: {{ lat: {WOODINVILLE[0]}, lon: {WOODINVILLE[1]}, alt: 5.02 }}\n"
-        "  bare: {}\n"
-    )
+    path.write_text("scenes: {}\n")
     return load_catalog(path)
 
 
@@ -113,13 +106,14 @@ def _near(origin):
 def _scene(tmp_path, physics_scene: str | None) -> str:
     """Write a local scene, an empty world the catalog doesn't list, and return its path.
 
-    `physics_scene`, when given, is the text the scene's ``/World/PhysicsScene`` prim authors; ``None``
-    writes no ``PhysicsScene`` prim.
+    `physics_scene`, when given, is the text the scene's ``/World/PhysicsScene`` prim authors under
+    ``NexusSceneAPI``; ``None`` writes no ``PhysicsScene`` prim.
     """
     prim = (
         ""
         if physics_scene is None
-        else f'    def PhysicsScene "PhysicsScene"\n    {{\n        {physics_scene}\n    }}\n'
+        else '    def PhysicsScene "PhysicsScene" (\n        prepend apiSchemas = ["NexusSceneAPI"]\n    )\n'
+        f"    {{\n        {physics_scene}\n    }}\n"
     )
     path = tmp_path / "local_scene.usda"
     path.write_text(
@@ -131,25 +125,6 @@ def _scene(tmp_path, physics_scene: str | None) -> str:
 
 def _origin(origin) -> str:
     return f"double3 {ORIGIN_ATTR} = {tuple(origin)}"
-
-
-@pytest.fixture(scope="module")
-def zurich_scene(tmp_path_factory):
-    tmp = tmp_path_factory.mktemp("zurich")
-    return _settled(LaunchConfig().set_vehicle(sv.vehicle(tmp, SENSORS)).set_scene("zurich"), _catalog(tmp))
-
-
-@pytest.fixture(scope="module")
-def geo_override(tmp_path_factory):
-    tmp = tmp_path_factory.mktemp("geo")
-    launch = LaunchConfig().set_vehicle(sv.vehicle(tmp, SENSORS)).set_scene("woodinville").set_geodetic_origin(*ZURICH)
-    return _settled(launch, _catalog(tmp))
-
-
-@pytest.fixture(scope="module")
-def empty_scene(tmp_path_factory):
-    tmp = tmp_path_factory.mktemp("empty")
-    return _settled(LaunchConfig().set_vehicle(sv.vehicle(tmp, SENSORS)).set_scene("bare"), _catalog(tmp))
 
 
 @pytest.fixture(scope="module")
@@ -193,33 +168,11 @@ def gravity_five_vehicle(tmp_path_factory):
     return _settled(LaunchConfig().set_vehicle(str(path)).set_scene(sv.SCENE), _catalog(tmp))
 
 
-def test_the_magnetometer_reports_the_field_at_the_catalog_scenes_origin(zurich_scene):
-    """The magnetometer of a run built on a catalog scene reports the WMM field at that scene's origin."""
-    _, samples = zurich_scene
+def test_the_magnetometer_reports_the_field_at_the_scenes_origin(local_zurich_scene):
+    """The magnetometer reports the WMM field at the origin the scene's `PhysicsScene` authors."""
+    _, samples = local_zurich_scene
 
     np.testing.assert_allclose(_field(samples), ZURICH_NED, atol=FIELD_TOL)
-
-
-def test_a_geo_override_wins_over_the_catalog_origin(geo_override):
-    """A `--geo` override wins over the catalog origin for every ambient value."""
-    _, samples = geo_override
-
-    np.testing.assert_allclose(_field(samples), ZURICH_NED, atol=FIELD_TOL)
-
-
-def test_a_scene_with_no_origin_reads_the_default_origins_field(empty_scene):
-    """A scene whose catalog entry carries no origin resolves to the bundled default origin, Woodinville."""
-    _, samples = empty_scene
-
-    np.testing.assert_allclose(_field(samples), WOODINVILLE_NED, atol=FIELD_TOL)
-
-
-def test_a_scene_with_no_origin_reports_the_default_origin_on_gps(empty_scene):
-    """A scene whose catalog entry carries no origin resolves to the bundled default origin, Woodinville."""
-    _, samples = empty_scene
-    gps = samples["gps"]
-
-    assert (float(gps["lat"]), float(gps["lon"])) == pytest.approx(WOODINVILLE, abs=1e-4)
 
 
 def test_a_run_flies_at_the_origin_its_scenes_physics_scene_authors(local_zurich_scene):

@@ -18,7 +18,7 @@ pytest.importorskip("pxr")
 import warp as wp
 
 from nexus_sim._src.api.sim import Sim
-from nexus_sim._src.build.assembly import assemble, build_loop, build_scenario, resolve_device
+from nexus_sim._src.build.assembly import assemble, build_loop, resolve_device
 from nexus_sim._src.build.launch import resolve_vehicle_usd
 from nexus_sim._src.config import LaunchConfig
 from nexus_sim._src.core import Clock
@@ -29,7 +29,7 @@ from nexus_sim._src.physics import NewtonPhysics
 from nexus_sim._src.physics.vehicle import VehicleUsd
 from nexus_sim._src.scene.site import GRAVITY
 from nexus_sim.examples._lib import Rotors, build_rotor_mixer_from_model
-from tests.usd.sensor_vehicle import HostController
+from tests.usd.sensor_vehicle import HostController, scenario
 from tests.vehicle import quad
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")
@@ -167,7 +167,7 @@ def _loop(path, controller, *, commands=(), forces=()):
     """The run the quad at `path` builds around `controller`, with stand-in command elements and force
     elements built by `commands` and `forces`, each a callable of the physics, beside the rotors' own.
     """
-    cfg = build_scenario()
+    cfg = scenario()
     cfg["physics"]["force_cpu"] = True
     resolve_device(cfg)
     vehicle_usd = VehicleUsd({"usd_path": str(path)})
@@ -188,7 +188,7 @@ def _rotors(path, controller):
     """The run the quad at `path` builds around `controller` with the examples' `Rotors` in place of the
     rotor chain, the Newton motors idle, as the Proportional Integral Derivative (PID) example flies.
     """
-    cfg = build_scenario()
+    cfg = scenario()
     cfg["physics"]["force_cpu"] = True
     resolve_device(cfg)
     vehicle_usd = VehicleUsd({"usd_path": str(path)})
@@ -220,7 +220,7 @@ def fly_shipped(steps: int = STREAM_TICKS) -> np.ndarray:
     """Fly `astro_max_base` through the command stream on the CPU device: every body's pose per tick,
     ``(steps, bodies, 7)``.
     """
-    cfg = build_scenario()
+    cfg = scenario()
     cfg["physics"]["force_cpu"] = True
     vehicle_usd, _ = resolve_vehicle_usd(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
     orch = build_loop("astro_max_base", cfg, vehicle_usd, controller=_Stream(), max_steps=steps)

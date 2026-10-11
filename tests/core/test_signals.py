@@ -213,13 +213,14 @@ def _stopped(tmp_path, controller, *, sensors=(), guidance=None) -> tuple[str, i
     pytest.importorskip("newton")
     pytest.importorskip("pxr")
     from nexus_sim._src.api.sim import Sim
-    from nexus_sim._src.build.assembly import assemble, build_scenario, resolve_device
+    from nexus_sim._src.build.assembly import assemble, resolve_device
     from nexus_sim._src.physics import NewtonPhysics
     from nexus_sim._src.physics.vehicle import VehicleUsd
     from nexus_sim._src.vehicle.estimators import GroundTruthEstimator
+    from tests.usd.sensor_vehicle import scenario
     from tests.vehicle import quad
 
-    cfg = build_scenario()
+    cfg = scenario()
     cfg["physics"]["force_cpu"] = True
     resolve_device(cfg)
     vehicle_usd = VehicleUsd({"usd_path": str(quad.author(tmp_path / "quad.usda"))})

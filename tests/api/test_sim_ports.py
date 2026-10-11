@@ -20,6 +20,7 @@ from nexus_sim._src.core.interfaces import Component, Stage
 from nexus_sim._src.core.loop import Loop
 from nexus_sim._src.core.schema import SimTime
 from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
+from tests.usd import sensor_vehicle as sv
 
 # --- the stand-in core components, as tests/core builds the loop -----------------------------------
 
@@ -143,7 +144,7 @@ def _run(tmp_path, *, layer: str | None = None, peers: dict | None = None) -> Lo
     catalog = Catalog.from_dict(
         {
             "vehicles": {"astro": {"usd": {"url": blob.as_uri(), "sha256": sha, "filename": blob.name}}},
-            "scenes": {"empty": {}},
+            "scenes": {"empty": {"usd": sv.SCENE_REF}},
         }
     )
     spec = {"vehicle": "astro", "scene": "empty"}
