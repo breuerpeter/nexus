@@ -196,3 +196,19 @@ def test_the_public_surface_names_no_measurement():
     )
     out = subprocess.run([sys.executable, "-c", code], check=False, capture_output=True, text=True)
     assert out.stdout.strip() == "False True", out.stderr
+
+
+def test_bodystate_and_jointstate_leave_the_public_surface():
+    """`BodyState` and `JointState` leave the public surface.
+
+    Given a fresh interpreter, when it imports `nexus_sim`, then neither name is in `nexus_sim.__all__` and
+    `nexus_sim.BodyState` raises `AttributeError`.
+    """
+    code = (
+        "import nexus_sim as nx\n"
+        "print('>', [n for n in ('BodyState', 'JointState') if n in nx.__all__], end=' ')\n"
+        "try:\n    nx.BodyState\nexcept AttributeError:\n    print('raises')\nelse:\n    print('resolves')"
+    )
+    out = subprocess.run([sys.executable, "-c", code], check=False, capture_output=True, text=True)
+
+    assert out.stdout.strip() == "> [] raises", out.stdout + out.stderr
