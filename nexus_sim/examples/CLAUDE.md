@@ -36,7 +36,7 @@ in the script, and it records its flight `.rrd`. The launcher map is `_EXAMPLES`
   so the row lands at `sim/vehicle/controllers/<name>/horizon`.
 - `_lib/` is the shared machinery. It holds the single-body `Rotors` actuator in `rotors.py` plus
   the mixers in `mixer.py`, and the Universal Scene Description (USD) to single-body collapse in
-  `single_body.py`. It also holds the reference planners in `reference.py` and `min_snap.py`, the
+  `single_body.py`, which re-exports the rotor parser and geometry helpers `nexus-rl` reads. It also holds the reference planners in `reference.py` and `min_snap.py`, the
   train↔deploy observation source in `observation.py`, which `nexus-rl` also imports, and the
   evaluation dump in `eval_dump.py`.
 - The acados example provisions its own acados: `controllers/acados_nmpc/provision.py` fetches the

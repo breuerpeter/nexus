@@ -28,11 +28,11 @@ def _resolve_astro_max_usd() -> str:
     """Resolve the Astro Max USD for Isaac Lab to load: the **hosted, content-addressed catalog
     asset**, the same source the standalone runtime resolves; cached, so offline after the first fetch.
     """
-    from nexus_sim._src.config import LaunchConfig, resolve
+    from nexus_sim import Catalog
 
-    # resolve() fetches with a bounded timeout, via the asset resolver; a sha-mismatch raises ValueError so an
-    # integrity failure surfaces loudly instead of silently using a stale local file.
-    return str(resolve(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty")).vehicle_usd_path)
+    # The fetch has a bounded timeout, and a sha mismatch raises ValueError, so an integrity failure
+    # surfaces loudly instead of silently using a stale local file.
+    return str(Catalog.from_yaml().fetch_vehicle("astro_max_base"))
 
 
 ASTRO_MAX_USD = _resolve_astro_max_usd()

@@ -15,7 +15,8 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
 - **PX4 is the one first-class controller**, living in `nexus_sim/_src/`. Every other controller,
   `pid`, `policy`, `sampling_mpc`, and `acados_nmpc`, is a self-contained, **zero-arg** example
   under `nexus_sim/examples/controllers/<name>/`. Shared example machinery lives in
-  `nexus_sim/examples/_lib/`. It ships in the wheel, and `nexus-rl` imports from it. Core must
+  `nexus_sim/examples/_lib/`. It ships in the wheel, and `nexus-rl` imports from it. `nexus-rl`
+  imports nothing from `nexus_sim._src`, a ruff banned-import rule in `pyproject.toml`. Core must
   never import `nexus_sim.examples`, an import-linter contract in `.importlinter`. Run any
   example with `uv run -m nexus_sim.examples <name>`. Read `nexus_sim/examples/CLAUDE.md`
   before adding or changing an example.
