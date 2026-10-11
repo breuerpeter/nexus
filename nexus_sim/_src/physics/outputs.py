@@ -31,7 +31,7 @@ def joint_struct(nq: int, nqd: int) -> type:
         "q": wp.types.vector(length=nq, dtype=wp.float32),
         "qd": wp.types.vector(length=nqd, dtype=wp.float32),
     }
-    return wp.struct(type(f"JointState_{nq}_{nqd}", (), {"__annotations__": fields, "__module__": __name__}))
+    return wp.struct(type(f"Joint_{nq}_{nqd}", (), {"__annotations__": fields, "__module__": __name__}))
 
 
 @wp.kernel
