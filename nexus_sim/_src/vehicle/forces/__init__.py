@@ -1,4 +1,4 @@
-"""The force seam's components: each turns the current state into body wrenches and adds them to
+"""The force elements: each turns the current state into body wrenches and adds them to
 ``state.body_f``.
 
 A force element runs once per physics substep, after the command elements and before the physics ``step``

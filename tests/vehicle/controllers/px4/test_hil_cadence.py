@@ -10,7 +10,7 @@ import pytest
 pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
-from nexus_sim._src.core.registry import default_registry
+from nexus_sim._src.core.registry import Registry
 from tests.usd import sensor_vehicle as sv
 
 # PX4's ports are the machine's, so the tests that bind or dial them run on one worker, one at a time.
@@ -35,9 +35,7 @@ def _receive(tmp_path, prims: str, ticks: int) -> tuple[list[int], int]:
     Returns:
         The `fields_updated` mask of each `HIL_SENSOR` of the window, and how many `HIL_GPS` came in it.
     """
-    loop = sv.build(
-        sv.vehicle(tmp_path, prims, px4=True), components=default_registry(), peers={"px4_sitl": sv.KeepingFake}
-    )
+    loop = sv.build(sv.vehicle(tmp_path, prims, px4=True), components=Registry(), peers={"px4_sitl": sv.KeepingFake})
     fake = loop.peers[0]
     sv.steps(loop, ticks + 2 * MARGIN)
     sensor = [msg for msg in fake.last.every if msg.get_type() == "HIL_SENSOR"]

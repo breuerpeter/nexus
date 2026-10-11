@@ -14,9 +14,9 @@ from nexus_sim._src.build.assembly import build_scenario
 from nexus_sim._src.build.launch import resolve_scenario, resolve_vehicle_usd
 from nexus_sim._src.config import LaunchConfig
 from nexus_sim._src.guidance import MissionGuidance
-from nexus_sim.examples.controllers.pid.assembly import build_pid_orchestrator
-from nexus_sim.examples.controllers.policy.assembly import build_policy_orchestrator
-from nexus_sim.examples.controllers.sampling_mpc.assembly import build_sampling_mpc_orchestrator
+from nexus_sim.examples.controllers.pid.assembly import build_pid_loop
+from nexus_sim.examples.controllers.policy.assembly import build_policy_loop
+from nexus_sim.examples.controllers.sampling_mpc.assembly import build_sampling_mpc_loop
 from tests.usd import sensor_vehicle as sv
 
 
@@ -29,7 +29,7 @@ def _cpu() -> dict:
 def _policy(torchscript_policy):
     """The policy example's run, with no guidance."""
     vb, _ = resolve_vehicle_usd(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
-    return build_policy_orchestrator(_cpu(), policy_path=torchscript_policy(), vehicle_usd=vb, max_steps=1), None
+    return build_policy_loop(_cpu(), policy_path=torchscript_policy(), vehicle_usd=vb, max_steps=1), None
 
 
 def _sampling_mpc(torchscript_policy):
@@ -38,7 +38,7 @@ def _sampling_mpc(torchscript_policy):
     launch.runtime.device = "cpu"
     vb, _, cfg = resolve_scenario(launch)
     cfg["physics"]["force_cpu"] = True
-    return build_sampling_mpc_orchestrator(cfg, vehicle_usd=vb, num_rollouts=2, max_steps=1), None
+    return build_sampling_mpc_loop(cfg, vehicle_usd=vb, num_rollouts=2, max_steps=1), None
 
 
 def _pid_with_guidance(torchscript_policy):
@@ -46,7 +46,7 @@ def _pid_with_guidance(torchscript_policy):
     vb, _ = resolve_vehicle_usd(LaunchConfig().set_vehicle("astro_max_base").set_scene(sv.SCENE))
     guidance = MissionGuidance()
     guidance.set_mission([(0.0, 0.0, 1.5)])
-    return build_pid_orchestrator(_cpu(), goal_w=(0.0, 0.0, 1.5), max_steps=1, vehicle_usd=vb), guidance
+    return build_pid_loop(_cpu(), goal_w=(0.0, 0.0, 1.5), max_steps=1, vehicle_usd=vb), guidance
 
 
 @pytest.mark.usefixtures("warp_cpu")
@@ -73,8 +73,8 @@ def test_a_reader_of_the_estimate_on_a_run_with_no_estimator_fails_before_any_st
     """
     orch, guidance = build(torchscript_policy)
     orch.estimator = None
-    with Sim.from_orchestrator(orch, guidance=guidance) as sim:
+    with Sim._from_loop(orch, guidance=guidance) as sim:
         with pytest.raises(ValueError) as e:
             sim.run()
-        rows = len(sim.physics[sim.base_body].history())
+        rows = len(sim[f"vehicle/body/{sim.base_body}"].history())
     assert (reader in str(e.value), "estimator" in str(e.value), rows) == (True, True, 0)

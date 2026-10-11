@@ -1,7 +1,7 @@
 """The flown path: a run's recording carries the trail beside the airframe's recorded series.
 
 Real end-to-end on the Warp CPU backend: a one-body Universal Scene Description (USD) vehicle in
-free fall, the orchestrator driving a short run with its Recorder, then the ``.rrd`` it wrote. Skipped if rerun, newton or pxr are missing.
+free fall, the loop driving a short run with its Recorder, then the ``.rrd`` it wrote. Skipped if rerun, newton or pxr are missing.
 """
 
 import pytest
@@ -10,7 +10,7 @@ pytest.importorskip("rerun")
 pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
-from nexus_sim._src.core.interfaces import Stage
+from nexus_sim._src.core.interfaces import Component, Stage
 
 DT = 0.004  # 250 Hz control ticks
 STEPS = 30  # ticks, well past the trail's two-point floor
@@ -30,14 +30,14 @@ def _author_min_usd(path: str) -> None:
     stage.GetRootLayer().Save()
 
 
-class _Actuator:
+class _Actuator(Component):
     """Writes no forces: the body flies the trail under gravity alone."""
 
     def stages(self):
         return [Stage("forces", "device", lambda tick: None)]
 
 
-class _Controller:
+class _Controller(Component):
     """One device stage that commands nothing, so the body flies under gravity alone."""
 
     def connect(self) -> None:
@@ -57,7 +57,7 @@ def flight_paths(tmp_path_factory, rrd_entities):
     import warp as wp
 
     from nexus_sim._src.core.clock import Clock
-    from nexus_sim._src.core.orchestrator import Orchestrator
+    from nexus_sim._src.core.loop import Loop
     from nexus_sim._src.logging import Logger
     from nexus_sim._src.physics.physics import NewtonPhysics
     from nexus_sim._src.physics.vehicle import VehicleUsd
@@ -72,7 +72,7 @@ def flight_paths(tmp_path_factory, rrd_entities):
         mb = newton.ModelBuilder()
         VehicleUsd({"usd_path": usd}).build(mb)
         model = mb.finalize()
-        orch = Orchestrator(
+        orch = Loop(
             clock=Clock(DT),
             physics=NewtonPhysics(model=model, cfg=cfg),
             actuator=_Actuator(),

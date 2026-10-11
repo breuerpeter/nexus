@@ -11,21 +11,19 @@ every message it receives lets a test read what PX4 receives.
 
 from __future__ import annotations
 
-from importlib.metadata import entry_points
 from pathlib import Path
 from typing import ClassVar
 
 import numpy as np
+import warp as wp
 
 from nexus_sim._src.config import LaunchConfig
 from nexus_sim._src.core.clock import DeviceClock
-from nexus_sim._src.core.interfaces import Stage
-from nexus_sim._src.core.registry import ComponentRegistry
-from nexus_sim._src.core.schema import Controls
+from nexus_sim._src.core.interfaces import Component, Stage
+from nexus_sim._src.core.registry import Registry
 from nexus_sim._src.core.signals import Signal, wire
-from nexus_sim._src.core.stages import Bound, peer_stages
+from nexus_sim._src.core.stages import Bound
 from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
-from nexus_sim._src.usd import ENTRY_POINT_GROUP
 
 BASE = Path(__file__).with_name("fixture_vehicle.usda")
 # The scene a fixture run flies in: an empty world, local, so a test fetches nothing.
@@ -137,26 +135,44 @@ over "vehicle"
     return str(path)
 
 
-class Controller:
+class HostController(Component):
+    """A controller with one host stage, ``exchange``, over :meth:`exchange`: the stage writes what the exchange
+    returns to the controls signal, ``width`` wide, and reports the peer gone on ``None``, which ends the run. A
+    stand-in subclasses it and overrides :meth:`exchange`, and ``reads`` for the signals the exchange reads.
+    """
+
+    width = 4
+    reads: tuple = ()
+
+    def __init__(self):
+        super().__init__()
+        self.controls = Signal("controls", wp.float32, shape=(1, self.width))
+        self._cmd = np.zeros((1, self.width), dtype=np.float32)
+
+    def stages(self):
+        return [Stage("exchange", "host", self._exchange, reads=tuple(self.reads), writes=(self.controls,))]
+
+    def _exchange(self, tick):
+        command = self.exchange(tick.t, tick.timeout)
+        if command is None:
+            return False
+        self._cmd[0, :] = command
+        self.controls.write(self._cmd)
+        return True
+
+    def exchange(self, t, timeout=None):
+        return np.zeros(self.width, dtype=np.float32)
+
+
+class Controller(HostController):
     """A stand-in controller: it answers at once with zero commands."""
 
     def __init__(self, **kwargs):
+        super().__init__()
         self.airframe = kwargs.get("airframe")
 
-    def connect(self):
-        pass
 
-    def close(self):
-        pass
-
-    def stages(self):
-        return peer_stages(self)
-
-    def exchange(self, t, timeout=None):
-        return Controls(command=np.zeros(4))
-
-
-class StandInSensor:
+class StandInSensor(Component):
     """A stand-in sensor: it keeps the run's values and its keyword arguments, and its one host stage does nothing."""
 
     def __init__(self, run, **kwargs):
@@ -196,7 +212,7 @@ def estimator(*reads: Signal) -> type:
     class of its own, for one run.
     """
 
-    class StandInEstimator:
+    class StandInEstimator(Component):
         kept: ClassVar[list] = []
         runs = 0
 
@@ -229,10 +245,9 @@ def wired(sensor, time: float = 0.0):
     return sensor
 
 
-def components(**entries) -> ComponentRegistry:
-    """A registry of the test's own: every shipped entry, the stand-in controller for PX4, then `entries`."""
-    shipped = {entry.name: entry for entry in entry_points(group=ENTRY_POINT_GROUP)}
-    return ComponentRegistry({**shipped, "NexusPx4API": Controller, **entries})
+def components(**entries) -> Registry:
+    """A registry of the test's own: the stand-in controller for PX4, then `entries`; the install answers the rest."""
+    return Registry({"NexusPx4API": Controller, **entries})
 
 
 def build(

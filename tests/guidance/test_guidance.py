@@ -9,7 +9,7 @@ import pytest
 
 pytest.importorskip("warp")
 
-from nexus_sim._src.core.interfaces import Stage, Tick
+from nexus_sim._src.core.interfaces import Component, Stage, Tick
 from nexus_sim._src.core.schema import PoseTwist, PositionGoal, ReferenceTrajectory, SimTime
 from nexus_sim._src.core.signals import Signal, wire
 from nexus_sim._src.core.stages import Bound
@@ -27,7 +27,7 @@ class _Reference:
         self.start = np.asarray(p0, dtype=float)
 
 
-class _Estimator:
+class _Estimator(Component):
     """Stands in for the estimator: it writes the estimate the guidance reads, which each tick sets."""
 
     def __init__(self):
@@ -65,7 +65,7 @@ def _tick(guidance, pos, sim_time) -> Tick:
 
 
 def test_a_guidance_constructs_from_its_own_parameters():
-    """A guidance constructs from its own parameters: no controller, no orchestrator and no stop."""
+    """A guidance constructs from its own parameters: no controller, no loop and no stop."""
     built = [
         MissionGuidance(reached_m=0.3),
         TrackingGuidance(planner=_Reference),

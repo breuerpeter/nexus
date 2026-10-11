@@ -13,11 +13,11 @@ from __future__ import annotations
 import numpy as np
 
 from nexus_sim._src.core import logger
-from nexus_sim._src.core.interfaces import Stage
+from nexus_sim._src.core.interfaces import Component, Stage
 from nexus_sim._src.core.signals import Signal
 
 
-class RtxMountedSensor:
+class RtxMountedSensor(Component):
     """Shared base for RTX sensors mounted on a vehicle body: a ``Sensor`` whose work is one host
     stage, over a prim authored in the vehicle USD as a body child.
 
@@ -59,7 +59,7 @@ class RtxMountedSensor:
         logger.info(f"{type(self).__name__}: {path} @{self.rate:.0f}Hz -> sensors/{self.name} (body[{body}])")
 
     def set_logger(self, logger_) -> None:
-        """Component-owned logging: the orchestrator hands over the Logger scoped to this sensor,
+        """Component-owned logging: the loop hands over the Logger scoped to this sensor,
         and None = off.
 
         In debug mode, non-camera sensors log their coordinate frame once, statically, at their own row

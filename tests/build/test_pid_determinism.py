@@ -3,7 +3,7 @@
 Newton CPU physics is bit-exact, but real-PX4 *armed* flight isn't
 bit-reproducible, because of its multi-threaded work-queue interleaving. The built-in PID is the
 deterministic controller that closes that gap: flown through the unchanged
-``Orchestrator.run()`` over the bit-exact Newton CPU backend, two runs of the same setup produce
+``Loop.run()`` over the bit-exact Newton CPU backend, two runs of the same setup produce
 **bit-for-bit the same** trajectories: the determinism CI gate that doesn't wait on PX4.
 
 It flies the local fixture vehicle of ``tests/usd/sensor_vehicle.py``, built and settled twice; skipped
@@ -19,7 +19,7 @@ pytest.importorskip("warp")
 from nexus_sim._src.build.assembly import build_scenario
 from nexus_sim._src.build.launch import resolve_vehicle_usd
 from nexus_sim._src.config import LaunchConfig
-from nexus_sim.examples.controllers.pid.assembly import build_pid_orchestrator
+from nexus_sim.examples.controllers.pid.assembly import build_pid_loop
 from tests.usd import sensor_vehicle as sv
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")  # the build's force_cpu sets the device; the scope puts it back
@@ -29,7 +29,7 @@ def _run(steps: int, vehicle: str):
     cfg = build_scenario()
     cfg["physics"]["force_cpu"] = True
     vehicle_usd, _ = resolve_vehicle_usd(LaunchConfig().set_vehicle(vehicle).set_scene(sv.SCENE))
-    orch = build_pid_orchestrator(
+    orch = build_pid_loop(
         cfg,
         goal_w=(0.0, 0.0, 1.5),
         max_steps=steps,

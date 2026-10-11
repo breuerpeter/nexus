@@ -10,7 +10,7 @@ import pytest
 from pxr import Sdf, Usd, UsdGeom
 
 from nexus_sim._src.build.components import resolve_components
-from nexus_sim._src.core.registry import ComponentRegistry
+from nexus_sim._src.core.registry import Registry
 from nexus_sim._src.usd import schema_names
 
 FIXTURE = Path(__file__).with_name("conformance.usda")
@@ -76,7 +76,7 @@ def test_each_attribute_the_schema_defines_reaches_the_class_as_the_snake_case_k
     authored, when the build resolves it with a registry that maps the schema to a stand-in, then the
     stand-in's keyword arguments hold the snake-case name with the authored value.
     """
-    (imu,) = _imu(resolve_components(FIXTURE, ComponentRegistry(dict.fromkeys(schema_names(), StandIn))))
+    (imu,) = _imu(resolve_components(FIXTURE, Registry(dict.fromkeys(schema_names(), StandIn))))
     assert imu.kwargs["acc_noise"] == pytest.approx(0.05)
 
 
@@ -86,7 +86,7 @@ def test_an_attribute_the_prim_does_not_author_takes_the_fallback_the_plugin_def
     Given the fixture prim with one attribute unauthored, when resolved, then the stand-in's keyword
     arguments hold that name at the plugin's fallback.
     """
-    (imu,) = _imu(resolve_components(FIXTURE, ComponentRegistry(dict.fromkeys(schema_names(), StandIn))))
+    (imu,) = _imu(resolve_components(FIXTURE, Registry(dict.fromkeys(schema_names(), StandIn))))
     assert imu.kwargs["gyro_noise"] == pytest.approx(0.02)
 
 
@@ -110,7 +110,7 @@ def test_an_asset_path_attribute_resolves_against_the_layer_that_authored_it(tmp
     root.GetRootLayer().subLayerPaths.append("sub/mount.usda")
     root.GetRootLayer().Save()
 
-    (ai,) = resolve_components(vehicle, ComponentRegistry({"StandInAPI": StandIn}))
+    (ai,) = resolve_components(vehicle, Registry({"StandInAPI": StandIn}))
     assert Path(ai.kwargs["weights"]) == sub / "weights.pt"
 
 
@@ -127,18 +127,22 @@ def test_a_newton_schema_on_a_prim_is_not_a_nexus_component(tmp_path):
     rotor.GetAttribute("newton:kp").Set(2.0)
     stage.GetRootLayer().Save()
 
-    assert resolve_components(vehicle, ComponentRegistry({})) == []
+    assert resolve_components(vehicle, Registry({})) == []
 
 
-def test_a_schema_no_class_claims_fails_the_build_and_names_the_prim():
+def test_a_schema_no_class_claims_fails_the_build_and_names_the_prim(tmp_path):
     """A schema no class claims fails the build and names the prim.
 
-    Given the fixture applying a schema no registry entry claims, when resolved, then the build fails
-    naming the prim path and the schema.
+    Given a vehicle whose prim applies the stand-in schema, which the registry doesn't map and no installed
+    package claims, when resolved, then the build fails naming the prim path and the schema.
     """
+    vehicle = tmp_path / "vehicle.usda"
+    stage = Usd.Stage.CreateNew(str(vehicle))
+    UsdGeom.Xform.Define(stage, "/Vehicle/body/Ai").GetPrim().AddAppliedSchema("StandInAPI")
+    stage.GetRootLayer().Save()
     with pytest.raises(ValueError) as e:
-        resolve_components(FIXTURE, ComponentRegistry({"NexusPropellerAPI": StandIn, "NexusPx4API": StandIn}))
-    assert IMU in str(e.value) and "NexusImuAPI" in str(e.value)
+        resolve_components(vehicle, Registry({}))
+    assert "/Vehicle/body/Ai" in str(e.value) and "StandInAPI" in str(e.value)
 
 
 def test_an_authored_attribute_the_schema_does_not_define_fails_the_build_and_names_the_prim(tmp_path):
@@ -153,7 +157,7 @@ def test_an_authored_attribute_the_schema_does_not_define_fails_the_build_and_na
     stage.GetRootLayer().Save()
 
     with pytest.raises(ValueError) as e:
-        resolve_components(vehicle, ComponentRegistry({"NexusImuAPI": StandIn}))
+        resolve_components(vehicle, Registry({"NexusImuAPI": StandIn}))
     assert IMU in str(e.value) and "nexus:bogus" in str(e.value)
 
 

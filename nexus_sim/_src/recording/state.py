@@ -2,7 +2,7 @@
 
 The Recorder registers one history per body, ``vehicle/body/<label>``, and one per joint,
 ``vehicle/joints/<label>``, from the finalized model's labels, so the full Newton model state is
-addressable by name: ``sim.physics["body_frd"]`` is the base body, ``sim.physics["rotor_1_joint"]``
+addressable by name: ``sim["vehicle/body/body_frd"]`` is the base body, ``sim["vehicle/joints/rotor_1_joint"]``
 an actuator joint. Each tick a device-only kernel snapshots that entity into its history's staging
 buffers, its values and its time, with no D2H, and the decode reconstructs the typed state at read time.
 

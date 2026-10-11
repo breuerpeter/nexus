@@ -19,13 +19,9 @@ estimate, and that has no estimator, fails before any stage runs, with an error 
 and the estimator. PX4 takes none, because its own estimator runs in its peer and takes the sensors'
 values over the lockstep link.
 
-The estimator belongs to the vehicle's flight stack, beside its controller. Each example's assembly
-constructs it and hands it to the loop. The classes are **internal**: an example imports them from
-`nexus_sim._src`, not from the top-level package.
-
-```python
-orch = Orchestrator(..., estimator=GroundTruthEstimator(), controller=controller)
-```
+The estimator belongs to the vehicle's flight stack, beside its controller, and the vehicle's
+Universal Scene Description (USD) file declares it. The shipped class is **internal**: a vehicle names it by its schema, and a project's
+estimator subclasses [`Component`](components.md) and writes a `PoseTwist`, which `nexus_sim` exports.
 
 ::: nexus_sim._src.vehicle.estimators.ground_truth.GroundTruthEstimator
-::: nexus_sim._src.core.schema.PoseTwist
+::: nexus_sim.PoseTwist

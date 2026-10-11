@@ -20,6 +20,7 @@ from nexus_sim.examples._lib.coupling import (  # noqa: F401
 )
 from nexus_sim.examples._lib.eval_dump import dump_run, dump_stats  # noqa: F401
 from nexus_sim.examples._lib.mixer import (  # noqa: F401
+    Controls,
     CtbrMixer,
     CtbrParams,
     MomentMixer,

@@ -15,7 +15,7 @@ pytest.importorskip("pxr")
 
 from pxr import Usd
 
-from nexus_sim._src.core.registry import default_registry
+from nexus_sim._src.core.registry import Registry
 from nexus_sim._src.peers.kit.fake import KitFake
 from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
 from tests.usd import sensor_vehicle as sv
@@ -58,7 +58,7 @@ def test_a_camera_a_thermal_camera_and_a_lidar_schema_each_build_their_sensor_wi
     sizes = [(s.width, s.height) for s in loop.sensors[:2]]  # the lidar declares no resolution
     loop.close()
 
-    registry = default_registry()
+    registry = Registry()
     assert (built, sizes) == (
         [
             (registry.resolve("NexusCameraAPI"), 30.0),
@@ -170,7 +170,7 @@ def test_a_vehicle_with_no_rtx_sensor_schema_starts_no_kit_peer(tmp_path):
     kit, started = _kit()
 
     path = sv.vehicle(tmp_path, analytic, px4=True)
-    sv.build(path, components=default_registry(), peers={"px4_sitl": Px4Fake, "kit": kit}).close()
+    sv.build(path, components=Registry(), peers={"px4_sitl": Px4Fake, "kit": kit}).close()
 
     assert started == []
 

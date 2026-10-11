@@ -73,7 +73,7 @@ configuration lives in the script, and it records an interactive `.rrd` of its f
 
     [:octicons-arrow-right-24: Examples](../examples/index.md)
 
--   **Look up the API**: `Sim`, `Orchestrator`, and the rest of the public surface.
+-   **Look up the API**: `Sim`, `Loop`, and the rest of the public surface.
 
     [:octicons-arrow-right-24: API reference](../reference/index.md)
 

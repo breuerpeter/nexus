@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from nexus_sim._src.usd.reader import ROLES, read_declarations, roles
 
-from .registry import ComponentRegistry, default_registry
+from .registry import Registry
 
 
 @dataclass(frozen=True)
@@ -23,18 +23,18 @@ class ComponentSpec:
     role: str
 
 
-def resolve_components(usd_path: str | pathlib.Path, registry: ComponentRegistry | None = None) -> list[ComponentSpec]:
+def resolve_components(usd_path: str | pathlib.Path, registry: Registry | None = None) -> list[ComponentSpec]:
     """One record per applied nexus schema in the vehicle file at `usd_path`: its prim, class, keyword arguments
     and role.
 
-    Creates no component. With no `registry`, the default one resolves each schema.
+    Creates no component. With no `registry`, the install resolves each schema.
 
     Raises:
         ValueError: A prim applies a schema that states no role or more than one, or a schema no class
             claims; the message names the prim and the schema, and the roles it states.
     """
     if registry is None:
-        registry = default_registry()
+        registry = Registry()
     specs = []
     for prim, schema, kwargs in read_declarations(usd_path):
         stated = roles(schema)
@@ -49,8 +49,6 @@ def resolve_components(usd_path: str | pathlib.Path, registry: ComponentRegistry
             )
         cls = registry.resolve(schema)
         if cls is None:
-            raise ValueError(
-                f"{prim}: no class claims {schema}; map it with register_component or a nexus.components entry point"
-            )
+            raise ValueError(f"{prim}: no class claims {schema}; map it with register or a nexus.registry entry point")
         specs.append(ComponentSpec(prim, schema, cls, kwargs, stated[0]))
     return specs

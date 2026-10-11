@@ -14,10 +14,9 @@ pytest.importorskip("pxr")
 
 import warp as wp
 
-from nexus_sim._src.core.interfaces import Stage
+from nexus_sim._src.core.interfaces import Component, Stage
 from nexus_sim._src.core.schema import PoseTwist
 from nexus_sim._src.core.signals import Signal
-from nexus_sim._src.core.stages import peer_stages
 from tests.usd import sensor_vehicle as sv
 from tests.usd.stand_in.nexus_stand_in.estimator import StandInEstimator
 from tests.usd.stand_in.nexus_stand_in.sensor import Gain
@@ -27,7 +26,7 @@ pytestmark = pytest.mark.usefixtures("warp_cpu")
 ESTIMATOR = sv.prim("Estimator", "StandInEstimatorAPI", "float3 nexus:position = (1, 2, 3)", kind="Scope")
 
 
-class _EstimateGuidance:
+class _EstimateGuidance(Component):
     """A guidance whose host stage keeps the estimate it reads on each tick, and writes no new setpoint."""
 
     def __init__(self):
@@ -51,12 +50,10 @@ class _SetpointController(sv.Controller):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.setpoint = Signal("setpoint", wp.vec3, shape=(1,))
-
-    def stages(self):
-        return peer_stages(self, reads=(self.setpoint,))
+        self.reads = (self.setpoint,)
 
 
-class _ConnectingSensor:
+class _ConnectingSensor(Component):
     """A sensor whose class also states `connect` and `close`, as a controller's does. Its host stage writes
     its gain to the signal `gain`.
     """

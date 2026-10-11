@@ -2,6 +2,7 @@
 
 import warp as wp
 
+from nexus_sim import Component
 from nexus_sim._src.core.interfaces import Stage
 from nexus_sim._src.core.signals import Signal
 
@@ -13,7 +14,7 @@ class Gain:
     value: wp.float32
 
 
-class StandInSensor:
+class StandInSensor(Component):
     """A sensor that keeps the seed and the tick the run hands it, and writes its gain where a reader reads it:
     the signal `gain`, of the project's own type `Gain`.
 

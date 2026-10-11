@@ -172,7 +172,7 @@ scenario's Global Positioning System (GPS) origin. An inconsistent field gives P
 estimate, and it can't arm.
 
 **The PID law is the determinism authority.** The built-in PID, flown through the
-unchanged orchestrator on the CPU backend, reproduces bit-for-bit run-to-run. Real PX4 SITL is
+unchanged loop on the CPU backend, reproduces bit-for-bit run-to-run. Real PX4 SITL is
 instead *tolerance-gated*. The PX4 multi-threaded work-queue interleaves same-tick estimator and
 controller threads in an OS-dependent order. So armed flight isn't bit-reproducible, even though
 the sim it runs on is a pure deterministic function of the actuator stream it receives. Replaying a

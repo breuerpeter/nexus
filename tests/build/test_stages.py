@@ -18,7 +18,7 @@ from nexus_sim._src.build.assembly import build_scenario
 from nexus_sim._src.build.launch import resolve_vehicle_usd
 from nexus_sim._src.config import LaunchConfig
 from nexus_sim._src.guidance import TrackingGuidance
-from nexus_sim.examples.controllers.pid.assembly import build_pid_orchestrator
+from nexus_sim.examples.controllers.pid.assembly import build_pid_loop
 from tests.usd import sensor_vehicle as sv
 
 # The Secure Hash Algorithm (SHA) 256 digest of main's 200-tick PID body poses, float32 (200, 5, 7),
@@ -33,11 +33,11 @@ _MAIN_TRAJECTORY = {
 
 
 def _pid(*, cpu: bool, max_steps: int, vehicle: str = "astro_max_base"):
-    """The PID example's orchestrator flying `vehicle`, a catalog name or a path, toward 1.5 m up."""
+    """The PID example's loop flying `vehicle`, a catalog name or a path, toward 1.5 m up."""
     cfg = build_scenario()
     cfg["physics"]["force_cpu"] = cpu
     vehicle_usd, _ = resolve_vehicle_usd(LaunchConfig().set_vehicle(vehicle).set_scene(sv.SCENE))
-    return build_pid_orchestrator(cfg, goal_w=(0.0, 0.0, 1.5), max_steps=max_steps, vehicle_usd=vehicle_usd)
+    return build_pid_loop(cfg, goal_w=(0.0, 0.0, 1.5), max_steps=max_steps, vehicle_usd=vehicle_usd)
 
 
 @pytest.mark.gpu
@@ -66,10 +66,10 @@ def test_start_returns_with_the_seed_row_and_the_first_tick_recorded(device, tmp
     """
     with (
         wp.ScopedDevice(device),
-        Sim.from_orchestrator(_pid(cpu=device == "cpu", max_steps=50, vehicle=sv.vehicle(tmp_path))) as sim,
+        Sim._from_loop(_pid(cpu=device == "cpu", max_steps=50, vehicle=sv.vehicle(tmp_path))) as sim,
     ):
         sim.start()
-        rows = len(sim.physics[sim.base_body].history())
+        rows = len(sim[f"vehicle/body/{sim.base_body}"].history())
     assert rows == 2
 
 
@@ -98,10 +98,10 @@ def test_a_guidance_whose_setpoint_type_its_controller_does_not_read_fails_the_r
     guidance.set_mission([(1.0, 0.0, 1.5)])
     with (
         wp.ScopedDevice("cpu"),
-        Sim.from_orchestrator(_pid(cpu=True, max_steps=50, vehicle=sv.vehicle(tmp_path)), guidance=guidance) as sim,
+        Sim._from_loop(_pid(cpu=True, max_steps=50, vehicle=sv.vehicle(tmp_path)), guidance=guidance) as sim,
     ):
         with pytest.raises(ValueError) as e:
             sim.run()
-        rows = len(sim.physics[sim.base_body].history())
+        rows = len(sim[f"vehicle/body/{sim.base_body}"].history())
     words = ("TrackingGuidance", "PidController", "ReferenceTrajectory", "vec3f")
     assert (all(word in str(e.value) for word in words), rows) == (True, 0)

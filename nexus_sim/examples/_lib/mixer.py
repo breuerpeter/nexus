@@ -1,6 +1,6 @@
 """The **mixer**: the airframe control-allocation + Collective Thrust and Body Rates (CTBR) and moment
 control laws that turn a high-level controller action into the per-rotor commands the single-body motor
-model consumes. This is the flight-controller half of the actuator seam: the law + the mixer live here and
+model consumes. This is the flight-controller half of the rotor chain: the law + the mixer live here and
 in the controllers, the motor model lives in :class:`~nexus_sim.examples._lib.rotors.Rotors`.
 
 ``Controls.command`` is **always** ``nr`` normalized per-rotor commands ``u ∈ [0, 1]``, the rotor-speed
@@ -32,11 +32,26 @@ this leaf module keeps the import graph acyclic.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 import warp as wp
 
 from nexus_sim._src.vehicle.rotors import RPM_PER_RADS, find_rotor_joints, quat_to_R
+
+
+@dataclass(slots=True)
+class Controls:
+    """The controller→actuator command: always one command per actuator, normalized to ``[0, 1]``.
+
+    The control law and the vehicle's mixer, the rate loop and the ``B⁻¹`` allocation, live in the
+    controller, so whatever the law computes, Collective Thrust Body Rate (CTBR), moments or Nonlinear
+    Model Predictive Control (NMPC) thrusts, ``command`` is what the controller's law emits and its stage
+    writes to its controls signal: a length-``n`` host ``np.ndarray`` on the host exchange paths, or a
+    device-native ``(1, n)`` Warp array in the captured loop.
+    """
+
+    command: Any = None  # one entry per actuator: an np.ndarray of length n, or a (1, n) Warp array
 
 
 @wp.struct

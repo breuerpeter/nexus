@@ -17,7 +17,7 @@ import nexus_sim as nx
 from nexus_sim._src.build.assembly import build_scenario
 from nexus_sim._src.build.launch import resolve_vehicle_usd
 from nexus_sim._src.config import LaunchConfig
-from nexus_sim.examples.controllers.policy.assembly import build_policy_orchestrator
+from nexus_sim.examples.controllers.policy.assembly import build_policy_loop
 from nexus_sim.examples.controllers.policy.goto import flight
 from nexus_sim.examples.controllers.policy.goto.geofence import GeofenceGuidance
 
@@ -88,12 +88,12 @@ def _fly_tour(policy: str, steps: int) -> tuple[np.ndarray, np.ndarray]:
     cfg = build_scenario()
     cfg["physics"]["force_cpu"] = True
     vehicle_usd, _ = resolve_vehicle_usd(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
-    orch = build_policy_orchestrator(cfg, policy_path=policy, vehicle_usd=vehicle_usd, max_steps=steps)
+    orch = build_policy_loop(cfg, policy_path=policy, vehicle_usd=vehicle_usd, max_steps=steps)
     guidance = GeofenceGuidance(bounds=flight.FENCE)
-    with nx.Sim.from_orchestrator(orch, guidance=guidance) as sim:
-        sim.guidance.set_mission(flight.WAYPOINTS)
+    with nx.Sim._from_loop(orch, guidance=guidance) as sim:
+        guidance.set_mission(flight.WAYPOINTS)
         sim.run()
-    traj = sim.physics[sim.base_body].history()
+    traj = sim[f"vehicle/body/{sim.base_body}"].history()
     return np.array([s.position for s in traj]), np.array([s.quat_xyzw for s in traj])
 
 
@@ -121,10 +121,10 @@ def test_a_run_with_a_guidance_and_a_host_exchange_runs_one_device_segment_per_t
     cfg = build_scenario()
     cfg["physics"]["force_cpu"] = True
     vehicle_usd, _ = resolve_vehicle_usd(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
-    orch = build_policy_orchestrator(cfg, policy_path=torchscript_policy(), vehicle_usd=vehicle_usd, max_steps=1)
+    orch = build_policy_loop(cfg, policy_path=torchscript_policy(), vehicle_usd=vehicle_usd, max_steps=1)
     guidance = GeofenceGuidance(bounds=flight.FENCE)
     guidance.set_mission(flight.WAYPOINTS)
-    with caplog.at_level(logging.INFO, logger="nexus"), nx.Sim.from_orchestrator(orch, guidance=guidance) as sim:
+    with caplog.at_level(logging.INFO, logger="nexus"), nx.Sim._from_loop(orch, guidance=guidance) as sim:
         sim.run()
     plan = next(m for m in (r.getMessage() for r in caplog.records) if m.startswith("stage plan:"))
     assert plan.count("eager(") + plan.count("graph(") == 1

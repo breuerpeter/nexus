@@ -10,7 +10,7 @@ import pytest
 pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
-from nexus_sim._src.core.registry import default_registry
+from nexus_sim._src.core.registry import Registry
 from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
 from tests.usd import sensor_vehicle as sv
 
@@ -36,7 +36,7 @@ def test_px4_reads_the_imu_a_connection_on_its_prim_names_of_two(tmp_path):
     """
     connection = f"rel nexus:inputs:imu = <{sv.BODY}/ImuNoisy>"
     path = sv.vehicle(tmp_path, IMUS, px4=True, controller=connection)
-    loop = sv.build(path, fall_from=FALL_FROM, components=default_registry(), peers={"px4_sitl": Px4Fake})
+    loop = sv.build(path, fall_from=FALL_FROM, components=Registry(), peers={"px4_sitl": Px4Fake})
     fake = loop.peers[0]
     accels = []
     for _ in range(10):

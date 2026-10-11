@@ -1,11 +1,11 @@
 """Sim: the one public entry to a run, the program-driving API.
 
-Owns the sim: builds it from a ``LaunchConfig`` via ``build_from_launch`` and drives the
-``Orchestrator`` loop on the *caller's* thread, one driving model for every controller. A
-script steps the sim, with ``step``, ``run``, ``wait_until`` or ``sleep``, whether the controller
-takes setpoints or is PX4: the orchestrator's tick generator yields once per
-control tick either way, so a PX4 run is something you drive, not something you watch. Tears down
-cooperatively. Every run has a ``Recorder``, so ``physics`` and ``sensors`` read sim ground truth.
+Owns the sim: builds it from a ``LaunchConfig`` via ``build_from_launch`` and drives the ``Loop`` on the
+*caller's* thread, one driving model for every controller. A script steps the sim, with ``step``, ``run``,
+``wait_until`` or ``sleep``, whether the controller takes setpoints or is PX4: the loop's tick generator
+yields once per control tick either way, so a PX4 run is something you drive, not something you watch.
+Tears down cooperatively. Every run has a ``Recorder``, and a script reads any recorded history, a
+component's or the plant's, by indexing the run with the history's path: ``sim["vehicle/sensors/imu/imu"]``.
 """
 
 from __future__ import annotations
@@ -18,17 +18,19 @@ from nexus_sim._src.api.args import save_run_artifacts, sim_argparser  # noqa: F
 from nexus_sim._src.build.launch import build_from_launch
 from nexus_sim._src.config import LaunchConfig
 from nexus_sim._src.core import logger
-from nexus_sim._src.recording import Histories, Recorder
+from nexus_sim._src.recording import History, Recorder
 
 if TYPE_CHECKING:
-    from nexus_sim._src.core import Orchestrator
-    from nexus_sim._src.guidance import Guidance
+    from collections.abc import Iterator
+
+    from nexus_sim._src.core import Loop
+    from nexus_sim._src.core.registry import Registry
 
 
 class Sim:
     """The one public entry to a Newton sim run.
 
-    Builds an ``Orchestrator`` from a ``LaunchConfig`` and drives its loop on the *caller's*
+    Builds an ``Loop`` from a ``LaunchConfig`` and drives its loop on the *caller's*
     thread, one control tick per :meth:`step`, the same for a controller that takes setpoints
     and for PX4 on its Hardware In The Loop (HIL) lockstep. :meth:`start` drives setup as far as lockstep;
     :meth:`run` drives the whole run; :meth:`wait_until` and :meth:`sleep` step until a
@@ -59,11 +61,14 @@ class Sim:
             composes over the vehicle: it changes a declared value, selects a variant, or drops a
             declaration. A layer that drops the PX4 Software In The Loop (SITL) peer's,
             ``NexusPx4SitlAPI``, flies an autopilot started elsewhere, which dials port 4560.
+        registry: The :class:`~nexus_sim.Registry` the build resolves each schema with, its own rows first
+            and the install's for the rest, so a test maps a schema to a stand-in or a peer to its fake;
+            ``None`` takes the install alone.
 
     Example:
         >>> with Sim("astro_max_base", scene="empty") as sim:
         ...     sim.start()
-        ...     sim.wait_until(lambda: sim.physics[sim.base_body].latest().altitude_m > 1.0, sim_timeout=30.0)
+        ...     sim.wait_until(lambda: sim[f"vehicle/body/{sim.base_body}"].latest().altitude_m > 1.0, sim_timeout=30.0)
     """
 
     def __init__(
@@ -82,7 +87,9 @@ class Sim:
         max_steps: int | None = None,
         rtf: float = 0.0,
         layer: str | None = None,
+        registry: Registry | None = None,
     ):
+        self._registry = registry  # the registry the build resolves each schema with, or None for the default
         self._launch = LaunchConfig()
         self._launch.set_vehicle(vehicle)  # a catalog *name* or a local .usd path
         self._launch.layer = layer  # an override layer the run composes over the vehicle, or None
@@ -114,36 +121,36 @@ class Sim:
         self._launch.output.debug = debug  # axes-only scene: coordinate triads, no meshes → a small .rrd
         self._cache_dir = cache_dir
         self._orch = None
-        self._guidance = None  # a launch-built run has none: a flight hands one to from_orchestrator
+        self._guidance = None  # a launch-built run has none: a flight hands one to _from_loop
         self._ran = False
         self._stopped = False
-        self._prebuilt_orch = None  # set by from_orchestrator, the self-assembled-example entry
+        self._prebuilt_orch = None  # set by _from_loop, the self-assembled-example entry
 
     @classmethod
-    def from_orchestrator(
+    def _from_loop(
         cls,
-        orch: Orchestrator,
+        orch: Loop,
         *,
         guidance: object | None = None,
     ) -> Sim:
-        """Host a self-assembled :class:`~nexus_sim._src.core.Orchestrator`: the examples' entry.
+        """Host a self-assembled :class:`~nexus_sim._src.core.Loop`: the examples' entry.
 
-        An example builds its own orchestrator, its controller plus actuator plus sensors around
+        An example builds its own loop, its controller plus actuator plus sensors around
         the core components, see ``nexus_sim/examples/controllers/*/assembly.py``, and hands it
         over; the ``Sim`` adds what a script reads and drives: the ``Recorder``, when the loop has
-        none, ``sim.physics`` and ``sim.sensors``; the guidance the flight constructed, which joins
-        the loop; and the run lifecycle, ``run``, ``step``, ``stop``, ``results`` and ``artifacts``.
+        none, the histories by path; the guidance the flight constructed, which joins the loop; and
+        the run lifecycle, ``run``, ``step``, ``stop``, ``results`` and ``artifacts``. Internal: the
+        examples' way in until they build through the one builder.
 
         Args:
-            orch: The built orchestrator; its components already carry the renderer and logger.
+            orch: The built loop; its components already carry the renderer and logger.
             guidance: The guidance the flight constructed, for example
                 ``MissionGuidance(reached_m=0.3)``. Its stage runs each tick before the controller's
                 and writes the setpoint the controller reads. ``None`` flies the controller to the
-                setpoint's default.
+                setpoint's default. The flight keeps the object it built and sets the mission on it.
 
         Returns:
-            The ``Sim`` handle: use as a context manager, then ``sim.guidance.set_mission`` plus
-            ``sim.run()``.
+            The ``Sim`` handle: use as a context manager, then ``sim.run()``.
         """
         sim = cls.__new__(cls)
         sim._launch = None
@@ -185,14 +192,14 @@ class Sim:
     # -- context manager: build only; start()/step()/run() drive the run on the caller's thread --
     def __enter__(self) -> Sim:
         if self._prebuilt_orch is not None:
-            self._orch = self._prebuilt_orch  # a self-assembled example's orchestrator, via from_orchestrator
+            self._orch = self._prebuilt_orch  # a self-assembled example's loop, via _from_loop
             if self._guidance is not None:
                 # The flight's guidance joins the loop's ring: its stage runs before the controller's.
                 # The loop builds its ring at the first step, so handing it over here is in time.
                 self._orch.guidance = self._guidance
         else:
             # A vehicle that authors RTX sensors starts the Kit render peer here, from the host.
-            self._orch = build_from_launch(self._launch, cache_dir=self._cache_dir)
+            self._orch = build_from_launch(self._launch, cache_dir=self._cache_dir, components=self._registry)
         if self._orch.recorder is None:
             # A self-assembled loop that brought no Recorder gets one: the loop hands it the plant and
             # each sensor at its first step. dt → the per-row sim time, counter × dt.
@@ -202,29 +209,7 @@ class Sim:
         # step-driven the same way as any other.
         return self
 
-    # -- the guidance of a setpoint controller, and the run's port map --
-    @property
-    def guidance(self) -> Guidance:
-        """The guidance of this run: the component a flight constructed and handed to
-        :meth:`from_orchestrator`, whose stage turns the mission into the controller's setpoint each
-        tick. Set the mission on it before ``run()``, and read its telemetry after.
-
-        Returns:
-            The run's guidance, for example a ``MissionGuidance``.
-
-        Raises:
-            RuntimeError: The run has no guidance: the flight handed none over, or the vehicle
-                flies PX4, whose own navigator is its guidance. The message shows how a flight
-                constructs one.
-        """
-        if self._guidance is None:
-            raise RuntimeError(
-                "this run has no guidance: a flight constructs one and hands it over, "
-                "`guidance = MissionGuidance(reached_m=0.3)` then "
-                "`Sim.from_orchestrator(orch, guidance=guidance)`; a PX4 run takes none"
-            )
-        return self._guidance
-
+    # -- the run's port map --
     @property
     def ports(self) -> Mapping[str, dict]:
         """The run's port map: each link that leaves the run, by name, to the address a script opens
@@ -249,7 +234,7 @@ class Sim:
     def start(self, timeout: float | None = None) -> None:
         """Drive the run's setup, returning once the first control tick has completed.
 
-        One step: the orchestrator's first ``step()`` runs physics reset, the wait for the Kit
+        One step: the loop's first ``step()`` runs physics reset, the wait for the Kit
         render peer to boot and warm its stage when the vehicle renders, the seed row and the graph
         capture, ``controller.connect()``, which binds the HIL port PX4 dials, and the preroll wait
         for the peer, then flies one tick.
@@ -283,9 +268,8 @@ class Sim:
         generator, setup, loop and teardown. Bounded by ``max_steps``, the guidance's mission end, or,
         for PX4, the peer disconnecting; ``stop()`` ends it early.
 
-        Set the mission via ``sim.guidance`` first, then read ``sim.physics[name]`` or
-        ``sim.sensors[name]``, with ``.latest()`` or ``.history()``, after it returns. A script that
-        wants to observe or command mid-flight uses :meth:`step` or :meth:`wait_until` instead.
+        Read any history, ``sim[path]``, with ``.latest()`` or ``.history()``, after it returns. A script
+        that wants to observe or command mid-flight uses :meth:`step` or :meth:`wait_until` instead.
 
         Raises:
             RuntimeError: Called outside the ``Sim`` context manager.
@@ -303,9 +287,8 @@ class Sim:
         you read between steps lands at exact tick boundaries, with no wall-clock.
 
         The one driving verb for every controller: one that takes setpoints and PX4 alike advance
-        one tick per call. Set the mission via ``sim.guidance`` first; then step and
-        read ``sim.physics[...]`` between steps. Returns ``False`` when the run has ended: mission
-        complete, ``max_steps``, stopped, or the peer disconnected.
+        one tick per call. Step, then read ``sim[path]`` between steps. Returns ``False`` when the run
+        has ended: mission complete, ``max_steps``, stopped, or the peer disconnected.
 
         Raises:
             RuntimeError: Called outside the ``Sim`` context manager.
@@ -320,47 +303,45 @@ class Sim:
     def __exit__(self, *exc) -> None:
         self.stop()
 
-    # -- ground truth: North-East-Down (NED) free; world Z-up --
-    @property
-    def physics(self) -> Histories:
-        """Name-keyed view over the recorded model state: every body and joint, by the model's labels.
+    # -- the recorded histories, by path: the run is a mapping --
+    def _histories(self) -> dict[str, History]:
+        if self._orch is None:
+            raise RuntimeError("enter the Sim context first (`with nx.Sim(...) as sim:`)")
+        return self._orch.recorder.histories
 
-        ``sim.physics["body_frd"]`` or ``sim.physics["rotor_1"]`` → a body's history, whose ``.latest()``
-        and ``.history()`` give :class:`~nexus_sim._src.recording.BodyState`;
-        ``sim.physics["rotor_1_joint"]`` → a joint's history,
-        :class:`~nexus_sim._src.recording.JointState`. Ground truth in the world frame, Z-up FLU, not an
-        autopilot's Extended Kalman Filter (EKF) estimate. Use :attr:`base_body` for the base body
-        without hardcoding a name: ``sim.physics[sim.base_body].latest()``.
+    def __getitem__(self, path: str) -> History:
+        """The recorded history at ``path``, its path below the run's root, as the recording names it.
+
+        ``sim["vehicle/sensors/imu/imu"]`` is the Inertial Measurement Unit (IMU)'s sample stream,
+        ``sim["vehicle/controllers/px4/controls"]``
+        the controls PX4 wrote, ``sim["vehicle/body/body_frd"]`` the base body's pose and twist and
+        ``sim["vehicle/joints/rotor_1_joint"]`` a joint's, ground truth in the world frame, Z-up FLU. Each is a
+        :class:`~nexus_sim._src.recording.History`, with ``.latest()``, ``.history()`` and ``.arrays()``. A
+        signal's row is a record of ``t``, the tick's sim time, then the fields its type declares,
+        ``row["accel"]``; a body's reads as a :class:`~nexus_sim._src.recording.BodyState` and a joint's as a
+        :class:`~nexus_sim._src.recording.JointState`. Use :attr:`base_body` for the base body without
+        hardcoding its name: ``sim[f"vehicle/body/{sim.base_body}"].latest()``.
 
         Raises:
             RuntimeError: Accessed before entering the ``Sim`` context.
+            KeyError: No history at ``path``; ``for path in sim`` lists them.
         """
-        if self._orch is None:
-            raise RuntimeError("enter the Sim context first (`with nx.Sim(...) as sim:`)")
-        return Histories(self._orch.recorder.histories, ("vehicle/body/", "vehicle/joints/"))
+        return self._histories()[path]
 
-    @property
-    def sensors(self) -> Histories:
-        """Name-keyed view over the sensors' histories: ``sim.sensors["imu"]`` and so on. Keys are flat
-        instance names, so a redundant setup reads ``sim.sensors["imu_bosch"]`` beside
-        ``sim.sensors["imu_murata"]``, each the history of the one signal its sensor writes.
+    def __iter__(self) -> Iterator[str]:
+        """Each recorded history's path, in the order the run registered them."""
+        return iter(self._histories())
 
-        Each value is a :class:`~nexus_sim._src.recording.History`, with ``.latest()``, ``.history()`` and
-        ``.arrays()``, of that sensor's recorded sample stream: a row is a record of ``t``, the tick's sim
-        time, then the sample's fields as its type declares them, ``row["accel"]`` for an Inertial
-        Measurement Unit (IMU).
+    def __len__(self) -> int:
+        return len(self._histories())
 
-        Raises:
-            RuntimeError: Accessed before entering the ``Sim`` context.
-        """
-        if self._orch is None:
-            raise RuntimeError("enter the Sim context first (`with nx.Sim(...) as sim:`)")
-        return Histories(self._orch.recorder.histories, ("vehicle/sensors/",))
+    def __contains__(self, path: object) -> bool:
+        return path in self._histories()
 
     @property
     def base_body(self) -> str:
-        """The base body's label, discovered from the model, not hardcoded: the default vehicle
-        entity for ``sim.physics[sim.base_body]`` and the sim clock :meth:`wait_until` and :meth:`sleep` use.
+        """The base body's label, discovered from the model, not hardcoded: the body under ``vehicle/body/``
+        a script reads the vehicle's pose from, and the one the sim clock :meth:`wait_until` and :meth:`sleep` use.
         """
         return self._orch.physics.base_body
 
@@ -368,7 +349,7 @@ class Sim:
     def _clock_t(self) -> float:
         """Current sim time, the lockstep clock: the sim-time budget basis for the waits that follow.
 
-        Read straight off the orchestrator's ``Clock``, which holds it host-side, so this is free:
+        Read straight off the loop's ``Clock``, which holds it host-side, so this is free:
         :meth:`wait_until` and :meth:`sleep` call it *every* control tick, and reading it off the
         base body's history instead meant a device-to-host copy per tick, ~0.08 ms against a 4 ms
         budget, 6% of a PX4 run's wall time. Same quantity either way: the Recorder stamps
@@ -382,9 +363,8 @@ class Sim:
         """Step the sim until ``predicate()`` is true, or ``sim_timeout`` sim seconds elapse.
 
         Deterministic: this drives the sim itself, so it evaluates the predicate at exact tick
-        boundaries and there is no wall-clock in the loop. Budgets in sim time, the lockstep clock
-        from ``sim.physics[sim.base_body].latest().t``, so a driver's timeouts are invariant to how
-        fast the sim actually runs.
+        boundaries and there is no wall-clock in the loop. Budgets in sim time, the lockstep clock,
+        so a driver's timeouts are invariant to how fast the sim actually runs.
 
         Args:
             predicate: Zero-arg callable evaluated after each control tick.
@@ -421,41 +401,37 @@ class Sim:
                 break
 
     def results(self) -> dict:
-        """Run stats from the last ``run()``: the orchestrator's ``run_stats``, which are
+        """Run stats from the last ``run()``: the loop's ``run_stats``, which are
         ``control_steps``, steady ``rtf`` and ``full_rtf``. Empty before a run completes.
 
         Returns:
             dict: The run-stats mapping, for example ``control_steps``, ``rtf`` and ``full_rtf``;
                 empty if no run has completed.
         """
-        return dict(getattr(self._orch, "run_stats", {}) or {}) if self._orch is not None else {}
+        return dict(self._orch.run_stats) if self._orch is not None else {}
 
     def artifacts(self) -> dict:
         """Return the artifacts produced by this run.
 
-        The Rerun ``.rrd`` this run wrote, merged with whatever the active controller and the
-        run's peers contribute. Stays generic: it doesn't name controller-specific artifacts
-        such as the PX4 ``.ulg`` or the PX4 console log; each controller and peer declares its
-        own via an optional ``artifacts()`` method.
+        The Rerun ``.rrd`` this run wrote, merged with what every component and every peer of the run
+        contributes through its ``artifacts()``: PX4's controller names its ``.ulg``, the PX4 peer its console
+        log. Stays generic: it names no artifact itself.
 
         Returns:
             dict: At least ``{"rrd": <path or None>}``, the ``.rrd`` path, or ``None``
-                if no recorder ran, updated with any controller- and peer-contributed entries.
+                if no recorder ran, updated with the entries the components and the peers contribute.
         """
-        orch = self._orch
-        logger = getattr(orch, "logger", None) if orch is not None else None
-        out = {"rrd": logger.rrd_path if logger is not None else None}
-        controller = getattr(orch, "controller", None) if orch is not None else None
-        for source in (controller, *getattr(orch, "peers", ())):
-            contribute = getattr(source, "artifacts", None) if source is not None else None
-            if callable(contribute):
-                out.update(contribute())
+        if self._orch is None:
+            return {"rrd": None}
+        out = {"rrd": self._orch.logger.rrd_path if self._orch.logger is not None else None}
+        for source in (*self._orch.components(), *self._orch.peers):
+            out.update(source.artifacts())
         return out
 
     def stop(self) -> None:
         """Tear the run down cooperatively: one path for every controller.
 
-        Signals the orchestrator to stop, then closes the tick generator so its teardown runs:
+        Signals the loop to stop, then closes the tick generator so its teardown runs:
         the Real-Time Factor (RTF) stamp, ``controller.close()``, the stop of every peer the build
         started, the PX4 container, and the logging flush. Idempotent: repeat calls are no-ops.
         ``__exit__`` calls it automatically.

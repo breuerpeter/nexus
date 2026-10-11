@@ -16,7 +16,7 @@ logging-agnostic:
   they keep calling ``logger.info(...)``.
 
 A row's entity path names who wrote it: the process, ``sim`` here or a peer's folder name, then the
-component's role folder, then the instance. A component never spells that path: the orchestrator
+component's role folder, then the instance. A component never spells that path: the loop
 hands it a :class:`ScopedLogger`, which puts the component's path before each row's name.
 
 The recording, app ID ``nexus`` and recording ID ``nexus``, either serves
@@ -131,7 +131,7 @@ def _peer_roots() -> list[str]:
 def _recording_tabs(recording: dict | None, cameras: dict | None) -> list:
     """The component-kind debug tab tree, group ▸ instance ▸ quantity, derived from the Recorder's
     histories' paths, ``vehicle/body/<name>``, ``vehicle/sensors/<name>``, and so on, so the tabs mirror the
-    access surface: ``sim.physics["body_frd"]`` → Physics ▸ body_frd; ``sim.sensors["imu"]`` → Sensors ▸ imu.
+    access surface: ``sim["vehicle/body/body_frd"]`` → Physics ▸ body_frd; ``sim["vehicle/sensors/imu/imu"]`` → Sensors ▸ imu.
 
     ``recording`` maps a history's key → ``(path, source, [field names])``, from the Logger's first block:
     the writer's path, whose folder before the instance names the group, and the writing class. Each
@@ -372,7 +372,7 @@ class Logger:
     log calls components use directly: :meth:`set_time`, :meth:`log_image`, :meth:`log_strip` and the
     rest. Semantic overlays such as the guidance's reference or a controller's horizon live in each
     component's own code, not here, and a component reaches these calls through its :meth:`scoped`
-    view. The orchestrator holds one ``Logger | None``; ``None`` is the single, clean off-switch: no
+    view. The loop holds one ``Logger | None``; ``None`` is the single, clean off-switch: no
     recording, max benchmark/CI speed.
 
     **serve or file, never both**: a live gRPC server and a *complete* ``.rrd`` can't both come out
@@ -537,7 +537,7 @@ class Logger:
     def scoped(self, path: str) -> ScopedLogger:
         """A component's view of this Logger: every row it logs lands under ``sim/<path>``.
 
-        The orchestrator calls this once per component, when it wires the component, so a row costs
+        The loop calls this once per component, when it wires the component, so a row costs
         no path lookup.
 
         Args:
@@ -549,7 +549,7 @@ class Logger:
     # ----- shared log calls: components pass data; the Logger owns all rerun interaction -----
     def set_time(self, sim_time: float) -> None:
         """Set the shared ``time`` timeline for this tick, duration-typed: the viewer renders sim
-        seconds, not an epoch date. The orchestrator calls it once at tick start,
+        seconds, not an epoch date. The loop calls it once at tick start,
         so every component's later overlay lands at the timestamp the scene mesh is on. Components
         never call this; they just log their data.
         """
@@ -583,7 +583,7 @@ class Logger:
     def log_profile(self, stats) -> None:
         """One static markdown table at ``run/profile``: the run's end-of-run stats, meaning control steps,
         steady/full RTF, the always-on loop profiler's per-phase breakdown, rendered the same way as the
-        Settings tab. Called at teardown by the orchestrator, since the stats only exist once the loop
+        Settings tab. Called at teardown by the loop, since the stats only exist once the loop
         ended; rebuilds the blueprint so the Profile tab shows up.
         """
         try:
@@ -604,7 +604,7 @@ class Logger:
     def log_rtf(self, rtf: float) -> None:
         """Log the live real-time factor as a one-line markdown doc at ``run/rtf``, stamped on the
         timeline, so the viewer's RTF row always shows the value AT the timeline cursor and scrubbing
-        replays it. The orchestrator calls this ~1 Hz wall-clock from its per-tick log fan-out; the
+        replays it. The loop calls this ~1 Hz wall-clock from its per-tick log fan-out; the
         timeline is already set.
         """
         try:
@@ -1184,9 +1184,9 @@ def build_logger(
     sink=None,
     settings=None,
 ):
-    """The one Rerun-sink factory: every runtime/orchestrator builds its recording sink here instead of
+    """The one Rerun-sink factory: every runtime/loop builds its recording sink here instead of
     inlining ``Logger(...)``, so the serve-or-file and axes-only-``debug`` policy lives in a single
-    place, which used to be a copy-paste across the orchestrator builders. Call it inside the builder's
+    place, which used to be a copy-paste across the loop builders. Call it inside the builder's
     ``if rerun:`` guard, which keeps the optional ``rerun`` dependency lazily imported; headless/CI never
     pulls it.
 

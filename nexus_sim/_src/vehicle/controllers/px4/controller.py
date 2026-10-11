@@ -28,6 +28,7 @@ import math
 import os
 
 import numpy as np
+import warp as wp
 
 # Set the MAVLink 2 common dialect before importing mavutil, which reads it at import.
 os.environ["MAVLINK20"] = "1"
@@ -37,10 +38,9 @@ from pymavlink import mavutil
 
 from nexus_sim._src import transform
 from nexus_sim._src.core import logger
-from nexus_sim._src.core.interfaces import Stage
-from nexus_sim._src.core.schema import BaroSample, Controls, GpsSample, ImuSample, MagSample
+from nexus_sim._src.core.interfaces import Component, Stage
+from nexus_sim._src.core.schema import BaroSample, GpsSample, ImuSample, MagSample
 from nexus_sim._src.core.signals import Signal
-from nexus_sim._src.core.stages import peer_stages
 from nexus_sim._src.peers.px4_sitl import HIL_PORT
 
 # Where this controller looks for PX4's ULog, mirroring the recorder's
@@ -90,7 +90,7 @@ def _listener(port: int) -> int | None:
     return None
 
 
-class Px4MavlinkController:
+class Px4MavlinkController(Component):
     def __init__(
         self,
         *,
@@ -132,6 +132,10 @@ class Px4MavlinkController:
         self.mag = Signal("mag", MagSample, shape=(1,), default=_NO_MAG)
         self.baro = Signal("baro", BaroSample, shape=(1,), default=_NO_BARO)
         self.gps = Signal("gps", GpsSample, shape=(1,), default=_NO_GPS)
+        # The controls PX4 sends back each exchange: HIL_ACTUATOR_CONTROLS carries 16 channels, so the signal is
+        # 16 wide, and the command elements read the leading channels their rotors take.
+        self.controls = Signal("controls", wp.float32, shape=(1, 16))
+        self._cmd = np.zeros((1, 16), dtype=np.float32)
         # The time of the last sample of each sensor the exchange sent; a sample with another time is new.
         self._sent = dict.fromkeys(("imu", "mag", "baro", "gps"), math.nan)
 
@@ -192,10 +196,25 @@ class Px4MavlinkController:
 
     def stages(self):
         """The ``truth`` and ``exchange`` host stages: the MAVLink lockstep round-trip blocks on the peer, so
-        it runs between graph replays. The ``exchange`` stage reads the four sensors' samples.
+        it runs between graph replays. The ``exchange`` stage reads the four sensors' samples and writes the
+        controls.
         """
-        (exchange,) = peer_stages(self, reads=(self.imu, self.mag, self.baro, self.gps))
-        return [Stage("truth", "host", self._truth), exchange]
+        reads = (self.imu, self.mag, self.baro, self.gps)
+        return [
+            Stage("truth", "host", self._truth),
+            Stage("exchange", "host", self._exchange, reads=reads, writes=(self.controls,)),
+        ]
+
+    def _exchange(self, tick) -> bool:
+        """The exchange stage: one lockstep round trip, which writes the controls PX4 sent, or reports the peer
+        gone by returning ``False``, which ends the run.
+        """
+        controls = self.exchange(tick.t, tick.timeout)
+        if controls is None:
+            return False
+        self._cmd[0, :] = controls
+        self.controls.write(self._cmd)
+        return True
 
     def _truth(self, tick) -> None:
         """Copy the base body's true attitude and rates to the host, in PX4's frames, for the ground truth
@@ -280,11 +299,11 @@ class Px4MavlinkController:
         msg = self.mav.recv_match(type="HIL_ACTUATOR_CONTROLS", blocking=True, timeout=timeout)
         if msg is None:
             return None
-        return Controls(command=np.asarray(msg.controls, dtype=np.float32))
+        return np.asarray(msg.controls, dtype=np.float32)
 
     def close(self) -> None:
         # The peer is the run's to stop; this end only closes its socket. It tolerates failure, the same
-        # as every other teardown step: the orchestrator still has to flush the recording.
+        # as every other teardown step: the loop still has to flush the recording.
         try:
             if self.mav is not None:
                 self.mav.close()

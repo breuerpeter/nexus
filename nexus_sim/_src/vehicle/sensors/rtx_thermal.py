@@ -76,7 +76,7 @@ class RtxThermalSensor(RtxMountedSensor):
 
     def set_logger(self, logger_) -> None:
         """Take the Logger, but defer the pinhole: it needs the emitted image size, and no frame
-        has rendered yet when the orchestrator hands the Logger over.
+        has rendered yet when the loop hands the Logger over.
         """
         super().set_logger(logger_)
         self._frustum_logged = False

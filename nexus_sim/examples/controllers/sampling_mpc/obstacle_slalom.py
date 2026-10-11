@@ -9,9 +9,9 @@ port of NVIDIA's ``example_diffsim_drone``, and the counterpart to ``waypoint_tr
     the landscape is non-convex, go left *or* right around the pillar, so a single analytic solve
     gets trapped in it.
 
-**The shape.** A zero-arg, self-contained script: it assembles its own orchestrator, the
+**The shape.** A zero-arg, self-contained script: it assembles its own loop, the
 example-owned :mod:`assembly` that wraps controller + actuator + physics around the core components,
-and hosts it via ``Sim.from_orchestrator`` + ``sim.guidance``. The vehicle is the catalog
+and hosts it via ``Sim._from_loop``, holding its guidance. The vehicle is the catalog
 ``astro-max`` and the obstacle pillars ride in the catalog ``slalom`` scene, a
 Universal Scene Description (USD) file of cost-only capsules. The guidance sequences the waypoints:
 ``set_mission`` → advance on arrival → the next goal on the tick; the controller logs its MPC horizon to
@@ -36,7 +36,7 @@ from nexus_sim._src.config import LaunchConfig
 from nexus_sim._src.guidance import MissionGuidance
 from nexus_sim._src.rendering import rtx_renderer
 from nexus_sim.examples._lib import dump_run
-from nexus_sim.examples.controllers.sampling_mpc.assembly import build_sampling_mpc_orchestrator
+from nexus_sim.examples.controllers.sampling_mpc.assembly import build_sampling_mpc_loop
 
 # Everything this demo is, in one place: zero args by design, the configuration IS the example.
 VEHICLE = "astro_max_base"
@@ -53,7 +53,7 @@ def main() -> None:
     launch = LaunchConfig().set_vehicle(VEHICLE).set_scene(SCENE)
     launch.runtime.device = "cuda"  # prefer CUDA; resolve_device falls back to CPU when there is none
     vehicle_usd, _resolved, cfg = resolve_scenario(launch)
-    orch = build_sampling_mpc_orchestrator(
+    orch = build_sampling_mpc_loop(
         cfg,
         vehicle_usd=vehicle_usd,
         max_steps=MAX_STEPS,
@@ -63,11 +63,11 @@ def main() -> None:
     # reached_m=0.5 matches the demo's leg spacing: the guidance advances to the next waypoint this close;
     # final_hold_s lets the stochastic MPC settle on the final waypoint before the guidance ends the run.
     guidance = MissionGuidance(reached_m=0.5, final_hold_s=4.0)
-    with nx.Sim.from_orchestrator(orch, guidance=guidance) as sim:
-        sim.guidance.set_mission(WAYPOINTS)  # the guidance sequences these; the planner avoids the pillars
+    with nx.Sim._from_loop(orch, guidance=guidance) as sim:
+        guidance.set_mission(WAYPOINTS)  # the guidance sequences these; the planner avoids the pillars
         sim.run()
 
-    traj = sim.physics[sim.base_body].history()
+    traj = sim[f"vehicle/body/{sim.base_body}"].history()
     q = np.array([s.position for s in traj])
     quats = np.array([s.quat_xyzw for s in traj])  # xyzw order
     reached = guidance.reached

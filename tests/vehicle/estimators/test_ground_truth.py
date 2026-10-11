@@ -14,8 +14,8 @@ import warp as wp
 
 from nexus_sim._src.api.sim import Sim
 from nexus_sim._src.build.assembly import build_scenario
-from nexus_sim._src.core import Clock, Orchestrator
-from nexus_sim._src.core.interfaces import Stage, Tick
+from nexus_sim._src.core import Clock, Loop
+from nexus_sim._src.core.interfaces import Component, Stage, Tick
 from nexus_sim._src.core.schema import PoseTwist, SimTime
 from nexus_sim._src.core.signals import Signal, wire
 from nexus_sim._src.core.stages import Bound
@@ -42,7 +42,7 @@ class _KeepingGuidance(MissionGuidance):
         super()._tick(pos, ts)
 
 
-class _KeepingController:
+class _KeepingController(Component):
     """A controller whose host stage keeps each estimate it reads. It reads the guidance's setpoint too."""
 
     def __init__(self):
@@ -92,7 +92,7 @@ def test_each_reader_gets_the_base_bodys_true_pose_and_twist_with_no_noise_and_n
     guidance = _KeepingGuidance()
     with wp.ScopedDevice(device):
         controller = _KeepingController()
-        orch = Orchestrator(
+        orch = Loop(
             clock=Clock(cfg["physics"]["dt"]),
             physics=NewtonPhysics(
                 vehicle_usd=VehicleUsd({"usd_path": str(quad.author(tmp_path / "quad.usda"))}), cfg=cfg
@@ -102,9 +102,9 @@ def test_each_reader_gets_the_base_bodys_true_pose_and_twist_with_no_noise_and_n
             controller=controller,
             max_steps=TICKS,
         )
-        with Sim.from_orchestrator(orch, guidance=guidance) as sim:
+        with Sim._from_loop(orch, guidance=guidance) as sim:
             sim.run()
-            rows = sim.physics[sim.base_body].history()
+            rows = sim[f"vehicle/body/{sim.base_body}"].history()
     truth = [[*r.position, *r.quat_xyzw, *r.velocity, *r.angular_velocity] for r in rows]
 
     assert (

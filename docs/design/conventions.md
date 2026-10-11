@@ -94,7 +94,7 @@ The project's name takes three forms, each for one kind of thing:
 |---|---|---|
 | `nexus-sim` | The distribution on PyPI | `pip install nexus-sim` |
 | `nexus_sim` | The Python import package and its folder: every name Python resolves | `import nexus_sim as nx`, `nexus_sim/_src/` |
-| `nexus` | The project, and every name outside Python's import system | the `nexus` command, the `nexus:` USD attributes, the `nexus.components` entry-point group, the `nexus` logger, the `nexus.peer` Docker label, `nexus.catalog.yaml`, `~/.cache/nexus` |
+| `nexus` | The project, and every name outside Python's import system | the `nexus` command, the `nexus:` USD attributes, the `nexus.registry` entry-point group, the `nexus` logger, the `nexus.peer` Docker label, `nexus.catalog.yaml`, `~/.cache/nexus` |
 
 The reinforcement learning project follows the same split: `nexus-rl` is its folder and project, and
 `nexus_rl` is its import package.
@@ -108,7 +108,7 @@ The `Project` Vale style in `.vale/styles/Project/` checks both rules.
 
 ## The vehicle model
 
-The loop names no vehicle type: `Controls` carries one command per actuator, and the base body is
+The loop names no vehicle type: the `controls` signal carries one command per actuator, and the base body is
 whatever body the rotor joints share. Only the shipped rotor chain, the example controllers, and the
 vehicle USDs are **quad-X**. Every shipped vehicle is a USD authored to the structure and frames
 below, because the framework **only ever builds models from

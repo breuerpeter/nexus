@@ -1,4 +1,4 @@
-"""The rotor chain splits into a command seam, a force seam and physics stepping Newton's actuators, and
+"""The rotor chain splits into a command element, a force element and physics stepping Newton's actuators, and
 the shipped vehicle flies as before. Controls that a reader can't take stop the run before any stage runs.
 
 Real builds on the Warp CPU backend: the fixture quad of ``tests/vehicle/quad.py`` around a stand-in
@@ -18,19 +18,18 @@ pytest.importorskip("pxr")
 import warp as wp
 
 from nexus_sim._src.api.sim import Sim
-from nexus_sim._src.build.assembly import assemble, build_orchestrator, build_scenario, resolve_device
+from nexus_sim._src.build.assembly import assemble, build_loop, build_scenario, resolve_device
 from nexus_sim._src.build.launch import resolve_vehicle_usd
 from nexus_sim._src.config import LaunchConfig
 from nexus_sim._src.core import Clock
-from nexus_sim._src.core.interfaces import Stage
-from nexus_sim._src.core.orchestrator import Orchestrator
-from nexus_sim._src.core.schema import Controls
+from nexus_sim._src.core.interfaces import Component, Stage
+from nexus_sim._src.core.loop import Loop
 from nexus_sim._src.core.signals import Signal
-from nexus_sim._src.core.stages import peer_stages
 from nexus_sim._src.physics import NewtonPhysics
 from nexus_sim._src.physics.vehicle import VehicleUsd
 from nexus_sim._src.scene.site import GRAVITY
 from nexus_sim.examples._lib import Rotors, build_rotor_mixer_from_model
+from tests.usd.sensor_vehicle import HostController
 from tests.vehicle import quad
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")
@@ -54,23 +53,14 @@ def stream(step: int) -> np.ndarray:
     return np.full(4, 0.6, dtype=np.float32)
 
 
-class _Stream:
+class _Stream(HostController):
     """Answers the preroll at once and sends the command the stream holds for the tick."""
 
-    def connect(self):
-        pass
-
-    def stages(self):
-        return peer_stages(self)
-
     def exchange(self, t, timeout=None):
-        return Controls(command=stream(min(t.step_index, STREAM_TICKS - 1)))
-
-    def close(self):
-        pass
+        return stream(min(t.step_index, STREAM_TICKS - 1))
 
 
-class _Narrow:
+class _Narrow(Component):
     """A device-native controller whose controls hold three values, one short of the quad's four rotors."""
 
     def __init__(self):
@@ -86,7 +76,7 @@ class _Narrow:
         pass
 
 
-class _Silent:
+class _Silent(Component):
     """A device-native controller that writes no controls."""
 
     def connect(self):
@@ -104,7 +94,7 @@ def _servo_target(cmd: wp.array2d(dtype=float), channel: int, scale: float, inde
     target[index] = cmd[0, channel] * scale
 
 
-class _ServoCommand:
+class _ServoCommand(Component):
     """A command element beside the rotors': it writes the servo's position target from one channel of the
     controller's command, `scale` radians per unit.
     """
@@ -134,7 +124,7 @@ def _add_lift(bodies: wp.array(dtype=wp.int32), fz: float, body_f: wp.array(dtyp
     wp.atomic_add(body_f, bodies[wp.tid()], wp.spatial_vector(0.0, 0.0, fz, 0.0, 0.0, 0.0))
 
 
-class _Lift:
+class _Lift(Component):
     """A force element that adds an upward world force of `fz` newtons on each of `bodies`, every tick."""
 
     def __init__(self, bodies, fz: float):
@@ -183,7 +173,7 @@ def _loop(path, controller, *, commands=(), forces=()):
     vehicle_usd = VehicleUsd({"usd_path": str(path)})
     physics = NewtonPhysics(vehicle_usd=vehicle_usd, cfg=cfg)
     a = assemble(physics, vehicle_usd, cfg, controller=controller)
-    return Orchestrator(
+    return Loop(
         clock=a.clock,
         physics=a.physics,
         commands=[*a.commands, *(make(physics) for make in commands)],
@@ -207,7 +197,7 @@ def _rotors(path, controller):
         physics.model, vehicle_usd.rotor_joints(), vehicle_usd.actuator_params(), physics.state0.body_q.numpy()
     )
     dt = cfg["physics"]["dt"]
-    return Orchestrator(
+    return Loop(
         clock=Clock(dt),
         physics=physics,
         actuator=Rotors(mixer=mixer, dt=dt, motor_tau=0.033),
@@ -219,10 +209,10 @@ def _rotors(path, controller):
 
 def _flown(orch) -> tuple[float, float | None]:
     """The airframe's climb over the flight [m], and the gimbal joint's final angle [rad] when it has one."""
-    with wp.ScopedDevice("cpu"), Sim.from_orchestrator(orch) as sim:
+    with wp.ScopedDevice("cpu"), Sim._from_loop(orch) as sim:
         sim.run()
-        rows = sim.physics["body"].history_arrays()["position"]
-        joint = sim.physics["gimbal_joint"].history()[-1].q[0] if "gimbal_joint" in sim.physics else None
+        rows = sim["vehicle/body/body"].history_arrays()["position"]
+        joint = sim["vehicle/joints/gimbal_joint"].history()[-1].q[0] if "vehicle/joints/gimbal_joint" in sim else None
     return float(rows[-1][2] - rows[0][2]), joint
 
 
@@ -233,7 +223,7 @@ def fly_shipped(steps: int = STREAM_TICKS) -> np.ndarray:
     cfg = build_scenario()
     cfg["physics"]["force_cpu"] = True
     vehicle_usd, _ = resolve_vehicle_usd(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
-    orch = build_orchestrator("astro_max_base", cfg, vehicle_usd, controller=_Stream(), max_steps=steps)
+    orch = build_loop("astro_max_base", cfg, vehicle_usd, controller=_Stream(), max_steps=steps)
     poses = []
     orch.on_tick = lambda view, t, n: poses.append(orch.physics.state0.body_q.numpy().copy())
     orch.run()
@@ -275,10 +265,10 @@ def test_a_controller_whose_controls_are_narrower_than_a_reader_needs_fails_the_
     """
     path = quad.author(tmp_path / "quad.usda")
     orch = quad.build(path, quad.FLIGHT_STEPS, _Narrow()) if reader == "RotorCommand" else _rotors(path, _Narrow())
-    with wp.ScopedDevice("cpu"), Sim.from_orchestrator(orch) as sim:
+    with wp.ScopedDevice("cpu"), Sim._from_loop(orch) as sim:
         with pytest.raises(ValueError) as e:
             sim.run()
-        rows = len(sim.physics["body"].history())
+        rows = len(sim["vehicle/body/body"].history())
     named = all(re.search(rf"\b{word}\b", str(e.value)) for word in ("_Narrow", reader, "3", "4"))
     assert (named, rows) == (True, 0)
 
@@ -292,10 +282,10 @@ def test_an_input_no_component_writes_fails_the_run_naming_the_reader_and_the_si
     recording holds no row.
     """
     orch = quad.build(quad.author(tmp_path / "quad.usda"), quad.FLIGHT_STEPS, _Silent())
-    with wp.ScopedDevice("cpu"), Sim.from_orchestrator(orch) as sim:
+    with wp.ScopedDevice("cpu"), Sim._from_loop(orch) as sim:
         with pytest.raises(ValueError) as e:
             sim.run()
-        rows = len(sim.physics["body"].history())
+        rows = len(sim["vehicle/body/body"].history())
     named = all(word in str(e.value) for word in ("RotorCommand", "controls"))
     assert (named, rows) == (True, 0)
 
@@ -317,9 +307,9 @@ def test_a_newton_actuator_on_a_joint_that_is_no_rotor_still_drives_its_joint(tm
     """
     orch = quad.build(quad.author(tmp_path / "quad.usda", servo=True), quad.FLIGHT_STEPS, quad.Commands([0.0] * 4))
     _turn_joint(orch.physics, quad.GIMBAL_JOINT, SERVO_RAD)
-    with wp.ScopedDevice("cpu"), Sim.from_orchestrator(orch) as sim:
+    with wp.ScopedDevice("cpu"), Sim._from_loop(orch) as sim:
         sim.run()
-        angles = [row.q[0] for row in sim.physics["gimbal_joint"].history()]
+        angles = [row.q[0] for row in sim["vehicle/joints/gimbal_joint"].history()]
     assert (round(angles[0], 1), abs(angles[-1]) < SETTLED) == (SERVO_RAD, True)
 
 

@@ -88,3 +88,5 @@ path.
 | `sim/guidance/waypoints/wp_<i>`, `sim/guidance/reference` | The guidance's mission: its waypoints and its tracked reference |
 | `sim/model/shapes/…` | The scene: each shape's mesh once, posed from the bodies' histories |
 | `<peer>/logs` | A peer's log rows, under the name of its folder |
+
+::: nexus_sim.logger

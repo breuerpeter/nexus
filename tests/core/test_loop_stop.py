@@ -1,10 +1,10 @@
-"""Orchestrator hosting hooks: step() drives the run; stop() ends the loop and closes the controller."""
+"""Loop hosting hooks: step() drives the run; stop() ends the loop and closes the controller."""
 
 import pytest
 
-from nexus_sim._src.core.interfaces import Stage
-from nexus_sim._src.core.orchestrator import Orchestrator
-from nexus_sim._src.core.schema import Controls, SimTime
+from nexus_sim._src.core.interfaces import Component, Stage
+from nexus_sim._src.core.loop import Loop
+from nexus_sim._src.core.schema import SimTime
 from nexus_sim._src.peers.kit.runner import KitPeerError
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")  # Python stand-ins run stage by stage, never as a graph
@@ -44,7 +44,7 @@ class _Physics:
         ]
 
 
-class _Actuator:
+class _Actuator(Component):
     def forces(self, controls, state):
         pass
 
@@ -52,7 +52,7 @@ class _Actuator:
         return [Stage("forces", "device", lambda tick: self.forces(None, tick.state))]
 
 
-class _Controller:
+class _Controller(Component):
     """Lockstep stand-in: returns controls immediately, so preroll succeeds at once. Its work is the
     PX4 shape, a ``truth`` and an ``exchange`` host stage.
     """
@@ -64,7 +64,7 @@ class _Controller:
         pass
 
     def exchange(self, t, timeout):
-        return Controls(command=[0.0, 0.0, 0.0, 0.0])
+        return [0.0, 0.0, 0.0, 0.0]
 
     def close(self):
         self.closed = True
@@ -77,7 +77,7 @@ class _Controller:
 
 
 def _orch(sensors=(), **kw):
-    return Orchestrator(
+    return Loop(
         clock=_Clock(),
         physics=_Physics(),
         actuator=_Actuator(),
@@ -161,7 +161,7 @@ def test_closing_a_run_that_never_stepped_closes_the_renderer():
     assert orch.renderer.closed
 
 
-class _DyingSensor:
+class _DyingSensor(Component):
     """A sensor whose work is a host stage and whose peer dies mid-flight, as an RTX sensor's Kit peer can."""
 
     host_rate = True

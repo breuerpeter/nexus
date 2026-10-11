@@ -1,5 +1,5 @@
 """``AcadosNMPCController``: analytic real-time Nonlinear Model Predictive Control (NMPC) via acados, the
-Controller seam.
+controller.
 
 A first-class Controller, alongside the Proportional Integral Derivative (PID), PX4, sampling
 Model Predictive Control (MPC), and trained-policy controllers. It solves the optimal-control problem
@@ -35,10 +35,11 @@ from __future__ import annotations
 import os
 
 import numpy as np
+import warp as wp
 
+from nexus_sim._src.core.interfaces import Component, Stage
 from nexus_sim._src.core.schema import PoseTwist, ReferenceTrajectory
 from nexus_sim._src.core.signals import Signal
-from nexus_sim._src.core.stages import peer_stages
 
 GRAVITY = 9.81
 DEFAULT_CODEGEN_DIR = os.path.expanduser("~/.cache/nexus/acados_codegen/quad_nmpc")  # generated C, out of the repo
@@ -129,7 +130,7 @@ def build_acados_model(*, mass, inertia, rotor_offsets, turning_dirs, reaction_k
     return model, att_err
 
 
-class AcadosNMPCController:
+class AcadosNMPCController(Component):
     """Receding-horizon NMPC. Each control tick it seeds the current measured state, sets
     a full flat-state reference over the horizon, queried from the guidance-planned reference, runs one SQP
     real-time iteration with HPIPM, and applies the first rotor-thrust command, converted to the actuator's
@@ -174,12 +175,15 @@ class AcadosNMPCController:
         # The setpoint the guidance writes, a ReferenceTrajectory on the host, and the one this controller
         # last read, so it notices a new reference by its identity.
         self.setpoint = Signal("setpoint", ReferenceTrajectory)
+        # The controls this controller writes: one throttle per rotor.
+        self.controls = Signal("controls", wp.float32, shape=(1, self.n))
+        self._cmd = np.zeros((1, self.n), dtype=np.float32)
         # The vehicle's estimate, the base body's pose and twist an estimator writes: each solve starts there.
         self.estimate = Signal("estimate", PoseTwist, shape=(1,))
         self._read = None
         self.reference = None  # the tracked reference, from the setpoint
         self._ref_step0 = None  # the control step at which the active reference started, the time anchor
-        self._logger = None  # the orchestrator hands over the Logger, None when off; gates the horizon viz
+        self._logger = None  # the loop hands over the Logger, None when off; gates the horizon viz
         self.track_err = []  # per-tick ‖realized − reference‖ world position error, the evo-style APE gate
         self.snapshot_every = int(snapshot_every)
         self.codegen_dir = str(codegen_dir)
@@ -245,12 +249,19 @@ class AcadosNMPCController:
         """The ``exchange`` host stage: the per-tick solve runs on the host between replays,
         from the estimate, tracking the reference the exchange reads from the setpoint.
         """
-        return peer_stages(self, reads=(self.setpoint, self.estimate))
+        return [
+            Stage("exchange", "host", self._exchange, reads=(self.setpoint, self.estimate), writes=(self.controls,))
+        ]
+
+    def _exchange(self, tick) -> bool:
+        self._cmd[0, :] = np.asarray(self.exchange(tick.t, tick.timeout).command, dtype=np.float32).reshape(-1)
+        self.controls.write(self._cmd)
+        return True
 
     name = "acados_nmpc"  # the instance name: its rows land at sim/vehicle/controllers/acados_nmpc
 
     def set_logger(self, logger) -> None:
-        """The orchestrator hands over the Logger scoped to this controller, ``None`` when off: the
+        """The loop hands over the Logger scoped to this controller, ``None`` when off: the
         gate for the horizon viz.
         """
         self._logger = logger
@@ -280,7 +291,7 @@ class AcadosNMPCController:
         return np.full(self.n, throttle, dtype=np.float32)
 
     def exchange(self, t, timeout=None):
-        from nexus_sim._src.core import Controls
+        from nexus_sim.examples._lib.mixer import Controls
 
         self._read_setpoint()
         if self.reference is None:  # the guidance hasn't planned the reference yet → hold hover
@@ -340,7 +351,7 @@ class AcadosNMPCController:
         # Component-owned horizon viz, event-driven: when recording, emit the predicted NMPC horizon to
         # its row ``horizon`` every snapshot_every ticks; the newest entry at each time means scrubbing
         # shows the active horizon. Gated on self._logger so the solver-state extraction never runs when
-        # not recording. The orchestrator set the timeline at tick start, so this just hands the path to
+        # not recording. The loop set the timeline at tick start, so this just hands the path to
         # the Logger.
         if self._logger is not None and self._step % self.snapshot_every == 0:
             pred = np.array([self._solver.get(k, "x")[:3] for k in range(self.N + 1)], dtype=np.float32)

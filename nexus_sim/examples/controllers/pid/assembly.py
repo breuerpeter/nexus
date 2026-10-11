@@ -1,12 +1,12 @@
-"""Assemble the core Orchestrator around the Proportional Integral Derivative (PID)
+"""Assemble the core Loop around the Proportional Integral Derivative (PID)
 :class:`PidController`.
 
 This example-owned assembly, moved out of core because PX4 is the one first-class control path, wires
 the same core components as the PX4 assembly: ``NewtonPhysics``, the single-body ``Rotors``
 actuator, the device-native observation sensor, the passthrough estimator, whose estimate the guidance
-reads, and the core ``Orchestrator``. The actuator's
+reads, and the core ``Loop``. The actuator's
 aero/thrust map comes from the vehicle's Universal Scene Description (USD) file.
-``Sim.from_orchestrator`` hosts the built orchestrator.
+``Sim._from_loop`` hosts the built loop.
 
 This is also the **determinism authority**: a deterministic controller over the
 bit-exact Newton CPU physics gives the bit-reproducible CI gate that real PX4, with its
@@ -17,12 +17,12 @@ this assembly from here, because examples ship in the wheel.
 from __future__ import annotations
 
 from nexus_sim._src.build.assembly import resolve_device
-from nexus_sim._src.core import Clock, Orchestrator, logger
+from nexus_sim._src.core import Clock, Loop, logger
 from nexus_sim._src.physics import NewtonPhysics
 from nexus_sim._src.vehicle.estimators import GroundTruthEstimator
 
 
-def build_pid_orchestrator(
+def build_pid_loop(
     cfg: dict,
     *,
     goal_w=(0.0, 0.0, 1.0),
@@ -39,8 +39,8 @@ def build_pid_orchestrator(
     debug: bool = False,
     vehicle_usd=None,
     renderer_factory=None,
-) -> Orchestrator:
-    """Assemble the core Orchestrator with the :class:`PidController`.
+) -> Loop:
+    """Assemble the core Loop with the :class:`PidController`.
 
     The control law's gains are the differentiable design parameters tuned offline by the
     design-optimization example. ``cfg["physics"]["solver"] == "semi_implicit"`` selects the
@@ -92,7 +92,7 @@ def build_pid_orchestrator(
         # gains use this scale, see law.py.
         thrust_to_weight = mixer.thrust_to_weight(robot_mass)
     logger.info(
-        f"pid-orchestrator: robot_mass={robot_mass:.4f} kg, goal={tuple(goal_w)}, "
+        f"pid-loop: robot_mass={robot_mass:.4f} kg, goal={tuple(goal_w)}, "
         f"single_body={single_body}, t2w={thrust_to_weight:.3f}"
     )
 
@@ -128,7 +128,7 @@ def build_pid_orchestrator(
                 "max_steps": max_steps, "physics_substeps": physics_substeps,
             }},
         )  # fmt: skip
-    return Orchestrator(
+    return Loop(
         clock=Clock(dt, rtf=rtf),
         physics=physics,
         actuator=actuator,

@@ -366,7 +366,7 @@ class Renderer:
         reported = 0.0
         steps = 0
         while True:
-            self._rep.orchestrator.step()
+            self._rep.loop.step()
             steps += 1
             if steps >= 8 and all(s.grab(None) for s in cameras):
                 log(f"first frame after {steps} steps, {time.time() - t0:.0f}s")

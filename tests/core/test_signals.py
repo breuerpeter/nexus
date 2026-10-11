@@ -12,8 +12,8 @@ pytest.importorskip("warp")
 
 import warp as wp
 
-from nexus_sim._src.core.interfaces import Stage
-from nexus_sim._src.core.orchestrator import Orchestrator
+from nexus_sim._src.core.interfaces import Component, Stage
+from nexus_sim._src.core.loop import Loop
 from nexus_sim._src.core.schema import ReferenceTrajectory, SimTime
 from nexus_sim._src.core.signals import Signal, wire
 from nexus_sim._src.core.stages import Bound
@@ -76,7 +76,7 @@ class _Physics:
         return [Stage("clear", "device", lambda tick: None), Stage("step", "device", lambda tick: None)]
 
 
-class _Counter:
+class _Counter(Component):
     """A sensor whose device stage counts the run's ticks and writes the count to the signal `count`. Its
     stage stays out of the warm pass, so the count is the tick's.
     """
@@ -93,7 +93,7 @@ class _Counter:
         wp.launch(_count, dim=1, inputs=[self._n], outputs=[self.count.buffer])
 
 
-class _DeviceReader:
+class _DeviceReader(Component):
     """A controller whose device stage copies the signal `count` into a buffer of its own, `seen`."""
 
     def __init__(self):
@@ -113,7 +113,7 @@ class _DeviceReader:
         wp.launch(_copy, dim=1, inputs=[self.count.buffer], outputs=[self.seen])
 
 
-class _HostReader:
+class _HostReader(Component):
     """A controller whose host stage reads the signal `count` with a copy. It keeps each value it read."""
 
     def __init__(self):
@@ -134,7 +134,7 @@ class _HostReader:
         return True
 
 
-class _KeepingReader:
+class _KeepingReader(Component):
     """A controller whose host stage keeps each value of the signal `count` it reads, as read gave it."""
 
     def __init__(self):
@@ -167,7 +167,7 @@ class _Reference:
         return []
 
 
-class _SteerOnDevice:
+class _SteerOnDevice(Component):
     """A controller whose device stage, `steer`, reads the planned reference, which is a host signal."""
 
     def __init__(self):
@@ -183,7 +183,7 @@ class _SteerOnDevice:
         return [Stage("steer", "device", lambda tick: None, reads=(self.setpoint,))]
 
 
-class _CountReader:
+class _CountReader(Component):
     """A controller whose device stage reads the signal `count` and writes the fixture quad's four controls."""
 
     def __init__(self):
@@ -201,7 +201,7 @@ class _CountReader:
 
 
 def _orch(sensors, controller, **kw):
-    return Orchestrator(clock=_Clock(), physics=_Physics(), sensors=sensors, controller=controller, **kw)
+    return Loop(clock=_Clock(), physics=_Physics(), sensors=sensors, controller=controller, **kw)
 
 
 def _stopped(tmp_path, controller, *, sensors=(), guidance=None) -> tuple[str, int]:
@@ -225,7 +225,7 @@ def _stopped(tmp_path, controller, *, sensors=(), guidance=None) -> tuple[str, i
     vehicle_usd = VehicleUsd({"usd_path": str(quad.author(tmp_path / "quad.usda"))})
     physics = NewtonPhysics(vehicle_usd=vehicle_usd, cfg=cfg)
     a = assemble(physics, vehicle_usd, cfg, controller=controller)
-    orch = Orchestrator(
+    orch = Loop(
         clock=a.clock,
         physics=a.physics,
         commands=a.commands,
@@ -235,10 +235,10 @@ def _stopped(tmp_path, controller, *, sensors=(), guidance=None) -> tuple[str, i
         controller=a.controller,
         max_steps=quad.FLIGHT_STEPS,
     )
-    with Sim.from_orchestrator(orch, guidance=guidance) as sim:
+    with Sim._from_loop(orch, guidance=guidance) as sim:
         with pytest.raises(ValueError) as e:
             sim.run()
-        return str(e.value), len(sim.physics["body"].history())
+        return str(e.value), len(sim["vehicle/body/body"].history())
 
 
 @pytest.mark.parametrize("device", DEVICES)
@@ -327,11 +327,12 @@ def test_two_components_that_write_one_signal_a_third_reads_fail_the_run_naming_
     assert (all(name in message for name in ("first_counter", "second_counter")), rows) == (True, 0)
 
 
-class _Writer:
-    """A sensor on the prim `path` whose host stage writes `value` to the signal `count`."""
+class _Writer(Component):
+    """A sensor on the prim `path`, named after its leaf, whose host stage writes `value` to the signal `count`."""
 
     def __init__(self, path: str, value: int):
         self.prim_path = path
+        self.name = path.rsplit("/", 1)[-1]
         self.value = value
         self.count = Signal("count", Count, shape=(1,))
 
@@ -339,7 +340,7 @@ class _Writer:
         return [Stage("write", "host", lambda tick: self.count.write([(self.value,)]), writes=(self.count,))]
 
 
-class _Reader:
+class _Reader(Component):
     """An estimator on the prim `/vehicle/Estimator` whose host stage reads the signal `count`, as `type`."""
 
     prim_path = "/vehicle/Estimator"
@@ -353,10 +354,17 @@ class _Reader:
 
 def _read(writers, reader, connections=None):
     """What `reader` reads once `writers` have each written their value, wired as the loop wires them, with
-    `connections`, by the reader's prim, the signal and the prim it names.
+    `connections`, by the reader's prim, the signal and the prim it names, which the builder resolves to the
+    component on each prim before the loop wires.
     """
     pairs = [*((w, "sensor") for w in writers), (reader, "estimator")]
-    wire([Bound(stage, c, role) for c, role in pairs for stage in c.stages()], connections)
+    by_prim = {c.prim_path: c for c, _ in pairs}
+    links = [
+        (by_prim[reader_prim], signal, by_prim[writer_prim])
+        for reader_prim, inputs in (connections or {}).items()
+        for signal, writer_prim in inputs.items()
+    ]
+    wire([Bound(stage, c, role) for c, role in pairs for stage in c.stages()], links)
     for w in writers:
         w.count.write([(w.value,)])
     return reader.count.read()
@@ -399,20 +407,35 @@ def test_two_writers_a_reader_takes_through_neither_a_connection_nor_a_list_fail
     with pytest.raises(ValueError) as e:
         _read([_Writer("/vehicle/body/A", 1), _Writer("/vehicle/body/B", 2)], _Reader())
 
-    named = [word in str(e.value) for word in ("/vehicle/body/A", "/vehicle/body/B", "_Reader", "connection")]
+    named = [word in str(e.value) for word in ("A", "B", "_Reader", "connection")]
     assert named == [True] * 4
 
 
 @pytest.mark.usefixtures("warp_cpu")
-def test_a_connection_to_a_prim_that_writes_no_such_signal_fails_the_wiring_naming_the_reader_prim_and_signal():
-    """A connection to a prim that writes none of the signal fails the wiring, and the error names the reader,
-    the prim and the signal.
+class _Silent(Component):
+    """A sensor on the prim `path`, named after its leaf, whose host stage writes nothing."""
 
-    Given a stand-in sensor on the prim `A` that writes the signal `count`, and a reader whose prim connects
-    `count` to the prim `C`, which writes nothing, when the loop wires them, then it fails, naming the reader,
+    def __init__(self, path: str):
+        self.prim_path = path
+        self.name = path.rsplit("/", 1)[-1]
+
+    def stages(self):
+        return [Stage("idle", "host", lambda tick: None)]
+
+
+def test_a_connection_to_a_component_that_writes_no_such_signal_fails_the_wiring_naming_the_reader_writer_and_signal():
+    """A connection to a component that writes none of the signal fails the wiring, and the error names the
+    reader, the component and the signal.
+
+    Given a stand-in sensor on the prim `A` that writes the signal `count`, a sensor `C` that writes nothing,
+    and a reader whose prim connects `count` to `C`, when the loop wires them, then it fails, naming the reader,
     `C` and `count`.
     """
     with pytest.raises(ValueError) as e:
-        _read([_Writer("/vehicle/body/A", 1)], _Reader(), {"/vehicle/Estimator": {"count": "/vehicle/body/C"}})
+        _read(
+            [_Writer("/vehicle/body/A", 1), _Silent("/vehicle/body/C")],
+            _Reader(),
+            {"/vehicle/Estimator": {"count": "/vehicle/body/C"}},
+        )
 
-    assert [word in str(e.value) for word in ("_Reader", "/vehicle/body/C", "'count'")] == [True] * 3
+    assert [word in str(e.value) for word in ("_Reader", "C", "'count'")] == [True] * 3

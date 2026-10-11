@@ -7,7 +7,7 @@ It's a hand-coded "policy": it consumes the **same 12-D body-frame observation**
 policy does, see ``examples/_lib/observation.py``, and emits a **4-D direct-moment action**
 ``[thrust, m_x, m_y, m_z]`` the single-body :class:`~nexus_sim.examples._lib.rotors.Rotors`
 consumes in moment-input mode, allocation + motor lag with no rate loop, so the PID and a trained policy
-are interchangeable at the controller seam, and the PID's gains are the differentiable *design parameters*
+are interchangeable as the controller, and the PID's gains are the differentiable *design parameters*
 the rollout optimizes for the least overshoot + time-to-waypoint.
 
 Observation layout, body frame, from ``observation_from_state``:

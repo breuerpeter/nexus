@@ -14,7 +14,7 @@ controller.
   control tick.
 - **A min-snap reference, tracked as the full flat state:** the NMPC is a pure *tracking*
   controller. The planner lives with the **guidance**, a `TrackingGuidance` the flight constructs, and
-  `sim.guidance.set_mission(WAYPOINTS)` hands it the waypoints.
+  `guidance.set_mission(WAYPOINTS)` hands it the waypoints.
   It fits a **min-snap polynomial** through the waypoints, in `examples/_lib/min_snap.py`.
   Differential flatness then lifts it
   to a full state reference of attitude and body rate plus thrust feed-forward. The
@@ -151,7 +151,7 @@ the current state and hover thrust. So a new trajectory never inherits a stale s
 
 ### Where it sits in the framework
 
-The orchestrator runs physics CUDA-graph-captured. The NMPC solve is the one per-tick host
+The loop runs physics CUDA-graph-captured. The NMPC solve is the one per-tick host
 operation. It runs in a host stage between graph replays, the captured-host-exchange
 strategy. See [Execution](../design/execution.md). Two side channels feed the artifacts.
 `track_err` records the per-tick realized-versus-reference position error at node 0, the APE the

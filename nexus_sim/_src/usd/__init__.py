@@ -12,15 +12,15 @@ from pathlib import Path
 
 _PLUGIN = Path(__file__).parent
 
-# The entry-point group a package declares its component classes in, one entry per schema:
-# `NexusImuAPI = "nexus_sim._src.vehicle.sensors:ImuSensor"`.
-ENTRY_POINT_GROUP = "nexus.components"
+# The entry-point group a package declares its classes in, one entry per schema, a component's or a peer's:
+# `NexusImuAPI = "nexus_sim._src.vehicle.sensors:ImuSensor"`. The registry reads it.
+ENTRY_POINT_GROUP = "nexus.registry"
 
 
 def register_plugins() -> None:
-    """Register the nexus schema plugin with OpenUSD, then the plugin of each package with a component entry.
+    """Register the nexus schema plugin with OpenUSD, then the plugin of each package with a registry entry.
 
-    A package with an entry in the `nexus.components` group ships its plugin's `plugInfo.json` at the root
+    A package with an entry in the `nexus.registry` group ships its plugin's `plugInfo.json` at the root
     of its top-level package, as Newton's schema package does. This finds the package without importing
     it, so a class with heavy imports behind it costs nothing until a run declares its schema.
 

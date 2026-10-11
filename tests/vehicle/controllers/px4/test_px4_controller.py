@@ -155,7 +155,7 @@ def test_artifacts_carry_the_ulog_and_nothing_of_the_peer(tmp_path):
 
 def test_close_closes_the_link_and_tolerates_a_closed_one():
     """A daemon that has gone away is the peer's problem; this end closes its socket and the
-    orchestrator still flushes the recording.
+    loop still flushes the recording.
     """
     closed = []
 
@@ -169,3 +169,14 @@ def test_close_closes_the_link_and_tolerates_a_closed_one():
     c.close()
     c.close()  # a second close finds the same socket and must not raise
     assert closed == ["mav", "mav"]
+
+
+def test_the_px4_controller_declares_its_controls_signal_16_wide():
+    """PX4's controller declares its controls signal with the 16 channels `HIL_ACTUATOR_CONTROLS` carries.
+
+    Given the controller, when a reader lists its stages, then the one signal they write is `controls` of shape
+    `(1, 16)`.
+    """
+    written = [signal for stage in ctrl.Px4MavlinkController().stages() for signal in stage.writes]
+
+    assert [(signal.name, signal.shape) for signal in written] == [("controls", (1, 16))]

@@ -132,26 +132,27 @@ def test_a_list_input_with_no_sensor_of_its_kind_reads_its_default_and_without_o
 
 
 def test_two_magnetometers_that_a_reader_reads_through_neither_a_connection_nor_a_list_fail_the_build(tmp_path):
-    """Two sensors of one kind that a reader reads through neither a connection nor a list fail the build, and the error names both prims and the reader and says that a connection on the reader's prim picks one.
+    """Two sensors of one kind that a reader reads through neither a connection nor a list fail the build, and the error names both sensors and the reader and says that a connection on the reader's prim picks one.
 
     Given the fixture vehicle with two magnetometers and a stand-in estimator that reads the magnetometer with
     no connection, when the vehicle builds, then it fails before any stage runs, and the error names both
-    magnetometer prims and the estimator, and says that a connection on the estimator's prim picks one.
+    magnetometers by their instance names and the estimator, and says that a connection on the estimator's
+    prim picks one.
     """
     reader = sv.estimator(Signal("mag", MagSample, shape=(1,)))
     message = _stopped(tmp_path, MAGS, reader)
-    named = [f"{sv.BODY}/MagA" in message, f"{sv.BODY}/MagB" in message, "StandInEstimator" in message]
+    named = ["maga" in message, "magb" in message, "StandInEstimator" in message]
 
     assert (named, "connection" in message, reader.runs) == ([True, True, True], True, 0), message
 
 
 def test_a_connection_that_names_a_prim_which_writes_none_of_the_signals_its_reader_reads_fails_the_build(tmp_path):
-    """A connection that names a prim which writes none of the signals its reader reads fails the build, and the error names the reader, the prim and the signal.
+    """A connection that names a prim which writes none of the signals its reader reads fails the build, and the error names the reader, the component and the signal.
 
     Given the fixture vehicle with an Inertial Measurement Unit (IMU) and a barometer, and a stand-in estimator
     whose prim connects its IMU input to the barometer, when the vehicle builds, then it fails before any stage
-    runs, and the error names the estimator, the barometer's prim and the IMU's signal; and once with a
-    connection to a path that holds no prim.
+    runs, and the error names the estimator, the barometer by its instance name and the IMU's signal; and once
+    with a connection to a path that holds no prim, which the error names.
     """
 
     def stopped(name: str, target: str) -> tuple[bool, bool, int]:
@@ -159,7 +160,8 @@ def test_a_connection_that_names_a_prim_which_writes_none_of_the_signals_its_rea
         folder.mkdir()
         reader = sv.estimator(Signal("imu", ImuSample, shape=(1,)))
         message = _stopped(folder, IMU + BARO, reader, estimator=_connection("imu", target))
-        return target in message, _names(message, "imu"), reader.runs
+        named = target in message or target.rsplit("/", 1)[-1].lower() in message
+        return named, _names(message, "imu"), reader.runs
 
     assert (stopped("baro", f"{sv.BODY}/Baro0"), stopped("nowhere", f"{sv.BODY}/Nowhere")) == (
         (True, True, 0),

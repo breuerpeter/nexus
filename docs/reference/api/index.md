@@ -1,5 +1,5 @@
 ---
-description: "The public API of nexus, from Sim and Orchestrator to the rest, generated from the source with typed signatures."
+description: "The public API of nexus, from Sim and the component contract to the rest, generated from the source with typed signatures."
 ---
 
 # API reference
@@ -11,11 +11,12 @@ of the public surface. Import from `nexus_sim`, never from `nexus_sim._src`.
 
 <div class="grid cards" markdown>
 
--   **[Simulation](simulation.md)**: `Sim`, the top-level entry point for building and running a simulation, and the `BodyState` and `JointState` values it reports.
--   **[Core types](core.md)**: `Orchestrator`, `Controls`, and `SimTime`, the runtime-agnostic loop, control, and time surfaces.
+-   **[Simulation](simulation.md)**: `Sim`, the one entry to a run, which a script drives and indexes by path for any recorded history, and the `BodyState` and `JointState` rows of the plant.
+-   **[Components, registry, and peers](components.md)**: `Component`, the one contract every role fills, with `Stage`, `Tick` and `Signal`. `Registry` and `register` map a declaration to its class, and `Peer` is the contract a process the run starts fills.
+-   **[Signal types](core.md)**: `SimTime`, `PoseTwist`, the setpoint types and each shipped sensor's sample type, what a component's signals carry.
 -   **[Configuration](configuration.md)**: `LaunchConfig` for the launch configuration and `Catalog` for the vehicle and scene catalog.
--   **[Estimator](estimator.md)**: the role that writes the estimate, the vehicle's pose and twist the guidance and the controllers read. Its classes are internal, as the guidance's are.
--   **[Guidance](guidance.md)**: the role that turns a mission into a controller's setpoint, reached via `sim.guidance`. Its classes are internal, so the page is the one exception to importing from `nexus_sim`.
+-   **[Estimator](estimator.md)**: the role that writes the estimate, the vehicle's pose and twist the guidance and the controllers read. Its shipped class is internal, as the guidance's are.
+-   **[Guidance](guidance.md)**: the role that turns a mission into a controller's setpoint, which a flight constructs and holds. Its classes are internal, so the page is the one exception to importing from `nexus_sim`.
 -   **[PX4](px4.md)**: `OffboardClient`, the client a script opens on PX4's offboard link, and the mission plan types, imported from `nexus_sim.px4`.
 -   **[Logging](logging.md)**: `logger`, the framework logger, which writes to the console and tees into the Rerun recording.
 

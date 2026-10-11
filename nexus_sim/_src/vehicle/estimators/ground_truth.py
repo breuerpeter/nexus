@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import warp as wp
 
-from nexus_sim._src.core.interfaces import Stage
+from nexus_sim._src.core.interfaces import Component, Stage
 from nexus_sim._src.core.schema import PoseTwist
 from nexus_sim._src.core.signals import Signal
 
@@ -27,7 +27,7 @@ def copy_pose_twist(
     estimate[0] = e
 
 
-class GroundTruthEstimator:
+class GroundTruthEstimator(Component):
     """The passthrough estimator: its stage writes the base body's true pose and twist, in world axes, to the
     signal ``estimate``, with no noise and no delay. So a guidance or a controller that reads the estimate
     reads the values of the physics state, and one written against the estimate runs behind any estimator.

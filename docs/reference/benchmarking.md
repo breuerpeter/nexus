@@ -11,7 +11,7 @@ improvement, is always a visible diff.
 
 ## What CI measures
 
-**Steady Real Time Factor (RTF)**: simulated seconds per wall-clock second. The orchestrator
+**Steady Real Time Factor (RTF)**: simulated seconds per wall-clock second. The loop
 measures it over the whole run *excluding* the first 250 control steps, where lazy kernel
 compilation and initial settle happen. Whole-run wall time is never used as a speed metric.
 Alongside the steady figure, the loop profiler records an RTF **window series** of 1000-tick

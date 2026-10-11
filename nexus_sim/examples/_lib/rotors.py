@@ -1,10 +1,10 @@
-"""``Rotors``: the examples' single-body actuator, the old actuator seam: ``N`` MotorModels, from
+"""``Rotors``: the examples' single-body actuator, the old actuator stage: ``N`` MotorModels, from
 :mod:`~nexus_sim.examples._lib.motor`, + ``N`` PropellerModels, from :mod:`~nexus_sim._src.vehicle.forces.propellers`,
 + the summed-wrench **coupling** from :mod:`~nexus_sim.examples._lib.coupling`. Every consumer of the
 single-body plant, RL train + deploy, Proportional Integral Derivative (PID), policy, sampling Model
 Predictive Control (MPC) and design-opt, runs this actuator at the highest fidelity that runs everywhere,
 airflow propeller + motor lag, summing the per-rotor wrench into one base-body wrench,
-``state.body_f[base]``. It stays on the old seam, the loop's ``actuator``, until the single-body plant's
+``state.body_f[base]``. It stays on the loop's ``actuator`` slot, until the single-body plant's
 motor lag finds a home: it needs the controller's command, so it's neither a command element, which writes
 Newton's control inputs, nor a force element, which reads the state alone.
 
@@ -25,14 +25,14 @@ from __future__ import annotations
 import numpy as np
 import warp as wp
 
-from nexus_sim._src.core.interfaces import Stage
+from nexus_sim._src.core.interfaces import Component, Stage
 from nexus_sim._src.core.signals import Signal
 from nexus_sim.examples._lib.coupling import rigid_body_wrench_world
 from nexus_sim.examples._lib.mixer import RotorMixer
 from nexus_sim.examples._lib.motor import motor_alpha
 
 
-class Rotors:
+class Rotors(Component):
     def __init__(
         self,
         *,

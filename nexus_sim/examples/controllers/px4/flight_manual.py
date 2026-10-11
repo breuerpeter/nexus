@@ -69,7 +69,7 @@ def main() -> int:
             # The script opens the offboard client itself, after start(), and closes it on the way
             # out. Entering it returns at once: PX4 runs on the sim's clock, so the wait for its
             # heartbeat steps the sim.
-            spawn_alt = sim.physics[sim.base_body].latest().altitude_m
+            spawn_alt = sim[f"vehicle/body/{sim.base_body}"].latest().altitude_m
             with OffboardClient(f"udpin:0.0.0.0:{link['port']}", system_id=link["system_id"]) as op:
                 sim.wait_until(lambda: op.connected, sim_timeout=args.timeout)
                 # SITL's rcS already sets this, but it's a runtime default rather than a compiled-in
@@ -107,7 +107,7 @@ def main() -> int:
             # flight. Measured here rather than on the happy path so a flight that timed out still
             # reports how far it actually got.
             if spawn_alt is not None:
-                alts = np.array([s.altitude_m for s in sim.physics[sim.base_body].history()])
+                alts = np.array([s.altitude_m for s in sim[f"vehicle/body/{sim.base_body}"].history()])
                 climb = float(alts.max() - spawn_alt) if alts.size else 0.0
                 stats.update(takeoff_confirmed=flight_ok, climb_m=round(climb, 2))
                 nx.logger.info(f"[manual] {'takeoff OK' if flight_ok else 'no takeoff'}, climbed {climb:.2f} m")

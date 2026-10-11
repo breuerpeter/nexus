@@ -16,7 +16,7 @@ pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
 from nexus_sim._src.config.catalog import load_catalog
-from nexus_sim._src.core.registry import default_registry
+from nexus_sim._src.core.registry import Registry
 from nexus_sim._src.core.schema import BaroSample, GpsSample, ImuSample, MagSample
 from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
@@ -246,7 +246,7 @@ def test_the_ground_truth_px4_receives_is_the_base_bodys_whatever_the_imus_mount
         'float nexus:gyroNoise = 0.5\nfloat xformOp:rotateZ = 90\nuniform token[] xformOpOrder = ["xformOp:rotateZ"]',
     )
     path = sv.vehicle(tmp_path, sv.prim("Gps0", "NexusGpsAPI"), mast=turned, px4=True)
-    loop = sv.build(path, components=default_registry(), peers={"px4_sitl": Px4Fake})
+    loop = sv.build(path, components=Registry(), peers={"px4_sitl": Px4Fake})
     fake = loop.peers[0]
 
     n = 0

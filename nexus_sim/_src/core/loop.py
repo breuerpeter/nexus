@@ -1,4 +1,4 @@
-"""The fixed-order, deterministic orchestrator.
+"""The fixed-order, deterministic loop.
 
 A tick is an ordered ring of stages, per docs/design/execution.md. Every component states its
 per-tick work as a list of ``Stage``: a device stage joins a CUDA graph, a host stage runs between
@@ -42,14 +42,7 @@ if TYPE_CHECKING:
     from nexus_sim._src.peers import Peer
     from nexus_sim._src.recording import Recorder
 
-    from .interfaces import (
-        Actuator,
-        Clock,
-        Controller,
-        Physics,
-        Renderer,
-        Sensor,
-    )
+    from .interfaces import Clock, Component, Physics
 
 
 def _on_cuda() -> bool:
@@ -59,29 +52,30 @@ def _on_cuda() -> bool:
 
 def _instance(component) -> str:
     """A component's instance name, the leaf of its path: its ``name``, else its class's name."""
-    return str(getattr(component, "name", None) or type(component).__name__)
+    return str(component.name or type(component).__name__)
 
 
 def _sensor_names(sensors: list) -> list[str]:
     """Each sensor's instance name, in order.
 
     Raises:
-        ValueError: Two sensors share a name; the message names the prim that declares each.
+        ValueError: Two sensors share a name; the message names the class of each. The builder checks the
+            same for the sensors a vehicle declares, and names their prims.
     """
     first: dict[str, object] = {}
     for sensor in sensors:
         name = _instance(sensor)
         if name in first:
-            declared = [getattr(s, "prim_path", None) or type(s).__name__ for s in (first[name], sensor)]
+            declared = [type(s).__name__ for s in (first[name], sensor)]
             raise ValueError(
                 f"sensors {declared[0]} and {declared[1]} share the name {name!r}: a recorded row's path "
-                "ends in its sensor's name, so rename one prim"
+                "ends in its sensor's name, so name one apart"
             )
         first[name] = sensor
     return [_instance(sensor) for sensor in sensors]
 
 
-class Orchestrator:
+class Loop:
     """Fixed-order, deterministic per-tick driver over typed component boundaries.
 
     Runs the ring of stages every component states, sensors -> estimator -> guidance -> controller ->
@@ -106,17 +100,17 @@ class Orchestrator:
         *,
         clock: Clock,
         physics: Physics,
-        sensors: Iterable[Sensor],
-        controller: Controller,
-        estimator: object | None = None,
-        guidance: object | None = None,
-        commands: Iterable[object] = (),
-        forces: Iterable[object] = (),
-        actuator: Actuator | None = None,
-        renderer: Renderer | None = None,
+        sensors: Iterable[Component],
+        controller: Component,
+        estimator: Component | None = None,
+        guidance: Component | None = None,
+        commands: Iterable[Component] = (),
+        forces: Iterable[Component] = (),
+        actuator: Component | None = None,
+        renderer: object | None = None,
         peers: Iterable[Peer] = (),
         ports: Mapping[str, dict] | None = None,
-        connections: Mapping[str, Mapping[str, str]] | None = None,
+        connections: Iterable[tuple[Component, str, Component]] | None = None,
         logger: Logger | None = None,
         recorder: Recorder | None = None,
         on_tick: Callable[[newton.State, float, int], None] | None = None,
@@ -138,10 +132,9 @@ class Orchestrator:
                 + double-buffer.
             sensors: Iterable of sensors, each a device stage that writes its sample to a signal of its
                 own type, or a host stage for a sensor whose work leaves the process. Stored as a list.
-            controller: Control boundary. ``connect()`` binds and starts the peer, and the
-                seed pass waits for it; its stages set the command buffer; ``close()`` tears down.
-                A controller with a peer exposes ``attached``, false until the peer dials in,
-                which holds the seed pass's clock.
+            controller: The controller: its stages write the controls the command elements read. One with
+                a peer reads ``attached`` false until the peer dials in, which holds the seed pass's clock,
+                as any component that waits on a peer does.
             estimator: Optional estimator, for a guidance or a controller that reads the vehicle's state:
                 its stages run each tick after the sensors' and before the guidance's, and write the
                 estimate, the base body's pose and twist, which the guidance and the controller read in
@@ -159,9 +152,9 @@ class Orchestrator:
                 control inputs, the rotors' speed targets and feedforward, in its device stages.
             forces: The force elements: each adds its body wrenches to the shared ``state.body_f``
                 from the current state, the propellers' thrust and drag, in its device stages.
-            actuator: The old actuator seam, the examples' single-body ``Rotors``: one device stage
+            actuator: The old actuator stage, the examples' single-body ``Rotors``: one device stage
                 that writes the shared body forces from the controls the controller writes. ``None``
-                for a run on the command and force seams.
+                for a run on command elements and force elements.
             renderer: Optional render-lifecycle object, for example the Kit render peer's
                 :class:`~nexus_sim._src.rendering.KitRenderer`: the loop calls only
                 ``on_physics_ready()``/``close()``; the host-rate RTX camera *sensors* drive
@@ -173,14 +166,14 @@ class Orchestrator:
             ports: The run's port map, a :class:`~nexus_sim._src.core.ports.PortMap`: each link that
                 leaves the run, by name, to the address a script opens its client on. The run
                 owns every address, and the build names them here; ``None`` names no link.
-            connections: For a component's prim, each signal it reads and the prim whose component writes
-                it, from the vehicle's ``nexus:inputs:`` relationships: where more than one component
-                writes a signal, a reader takes the one its connection names. A component's prim is its
-                ``prim_path``, which the build sets. ``None`` connects nothing.
+            connections: Triples of a reader, a signal's name and the writer it reads that signal from,
+                which the build resolves from the vehicle's ``nexus:inputs:`` relationships: where more
+                than one component writes a signal, a reader takes the one its connection names.
+                ``None`` connects nothing.
             logger: Optional :class:`~nexus_sim._src.logging.Logger`: the recording
                 sink + shared log calls. ``None`` ⇒ no recording, for max speed. When present, the
-                loop hands each component that states ``set_logger`` a view scoped to its path, and
-                writes the Recorder's histories into it, a block at a time.
+                loop hands each component a view scoped to its path, and writes the Recorder's
+                histories into it, a block at a time.
             recorder: The run's :class:`~nexus_sim._src.recording.Recorder`, which keeps every row of
                 the plant's state and of each sensor's output. The loop reads the attribute at the first
                 step, so a host can set it after construction; ``None`` records nothing.
@@ -213,7 +206,9 @@ class Orchestrator:
         self.renderer = renderer
         self.peers = list(peers)
         self.ports = PortMap() if ports is None else ports
-        self.connections = dict(connections or {})
+        self.connections = list(connections or ())
+        self.run_stats: dict = {}  # set when a run finishes; empty until then
+        self._connected: list = []  # the components the run connected, which the teardown closes
         # The single logging switch: a `Logger`, the recording sink + the shared log calls, or None.
         # None ⇒ no recording → max benchmark/CI speed.
         self.logger = logger
@@ -233,16 +228,16 @@ class Orchestrator:
             ),
         ]
         self._paths = {id(c): path for c, path in wired}
-        # Logging components expose `set_logger(logger)`. The orchestrator hands each a view of the one
-        # Logger scoped to the component's path, so no call site names an entity; None when off, the
-        # single switch. A component logs a value with no fixed width live, in its own code: the
-        # guidance its markers at a mission event, an MPC controller its horizon when it refreshes, a
-        # camera its frames; the guidance via `add_loggable` when the loop builds its ring, since a
-        # flight can hand it over after construction. The scene and every fixed-width value come from
-        # the Recorder's histories, which the loop writes a block at a time.
-        self._loggables = [c for c, _ in wired if hasattr(c, "set_logger")]
+        # The loop hands each component a view of the one Logger scoped to the component's path, so no
+        # call site names an entity; None when off, the single switch. A component logs a value with no
+        # fixed width live, in its own code: the guidance its markers at a mission event, an MPC
+        # controller its horizon when it refreshes, a camera its frames; the guidance via `add_loggable`
+        # when the loop builds its ring, since a flight can hand it over after construction. The scene
+        # and every fixed-width value come from the Recorder's histories, which the loop writes a block
+        # at a time. Physics is a fixed part, not a component: it logs nothing itself.
+        self._loggables = [c for c, _ in wired if c is not physics]
         for c, path in wired:
-            if hasattr(c, "set_logger"):
+            if c is not physics:
                 c.set_logger(self._scoped(path))
         # Live-RTF anchors, wall and sim: a rolling window the width of the ~1 s emission interval.
         # Distinct from _last_log_t, the sim-time scene decimation, and from run_stats' post-hoc RTF.
@@ -352,8 +347,7 @@ class Orchestrator:
         last emission, a rolling window exactly one emission interval wide. Only completed ticks reach
         this call, so a stalled exchange shows as a *low* next reading, not a live countdown.
         """
-        log_rtf = getattr(self.logger, "log_rtf", None)  # a custom sink might not have it, and None is off
-        if log_rtf is None:
+        if self.logger is None:
             return
         now = time.monotonic()
         if self._rtf_wall_prev is None:
@@ -362,7 +356,7 @@ class Orchestrator:
         wall = now - self._rtf_wall_prev
         if wall < 1.0:
             return
-        log_rtf((st - self._rtf_sim_prev) / wall)
+        self.logger.log_rtf((st - self._rtf_sim_prev) / wall)
         self._rtf_wall_prev, self._rtf_sim_prev = now, st
 
     def _close_logs(self) -> None:
@@ -371,15 +365,15 @@ class Orchestrator:
         """
         if self.logger is None:
             return
-        if self.recorder is not None and hasattr(self.logger, "write"):
+        if self.recorder is not None:
             self.logger.write(self.recorder.histories, self._written)  # the last block: the staged rows
         # The final steady RTF from run_stats, whose loop's finally ran first, stamped at end-of-run
         # sim time; a run faster than the ~1 s live cadence would otherwise never show a reading.
-        stats = getattr(self, "run_stats", None) or {}  # missing until a run has looped
-        if stats.get("rtf") and hasattr(self.logger, "log_rtf"):
+        stats = self.run_stats  # empty until a run has looped
+        if stats.get("rtf"):
             self.logger.set_time(stats["control_steps"] * self.clock.dt)
             self.logger.log_rtf(float(stats["rtf"]))
-        if stats and hasattr(self.logger, "log_profile"):
+        if stats:
             self.logger.log_profile(stats)  # steps + RTF + the loop profiler's breakdown, for the Profile tab
         self.logger.close()
 
@@ -462,9 +456,7 @@ class Orchestrator:
                 self._paths[id(self.estimator)] = f"vehicle/estimators/{_instance(self.estimator)}"
             if self.guidance is not None:
                 # Here, since a flight can hand the guidance over after construction.
-                self._paths[id(self.guidance)] = "guidance"
-                if hasattr(self.guidance, "set_logger"):
-                    self.add_loggable(self.guidance, "guidance")
+                self.add_loggable(self.guidance, "guidance")
             ring = build_ring(
                 sensors=self.sensors,
                 estimator=self.estimator,
@@ -497,14 +489,18 @@ class Orchestrator:
             )
             if self._device_clock is not None:
                 self._device_clock.time.write([tick.t.sim_time])
-            # A controller without a peer connects first, which reserves its device buffers before the
-            # warm pass. One with a peer connects after the capture, so every kernel the loop launches has
-            # loaded before the peer is up: from the moment PX4 dials in, it logs a ``poll timeout``
-            # error for each second of wall time that brings no message. The peer's own signal,
-            # ``attached``, says which, until #37 moves it to the peer.
-            peer = hasattr(self.controller, "attached")
-            if not peer:
-                self.controller.connect()
+            # A component attached from the start has no peer: it connects first, which reserves its
+            # device buffers before the warm pass. One that waits on a peer connects after the capture,
+            # so every kernel the loop launches has loaded before the peer is up: from the moment PX4
+            # dials in, it logs a ``poll timeout`` error for each second of wall time that brings no
+            # message. The component's own ``attached`` says which.
+            components = self.components()
+            self._owners = {id(b.stage): b.component for b in ring}
+            waiting = [c for c in components if not c.attached]
+            for c in components:
+                if not any(c is w for w in waiting):
+                    c.connect()
+                    self._connected.append(c)
             # The warm pass, over the settled state. A guidance's warm stage runs between the sensors'
             # and the controller's and writes its setpoint, so the controller holds the first goal
             # before its own first stage. The log opens at the settled state's time, so the markers a
@@ -515,9 +511,10 @@ class Orchestrator:
             self._record_tick()  # the settled pre-flight row, the datum every climb measures against
             self._commit()
             graphs = self._capture(segments, tick) if captured else None
-            if peer:
-                self.controller.connect()  # bind the peer's port and start it
-            self._seed(ring, tick, peer)
+            for c in waiting:
+                c.connect()  # bind the peer's port and start listening
+                self._connected.append(c)
+            self._seed(ring, tick, waiting)
             yield from self._loop(segments, graphs, tick)
         except ConnectionError as e:
             logger.info(
@@ -541,9 +538,34 @@ class Orchestrator:
                 self._close_logs()
         finally:
             try:
-                self.controller.close()
+                self._close_components()
             finally:
                 self._stop_peers()
+
+    def components(self) -> list:
+        """Every component of the run, in ring order: the sensors, the estimator, the guidance, the controller,
+        the command elements, the force elements and the old actuator stage.
+        """
+        optional = [c for c in (self.estimator, self.guidance) if c is not None]
+        tail = [self.actuator] if self.actuator is not None else []
+        return [*self.sensors, *optional, self.controller, *self.commands, *self.forces, *tail]
+
+    def _close_components(self) -> None:
+        """Close every component the run connected, in reverse order, each even when an earlier one raises:
+        the first error propagates after the last close.
+        """
+        components = list(reversed(self._connected))
+        self._connected = []
+
+        def close(i: int) -> None:
+            if i == len(components):
+                return
+            try:
+                components[i].close()
+            finally:
+                close(i + 1)
+
+        close(0)
 
     def _controller_name(self) -> str:
         """The controller's class, so a run's end names the peer that left it: ``Px4MavlinkController``."""
@@ -596,40 +618,50 @@ class Orchestrator:
             except Exception as exc:
                 logger.warning(f"stopping a peer failed ({exc})")
 
-    def _seed(self, ring, tick, peer: bool) -> None:
+    def _seed(self, ring, tick, waiting: list) -> None:
         """The seed pass, for a controller with a host stage: one pass of the sensors' warm stages and
         the controller's stages over the settled state, whose final exchange writes the controls the
-        first tick applies. Each pass advances the sim clock, and its mirror on the device with it. A
-        controller with a peer holds the sim clock until the peer attaches, so the peer's first stamp is
-        near zero, and the pass repeats, re-sampling the static settled state so noise dithers into a
-        live feed, until the first controls arrive or the preroll times out. A controller whose stages
-        are all device stages gets no pass: the warm pass seeded it.
+        first tick applies. Each pass advances the sim clock, and its mirror on the device with it. The
+        loop holds the sim clock until every component in ``waiting`` has attached, so a peer's first
+        stamp is near zero, and runs each one's host stages meanwhile, its way to its peer. The pass
+        repeats, re-sampling the static settled state so noise dithers into a live feed, until the
+        first controls arrive or the preroll times out. A controller whose stages are all device stages,
+        with no component waiting, gets no pass: the warm pass seeded it.
 
         Raises:
-            ConnectionError: No controls arrived within ``preroll_timeout``.
+            ConnectionError: A component never attached, or no controls arrived, within
+                ``preroll_timeout``.
         """
         stages = seed_stages(ring)
-        if all(st.kind == "device" for st in stages):
+        if not waiting and all(st.kind == "device" for st in stages):
             return
-        if peer:
-            logger.info("Waiting for the controller to start lockstep...")
+        names = " and ".join(_instance(c) for c in waiting)
+        if waiting:
+            logger.info(f"Waiting for {names} to attach...")
         tick.timeout = 0.05
         deadline = time.monotonic() + self.preroll_timeout
+        seeded = {id(st) for st in stages}
         while time.monotonic() < deadline:
-            # Hold the sim clock until the peer has dialed in: time spent waiting would start the peer's
+            # Hold the sim clock until every peer has dialed in: time spent waiting would start a peer's
             # clock late, and PX4 times its boot checks from its first stamp.
-            attached = self.controller.attached if peer else True
-            if attached:
+            pending = [c for c in waiting if not c.attached]
+            if pending:
+                tick.t = self.clock.now()
+            else:
                 tick.t = self.clock.advance()
                 if self._device_clock is not None:
                     self._device_clock.advance()
-            else:
-                tick.t = self.clock.now()
-            if all(st.run(tick) is not False for st in stages):
-                if peer:
-                    logger.info("controller lockstep established")
+            polls = [
+                b.stage
+                for b in ring
+                if b.stage.kind == "host" and id(b.stage) not in seeded and any(b.component is c for c in pending)
+            ]
+            answered = all(st.run(tick) is not False for st in [*stages, *polls])
+            if answered and not pending:
+                if waiting:
+                    logger.info(f"{names} attached: lockstep established")
                 return
-        raise ConnectionError(f"controller did not respond within {self.preroll_timeout}s")
+        raise ConnectionError(f"{names or 'the controller'} did not respond within {self.preroll_timeout}s")
 
     def _open_tick(self, tick) -> bool:
         """Advance the clock and open the tick's log, before any host stage, so the Model Predictive
@@ -689,8 +721,9 @@ class Orchestrator:
                         st = seg.stages[0]
                         if st.run(tick) is False:  # the peer stopped answering: a run's normal end
                             count -= 1  # the disconnect tick didn't advance the sim
+                            owner = type(self._owners.get(id(st), self.controller)).__name__
                             raise ConnectionError(
-                                f"{self._controller_name()} disconnected (no actuator controls received)"
+                                f"{owner} disconnected (no answer from its peer in its {st.name} stage)"
                             )
                         prof.mark(st.name)
                     elif replay is not None:

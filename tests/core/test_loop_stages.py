@@ -12,9 +12,9 @@ pytest.importorskip("warp")
 
 import warp as wp
 
-from nexus_sim._src.core.interfaces import Stage
-from nexus_sim._src.core.orchestrator import Orchestrator
-from nexus_sim._src.core.schema import Controls, SimTime
+from nexus_sim._src.core.interfaces import Component, Stage
+from nexus_sim._src.core.loop import Loop
+from nexus_sim._src.core.schema import SimTime
 
 
 @wp.kernel
@@ -65,7 +65,7 @@ class _Physics:
         ]
 
 
-class _Actuator:
+class _Actuator(Component):
     capturable = True
 
     def forces(self, controls, state):
@@ -81,7 +81,7 @@ class _Actuator:
         return [Stage("forces", "device", lambda tick: self.forces(None, tick.state))]
 
 
-class _GraphSensor:
+class _GraphSensor(Component):
     """An in-graph sensor: one device stage that writes nothing a stand-in needs."""
 
     capturable = True
@@ -96,7 +96,7 @@ class _GraphSensor:
         return [Stage("sample", "device", lambda tick: None)]
 
 
-class _HostSensor:
+class _HostSensor(Component):
     """A sensor whose work is a host stage, as an RTX sensor's frame exchange with the Kit peer is. It
     keeps, per sample, whether the device was under capture at the time.
     """
@@ -113,7 +113,7 @@ class _HostSensor:
         return [Stage("sample", "host", lambda tick: self.sample(tick.state, tick.t))]
 
 
-class _PeerController:
+class _PeerController(Component):
     """A controller with a peer, the PX4 shape: two host stages, ``truth`` and ``exchange``, plus one
     device stage that bumps its own buffer, which exists from construction because the loop captures
     before a peer connects. ``answers`` says which exchanges the peer answers; ``attached`` says when
@@ -135,7 +135,7 @@ class _PeerController:
         self.calls += 1
         if not self._answers(self.calls):
             return None
-        return Controls(command=[0.0, 0.0, 0.0, 0.0])
+        return [0.0, 0.0, 0.0, 0.0]
 
     def close(self):
         self.closed = True
@@ -155,7 +155,7 @@ class _PeerController:
         ]
 
 
-class _DeviceController:
+class _DeviceController(Component):
     """A controller whose stages are all device stages, the Proportional Integral Derivative (PID) shape. It keeps every ``exchange`` call."""
 
     capturable = True
@@ -169,7 +169,7 @@ class _DeviceController:
 
     def exchange(self, t, timeout):
         self.exchange_calls += 1
-        return Controls(command=[0.0, 0.0, 0.0, 0.0])
+        return [0.0, 0.0, 0.0, 0.0]
 
     def close(self):
         pass
@@ -178,7 +178,7 @@ class _DeviceController:
         return [Stage("act", "device", lambda tick: wp.launch(_bump, dim=1, inputs=[self.act]))]
 
 
-class _Stageless:
+class _Stageless(Component):
     """A controller that states no stages."""
 
     def connect(self):
@@ -188,7 +188,7 @@ class _Stageless:
         pass
 
 
-class _EmptyStages:
+class _EmptyStages(Component):
     """A controller whose stage list is empty."""
 
     def connect(self):
@@ -201,7 +201,7 @@ class _EmptyStages:
         return []
 
 
-class _UnknownKind:
+class _UnknownKind(Component):
     """A controller whose one stage misspells its kind."""
 
     def connect(self):
@@ -220,15 +220,27 @@ class _Logger:
     def __init__(self):
         self.closed = False
 
+    def scoped(self, path):
+        return None
+
     def set_time(self, t):
         pass
 
     def close(self):
         self.closed = True
 
+    def write(self, histories, start, stop=None):
+        pass
+
+    def log_rtf(self, rtf):
+        pass
+
+    def log_profile(self, stats):
+        pass
+
 
 def _orch(controller, *, sensors=(), physics=None, **kw):
-    return Orchestrator(
+    return Loop(
         clock=_Clock(),
         physics=physics or _Physics(),
         actuator=_Actuator(),
@@ -385,7 +397,7 @@ class _Noting(_Physics):
         return state
 
 
-class _CommandElement:
+class _CommandElement(Component):
     """A command element: one device stage that notes when it runs."""
 
     def __init__(self, notes):
@@ -395,7 +407,7 @@ class _CommandElement:
         return [Stage("command", "device", lambda tick: self.notes.append("command"))]
 
 
-class _ForceElement:
+class _ForceElement(Component):
     """A force element: one device stage that notes when it runs."""
 
     def __init__(self, notes):
@@ -415,7 +427,7 @@ def test_a_tick_runs_clear_the_command_elements_the_force_elements_and_step_once
     """
     notes = []
     with wp.ScopedDevice("cpu"):
-        orch = Orchestrator(
+        orch = Loop(
             clock=_Clock(),
             physics=_Noting(notes),
             commands=[_CommandElement(notes)],
@@ -437,7 +449,7 @@ def test_a_command_element_or_a_force_element_that_states_no_stages_fails_the_bu
     when each loop builds, then each fails and the error names the stand-in's class.
     """
     with wp.ScopedDevice("cpu"), pytest.raises(ValueError, match="_Stageless"):
-        Orchestrator(
+        Loop(
             clock=_Clock(),
             physics=_Physics(),
             sensors=[_GraphSensor()],

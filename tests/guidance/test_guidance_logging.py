@@ -1,5 +1,5 @@
 """A guidance names only its own rows: ``waypoints/wp_<i>`` and ``reference``. The loop scopes its
-logger to the guidance's path, which ``tests/core/test_orchestrator_guidance.py`` proves. A stand-in
+logger to the guidance's path, which ``tests/core/test_loop_guidance.py`` proves. A stand-in
 sink takes the place of that scoped logger, and each test drives the guidance through its stages,
 which the loop calls.
 """
@@ -8,7 +8,7 @@ import pytest
 
 pytest.importorskip("warp")
 
-from nexus_sim._src.core.interfaces import Stage, Tick
+from nexus_sim._src.core.interfaces import Component, Stage, Tick
 from nexus_sim._src.core.schema import PoseTwist, SimTime
 from nexus_sim._src.core.signals import Signal, wire
 from nexus_sim._src.core.stages import Bound
@@ -17,7 +17,7 @@ from nexus_sim._src.guidance import MissionGuidance, TrackingGuidance
 START = (0.0, 0.0, 2.0)
 
 
-class _Estimator:
+class _Estimator(Component):
     """Stands in for the estimator: it writes the estimate the guidance reads, which each tick sets."""
 
     def __init__(self):

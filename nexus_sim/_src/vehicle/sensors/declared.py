@@ -15,10 +15,10 @@ from pathlib import Path
 
 from nexus_sim._src.core.components import ComponentSpec, resolve_components
 from nexus_sim._src.core.interfaces import SensorRun
-from nexus_sim._src.core.registry import ComponentRegistry
+from nexus_sim._src.core.registry import Registry
 
 
-def sensor_specs(usd_path: str | Path, registry: ComponentRegistry | None = None) -> list[ComponentSpec]:
+def sensor_specs(usd_path: str | Path, registry: Registry | None = None) -> list[ComponentSpec]:
     """One record per sensor the vehicle file at `usd_path` declares, in the order of its prims.
 
     With no `registry`, the default one resolves each schema.
@@ -32,7 +32,7 @@ def sensor_specs(usd_path: str | Path, registry: ComponentRegistry | None = None
 
 def requires(spec: ComponentSpec, peer: str) -> bool:
     """Whether the class of `spec` requires the peer named `peer`."""
-    return peer in getattr(spec.cls, "requires", ())
+    return peer in spec.cls.requires
 
 
 def build_sensors(specs: list[ComponentSpec], *, usd_path: str | Path, model, seedtree, dt: float, site, link=None):
@@ -51,13 +51,23 @@ def build_sensors(specs: list[ComponentSpec], *, usd_path: str | Path, model, se
         The sensors, in the order of `specs`, each named after its prim, in lower case.
 
     Raises:
-        ValueError: A sensor's prim doesn't sit under a rigid body of the model; the message names the prim.
+        ValueError: A sensor's prim doesn't sit under a rigid body of the model, or two sensors' prims share
+            a name; the message names the prims.
     """
     from pxr import Usd, UsdGeom
 
     stage = Usd.Stage.Open(str(usd_path), Usd.Stage.LoadAll)
     bodies = [str(label) for label in model.body_label]
     coms = model.body_com.numpy()
+    named: dict[str, str] = {}
+    for spec in specs:
+        name = spec.prim.rsplit("/", 1)[-1].lower()
+        if name in named:
+            raise ValueError(
+                f"sensors {named[name]} and {spec.prim} share the name {name!r}: a recorded row's path ends in "
+                "its sensor's name, so rename one prim"
+            )
+        named[name] = spec.prim
     sensors = []
     for spec in specs:
         prim = stage.GetPrimAtPath(spec.prim)
@@ -81,12 +91,11 @@ def build_sensors(specs: list[ComponentSpec], *, usd_path: str | Path, model, se
             com=tuple(float(x) for x in coms[body]),
             path=spec.prim,
             prim=prim,
-            link=link if getattr(spec.cls, "requires", ()) else None,
+            link=link if spec.cls.requires else None,
         )
         sensor = spec.cls(run, **spec.kwargs)
         # The instance is the prim that declares it: its name, in lower case, ends a recorded row's path
-        # and keys the Recorder's history, and its path is what a shared-name error names.
+        # and keys the Recorder's history.
         sensor.name = spec.prim.rsplit("/", 1)[-1].lower()
-        sensor.prim_path = spec.prim
         sensors.append(sensor)
     return sensors

@@ -36,8 +36,8 @@ import nexus_sim._src.build.launch as launch_mod
 import nexus_sim._src.peers.containers as containers
 from nexus_sim._src.api.sim import Sim
 from nexus_sim._src.config import Catalog, LaunchConfig
-from nexus_sim._src.core.interfaces import Stage
-from nexus_sim._src.core.orchestrator import Orchestrator
+from nexus_sim._src.core.interfaces import Component, Stage
+from nexus_sim._src.core.loop import Loop
 from nexus_sim._src.core.schema import SimTime
 from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
@@ -178,7 +178,7 @@ class _Physics:
         ]
 
 
-class _Actuator:
+class _Actuator(Component):
     def forces(self, controls, state):
         pass
 
@@ -187,7 +187,7 @@ class _Actuator:
 
 
 def _loop(controller, **kw):
-    return Orchestrator(
+    return Loop(
         clock=_Clock(),
         physics=_Physics(),
         actuator=_Actuator(),
@@ -208,7 +208,7 @@ def assembly(monkeypatch):
         peers = {"peers": kw["peers"]} if "peers" in kw else {}
         return _loop(kw["controller"], preroll_timeout=kw.get("preroll_timeout", 2.0), **peers)
 
-    monkeypatch.setattr(launch_mod, "build_orchestrator", assemble)
+    monkeypatch.setattr(launch_mod, "build_loop", assemble)
 
 
 # --- a catalog with one vehicle, a local USD file --------------------------------------------------
@@ -235,7 +235,7 @@ def catalog(tmp_path) -> Catalog:
 def run(daemon, assembly, catalog, tmp_path):
     """Build a PX4 run of the catalog's vehicle, over the override layer given, if one is, and return its loop."""
 
-    def _run(layer: str | None = None) -> Orchestrator:
+    def _run(layer: str | None = None) -> Loop:
         spec = {"vehicle": "astro", "scene": "empty"}
         if layer is not None:
             path = tmp_path / "override.usda"
@@ -455,7 +455,7 @@ def test_a_local_vehicle_usd_flies_the_airframe_its_px4_schema_declares(daemon, 
 _FAKE_PX4 = {"px4_sitl": Px4Fake}
 
 
-class _Commands:
+class _Commands(Component):
     """An actuator that keeps the controls it reads each tick, the commands the controller received."""
 
     def __init__(self):
@@ -480,7 +480,7 @@ def _step(loop, ticks: int) -> list[bool]:
     return stepped
 
 
-def _faked(catalog, tmp_path) -> Orchestrator:
+def _faked(catalog, tmp_path) -> Loop:
     """Build the catalog's vehicle with the PX4 SITL peer sent to its fake."""
     launch = LaunchConfig.from_dict({"vehicle": "astro", "scene": "empty"})
     return launch_mod.build_from_launch(
@@ -540,7 +540,7 @@ def test_the_fake_px4_receives_a_hil_sensor_each_tick_and_the_state_with_each_gp
     assert (kinds.count("HIL_SENSOR"), gps > 0, state == gps) == (501, True, True), (gps, state)
 
 
-def _shipped(monkeypatch) -> Orchestrator:
+def _shipped(monkeypatch) -> Loop:
     """Build a run of `astro_max_base` on the CPU with the PX4 SITL peer sent to the fake that keeps every message."""
     monkeypatch.delenv("NEXUS_ASSET_CACHE")  # the shipped vehicle comes from the checkout's own cache
     launch = LaunchConfig.from_dict({"vehicle": "astro_max_base", "scene": "empty", "runtime": {"device": "cpu"}})
@@ -581,7 +581,7 @@ def test_the_controller_gets_the_fake_px4s_hover_command_every_tick(daemon, cata
     commands = _Commands()
 
     def assemble(label, cfg, **kw):
-        return Orchestrator(
+        return Loop(
             clock=_Clock(),
             physics=_Physics(),
             actuator=commands,
@@ -592,7 +592,7 @@ def test_the_controller_gets_the_fake_px4s_hover_command_every_tick(daemon, cata
             peers=kw["peers"],
         )
 
-    monkeypatch.setattr(launch_mod, "build_orchestrator", assemble)
+    monkeypatch.setattr(launch_mod, "build_loop", assemble)
     loop = _faked(catalog, tmp_path)
 
     _step(loop, 500)
@@ -692,7 +692,7 @@ _DROP_PX4_SITL_FROM_SCOPE = (
 )
 
 
-def _declared_run(tmp_path, layer: str | None = None, vehicle: str = _SCOPED) -> Orchestrator:
+def _declared_run(tmp_path, layer: str | None = None, vehicle: str = _SCOPED) -> Loop:
     """Build a run of a catalog vehicle that declares the PX4 SITL peer, `vehicle`, over `layer` when the
     caller passes one.
     """

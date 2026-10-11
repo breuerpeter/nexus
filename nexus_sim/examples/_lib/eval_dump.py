@@ -19,7 +19,7 @@ Conventions, which the harness relies on:
   from ``MissionGuidance.arrival_times``; the harness builds the piecewise-linear position
   reference.
 - ``<name>.json``: ``{"name", "stats", "results", "rrd"}``, the example's stats dict, the
-  orchestrator's ``run_stats`` with the steady ``rtf`` and so on, and the ``.rrd`` path, ``null``
+  loop's ``run_stats`` with the steady ``rtf`` and so on, and the ``.rrd`` path, ``null``
   unless the run recorded one.
 
 Output dir: ``$NEXUS_EVAL_OUT``, which the CI harness sets, else ``~/.cache/nexus/eval``.
@@ -100,7 +100,7 @@ def dump_run(
         Path: The written ``<name>.json``; the ``.npz`` sits beside it.
     """
     d = _out_dir(out_dir)
-    states = sim.physics[sim.base_body].history()
+    states = sim[f"vehicle/body/{sim.base_body}"].history()
     arrays: dict[str, np.ndarray] = {
         "est_t": np.array([s.t for s in states], dtype=np.float64),
         "est_pos": np.array([s.position for s in states], dtype=np.float64),

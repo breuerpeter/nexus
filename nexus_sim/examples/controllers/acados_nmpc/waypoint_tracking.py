@@ -6,9 +6,9 @@ through the waypoints, flown nose-first. ``obstacle_slalom.py`` is its
 counterpart: a differentiable-simulation sampling MPC for the obstacle-avoidance regime an analytic NMPC
 can't easily handle.
 
-**The shape.** A zero-arg, self-contained script: it assembles its own orchestrator, the example-owned
-:mod:`assembly`, and hosts it via ``Sim.from_orchestrator`` + ``sim.guidance``. The min-snap +
-differential-flatness planner lives with the **guidance**: ``sim.guidance.set_mission(WAYPOINTS)``
+**The shape.** A zero-arg, self-contained script: it assembles its own loop, the example-owned
+:mod:`assembly`, and hosts it via ``Sim._from_loop``, holding its guidance. The min-snap +
+differential-flatness planner lives with the **guidance**: ``guidance.set_mission(WAYPOINTS)``
 plans the whole-path flat-state reference and writes it to the setpoint the NMPC reads, as a
 ``ReferenceTrajectory``; the controller just *tracks* it. The flat-state reference, position + attitude +
 body-rate + thrust feedforward, is the quadrotor differential-flatness map with a velocity-aligned,
@@ -56,7 +56,7 @@ from nexus_sim._src.guidance import TrackingGuidance
 from nexus_sim._src.rendering import rtx_renderer
 from nexus_sim.examples._lib import dump_run
 from nexus_sim.examples._lib.min_snap import MinSnapReference
-from nexus_sim.examples.controllers.acados_nmpc.assembly import build_acados_orchestrator
+from nexus_sim.examples.controllers.acados_nmpc.assembly import build_acados_loop
 
 # Everything this demo is, in one place: zero args by design, the configuration IS the example.
 VEHICLE = "astro_max_base"
@@ -84,7 +84,7 @@ def main() -> None:
     launch = LaunchConfig().set_vehicle(VEHICLE).set_scene(SCENE)
     launch.runtime.device = "cuda"  # prefer CUDA; resolve_device falls back to CPU when there is none
     vehicle_usd, _resolved, cfg = resolve_scenario(launch)
-    orch = build_acados_orchestrator(
+    orch = build_acados_loop(
         cfg,
         vehicle_usd=vehicle_usd,
         max_steps=MAX_STEPS,
@@ -97,11 +97,11 @@ def main() -> None:
     mass = float(orch.physics.model.body_mass.numpy().sum())
     controller = orch.controller  # the NMPC its assembly built, whose telemetry the flight reads after the run
     guidance = TrackingGuidance(planner=lambda waypoints: MinSnapReference(waypoints, mass=mass), final_hold_s=3.0)
-    with nx.Sim.from_orchestrator(orch, guidance=guidance) as sim:
-        sim.guidance.set_mission(WAYPOINTS)  # the guidance plans the min-snap reference; the NMPC tracks it
+    with nx.Sim._from_loop(orch, guidance=guidance) as sim:
+        guidance.set_mission(WAYPOINTS)  # the guidance plans the min-snap reference; the NMPC tracks it
         sim.run()
 
-    states = sim.physics[sim.base_body].history()
+    states = sim[f"vehicle/body/{sim.base_body}"].history()
     traj = np.array([s.position for s in states])
     quats = np.array([s.quat_xyzw for s in states])  # xyzw order
     qx, qy, qz, qw = quats[:, 0], quats[:, 1], quats[:, 2], quats[:, 3]

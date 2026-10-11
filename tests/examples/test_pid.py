@@ -8,7 +8,7 @@ are the single source of truth shared by the eager controller and the differenti
 import numpy as np
 import pytest
 
-from nexus_sim._src.core.schema import Controls
+from nexus_sim.examples._lib.mixer import Controls
 from nexus_sim.examples.controllers.pid import (
     DEFAULT_GAINS,
     NUM_GAINS,

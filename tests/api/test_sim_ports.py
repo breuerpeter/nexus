@@ -16,8 +16,8 @@ import pytest
 import nexus_sim._src.build.launch as launch_mod
 from nexus_sim._src.api.sim import Sim
 from nexus_sim._src.config import Catalog, LaunchConfig
-from nexus_sim._src.core.interfaces import Stage
-from nexus_sim._src.core.orchestrator import Orchestrator
+from nexus_sim._src.core.interfaces import Component, Stage
+from nexus_sim._src.core.loop import Loop
 from nexus_sim._src.core.schema import SimTime
 from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
 
@@ -60,7 +60,7 @@ class _Physics:
         ]
 
 
-class _Actuator:
+class _Actuator(Component):
     def forces(self, controls, state):
         pass
 
@@ -79,7 +79,7 @@ def assembly(monkeypatch, tmp_path):
         run = {
             k: kw[k] for k in ("peers", "ports") if k in kw
         }  # what the build made, handed through as the real assembly does
-        return Orchestrator(
+        return Loop(
             clock=_Clock(),
             physics=_Physics(),
             actuator=_Actuator(),
@@ -90,7 +90,7 @@ def assembly(monkeypatch, tmp_path):
             **run,
         )
 
-    monkeypatch.setattr(launch_mod, "build_orchestrator", assemble)
+    monkeypatch.setattr(launch_mod, "build_loop", assemble)
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
 
 
@@ -133,7 +133,7 @@ class _Px4OnInstance2:
         return True
 
 
-def _run(tmp_path, *, layer: str | None = None, peers: dict | None = None) -> Orchestrator:
+def _run(tmp_path, *, layer: str | None = None, peers: dict | None = None) -> Loop:
     """Build a run of a catalog vehicle that declares PX4 and its SITL peer, over `layer` when the caller
     passes one, with the PX4 SITL peer sent to the class `peers` names.
     """
@@ -163,7 +163,7 @@ def test_the_runs_port_map_names_the_offboard_link_from_the_px4_instance_the_run
     Given a `Sim` over a PX4 vehicle whose run claims instance 2, when a script reads the run's port
     map, then the offboard link's entry names UDP port 14542 and MAVLink system id 3.
     """
-    with Sim.from_orchestrator(_run(tmp_path, peers={"px4_sitl": _Px4OnInstance2})) as sim:
+    with Sim._from_loop(_run(tmp_path, peers={"px4_sitl": _Px4OnInstance2})) as sim:
         link = sim.ports["offboard"]
 
     assert (link["protocol"], link["port"], link["system_id"]) == ("udp", 14542, 3)
@@ -175,7 +175,7 @@ def test_a_run_attached_to_a_px4_started_elsewhere_lists_instance_0s_offboard_li
     Given a `Sim` over a PX4 vehicle whose override layer drops the peer declaration, when a script
     reads the run's port map, then the offboard link's entry names UDP port 14540 and system id 1.
     """
-    with Sim.from_orchestrator(_run(tmp_path, layer=_DROP_PX4_SITL)) as sim:
+    with Sim._from_loop(_run(tmp_path, layer=_DROP_PX4_SITL)) as sim:
         link = sim.ports["offboard"]
 
     assert (link["protocol"], link["port"], link["system_id"]) == ("udp", 14540, 1)
@@ -188,6 +188,6 @@ def test_on_a_fake_px4_run_the_offboard_lookup_fails_at_once_and_names_the_fake(
     Given a `Sim` over the fake PX4, when a script reads the offboard link from the run's port map,
     then it raises before any step, with a message that names the fake PX4.
     """
-    with Sim.from_orchestrator(_run(tmp_path, peers={"px4_sitl": Px4Fake})) as sim:
+    with Sim._from_loop(_run(tmp_path, peers={"px4_sitl": Px4Fake})) as sim:
         with pytest.raises(LookupError, match="fake PX4"):
             sim.ports["offboard"]
