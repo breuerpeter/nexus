@@ -148,7 +148,7 @@ core = "sysmon"
 line-length = 120
 extend-exclude = ["docs"]
 [tool.ruff.lint]
-select = ["E","I","F","W","B","C4","NPY","PLC","PLE","PLW","UP","RUF","D"]
+select = ["E","I","F","W","B","C4","NPY","PLC","PLE","PLW","UP","RUF","D","TID251"]
 # D1xx (missing-docstring) rules are off for now so undocumented code still passes;
 # docstrings that *do* exist must follow the Google convention. Drop these to require
 # docstrings everywhere once coverage is in place.
@@ -159,5 +159,11 @@ ignore = ["E501","PLC0415","RUF001","RUF002","RUF003","PLW0603",
           "D205","D415"]
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+# nexus-rl is the worked example of a project beside the framework, so it imports only the public surface,
+# `nexus_sim` and the examples' shared library, never `nexus_sim._src`. The ban holds there alone.
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"nexus_sim._src".msg = "nexus-rl imports only the public surface: nexus_sim or nexus_sim.examples._lib"
+[tool.ruff.lint.per-file-ignores]
+"!nexus-rl/**" = ["TID251"]
 [tool.ruff.format]
 quote-style = "double"

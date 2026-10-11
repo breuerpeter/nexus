@@ -28,8 +28,6 @@ import torch
 import warp as wp
 from isaaclab.utils.configclass import configclass
 
-from nexus_sim._src.physics.vehicle import parse_rotors  # the rotors the vehicle USD declares
-from nexus_sim._src.vehicle.rotors import RPM_PER_RADS, quat_to_R  # shared rotor geometry, from the core
 from nexus_sim.examples._lib import (  # the shared single-body model + mixer: train + deploy + diff
     build_allocation,  # the one allocation builder; replaces the hand-rolled torch B
     ctbr_to_cmd_batched,  # the same CTBR mixer the deploy policy controller runs, with dim=N here
@@ -40,6 +38,11 @@ from nexus_sim.examples._lib.observation import (  # shared single source for tr
     OBS_DIM,  # kinematic obs dim, 12
     POLICY_OBS_DIM,  # kinematic + last-action obs dim, 16
     observation_from_state,  # shared obs-from-state, the single source
+)
+from nexus_sim.examples._lib.single_body import (  # the rotors the vehicle USD declares, and their geometry
+    RPM_PER_RADS,
+    parse_rotors,
+    quat_to_R,
 )
 
 from .quadcopter_newton import NUM_SUBSTEPS, QuadcopterNewtonEnv, QuadcopterNewtonEnvCfg
@@ -83,7 +86,7 @@ class GoToEnv(QuadcopterNewtonEnv):
         self._rotor_bodies = [i for i, n in enumerate(bn) if "rotor" in n.lower()]
         self._nr = len(self._rotor_bodies)
         # Actuator aero/thrust + motor map from the rotors the vehicle USD declares: the one source the core
-        # also reads, in physics/builders/usd.parse_rotors, so no hardcoded per-vehicle dup.
+        # also reads, so no hardcoded per-vehicle dup.
         act, _joints = parse_rotors(cfg.robot.spawn.usd_path)
         self._kf = act["ct"] * RPM_PER_RADS**2  # thrust = kf·Ω², with Ω in rad/s
         self._omega_max = act["rpm_max"] / RPM_PER_RADS  # motor saturation speed [rad/s]

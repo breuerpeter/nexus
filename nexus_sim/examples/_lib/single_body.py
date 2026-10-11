@@ -28,8 +28,10 @@ from typing import Any
 
 import numpy as np
 
-from nexus_sim._src.vehicle.rotors import find_rotor_joints
-from nexus_sim._src.vehicle.rotors import quat_to_R as _quat_to_R
+# The rotor values the vehicle USD declares and the rotor geometry: the single-body model reads them, and
+# so does nexus-rl, which imports them from here, since the core reads them too and never imports the examples.
+from nexus_sim._src.physics.vehicle import parse_rotors  # noqa: F401
+from nexus_sim._src.vehicle.rotors import RPM_PER_RADS, find_rotor_joints, quat_to_R  # noqa: F401
 
 
 @dataclass
@@ -86,11 +88,11 @@ def _read_rotor_layout(vehicle_usd):
     newton.eval_fk(m, m.joint_q, m.joint_qd, st)
     bq = st.body_q.numpy()
     _vel, _pos, bodies, base = find_rotor_joints(m, vehicle_usd.rotor_joints())
-    rb = _quat_to_R(bq[base, 3:7])
+    rb = quat_to_R(bq[base, 3:7])
     bz = rb @ np.array([0.0, 0.0, 1.0])
     offsets = np.array([rb.T @ (bq[r, :3] - bq[base, :3]) for r in bodies], dtype=np.float32)  # base-frame
     dirs = np.array(
-        [-np.sign(np.dot(_quat_to_R(bq[r, 3:7]) @ np.array([0.0, 0.0, 1.0]), bz)) for r in bodies], dtype=np.float32
+        [-np.sign(np.dot(quat_to_R(bq[r, 3:7]) @ np.array([0.0, 0.0, 1.0]), bz)) for r in bodies], dtype=np.float32
     )
     mass = float(m.body_mass.numpy().sum())
     return mass, offsets, dirs

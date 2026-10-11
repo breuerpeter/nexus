@@ -13,6 +13,7 @@ import yaml
 from pydantic import Field, model_validator
 
 from nexus_sim._src.assets.resolver import hosted_url
+from nexus_sim._src.assets.resolver import resolve as fetch_asset
 from nexus_sim._src.core import logger
 
 from .models import AssetRef, GeodeticOrigin, _Base
@@ -163,6 +164,27 @@ class Catalog(_Base):
         """
         path = pathlib.Path(path) if path is not None else _DEFAULT_CATALOG
         return cls.from_dict(yaml.safe_load(path.read_text()))
+
+    def fetch_vehicle(self, name: str) -> pathlib.Path:
+        """Fetch the named vehicle's Universal Scene Description (USD) file and return its local path.
+
+        The file lands in the asset cache, which ``$NEXUS_ASSET_CACHE`` overrides, and a later call reads
+        it from there with no download. A project that loads a catalog vehicle into a simulator of its
+        own, such as Isaac Lab, opens the returned file.
+
+        Args:
+            name: The vehicle's key in :attr:`vehicles`, such as ``astro_max_base``.
+
+        Returns:
+            The path of the cached file, whose sha256 matches the catalog entry.
+
+        Raises:
+            NoMatchError: If the catalog names no vehicle ``name``. The message lists the vehicles it names.
+            ValueError: If the fetched file's sha256 differs from the catalog entry's.
+        """
+        if name not in self.vehicles:
+            raise NoMatchError(f"no vehicle named {name!r}; catalog names: {list(self.vehicles)}")
+        return fetch_asset(self.vehicles[name].usd.model_dump(exclude_none=True))
 
 
 _DEFAULT_CATALOG = pathlib.Path(__file__).parent / "catalog.yaml"
