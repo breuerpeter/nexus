@@ -28,6 +28,31 @@ SKY_SUN_ANGLE = 0.5
 SKY_SUN_ROTATE = (-50.0, 0.0, 35.0)
 
 
+# Where every shipped scene's PhysicsScene sits: under `/World`, never at `/PhysicsScene`, where a
+# vehicle keeps its own, so a layer that moves the origin composes over the scene alone.
+PHYSICS_SCENE = "/World/PhysicsScene"
+# The origin the shipped flat scenes sit at: Woodinville, latitude and longitude in degrees and the
+# altitude over mean sea level in metres.
+WOODINVILLE = (47.747944, -122.163917, 5.02)
+
+
+def author_origin(stage, origin: tuple[float, float, float]) -> None:
+    """Author where the scene sits on Earth: a ``PhysicsScene`` prim at :data:`PHYSICS_SCENE` that applies
+    ``NexusSceneAPI`` and sets ``nexus:geodeticOrigin`` to ``origin``, latitude, longitude and altitude.
+
+    Defines ``/World`` as an ``Xform`` when the stage has none, as the cesium scene has none. Applies the
+    schema by name, so it runs where the nexus plugin isn't registered, such as the Kit container.
+    """
+    from pxr import Gf, Sdf, UsdGeom, UsdPhysics
+
+    parent = PHYSICS_SCENE.rsplit("/", 1)[0]
+    if not stage.GetPrimAtPath(parent):
+        UsdGeom.Xform.Define(stage, parent)
+    prim = UsdPhysics.Scene.Define(stage, PHYSICS_SCENE).GetPrim()
+    prim.AddAppliedSchema("NexusSceneAPI")
+    prim.CreateAttribute("nexus:geodeticOrigin", Sdf.ValueTypeNames.Double3).Set(Gf.Vec3d(*origin))
+
+
 def author_sky(stage, root_path: str, *, dome_intensity: float = SKY_DOME_INTENSITY) -> None:
     """Author the plain lit sky, dome + sun and no geometry, under ``root_path``.
 

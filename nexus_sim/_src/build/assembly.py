@@ -93,10 +93,9 @@ def assemble(
 
     dt = cfg["physics"]["dt"]
     rtf = cfg["physics"].get("rtf", 0)
-    # The site: the scene's geodetic origin, which the run's builder threaded into the cfg, and the
-    # ambient values resolved from it once, here, for the sensors that read them.
-    gps = cfg["sensors"]["gps"]["init"]
-    site = Site.at(gps["lat"], gps["lon"], gps["alt"])
+    # The site: the geodetic origin the scene's PhysicsScene authors, which the run's builder threaded
+    # into the cfg, and the ambient values resolved from it once, here, for the sensors that read them.
+    site = Site.at(*cfg["geodetic_origin"])
     commands, forces = rotor_chain(physics, vehicle_usd)  # from the vehicle USD's rotors, not cfg
 
     seedtree = SeedTree(cfg.get("seed", 42))  # the run's builder threads runtime.seed; string-name path keeps 42
@@ -141,15 +140,11 @@ def assemble(
     )
 
 
-# Default scenario; its Global Positioning System (GPS) origin is Seattle.
+# Default scenario. No sensor entry, by design: the scene's PhysicsScene authors its geodetic origin,
+# and the sensor suite, which sensors exist + their noise/mount params, lives in the vehicle USD as
+# applied sensor schemas, the same as the actuator entry below.
 DEFAULT_SCENARIO = {
     "physics": {"enabled": True, "dt": 0.004, "force_cpu": False, "rtf": 0, "solver": "mujoco"},
-    # sensors.gps.init is the scene's geodetic origin, a world property, so it stays config. The
-    # sensor suite itself, which sensors exist + their noise/mount params, lives in the vehicle
-    # USD as applied sensor schemas, the same as the actuator entry below.
-    "sensors": {
-        "gps": {"init": {"lat": 47.747944, "lon": -122.163917, "alt": 5.02}},
-    },
     # No rotor entry, by design. The aero/thrust map (rpm_max, ct, cd, tau, aero_h, aero_hforce)
     # lives in the vehicle USD, declared per rotor on its body, its motor and its joint, and
     # VehicleUsd.actuator_params() reads it; since the USD is content-hashed, the vehicle hash pins the

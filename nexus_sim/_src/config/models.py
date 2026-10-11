@@ -33,22 +33,6 @@ class AssetRef(_Base):
     filename: str | None = None
 
 
-class GeodeticOrigin(_Base):
-    """The geo coords of the world origin, the scene's ``start`` point where the vehicle spawns: the
-    Global Positioning System (GPS) init and the geo-referenced fields, magnetic and gravity, anchor
-    to it.
-
-    ``alt`` is the WGS84 *ellipsoidal* height of that surface. Optional: a cesium scene MEASURES
-    it from the streamed world at run time with the ground-align probe; a converted scan can author
-    it, and ``spawn_site.py --geo`` computes it; ``None`` keeps the scenario default reference
-    altitude, which serves GPS realism only.
-    """
-
-    lat: float
-    lon: float
-    alt: float | None = None
-
-
 class Px4Spec(_Base):
     """The receipt's record of the PX4 airframe: the Software In The Loop (SITL) airframe **make
     target** the vehicle flies as.
@@ -121,21 +105,14 @@ class LaunchConfig(_Base):
 
     ``None`` until set; a launch that still names none fails to resolve.
     """
-    geodetic_origin: GeodeticOrigin | None = None
-    """Override the scene's geodetic origin (the lat/lon the local frame anchors to).
-
-    ``None`` uses the catalog scene's ``geodetic_origin`` (its default). A launch value wins: it
-    re-anchors the GPS/magnetic/gravity reference and, for the streamed cesium globe, selects the
-    place it streams. So `cesium` at any location is `--scene cesium --geo <lat>,<lon>`.
-    """
     layer: str | None = None
     """Path to an override layer, a local Universal Scene Description (USD) file the run composes over
-    the vehicle, the ``--layer`` value.
+    the vehicle and the scene, the ``--layer`` value.
 
-    Its opinions win over the vehicle's: it changes a declared value, selects a variant, or drops a
+    Its opinions win over theirs: it changes a declared value, selects a variant, or drops a
     declaration, such as the PX4 Software In The Loop (SITL) peer's to fly an autopilot started
-    elsewhere. The receipt records its sha256 beside the vehicle's. ``None`` flies the vehicle as
-    its file declares it.
+    elsewhere, or moves the scene's geodetic origin on its ``PhysicsScene`` prim. The receipt records
+    its sha256 beside the vehicle's. ``None`` flies the vehicle and the scene as their files declare them.
     """
     runtime: Runtime = Field(default_factory=Runtime)
     """Solver, device, timestep, and seed settings for the run.
@@ -208,9 +185,4 @@ class LaunchConfig(_Base):
             ``self``, so calls chain.
         """
         self.scene = scene
-        return self
-
-    def set_geodetic_origin(self, lat: float, lon: float, alt: float | None = None) -> LaunchConfig:
-        """Override the scene's geodetic origin, lat and lon, in place. Returns ``self``, chainable."""
-        self.geodetic_origin = GeodeticOrigin(lat=lat, lon=lon, alt=alt)
         return self

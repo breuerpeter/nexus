@@ -9,12 +9,12 @@ This tool suggests one. It's advisory: eyeball the result, tweak the numbers in
 
 Host-runnable with usd-core + numpy and no Kit::
 
-    uv run python scripts/assets/spawn_site.py <scene.usdz> [--geo lat,lon[,alt]]
+    uv run python scripts/assets/spawn_site.py <scene.usdz> [--geo lat,lon,alt]
 
 ``--geo`` is the geodetic anchor of the scene frame's origin, which the splat converter traces as
-"scene origin: …"; with it, the tool also prints the catalog ``geodetic_origin``: the
-lat/lon plus ellipsoidal alt of the picked start point, which is the world origin the runtime
-places it at.
+"scene origin: …"; with it, the tool also prints the scene's geodetic origin: the lat/lon plus
+ellipsoidal alt of the picked start point, which is the world origin the runtime places it at, as the
+``author_scene_origin.py`` command that authors it on the scene's ``PhysicsScene``.
 
 The suggestion is a flat, open-terrain cell near the scene center:
 
@@ -145,9 +145,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--geo",
         default=None,
-        metavar="LAT,LON[,ALT]",
+        metavar="LAT,LON,ALT",
         help="geodetic anchor of the scene frame's origin (the converter's 'scene origin' trace);"
-        " prints the catalog geodetic_origin AT the picked start",
+        " prints the scene's geodetic origin AT the picked start",
     )
     return p
 
@@ -160,13 +160,14 @@ def main(argv=None) -> None:
     if args.geo:
         import math
 
-        parts = [float(v) for v in args.geo.split(",")]
-        lat0, lon0, alt0 = parts[0], parts[1], (parts[2] if len(parts) > 2 else None)
+        lat0, lon0, alt0 = (float(v) for v in args.geo.split(","))
         r_earth = 6371008.8
         lat = lat0 + math.degrees(y / r_earth)
         lon = lon0 + math.degrees(x / (r_earth * math.cos(math.radians(lat0))))
-        alt = f", alt: {alt0 + z:.1f}" if alt0 is not None else ""
-        print(f"                       geodetic_origin: {{ lat: {lat:.6f}, lon: {lon:.6f}{alt} }}")
+        print(
+            "scene's origin:       uv run python scripts/assets/author_scene_origin.py "
+            f"{args.usd} <out.usdz> --origin {lat:.6f},{lon:.6f},{alt0 + z:.1f}"
+        )
 
 
 if __name__ == "__main__":

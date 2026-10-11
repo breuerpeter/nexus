@@ -14,7 +14,7 @@ same pull request, and a rule in the `Project` Vale style flags each word a chan
 
 One flight of one vehicle in one scene, from build to teardown. A run names its vehicle and its
 scene, by catalog name or by local Universal Scene Description (USD) path, and can compose an
-override layer over the vehicle.
+override layer over the vehicle and the scene.
 It records what it flew in its receipt, a `TestedConfig`.
 
 ### Sim

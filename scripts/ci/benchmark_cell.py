@@ -22,6 +22,7 @@ import os
 import sys
 
 import nexus_sim as nx
+from nexus_sim.examples._lib.origin import origin_layer
 from nexus_sim.px4 import FRAME_GLOBAL_RELATIVE_ALT, NAV_TAKEOFF, NAV_WAYPOINT, MissionItem, OffboardClient
 
 READY_S = float(os.environ.get("NEWTON_CELL_READY_S", "300"))  # PX4-lockstep wait budget
@@ -54,9 +55,10 @@ INSPECTION_WAYPOINTS = (
 )
 INSPECTION_LAND = (-36.5, -26.0)
 INSPECTION_SPEED = 2.0  # [m/s]
-# Where the world origin sits on the globe for the inspection: the mission's items are geodetic, so
-# the cell pins the origin rather than read it back from the run.
-INSPECTION_GEO = (47.397742, 8.545594)
+# Where the world origin sits on the globe for the inspection, latitude, longitude and altitude over mean
+# sea level: the mission's items are geodetic, so the cell pins the origin rather than read it back from
+# the run, through an override layer over the scene.
+INSPECTION_GEO = (47.397742, 8.545594, 5.02)
 NAV_LAND = 21
 DO_CHANGE_SPEED = 178
 FRAME_MISSION = 2  # the frame PX4 reads a DO_ command in; it refuses one in a global frame
@@ -95,7 +97,7 @@ def _fly_mission(sim, op) -> bool:
 
 def _inspection_items() -> list[MissionItem]:
     """The inspection as PX4 mission items, geodetic around ``INSPECTION_GEO``, altitudes over home."""
-    lat0, lon0 = INSPECTION_GEO
+    lat0, lon0, _ = INSPECTION_GEO
 
     def fix(x: float, y: float) -> tuple[int, int]:
         # World +x is north and +y is west, on a spherical earth's local tangent plane.
@@ -142,8 +144,10 @@ def main() -> int:
     parser = nx.sim_argparser(description="benchmark-matrix cell (one whole PX4 flight)")
     parser.add_argument("--mission", choices=("square", "inspection"), default="square", help="the flight to fly")
     args = parser.parse_args()
-    if args.mission == "inspection" and args.geo is None:
-        args.geo = f"{INSPECTION_GEO[0]},{INSPECTION_GEO[1]}"
+    if args.mission == "inspection":
+        if args.layer is not None:
+            parser.error("the inspection pins the scene's origin with a layer of its own; pass no --layer")
+        args.layer = origin_layer(*INSPECTION_GEO)
     with nx.Sim.from_args(args) as sim:
         sim.start(timeout=READY_S)
         # The run owns the address of the offboard link; the cell's flight opens its own client on

@@ -104,22 +104,19 @@ def _thread_scene(cfg: dict, resolved: ResolvedLaunch) -> None:
     The physics model build loads the scene USD plus its start point exactly the same way as the
     vehicle USD: physics takes the UsdPhysics-authored prims, see ``scene.add_scene``. When the
     vehicle renders, the Kit peer opens the same file as its render stage and finds by its
-    content whether it needs live machinery, for example the cesium globe. A geolocated scene anchors
-    *both* the render world, ``rtx.georef``, and the Hardware In The Loop (HIL) Global Positioning
-    System (GPS), ``sensors.gps.init``, at its geodetic origin: the scene is the single source of
-    the "where on Earth" answer, so the Ground Control Station (GCS) minimap and the camera feed agree.
+    content whether it needs live machinery, for example the cesium globe. The scene's
+    ``PhysicsScene`` prim authors its geodetic origin, which anchors *both* the render world and the
+    sensors: the scene is the single source of the "where on Earth" answer, so the Ground Control
+    Station (GCS) minimap and the camera feed agree.
+
+    Raises:
+        ValueError: The scene holds no ``PhysicsScene`` prim, or its ``PhysicsScene`` authors no origin.
     """
+    from nexus_sim._src.scene.origin import geodetic_origin
+
     cfg["scene_usd_path"] = resolved.scene_usd_path
     cfg["scene_start"] = resolved.tested_config.scene_start
-    go = resolved.tested_config.geodetic_origin
-    if go is not None:
-        cfg["rtx"] = {**cfg.get("rtx", {}), "georef": {"lat": go.lat, "lon": go.lon, "alt": go.alt}}
-        sensors = cfg.get("sensors", {})
-        gps = sensors.get("gps", {})
-        init = {**gps.get("init", {}), "lat": go.lat, "lon": go.lon}
-        if go.alt is not None:
-            init["alt"] = go.alt
-        cfg["sensors"] = {**sensors, "gps": {**gps, "init": init}}
+    cfg["geodetic_origin"] = geodetic_origin(resolved.scene_usd_path)
 
 
 def resolve_scenario(

@@ -63,20 +63,20 @@ def _layer(path: str | None) -> tuple[pathlib.Path, AssetRef] | None:
     return local, _local_ref(local)
 
 
-def _stack(layer: pathlib.Path, layer_sha: str, vehicle: pathlib.Path, vehicle_sha: str, cache_dir) -> pathlib.Path:
-    """A root file in the asset cache that stacks *layer* over *vehicle*, so each reader of the vehicle
-    opens the composed vehicle by one path. USD composes the two; the file only lists them, strongest
-    first, and carries the vehicle's default prim.
+def _stack(layer: pathlib.Path, layer_sha: str, asset: pathlib.Path, asset_sha: str, cache_dir) -> pathlib.Path:
+    """A root file in the asset cache that stacks *layer* over *asset*, the vehicle or the scene, so each
+    reader of the asset opens the composed asset by one path. USD composes the two; the file only lists
+    them, strongest first, and carries the asset's default prim.
     """
     from pxr import Sdf
 
     from nexus_sim._src.assets.resolver import default_cache
 
-    out = pathlib.Path(cache_dir or default_cache()) / "layered" / f"{vehicle_sha}-{layer_sha}" / "vehicle.usda"
+    out = pathlib.Path(cache_dir or default_cache()) / "layered" / f"{asset_sha}-{layer_sha}" / f"{asset.stem}.usda"
     out.parent.mkdir(parents=True, exist_ok=True)
     root = Sdf.Layer.CreateAnonymous(".usda")
-    root.subLayerPaths = [str(layer), str(vehicle)]
-    root.defaultPrim = Sdf.Layer.FindOrOpen(str(vehicle)).defaultPrim
+    root.subLayerPaths = [str(layer), str(asset)]
+    root.defaultPrim = Sdf.Layer.FindOrOpen(str(asset)).defaultPrim
     root.Export(str(out))
     return out
 
@@ -144,9 +144,11 @@ def resolve(
     if local_scene is not None:
         scn_path = local_scene  # in place: sibling files such as a mesh's textures/ must stay resolvable
     else:
-        scn_path = _resolve_asset(scene.usd, cache_dir) if (fetch and scene.usd) else None
-    # The geodetic origin: a launch override wins, else the catalog scene's default, which can be None.
-    geodetic_origin = launch.geodetic_origin or scene.geodetic_origin
+        scn_path = _resolve_asset(scene.usd, cache_dir) if fetch else None
+    if layer is not None and scn_path is not None:
+        # The scene's own layers keep resolving their asset paths, a mesh's textures/ among them, since
+        # USD resolves each path against the layer that authors it.
+        scn_path = _stack(layer[0], layer[1].sha256, pathlib.Path(scn_path), scene.usd.sha256, cache_dir)
     tested = TestedConfig(
         vehicle=str(local) if local is not None else launch.vehicle,
         catalog=str(source) if source is not None else None,
@@ -155,7 +157,6 @@ def resolve(
         scene=scene_id,
         scene_usd=scene.usd,
         scene_start=scene.start,
-        geodetic_origin=geodetic_origin,
         runtime=launch.runtime,
     )
     return ResolvedLaunch(

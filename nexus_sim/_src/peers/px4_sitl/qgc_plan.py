@@ -60,8 +60,7 @@ class Plan:
 
     Attributes:
         home: ``plannedHomePosition`` as ``(lat [deg], lon [deg], alt [m])``. The altitude is height
-            over mean sea level, which is a different datum from the WGS84 ellipsoidal height
-            ``Sim(geo=…)`` takes: pass latitude and longitude across, never this altitude.
+            over mean sea level, not the WGS84 ellipsoidal height a streamed globe's origin takes.
         items: The mission items in file order, with ``seq`` matching the index.
     """
 

@@ -127,15 +127,38 @@ A vehicle whose USD declares RTX sensors, such as the `astro_max_fpv` variant's 
 
 ```bash
 # photoreal geolocated globe: Google Photorealistic 3D Tiles streamed live at
-# the scene's lat/lon, via Cesium for Omniverse v0.29.0:
+# the scene's origin, via Cesium for Omniverse v0.29.0:
 export CESIUM_ION_TOKEN=<your ion access token>      # cesium.com/ion → Access Tokens
-uv run nexus run --vehicle astro_max_fpv --scene cesium --geo 37.7942,-122.3954,-32 --view   # SF
+uv run nexus run --vehicle astro_max_fpv --scene cesium --view
 ```
 
-A cesium scene is just a `geodetic_origin` in the catalog: latitude, longitude, and the WGS84
-ellipsoidal height of the street, which sets the globe so the street sits on the physics ground.
-If it sits off, tweak the catalog value, with no conversion. Tile selection runs one
-hidden-cost viewport per camera, and the RTX lidar reflects off the tiles.
+Every scene states where it sits on Earth. Its `PhysicsScene` prim, `/World/PhysicsScene` in each
+shipped scene, applies `NexusSceneAPI` and authors `nexus:geodeticOrigin`: the latitude, the
+longitude and the altitude of the world origin. For the cesium globe the altitude is the WGS84
+ellipsoidal height of the street, which sets the globe so the street sits on the physics ground. A
+run fails on a scene whose `PhysicsScene` authors no origin.
+
+An override layer moves the origin, as it changes any other declared value. To fly the globe over
+San Francisco, write a layer that authors the new origin on the scene's `PhysicsScene`:
+
+```usda
+#usda 1.0
+
+over "World"
+{
+    over "PhysicsScene"
+    {
+        double3 nexus:geodeticOrigin = (37.7942, -122.3954, -32)
+    }
+}
+```
+
+```bash
+uv run nexus run --vehicle astro_max_fpv --scene cesium --layer sf.usda --view
+```
+
+If the street sits off, change the altitude in the layer. Tile selection runs one hidden-cost
+viewport per camera, and the RTX lidar reflects off the tiles.
 [Benchmarking](../reference/benchmarking.md) lists the measured real-time factor of each vehicle
 on this scene. Without a token the run warns and falls back to a plain sky, and the flight continues.
 The Cesium ion and Google Maps Platform terms govern the streamed tiles: see
@@ -149,7 +172,8 @@ stops. The vehicle's USD declares it: `NexusPx4SitlAPI` on the controller's scop
 run of a vehicle that declares it starts the PX4 SITL container and stops it on exit.
 
 **An autopilot started elsewhere.** To fly a PX4 SITL of your own, or a real autopilot on a bench,
-drop the declaration with an **override layer**, a small USD file the run composes over the vehicle:
+drop the declaration with an **override layer**, a small USD file the run composes over the vehicle
+and the scene:
 
 ```usda
 #usda 1.0

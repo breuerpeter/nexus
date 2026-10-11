@@ -217,6 +217,18 @@ class "NexusPx4SitlAPI" (
 {
 }
 
+class "NexusSceneAPI" (
+    doc = """Where a scene sits on Earth, on the scene's `PhysicsScene` prim. A run's build fails on a scene whose `PhysicsScene` authors no origin, and an override layer moves it."""
+)
+{
+    double3 nexus:geodeticOrigin (
+        doc = """The WGS84 point the scene's world origin sits at: latitude, longitude and the altitude over mean sea level. For a streamed globe the altitude is the surface's ellipsoidal height, so the street sits at the world origin.
+
+        Range: latitude [-90, 90], longitude [-180, 180], altitude any
+        Units: degrees, degrees, metres"""
+    )
+}
+
 class "NexusSensorRoleAPI" (
     doc = "The sensor role, which a sensor's schema includes as a built-in. A sensor sits on its mount prim, whose parent is the rigid body it rides, and runs in the sensors' place in the tick."
 )
