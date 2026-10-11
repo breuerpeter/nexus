@@ -148,7 +148,7 @@ over "World"
 {
     over "PhysicsScene"
     {
-        double3 nexus:geodeticOrigin = (37.7942, -122.3954, -32)
+        double3 nexus:geodeticOrigin = (37.7942, -122.3954, -29)
     }
 }
 ```
