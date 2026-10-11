@@ -74,7 +74,6 @@ PINNED = [
     "BodyState",
     "Catalog",
     "Component",
-    "Controls",
     "GpsSample",
     "Image",
     "ImuSample",
