@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from nexus_sim._src.api.args import save_run_artifacts, sim_argparser  # noqa: F401  # re-export; defs are import-light
 from nexus_sim._src.build.launch import build_from_launch
@@ -342,6 +342,13 @@ class Sim:
 
     def __contains__(self, path: object) -> bool:
         return path in self._histories()
+
+    def read(self, path: str) -> Any:
+        """The live value of the signal at ``path``, typed by the signal."""
+
+    @property
+    def time(self) -> float:
+        """The sim time of the last tick, seconds."""
 
     @property
     def base_body(self) -> str:
