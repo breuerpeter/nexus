@@ -114,7 +114,7 @@ def main() -> None:
     # Nose-first: while cruising, the body +x axis should track the horizontal velocity direction, the
     # guidance's velocity-aligned yaw reference. Body +x in world (x,y) compared to the horizontal velocity,
     # over the moving steps; the check skips near-hover steps, where nothing constrains the heading.
-    vel = np.array([s.velocity for s in states])  # world linear velocity
+    vel = np.asarray(states["linear_velocity"], dtype=float)  # world linear velocity
     bx = np.stack([1.0 - 2.0 * (qy * qy + qz * qz), 2.0 * (qx * qy + qw * qz)], axis=1)  # body +x, world (x, y)
     bx /= np.linalg.norm(bx, axis=1, keepdims=True) + 1e-9
     vh = vel[:, :2]

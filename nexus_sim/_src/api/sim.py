@@ -66,10 +66,12 @@ class Sim:
             ``None`` takes the install alone.
 
     Example:
-        >>> with Sim("astro_max_base", scene="empty") as sim:
-        ...     sim.start()
-        ...     body = sim[f"vehicle/body/{sim.base_body}"]
-        ...     sim.wait_until(lambda: body.latest()["position"][2] > 1.0, sim_timeout=30.0)
+        ```python
+        with Sim("astro_max_base", scene="empty") as sim:
+            sim.start()
+            body = sim[f"vehicle/body/{sim.base_body}"]
+            sim.wait_until(lambda: body.latest()["position"][2] > 1.0, sim_timeout=30.0)
+        ```
     """
 
     def __init__(

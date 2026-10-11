@@ -84,7 +84,7 @@ def main() -> None:
     tilt = np.degrees(np.arccos(np.clip(up_z, -1.0, 1.0)))
     # Nose-first: while cruising, the body +x axis should track the horizontal velocity direction, the
     # velocity-aligned heading cost. Body +x in world xy compared to the horizontal velocity, over the moving steps.
-    vel = np.array([s.velocity for s in traj])  # world linear velocity
+    vel = np.asarray(traj["linear_velocity"], dtype=float)  # world linear velocity
     bx = np.stack([1.0 - 2.0 * (qy * qy + qz * qz), 2.0 * (qx * qy + qw * qz)], axis=1)  # body +x, world xy
     bx /= np.linalg.norm(bx, axis=1, keepdims=True) + 1e-9
     sp = np.linalg.norm(vel[:, :2], axis=1)
