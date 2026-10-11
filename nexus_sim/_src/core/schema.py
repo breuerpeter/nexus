@@ -35,24 +35,6 @@ class SimTime:
         return int(self.sim_time * 1e6)
 
 
-@dataclass(slots=True)
-class Controls:
-    """The controller→actuator command: always one command per actuator, normalized to ``[0, 1]``.
-
-    This is the standardized actuator seam: the control law and the vehicle's mixer, the rate loop and
-    the ``B⁻¹`` allocation, live in the controller, so whatever the law computes, Collective Thrust Body
-    Rate (CTBR), moments or Nonlinear Model Predictive Control (NMPC) thrusts, ``command`` is what the
-    controller emits and the actuator chain takes in. A length-``n`` host ``np.ndarray`` on the PX4 and
-    eager deploy paths, or a device-native ``(1, n)`` Warp array in the captured loop.
-
-    The signal ``controls`` carries it on the device: a ``(1, n)`` array of ``wp.float32``, which the
-    controller writes and the command elements read. A row, not a struct, since its width differs by
-    controller.
-    """
-
-    command: Any = None  # one entry per actuator: an np.ndarray of length n, or a (1, n) Warp array
-
-
 @wp.struct
 class PoseTwist:
     """The pose and twist of the vehicle's base body in world axes: the estimate an estimator writes, and

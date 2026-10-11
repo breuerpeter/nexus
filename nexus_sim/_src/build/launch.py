@@ -1,19 +1,19 @@
-"""The run's builder: a ``LaunchConfig`` → a running ``Orchestrator``, the one path every run builds through.
+"""The run's builder: a ``LaunchConfig`` → a running ``Loop``, the one path every run builds through.
 
 Resolves the launch against the catalog, sha-verifying every asset, wraps the vehicle
 Universal Scene Description (USD) file in a :class:`VehicleUsd`, threads the resolved scene, its
-USD plus start plus geodetic origin, into the scenario cfg, and assembles the core orchestrator,
+USD plus start plus geodetic origin, into the scenario cfg, and assembles the core loop,
 the controller-agnostic ``build.assembly``, around the one controller the vehicle USD declares on
 the controller's ``Scope``. PX4 is the one first-class controller, and *this* layer builds its
 ``Px4MavlinkController`` from the ``NexusPx4API`` schema; every other controller is an example that
-self-assembles its orchestrator via :func:`resolve_scenario` plus ``Sim.from_orchestrator``, and
+self-assembles its loop via :func:`resolve_scenario` plus ``Sim._from_loop``, and
 renders through :func:`~nexus_sim._src.rendering.rtx_renderer` the same way.
 
 A vehicle whose USD declares RTX sensors renders them in the Kit peer, a required peer: a container
 this build starts right after the fetch, so Kit boots while PX4 builds and the physics compiles. The PX4
 autopilot is a peer too: when the vehicle declares the PX4 Software In The Loop (SITL) peer,
 ``NexusPx4SitlAPI``, the build starts its container on the peer contract before the assembly, on a
-PX4 instance free on this machine, and hands it to the orchestrator, which stops it when the run
+PX4 instance free on this machine, and hands it to the loop, which stops it when the run
 ends. A run whose override layer drops that declaration starts nothing, and the controller waits on
 instance 0's Hardware In The Loop (HIL) port for an autopilot started elsewhere.
 
@@ -32,15 +32,15 @@ from typing import IO
 import warp as wp
 
 from nexus_sim._src.config import Catalog, LaunchConfig, Px4Spec, ResolvedLaunch, Runtime, resolve
-from nexus_sim._src.core import Orchestrator
+from nexus_sim._src.core import Loop
 from nexus_sim._src.core.ports import PortMap
-from nexus_sim._src.core.registry import ComponentRegistry
+from nexus_sim._src.core.registry import Registry
 from nexus_sim._src.peers.px4_sitl import HIL_PORT, OFFBOARD_PORT
 from nexus_sim._src.physics import VehicleUsd
 from nexus_sim._src.rendering import rtx_renderer
 from nexus_sim._src.usd.reader import read_connections, read_declarations
 
-from .assembly import build_orchestrator, build_scenario
+from .assembly import build_loop, build_scenario
 from .components import declared_controller, declared_estimator, prims_applying
 
 # The schema a vehicle declares PX4 with; its `airframe` goes into the receipt.
@@ -94,7 +94,7 @@ def _scenario_from_receipt(rt: Runtime) -> dict:
     cfg["physics"]["force_cpu"] = rt.device == "cpu"
     cfg["physics"]["solver"] = rt.solver  # mujoco, the default | semi_implicit | featherstone
     cfg["physics"]["rtf"] = rt.rtf  # 0 = unthrottled; 1.0 = pace to wall-clock, for interactive flying
-    cfg["seed"] = rt.seed  # honored by build_orchestrator's SeedTree
+    cfg["seed"] = rt.seed  # honored by build_loop's SeedTree
     return cfg
 
 
@@ -129,9 +129,9 @@ def resolve_scenario(
     cache_dir: str | pathlib.Path | None = None,
 ) -> tuple[VehicleUsd, ResolvedLaunch, dict]:
     """Resolve *launch* to ``(vehicle_usd, resolved, scenario cfg)``: the shared front half of
-    any orchestrator assembly. ``build_from_launch`` composes it with the PX4 assembly; a
+    any loop assembly. ``build_from_launch`` composes it with the PX4 assembly; a
     self-assembled example, with its own controller plus actuator plus physics, starts from this and
-    hands the built orchestrator to ``Sim.from_orchestrator``.
+    hands the built loop to ``Sim._from_loop``.
     """
     vehicle_usd, resolved = resolve_vehicle_usd(launch, catalog, cache_dir=cache_dir)
     cfg = _scenario_from_receipt(resolved.tested_config.runtime)
@@ -146,13 +146,13 @@ def build_from_launch(
     cache_dir: str | pathlib.Path | None = None,
     cfg: dict | None = None,
     preroll_timeout: float = 30.0,
-    components: ComponentRegistry | None = None,
+    components: Registry | None = None,
     peers: Mapping[str, Callable] | None = None,
-) -> Orchestrator:
-    """Resolve *launch* and assemble the core Orchestrator around the controller the vehicle declares.
+) -> Loop:
+    """Resolve *launch* and assemble the core Loop around the controller the vehicle declares.
 
     PX4 is the one first-class controller; every other controller is an example that
-    self-assembles from ``resolve_scenario`` plus its own components plus ``Sim.from_orchestrator``.
+    self-assembles from ``resolve_scenario`` plus its own components plus ``Sim._from_loop``.
     ``components`` resolves the vehicle's schemas to classes; ``None`` takes the default registry.
     ``peers`` maps a peer's name, ``px4_sitl`` or ``kit``, to the class the build starts for it, or for
     ``kit`` a callable that builds one, over :func:`shipped_peers`: a test sends a peer to its fake
@@ -187,7 +187,7 @@ def build_from_launch(
     if spec.schema != PX4_SCHEMA:
         raise ValueError(
             f"{spec.prim}: {spec.schema} is not a core controller (PX4 is the one first-class controller); "
-            "other controllers live in nexus_sim/examples/ and self-assemble via Sim.from_orchestrator"
+            "other controllers live in nexus_sim/examples/ and self-assemble via Sim._from_loop"
         )
     estimator_spec = declared_estimator(resolved.vehicle_usd_path, components)
     if not spec.kwargs["airframe"]:
@@ -205,18 +205,18 @@ def build_from_launch(
         # controller-agnostic. The schema gives its keywords, and the run gives the PX4 peer's addresses.
         instance, claim = peer_classes["px4_sitl"].claim_instance() if px4_sitl else (0, None)
         controller = spec.cls(**spec.kwargs, port=HIL_PORT + instance, target_system=instance + 1)
-        controller.prim_path = spec.prim
+        prims = {spec.prim: controller}
         # The estimator the vehicle declares, if any, takes its schema's keywords alone.
         estimator = estimator_spec.cls(**estimator_spec.kwargs) if estimator_spec else None
         if estimator is not None:
-            estimator.prim_path = estimator_spec.prim
+            prims[estimator_spec.prim] = estimator
         if px4_sitl:
             # The peer starts here, before the assembly: its start builds PX4 incrementally, which must
             # stay outside the sim's preroll window, GH #39, and PX4 boots while the physics compiles.
             started.append(_start_px4(peer_classes["px4_sitl"], resolved, instance, controller.airframe, claim))
 
         # output.log/view → the Logger, which writes the .rrd or serves :9876; neither → no recording.
-        return build_orchestrator(
+        return build_loop(
             label,
             cfg,
             vehicle_usd=vehicle_usd,
@@ -225,6 +225,7 @@ def build_from_launch(
             peers=started,
             ports=_ports(instance, started),
             connections=read_connections(resolved.vehicle_usd_path),
+            prims=prims,
             rerun=launch.output.log or launch.output.view,
             viewer=launch.output.view,
             debug=launch.output.debug,

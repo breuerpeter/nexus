@@ -14,8 +14,8 @@ pytest.importorskip("warp")
 
 import warp as wp
 
-from nexus_sim._src.core.interfaces import Stage
-from nexus_sim._src.core.orchestrator import Orchestrator
+from nexus_sim._src.core.interfaces import Component, Stage
+from nexus_sim._src.core.loop import Loop
 from nexus_sim._src.core.schema import PoseTwist, ReferenceTrajectory, SimTime
 from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.guidance import MissionGuidance, TrackingGuidance
@@ -75,7 +75,7 @@ class _Physics:
         ]
 
 
-class _Estimator:
+class _Estimator(Component):
     """An estimator whose stage writes the scripted position to the estimate the guidance reads."""
 
     capturable = True
@@ -90,21 +90,21 @@ class _Estimator:
         return [Stage("estimate", "device", estimate, writes=(self.estimate,))]
 
 
-class _Actuator:
+class _Actuator(Component):
     capturable = True
 
     def stages(self):
         return [Stage("forces", "device", lambda tick: None)]
 
 
-class _Sensor:
+class _Sensor(Component):
     capturable = True
 
     def stages(self):
         return [Stage("sample", "device", lambda tick: None)]
 
 
-class _ExchangeController:
+class _ExchangeController(Component):
     """A controller that reads a setpoint of type `setpoint` and solves on the host: a ``truth`` and an
     ``exchange`` host stage. It keeps, per exchange, the sim time, the vehicle's position and the setpoint
     it reads.
@@ -129,7 +129,7 @@ class _ExchangeController:
         return [Stage("truth", "host", lambda tick: None), Stage("exchange", "host", exchange, reads=(self.setpoint,))]
 
 
-class _DeviceController:
+class _DeviceController(Component):
     """A controller that reads a setpoint and whose stages are all device stages, the shape of the
     Proportional Integral Derivative (PID) example. It keeps the setpoint it reads each time its
     stage runs.
@@ -151,7 +151,7 @@ class _DeviceController:
         return [Stage("act", "device", lambda tick: self.held.append(self.setpoint.read()), reads=(self.setpoint,))]
 
 
-class _NoSetpointController:
+class _NoSetpointController(Component):
     """A controller that reads no setpoint, the shape of PX4's."""
 
     def connect(self):
@@ -217,7 +217,7 @@ class _View:
 
 
 def _orch(controller, physics, **kw):
-    return Orchestrator(
+    return Loop(
         clock=_Clock(),
         physics=physics,
         actuator=_Actuator(),
@@ -339,7 +339,7 @@ def test_a_mission_that_is_over_ends_the_run():
 def test_a_run_whose_controller_takes_no_setpoint_refuses_a_guidance():
     """A run whose controller reads no setpoint refuses a guidance.
 
-    Given an orchestrator whose controller reads no setpoint and a `MissionGuidance`, when the run takes
+    Given a loop whose controller reads no setpoint and a `MissionGuidance`, when the run takes
     its first step, then it raises `TypeError` that names the controller's class.
     """
     with wp.ScopedDevice("cpu"):
@@ -351,7 +351,7 @@ def test_a_run_whose_controller_takes_no_setpoint_refuses_a_guidance():
         orch.close()
 
 
-class _SetpointSensor:
+class _SetpointSensor(Component):
     """A sensor whose device stage reads a signal named `setpoint`, as the guidance's is."""
 
     def __init__(self):
@@ -371,7 +371,7 @@ def test_a_run_whose_controller_reads_no_setpoint_refuses_a_guidance_that_anothe
     with wp.ScopedDevice("cpu"):
         guidance = MissionGuidance()
         guidance.set_mission(GOALS)
-        orch = Orchestrator(
+        orch = Loop(
             clock=_Clock(),
             physics=_Physics([(0.0, 0.0, 0.0)]),
             actuator=_Actuator(),

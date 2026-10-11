@@ -20,7 +20,8 @@ pytest.importorskip("pxr")
 import warp as wp
 
 import nexus_sim as nx
-from nexus_sim._src.core.interfaces import Stage
+from nexus_sim._src.core.interfaces import Component, Stage
+from nexus_sim._src.core.registry import Registry
 from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.vehicle.estimators import GroundTruthEstimator
 from tests.conftest import fly_recorded
@@ -45,7 +46,7 @@ LIDAR = sv.prim("Lidar", "NexusLidarAPI", "float nexus:rate = 25", kind="OmniLid
 POINT = [1.0, 2.0, 3.0]
 
 
-class _TickWriter:
+class _TickWriter(Component):
     """A controller named `standin` whose host stage writes the tick's step index into each of its 16 controls."""
 
     name = "standin"
@@ -95,7 +96,7 @@ def _build(tmp_path, body: str, *, device: str = "cpu", controller=None, estimat
 @contextlib.contextmanager
 def _flown(loop, ticks: int):
     """`loop` hosted by `Sim` and stepped `ticks` ticks, open for a test to read, then closed."""
-    with nx.Sim.from_orchestrator(loop) as sim:
+    with nx.Sim._from_loop(loop) as sim:
         for _ in range(ticks):
             assert sim.step()
         yield sim
@@ -162,7 +163,7 @@ def test_every_device_signal_a_component_writes_keeps_a_history_and_no_component
             imu, estimate, controls = (
                 _history(loop.recorder.histories, signal) for signal in ("imu", "estimate", "controls")
             )
-            rows = sim.physics[sim.base_body].history()
+            rows = sim[f"vehicle/body/{sim.base_body}"].history()
             truth = [[*r.position, *r.velocity] for r in (rows[0], *rows[:-1])]
     read = (
         [_column(rows, "t").tolist() for rows in (imu, estimate, controls)],
@@ -185,13 +186,13 @@ def test_a_historys_key_is_its_writers_path_then_the_signals_name_and_the_clock_
     Given the run of the preceding row, its estimator a stand-in that writes a second device signal `wind` beside
     its estimate, when it steps, then the keys are `vehicle/sensors/imu/imu`, `vehicle/estimators/<name>/estimate`,
     `vehicle/estimators/<name>/wind` and `vehicle/controllers/standin/controls`, no history holds the clock's
-    `time`, and `sim.sensors["imu"]` resolves the IMU's history.
+    `time`, and `sim["vehicle/sensors/imu/imu"]` resolves the IMU's history.
     """
     loop = _build(tmp_path, IMU, controller=_TickWriter, estimator=_Windy())
     with _flown(loop, 1) as sim:
         histories = loop.recorder.histories
         keys = sorted(k for k in histories if not k.startswith(("vehicle/body/", "vehicle/joints/")))
-        resolved = sim.sensors["imu"] is histories.get("vehicle/sensors/imu/imu")
+        resolved = sim["vehicle/sensors/imu/imu"] is histories.get("vehicle/sensors/imu/imu")
 
     assert (keys, resolved) == (
         [
@@ -210,19 +211,20 @@ def test_a_historys_row_is_one_record_t_then_the_signals_quantities_as_its_type_
     signal's type declares, and a value-typed signal is one quantity named after the signal.
 
     Given the fixture vehicle with an IMU and a GPS at a site at latitude 47.3977, and the stand-in controller,
-    when the run steps one tick, then the newest row of `sim.sensors["imu"]` is a record whose dtype names `t`,
+    when the run steps one tick, then the newest row of `sim["vehicle/sensors/imu/imu"]` is a record whose dtype names `t`,
     `time`, `accel` and `gyro`, with `accel` and `gyro` float32 of width 3, the `lat` of the newest row of
-    `sim.sensors["gps"]` is float64 within 1e-9 degrees of the site's, the controls' newest row holds
-    `controls`, 16 float32, and `history()` gives the rows as one array and `arrays()` one array per quantity.
+    `sim["vehicle/sensors/gps/gps"]` is float64 within 1e-9 degrees of the site's, the controls' newest row holds
+    `controls`, 4 float32, one per rotor the stand-in commands, and `history()` gives the rows as one array and
+    `arrays()` one array per quantity.
     The fixture scene's site is Woodinville, so the latitude read is its.
     """
     loop = _build(tmp_path, IMU + GPS)
     with _flown(loop, 1) as sim:
-        imu, gps = (_record(sim.sensors[name].latest()) for name in ("imu", "gps"))
+        imu, gps = (_record(sim[f"vehicle/sensors/{name}/{name}"].latest()) for name in ("imu", "gps"))
         key = next((k for k in loop.recorder.histories if k.endswith("/controls")), None)
         controls = _record(loop.recorder.histories[key].latest()) if key is not None else None
-        rows = sim.sensors["imu"].history()
-        arrays = sim.sensors["imu"].arrays()
+        rows = sim["vehicle/sensors/imu/imu"].history()
+        arrays = sim["vehicle/sensors/imu/imu"].arrays()
     lat = float(gps["lat"]) if gps is not None and "lat" in gps.dtype.names else None
     read = (
         tuple(imu.dtype.names) if imu is not None else (),
@@ -237,7 +239,7 @@ def test_a_historys_row_is_one_record_t_then_the_signals_quantities_as_its_type_
         ("t", "time", "accel", "gyro"),
         [("float32", 3), ("float32", 3)],
         (("float64", 1), True),
-        ("float32", 16),
+        ("float32", 4),
         True,
         {"t": (True, 2), "time": (True, 2), "accel": (True, 2), "gyro": (True, 2)},
     )
@@ -254,7 +256,7 @@ def test_a_sensors_history_holds_on_each_tick_the_sample_its_signal_holds_with_i
     """
     loop = _build(tmp_path, RATED_IMU)
     with _flown(loop, 8) as sim:
-        rows = _structured(sim.sensors["imu"].history())
+        rows = _structured(sim["vehicle/sensors/imu/imu"].history())
     samples = [tuple(row) for row in _flat(rows, "accel", "gyro")]
     held = [len(set(samples[a:b])) for a, b in ((0, 4), (4, 8))] if len(samples) == 9 else []
 
@@ -305,10 +307,9 @@ def test_an_input_no_component_writes_keeps_no_history(tmp_path):
     Given the fixture vehicle with an IMU and no GPS on the PX4 fake, when the run steps 3 ticks, then the
     Recorder holds no history whose key ends in `gps`.
     """
-    from nexus_sim._src.core.registry import default_registry
     from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
 
-    loop = sv.build(sv.vehicle(tmp_path, IMU, px4=True), components=default_registry(), peers={"px4_sitl": Px4Fake})
+    loop = sv.build(sv.vehicle(tmp_path, IMU, px4=True), components=Registry(), peers={"px4_sitl": Px4Fake})
     with _flown(loop, 3):
         keys = sorted(k for k in loop.recorder.histories if k.endswith("gps"))
 
@@ -320,12 +321,12 @@ def test_two_sensors_of_one_kind_record_apart_each_under_its_own_instance(tmp_pa
     """Two sensors of one kind record apart, each under its own instance.
 
     Given the fixture vehicle with two IMUs on the prims `imu_a`, quiet, and `imu_b`, with an accelerometer
-    noise of 0.5 m/s^2, when the run steps 5 ticks, then `sim.sensors["imu_a"]` and `sim.sensors["imu_b"]` are
+    noise of 0.5 m/s^2, when the run steps 5 ticks, then `sim["vehicle/sensors/imu_a/imu"]` and `sim["vehicle/sensors/imu_b/imu"]` are
     two histories whose accelerometer rows differ from the second row on.
     """
     loop = _build(tmp_path, TWO_IMUS)
     with _flown(loop, TICKS) as sim:
-        a, b = sim.sensors["imu_a"], sim.sensors["imu_b"]
+        a, b = sim["vehicle/sensors/imu_a/imu"], sim["vehicle/sensors/imu_b/imu"]
         rows_a, rows_b = a.arrays(), b.arrays()
     differ = [k for k in rows_a if k != "t" and not np.array_equal(rows_a[k][1:], rows_b.get(k, rows_a[k])[1:])]
 

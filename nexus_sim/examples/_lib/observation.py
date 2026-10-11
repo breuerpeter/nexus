@@ -2,7 +2,7 @@
 observation from state, reused by the `nexus-rl` training task, the trained-policy deploy
 controller, and the Proportional Integral Derivative (PID) and design-opt examples, so the observation
 the policy trains on is **the same, bit for bit,** as the one it gets at deploy, the prerequisite for a
-bit-for-bit equal Isaac-Lab↔Orchestrator rollout.
+bit-for-bit equal Isaac-Lab↔Loop rollout.
 
 The Isaac-Lab `Isaac-Quadcopter-Direct-v0` observation, in order:
 
@@ -28,7 +28,7 @@ from __future__ import annotations
 import numpy as np
 import warp as wp
 
-from nexus_sim._src.core.interfaces import Stage
+from nexus_sim._src.core.interfaces import Component, Stage
 from nexus_sim._src.core.signals import Signal
 
 OBS_DIM = 12  # kinematic observation; the PID determinism gate / WarpObservationSensor use this dim
@@ -168,7 +168,7 @@ def observation_kernel(
     obs[11] = goal_b[2]
 
 
-class WarpObservationSensor:
+class WarpObservationSensor(Component):
     """Device-native ground-truth observation sensor: writes the 12-D obs to the signal ``observation``, a
     persistent ``(12,)`` Warp array, from the live state's device arrays, so it records on a tape / joins a
     graph, the Warp twin of :func:`observation_from_state`.

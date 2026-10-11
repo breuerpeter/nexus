@@ -26,12 +26,12 @@ def test_sim_takes_no_observe_argument():
     """`Sim` takes no `observe`.
 
     Given `Sim(..., observe=False)`, when a script builds it, then it raises `TypeError`; and so does
-    `Sim.from_orchestrator(..., observe=False)`.
+    `Sim._from_loop(..., observe=False)`.
     """
     with pytest.raises(TypeError, match="observe"):
         nx.Sim("astro_max_base", scene="empty", device="cpu", observe=False)
     with pytest.raises(TypeError, match="observe"):
-        nx.Sim.from_orchestrator(object(), observe=False)
+        nx.Sim._from_loop(object(), observe=False)
 
 
 def test_a_run_with_no_recording_still_reads_its_physics(tmp_path):
@@ -40,9 +40,9 @@ def test_a_run_with_no_recording_still_reads_its_physics(tmp_path):
     Given a `Sim` with `log=False`, when it steps once, then the base body's newest row
     is that tick's row: the body, spawned in free fall, has fallen.
     """
-    with nx.Sim.from_orchestrator(_unrecorded(tmp_path)) as sim:
+    with nx.Sim._from_loop(_unrecorded(tmp_path)) as sim:
         sim.step()
-        latest = sim.physics[sim.base_body].latest()
+        latest = sim[f"vehicle/body/{sim.base_body}"].latest()
 
     assert latest.velocity[2] < 0
 
@@ -53,8 +53,8 @@ def test_a_run_with_no_recording_still_waits_on_its_physics(tmp_path):
     Given a `Sim` with `log=False`, when a script waits until the body has fallen 0.1 m, then
     `wait_until` returns.
     """
-    with nx.Sim.from_orchestrator(_unrecorded(tmp_path)) as sim:
-        sim.wait_until(lambda: sim.physics[sim.base_body].latest().altitude_m < 4.9, sim_timeout=2.0)
-        fell_to = sim.physics[sim.base_body].latest().altitude_m
+    with nx.Sim._from_loop(_unrecorded(tmp_path)) as sim:
+        sim.wait_until(lambda: sim[f"vehicle/body/{sim.base_body}"].latest().altitude_m < 4.9, sim_timeout=2.0)
+        fell_to = sim[f"vehicle/body/{sim.base_body}"].latest().altitude_m
 
     assert fell_to < 4.9

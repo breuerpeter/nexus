@@ -49,7 +49,7 @@ LOCAL_ASSETS = ROOT / "assets" / "local"  # preview-before-publish glb copies li
 
 # ──────────────────────────────────────────────────────────────────────────────
 # glb conversion: runs in the isolated `bpy` interpreter; see the module docstring.
-# Everything under here imports bpy/pxr lazily so the orchestrator env, which has no bpy, can
+# Everything under here imports bpy/pxr lazily so the loop env, which has no bpy, can
 # import this module without pulling Blender in.
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -175,7 +175,7 @@ def _reinvoke_convert(src: Path, dst: Path, rotate_x: float) -> None:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Orchestrator: runs in the project env.
+# Loop: runs in the project env.
 # ──────────────────────────────────────────────────────────────────────────────
 
 

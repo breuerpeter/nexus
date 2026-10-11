@@ -26,12 +26,12 @@ from __future__ import annotations
 import numpy as np
 import warp as wp
 
-from nexus_sim._src.core.interfaces import Stage
+from nexus_sim._src.core.interfaces import Component, Stage
 from nexus_sim._src.core.schema import BaroSample, GpsSample, ImuSample, MagSample
 from nexus_sim._src.core.signals import Signal
 
 
-class DeviceSensor:
+class DeviceSensor(Component):
     """A sensor whose work is one device stage, named after the sensor, over ``sample_wp``. The stage reads
     the tick's sim time, the signal ``time``, and writes the sensor's sample, stamped with it, to its output
     signal ``out`` on a tick that its rate makes due. On any other tick the kernel writes nothing, so the

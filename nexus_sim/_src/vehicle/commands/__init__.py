@@ -1,4 +1,4 @@
-"""The command seam's components: each turns the controller's command into Newton's control inputs.
+"""The command elements: each turns the controller's command into Newton's control inputs.
 
 A command element's stage runs once per physics substep, after the physics ``clear`` stage and before the force
 stages, and writes the targets and feedforward the model's ``newton.Control`` holds; physics then steps

@@ -13,7 +13,7 @@ pytest.importorskip("pxr")
 
 import warp as wp
 
-from nexus_sim._src.core.interfaces import Stage
+from nexus_sim._src.core.interfaces import Component, Stage
 from nexus_sim._src.core.signals import Signal
 from tests.usd import sensor_vehicle as sv
 
@@ -23,7 +23,7 @@ TICKS = 5
 WIDTH = 20
 
 
-class _Wide:
+class _Wide(Component):
     """A stand-in controller named `wide` whose host stage writes a 20-wide controls signal, 0.5 on every channel."""
 
     name = "wide"

@@ -1,7 +1,7 @@
 """Recorder: capturable taps write into device staging buffers that drain onto host blocks, the
 read-side twin of logging. Exercises a body's history, record_body → BodyState, a joint's history,
 record_joint → JointState with variable width, a signal's history, tap → records of `t` then the
-signal's quantities, the drain past the staging buffer, and the Histories name view.
+signal's quantities, and the drain past the staging buffer.
 """
 
 import numpy as np
@@ -12,7 +12,7 @@ from nexus_sim._src.core.interfaces import Stage
 from nexus_sim._src.core.schema import ImuSample
 from nexus_sim._src.core.signals import Signal, wire
 from nexus_sim._src.core.stages import Bound
-from nexus_sim._src.recording import BodyState, Histories, History, JointState, Recorder
+from nexus_sim._src.recording import BodyState, History, JointState, Recorder
 from nexus_sim._src.recording.state import (
     BODY_FIELDS,
     BODY_WIDTH,
@@ -196,22 +196,6 @@ def test_duplicate_name_with_different_shape_raises():
         rec.history("vehicle/sensors/imu", width=4, decode=lambda r: r, source="ImuBosch")
 
 
-def test_histories_resolve_bare_names_across_namespaces():
-    rec = Recorder(dt=0.004)
-    rec.history("vehicle/body/body_frd", width=BODY_WIDTH, decode=decode_body)
-    rec.history("vehicle/joints/rotor_1_joint", width=2, decode=make_decode_joint(1, 1))
-    rec.history("vehicle/sensors/imu", width=11, decode=lambda r: r)
-    state = Histories(rec.histories, ("vehicle/body/", "vehicle/joints/"))
-    meas = Histories(rec.histories, ("vehicle/sensors/",))
-
-    assert rec.histories["vehicle/body/body_frd"] is state["body_frd"]
-    assert rec.histories["vehicle/joints/rotor_1_joint"] is state["rotor_1_joint"]
-    assert set(state) == {"body_frd", "rotor_1_joint"}  # spans both prefixes; sensors excluded
-    assert set(meas) == {"imu"}
-    with pytest.raises(KeyError):
-        state["imu"]  # not in body/ or joint/
-
-
 def test_the_recorder_taps_a_signal_under_its_writers_path_with_the_quantities_its_type_declares():
     """`tap` registers a signal's history as `<path>/<signal>`, its quantities those of the signal's type: a
     struct's fields, each with its width, or one quantity named after a value-typed signal, of its width.
@@ -262,13 +246,3 @@ def test_the_record_stage_copies_each_tapped_signals_value_into_a_row_of_t_then_
         pytest.approx(0.008),
         [3.0] * 16,
     )
-
-
-def test_histories_resolve_an_instance_to_the_one_history_under_its_path():
-    """The view resolves an instance name to the one signal's history under its path, and lists the instance."""
-    rec = Recorder(dt=0.004)
-    (imu,) = _wired(Signal("imu", ImuSample, shape=(1,)))
-    h = rec.tap("vehicle/sensors/imu_a", imu)
-    sensors = Histories(rec.histories, ("vehicle/sensors/",))
-
-    assert (sensors["imu_a"] is h, set(sensors)) == (True, {"imu_a"})

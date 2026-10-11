@@ -6,7 +6,7 @@ description: "How nexus works: a fixed-order deterministic sim loop of typed, re
 
 The framework is an **imperative, fixed-order, deterministic simulation loop** in which every concern is
 a replaceable [component](concepts.md#component) behind a typed interface. The
-[loop](concepts.md#loop), the class [`Orchestrator`](../reference/api/core.md), steps the
+[loop](concepts.md#loop), the class [`Loop`](../reference/api/core.md), steps the
 components in a fixed order each [tick](concepts.md#tick), and [`Sim`](concepts.md#sim) builds
 and drives it.
 
@@ -54,7 +54,7 @@ can be [CUDA-graph-captured](execution.md).
 | Type | Carries |
 |---|---|
 | `newton.State` | pose, velocity, body rates, per-body forces: the live Newton state in `body_q`, `body_qd`, and `body_f` |
-| `Controls` | one normalized command per actuator, what the controller emits |
+| `controls` | the signal a controller writes: one normalized command per actuator, as wide as its actuators, which the command elements read |
 | `PoseTwist` | the estimate: the base body's pose and twist in world axes, what the estimator writes and the guidance and the controller read |
 | `Wrench` | a **per-body** spatial force over the whole articulation, the base body plus each actuator's body, realized as the shared `body_f` buffer, not a single body-level force and torque pair |
 | `ImuSample`, `MagSample`, `BaroSample`, `GpsSample` | each analytic sensor's sample, a Warp struct whose first field is the sim time of the tick that took it, which the sensor writes as its signal, `imu`, `mag`, `baro` or `gps` |
@@ -130,9 +130,8 @@ estimate. A run whose guidance or controller reads the estimate, and that has no
 before any stage runs, with an error that names the readers and the estimator.
 
 **What to fly is separate from how it flies.** A controller that takes setpoints flies the mission
-of its **guidance**, the outer loop of the control cascade, reached through
-[`sim.guidance`](../reference/api/guidance.md). The guidance is a component of the loop, and it
-holds no other component. Its stage runs each tick after the estimator's and before the controller's,
+of its [**guidance**](../reference/api/guidance.md), the outer loop of the control cascade. The
+guidance is a component of the loop, and it holds no other component. Its stage runs each tick after the estimator's and before the controller's,
 and it reads the vehicle's position from the estimate.
 It writes the setpoint, a [signal](execution.md#signals) of one setpoint type, a position goal as one
 `wp.vec3` or a `ReferenceTrajectory`, and the controller reads it on that same tick. The loop checks before any
@@ -140,7 +139,7 @@ stage runs that the controller reads the type the guidance writes. When the miss
 stage marks the tick done, and the loop ends the run. `MissionGuidance` sequences
 position goals and advances on arrival. `TrackingGuidance` plans one reference for a tracking
 controller, with a `ruckig` or min-snap planner. A flight constructs its guidance from the
-guidance's own parameters and hands it to `Sim.from_orchestrator`.
+guidance's own parameters and hands it to `Sim._from_loop`.
 
 PX4 takes no guidance, because its own navigator sequences its missions, and no setpoint from the
 loop. It takes no estimator either, because its own estimator runs in its peer and takes the
@@ -168,7 +167,7 @@ The propeller's parameters, `ct`, `cd` and the aero terms, come from the `NexusP
 that each rotor's rigid body applies in the vehicle USD. The rotor speed at full command is the
 motor's no-load speed, `newton:velocityLimit`. The **mixer**, the
 Collective Thrust and Body Rates (CTBR) rate loop and the `B⁻¹` control allocation, lives in the
-*controllers*, not the rotor chain. So `Controls.command` is always one entry per actuator, and a
+*controllers*, not the rotor chain. So the `controls` signal is always one entry per actuator, and a
 command element only ever applies the forward map. PX4 and the acados example fly this chain. The
 PID, policy and sampling Model Predictive Control (MPC) examples fly a single-body plant with a
 motor lag of their own.
@@ -194,10 +193,10 @@ Observability is cross-cutting, split into a **write** side and a **read** side:
   Recorder every device signal, and the Recorder taps each buffer in the record stage. A device kernel writes each
   tick's row into a small staging buffer. The buffer drains onto host blocks that grow with the run,
   so device memory stays fixed and the Recorder drops no row. A caller reads a history on demand
-  through [`sim.physics`](../reference/api/simulation.md) and `sim.sensors`. A history's key is its
-  writer's path below the process root, then the signal's name for a signal: `vehicle/body/…`,
+  by indexing the run with its key, [`sim[path]`](../reference/api/simulation.md). A history's key is
+  its writer's path below the process root, then the signal's name for a signal: `vehicle/body/…`,
   `vehicle/joints/…` and `vehicle/sensors/imu/imu`. The key is the same path in the recording, so the
-  Recorder and the recording use one name for one thing. This is the capture-safe way to read a run
+  Recorder, the recording and the script use one name for one thing. This is the capture-safe way to read a run
   without a host round-trip each tick. Each time the staging buffers drain, the Logger writes the
   block as time-series entities at `sim/<key>/<field>`, and the scene's poses with it. So you can
   inspect the whole history in the viewer's debug tabs.

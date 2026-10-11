@@ -20,6 +20,8 @@ import sys
 import time
 from pathlib import Path
 
+from nexus_sim._src.core.interfaces import Component
+
 DT = 0.004  # 250 Hz control ticks
 READY_TICKS = 50  # the ticks the script flies before it prints ready
 # The base body's recorded position series, one child of its history's key, and its pose.
@@ -42,7 +44,7 @@ def author_usd(path: str) -> None:
     stage.GetRootLayer().Save()
 
 
-class Actuator:
+class Actuator(Component):
     """Writes no forces: the body flies under gravity alone."""
 
     def stages(self):
@@ -51,7 +53,7 @@ class Actuator:
         return [Stage("forces", "device", lambda tick: None)]
 
 
-class Controller:
+class Controller(Component):
     """One device stage that commands nothing. ``act`` runs each tick, so a test can make it raise."""
 
     def __init__(self, act=None):
@@ -89,7 +91,7 @@ def build(
     import newton
 
     from nexus_sim._src.core.clock import Clock
-    from nexus_sim._src.core.orchestrator import Orchestrator
+    from nexus_sim._src.core.loop import Loop
     from nexus_sim._src.logging import Logger
     from nexus_sim._src.physics.physics import NewtonPhysics
     from nexus_sim._src.physics.vehicle import VehicleUsd
@@ -104,7 +106,7 @@ def build(
     VehicleUsd({"usd_path": usd}).build(mb)
     model = mb.finalize()
     recorder = {} if staging is None else {"recorder": Recorder(dt=DT, staging=staging)}
-    orch = Orchestrator(
+    orch = Loop(
         clock=Clock(DT),
         physics=NewtonPhysics(model=model, cfg=cfg),
         actuator=Actuator(),
@@ -251,7 +253,7 @@ def _fly(tmp: str, mode: str) -> None:
     with wp.ScopedDevice("cpu"):
         orch, _ = build(tmp, staging=8 if mode == "staged" else None)
         try:
-            with nx.Sim.from_orchestrator(orch) as sim:
+            with nx.Sim._from_loop(orch) as sim:
                 try:
                     n = 0
                     while sim.step():
@@ -260,7 +262,7 @@ def _fly(tmp: str, mode: str) -> None:
                             stopping["now"] = True  # the next write Rerun takes is the teardown's
                             print("ready", flush=True)
                 except KeyboardInterrupt:  # the run has torn down on its way here
-                    print(f"history {len(sim.physics[sim.base_body].history())}", flush=True)
+                    print(f"history {len(sim[f'vehicle/body/{sim.base_body}'].history())}", flush=True)
                     raise
         except KeyboardInterrupt:
             pass

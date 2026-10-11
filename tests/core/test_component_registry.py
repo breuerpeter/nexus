@@ -45,31 +45,31 @@ def _python(code: str, *, cwd: Path, pythonpath: Path) -> list[str]:
 
 def test_a_registry_resolves_a_schema_to_the_class_it_maps():
     """A registry resolves a schema to the class it maps."""
-    from nexus_sim._src.core.registry import ComponentRegistry
+    from nexus_sim._src.core.registry import Registry
 
     class StandIn:
         """A stand-in component class."""
 
-    assert ComponentRegistry({"StandInAPI": StandIn}).resolve("StandInAPI") is StandIn
+    assert Registry({"StandInAPI": StandIn}).resolve("StandInAPI") is StandIn
 
 
 def test_a_registry_resolves_an_import_path_to_the_class_it_names():
     """A registry resolves an entry given as an import path, `module:Class`, to the class it names."""
     import json
 
-    from nexus_sim._src.core.registry import ComponentRegistry
+    from nexus_sim._src.core.registry import Registry
 
-    assert ComponentRegistry({"JsonAPI": "json:JSONDecoder"}).resolve("JsonAPI") is json.JSONDecoder
+    assert Registry({"JsonAPI": "json:JSONDecoder"}).resolve("JsonAPI") is json.JSONDecoder
 
 
 def test_a_registry_resolves_an_entry_added_after_its_creation():
     """A registry resolves an entry that `add` gives it after its creation."""
-    from nexus_sim._src.core.registry import ComponentRegistry
+    from nexus_sim._src.core.registry import Registry
 
     class StandIn:
         """A stand-in component class."""
 
-    registry = ComponentRegistry()
+    registry = Registry()
     registry.add("StandInAPI", StandIn)
     assert registry.resolve("StandInAPI") is StandIn
 
@@ -107,10 +107,10 @@ def test_a_project_adds_an_entry_to_the_default_registry_through_a_public_regist
     code = f"""
 import nexus_stand_in  # registers the stand-in schema plugin
 import nexus_sim
-from nexus_sim._src.core.registry import register_component
+from nexus_sim._src.core.registry import register
 from nexus_sim._src.build.components import resolve_components
 from nexus_stand_in.heavy import StandIn
-register_component("StandInAPI", StandIn)
+register("StandInAPI", StandIn)
 author_stand_in({str(vehicle)!r})
 (ai,) = resolve_components({str(vehicle)!r})
 print(">", ai.cls is StandIn)
@@ -126,7 +126,7 @@ def test_a_registry_handed_to_the_builder_replaces_the_default_and_leaves_it_unt
     to the IMU class.
     """
     from nexus_sim._src.build.components import resolve_components
-    from nexus_sim._src.core.registry import ComponentRegistry
+    from nexus_sim._src.core.registry import Registry
     from nexus_sim._src.usd import schema_names
     from nexus_sim._src.vehicle.sensors import ImuSensor
 
@@ -136,7 +136,7 @@ def test_a_registry_handed_to_the_builder_replaces_the_default_and_leaves_it_unt
     imu_prim = "/Vehicle/body/Imu"
     (stand_in,) = [
         spec
-        for spec in resolve_components(FIXTURE, ComponentRegistry(dict.fromkeys(schema_names(), StandIn)))
+        for spec in resolve_components(FIXTURE, Registry(dict.fromkeys(schema_names(), StandIn)))
         if spec.prim == imu_prim
     ]
     (imu,) = [spec for spec in resolve_components(FIXTURE) if spec.prim == imu_prim]
@@ -173,9 +173,9 @@ def test_the_build_imports_an_entry_class_only_when_a_run_declares_its_schema(tm
 import sys
 import nexus_stand_in  # registers the stand-in schema plugin
 import nexus_sim
-from nexus_sim._src.core.registry import register_component
+from nexus_sim._src.core.registry import register
 from nexus_sim._src.build.components import resolve_components
-register_component("StandInAPI", "nexus_stand_in.heavy:StandIn")
+register("StandInAPI", "nexus_stand_in.heavy:StandIn")
 author_bare({str(bare)!r})
 resolve_components({str(bare)!r})
 print(">", "nexus_stand_in.heavy" in sys.modules)
@@ -186,23 +186,10 @@ print(">", "nexus_stand_in.heavy" in sys.modules)
     assert _python(code, cwd=tmp_path, pythonpath=STAND_IN) == ["False", "True"]
 
 
-def test_the_provider_registry_goes_and_nexus_catalog_names_the_catalog():
-    """The provider registry nothing calls goes, and `nexus_sim.Catalog` names the catalog.
-
-    Given `import nexus_sim`, when the test looks, then `nexus_sim._src.core` exports no `Registry`
-    and `nexus_sim.Catalog` resolves the catalog.
-    """
-    import nexus_sim as nx
-    import nexus_sim._src.core as core
-    from nexus_sim._src.config import Catalog
-
-    assert (hasattr(core, "Registry"), nx.Catalog) == (False, Catalog)
-
-
 def test_a_package_with_an_entry_in_nexus_registry_and_a_plugin_at_its_root_is_registered_at_import(tmp_path):
-    """The registry is named for what it does: a package with an entry in the `nexus.registry` entry-point group
-    and a `plugInfo.json` at its root is registered at import, its schema with OpenUSD and its entry in the
-    default registry.
+    """The name of the registry says what it does: `import nexus_sim` registers a package with an entry in the
+    `nexus.registry` entry-point group and a `plugInfo.json` at its root, its schema with OpenUSD and its entry
+    in the default registry.
 
     Given a stand-in distribution with one `nexus.registry` entry and a `plugInfo.json` at its root, when a fresh
     interpreter imports `nexus_sim`, then OpenUSD knows its schema and the default registry resolves the entry to
@@ -215,7 +202,7 @@ def test_a_package_with_an_entry_in_nexus_registry_and_a_plugin_at_its_root_is_r
     pyproject = project / "pyproject.toml"
     pyproject.write_text(
         pyproject.read_text().replace(
-            '[project.entry-points."nexus.components"]', '[project.entry-points."nexus.registry"]'
+            '[project.entry-points."nexus.registry"]', '[project.entry-points."nexus.registry"]'
         )
     )
     site = tmp_path / "site"

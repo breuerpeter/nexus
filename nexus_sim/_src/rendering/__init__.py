@@ -15,7 +15,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from nexus_sim._src.core import logger
-from nexus_sim._src.core.registry import ComponentRegistry
+from nexus_sim._src.core.registry import Registry
 from nexus_sim._src.peers.kit.runner import KitPeer
 
 from .link import KitRenderer
@@ -50,7 +50,7 @@ class RtxRendererFactory:
     the vehicle's file.
     """
 
-    def __init__(self, peer: KitPeer, *, components: ComponentRegistry | None = None):
+    def __init__(self, peer: KitPeer, *, components: Registry | None = None):
         self._peer = peer
         self._components = components
 
@@ -122,7 +122,7 @@ def rtx_renderer(
     *,
     cache_dir=None,
     peer: Callable = KitPeer,
-    components: ComponentRegistry | None = None,
+    components: Registry | None = None,
 ) -> RtxRendererFactory | None:
     """Start the Kit render peer when the vehicle declares a sensor that requires it, and return its renderer factory.
 

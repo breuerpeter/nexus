@@ -9,14 +9,12 @@ from __future__ import annotations
 import pathlib
 
 from nexus_sim._src.core.components import ComponentSpec, resolve_components
-from nexus_sim._src.core.registry import ComponentRegistry
+from nexus_sim._src.core.registry import Registry
 
 __all__ = ["ComponentSpec", "declared_controller", "declared_estimator", "prims_applying", "resolve_components"]
 
 
-def _on_scopes(
-    usd_path: str | pathlib.Path, role: str, registry: ComponentRegistry | None
-) -> tuple[str, list[ComponentSpec]]:
+def _on_scopes(usd_path: str | pathlib.Path, role: str, registry: Registry | None) -> tuple[str, list[ComponentSpec]]:
     """The vehicle's root prim, or its file with no default prim, and each component it declares in `role`.
 
     Raises:
@@ -44,7 +42,7 @@ def _on_scopes(
     return root, specs
 
 
-def declared_controller(usd_path: str | pathlib.Path, registry: ComponentRegistry | None = None) -> ComponentSpec:
+def declared_controller(usd_path: str | pathlib.Path, registry: Registry | None = None) -> ComponentSpec:
     """The one controller the vehicle file at `usd_path` declares, on the `Scope` that applies its schema.
 
     With no `registry`, the default one resolves each schema.
@@ -62,7 +60,7 @@ def declared_controller(usd_path: str | pathlib.Path, registry: ComponentRegistr
     return controllers[0]
 
 
-def declared_estimator(usd_path: str | pathlib.Path, registry: ComponentRegistry | None = None) -> ComponentSpec | None:
+def declared_estimator(usd_path: str | pathlib.Path, registry: Registry | None = None) -> ComponentSpec | None:
     """The estimator the vehicle file at `usd_path` declares, on the `Scope` that applies its schema, or ``None``.
 
     With no `registry`, the default one resolves each schema.

@@ -36,6 +36,15 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
   states the layout. Read it before adding a peer or a file to one.
 - **Component schemas live in a USD schema plugin** in `nexus_sim/_src/usd/`, which `import nexus_sim`
   registers. Read `nexus_sim/_src/usd/CLAUDE.md` before adding or changing a schema.
+- **One contract serves every role.** A component subclasses `Component`, states its stages and
+  overrides the lifecycle members it has: `connect`, `close`, `set_logger`, `attached`, `requires`,
+  `artifacts` and `name`. The loop, the builder and `Sim` read those from every component and find
+  none by name. A test stand-in subclasses `Component` too. A controller writes its own `controls`
+  signal, as wide as its actuators. The registry, `Registry`, maps each schema to its class: a
+  project registers through the `nexus.registry` entry-point group, and a test hands a run its
+  stand-ins through `Sim(registry=...)`. A script reads any recorded history by indexing the run
+  with the history's path, `sim["vehicle/sensors/imu/imu"]`, and `Sim` gives no role an accessor.
+  `docs/guide/your-own-component.md` walks a project through it.
 - **`evo` is GPLv3** → it lives only in the `ci` dependency-group and never ships as a dependency.
   Examples dump plain `.npz` and JSON files, and only `scripts/ci/evaluate_examples.py` imports
   `evo` to score them.

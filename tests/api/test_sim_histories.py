@@ -37,10 +37,10 @@ def test_a_script_reads_any_history_by_indexing_the_run_with_its_path(tmp_path):
 
     Given a recorded run on the fixture vehicle, when it ends, then `sim["vehicle/sensors/imu/imu"]` is the IMU's
     history, `sim["vehicle/controllers/stand_in/controls"]` the controller's and `sim["vehicle/body/body"]` the base
-    body's, each with `.latest()` and `.history()`: the IMU's newest row is the last tick's, and the controls and
+    body's, each read by its newest row and by all its rows: the IMU's newest row is the last tick's, and the controls and
     the body each hold the seed row and one row per tick.
     """
-    with nx.Sim.from_orchestrator(_build(tmp_path)) as sim:
+    with nx.Sim._from_loop(_build(tmp_path)) as sim:
         for _ in range(TICKS):
             sim.step()
         imu, controls, body = (
@@ -57,13 +57,13 @@ def test_a_script_reads_any_history_by_indexing_the_run_with_its_path(tmp_path):
 
 
 def test_sim_gives_no_role_and_no_fixed_part_an_accessor_of_its_own(tmp_path):
-    """`sim.sensors`, `sim.physics` and `sim.guidance` are gone: a script indexes the run by path, so `Sim` gives
+    """`sim.sensors`, `sim.physics` and `sim.guidance` went: a script indexes the run by path, so `Sim` gives
     no role and no fixed part an accessor of its own.
 
     Given a run on the fixture vehicle, when a script looks for `sensors`, `physics` and `guidance` on `Sim`,
     then none is an attribute of it, so a read of any raises `AttributeError`.
     """
-    with nx.Sim.from_orchestrator(_build(tmp_path)) as sim:
+    with nx.Sim._from_loop(_build(tmp_path)) as sim:
         present = [name for name in ("sensors", "physics", "guidance") if hasattr(type(sim), name)]
 
     assert present == []

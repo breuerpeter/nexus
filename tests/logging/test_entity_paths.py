@@ -153,15 +153,15 @@ def test_the_logs_view_shows_each_rows_entity_path_and_gathers_the_sims_log_rows
     """The Logs view shows each row's entity path and gathers the sim's log rows and a peer's.
 
     Given a recorded flight, when the run sends its default layout, then the Logs view shows the
-    EntityPath column, and its contents take in `/sim/logs/orchestrator` and `/px4_sitl/logs` and
+    EntityPath column, and its contents take in `/sim/logs/loop` and `/px4_sitl/logs` and
     leave out `/sim/run/rtf`.
     """
     layout = rrd_layout(recorded_flight)
-    shown = [e for e in ("/sim/logs/orchestrator", "/px4_sitl/logs", "/sim/run/rtf") if layout.shows("Logs", e)]
+    shown = [e for e in ("/sim/logs/loop", "/px4_sitl/logs", "/sim/run/rtf") if layout.shows("Logs", e)]
 
     assert (layout.view("Logs")["columns"].get(ENTITY_PATH_COLUMN), shown) == (
         True,
-        ["/sim/logs/orchestrator", "/px4_sitl/logs"],
+        ["/sim/logs/loop", "/px4_sitl/logs"],
     )
 
 

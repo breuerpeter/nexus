@@ -25,7 +25,7 @@ TICKS = 50
 
 def _fly(orch, ticks: int) -> None:
     """Step the run ``ticks`` ticks through ``Sim``, then close it."""
-    with nx.Sim.from_orchestrator(orch) as sim:
+    with nx.Sim._from_loop(orch) as sim:
         for _ in range(ticks):
             assert sim.step()
 
@@ -39,11 +39,11 @@ def test_a_history_holds_every_row_of_a_run_with_no_step_cap(tmp_path):
     `t` equal to `k * dt` for `k` in 0..50, and the newest row is the last.
     """
     orch, _ = _flight.build(tmp_path, staging=8)
-    with nx.Sim.from_orchestrator(orch) as sim:
+    with nx.Sim._from_loop(orch) as sim:
         for _ in range(TICKS):
             assert sim.step()
-        history = sim.physics[sim.base_body].history()
-        latest = sim.physics[sim.base_body].latest()
+        history = sim[f"vehicle/body/{sim.base_body}"].history()
+        latest = sim[f"vehicle/body/{sim.base_body}"].latest()
 
     assert ([s.t for s in history], latest.t) == (
         pytest.approx([k * DT for k in range(TICKS + 1)]),

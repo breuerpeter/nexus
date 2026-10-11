@@ -7,7 +7,7 @@ which an estimator writes, never from the physics state. It writes a changed set
 ``setpoint``, which the controller reads, in
 place between graph replays, so a captured graph stays valid, per the capture contract, and the
 controller reads the setpoint on that tick. The stage sets ``Tick.done`` when the mission is over, and
-the loop ends the run. Logging is component-owned: the orchestrator hands over the Logger scoped to the
+the loop ends the run. Logging is component-owned: the loop hands over the Logger scoped to the
 guidance's path, and the guidance emits its own rows, ``waypoints/wp_<i>`` and ``reference``, when the
 mission changes, on set, advance or plan. Rerun shows the last value per entity path, so logging only on
 change is enough.
@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from nexus_sim._src.core.interfaces import Stage, Tick
+from nexus_sim._src.core.interfaces import Component, Stage, Tick
 from nexus_sim._src.core.schema import PoseTwist, PositionGoal, Setpoint, as_position_goal
 from nexus_sim._src.core.signals import Signal
 
@@ -28,7 +28,7 @@ _PENDING = (120, 120, 130)
 _RADIUS = 0.18  # sphere radius [m]
 
 
-class Guidance:
+class Guidance(Component):
     """Shared guidance state: the mission, the stage, its two outputs and the markers.
 
     A subclass does its work in ``_tick``. It commands a setpoint with ``_command`` and ends its mission
@@ -49,7 +49,7 @@ class Guidance:
         # signal, and whether the mission is over.
         self._commanded: Setpoint | None = None
         self._done = False
-        # Component-owned logging: the orchestrator hands over the Logger, None when off, which is the
+        # Component-owned logging: the loop hands over the Logger, None when off, which is the
         # gate, and sets the timeline at tick start, so an emitter just hands data to the Logger.
         self._logger = None
 
@@ -90,7 +90,7 @@ class Guidance:
 
     # -- component-owned logging ---------------------------------------------------
     def set_logger(self, logger) -> None:
-        """The orchestrator hands over the Logger, scoped to the guidance's path, or ``None`` when off: the
+        """The loop hands over the Logger, scoped to the guidance's path, or ``None`` when off: the
         gate for the markers. Each emitter names only its own row.
         """
         self._logger = logger

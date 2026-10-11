@@ -33,7 +33,7 @@ source_modules =
 forbidden_modules =
     nexus_sim.examples
 
-; No generic part names PX4: the loop, the seams and Sim carry no PX4 class, port or verb, so the
+; No generic part names PX4: the loop, the components and Sim carry no PX4 class, port or verb, so the
 ; script that commands PX4 is what names it, through the public namespace nexus_sim.px4. The imports that
 ; remain are the builder's, which starts the PX4 peer from its runner, numbers the links from its
 ; instance and tells the fake apart for the port map, and the argument parser's, which prints the

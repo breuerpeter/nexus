@@ -17,8 +17,10 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import warp as wp
 
+from .interfaces import Component
+
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Iterable
 
     from .stages import Bound
 
@@ -91,14 +93,15 @@ def _value(buffer: Any) -> Any:
     return buffer.numpy().copy() if isinstance(buffer, wp.array) else buffer.value
 
 
+def _name(component: object) -> str:
+    """The instance name of a component, its ``name``, else its class's name, as for a fixed part."""
+    name = component.name if isinstance(component, Component) else None
+    return str(name or type(component).__name__)
+
+
 def _owner(bound: Bound) -> str:
-    """The instance name of the component that states a stage: its ``name``, else its class's."""
-    return str(getattr(bound.component, "name", None) or type(bound.component).__name__)
-
-
-def _prim(bound: Bound) -> str | None:
-    """The path of the prim that declares the component that states a stage, or ``None``."""
-    return getattr(bound.component, "prim_path", None)
+    """The instance name of what states a stage."""
+    return _name(bound.component)
 
 
 def _type(signal_type: Any) -> str:
@@ -108,38 +111,39 @@ def _type(signal_type: Any) -> str:
     return getattr(signal_type, "__name__", str(signal_type))
 
 
-def wire(ring: list[Bound], connections: Mapping[str, Mapping[str, str]] | None = None) -> None:
+def wire(ring: list[Bound], connections: Iterable[tuple[object, str, object]] | None = None) -> None:
     """Wire every signal the ring's stages declare, before any stage runs, and check each pair.
 
     The builder allocates one buffer per output and hands it to its writer. An input takes the buffer of the
-    one writer of its name, or of the writer a connection on its reader's prim names; a list input takes
-    every writer's buffer, in ring order. A reader's default fills the buffer it takes until its writer
-    first writes. An input that no component writes reads its own buffer, which holds its default.
+    one writer of its name, or of the writer its reader's connection names; a list input takes every
+    writer's buffer, in ring order. A reader's default fills the buffer it takes until its writer first
+    writes. An input that no component writes reads its own buffer, which holds its default.
 
     Args:
         ring: The stages of one tick.
-        connections: For a reader's prim, each signal it reads and the prim whose component writes it, from
-            the relationships ``nexus:inputs:<signal>`` the vehicle authors.
+        connections: Triples of a reader, a signal's name and the writer the reader takes that signal from,
+            which the builder resolves from the relationships ``nexus:inputs:<signal>`` the vehicle authors.
 
     Raises:
         ValueError: A device stage declares a host signal, a device signal has no shape, two components
             write one signal that a third reads through neither a connection nor a list, a connection names
-            a prim whose component writes no such signal, a reader and its writer disagree on the type, a
-            reader needs more of an axis than its writer's buffer holds, or an input has neither a writer nor
-            a default. The message names both ends, or the stage or the reader and the signal.
+            a writer that writes no such signal, a reader and its writer disagree on the type, a reader needs
+            more of an axis than its writer's buffer holds, or an input has neither a writer nor a default.
+            The message names both ends, or the stage or the reader and the signal.
     """
     writes, reads = _declared(ring)
     for written in writes.values():
         for _, output in written:
             output.buffer = output._allocate()
     defaulted: set[int] = set()  # the outputs a reader's default already fills
+    links = list(connections or ())
     for name, readers in reads.items():
         written = writes.get(name, [])
         for bound, signal in readers:
             if typing.get_origin(signal.type) is list:
                 _take_all(bound, signal, written)
             else:
-                connected = (connections or {}).get(_prim(bound) or "", {}).get(name)
+                connected = next((w for r, s, w in links if r is bound.component and s == name), None)
                 _take_one(bound, signal, written, connected, defaulted)
 
 
@@ -170,24 +174,24 @@ def _declared(ring: list[Bound]) -> tuple[dict, dict]:
     return writes, reads
 
 
-def _take_one(bound: Bound, signal: Signal, written: list, connected: str | None, defaulted: set[int]) -> None:
+def _take_one(bound: Bound, signal: Signal, written: list, connected: object | None, defaulted: set[int]) -> None:
     """Hand an input the buffer of its writer: the one its connection names, else the one there is, else a
     buffer of its own that holds its default.
     """
     name = signal.name
     if connected is not None:
-        picked = [(writer, output) for writer, output in written if _prim(writer) == connected]
+        picked = [(writer, output) for writer, output in written if writer.component is connected]
         if not picked:
             raise ValueError(
-                f"{_owner(bound)} connects {name!r} to {connected}, which writes no {name!r}: a connection names "
-                "the prim of a component that writes the signal"
+                f"{_owner(bound)} connects {name!r} to {_name(connected)}, which writes no {name!r}: a connection "
+                "names a component that writes the signal"
             )
         writer, output = picked[0]
     elif len(written) == 1:
         writer, output = written[0]
     elif written:
         raise ValueError(
-            f"{' and '.join(_prim(w) or _owner(w) for w, _ in written)} all write {name!r}, which {_owner(bound)} "
+            f"{' and '.join(_owner(w) for w, _ in written)} all write {name!r}, which {_owner(bound)} "
             f"reads: a connection on the reader's prim, the relationship nexus:inputs:{name} its schema declares, "
             "picks one, or a list input takes them all"
         )

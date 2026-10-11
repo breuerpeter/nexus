@@ -5,7 +5,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from nexus_sim._src.core.schema import Controls  # noqa: E402
+from nexus_sim.examples._lib.mixer import Controls  # noqa: E402
 from nexus_sim.examples.controllers.policy.controller import TrainedPolicyController  # noqa: E402
 
 

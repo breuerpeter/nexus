@@ -95,7 +95,7 @@ The end-of-run `profile [...]` line reports the sliding-window Real Time Factor 
 and p95, and the per-phase partition, plus the CUDA-event-timed GPU batch. In the partition,
 `exchange` is the PX4 lockstep wait, `gpu+read` is the device batch plus the D2H sync,
 `sensors.host` is the RTX render link, and `other` is an explicit residual. The same numbers land
-in `Orchestrator.run_stats["profile"]`.
+in `Loop.run_stats["profile"]`.
 
 Every entry point shares the deep-diagnostics flags below. `nexus run` and the
 examples launcher, `uv run -m nexus_sim.examples <name> --profile`, spell them identically:

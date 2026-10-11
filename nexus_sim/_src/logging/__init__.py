@@ -5,7 +5,7 @@ recording" section describes.
 histories into it a block at a time, the series, the scene and the flown path, and routes the
 ``newton`` logger's events into the same recording. It exposes the shared log calls ``set_time``,
 ``log_image`` and the rest; each component logs its live rows through the ``ScopedLogger`` the
-orchestrator hands it, which puts the component's path before each row's name.
+loop hands it, which puts the component's path before each row's name.
 """
 
 from .rerun_logging import (

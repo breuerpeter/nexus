@@ -12,7 +12,7 @@ description = "A stand-in component project for the nexus tests"
 requires-python = "==3.12.*"
 
 # The class each schema builds, by import path, loaded at build.
-[project.entry-points."nexus.components"]
+[project.entry-points."nexus.registry"]
 StandInAPI = "nexus_stand_in.heavy:StandIn"
 StandInSensorAPI = "nexus_stand_in.sensor:StandInSensor"
 StandInEstimatorAPI = "nexus_stand_in.estimator:StandInEstimator"

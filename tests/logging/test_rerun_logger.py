@@ -10,7 +10,7 @@ pytest.importorskip("rerun")
 pytest.importorskip("newton")
 
 
-# A camera's entity, as the orchestrator scopes it for a sensor named `fpv`.
+# A camera's entity, as the loop scopes it for a sensor named `fpv`.
 FPV_ENTITY = "sim/vehicle/sensors/fpv"
 
 
@@ -137,7 +137,7 @@ def test_blueprint_layout_and_eye_tracking():
 
 def test_blueprint_recording_tabs_mirror_history_keys():
     """The debug tab tree derives from the histories' writer paths: group ▸ instance ▸ quantity
-    mirrors the access surface, ``sim.physics["body_frd"]`` → Physics ▸ body_frd ▸ position …, with
+    mirrors the access surface, ``sim["vehicle/body/body_frd"]`` → Physics ▸ body_frd ▸ position …, with
     sensor instance tabs carrying the impl class, and a signal's quantities under its key.
     """
     from nexus_sim._src.logging.rerun_logging import _blueprint

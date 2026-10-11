@@ -1,9 +1,9 @@
-"""Assemble the core Orchestrator around the :class:`TrainedPolicyController`.
+"""Assemble the core Loop around the :class:`TrainedPolicyController`.
 
 This example-owned assembly, moved out of core since PX4 is the one first-class control path, wires
 the same core components as the PX4 assembly: ``NewtonPhysics``, the full articulated Universal Scene
 Description (USD), the single-body ``Rotors`` actuator, the passthrough estimator, and the core
-``Orchestrator``. The controller builds its own observation from the estimate, the single
+``Loop``. The controller builds its own observation from the estimate, the single
 train↔deploy obs source, ``nexus_sim.examples._lib.observation``, and runs its TorchScript
 inference in a host stage; everything else captures, the captured-host-exchange strategy.
 """
@@ -11,12 +11,12 @@ inference in a host stage; everything else captures, the captured-host-exchange 
 from __future__ import annotations
 
 from nexus_sim._src.build.assembly import resolve_device
-from nexus_sim._src.core import Clock, Orchestrator, logger
+from nexus_sim._src.core import Clock, Loop, logger
 from nexus_sim._src.physics import NewtonPhysics
 from nexus_sim._src.vehicle.estimators import GroundTruthEstimator
 
 
-def build_policy_orchestrator(
+def build_policy_loop(
     cfg: dict,
     *,
     policy_path: str,
@@ -34,13 +34,13 @@ def build_policy_orchestrator(
     sink=None,
     vehicle_usd=None,
     renderer_factory=None,
-) -> Orchestrator:
-    """Assemble the core Orchestrator with a trained-policy Controller in place of PX4.
+) -> Loop:
+    """Assemble the core Loop with a trained-policy Controller in place of PX4.
 
     The actuator is the single-body :class:`Rotors` in Collective Thrust and Body Rates (CTBR)
     mode, matching the policy's Isaac-Lab **CTBR** action: collective thrust + body-rate setpoints → mixer
-    → per-rotor motor-speed states. The policy thus flies through ``Orchestrator.run()`` exactly as PX4
-    does: same fixed-order tick, same live newton.State, no orchestrator changes.
+    → per-rotor motor-speed states. The policy thus flies through ``Loop.run()`` exactly as PX4
+    does: same fixed-order tick, same live newton.State, no loop changes.
 
     The standalone applies the wrench **once** per step, with no Isaac-Lab substep dilution, so the
     defaults are the *effective* values the policy trained against: ``thrust_to_weight=1.9``, since
@@ -74,9 +74,7 @@ def build_policy_orchestrator(
     # model so the loop is inertia-correct, exactly as training reads it, in goto_env.__init__.
     base_inertia = np.asarray(physics.model.body_inertia.numpy())[0].reshape(3, 3)
     inertia_diag = (float(base_inertia[0, 0]), float(base_inertia[1, 1]), float(base_inertia[2, 2]))
-    logger.info(
-        f"policy-orchestrator: robot_mass={robot_mass:.4f} kg, inertia_diag={inertia_diag}, goal={tuple(goal_w)}"
-    )
+    logger.info(f"policy-loop: robot_mass={robot_mass:.4f} kg, inertia_diag={inertia_diag}, goal={tuple(goal_w)}")
 
     # The airframe mixer, B⁻¹ + forward B + thrust map, built once from the model rotor geometry + the USD
     # thrust map; split between the controller and the actuator: the controller runs the CTBR mixer, rate loop → B⁻¹, the actuator
@@ -121,7 +119,7 @@ def build_policy_orchestrator(
                 "max_steps": max_steps, "physics_substeps": physics_substeps,
             }},
         )  # fmt: skip
-    return Orchestrator(
+    return Loop(
         clock=Clock(dt, rtf=rtf),
         physics=physics,
         actuator=actuator,

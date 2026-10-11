@@ -142,6 +142,7 @@ nav:
     - Running: guide/running.md
     - Converting scenes: guide/convert-scenes.md
     - Bringing your own assets: guide/your-own-assets.md
+    - Bringing your own component: guide/your-own-component.md
     - Examples:
       - examples/index.md
       - PID waypoint tour: examples/pid.md
@@ -169,7 +170,8 @@ nav:
     - API reference:
       - reference/api/index.md
       - Simulation: reference/api/simulation.md
-      - Core types: reference/api/core.md
+      - Components, registry, and peers: reference/api/components.md
+      - Signal types: reference/api/core.md
       - Configuration: reference/api/configuration.md
       - Estimator: reference/api/estimator.md
       - Guidance: reference/api/guidance.md

@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from nexus_sim._src.config import Catalog, LaunchConfig
+from nexus_sim._src.core.interfaces import Component
 from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
 from tests.usd import sensor_vehicle as sv
 
@@ -149,7 +150,7 @@ def test_scene_threads_uniformly_and_anchors_gps(tmp_path, monkeypatch):
         captured["kw"] = kw
         return "ORCH"
 
-    monkeypatch.setattr(L, "build_orchestrator", fake_build)
+    monkeypatch.setattr(L, "build_loop", fake_build)
     lc = LaunchConfig().set_vehicle("astro").set_scene("geo-scene")
     assert L.build_from_launch(lc, catalog=reg, cache_dir=tmp_path / "cache") == "ORCH"
 
@@ -167,19 +168,19 @@ def test_scene_threads_uniformly_and_anchors_gps(tmp_path, monkeypatch):
 def test_build_from_launch_starts_the_px4_peer_before_the_assembly(tmp_path, monkeypatch, daemon):
     """This is the path *both* runtimes share, so the PX4 lifecycle hangs off it: the catalog's
     airframe reaches the peer, and the peer *starts*, its incremental build first, before the
-    orchestrator exists: the build has to stay outside the sim's 30 s preroll window, see GH #39.
+    loop exists: the build has to stay outside the sim's 30 s preroll window, see GH #39.
     """
     import nexus_sim._src.build.launch as L
 
     order = []
-    monkeypatch.setattr(L, "build_orchestrator", lambda label, cfg, **kw: order.append("orchestrator") or kw)
+    monkeypatch.setattr(L, "build_loop", lambda label, cfg, **kw: order.append("loop") or kw)
 
     reg = _astro_catalog(_usd_ref(tmp_path))
     lc = LaunchConfig().set_vehicle("astro").set_scene("empty")
     kw = L.build_from_launch(lc, catalog=reg, cache_dir=tmp_path / "cache")
 
     started = [r["environment"].get("PX4_SIM_MODEL") for r in daemon if r.get("detach", True)]
-    assert order == ["orchestrator"] and started == ["none_80001"], "the peer starts before the assembly"
+    assert order == ["loop"] and started == ["none_80001"], "the peer starts before the assembly"
     assert [p.airframe for p in kw["peers"]] == ["80001"], "the catalog's airframe reaches the peer"
 
 
@@ -260,8 +261,8 @@ def test_a_vehicle_that_declares_no_controller_fails_the_build(tmp_path, daemon)
     assert ("/vehicle" in str(err.value), daemon) == (True, [])
 
 
-class _StandInController:
-    """A second controller: the loop's controller seam and nothing more."""
+class _StandInController(Component):
+    """A second controller: the controller role and nothing more."""
 
     def __init__(self, **kwargs):
         self.kwargs = kwargs
@@ -283,11 +284,9 @@ def test_a_vehicle_that_declares_two_controllers_fails_the_build(tmp_path, daemo
     stand-in controller schema, when a run builds, then it raises before any peer starts, and the error
     names the vehicle's root prim and both schemas.
     """
-    from nexus_sim._src.core.registry import ComponentRegistry, default_registry
+    from nexus_sim._src.core.registry import Registry
 
-    components = ComponentRegistry(
-        {"NexusPx4API": default_registry().resolve("NexusPx4API"), "StandInAPI": _StandInController}
-    )
+    components = Registry({"NexusPx4API": Registry().resolve("NexusPx4API"), "StandInAPI": _StandInController})
     # The stand-in schema applies to an Xformable prim, so it sits on an Xform of its own.
     stand_in = '    def Xform "StandIn" (\n        prepend apiSchemas = ["StandInAPI"]\n    )\n    {\n    }\n}\n'
     two = PX4_SCOPED.removesuffix("}\n") + stand_in
@@ -353,7 +352,7 @@ def _build_message(tmp_path, monkeypatch, prims: str) -> str:
     """
     import nexus_sim._src.build.launch as L
 
-    monkeypatch.setattr(L, "build_orchestrator", lambda label, cfg, **kw: kw)
+    monkeypatch.setattr(L, "build_loop", lambda label, cfg, **kw: kw)
     try:
         _build(tmp_path, prims)
     except ValueError as exc:
@@ -372,7 +371,7 @@ def test_a_vehicle_that_declares_px4_on_a_scope_flies_px4_and_starts_the_peer(tm
     """
     import nexus_sim._src.build.launch as L
 
-    monkeypatch.setattr(L, "build_orchestrator", lambda label, cfg, **kw: kw)
+    monkeypatch.setattr(L, "build_loop", lambda label, cfg, **kw: kw)
     vehicle = _scoped({scope: '"NexusPx4API", "NexusPx4SitlAPI"'})
 
     kw = _build(tmp_path, vehicle, peers={"px4_sitl": _Px4Peer})

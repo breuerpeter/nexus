@@ -1,5 +1,5 @@
 """``SamplingMPCController``: receding-horizon sampling + gradient diffsim Model Predictive
-Control (MPC) on the Controller seam.
+Control (MPC) as the controller.
 
 A first-class Controller, alongside :class:`~nexus_sim.examples.controllers.pid.PidController`,
 :class:`~nexus_sim._src.vehicle.controllers.px4.Px4MavlinkController`, and the trained-policy controller. Each
@@ -27,9 +27,9 @@ import warp as wp
 import warp.optim
 from newton.geometry import sdf_capsule  # warp-callable Signed Distance Field (SDF) for the collision-cost kernel
 
+from nexus_sim._src.core.interfaces import Component, Stage
 from nexus_sim._src.core.schema import PoseTwist
 from nexus_sim._src.core.signals import Signal
-from nexus_sim._src.core.stages import peer_stages
 from nexus_sim.examples._lib import build_rotor_mixer_from_layout, rigid_body_wrench_world
 
 GRAVITY = 9.81
@@ -200,7 +200,7 @@ def pick_best(rollouts: wp.array3d(dtype=float), best_id: int, nominal: wp.array
     nominal[0, pt, c] = rollouts[best_id, pt, c]
 
 
-class SamplingMPCController:
+class SamplingMPCController(Component):
     """Receding-horizon sampling MPC. Each tick: sample ``num_rollouts`` noisy plans around the nominal,
     refine them all in parallel by back-propagating an obstacle-aware cost through a batched
     differentiable rollout, keep the lowest-cost one, apply its first control. Mirrors NVIDIA's
@@ -258,6 +258,9 @@ class SamplingMPCController:
         # writes it in place without invalidating the captured CUDA graph, because the rollout reads its
         # current contents. The guidance owns mission sequencing, advance on arrival, uniform with policy/pid.
         self.setpoint = Signal("setpoint", wp.vec3, shape=(1,), default=[goal_w])
+        # The controls this controller writes: one command per rotor.
+        self.controls = Signal("controls", wp.float32, shape=(1, self.n_rotors))
+        self._cmd = np.zeros((1, self.n_rotors), dtype=np.float32)
         # The vehicle's estimate, the base body's pose and twist an estimator writes: each plan starts there.
         self.estimate = Signal("estimate", PoseTwist, shape=(1,))
 
@@ -307,7 +310,7 @@ class SamplingMPCController:
         self._graph = None
 
         self._k = 0
-        self._logger = None  # the orchestrator hands over the Logger, None when off; gates the horizon viz
+        self._logger = None  # the loop hands over the Logger, None when off; gates the horizon viz
 
     def connect(self) -> None:
         pass
@@ -316,12 +319,19 @@ class SamplingMPCController:
         """The ``exchange`` host stage: the per-tick solve runs on the host between replays,
         from the estimate and toward the setpoint the exchange reads.
         """
-        return peer_stages(self, reads=(self.setpoint, self.estimate))
+        return [
+            Stage("exchange", "host", self._exchange, reads=(self.setpoint, self.estimate), writes=(self.controls,))
+        ]
+
+    def _exchange(self, tick) -> bool:
+        self._cmd[0, :] = np.asarray(self.exchange(tick.t, tick.timeout).command, dtype=np.float32).reshape(-1)
+        self.controls.write(self._cmd)
+        return True
 
     name = "sampling_mpc"  # the instance name: its rows land at sim/vehicle/controllers/sampling_mpc
 
     def set_logger(self, logger) -> None:
-        """The orchestrator hands over the Logger scoped to this controller, ``None`` when off: the
+        """The loop hands over the Logger scoped to this controller, ``None`` when off: the
         gate for the horizon viz.
         """
         self._logger = logger
@@ -438,14 +448,14 @@ class SamplingMPCController:
         )
         # Component-owned horizon viz, event-driven, per replan: emit the lowest-cost rollout's predicted
         # path to its row ``horizon``. Gated on self._logger so the code skips the horizon+1 GPU→CPU
-        # reads below entirely when not recording; they're pure viz cost. The orchestrator set the timeline
+        # reads below entirely when not recording; they're pure viz cost. The loop set the timeline
         # at tick start, so scrubbing shows the plan logged most recently before the cursor, the active one.
         if self._logger is not None:
             pred = np.array([self.S[h].body_q.numpy()[best, :3] for h in range(self.horizon + 1)], dtype=np.float32)
             self._logger.log_strip("horizon", pred, color=(255, 140, 0))
 
     def exchange(self, t, timeout=None):
-        from nexus_sim._src.core import Controls
+        from nexus_sim.examples._lib.mixer import Controls
 
         if not hasattr(self, "_step"):
             self._step = 0

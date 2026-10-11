@@ -18,10 +18,10 @@ import warp as wp
 
 from nexus_sim._src.config import LaunchConfig
 from nexus_sim._src.config.catalog import load_catalog
-from nexus_sim._src.core.schema import BaroSample, Controls, GpsSample, ImuSample, MagSample
+from nexus_sim._src.core.schema import BaroSample, GpsSample, ImuSample, MagSample
 from nexus_sim._src.core.signals import Signal
-from nexus_sim._src.core.stages import peer_stages
 from tests.usd import sensor_vehicle as sv
+from tests.usd.sensor_vehicle import HostController
 
 ZURICH = (47.3769, 8.5417, 408.0)
 WOODINVILLE = (47.747944, -122.163917)
@@ -40,28 +40,21 @@ SENSORS = (
 )
 
 
-class _Controller:
+class _Controller(HostController):
     """Answers the preroll at once and keeps the last sample of each sensor its exchange read, by signal."""
 
     def __init__(self):
+        super().__init__()
         self.signals = [
             Signal(name, sample, shape=(1,))
             for name, sample in (("imu", ImuSample), ("mag", MagSample), ("baro", BaroSample), ("gps", GpsSample))
         ]
+        self.reads = tuple(self.signals)
         self.samples = {}
-
-    def connect(self):
-        pass
-
-    def stages(self):
-        return peer_stages(self, reads=tuple(self.signals))
 
     def exchange(self, t, timeout=None):
         self.samples = {signal.name: signal.read()[0] for signal in self.signals}
-        return Controls(command=np.zeros(4))
-
-    def close(self):
-        pass
+        return np.zeros(4)
 
 
 def _catalog(tmp_path):
@@ -84,14 +77,14 @@ def _settled(launch, catalog):
     The build's ``force_cpu`` sets the Warp device, and the scope puts it back; a module fixture runs
     before the function-scoped ``warp_cpu`` fixture would.
     """
-    from nexus_sim._src.build.assembly import build_orchestrator
+    from nexus_sim._src.build.assembly import build_loop
     from nexus_sim._src.build.launch import resolve_scenario
 
     with wp.ScopedDevice("cpu"):
         builder, resolved, cfg = resolve_scenario(launch, catalog=catalog)
         cfg["physics"]["force_cpu"] = True
         controller = _Controller()
-        orch = build_orchestrator(resolved.tested_config.vehicle, cfg, builder, controller=controller, max_steps=0)
+        orch = build_loop(resolved.tested_config.vehicle, cfg, builder, controller=controller, max_steps=0)
         orch.run()
     return orch, controller.samples
 

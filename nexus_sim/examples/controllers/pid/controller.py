@@ -6,7 +6,7 @@ Two roles, one control law, ``law.pid_action_np`` and ``law.pid_law``:
 1. **Determinism authority.** A deterministic controller over the bit-exact
    Newton CPU physics is what closes the bit-reproducibility gap left open with real PX4,
    whose multi-threaded work-queue interleaving isn't the same bit for bit. Flown through the unchanged
-   :class:`~nexus_sim._src.core.orchestrator.Orchestrator` it gives a CI determinism gate that does
+   :class:`~nexus_sim._src.core.loop.Loop` it gives a CI determinism gate that does
    not wait on PX4.
 
 2. **The design-optimization controller.** Its gains are the differentiable design parameters the
@@ -18,7 +18,7 @@ control law emits a
 direct-moment action ``[thrust, m_x, m_y, m_z]``; the controller's **moment mixer**, ``B⁻¹`` allocation
 with no rate loop, :class:`~nexus_sim.examples._lib.mixer.MomentMixer`, then turns it into the ``nr``
 per-rotor commands the single-body :class:`~nexus_sim.examples._lib.rotors.Rotors`
-motor model consumes. So PID, policy, and PX4 all fly through the same orchestrator tick, all emitting
+motor model consumes. So PID, policy, and PX4 all fly through the same loop tick, all emitting
 ``Controls.command`` = per-rotor commands; only where the control law runs differs.
 
 The mixer is optional: the differentiable design-optimization rollout configures the controller with no
@@ -31,15 +31,15 @@ from __future__ import annotations
 import numpy as np
 import warp as wp
 
-from nexus_sim._src.core.interfaces import Stage
-from nexus_sim._src.core.schema import Controls
+from nexus_sim._src.core.interfaces import Component, Stage
 from nexus_sim._src.core.signals import Signal
+from nexus_sim.examples._lib.mixer import Controls
 from nexus_sim.examples._lib.observation import OBS_DIM
 
 from .law import DEFAULT_GAINS, hover_action, pid_action_np
 
 
-class PidController:
+class PidController(Component):
     """Deterministic PID controller, built-in.
 
     Args:

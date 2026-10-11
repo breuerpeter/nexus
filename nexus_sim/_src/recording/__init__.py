@@ -9,15 +9,14 @@ CI gate, reads a history on demand, and the Logger writes each drained block int
 component records itself: the Recorder taps the plant's state and each signal's buffer.
 
 A history's key is its writer's path below the process root, the path its rows take in a recording, then
-the signal's name for a signal, and the access surface mirrors the keys. ``Sim.physics`` is a name-keyed
-view over the per-body histories, ``vehicle/body/<label>``, and the per-joint histories,
-``vehicle/joints/<label>``, that the Recorder registers from the plant: ``sim.physics["body_frd"]`` →
-:class:`BodyState`, ``sim.physics["rotor_1_joint"]`` → :class:`JointState`. ``Sim.sensors`` is the same
-over the sensors' histories, ``vehicle/sensors/<name>/<signal>``, by instance name: a row reads as a record
-of ``t`` then the quantities the signal's type declares, and the writing class rides along as ``source``.
+the signal's name for a signal, and a script reads a history by that key, indexing the run: the per-body
+histories, ``sim["vehicle/body/<label>"]`` → :class:`BodyState`, the per-joint histories,
+``sim["vehicle/joints/<label>"]`` → :class:`JointState`, which the Recorder registers from the plant, and
+the signals', ``sim["vehicle/sensors/<name>/<signal>"]``, whose row reads as a record of ``t`` then the
+quantities the signal's type declares, with the writing class along as ``source``.
 """
 
-from .recorder import Histories, History, Recorder
+from .recorder import History, Recorder
 from .state import BodyState, JointState
 
-__all__ = ["BodyState", "Histories", "History", "JointState", "Recorder"]
+__all__ = ["BodyState", "History", "JointState", "Recorder"]

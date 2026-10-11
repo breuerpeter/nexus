@@ -8,8 +8,8 @@ loads the exported ``policy.pt`` and flies it with the single-body :class:`Rotor
 same per-rotor model the policy trained against, closing the loop: train on Isaac-Lab-on-Newton →
 deploy on the core.
 
-**The shape.** A zero-arg, self-contained script: it assembles its own orchestrator, the
-example-owned :mod:`assembly`, and hosts it via ``Sim.from_orchestrator`` + ``sim.guidance``. The
+**The shape.** A zero-arg, self-contained script: it assembles its own loop, the
+example-owned :mod:`assembly`, and hosts it via ``Sim._from_loop`` + ``sim.guidance``. The
 controller builds its observation from the estimate the passthrough estimator writes, the single
 train↔deploy obs source, and runs its TorchScript inference in a host stage; everything else runs CUDA-graph
 captured. A geofence guidance sequences the waypoints, advancing on arrival, since the policy is
@@ -38,7 +38,7 @@ from nexus_sim._src.build.launch import resolve_scenario
 from nexus_sim._src.config import LaunchConfig
 from nexus_sim._src.rendering import rtx_renderer
 from nexus_sim.examples._lib import dump_run
-from nexus_sim.examples.controllers.policy.assembly import build_policy_orchestrator
+from nexus_sim.examples.controllers.policy.assembly import build_policy_loop
 from nexus_sim.examples.controllers.policy.goto.geofence import GeofenceGuidance
 
 # Everything this demo is, in one place: zero required args, the configuration IS the example;
@@ -91,7 +91,7 @@ def main() -> None:
     launch = LaunchConfig().set_vehicle(VEHICLE).set_scene(SCENE)
     launch.runtime.device = "cuda"  # prefer CUDA; resolve_device falls back to CPU when there is none
     vehicle_usd, _resolved, cfg = resolve_scenario(launch)
-    orch = build_policy_orchestrator(
+    orch = build_policy_loop(
         cfg,
         policy_path=policy,
         vehicle_usd=vehicle_usd,
@@ -100,13 +100,13 @@ def main() -> None:
         renderer_factory=rtx_renderer(vehicle_usd, cfg),  # the Kit peer, when the vehicle authors RTX sensors
     )
     guidance = GeofenceGuidance(bounds=FENCE)
-    with nx.Sim.from_orchestrator(orch, guidance=guidance) as sim:
-        sim.guidance.set_mission(WAYPOINTS)  # the guidance sequences these, advances on arrival, ends the run
+    with nx.Sim._from_loop(orch, guidance=guidance) as sim:
+        guidance.set_mission(WAYPOINTS)  # the guidance sequences these, advances on arrival, ends the run
         t0 = time.time()
         sim.run()  # blocks until the mission completes, or the safety cap
         wall = time.time() - t0
 
-    traj = sim.physics[sim.base_body].history()
+    traj = sim[f"vehicle/body/{sim.base_body}"].history()
     final_pos = np.asarray(traj[-1].position) if traj else np.full(3, np.nan)
     reached = guidance.reached
     # Measure to the goal the policy is actively tracking, clamped to the last waypoint on completion,

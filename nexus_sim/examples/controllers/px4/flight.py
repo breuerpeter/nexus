@@ -68,7 +68,7 @@ def main() -> int:
         "px4_warnings": 0,  # warning- and error-level lines from PX4 about the sim; must be 0, gated
         "east_leg_reached": False,  # both legs of the east-west out-and-back completed; gated
         "east_err_m": 0.0,  # worst world-frame miss at a leg endpoint [m]: the #61 gate
-        "rtf": 0.0,  # steady with-PX4 lockstep RTF, compile/warmup-excluded, from the orchestrator
+        "rtf": 0.0,  # steady with-PX4 lockstep RTF, compile/warmup-excluded, from the loop
     }
     flight_ok = False
     warn_lines: list[str] = []
@@ -90,7 +90,7 @@ def main() -> int:
             #    out. Entering it returns at once: PX4 runs on the sim's clock, so the wait for its
             #    heartbeat steps the sim.
             t_gcs = time.time()
-            spawn_alt = sim.physics[sim.base_body].latest().altitude_m
+            spawn_alt = sim[f"vehicle/body/{sim.base_body}"].latest().altitude_m
             with OffboardClient(f"udpin:0.0.0.0:{link['port']}", system_id=link["system_id"]) as op:
                 sim.wait_until(lambda: op.connected, sim_timeout=timeout)
                 op.takeoff(TAKEOFF_ALT)  # returns at once; the client's pump arms once armable
@@ -100,7 +100,7 @@ def main() -> int:
                 # The yaw phase: hold the arrival position and altitude, sweeping the heading. The
                 # first goto anchors the local frame here, so (0, 0, alt) IS the hold position, and
                 # the world position right now IS that anchor, which every goto below is relative to.
-                anchor_x, anchor_y, _ = sim.physics[sim.base_body].latest().position
+                anchor_x, anchor_y, _ = sim[f"vehicle/body/{sim.base_body}"].latest().position
                 for heading in YAW_SWEEP:
                     # YAW_SWEEP is compass, PX4/NED, clockwise from north; goto takes world yaw, which
                     # runs the other way, so negate here and PX4 receives exactly the old headings.
@@ -122,7 +122,7 @@ def main() -> int:
                         # In the finally, so a leg that times out still records how far it got. Under
                         # a mirrored map that miss IS the diagnostic, and reporting 0.0 there would
                         # read as a clean flight on the one metric whose job is to catch it.
-                        x, y, _ = sim.physics[sim.base_body].latest().position
+                        x, y, _ = sim[f"vehicle/body/{sim.base_body}"].latest().position
                         err = math.hypot(x - (anchor_x + leg[0]), y - (anchor_y + leg[1]))
                         stats["east_err_m"] = round(max(stats["east_err_m"], err), 2)
                         nx.logger.info(f"[sitl] leg {leg}: world miss {err:.2f} m")
@@ -146,7 +146,7 @@ def main() -> int:
             # flight. Measured here rather than on the happy path so a flight that timed out still
             # reports how far it actually got.
             if spawn_alt is not None:
-                alts = np.array([s.altitude_m for s in sim.physics[sim.base_body].history()])
+                alts = np.array([s.altitude_m for s in sim[f"vehicle/body/{sim.base_body}"].history()])
                 climb = float(alts.max() - spawn_alt) if alts.size else 0.0
                 stats.update(
                     takeoff_confirmed=flight_ok,

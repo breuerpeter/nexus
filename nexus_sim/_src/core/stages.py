@@ -6,22 +6,17 @@ command elements -> the force elements -> ``step`` per physics substep, record. 
 its host stages and rotates it to
 start after the last cut, so the ring's tail folds into the first run and each maximal run of
 device stages becomes one CUDA graph; with no host stage the whole ring is one segment in canonical
-order. :func:`peer_stages` is the one shape for a controller that blocks on a peer or solves on the
-host: an ``exchange`` host stage.
+order. A controller that blocks on a peer or solves on the host states its own host stage, which writes
+its controls signal, of the width its actuators take.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-import numpy as np
-import warp as wp
-
 from .interfaces import Stage
-from .signals import Signal
 
 KINDS = ("device", "host")
-CHANNELS = 16  # MAVLink's HIL_ACTUATOR_CONTROLS carries 16 channels, the widest command any controller sends
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,7 +44,7 @@ def stages_of(component, role: str) -> list[Bound]:
             kind.
     """
     name = type(component).__name__
-    stages = component.stages() if hasattr(component, "stages") else []
+    stages = component.stages()
     if not stages:
         raise ValueError(f"{name} states no stages: every {role} lists its per-tick work as Stage objects")
     bound = []
@@ -78,7 +73,7 @@ def build_ring(
     -> ``step`` unrolled ``substeps`` times, then ``record``. The estimator sits after the sensors, so it
     reads their values of that tick, and before the guidance and the controller, so they read its estimate
     of that tick. The guidance sits before the controller, so the setpoint it writes is the one the
-    controller reads on that tick. The old actuator seam's one stage, the examples' single-body ``Rotors``,
+    controller reads on that tick. The old actuator stage, the examples' single-body ``Rotors``,
     runs with the force stages, since it writes the body forces too.
 
     Raises:
@@ -187,40 +182,12 @@ def plan_line(segments: list[Segment], captured: bool) -> str:
     return "stage plan: " + " ".join(parts)
 
 
-def peer_stages(controller, *, reads: tuple = ()) -> list[Stage]:
-    """The stages of a controller that blocks on a peer or solves on the host: ``exchange`` runs the
-    controller's ``exchange(t, timeout)`` and writes its commands to the controls, a ``(1, 16)`` device
-    signal, in place between graph replays. The builder allocates that buffer before the capture, so the
-    command elements' stages capture over it before the peer connects. ``None`` from the exchange reads as
-    the peer not answering, which the stage reports by returning ``False``. ``reads`` are the signals the
-    controller's ``exchange`` reads, such as its setpoint or each sensor's sample, which the stage declares.
-    """
-    controls = Signal("controls", wp.float32, shape=(1, CHANNELS))
-    cmd = np.zeros((1, CHANNELS), dtype=np.float32)
-
-    def exchange(tick):
-        out = controller.exchange(tick.t, tick.timeout)
-        if out is None:
-            return False
-        command = np.asarray(out.command, dtype=np.float32).reshape(-1)
-        if command.shape[0] > CHANNELS:
-            raise ValueError(
-                f"{type(controller).__name__} sent {command.shape[0]} commands, over the {CHANNELS} channels"
-            )
-        cmd[0, : command.shape[0]] = command
-        controls.write(cmd)
-        return True
-
-    return [Stage("exchange", "host", exchange, reads=tuple(reads), writes=(controls,))]
-
-
 __all__ = [
     "Bound",
     "Segment",
     "build_ring",
     "opening",
     "partition",
-    "peer_stages",
     "plan_line",
     "seed_stages",
     "warm_stages",

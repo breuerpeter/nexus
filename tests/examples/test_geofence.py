@@ -8,7 +8,7 @@ import pytest
 
 pytest.importorskip("warp")
 
-from nexus_sim._src.core.interfaces import Stage, Tick
+from nexus_sim._src.core.interfaces import Component, Stage, Tick
 from nexus_sim._src.core.schema import PoseTwist, SimTime
 from nexus_sim._src.core.signals import Signal, wire
 from nexus_sim._src.core.stages import Bound
@@ -21,7 +21,7 @@ MISSION = [(1.0, 0.0, 2.0), (2.0, 0.0, 2.0)]
 RED = (255, 0, 0)
 
 
-class _Estimator:
+class _Estimator(Component):
     """Stands in for the estimator: it writes the estimate the guidance reads, which each tick sets."""
 
     def __init__(self):

@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from nexus_sim._src.build.components import resolve_components
-from nexus_sim._src.core.registry import ComponentRegistry
+from nexus_sim._src.core.registry import Registry
 
 FIXTURE = Path(__file__).with_name("conformance.usda")
 PLUGIN = Path(__file__).resolve().parents[2] / "nexus_sim" / "_src" / "usd"
@@ -67,7 +67,7 @@ def test_two_versions_of_one_family_build_side_by_side_each_its_own_class(tmp_pa
         '    def Xform "a" (prepend apiSchemas = ["StandInGearAPI"])\n    {\n        float nexus:ratio = 2\n    }\n'
         '    def Xform "b" (prepend apiSchemas = ["StandInGearAPI_1"])\n    {\n        float nexus:gearRatio = 3\n    }',
     )
-    specs = resolve_components(vehicle, ComponentRegistry({"StandInGearAPI": First, "StandInGearAPI_1": Second}))
+    specs = resolve_components(vehicle, Registry({"StandInGearAPI": First, "StandInGearAPI_1": Second}))
     assert [(spec.prim, spec.cls, spec.kwargs) for spec in specs] == [
         ("/Vehicle/a", First, {"ratio": 2.0}),
         ("/Vehicle/b", Second, {"gear_ratio": 3.0}),
@@ -83,7 +83,7 @@ def test_an_undefined_version_of_a_defined_family_fails_the_build(tmp_path):
     """
     vehicle = _fixture_with(tmp_path, '"NexusPx4SitlAPI"', '"NexusPx4SitlAPI_9"')
     with pytest.raises(ValueError) as e:
-        resolve_components(vehicle, ComponentRegistry({"NexusImuAPI": First, "NexusPx4API": First}))
+        resolve_components(vehicle, Registry({"NexusImuAPI": First, "NexusPx4API": First}))
     assert all(text in str(e.value) for text in ("/Vehicle", "NexusPx4SitlAPI_9", version("nexus-sim")))
 
 
@@ -95,7 +95,7 @@ def test_an_undefined_version_with_its_attributes_authored_fails_naming_the_vers
     """
     vehicle = _fixture_with(tmp_path, '"NexusImuAPI"', '"NexusImuAPI_9"')
     with pytest.raises(ValueError) as e:
-        resolve_components(vehicle, ComponentRegistry({"NexusPx4API": First}))
+        resolve_components(vehicle, Registry({"NexusPx4API": First}))
     assert all(text in str(e.value) for text in (IMU, "NexusImuAPI_9", version("nexus-sim")))
 
 
@@ -107,7 +107,7 @@ def test_a_version_of_a_fully_retired_family_fails_the_build(tmp_path):
     """
     vehicle = _vehicle(tmp_path, '    def Xform "old" (prepend apiSchemas = ["StandInOldAPI_1"])\n    {\n    }')
     with pytest.raises(ValueError) as e:
-        resolve_components(vehicle, ComponentRegistry({}))
+        resolve_components(vehicle, Registry({}))
     assert all(text in str(e.value) for text in ("/Vehicle/old", "StandInOldAPI_1", version("nexus-sim")))
 
 
@@ -118,7 +118,7 @@ def test_a_schema_of_a_family_no_plugin_ever_defined_is_skipped(tmp_path):
     the build returns no component for it and raises nothing.
     """
     vehicle = _vehicle(tmp_path, '    def Xform "acme" (prepend apiSchemas = ["AcmeFooAPI"])\n    {\n    }')
-    assert resolve_components(vehicle, ComponentRegistry({})) == []
+    assert resolve_components(vehicle, Registry({})) == []
 
 
 @pytest.mark.parametrize(

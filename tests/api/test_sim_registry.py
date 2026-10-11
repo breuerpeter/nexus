@@ -10,7 +10,7 @@ pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
 import nexus_sim as nx
-from nexus_sim._src.core.interfaces import Stage
+from nexus_sim._src.core.interfaces import Component, Stage
 from nexus_sim._src.vehicle.forces.propellers import Propeller
 from nexus_sim._src.vehicle.sensors import ImuSensor
 from tests.usd import sensor_vehicle as sv
@@ -18,7 +18,7 @@ from tests.usd import sensor_vehicle as sv
 pytestmark = pytest.mark.usefixtures("warp_cpu")
 
 
-class _StandInImu:
+class _StandInImu(Component):
     """A stand-in for the Inertial Measurement Unit (IMU): its one host stage notes that it ran."""
 
     ran = False

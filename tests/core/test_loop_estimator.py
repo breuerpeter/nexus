@@ -10,8 +10,8 @@ pytest.importorskip("warp")
 
 import warp as wp
 
-from nexus_sim._src.core.interfaces import Stage
-from nexus_sim._src.core.orchestrator import Orchestrator
+from nexus_sim._src.core.interfaces import Component, Stage
+from nexus_sim._src.core.loop import Loop
 from nexus_sim._src.core.schema import PoseTwist, SimTime
 from nexus_sim._src.core.signals import Signal
 
@@ -79,7 +79,7 @@ class _Physics:
         return [Stage("clear", "device", lambda tick: None), Stage("step", "device", lambda tick: None)]
 
 
-class _Counter:
+class _Counter(Component):
     """A sensor whose device stage counts the run's ticks and writes the count to the signal `count`. Its
     stage stays out of the warm pass, so the count is the tick's.
     """
@@ -95,7 +95,7 @@ class _Counter:
         wp.launch(_count, dim=1, inputs=[self._n], outputs=[self.count.buffer])
 
 
-class _CountingEstimator:
+class _CountingEstimator(Component):
     """An estimator whose device stage writes the count it reads into the estimate's first coordinate."""
 
     def __init__(self):
@@ -109,7 +109,7 @@ class _CountingEstimator:
         wp.launch(_estimate, dim=1, inputs=[self.count.buffer], outputs=[self.estimate.buffer])
 
 
-class _EstimateReader:
+class _EstimateReader(Component):
     """A controller whose device stage copies the estimate's first coordinate into a buffer of its own, `seen`."""
 
     def __init__(self):
@@ -141,7 +141,7 @@ def test_the_controller_reads_an_estimate_made_from_that_ticks_sensor_values(dev
     """
     with wp.ScopedDevice(device):
         controller = _EstimateReader()
-        orch = Orchestrator(
+        orch = Loop(
             clock=_Clock(),
             physics=_Physics(),
             sensors=[_Counter()],
@@ -156,7 +156,7 @@ def test_the_controller_reads_an_estimate_made_from_that_ticks_sensor_values(dev
     assert seen == [1.0, 2.0, 3.0]
 
 
-class _EstimateSensor:
+class _EstimateSensor(Component):
     """A sensor whose device stage writes the estimate, which is the estimator's to write. It counts its runs."""
 
     def __init__(self):
@@ -180,7 +180,7 @@ def test_a_sensor_that_writes_the_estimate_does_not_stand_in_for_the_estimator()
     names the controller and the estimator.
     """
     sensor = _EstimateSensor()
-    orch = Orchestrator(clock=_Clock(), physics=_Physics(), sensors=[sensor], controller=_EstimateReader())
+    orch = Loop(clock=_Clock(), physics=_Physics(), sensors=[sensor], controller=_EstimateReader())
     with pytest.raises(ValueError) as e:
         orch.step()
     orch.close()

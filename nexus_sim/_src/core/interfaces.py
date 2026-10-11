@@ -1,12 +1,11 @@
-"""Narrow, typed component Protocols and the stage contract.
+"""The component contract, the stage contract, and the contracts of the fixed parts.
 
-Side-effect-light contracts so each component is independently testable and
-fault-wrappable. Every loop component states its per-tick work as a list of
-:class:`Stage`, and the loop runs each stage over the shared :class:`Tick`. The per-body
-``Wrench`` takes the form of the shared ``state.body_f`` device buffer the force elements add to in
-place, the shared-buffer contract, so a force element's stage and ``Physics.step`` don't pass a
-Wrench value type: Physics reads ``state.body_f``. A command element and a force element are each one
-shape, a ``stages()`` list, so neither has a Protocol of its own here.
+One contract, :class:`Component`, serves every role: a sensor, an estimator, a guidance, a controller, a
+command element or a force element. A component states its per-tick work as a list of :class:`Stage`, each
+declaring the signals it reads and writes, and the loop runs each stage over the shared :class:`Tick`. The
+per-body wrench takes the form of the shared ``state.body_f`` device buffer the force elements add to in
+place, so a force element's stage and ``Physics.step`` pass no wrench value: physics reads ``state.body_f``.
+The fixed parts, the clock and the physics, keep contracts of their own, which no project implements.
 """
 
 from __future__ import annotations
@@ -98,6 +97,59 @@ class SensorRun:
     link: Any = None
 
 
+class Component:
+    """The contract every component fills, whatever its role.
+
+    A component states its per-tick work in :meth:`stages`, each stage declaring the signals it reads and
+    writes, which the loop wires before any stage runs. The members below are the whole of what the loop,
+    the builder and ``Sim`` read from a component, so they find none by name: a class overrides the ones it
+    has and inherits the rest. The role a component fills, which the schema that declares it states, fixes
+    where its stages run in the tick and who declares it; the contract is the same for every role.
+
+    Attributes:
+        name: The instance name, which ends the component's path, ``vehicle/sensors/<name>``, and keys its
+            recorded histories. The builder sets it for a declared component from its prim; ``None`` reads
+            as the class's name.
+        requires: The names of the peers the class needs, such as ``("kit",)`` for an RTX sensor: the builder
+            starts each once, whatever the number of components that require it, and hands the class its link.
+        attached: Whether the component's peer has dialed in. ``True`` for a component with no peer, the
+            default. A component that reads ``False`` before it connects waits on a peer: the loop connects
+            it after the graph capture, so a peer that dials in early waits on no kernel load, and holds the
+            sim clock until it reads ``True``.
+    """
+
+    name: str | None = None
+    requires: tuple[str, ...] = ()
+    attached: bool = True
+
+    def stages(self) -> list[Stage]:
+        """The component's per-tick work, in ring order: one or more stages, each declaring what it reads and
+        writes. A device stage joins the captured graph; a host stage runs between replays. None by default,
+        which fails the build: every component states at least one.
+        """
+        return []
+
+    def connect(self) -> None:
+        """Open what the component needs for the run: bind a port, load a model. Nothing by default. The loop
+        connects a component before the warm pass, or after the graph capture when it waits on a peer.
+        """
+
+    def close(self) -> None:
+        """Release what :meth:`connect` opened, at the run's end. Nothing by default. Idempotent."""
+
+    def set_logger(self, logger) -> None:
+        """Take the Logger scoped to the component's path, or ``None`` when the run records nothing. A component
+        that logs a value with no fixed width live, a camera's frame or a guidance's markers, keeps it and logs
+        only its own row's name; every fixed-width signal the Recorder keeps itself. Nothing by default.
+        """
+
+    def artifacts(self) -> dict:
+        """The files the component leaves for a reader after the run, by name, which ``Sim.artifacts`` collects
+        beside the recording: PX4's controller names its ULog. Empty by default.
+        """
+        return {}
+
+
 @runtime_checkable
 class Clock(Protocol):
     dt: float
@@ -115,52 +167,3 @@ class Physics(Protocol):
         """The ``clear`` and ``step`` stages; the loop runs ``clear``, the command elements, the force
         elements and ``step`` once per physics substep, and ``step`` steps Newton's actuators before the solver.
         """
-
-
-@runtime_checkable
-class Actuator(Protocol):
-    """The old actuator seam, kept for the examples' single-body ``Rotors``: the controller's command
-    buffer in, forces out, in one stage the loop runs with the force stages. A run on the articulated
-    plant states a command element and a force element instead, with Newton's actuators between them.
-    """
-
-    def forces_wp(self, cmd: Any, state: newton.State) -> None:
-        """Write the per-body Wrench into the shared ``state.body_f`` buffer from ``cmd``, the
-        controller's ``(1, n)`` device buffer of normalized commands.
-        """
-
-    def stages(self) -> list[Stage]:
-        """One device stage over ``forces_wp``."""
-
-
-class Sensor(Protocol):
-    def stages(self) -> list[Stage]:
-        """The sensor's per-tick work: a device stage that samples the live ``newton.State``, or a host stage
-        for a sensor whose work leaves the process, an RTX camera's frame exchange with the Kit peer. The
-        stage writes the sensor's output, a signal of its own type, which an estimator or a controller reads.
-        """
-
-
-class Controller(Protocol):
-    def connect(self) -> None: ...
-    def close(self) -> None: ...
-
-    def stages(self) -> list[Stage]:
-        """The controller's per-tick work. A controller that blocks on a peer, PX4, or solves on the
-        host, a Model Predictive Control (MPC) solver, states an ``exchange`` host stage,
-        :func:`nexus_sim._src.core.stages.peer_stages`, which declares the signals it reads, such as each
-        sensor's sample; a device-native law, the Proportional Integral Derivative (PID) example, states device
-        stages. A stage of it writes the controls, the signal the command elements read.
-
-        A controller with a peer, one that exposes ``attached``, connects after the loop's warm pass
-        and graph capture, so a peer that dials in early waits on no kernel load. Its device stages
-        run and capture before ``connect()``, over buffers that exist from construction.
-
-        A controller that flies a guidance's mission declares the setpoint it reads on a stage, as a
-        signal of one setpoint type. PX4's controller declares none: its mission lives in its peer, and
-        a script commands it over its offboard link, with a client it opens itself.
-        """
-
-
-class Renderer(Protocol):
-    def render(self, state: newton.State, t: SimTime) -> None: ...

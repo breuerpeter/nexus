@@ -7,8 +7,8 @@ the bit-exact Newton CPU physics, the bit-reproducible CI gate real PX4 can't gi
 **design-optimization controller**: its gains are the differentiable parameters
 ``design_opt/gain_tuning.py`` tunes, and this flight deploys that example's proven configuration,
 the collapsed single-body plant + stable gains. This flight is the smallest end-to-end demo of
-an example's shape: assemble the orchestrator, the example-owned :mod:`assembly`, host it via
-``Sim.from_orchestrator``, fly its mission through ``sim.guidance``.
+an example's shape: assemble the loop, the example-owned :mod:`assembly`, host it via
+``Sim._from_loop``, fly its mission through ``sim.guidance``.
 
 **The shape.** A zero-arg, self-contained script. On CUDA the whole tick captures into one CUDA
 graph, controller + actuator + physics + sensors; on CPU it runs
@@ -27,7 +27,7 @@ from nexus_sim._src.config import LaunchConfig
 from nexus_sim._src.guidance import MissionGuidance
 from nexus_sim._src.rendering import rtx_renderer
 from nexus_sim.examples._lib import dump_run
-from nexus_sim.examples.controllers.pid.assembly import build_pid_orchestrator
+from nexus_sim.examples.controllers.pid.assembly import build_pid_loop
 
 # Everything this demo is, in one place: zero args by design, the configuration IS the example.
 VEHICLE = "astro_max_base"
@@ -49,7 +49,7 @@ def main() -> None:
     launch.runtime.device = "cuda"  # prefer CUDA; resolve_device falls back to CPU when there is none
     launch.runtime.solver = "semi_implicit"  # the collapsed single-body plant this PID's tuning targets
     vehicle_usd, _resolved, cfg = resolve_scenario(launch)
-    orch = build_pid_orchestrator(
+    orch = build_pid_loop(
         cfg,
         vehicle_usd=vehicle_usd,
         goal_w=WAYPOINTS[0],
@@ -60,11 +60,11 @@ def main() -> None:
         renderer_factory=rtx_renderer(vehicle_usd, cfg),  # the Kit peer, when the vehicle authors RTX sensors
     )
     guidance = MissionGuidance(reached_m=0.3, final_hold_s=2.0)
-    with nx.Sim.from_orchestrator(orch, guidance=guidance) as sim:
-        sim.guidance.set_mission(WAYPOINTS)  # the guidance sequences these, advances on arrival, ends the run
+    with nx.Sim._from_loop(orch, guidance=guidance) as sim:
+        guidance.set_mission(WAYPOINTS)  # the guidance sequences these, advances on arrival, ends the run
         sim.run()
 
-    states = sim.physics[sim.base_body].history()
+    states = sim[f"vehicle/body/{sim.base_body}"].history()
     q = np.array([s.position for s in states])
     reached = guidance.reached
     final = float(np.linalg.norm(q[-1] - np.array(WAYPOINTS[-1])))

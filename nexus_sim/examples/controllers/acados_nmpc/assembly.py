@@ -1,4 +1,4 @@
-"""Assemble the core Orchestrator around the :class:`AcadosNMPCController`, the acados
+"""Assemble the core Loop around the :class:`AcadosNMPCController`, the acados
 Nonlinear Model Predictive Control (NMPC).
 
 This example-owned assembly, moved out of core because PX4 is the one first-class control path,
@@ -13,12 +13,12 @@ the captured-host-exchange strategy. acados needs provisioning first: ``python -
 from __future__ import annotations
 
 from nexus_sim._src.build.assembly import resolve_device, rotor_chain
-from nexus_sim._src.core import Clock, Orchestrator, logger
+from nexus_sim._src.core import Clock, Loop, logger
 from nexus_sim._src.physics import NewtonPhysics
 from nexus_sim._src.vehicle.estimators import GroundTruthEstimator
 
 
-def build_acados_orchestrator(
+def build_acados_loop(
     cfg: dict,
     *,
     spawn=(0.0, 0.0, 2.0),
@@ -30,8 +30,8 @@ def build_acados_orchestrator(
     sink=None,
     vehicle_usd=None,
     renderer_factory=None,
-) -> Orchestrator:
-    """Assemble the core Orchestrator with the real-time NMPC."""
+) -> Loop:
+    """Assemble the core Loop with the real-time NMPC."""
     import newton
     import numpy as np
 
@@ -71,7 +71,7 @@ def build_acados_orchestrator(
     rotor_offsets = (bq[bodies, :3] - bq[base, :3]).astype(np.float32)  # (n,3) body-frame moment arms
     rotor_zz = 1.0 - 2.0 * (bq[bodies, 3] ** 2 + bq[bodies, 4] ** 2)  # rotor body +z, world z-component
     turning_dirs = (-np.sign(rotor_zz)).astype(np.float32)  # clockwise/counter-clockwise yaw-reaction sign
-    logger.info(f"acados-orchestrator: mass={mass:.4f} kg")
+    logger.info(f"acados-loop: mass={mass:.4f} kg")
     controller = AcadosNMPCController(
         mass=mass, inertia=base_inertia, rotor_offsets=rotor_offsets, turning_dirs=turning_dirs,
         ct=m["ct"], rpm_max=m["rpm_max"], dt=dt,
@@ -87,7 +87,7 @@ def build_acados_orchestrator(
         )  # fmt: skip
     # Rendering enters here alone, as in the core assembly: an optional renderer plus its host-rate sensors.
     renderer, extra_sensors = renderer_factory(physics, vehicle_usd, cfg) if renderer_factory else (None, [])
-    orch = Orchestrator(
+    orch = Loop(
         clock=Clock(dt),
         physics=physics,
         commands=commands,

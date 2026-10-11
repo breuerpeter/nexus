@@ -6,7 +6,7 @@ runs before the controller's, so the setpoint applies on the tick that computes 
 ``MissionGuidance`` sequences position goals and advances on arrival. ``TrackingGuidance`` plans one
 reference over the whole path for a tracking controller. Each writes its setpoint to a signal the
 controller reads. A flight constructs its
-guidance and hands it to ``Sim.from_orchestrator``; PX4 flies its own missions, so a PX4 run has none.
+guidance and hands it to ``Sim._from_loop``; PX4 flies its own missions, so a PX4 run has none.
 """
 
 from .base import Guidance

@@ -140,7 +140,7 @@ class NewtonPhysics:
         # Every Newton actuator the vehicle declares, rotor motor or not, stepped before the solver. Each
         # keeps two copies of its state, because ControllerPID is stateful and a Python swap would freeze at
         # the binding a CUDA graph captured: step() copies next → current in place after each step.
-        # ``step_actuators=False`` leaves them idle, for a run on the old actuator seam: the examples'
+        # ``step_actuators=False`` leaves them idle, for a run on the old actuator stage: the examples'
         # ``Rotors`` holds its own motor model and sums its wrench on the base body, so the rotor joints
         # hang free there, as they did before physics stepped the motors.
         self._actuators = list(getattr(self.model, "actuators", None) or []) if step_actuators else []
@@ -151,7 +151,7 @@ class NewtonPhysics:
         self.contacts = self.model.collide(self.state0) if self.contacts_on else None
         self.base_index = self._find_base()
         # The base body's label, the leaf of its model label when unique: Sim's default vehicle entity,
-        # ``sim.physics[sim.base_body]``, and the Recorder's key for its history.
+        # ``sim[f"vehicle/body/{sim.base_body}"]``, and the Recorder's key for its history.
         self.base_body = leaf_keys([str(k) for k in self.model.body_label])[self.base_index]
         logger.info(f"control dim {self.model.joint_dof_count}")
 

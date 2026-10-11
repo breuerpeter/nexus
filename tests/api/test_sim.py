@@ -1,6 +1,6 @@
-"""Sim lifecycle: drives the orchestrator on the CALLER's thread, proxies observation, tears down.
+"""Sim lifecycle: drives the loop on the CALLER's thread, proxies observation, tears down.
 
-Uses a fake orchestrator, a monkeypatched build_from_launch, so the test needs no real
+Uses a fake loop, a monkeypatched build_from_launch, so the test needs no real
 assets / Newton physics / PX4: it exercises the Sim wiring, not the sim.
 """
 
@@ -24,7 +24,7 @@ class _FakeClock:
 
 
 class _FakeOrch:
-    """A step-driven orchestrator stand-in, the shape ``Orchestrator.step()`` presents: setup runs
+    """A step-driven loop stand-in, the shape ``Loop.step()`` presents: setup runs
     inside the first ``step()``, each call advances one tick and records the airframe row, and
     ``run()`` is ``while self.step(): pass``. Every ``step()`` records the thread it ran on.
     """
@@ -110,7 +110,7 @@ def test_sim_start_drives_setup_observes_and_stops(monkeypatch):
         assert fake.steps == 1  # start() returns after one full control tick
         assert fake.threads == [threading.main_thread()]  # driven here, not on a sim thread
         assert fake.recorder is not None  # Sim handed the loop its Recorder
-        st = sim.physics[sim.base_body].latest()  # name-keyed: the discovered airframe entity
+        st = sim[f"vehicle/body/{sim.base_body}"].latest()  # name-keyed: the discovered airframe entity
         assert isinstance(st, BodyState)
         assert st.altitude_m == 4.0
     # __exit__ -> stop() ended the run and closed the tick generator
@@ -165,7 +165,7 @@ class _FakeController:
 
 
 class _SetpointOrch:
-    """An orchestrator whose controller reads a setpoint: run() is synchronous, fires on_tick."""
+    """A loop whose controller reads a setpoint: run() is synchronous, fires on_tick."""
 
     def __init__(self):
         self.sensors = []
@@ -179,10 +179,10 @@ class _SetpointOrch:
         self.ran = False
         self._stop = False
 
-    def _close_logs(self):  # the orchestrator's logging teardown, a no-op: this mock has no Logger
+    def _close_logs(self):  # the loop's logging teardown, a no-op: this mock has no Logger
         pass
 
-    def add_loggable(self, component, path):  # the orchestrator's loggable registration, a no-op in the mock
+    def add_loggable(self, component, path):  # the loop's loggable registration, a no-op in the mock
         pass
 
     def close(self):  # the step and run teardown, a no-op in this mock
@@ -203,17 +203,17 @@ class _SetpointOrch:
         self._stop = True
 
 
-def test_sim_hands_the_flights_guidance_to_the_orchestrator_and_runs():
+def test_sim_hands_the_flights_guidance_to_the_loop_and_runs():
     from nexus_sim._src.guidance import MissionGuidance
 
     fake = _SetpointOrch()
     guidance = MissionGuidance()
 
-    # A self-assembled orchestrator enters via from_orchestrator, the examples' entry, with its guidance.
-    with sim_mod.Sim.from_orchestrator(fake, guidance=guidance) as sim:
-        assert sim.guidance is guidance and fake.guidance is guidance  # the guidance joins the loop
+    # A self-assembled loop enters via _from_loop, the examples' entry, with its guidance.
+    with sim_mod.Sim._from_loop(fake, guidance=guidance) as sim:
+        assert fake.guidance is guidance  # the guidance joins the loop
         assert fake.on_tick is None  # the hook stays the caller's: the guidance rides a stage
-        sim.guidance.set_mission([(0.0, 0.0, 4.0)])
+        guidance.set_mission([(0.0, 0.0, 4.0)])
         assert tuple(guidance.active_setpoint.pos) == (0.0, 0.0, 4.0)  # its stage writes it, not Sim
         sim.run()
         assert fake.ran  # ran synchronously, no thread
@@ -223,7 +223,7 @@ def test_sim_hands_the_flights_guidance_to_the_orchestrator_and_runs():
 
 def test_sim_step_drives_a_self_assembled_run_tick_by_tick():
     fake = _SetpointOrch()
-    with sim_mod.Sim.from_orchestrator(fake) as sim:
+    with sim_mod.Sim._from_loop(fake) as sim:
         assert sim.step() is True  # advances one tick, delegating to orch.step()
         assert sim.step() is True
         assert sim.step() is False  # the run ended, where the generator would StopIteration
@@ -290,13 +290,3 @@ def test_a_sim_that_names_no_scene_fails_at_construction():
     """
     with pytest.raises((TypeError, ValueError), match="scene"):
         sim_mod.Sim(vehicle="astro_max_base")
-
-
-def test_reading_the_guidance_of_a_run_that_has_none_fails_with_the_way_to_construct_one():
-    """Reading the guidance of a run that has none fails with the way to construct one.
-
-    Given a `Sim` over a setpoint controller and no guidance, when a caller reads `sim.guidance`, then it
-    raises `RuntimeError` whose message shows how a flight constructs one.
-    """
-    with sim_mod.Sim.from_orchestrator(_SetpointOrch()) as sim, pytest.raises(RuntimeError, match="MissionGuidance"):
-        _ = sim.guidance

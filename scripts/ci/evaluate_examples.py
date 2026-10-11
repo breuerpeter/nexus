@@ -4,7 +4,7 @@ example stats, and speed, the Real-Time Factor (RTF), regression gates, plus the
 Runs each example as its own subprocess, ``uv run [--extra X] -m nexus_sim.examples <name>``,
 reads the artifacts every example dumps via ``nexus_sim.examples._lib.eval_dump``, where the harness sets
 ``$NEXUS_EVAL_OUT``, scores them, pose APE with **evo** for translation and, where the example defines
-a reference attitude, rotation, the example's own stats, and the orchestrator's steady RTF, then
+a reference attitude, rotation, the example's own stats, and the loop's steady RTF, then
 gates everything against the committed ``scripts/ci/examples_baselines.json`` and writes
 ``benchmark.json``, github-action-benchmark-style ``{name, unit, value}`` entries plus a
 ``biggerIsBetter`` direction, for the trend record. With ``--upload`` it publishes the ``.rrd`` of each

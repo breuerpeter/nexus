@@ -1,9 +1,9 @@
-"""Assemble the core Orchestrator around the :class:`SamplingMPCController`.
+"""Assemble the core Loop around the :class:`SamplingMPCController`.
 
 This example-owned assembly, moved out of core since PX4 is the one first-class control path, wires
 the **catalog vehicle** Universal Scene Description (USD) collapsed to a single rigid body + the resolved
 scene USD, its cost-only obstacle shapes, for example the ``slalom`` pillars, into both the real
-single-drone model, stepped by the Orchestrator, and the batched rollout model, ``num_rollouts``
+single-drone model, stepped by the Loop, and the batched rollout model, ``num_rollouts``
 differentiable drones the planner back-props through. The controller's per-tick optimization runs in a
 host stage; everything else captures, the captured-host-exchange strategy.
 """
@@ -11,12 +11,12 @@ host stage; everything else captures, the captured-host-exchange strategy.
 from __future__ import annotations
 
 from nexus_sim._src.build.assembly import resolve_device
-from nexus_sim._src.core import Clock, Orchestrator, logger
+from nexus_sim._src.core import Clock, Loop, logger
 from nexus_sim._src.physics import NewtonPhysics
 from nexus_sim._src.vehicle.estimators import GroundTruthEstimator
 
 
-def build_sampling_mpc_orchestrator(
+def build_sampling_mpc_loop(
     cfg: dict,
     *,
     goal_w=(0.0, 0.0, 2.0),
@@ -30,8 +30,8 @@ def build_sampling_mpc_orchestrator(
     sink=None,
     vehicle_usd=None,
     renderer_factory=None,
-) -> Orchestrator:
-    """Assemble the core Orchestrator with the sampling + gradient diffsim Model Predictive Control (MPC).
+) -> Loop:
+    """Assemble the core Loop with the sampling + gradient diffsim Model Predictive Control (MPC).
 
     Needs a scene with obstacles threaded into ``cfg``: ``resolve_scenario`` with
     ``set_scene("slalom")``; the controller discovers the scene's shapes from the collapsed model.
@@ -57,7 +57,7 @@ def build_sampling_mpc_orchestrator(
     batch = collapse_to_single_body(vehicle_usd, count=num_rollouts, requires_grad=True, cfg=cfg)
     real_model, batch_model = real.model, batch.model
     mass, offsets, dirs, m = real.mass, real.offsets, real.dirs, real.act
-    logger.info(f"sampling-mpc-orchestrator: mass={mass:.4f} kg, goal={tuple(goal_w)}, num_rollouts={num_rollouts}")
+    logger.info(f"sampling-mpc-loop: mass={mass:.4f} kg, goal={tuple(goal_w)}, num_rollouts={num_rollouts}")
 
     # Free single-body diff-sim regime: the pre-built collapsed model, + obstacles, gradient-capable
     # SemiImplicit solver, contacts off since avoidance is the controller's job, Forward Right Down (FRD)
@@ -97,7 +97,7 @@ def build_sampling_mpc_orchestrator(
         )  # fmt: skip
     # Rendering enters here alone, as in the core assembly: an optional renderer + its host-rate sensors.
     renderer, extra_sensors = renderer_factory(physics, vehicle_usd, cfg) if renderer_factory else (None, [])
-    return Orchestrator(
+    return Loop(
         clock=Clock(dt),
         physics=physics,
         actuator=actuator,

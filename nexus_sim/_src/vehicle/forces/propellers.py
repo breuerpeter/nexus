@@ -31,7 +31,7 @@ from dataclasses import dataclass
 
 import warp as wp
 
-from nexus_sim._src.core.interfaces import Stage
+from nexus_sim._src.core.interfaces import Component, Stage
 from nexus_sim._src.vehicle.rotors import RPM_PER_RADS, find_rotor_joints
 
 __all__ = ["RPM_PER_RADS", "Propeller", "Propellers", "propeller_force"]
@@ -103,7 +103,7 @@ def _propeller_wrench(
     wp.atomic_add(body_f, bi, wp.spatial_vector(w=force_world, v=drag_world))
 
 
-class Propellers:
+class Propellers(Component):
     """The propellers' force element: each rotor's thrust, H-force and reaction drag, from its
     solver-integrated speed, added to its rotor body's wrench.
 

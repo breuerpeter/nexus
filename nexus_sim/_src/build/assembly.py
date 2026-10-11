@@ -1,4 +1,4 @@
-"""The core orchestrator assembly, shared by every run, per §12.
+"""The core loop assembly, shared by every run, per §12.
 
 Controller-agnostic by construction: the assembly wires the plant, ``NewtonPhysics`` from nexus_sim's
 own ModelBuilder + solvers, the shipped rotor chain, the rotors' command element and the propellers' force
@@ -24,7 +24,7 @@ from typing import Any
 
 import warp as wp
 
-from nexus_sim._src.core import Clock, Orchestrator, SeedTree, logger
+from nexus_sim._src.core import Clock, Loop, SeedTree, logger
 from nexus_sim._src.physics import NewtonPhysics
 from nexus_sim._src.recording import Recorder
 from nexus_sim._src.scene import Site
@@ -41,6 +41,7 @@ class Assembly:
     sensors: list
     controller: Any
     logger: Any  # the Rerun sink, or None for no recording
+    prims: dict  # each sensor by the path of the prim that declares it, for the vehicle's connections
 
 
 def rotor_chain(physics, vehicle_usd) -> tuple[list, list]:
@@ -104,8 +105,9 @@ def assemble(
     # not a vehicle one. A vehicle that declares no sensor builds: which sensors a flight needs is its
     # controller's matter.
     usd_path = vehicle_usd.cfg["usd_path"]
+    specs = sensor_specs(usd_path, components)
     sensors = build_sensors(
-        sensor_specs(usd_path, components),
+        specs,
         usd_path=usd_path,
         model=physics.model,
         seedtree=seedtree,
@@ -135,6 +137,7 @@ def assemble(
         sensors=sensors,
         controller=controller,
         logger=sink,
+        prims=dict(zip([spec.prim for spec in specs], sensors, strict=True)),
     )
 
 
@@ -173,7 +176,7 @@ def resolve_device(cfg: dict) -> str:
     return "cuda:0"
 
 
-def build_orchestrator(
+def build_loop(
     vehicle: str,
     cfg: dict,
     vehicle_usd=None,
@@ -187,12 +190,13 @@ def build_orchestrator(
     peers=(),
     ports=None,
     connections=None,
+    prims=None,
     preroll_timeout: float = 30.0,
     max_steps: int | None = None,
     settings: dict | None = None,
     components=None,
-) -> Orchestrator:
-    """The core orchestrator: the one ``NewtonPhysics`` + the one shared assembly around the
+) -> Loop:
+    """The core loop: the one ``NewtonPhysics`` + the one shared assembly around the
     caller-supplied ``controller`` and ``estimator``, ``None`` for none; a run differs only in its renderer.
 
     ``renderer_factory`` is the one way rendering enters, from :func:`~nexus_sim._src.rendering.rtx_renderer`:
@@ -200,11 +204,16 @@ def build_orchestrator(
     ``None`` renders nothing. ``components`` resolves each sensor's schema to its class.
     ``peers`` are the processes the build started for this run, which the loop stops when the run ends.
     ``ports`` is the run's port map, the links that leave the run, which ``Sim.ports`` exposes.
-    ``connections`` are the vehicle's, which pick a reader's writer of a signal, by the reader's prim.
+    ``connections`` are the vehicle's, by prim: for a reader's prim, each signal it reads and the prim
+    whose component writes it; ``prims`` names the controller and the estimator by their prims, as the
+    assembly names each sensor, so the loop takes each connection between the two components.
     ``settings`` is the run's effective configuration, which the loop keeps for a caller to read back
     and the logger shows in the viewer's Settings tab; the run's builder passes the tested-config receipt.
     ``preroll_timeout`` covers the boot of a controller with a peer, since an autopilot in a container
     needs a generous window.
+
+    Raises:
+        ValueError: A connection names a prim that declares no component; the message names both prims.
     """
     logger.info(f"device: {resolve_device(cfg)}")
     if vehicle_usd is None:
@@ -217,9 +226,19 @@ def build_orchestrator(
         settings=settings,
     )  # fmt: skip
     if renderer_factory:
-        rtx = [s for s in a.sensors if getattr(s, "requires", ())]
+        rtx = [s for s in a.sensors if s.requires]
         renderer_factory.finish(renderer, rtx, vehicle_usd, cfg)
-    return Orchestrator(
+    by_prim = {**a.prims, **(prims or {})}
+    links = []
+    for reader, inputs in (connections or {}).items():
+        for signal, writer in inputs.items():
+            if reader not in by_prim:
+                raise ValueError(f"{reader} connects {signal!r} to {writer}, and declares no component itself")
+            if writer not in by_prim:
+                who = type(by_prim[reader]).__name__
+                raise ValueError(f"{who} on {reader} connects {signal!r} to {writer}, which declares no component")
+            links.append((by_prim[reader], signal, by_prim[writer]))
+    return Loop(
         clock=a.clock,
         physics=a.physics,
         commands=a.commands,
@@ -232,7 +251,7 @@ def build_orchestrator(
         renderer=renderer,
         peers=peers,
         ports=ports,
-        connections=connections,
+        connections=links,
         preroll_timeout=preroll_timeout,
         max_steps=max_steps,
         settings=settings,

@@ -1,4 +1,4 @@
-"""TrainedPolicyController: the trained-policy Controller seam.
+"""TrainedPolicyController: the trained-policy controller.
 
 Loads a policy exported by `nexus-rl`, Isaac Lab on the Newton backend, and runs it
 *in place of external PX4*, closing the loop from training on Isaac Lab on Newton to
@@ -30,13 +30,14 @@ from __future__ import annotations
 import numpy as np
 import warp as wp
 
-from nexus_sim._src.core.schema import Controls, PoseTwist
+from nexus_sim._src.core.interfaces import Component, Stage
+from nexus_sim._src.core.schema import PoseTwist
 from nexus_sim._src.core.signals import Signal
-from nexus_sim._src.core.stages import peer_stages
+from nexus_sim.examples._lib.mixer import Controls
 from nexus_sim.examples._lib.observation import ACTION_DIM, build_observation
 
 
-class TrainedPolicyController:
+class TrainedPolicyController(Component):
     """Run an exported TorchScript RL policy as a Controller.
 
     Args:
@@ -88,6 +89,11 @@ class TrainedPolicyController:
         self._prev_action = np.zeros(ACTION_DIM, dtype=np.float32)
         self._policy = None
         self._torch = None
+        # The controls this controller writes: one command per rotor through the airframe mixer, else the raw
+        # CTBR action, the width the stage declares.
+        width = int(mixer.nr) if mixer is not None else ACTION_DIM
+        self.controls = Signal("controls", wp.float32, shape=(1, width))
+        self._cmd = np.zeros((1, width), dtype=np.float32)
 
     # -- lifecycle ---------------------------------------------------------------
     def connect(self) -> None:
@@ -108,9 +114,16 @@ class TrainedPolicyController:
 
     def stages(self):
         """The ``exchange`` host stage: inference runs on the host between replays, over the
-        estimate and toward the setpoint the exchange reads.
+        estimate and toward the setpoint the exchange reads, and writes the controls.
         """
-        return peer_stages(self, reads=(self.setpoint, self.estimate))
+        return [
+            Stage("exchange", "host", self._exchange, reads=(self.setpoint, self.estimate), writes=(self.controls,))
+        ]
+
+    def _exchange(self, tick) -> bool:
+        self._cmd[0, :] = np.asarray(self.exchange(tick.t, tick.timeout).command, dtype=np.float32).reshape(-1)
+        self.controls.write(self._cmd)
+        return True
 
     # -- inference ---------------------------------------------------------------
     def act(self, obs: np.ndarray) -> Controls:
@@ -159,7 +172,7 @@ class TrainedPolicyController:
 
     # -- Controller Protocol conformance ----------------------------------------
     def exchange(self, t, timeout=None) -> Controls | None:
-        """Protocol-conforming step: flies through ``Orchestrator.run()`` exactly as PX4 does.
+        """Protocol-conforming step: flies through ``Loop.run()`` exactly as PX4 does.
 
         Builds the complete observation from the estimate, the base body's pose and twist an estimator
         writes, through :func:`~nexus_sim.examples._lib.observation.build_observation`, the single

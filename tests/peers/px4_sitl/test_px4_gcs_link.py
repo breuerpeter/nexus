@@ -120,8 +120,8 @@ def _mode(heartbeat) -> tuple[int, int]:
 
 def _fly(sim, seconds: float) -> None:
     """Step the sim for ``seconds`` of sim time. Unlike ``sim.sleep``, it raises when the run ends first."""
-    until = sim.physics[sim.base_body].latest().t + seconds
-    sim.wait_until(lambda: sim.physics[sim.base_body].latest().t >= until, sim_timeout=seconds + 1.0)
+    until = sim[f"vehicle/body/{sim.base_body}"].latest().t + seconds
+    sim.wait_until(lambda: sim[f"vehicle/body/{sim.base_body}"].latest().t >= until, sim_timeout=seconds + 1.0)
 
 
 def _retry_until(sim, done, send, *, sim_timeout: float) -> None:
@@ -164,7 +164,9 @@ def run_with_no_gcs():
                 sim, lambda: _mode(link.px4) == _HOLD, lambda: link.command(_SET_MODE, 1, *_HOLD), sim_timeout=120.0
             )
             sim.wait_until(lambda: link.px4.system_status == mavutil.mavlink.MAV_STATE_STANDBY, sim_timeout=120.0)
-            sim.wait_until(lambda: sim.physics[sim.base_body].latest().t > _DATALINK_TIMEOUT_S, sim_timeout=60.0)
+            sim.wait_until(
+                lambda: sim[f"vehicle/body/{sim.base_body}"].latest().t > _DATALINK_TIMEOUT_S, sim_timeout=60.0
+            )
             _retry_until(
                 sim, lambda: "NAV_DLL_ACT" in link.params, lambda: link.param_request("NAV_DLL_ACT"), sim_timeout=30.0
             )

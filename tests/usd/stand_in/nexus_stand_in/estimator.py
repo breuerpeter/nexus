@@ -2,6 +2,7 @@
 
 import warp as wp
 
+from nexus_sim import Component
 from nexus_sim._src.core.interfaces import Stage
 from nexus_sim._src.core.schema import PoseTwist
 from nexus_sim._src.core.signals import Signal
@@ -16,7 +17,7 @@ def _write_pose(position: wp.vec3, estimate: wp.array(dtype=PoseTwist)):
     estimate[0] = e
 
 
-class StandInEstimator:
+class StandInEstimator(Component):
     """An estimator whose device stage writes a fixed pose to the estimate: its position, the identity
     orientation and zero twist.
 

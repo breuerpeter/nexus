@@ -1,14 +1,14 @@
 """The contracts the loop drives take no ambient sample: physics, the actuator and each sensor read the
-state and the clock, and nothing else. Warp-free stubs, as in test_orchestrator_stop.py.
+state and the clock, and nothing else. Warp-free stubs, as in test_loop_stop.py.
 """
 
 from dataclasses import dataclass
 
 import pytest
 
-from nexus_sim._src.core.interfaces import Stage
-from nexus_sim._src.core.orchestrator import Orchestrator
-from nexus_sim._src.core.schema import Controls, SimTime
+from nexus_sim._src.core.interfaces import Component, Stage
+from nexus_sim._src.core.loop import Loop
+from nexus_sim._src.core.schema import SimTime
 from nexus_sim._src.core.signals import Signal
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")  # Python stand-ins run stage by stage, never as a graph
@@ -53,7 +53,7 @@ class _Physics:
         ]
 
 
-class _Actuator:
+class _Actuator(Component):
     def forces(self, controls, state):
         state["q"] += 1
 
@@ -68,7 +68,7 @@ class _Reading:
     q: int
 
 
-class _Sensor:
+class _Sensor(Component):
     """Copies the state into the signal `q`, so what the controller reads shows the sensor ran."""
 
     def __init__(self):
@@ -81,7 +81,7 @@ class _Sensor:
         return [Stage("sample", "host", lambda tick: self.sample(tick.state, tick.t), writes=(self.out,))]
 
 
-class _Controller:
+class _Controller(Component):
     """Answers the seed pass at once and keeps the last reading of the signal `q` its exchange read."""
 
     def __init__(self):
@@ -93,7 +93,7 @@ class _Controller:
 
     def exchange(self, t, timeout):
         self.last = self.q.read()
-        return Controls(command=[0.0, 0.0, 0.0, 0.0])
+        return [0.0, 0.0, 0.0, 0.0]
 
     def close(self):
         pass
@@ -105,13 +105,13 @@ class _Controller:
         return [Stage("exchange", "host", exchange, reads=(self.q,))]
 
 
-def test_the_loop_runs_a_tick_on_seams_that_take_no_env():
+def test_the_loop_runs_a_tick_on_contracts_that_take_no_env():
     """The loop runs a tick on contracts that take no `env`: `Physics.step(state, dt)`,
     `Actuator.forces(controls, state)` and `Sensor.sample(state, t)`. A tick's exchange follows its step, so
     the second tick's sample carries the state after two ticks.
     """
     controller = _Controller()
-    orch = Orchestrator(
+    orch = Loop(
         clock=_Clock(),
         physics=_Physics(),
         actuator=_Actuator(),

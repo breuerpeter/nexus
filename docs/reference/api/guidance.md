@@ -1,5 +1,5 @@
 ---
-description: "API reference for guidance, the role that turns a mission into a controller's setpoint: MissionGuidance and TrackingGuidance, reached through sim.guidance."
+description: "API reference for guidance, the role that turns a mission into a controller's setpoint: MissionGuidance and TrackingGuidance, which a flight constructs and holds."
 ---
 
 # Guidance
@@ -14,15 +14,15 @@ stage runs that the controller reads the type the guidance writes. When the miss
 marks the tick done, and the loop ends the run. PX4 takes none, because its own navigator sequences
 its missions.
 
-A flight constructs its guidance from the guidance's own parameters and hands it to
-`Sim.from_orchestrator`, then reaches it through
-[`sim.guidance`](simulation.md). The classes are **internal**: an example imports them from
+A flight constructs its guidance from the parameters of the guidance, hands it to the loop, and keeps
+the object. It sets the mission on it before the run and reads its telemetry after. `Sim` gives no
+role an accessor of its own. The classes are **internal**: an example imports them from
 `nexus_sim._src.guidance`, not from the top-level package.
 
 ```python
 guidance = MissionGuidance(reached_m=0.3, final_hold_s=2.0)
-with nx.Sim.from_orchestrator(orch, guidance=guidance) as sim:
-    sim.guidance.set_mission([(3.0, 0.0, 2.0), (3.0, 3.0, 2.5)])
+guidance.set_mission([(3.0, 0.0, 2.0), (3.0, 3.0, 2.5)])
+with nx.Sim._from_loop(orch, guidance=guidance) as sim:
     sim.run()
 ```
 

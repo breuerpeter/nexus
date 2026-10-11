@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import warp as wp
 
-from nexus_sim._src.core.interfaces import Stage
+from nexus_sim._src.core.interfaces import Component, Stage
 from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.vehicle.rotors import RPM_PER_RADS, find_rotor_joints
 
@@ -59,7 +59,7 @@ def _scatter_rotor_commands(
     out_joint_act[d] = drag_ff[i]
 
 
-class RotorCommand:
+class RotorCommand(Component):
     """The rotors' command element: the controller's normalized per-rotor commands to each rotor motor's
     speed target and drag feedforward in the model's ``newton.Control``.
 

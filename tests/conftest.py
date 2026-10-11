@@ -25,6 +25,7 @@ if platform.machine() == "x86_64":
 # Newton's plugin backs the test that applies a Newton schema, and the stand-in project's backs the tests
 # that apply `StandInAPI`.
 import tests.usd.stand_in.nexus_stand_in  # noqa: F401
+from nexus_sim._src.core.interfaces import Component
 
 # A worker's resident memory settles near 2.8 GiB over the suite, 5.2 GiB when one worker runs it all:
 # the flights keep the memory they take. One worker per logical CPU would want 56 GiB on a 20-CPU laptop.
@@ -353,7 +354,7 @@ class StandInReference:
         return [self._start, *self._waypoints]
 
 
-class StandInController:
+class StandInController(Component):
     """A controller named `standin` that commands nothing, its controls all zero, reads a planned
     reference as its setpoint and logs one row of its own, `horizon`, each tick through the logger the
     loop hands it.
@@ -405,7 +406,7 @@ def fly_recorded(
     name or a path. ``layer`` is an override layer's text. The home folder is ``tmp`` for the run, so the recording lands there.
     """
     import nexus_sim as nx
-    from nexus_sim._src.build.assembly import build_orchestrator
+    from nexus_sim._src.build.assembly import build_loop
     from nexus_sim._src.build.launch import resolve_scenario
     from nexus_sim._src.config import LaunchConfig
     from nexus_sim._src.guidance import TrackingGuidance
@@ -424,7 +425,7 @@ def fly_recorded(
         controller = StandInController()
         renderer_factory = rtx_renderer(vehicle_usd, cfg, peer=kit or KitFake)
         try:
-            orch = build_orchestrator(
+            orch = build_loop(
                 "fixture",
                 cfg,
                 vehicle_usd=vehicle_usd,
@@ -441,8 +442,8 @@ def fly_recorded(
             raise
         orch.estimator = GroundTruthEstimator()  # the guidance reads the vehicle's position from its estimate
         guidance = TrackingGuidance(planner=StandInReference)
-        with nx.Sim.from_orchestrator(orch, guidance=guidance) as sim:
-            sim.guidance.set_mission([(1.0, 0.0, 2.0), (2.0, 0.0, 2.0)])
+        with nx.Sim._from_loop(orch, guidance=guidance) as sim:
+            guidance.set_mission([(1.0, 0.0, 2.0), (2.0, 0.0, 2.0)])
             sim.run()
         return orch.logger.rrd_path
 

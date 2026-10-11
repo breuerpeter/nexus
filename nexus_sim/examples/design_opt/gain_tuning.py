@@ -141,7 +141,7 @@ class AstroMaxWaypointRollout:
         self.omega_max_motor = mixer.omega_max_motor
         self.alpha = motor_alpha(m["tau"], dt)
 
-        # Reused orchestrator components, the same as the lumped rollout, + full tape history.
+        # Reused loop components, the same as the lumped rollout, + full tape history.
         self.obs_sensor = WarpObservationSensor(goal_w=goal)
         self.controller = PidController(goal_w=goal, thrust_to_weight=self.t2w)
         self.states = [self.model.state(requires_grad=True) for _ in range(self.N + 1)]
@@ -378,25 +378,25 @@ def main():
     nx.logger.info(f"gain opt: loss {hist[0]:.0f} -> min {min(hist):.0f}  gains={np.round(gopt, 3)}")
 
     # The real gate: fly both gain sets free-running on the collapsed single-body plant the tuning ran on:
-    # the nx.Sim builtin with solver="semi_implicit" → build_pid_orchestrator's collapsed diffsim regime, and
+    # the nx.Sim builtin with solver="semi_implicit" → build_pid_loop's collapsed diffsim regime, and
     # moment_scale=MS matching the tuning. Gate on the FLIGHT, not the fixed-horizon rollout metric: that
     # metric looked "settled" while the drone was still moving through the goal at the horizon's end, the trap
     # this example fell into. The tuned controller must reach the far goal and hold it, with no flying through;
-    # the mistuned baseline must not. --log/--view records each flight; the deploy IS the standard Orchestrator run.
+    # the mistuned baseline must not. --log/--view records each flight; the deploy IS the standard Loop run.
     def fly(gains, name: str):
-        # The deploy flight IS the standard orchestrator run, on the same collapsed single-body plant
+        # The deploy flight IS the standard loop run, on the same collapsed single-body plant
         # the tuning ran on: the example-owned PID assembly with solver=semi_implicit.
         from nexus_sim._src.build.launch import resolve_scenario
         from nexus_sim._src.config import LaunchConfig
         from nexus_sim._src.guidance import MissionGuidance
         from nexus_sim._src.rendering import rtx_renderer
-        from nexus_sim.examples.controllers.pid.assembly import build_pid_orchestrator
+        from nexus_sim.examples.controllers.pid.assembly import build_pid_loop
 
         launch = LaunchConfig().set_vehicle("astro_max_base").set_scene("empty")
         launch.runtime.device = "cuda"  # prefer CUDA; falls back to CPU without one
         launch.runtime.solver = "semi_implicit"  # the collapsed diffsim plant: deploy ≡ tuning plant
         vehicle_usd_2, _resolved, cfg = resolve_scenario(launch)
-        orch = build_pid_orchestrator(
+        orch = build_pid_loop(
             cfg,
             vehicle_usd=vehicle_usd_2,
             gains=list(gains),
@@ -406,10 +406,10 @@ def main():
             renderer_factory=rtx_renderer(vehicle_usd_2, cfg),  # the Kit peer, when the vehicle authors RTX sensors
         )
         guidance = MissionGuidance(reached_m=0.15, final_hold_s=3.0)
-        with nx.Sim.from_orchestrator(orch, guidance=guidance) as sim:
-            sim.guidance.set_mission([GOAL])
+        with nx.Sim._from_loop(orch, guidance=guidance) as sim:
+            guidance.set_mission([GOAL])
             sim.run()
-            q = np.array([s.position for s in sim.physics[sim.base_body].history()])
+            q = np.array([s.position for s in sim[f"vehicle/body/{sim.base_body}"].history()])
             rrd = sim.artifacts().get("rrd")
         d = np.linalg.norm(q - np.array(GOAL, dtype=float), axis=1)
         reached = bool(d.min() < 0.2)  # got to the goal

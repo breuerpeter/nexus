@@ -12,10 +12,9 @@ import warp as wp
 from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics
 
 from nexus_sim._src.api.sim import Sim
-from nexus_sim._src.build.assembly import build_orchestrator, build_scenario
-from nexus_sim._src.core.schema import Controls
-from nexus_sim._src.core.stages import peer_stages
+from nexus_sim._src.build.assembly import build_loop, build_scenario
 from nexus_sim._src.physics.vehicle import VehicleUsd
+from tests.usd.sensor_vehicle import HostController
 
 ROOT = "/Vehicle"
 ARM = 0.2  # rotor offset from the airframe's center on each axis [m]
@@ -138,39 +137,32 @@ def author(
     return path
 
 
-class Commands:
+class Commands(HostController):
     """Answers the preroll at once and sends the same command every tick: one value per channel."""
 
     def __init__(self, values=(1.0, 1.0, 1.0, 1.0)):
         self.values = np.asarray(values, dtype=np.float32)
-
-    def connect(self):
-        pass
-
-    def stages(self):
-        return peer_stages(self)
+        self.width = len(self.values)  # the controls signal is as wide as the command
+        super().__init__()
 
     def exchange(self, t, timeout=None):
-        return Controls(command=self.values.copy())
-
-    def close(self):
-        pass
+        return self.values.copy()
 
 
 def build(path, steps=0, controller=None):
     """The run the vehicle at `path` builds, around `controller`, full throttle with no controller."""
     cfg = build_scenario()
     cfg["physics"]["force_cpu"] = True
-    return build_orchestrator(
+    return build_loop(
         "quad", cfg, VehicleUsd({"usd_path": str(path)}), controller=controller or Commands(), max_steps=steps
     )
 
 
 def fly(orch):
     """Fly the built run to its end and return the airframe's recorded positions, one row per tick [m]."""
-    with wp.ScopedDevice("cpu"), Sim.from_orchestrator(orch) as sim:
+    with wp.ScopedDevice("cpu"), Sim._from_loop(orch) as sim:
         sim.run()
-        return sim.physics["body"].history_arrays()["position"]
+        return sim["vehicle/body/body"].history_arrays()["position"]
 
 
 def climb(path, controller=None):

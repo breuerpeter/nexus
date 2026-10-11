@@ -19,7 +19,7 @@ import pytest
 pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
-from nexus_sim._src.core.registry import default_registry
+from nexus_sim._src.core.registry import Registry
 from tests.usd import sensor_vehicle as sv
 
 # PX4's ports are the machine's, so the tests that bind or dial them run on one worker, one at a time.
@@ -50,7 +50,7 @@ def _received(tmp_path: Path, body: str) -> list[dict]:
     loop = sv.build(
         sv.vehicle(tmp_path, body, px4=True),
         seed=SEED,
-        components=default_registry(),
+        components=Registry(),
         peers={"px4_sitl": sv.KeepingFake},
     )
     fake = loop.peers[0]

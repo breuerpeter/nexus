@@ -1,8 +1,8 @@
-"""The driver-script public surface: a test script imports these from nexus_sim.
+"""The public surface: what a script imports from nexus_sim, pinned as one list.
 
-Guidance and controllers are *internal*: a flight reaches its guidance via ``sim.guidance`` and its
-controller through the objects it built, and a PX4 script imports its client from ``nexus_sim.px4``. The old
-``Pilot``, ``Px4Pilot`` and ``wait_until`` exports on ``nx`` no longer exist.
+The shipped guidance and estimator classes are *internal*: a flight holds the guidance it built, the
+vehicle's Universal Scene Description (USD) file declares the rest, and a PX4 script imports its client
+from ``nexus_sim.px4``.
 """
 
 import json

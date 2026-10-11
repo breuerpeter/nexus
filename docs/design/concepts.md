@@ -19,9 +19,10 @@ It records what it flew in its receipt, a `TestedConfig`.
 
 ### Sim
 
-`Sim` is the one public entry to a run. It builds a run from its arguments and drives the loop on
-the caller's thread, one tick per `step`. A script reads the run through it: the Recorder's
-histories through `sim.physics`, and the port map through `sim.ports`.
+`Sim` is the one public entry to a run. It builds a run from its arguments, the vehicle, the scene,
+the catalog, the override layer and the registry, and drives the loop on the caller's thread, one
+tick per `step`. A script reads the run through it: any recorded [history](#history) by indexing the
+run with the history's path, `sim["vehicle/sensors/imu/imu"]`, and the port map through `sim.ports`.
 
 ### Catalog
 
@@ -35,11 +36,11 @@ says how a run finds one.
 
 The code that turns a launch into a run, `build_from_launch`. It resolves the launch against the
 catalog and fetches its assets. It builds the physics, and each component the vehicle's USD
-declares through the component registry. It starts the run's peers and hands the loop its parts.
+declares through the [registry](#registry). It starts the run's peers and hands the loop its parts.
 
 ### Loop
 
-The fixed-order loop that runs a run's ticks, the class `Orchestrator`. It lays the components'
+The fixed-order loop that runs a run's ticks, the class `Loop`. It lays the components'
 stages out in its ring, captures the segments on CUDA, runs ticks until the run ends, and tears the
 run down.
 
@@ -91,15 +92,20 @@ estimator reads. Newton's `NewtonMimicAPI` names the joint it follows the same w
 
 ### Component
 
-A class in the loop's process that fills one role in the tick. A component states its per-tick work
-as stages. The builder builds it from the schema the vehicle's USD applies, or takes it as a run
-argument, as it takes a guidance.
+A class in the loop's process that fills one role in the tick, a subclass of `Component`, the one
+contract every role fills. A component states its per-tick work as stages, each declaring the signals
+it reads and writes. It can state the rest of the contract. `connect` and `close` open and release
+what it needs for the run. `set_logger` takes the scoped Logger the loop hands it. `attached` reads
+false until the peer it waits on dials in. `requires` names the peers its class needs, `artifacts`
+the files it leaves for a reader, and `name` its instance name. The loop, the builder and `Sim` read
+those members from every component, whatever its role, and find none by name. The builder builds a
+component from the schema the vehicle's USD applies.
 
 ### Role
 
 What a component does in the tick. The role fixes where the component's stages run in the ring and
-who declares it. The vehicle's USD declares every role but the guidance, which the run takes as an
-argument. The schema of a declared component states its role: it includes a role schema, such as
+who declares it. The contract is the same for every role. The vehicle's USD declares every role. The
+schema of a declared component states its role: it includes a role schema, such as
 `NexusSensorRoleAPI`, as a built-in. The builder places the component by that role, never by the
 methods of its class. The [schema reference](../reference/schemas.md) lists the role of each schema.
 
@@ -112,7 +118,7 @@ methods of its class. The [schema reference](../reference/schemas.md) lists the 
 | Command element | turns the controls into Newton's control inputs, such as the rotors' speed targets |
 | Force element | adds body wrenches to the shared `body_f` buffer from the current state, such as the propellers' thrust. It adds and never assigns, so two on one body both act |
 
-Each role's contract is a `Protocol` in `nexus_sim/_src/core/interfaces.py`.
+The fixed parts, the clock and the physics, keep contracts of their own, which no project implements.
 
 ### Plant side and flight stack
 
@@ -156,10 +162,13 @@ An applied USD API schema from the plugin in `nexus_sim/_src/usd/` that declares
 prim, such as `NexusImuAPI`. Its `nexus:` attributes are the class's keyword arguments, and the
 [schema reference](../reference/schemas.md) lists them.
 
-### Component registry
+### Registry
 
-The map from schema to class, `ComponentRegistry`. The default one reads the `nexus.components`
-entry-point group, and a test hands the builder one of its own.
+The map from each name a run resolves to its class, `Registry`, a component's schema and a peer's
+alike. The own rows of a registry answer first, and the install answers the rest: the `nexus.registry`
+entry-point group of each installed package, which `register` adds to for a class a script defines. A
+test hands the run a registry of its own, with its stand-ins and its fakes as rows, through
+`Sim(registry=...)`.
 
 ## Recording
 

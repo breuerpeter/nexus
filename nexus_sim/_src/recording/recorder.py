@@ -18,7 +18,7 @@ states a recording member.
 from __future__ import annotations
 
 import threading
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
@@ -399,42 +399,3 @@ class Recorder:
         if not any(drained):
             return None
         return (self.rows - self.staging, self.rows)
-
-
-class Histories(Mapping):
-    """A read-only, name-keyed view over a subset of a Recorder's histories: the host-facing surface.
-
-    ``Sim.physics`` and ``Sim.sensors`` are views over the flat ``Recorder.histories`` dict, selected by
-    the prefix of a history's path and addressed by the bare instance name. ``sim.physics["rotor_1_joint"]``
-    resolves ``histories["vehicle/joints/rotor_1_joint"]``, and ``Sim.physics`` spans both ``vehicle/body/``
-    and ``vehicle/joints/``. A sensor's instance resolves the one signal's history under its path:
-    ``sim.sensors["imu"]`` resolves ``histories["vehicle/sensors/imu/imu"]``. A lookup returns the
-    :class:`History`, so the caller picks ``.latest()`` or ``.history()``.
-    """
-
-    def __init__(self, histories: dict[str, History], prefixes: tuple[str, ...]):
-        self._histories = histories
-        self._prefixes = prefixes
-
-    def _resolve(self, name: str) -> str:
-        paths = {p + name for p in self._prefixes}
-        hits = [key for key, h in self._histories.items() if h.path in paths]
-        if not hits:
-            raise KeyError(name)
-        if len(hits) > 1:  # the same bare name under two namespaces, say a body and a joint: ambiguous
-            raise KeyError(f"ambiguous entity name {name!r}: matches {hits}")
-        return hits[0]
-
-    def __getitem__(self, name: str) -> History:
-        return self._histories[self._resolve(name)]
-
-    def __iter__(self):
-        seen = set()
-        for h in self._histories.values():
-            for p in self._prefixes:
-                if h.path.startswith(p) and h.path not in seen:
-                    seen.add(h.path)
-                    yield h.path[len(p) :]
-
-    def __len__(self) -> int:
-        return sum(1 for _ in self)

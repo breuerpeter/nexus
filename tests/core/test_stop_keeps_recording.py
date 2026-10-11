@@ -96,7 +96,7 @@ def test_a_python_exception_in_a_stage_still_writes_the_recording(tmp_path):
             raise ValueError("the controller's stage failed")
 
     orch, rrd = _flight.build(tmp_path, staging=None, controller=_flight.Controller(act))
-    with nx.Sim.from_orchestrator(orch) as sim, pytest.raises(ValueError, match="stage failed"):
+    with nx.Sim._from_loop(orch) as sim, pytest.raises(ValueError, match="stage failed"):
         sim.run()
 
     assert rows(rrd, POSITION) == 20

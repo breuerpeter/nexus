@@ -22,7 +22,7 @@ One report line per run, and periodically with ``report_every_s``::
     profile [captured-host] 7113 ticks | tick p50 3.9 ms p95 4.4 ms | rtf 0.79 | exchange 2.71 ms 68% |
     sensors.host 0.83 ms 21% | replay 0.27 ms 7% | ... | other 0.04 ms 1% | gpu.batch 0.26 ms
 
-``stats()`` returns the same numbers as a dict, merged into ``Orchestrator.run_stats``.
+``stats()`` returns the same numbers as a dict, merged into ``Loop.run_stats``.
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ _TRACE_CAP = 400_000  # max buffered trace spans, about 50 MB JSON; deep traces 
 
 
 class LoopProfiler:
-    """Per-tick phase profiler for the orchestrator loops; see the module docstring."""
+    """Per-tick phase profiler for the loops; see the module docstring."""
 
     def __init__(
         self,
@@ -185,7 +185,7 @@ class LoopProfiler:
         if self._gpu_n:
             out["gpu_batch_us"] = round(self._gpu_ns / self._gpu_n / 1e3, 1)
         # Whole-run RTF spread over fixed windows; drop the first window as the compile/settle
-        # transient, the same exclusion the orchestrator's steady rtf makes via warmup_steps.
+        # transient, the same exclusion the loop's steady rtf makes via warmup_steps.
         steady = self._win_rtfs[1:] if len(self._win_rtfs) > 1 else self._win_rtfs
         if steady:
             mean = sum(steady) / len(steady)

@@ -2,9 +2,9 @@
 
 import pytest
 
-from nexus_sim._src.core.interfaces import Stage
-from nexus_sim._src.core.orchestrator import Orchestrator
-from nexus_sim._src.core.schema import Controls, SimTime
+from nexus_sim._src.core.interfaces import Component, Stage
+from nexus_sim._src.core.loop import Loop
+from nexus_sim._src.core.schema import SimTime
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")  # Python stand-ins run stage by stage, never as a graph
 
@@ -43,7 +43,7 @@ class _Physics:
         ]
 
 
-class _Actuator:
+class _Actuator(Component):
     def forces(self, controls, state):
         pass
 
@@ -51,7 +51,7 @@ class _Actuator:
         return [Stage("forces", "device", lambda tick: self.forces(None, tick.state))]
 
 
-class _LatePeerController:
+class _LatePeerController(Component):
     """A controller with a peer that dials in on the preroll's hundredth try and answers the first
     message it gets. It keeps the stamp of every message that reached the peer. Its work is the PX4
     shape, a ``truth`` and an ``exchange`` host stage.
@@ -74,7 +74,7 @@ class _LatePeerController:
         if not reached:
             return None
         self.stamps.append(t.sim_time)
-        return Controls(command=[0.0, 0.0, 0.0, 0.0])
+        return [0.0, 0.0, 0.0, 0.0]
 
     def close(self):
         pass
@@ -91,7 +91,7 @@ def test_a_peer_that_dials_in_late_gets_its_first_stamp_near_zero():
     first stamp lands near zero: the first message the peer gets carries a stamp under 10 ms.
     """
     controller = _LatePeerController()
-    orch = Orchestrator(
+    orch = Loop(
         clock=_Clock(),
         physics=_Physics(),
         actuator=_Actuator(),

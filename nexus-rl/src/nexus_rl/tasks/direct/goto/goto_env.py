@@ -116,10 +116,10 @@ class GoToEnv(QuadcopterNewtonEnv):
 
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
         self._actions = actions.clone().clamp(-1.0, 1.0)
-        # Apply the same two ops the deploy seam runs, over zero-copy wp.from_torch views: the CTBR mixer,
+        # Apply the same two ops the deploy path runs, over zero-copy wp.from_torch views: the CTBR mixer,
         # ctbr_to_cmd_batched: inner rate loop → B⁻¹ → per-rotor command, then the single-body motor model,
         # rigid_body_wrench_batched: per-rotor command → motor lag/saturation → forward B → world wrench.
-        # So the policy trains on the exact seam it deploys against, byte-shared: the deploy policy
+        # So the policy trains on the exact path it deploys against, byte-shared: the deploy policy
         # controller launches the same ctbr_to_cmd_batched mixer and the deploy actuator the same motor model,
         # with no torch reimplementation. substeps = NUM_SUBSTEPS carries the substep-dilution convention: the
         # base env's thrust_to_weight/rate_gain are the ×NUM_SUBSTEPS-baked twins, so the mixer's ÷substeps
@@ -137,7 +137,7 @@ class GoToEnv(QuadcopterNewtonEnv):
         # motor model writes the world-frame wrench straight into the tensors Isaac Lab's wrench composer reads.
         force_wp = wp.from_torch(self._thrust[:, 0, :], dtype=wp.vec3)
         torque_wp = wp.from_torch(self._moment[:, 0, :], dtype=wp.vec3)
-        stream = wp.stream_from_torch() if action_wp.device.is_cuda else None  # the train-side torch↔Warp seam
+        stream = wp.stream_from_torch() if action_wp.device.is_cuda else None  # the train-side torch↔Warp boundary
         wp.launch(
             ctbr_to_cmd_batched,
             dim=self.num_envs,

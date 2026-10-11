@@ -11,8 +11,8 @@ pytest.importorskip("warp")
 import warp as wp
 
 from nexus_sim._src.core.clock import Clock
-from nexus_sim._src.core.interfaces import Stage
-from nexus_sim._src.core.orchestrator import Orchestrator
+from nexus_sim._src.core.interfaces import Component, Stage
+from nexus_sim._src.core.loop import Loop
 from nexus_sim._src.core.signals import Signal
 
 DEVICES = ["cpu", pytest.param("cuda:0", marks=pytest.mark.gpu)]
@@ -33,7 +33,7 @@ class _Physics:
         return [Stage("clear", "device", lambda tick: None), Stage("step", "device", lambda tick: None)]
 
 
-class _Stamper:
+class _Stamper(Component):
     """A sensor whose device stage copies the signal `time` into a buffer of its own, `seen`."""
 
     def __init__(self):
@@ -47,7 +47,7 @@ class _Stamper:
         wp.launch(_copy_time, dim=1, inputs=[self.time.buffer], outputs=[self.seen])
 
 
-class _Keeper:
+class _Keeper(Component):
     """A controller whose host stage keeps the time the stamper copied, beside the tick's sim time."""
 
     def __init__(self, stamper: _Stamper):
@@ -80,7 +80,7 @@ def test_a_device_stage_reads_the_ticks_sim_time_from_the_signal_time(device):
     with wp.ScopedDevice(device):
         stamper = _Stamper()
         keeper = _Keeper(stamper)
-        orch = Orchestrator(clock=Clock(0.004), physics=_Physics(), sensors=[stamper], controller=keeper)
+        orch = Loop(clock=Clock(0.004), physics=_Physics(), sensors=[stamper], controller=keeper)
         for _ in range(3):
             orch.step()
         orch.close()
