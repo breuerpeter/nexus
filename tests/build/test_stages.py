@@ -14,7 +14,6 @@ pytest.importorskip("warp")
 import warp as wp
 
 from nexus_sim._src.api.sim import Sim
-from nexus_sim._src.build.assembly import build_scenario
 from nexus_sim._src.build.launch import resolve_vehicle_usd
 from nexus_sim._src.config import LaunchConfig
 from nexus_sim._src.guidance import TrackingGuidance
@@ -34,7 +33,7 @@ _MAIN_TRAJECTORY = {
 
 def _pid(*, cpu: bool, max_steps: int, vehicle: str = "astro_max_base"):
     """The PID example's loop flying `vehicle`, a catalog name or a path, toward 1.5 m up."""
-    cfg = build_scenario()
+    cfg = sv.scenario()
     cfg["physics"]["force_cpu"] = cpu
     vehicle_usd, _ = resolve_vehicle_usd(LaunchConfig().set_vehicle(vehicle).set_scene(sv.SCENE))
     return build_pid_loop(cfg, goal_w=(0.0, 0.0, 1.5), max_steps=max_steps, vehicle_usd=vehicle_usd)

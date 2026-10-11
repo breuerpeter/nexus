@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pathlib
 
-from .models import AssetRef, GeodeticOrigin, Px4Spec, Runtime, _Base
+from .models import AssetRef, Px4Spec, Runtime, _Base
 
 
 class TestedConfig(_Base):
@@ -28,12 +28,11 @@ class TestedConfig(_Base):
     vehicle: str  # the variant's key in the catalog, or the local ``.usd`` path a run flew
     catalog: str | None = None  # the catalog the run resolved against, when it loaded one itself
     vehicle_usd: AssetRef
-    layer: AssetRef | None = None  # the override layer the run composed over the vehicle
+    layer: AssetRef | None = None  # the override layer the run composed over the vehicle and the scene
     px4: Px4Spec | None = None
     scene: str
-    scene_usd: AssetRef | None = None
+    scene_usd: AssetRef
     scene_start: tuple[float, float, float] | None = None  # scene-frame point placed at the world origin
-    geodetic_origin: GeodeticOrigin | None = None
     runtime: Runtime
 
     def to_json(self) -> str:

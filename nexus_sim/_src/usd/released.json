@@ -134,6 +134,13 @@
     }
   },
   "NexusPx4SitlAPI": {},
+  "NexusSceneAPI": {
+    "nexus:geodeticOrigin": {
+      "fallback": null,
+      "type": "double3",
+      "units": "degrees, degrees, metres"
+    }
+  },
   "NexusSensorRoleAPI": {},
   "NexusThermalCameraAPI": {
     "nexus:height": {

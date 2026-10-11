@@ -37,8 +37,9 @@ in the script, and it records its flight `.rrd`. The launcher map is `_EXAMPLES`
 - `_lib/` is the shared machinery. It holds the single-body `Rotors` actuator in `rotors.py` plus
   the mixers in `mixer.py`, and the Universal Scene Description (USD) to single-body collapse in
   `single_body.py`, which re-exports the rotor parser and geometry helpers `nexus-rl` reads. It also holds the reference planners in `reference.py` and `min_snap.py`, the
-  train↔deploy observation source in `observation.py`, which `nexus-rl` also imports, and the
-  evaluation dump in `eval_dump.py`.
+  train↔deploy observation source in `observation.py`, which `nexus-rl` also imports, the
+  evaluation dump in `eval_dump.py`, and in `origin.py` the override layer that moves a shipped
+  scene's geodetic origin, which `mission.py` and the benchmark cell write.
 - The acados example provisions its own acados: `controllers/acados_nmpc/provision.py` fetches the
   commit `acados.ref` pins and builds it under `~/.cache/nexus/acados/<sha>`, on
   `python -m nexus_sim.examples acados_nmpc --provision`. The `acados` extra holds PyPI packages only.

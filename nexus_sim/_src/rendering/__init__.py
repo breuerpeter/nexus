@@ -37,8 +37,6 @@ class RtxConfig:
         # 24 fps is the production rate: it holds >=1x realtime with two cameras on the photoreal
         # cesium world.
         self.render_hz = float(o.get("render_hz", 24.0))
-        # Geodetic anchor for a streamed world, {lat, lon, alt}: the catalog scene's geodetic_origin.
-        self.georef = o.get("georef")
 
 
 class RtxRendererFactory:
@@ -83,9 +81,9 @@ class RtxRendererFactory:
         renderer.setup = {
             "scene": cfg.get("scene_usd_path"),
             "scene_start": list(cfg.get("scene_start") or (0.0, 0.0, 0.0)),
-            # The streamed world's anchor falls back to the Global Positioning System (GPS) origin, so the globe and the GPS
-            # sensor agree on where local (0,0,0) is on Earth.
-            "georef": rtx.georef or cfg.get("sensors", {}).get("gps", {}).get("init"),
+            # The streamed world's anchor is the scene's geodetic origin, which the sensors read too, so the
+            # globe and the Global Positioning System (GPS) sensor agree on where local (0,0,0) is on Earth.
+            "georef": dict(zip(("lat", "lon", "alt"), cfg["geodetic_origin"], strict=True)),
             "vehicle": str(vehicle_usd.cfg["usd_path"]),
             "spawn": {"pos": [float(v) for v in pos], "quat_xyzw": [float(v) for v in att]},
             # The highest declared camera rate; the vehicle's file is the authority.
@@ -156,12 +154,13 @@ def rtx_renderer(
         return None
     prims = [spec.prim for spec in specs]
     logger.info(f"the vehicle declares RTX sensors {prims}: they render in the Kit container")
-    # A run with an override layer opens its vehicle through a root file that stacks the layer on the
-    # asset, so the peer reads the files that root file names too.
+    # A run with an override layer opens its vehicle and its scene through root files that stack the
+    # layer on each asset, so the peer reads the files each root file names too.
     from pxr import Sdf
 
-    root = Sdf.Layer.FindOrOpen(str(usd))
-    stacked = list(root.subLayerPaths)
-    started = peer([usd, *stacked, cfg.get("scene_usd_path")], cache_dir=cache_dir or default_cache())
+    files = [usd, cfg.get("scene_usd_path")]
+    roots = [Sdf.Layer.FindOrOpen(str(f)) for f in files]
+    stacked = [root.ComputeAbsolutePath(sub) for root in roots for sub in root.subLayerPaths]
+    started = peer([*files, *stacked], cache_dir=cache_dir or default_cache())
     started.start()
     return RtxRendererFactory(started, components=components)

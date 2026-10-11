@@ -31,9 +31,10 @@ Every component states its [stages](concepts.md#stage), and the loop cuts the
 [ring](concepts.md#ring) at the host stages, so each [segment](concepts.md#segment) replays as
 one CUDA graph. See [Execution](execution.md#stages-and-segments).
 
-The **site is resolved once at build**, not sampled per tick: the scene's geodetic origin gives the
-magnetic field, the air pressure and temperature, and gravity, and the sensors that read them take
-them as constructor arguments, the same way every other sensor parameter arrives. One gravity value
+The build resolves the **site once**, and nothing samples it per tick. The geodetic origin the
+scene's `PhysicsScene` authors gives the magnetic field, the air pressure and temperature, and
+gravity. The sensors that read them take them as constructor arguments, the same way every other
+sensor parameter arrives. One gravity value
 reaches both the physics and the Inertial Measurement Unit (IMU). A **camera is a sensor**: each frame
 the Kit peer renders reaches its reader as a signal, an `Image`, so a vision estimator or controller
 reads frames as it reads any sensor.

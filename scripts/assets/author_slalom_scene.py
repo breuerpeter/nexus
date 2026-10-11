@@ -39,7 +39,7 @@ def author(out_path: str) -> str:
     out_path = str(out_path)
     if not out_path.endswith(".usdz"):
         raise ValueError(f"scene assets are ONE self-contained .usdz, got {out_path!r}")
-    from scene_root import author_sky
+    from scene_root import WOODINVILLE, author_origin, author_sky
 
     tmp_usd = tempfile.mktemp(suffix=".usdc")
     stage = Usd.Stage.CreateNew(tmp_usd)
@@ -48,6 +48,7 @@ def author(out_path: str) -> str:
     root = UsdGeom.Xform.Define(stage, "/World")
     stage.SetDefaultPrim(root.GetPrim())  # the one root prim, the runtime's session start-translate target
     author_sky(stage, "/World")  # the scene USD is the single authority on its own lighting, stage 5
+    author_origin(stage, WOODINVILLE)  # and on where it sits on Earth
     for i, pos in enumerate(pillar_positions()):
         cap = UsdGeom.Capsule.Define(stage, f"/World/pillar_{i}")
         cap.CreateRadiusAttr(float(PILLAR_RADIUS))

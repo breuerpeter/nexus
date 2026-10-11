@@ -92,7 +92,9 @@ def test_the_conformance_fixture_applies_every_component_and_peer_schema_the_plu
     roles = {f"Nexus{name}RoleAPI" for name in ("Sensor", "Estimator", "Controller", "Force")}
     applied = {name for prim in stage.Traverse() for name in prim.GetAppliedSchemas()} - roles
     sensors = {f"Nexus{name}API" for name in ("Imu", "Mag", "Baro", "Gps", "Camera", "ThermalCamera", "Lidar")}
-    assert applied == set(schema_names()) - roles == sensors | {"NexusPropellerAPI", "NexusPx4API", "NexusPx4SitlAPI"}
+    # The scene schema sits on a scene's PhysicsScene, never on a vehicle such as the fixture.
+    components = set(schema_names()) - roles - {"NexusSceneAPI"}
+    assert applied == components == sensors | {"NexusPropellerAPI", "NexusPx4API", "NexusPx4SitlAPI"}
 
 
 def test_the_script_beside_the_fixture_reproduces_it(tmp_path):

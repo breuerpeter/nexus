@@ -58,9 +58,10 @@ class Sim:
             controller keeps up. ``1.0`` paces the loop to wall-clock for human-in-the-loop
             flying: 1:1 stick feel, and sim-time protocol timeouts align with wall-clock peers.
         layer: Path to an override layer, a local Universal Scene Description (USD) file the run
-            composes over the vehicle: it changes a declared value, selects a variant, or drops a
-            declaration. A layer that drops the PX4 Software In The Loop (SITL) peer's,
-            ``NexusPx4SitlAPI``, flies an autopilot started elsewhere, which dials port 4560.
+            composes over the vehicle and the scene: it changes a declared value, such as the scene's
+            geodetic origin on its ``PhysicsScene`` prim, selects a variant, or drops a declaration.
+            A layer that drops the PX4 Software In The Loop (SITL) peer's, ``NexusPx4SitlAPI``, flies
+            an autopilot started elsewhere, which dials port 4560.
         registry: The :class:`~nexus_sim.Registry` the build resolves each schema with, its own rows first
             and the install's for the rest, so a test maps a schema to a stand-in or a peer to its fake;
             ``None`` takes the install alone.
@@ -80,7 +81,6 @@ class Sim:
         *,
         scene: str,
         catalog: str | None = None,
-        geo: str | None = None,
         device: str = "auto",
         log: bool = False,
         view: bool = False,
@@ -95,14 +95,11 @@ class Sim:
         self._registry = registry  # the registry the build resolves each schema with, or None for the default
         self._launch = LaunchConfig()
         self._launch.set_vehicle(vehicle)  # a catalog *name* or a local .usd path
-        self._launch.layer = layer  # an override layer the run composes over the vehicle, or None
+        self._launch.layer = layer  # an override layer the run composes over the vehicle and the scene, or None
         self._launch.catalog = catalog  # None: the run finds its own catalog, see load_catalog
         if solver is not None:  # physics integrator override: mujoco | semi_implicit | featherstone
             self._launch.runtime.solver = solver
         self._launch.set_scene(scene)  # catalog scene, for example the 'slalom' obstacle pillars for sampling-mpc
-        if geo is not None:  # override the scene's geodetic origin, for example to fly cesium over any lat/lon
-            parts = [float(x) for x in geo.split(",")]
-            self._launch.set_geodetic_origin(*parts)  # lat,lon[,alt]; alt is the WGS84 ellipsoidal surface height
         # 'gpu' is an alias of 'cuda'. The launch takes 'auto', 'cpu' or 'cuda', and the resolve picks the
         # device: CUDA when a CUDA device is present, else the CPU. The receipt records the pick.
         if device == "gpu":
@@ -180,7 +177,6 @@ class Sim:
             "catalog": getattr(args, "catalog", None),
             "device": getattr(args, "device", "auto"),
             "scene": args.scene,
-            "geo": getattr(args, "geo", None),
             "solver": getattr(args, "solver", None),
             "log": getattr(args, "log", False),
             "view": getattr(args, "view", False),

@@ -16,7 +16,6 @@ import pytest
 pytest.importorskip("newton")
 pytest.importorskip("warp")
 
-from nexus_sim._src.build.assembly import build_scenario
 from nexus_sim._src.build.launch import resolve_vehicle_usd
 from nexus_sim._src.config import LaunchConfig
 from nexus_sim.examples.controllers.pid.assembly import build_pid_loop
@@ -26,7 +25,7 @@ pytestmark = pytest.mark.usefixtures("warp_cpu")  # the build's force_cpu sets t
 
 
 def _run(steps: int, vehicle: str):
-    cfg = build_scenario()
+    cfg = sv.scenario()
     cfg["physics"]["force_cpu"] = True
     vehicle_usd, _ = resolve_vehicle_usd(LaunchConfig().set_vehicle(vehicle).set_scene(sv.SCENE))
     orch = build_pid_loop(

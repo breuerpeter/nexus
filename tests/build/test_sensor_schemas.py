@@ -15,7 +15,6 @@ import pytest
 pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
-from nexus_sim._src.config.catalog import load_catalog
 from nexus_sim._src.core.registry import Registry
 from nexus_sim._src.core.schema import BaroSample, GpsSample, ImuSample, MagSample
 from nexus_sim._src.core.signals import Signal
@@ -100,16 +99,14 @@ def test_each_analytic_sensor_schema_on_an_xform_under_a_body_builds_that_sensor
 def test_a_sensor_built_from_a_schema_gets_the_runs_site_values(tmp_path):
     """A sensor built from a schema gets the run's site values.
 
-    Given the fixture with every noise at zero and a catalog scene whose geodetic origin is Zurich, when
-    the run steps once, then the Global Positioning System (GPS) reports the origin, the magnetometer the field at Zurich, and the
+    Given the fixture with every noise at zero and a scene whose PhysicsScene authors Zurich as its origin,
+    when the run steps once, then the Global Positioning System (GPS) reports the origin, the magnetometer the field at Zurich, and the
     barometer the standard pressure a quarter of a metre over mean sea level, where the base body rests.
     """
-    catalog = tmp_path / "nexus.catalog.yaml"
-    catalog.write_text(
-        f"scenes:\n  zurich:\n    geodetic_origin: {{ lat: {ZURICH[0]}, lon: {ZURICH[1]}, alt: {ZURICH[2]} }}\n"
-    )
+    scene = tmp_path / "zurich.usda"
+    scene.write_text(Path(sv.SCENE).read_text().replace("(47.747944, -122.163917, 5.02)", repr(tuple(ZURICH))))
     signals = _signals("gps", "mag", "baro")
-    _, kept = _reading(tmp_path, QUIET, signals=signals, ticks=1, scene="zurich", catalog=load_catalog(catalog))
+    _, kept = _reading(tmp_path, QUIET, signals=signals, ticks=1, scene=str(scene))
     (_, gps, mag, baro) = kept[-1]
 
     assert (

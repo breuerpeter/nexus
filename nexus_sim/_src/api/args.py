@@ -44,10 +44,6 @@ def sim_argparser(description: str | None = None) -> argparse.ArgumentParser:
         "mesh/splat, flown as the visual world)",
     )  # fmt: skip
     p.add_argument(
-        "--geo", default=None, metavar="LAT,LON[,ALT]",
-        help="override the scene's geodetic origin, e.g. 37.79,-122.40 (cesium: where the globe streams)",
-    )  # fmt: skip
-    p.add_argument(
         "--solver", default=None, choices=["mujoco", "semi_implicit", "featherstone"],
         help="physics integrator (default: catalog default, mujoco)",
     )  # fmt: skip
@@ -58,9 +54,9 @@ def sim_argparser(description: str | None = None) -> argparse.ArgumentParser:
     )  # fmt: skip
     p.add_argument(
         "--layer", default=None, metavar="PATH",
-        help="an override layer, a local USD file composed over the vehicle: it changes a declared value,\n"
-        "selects a variant, or drops a declaration; one that drops NexusPx4SitlAPI flies an autopilot\n"
-        f"started elsewhere, which dials the HIL port {HIL_PORT}",
+        help="an override layer, a local USD file composed over the vehicle and the scene: it changes a\n"
+        "declared value, such as the scene's nexus:geodeticOrigin, selects a variant, or drops a declaration;\n"
+        f"one that drops NexusPx4SitlAPI flies an autopilot started elsewhere, which dials the HIL port {HIL_PORT}",
     )  # fmt: skip
     p.add_argument("--log", action="store_true", help="write the Rerun .rrd to disk")
     p.add_argument("--view", action="store_true", help="serve the live Rerun viewer on :9876")

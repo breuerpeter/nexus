@@ -8,7 +8,7 @@ import math
 
 from nexus_sim._src.core import geomag
 
-# Seattle GPS origin from the default scenario, sensors.gps.init.
+# Woodinville, near Seattle: the origin the shipped flat scenes' PhysicsScene authors.
 SEATTLE = (47.747944, -122.163917)
 
 

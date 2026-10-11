@@ -10,8 +10,9 @@ body run it: :mod:`rotors` holds the summed-base-wrench ``Rotors``;
 and the allocation builders; :mod:`motor` holds the first-order Ω lag; :mod:`coupling` holds the
 wrench kernels the RL rollouts also run; :mod:`single_body` holds the collapse from
 Universal Scene Description (USD) to a single body. The reference planners :mod:`reference` and
-:mod:`min_snap`, the shared observation source :mod:`observation`, and the evaluation dump
-:mod:`eval_dump` live here too.
+:mod:`min_snap`, the shared observation source :mod:`observation`, the evaluation dump
+:mod:`eval_dump`, and :mod:`origin`, the override layer that moves a shipped scene's geodetic origin,
+live here too.
 """
 
 from nexus_sim.examples._lib.coupling import (  # noqa: F401

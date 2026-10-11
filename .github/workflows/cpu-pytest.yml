@@ -47,7 +47,8 @@ jobs:
           restore-keys: |
             ${{ steps.warp-key.outputs.versions }}-cpu-pytest-
             ${{ steps.warp-key.outputs.versions }}-
-      - run: uv run --locked --extra policy pytest -m "not gpu and not px4_sitl" --cov=nexus_sim --cov-report=xml --durations=25
+      # -rfEp lists each passed test beside the failures and errors, so the log shows which tests ran.
+      - run: uv run --locked --extra policy pytest -m "not gpu and not px4_sitl" -rfEp --cov=nexus_sim --cov-report=xml --durations=25
       - uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}

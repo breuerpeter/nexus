@@ -232,7 +232,7 @@ def _vehicle(tmp_path) -> dict:
 
 @pytest.fixture
 def catalog(tmp_path) -> Catalog:
-    return Catalog.from_dict({"vehicles": _vehicle(tmp_path), "scenes": {"empty": {}}})
+    return Catalog.from_dict({"vehicles": _vehicle(tmp_path), "scenes": {"empty": {"usd": sv.SCENE_REF}}})
 
 
 @pytest.fixture
@@ -706,7 +706,7 @@ def _declared_run(tmp_path, layer: str | None = None, vehicle: str = _SCOPED) ->
     catalog = Catalog.from_dict(
         {
             "vehicles": {"astro": {"usd": {"url": blob.as_uri(), "sha256": sha, "filename": blob.name}}},
-            "scenes": {"empty": {}},
+            "scenes": {"empty": {"usd": sv.SCENE_REF}},
         }
     )
     spec = {"vehicle": "astro", "scene": "empty"}

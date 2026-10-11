@@ -10,7 +10,6 @@ pytest.importorskip("torch")
 pytest.importorskip("newton")
 
 from nexus_sim._src.api.sim import Sim
-from nexus_sim._src.build.assembly import build_scenario
 from nexus_sim._src.build.launch import resolve_scenario, resolve_vehicle_usd
 from nexus_sim._src.config import LaunchConfig
 from nexus_sim._src.guidance import MissionGuidance
@@ -21,7 +20,7 @@ from tests.usd import sensor_vehicle as sv
 
 
 def _cpu() -> dict:
-    cfg = build_scenario()
+    cfg = sv.scenario()
     cfg["physics"]["force_cpu"] = True
     return cfg
 

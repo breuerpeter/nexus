@@ -33,6 +33,7 @@ import time
 
 import nexus_sim as nx
 from nexus_sim.examples._lib import dump_run
+from nexus_sim.examples._lib.origin import origin_layer
 from nexus_sim.examples.controllers.px4.log_warnings import px4_warnings
 from nexus_sim.px4 import NAV_WAYPOINT, OffboardClient, read_plan
 
@@ -70,13 +71,12 @@ def main() -> int:
     t_gcs = 0.0
 
     try:
-        lat, lon, _ = plan.home
-        # lat/lon only, deliberately: the plan's home altitude is relative to mean sea level, while
-        # Sim(geo=…) reads its third field as a WGS84 ELLIPSOIDAL height. Feeding one to the other
-        # offsets the origin.
-        # Every altitude in the plan is relative to home, so no absolute altitude is ever needed.
+        lat, lon, alt = plan.home
+        # The scene's origin moves to the plan's home: the plan's items are geodetic around it. The home
+        # altitude is over mean sea level, the datum the flat scene's origin takes.
         nx.logger.info(f"[mission] {PLAN.name}: {len(plan.items)} items, home {lat:.6f},{lon:.6f}")
-        with nx.Sim(VEHICLE, scene=SCENE, geo=f"{lat},{lon}", device="cuda", log=True) as sim:
+        layer = origin_layer(lat, lon, alt)
+        with nx.Sim(VEHICLE, scene=SCENE, layer=layer, device="cuda", log=True) as sim:
             sim.start(timeout=args.timeout)  # drive setup as far as PX4 lockstep
             link = sim.ports["offboard"]  # the run owns the address of the link this script opens
             nx.logger.info(f"[mission] PX4 lockstep established: uploading the plan over :{link['port']}")
