@@ -1,5 +1,5 @@
-"""A script reads any component's recorded history by its path below the run's root, through one view, and
-``Sim`` gives no role an accessor of its own, #44.
+"""A script reads any recorded history, a component's or the plant's, by its path below the run's root through
+one view, and ``Sim`` gives no role and no fixed part an accessor of its own, #44.
 
 Real builds of the fixture vehicle in ``tests/usd/sensor_vehicle.py`` on the Warp CPU backend, with an Inertial
 Measurement Unit (IMU) and a stand-in controller, hosted by ``Sim``. Skipped without newton or pxr.
@@ -31,13 +31,14 @@ def _build(tmp_path):
     return sv.build(sv.vehicle(tmp_path, sv.prim("Imu", "NexusImuAPI")), components=registry)
 
 
-def test_a_script_reads_any_components_history_by_its_path_through_one_view(tmp_path):
-    """A script reads any component's recorded history by its path below the run's root through one view.
+def test_a_script_reads_any_history_by_its_path_through_one_view(tmp_path):
+    """A script reads any recorded history, a component's or the plant's, by its path below the run's root
+    through one view.
 
     Given a recorded run on the fixture vehicle, when it ends, then the IMU's history reads at
-    `vehicle/sensors/imu/imu` and the controller's controls at `vehicle/controllers/stand_in/controls` with
-    `.latest()` and `.history()`: the IMU's newest row is the last tick's, and the controls hold the seed row
-    and one row per tick.
+    `vehicle/sensors/imu/imu`, the controller's controls at `vehicle/controllers/stand_in/controls` and the base
+    body's rows at `vehicle/body/body` with `.latest()` and `.history()`: the IMU's newest row is the last tick's,
+    and the controls and the body each hold the seed row and one row per tick.
     """
     with nx.Sim.from_orchestrator(_build(tmp_path)) as sim:
         for _ in range(TICKS):
@@ -46,18 +47,20 @@ def test_a_script_reads_any_components_history_by_its_path_through_one_view(tmp_
         read = view is not None and (
             float(view["vehicle/sensors/imu/imu"].latest()["t"]),
             len(view["vehicle/controllers/stand_in/controls"].history()),
+            len(view["vehicle/body/body"].history()),
         )
 
-    assert read == (pytest.approx(TICKS * DT), TICKS + 1)
+    assert read == (pytest.approx(TICKS * DT), TICKS + 1, TICKS + 1)
 
 
-def test_sim_gives_no_role_an_accessor_of_its_own(tmp_path):
-    """`sim.sensors` and `sim.guidance` are gone: `Sim` gives no role an accessor of its own.
+def test_sim_gives_no_role_and_no_fixed_part_an_accessor_of_its_own(tmp_path):
+    """`sim.sensors`, `sim.physics` and `sim.guidance` are gone: the one view reads every history, so `Sim` gives
+    no role and no fixed part an accessor of its own.
 
-    Given a run on the fixture vehicle, when a script looks for `sensors` and `guidance` on `Sim`, then neither is
-    an attribute of it, so a read of either raises `AttributeError`.
+    Given a run on the fixture vehicle, when a script looks for `sensors`, `physics` and `guidance` on `Sim`,
+    then none is an attribute of it, so a read of any raises `AttributeError`.
     """
     with nx.Sim.from_orchestrator(_build(tmp_path)) as sim:
-        present = [name for name in ("sensors", "guidance") if hasattr(type(sim), name)]
+        present = [name for name in ("sensors", "physics", "guidance") if hasattr(type(sim), name)]
 
     assert present == []
