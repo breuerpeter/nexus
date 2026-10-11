@@ -164,6 +164,9 @@ class Catalog(_Base):
         path = pathlib.Path(path) if path is not None else _DEFAULT_CATALOG
         return cls.from_dict(yaml.safe_load(path.read_text()))
 
+    def fetch_vehicle(self, name: str) -> pathlib.Path:
+        """Fetch the named vehicle's USD file into the verified asset cache and return its path."""
+
 
 _DEFAULT_CATALOG = pathlib.Path(__file__).parent / "catalog.yaml"
 CATALOG_FILENAME = "nexus.catalog.yaml"

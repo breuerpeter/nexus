@@ -1,6 +1,8 @@
 """The vehicle and scene catalog a run flies: the one the wheel ships, and a project's beside it."""
 
+import hashlib
 import logging
+from pathlib import Path
 
 import pytest
 
@@ -320,3 +322,53 @@ def test_a_project_catalog_that_adds_one_vehicle_by_key_still_flies_the_bundled_
     resolved = [name in catalog.vehicles for name in ("project_vehicle", "astro_max_base", "astro_max_fpv")]
 
     assert (resolved, "empty" in catalog.scenes) == ([True, True, True], True)
+
+
+# A one-line USD layer and its sha256, worked out once by hand: `printf '#usda 1.0\n' | sha256sum`.
+_LAYER = b"#usda 1.0\n"
+_LAYER_SHA256 = "28f84f705dab5dc6d5baaee8ee94e59b93b71bcd708c048c71066e7a8956e2d1"
+
+
+def _catalog_naming(tmp_path, sha256):
+    """A catalog whose one vehicle, `probe`, names a local file by URL and the given sha256."""
+    src = tmp_path / "probe.usda"
+    src.write_bytes(_LAYER)
+    return nexus_sim.Catalog.from_dict({"vehicles": {"probe": {"usd": {"url": src.as_uri(), "sha256": sha256}}}})
+
+
+def test_a_project_fetches_a_catalog_vehicles_file_through_the_public_catalog(tmp_path, monkeypatch):
+    """A project fetches a catalog vehicle's file through the public `Catalog`.
+
+    Given a catalog whose vehicle names a file by URL and sha256 and an empty asset cache, when a script
+    asks the `Catalog` for that vehicle's file, then it gets the local path of the cached file, whose
+    hash matches.
+    """
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("NEXUS_ASSET_CACHE", str(cache))
+    path = _catalog_naming(tmp_path, _LAYER_SHA256).fetch_vehicle("probe")
+
+    cached = isinstance(path, Path) and path.is_relative_to(cache)
+    assert (cached, cached and hashlib.sha256(path.read_bytes()).hexdigest()) == (True, _LAYER_SHA256)
+
+
+def test_a_vehicle_file_whose_hash_differs_from_the_catalogs_fails(tmp_path, monkeypatch):
+    """A vehicle file whose hash differs from the catalog's fails.
+
+    Given a catalog vehicle whose file's hash differs from its sha256, when a script asks the `Catalog`
+    for it, then it raises and names the hash mismatch.
+    """
+    monkeypatch.setenv("NEXUS_ASSET_CACHE", str(tmp_path / "cache"))
+    catalog = _catalog_naming(tmp_path, "0" * 64)
+
+    with pytest.raises(ValueError, match="hash mismatch"):
+        catalog.fetch_vehicle("probe")
+
+
+def test_an_unknown_vehicle_name_fails_and_names_the_known_ones():
+    """An unknown vehicle name fails and names the known ones.
+
+    Given the bundled catalog, when a script asks the `Catalog` for `no_such_vehicle`, then it raises and
+    names `astro_max_base` and `astro_max_fpv`.
+    """
+    with pytest.raises(Exception, match=r"astro_max_base.*astro_max_fpv"):
+        nexus_sim.Catalog.from_yaml().fetch_vehicle("no_such_vehicle")
