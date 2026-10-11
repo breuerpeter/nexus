@@ -44,7 +44,7 @@ def test_a_run_with_no_recording_still_reads_its_physics(tmp_path):
         sim.step()
         latest = sim[f"vehicle/body/{sim.base_body}"].latest()
 
-    assert latest.velocity[2] < 0
+    assert latest["linear_velocity"][2] < 0
 
 
 def test_a_run_with_no_recording_still_waits_on_its_physics(tmp_path):
@@ -54,7 +54,7 @@ def test_a_run_with_no_recording_still_waits_on_its_physics(tmp_path):
     `wait_until` returns.
     """
     with nx.Sim._from_loop(_unrecorded(tmp_path)) as sim:
-        sim.wait_until(lambda: sim[f"vehicle/body/{sim.base_body}"].latest().altitude_m < 4.9, sim_timeout=2.0)
-        fell_to = sim[f"vehicle/body/{sim.base_body}"].latest().altitude_m
+        sim.wait_until(lambda: sim[f"vehicle/body/{sim.base_body}"].latest()["position"][2] < 4.9, sim_timeout=2.0)
+        fell_to = sim[f"vehicle/body/{sim.base_body}"].latest()["position"][2]
 
     assert fell_to < 4.9

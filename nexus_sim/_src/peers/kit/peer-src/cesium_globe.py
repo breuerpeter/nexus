@@ -8,12 +8,12 @@ which is the georeference plus CesiumData plus the ion tileset plus the culling,
 tuning; the sky, dome and sun prims; and the photoreal render recipe,
 ``customLayerData.renderSettings``, which Kit applies when the peer opens the scene as the root
 stage, where its absolute ``/Cesium*`` paths compose natively. This handler injects the two
-runtime-only bits, the ion token the host sends in the setup message and the resolved georef of lat,
-lon and alt, both on the session layer, and runs the live machinery no USD can carry: per-camera
-tile-selection viewports and the streaming drain before the flight. The alt is data, the catalog
-scene's ``geodetic_origin.alt`` or ``--geo lat,lon,alt``: the WGS84 ellipsoidal height of the
-surface, applied as the georeference origin height so the street sits at local z=0, with no runtime
-ground probing. Tile geometry streams into Fabric, usdrt, and never exists as stage prims.
+runtime-only bits, the ion token the host sends in the setup message and the georef of lat, lon and
+alt, both on the session layer, and runs the live machinery no USD can carry: per-camera
+tile-selection viewports and the streaming drain before the flight. The georef is the geodetic
+origin the scene's ``PhysicsScene`` authors, which an override layer moves. Its alt is the WGS84
+ellipsoidal height of the surface, applied as the georeference origin height so the street sits at
+local z=0, with no runtime ground probing. Tile geometry streams into Fabric, usdrt, and never exists as stage prims.
 """
 
 from __future__ import annotations
@@ -71,7 +71,7 @@ class CesiumGlobe:
                 f"extensions not at {ext_dir!r} (the host mounts them for a scene with a Cesium tileset, or set NEXUS_CESIUM_EXTS)",
             ),
             (token, "no CESIUM_ION_TOKEN set"),
-            (georef, "no geodetic origin (scene geodetic_origin / gps.init)"),
+            (georef, "no geodetic origin in the setup message"),
         )
         problems = [msg for ok, msg in checks if not ok]
         if problems:
@@ -88,16 +88,9 @@ class CesiumGlobe:
             gprim = stage.GetPrimAtPath("/CesiumGeoreference")
             gprim.GetAttribute("cesium:georeferenceOrigin:latitude").Set(float(georef["lat"]))
             gprim.GetAttribute("cesium:georeferenceOrigin:longitude").Set(float(georef["lon"]))
-            # The surface's WGS84 ellipsoidal height is data, the catalog geodetic_origin.alt or
-            # --geo lat,lon,alt, applied directly so the street sits at local z=0. Missing alt →
-            # 0 with a warning: the terrain sits at its raw ellipsoidal offset; author the value.
-            alt = georef.get("alt")
-            if alt is None:
-                _log(
-                    "no geodetic_origin.alt: georeference height 0 (author the surface's WGS84 "
-                    "ellipsoidal height in the catalog, or --geo lat,lon,alt)"
-                )
-            gprim.GetAttribute("cesium:georeferenceOrigin:height").Set(float(alt or 0.0))
+            # The surface's WGS84 ellipsoidal height is data, the third value of the scene's
+            # nexus:geodeticOrigin, applied directly so the street sits at local z=0.
+            gprim.GetAttribute("cesium:georeferenceOrigin:height").Set(float(georef["alt"]))
 
             # Inject the ion token, a secret that never goes in the asset, before enabling the tile
             # engine, the same read-once rule as the georef: enabling cesium.omniverse processes the

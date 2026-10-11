@@ -303,7 +303,7 @@ def test_log_image_no_logger_side_throttle(tmp_path, monkeypatch):
 class _FakeHistory:
     """Three rows of a body's history: a three-column quantity, a quaternion and a scalar one."""
 
-    fields = (("position", 3), ("quat_xyzw", 4), ("q", 1))
+    fields = (("position", 3), ("orientation", 4), ("q", 1))
     source = "NewtonPhysics"
     path = "vehicle/body/body_frd"
     dt = 0.004
@@ -318,7 +318,7 @@ class _FakeHistory:
         t = np.arange(start, stop) * self.dt
         pos = np.stack([t * 10.0, np.zeros_like(t), np.ones_like(t)], axis=1).astype(np.float32)
         quat = np.tile(np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float32), (len(t), 1))
-        return {"t": t, "position": pos, "quat_xyzw": quat, "q": np.zeros(len(t), dtype=np.float32)}
+        return {"t": t, "position": pos, "orientation": quat, "q": np.zeros(len(t), dtype=np.float32)}
 
 
 def _timed_rows(rrd: str, entity: str) -> int:

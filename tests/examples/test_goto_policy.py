@@ -14,12 +14,12 @@ pytest.importorskip("torch")
 pytest.importorskip("newton")
 
 import nexus_sim as nx
-from nexus_sim._src.build.assembly import build_scenario
 from nexus_sim._src.build.launch import resolve_vehicle_usd
 from nexus_sim._src.config import LaunchConfig
 from nexus_sim.examples.controllers.policy.assembly import build_policy_loop
 from nexus_sim.examples.controllers.policy.goto import flight
 from nexus_sim.examples.controllers.policy.goto.geofence import GeofenceGuidance
+from tests.usd.sensor_vehicle import scenario
 
 
 def _catalog_with_base(tmp_path, monkeypatch):
@@ -85,7 +85,7 @@ def _fly_tour(policy: str, steps: int) -> tuple[np.ndarray, np.ndarray]:
     """Fly the example's tour with *policy* for *steps* control steps on the CPU backend, as the
     example does, and return the recorded positions and ``xyzw`` quaternions of the base body.
     """
-    cfg = build_scenario()
+    cfg = scenario()
     cfg["physics"]["force_cpu"] = True
     vehicle_usd, _ = resolve_vehicle_usd(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
     orch = build_policy_loop(cfg, policy_path=policy, vehicle_usd=vehicle_usd, max_steps=steps)
@@ -94,7 +94,7 @@ def _fly_tour(policy: str, steps: int) -> tuple[np.ndarray, np.ndarray]:
         guidance.set_mission(flight.WAYPOINTS)
         sim.run()
     traj = sim[f"vehicle/body/{sim.base_body}"].history()
-    return np.array([s.position for s in traj]), np.array([s.quat_xyzw for s in traj])
+    return traj["position"], traj["orientation"]
 
 
 @pytest.mark.usefixtures("warp_cpu")  # the build's force_cpu sets the device; the scope puts it back
@@ -118,7 +118,7 @@ def test_a_run_with_a_guidance_and_a_host_exchange_runs_one_device_segment_per_t
     Given the policy example's run on the CPU device with a TorchScript stand-in policy and its guidance,
     when it takes its first tick, then its logged stage plan holds one device segment.
     """
-    cfg = build_scenario()
+    cfg = scenario()
     cfg["physics"]["force_cpu"] = True
     vehicle_usd, _ = resolve_vehicle_usd(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
     orch = build_policy_loop(cfg, policy_path=torchscript_policy(), vehicle_usd=vehicle_usd, max_steps=1)

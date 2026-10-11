@@ -65,7 +65,7 @@ def main() -> None:
         sim.run()
 
     states = sim[f"vehicle/body/{sim.base_body}"].history()
-    q = np.array([s.position for s in states])
+    q = np.asarray(states["position"], dtype=float)
     reached = guidance.reached
     final = float(np.linalg.norm(q[-1] - np.array(WAYPOINTS[-1])))
     stats = {

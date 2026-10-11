@@ -29,7 +29,7 @@ ring's tail folds into the first run.
 host stage the whole ring is one graph. A component that states no stages fails the build with an
 error that names it, and so does a stage of a kind the loop doesn't know. Nothing falls back to a
 slower path in silence. A [run](concepts.md#run) logs its plan once at start, for example
-`stage plan: graph(clock -> clear -> rotors -> propellers -> step -> record -> imu -> mag -> baro -> gps) host(truth) host(exchange)`.
+`stage plan: graph(clock -> clear -> rotors -> propellers -> step -> state -> record -> imu -> mag -> baro -> gps) host(truth) host(exchange)`.
 
 ## Signals
 
@@ -68,7 +68,10 @@ before any stage runs, so a captured graph replays buffers that existed at the c
 the buffer of the one output of its name. Where two components write one signal, as two IMUs do, a
 reader takes the writer that a connection on its prim names, or every writer as a list. A connection is
 a relationship `nexus:inputs:<signal>` that the reader's schema declares, whose target is the writer's
-prim:
+prim, or a body's or joint's prim, whose pose or coordinates the plant writes as the signal
+`body/<label>` or `joints/<label>`: the input then takes that output, whatever its own name, as
+`nexus:inputs:pose = </vehicle/body/rotor_1>` hands an estimator's `pose` the rotor's. An input of the
+vehicle's pose type with no connection takes the base body:
 
 ```usda
 def Scope "Estimator" (

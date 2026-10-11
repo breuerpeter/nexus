@@ -186,14 +186,12 @@ def _catalog_base() -> str:
     return load_catalog().assets.base or ""
 
 
-def _catalog_snippet(kind: str, name: str, sha: str, url: str, compact: bool) -> str:
+def _catalog_snippet(name: str, sha: str, url: str, compact: bool) -> str:
     # An asset under the catalog's own base is compact, because that base completes it. One published
     # anywhere else carries its full URL, which is how a catalog names a blob hosted elsewhere.
     ref = f"{{ name: {name}, sha256: {sha} }}" if compact else f'{{ url: "{url}", sha256: {sha} }}'
-    usd = f"    usd: {ref}"
-    if kind == "vehicle":
-        return f"  {name}:\n{usd}"
-    return f"  {name}:\n{usd}\n    geodetic_origin: null   # or {{ lat: .., lon: .. }} for a geo-anchored scene"
+    # A scene's PhysicsScene authors its geodetic origin, so a vehicle and a scene take one snippet.
+    return f"  {name}:\n    usd: {ref}"
 
 
 def main(argv: list[str]) -> int:
@@ -247,7 +245,7 @@ def main(argv: list[str]) -> int:
             print("  NOTE: the docs preview reads the local copy until this base is one the site can reach.")
 
     print(f"\ncatalog.yaml snippet (add under `{kind_dir}:`):\n")
-    print(_catalog_snippet("vehicle" if is_vehicle else "scene", name, sha, usd_url, compact))
+    print(_catalog_snippet(name, sha, usd_url, compact))
     return 0
 
 

@@ -14,7 +14,6 @@ pytest.importorskip("warp")
 import warp as wp
 
 from nexus_sim._src.api.sim import Sim
-from nexus_sim._src.build.assembly import build_scenario
 from nexus_sim._src.build.launch import resolve_vehicle_usd
 from nexus_sim._src.config import LaunchConfig
 from nexus_sim._src.guidance import TrackingGuidance
@@ -34,7 +33,7 @@ _MAIN_TRAJECTORY = {
 
 def _pid(*, cpu: bool, max_steps: int, vehicle: str = "astro_max_base"):
     """The PID example's loop flying `vehicle`, a catalog name or a path, toward 1.5 m up."""
-    cfg = build_scenario()
+    cfg = sv.scenario()
     cfg["physics"]["force_cpu"] = cpu
     vehicle_usd, _ = resolve_vehicle_usd(LaunchConfig().set_vehicle(vehicle).set_scene(sv.SCENE))
     return build_pid_loop(cfg, goal_w=(0.0, 0.0, 1.5), max_steps=max_steps, vehicle_usd=vehicle_usd)
@@ -92,7 +91,7 @@ def test_a_guidance_whose_setpoint_type_its_controller_does_not_read_fails_the_r
     Given the PID example's run and a `TrackingGuidance`, which writes a `ReferenceTrajectory`, when the run
     starts, then it fails before any stage runs, and the error names `TrackingGuidance`, `PidController`,
     `ReferenceTrajectory` and `vec3f`, Warp's name for the `wp.vec3` a position goal travels as. No stage
-    ran, so the recording holds no row.
+    ran, so the recording holds no history.
     """
     guidance = TrackingGuidance(planner=lambda waypoints: _Reference())
     guidance.set_mission([(1.0, 0.0, 1.5)])
@@ -102,6 +101,6 @@ def test_a_guidance_whose_setpoint_type_its_controller_does_not_read_fails_the_r
     ):
         with pytest.raises(ValueError) as e:
             sim.run()
-        rows = len(sim[f"vehicle/body/{sim.base_body}"].history())
+        histories = len(sim)
     words = ("TrackingGuidance", "PidController", "ReferenceTrajectory", "vec3f")
-    assert (all(word in str(e.value) for word in words), rows) == (True, 0)
+    assert (all(word in str(e.value) for word in words), histories) == (True, 0)

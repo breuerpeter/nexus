@@ -18,7 +18,12 @@ ROOT = Path(__file__).resolve().parents[2]
 
 # A vehicle Universal Scene Description (USD) file with one camera prim: an RTX sensor, so the run starts the Kit peer.
 CAMERA_USD = '#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\ndef Xform "vehicle" {\n    def Camera "cam" {}\n}\n'
-PLAIN_USD = '#usda 1.0\n(\n    defaultPrim = "world"\n)\ndef Xform "world" {}\n'
+# A scene with nothing in it but its PhysicsScene, which authors where it sits.
+PLAIN_USD = (
+    '#usda 1.0\n(\n    defaultPrim = "world"\n)\ndef Xform "world" {\n'
+    '    def PhysicsScene "PhysicsScene" (\n        prepend apiSchemas = ["NexusSceneAPI"]\n    )\n'
+    "    {\n        double3 nexus:geodeticOrigin = (47.747944, -122.163917, 5.02)\n    }\n}\n"
+)
 
 
 def _ref(path: Path) -> str:
@@ -48,9 +53,7 @@ def test_the_host_fetches_the_vehicle_and_the_scene_before_the_kit_container_sta
     vehicle.write_text(CAMERA_USD)
     scene.write_text(PLAIN_USD)
     catalog = tmp_path / "catalog.yaml"
-    catalog.write_text(
-        f"vehicles:\n  v:\n    usd: {_ref(vehicle)}\nscenes:\n  s:\n    usd: {_ref(scene)}\n    geodetic_origin: null\n"
-    )
+    catalog.write_text(f"vehicles:\n  v:\n    usd: {_ref(vehicle)}\nscenes:\n  s:\n    usd: {_ref(scene)}\n")
     exe = shutil.which("nexus")
     assert exe, "no `nexus` command on the path"
 
@@ -93,8 +96,10 @@ def test_an_rtx_run_without_docker_names_docker_and_no_missing_file(tmp_path):
     consumer.mkdir()
     vehicle = consumer / "cam.usda"
     vehicle.write_text(CAMERA_USD)
-    # A catalog with an empty scene, which the run names, so it fetches nothing over the network.
-    (consumer / "nexus.catalog.yaml").write_text("scenes:\n  empty: {}\n")
+    # A catalog whose empty scene is a local file, which the run names, so it fetches nothing over the network.
+    scene = consumer / "empty.usda"
+    scene.write_text(PLAIN_USD)
+    (consumer / "nexus.catalog.yaml").write_text(f"scenes:\n  empty:\n    usd: {_ref(scene)}\n")
     env = {**_env(tmp_path), "PYTHONPATH": str(site)}
 
     out = subprocess.run(

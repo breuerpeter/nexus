@@ -80,7 +80,7 @@ class _Windy(GroundTruthEstimator):
         self.wind = Signal("wind", wp.vec3, shape=(1,))
 
     def stages(self):
-        return [Stage("estimate", "device", self._run, writes=(self.estimate, self.wind))]
+        return [Stage("estimate", "device", self._run, reads=(self.pose,), writes=(self.estimate, self.wind))]
 
 
 def _build(tmp_path, body: str, *, device: str = "cpu", controller=None, estimator=None):
@@ -164,7 +164,7 @@ def test_every_device_signal_a_component_writes_keeps_a_history_and_no_component
                 _history(loop.recorder.histories, signal) for signal in ("imu", "estimate", "controls")
             )
             rows = sim[f"vehicle/body/{sim.base_body}"].history()
-            truth = [[*r.position, *r.velocity] for r in (rows[0], *rows[:-1])]
+            truth = [[*r["position"], *r["linear_velocity"]] for r in (rows[0], *rows[:-1])]
     read = (
         [_column(rows, "t").tolist() for rows in (imu, estimate, controls)],
         [row[0] for row in _flat(controls, "controls")],

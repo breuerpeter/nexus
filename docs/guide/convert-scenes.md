@@ -45,19 +45,27 @@ center of the scan's bounding box, but bakes in no start point.
 
 ```bash
 uv run python scripts/assets/spawn_site.py "$NEXUS_DATA/scans/my_site_splat.usdz" \
-    --geo <lat>,<lon>,<alt>   # the converter's "scene origin" trace
+    --origin <lat>,<lon>,<alt>   # the converter's "scene origin" trace
 ```
 
-Prints the catalog `start:`, a flat open-terrain spot near the scene center, and, with `--geo`,
-the `geodetic_origin` measured **at that start**. Both are advisory catalog data: eyeball, tweak
-numbers, no reconversion. A mesh carries no geodesy, so reuse the sibling splat's origin trace and
-omit `alt`.
+Prints the catalog `start:`, a flat open-terrain spot near the scene center, and, with `--origin`,
+the scene's geodetic origin measured **at that start**, as the command that authors it. Both are
+advisory: eyeball, tweak numbers, no reconversion. A mesh carries no geodesy, so reuse the sibling
+splat's origin trace.
+
+Then author the origin on the scene's `PhysicsScene`, with the values step 2 printed. A run fails
+on a scene that authors none:
+
+```bash
+uv run python scripts/assets/author_scene_origin.py "$NEXUS_DATA/scans/my_site_splat.usdz" \
+    "$NEXUS_DATA/scans/my_site.usdz" --origin <lat>,<lon>,<alt>
+```
 
 ## 3. Preview-fly it unregistered
 
 ```bash
 uv run nexus run --vehicle astro_max_fpv \
-    --scene "$NEXUS_DATA/scans/my_site_splat.usdz" --log
+    --scene "$NEXUS_DATA/scans/my_site.usdz" --log
 ```
 
 A local `--scene` path flies the file in place, from the scene's own origin: the Kit container reads
@@ -67,9 +75,9 @@ it at its host path. Inspect the
 ## 4. Publish
 
 ```bash
-uv run python scripts/assets/prepare_asset_upload.py --scene "$NEXUS_DATA/scans/my_site_splat.usdz"
+uv run python scripts/assets/prepare_asset_upload.py --scene "$NEXUS_DATA/scans/my_site.usdz"
 ```
 
 Prints the content-addressed upload key, `public/assets/usd/scenes/<name>-<sha256>.usdz`, and the
-`catalog.yaml` snippet. Upload it by hand, then add the scene row with `start` and
-`geodetic_origin` from step 2. Done: `--scene my_site_splat` flies it anywhere.
+`catalog.yaml` snippet. Upload it by hand, then add the scene row with `start` from step 2.
+Done: `--scene my_site` flies it anywhere.

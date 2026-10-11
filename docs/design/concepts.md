@@ -14,7 +14,7 @@ same pull request, and a rule in the `Project` Vale style flags each word a chan
 
 One flight of one vehicle in one scene, from build to teardown. A run names its vehicle and its
 scene, by catalog name or by local Universal Scene Description (USD) path, and can compose an
-override layer over the vehicle.
+override layer over the vehicle and the scene.
 It records what it flew in its receipt, a `TestedConfig`.
 
 ### Sim
@@ -64,7 +64,8 @@ before the first tick.
 
 The stages one tick runs, in the loop's fixed order. The sensors come first, then the estimator, the
 guidance, and the controller. Once per physics substep, `clear`, the command elements, the force elements, and
-`step` follow, and the record stage comes last. `build_ring` lays the ring out.
+`step` follow, then `state`, which writes the plant's outputs, one signal per body and per joint, and the
+record stage comes last. `build_ring` lays the ring out.
 
 ### Segment
 
@@ -85,8 +86,9 @@ takes every writer's.
 
 A relationship `nexus:inputs:<signal>` on a reader's prim, which the reader's schema declares. Its
 target is the prim of the component the reader takes that signal from, such as the one of two IMUs the
-estimator reads. Newton's `NewtonMimicAPI` names the joint it follows the same way, with
-`newton:mimicJoint`.
+estimator reads, or a body's or joint's prim, whose pose or coordinates the plant writes, such as the
+body an estimator's `pose` reads. A reader of the vehicle's pose with no connection takes the base body.
+Newton's `NewtonMimicAPI` names the joint it follows the same way, with `newton:mimicJoint`.
 
 ## The parts of a run
 
@@ -112,7 +114,7 @@ methods of its class. The [schema reference](../reference/schemas.md) lists the 
 | Role | What it does |
 |---|---|
 | Sensor | samples the plant and writes its sample, a signal of its own type stamped with its sim time: an Inertial Measurement Unit (IMU), a Global Positioning System (GPS) receiver, a camera |
-| Estimator | turns the sensors' values into the estimate, the vehicle's pose and twist that the guidance and the controller read in place of the physics state. The one that ships, `GroundTruthEstimator`, hands on the base body's true pose and twist |
+| Estimator | turns the sensors' values into the estimate, the vehicle's pose and twist that the guidance and the controller read in place of the physics state. The one that ships, `GroundTruthEstimator`, hands on the true pose and twist the plant writes for the base body, or for the body a connection on its prim names |
 | Guidance | turns a mission into the setpoint a controller tracks |
 | Controller | turns the estimate, or the sensors' samples, into the controls, one command per actuator |
 | Command element | turns the controls into Newton's control inputs, such as the rotors' speed targets |
@@ -182,17 +184,19 @@ each row the component logs live, [Logging](../reference/api/logging.md#entity-p
 
 ### Recorder
 
-The fixed part that keeps a history of what a run records each tick: each body, each joint, and each
-device [signal](#signal) a component writes. The loop hands it the signals once it wires the ring.
+The fixed part that keeps a history of what a run records each tick: each device [signal](#signal) a
+component writes, the plant's bodies and joints among them. The loop hands it the signals once it
+wires the ring.
 No component records itself. A script reads it during and after a run, and the Logger writes it
 into the recording.
 
 ### History
 
-The rows the Recorder keeps for one body, joint or signal over a run, each stamped with its sim time:
-`history()` reads them oldest first, and `latest()` reads the newest. A signal's history sits under
-its writer's path then the signal's name, `vehicle/sensors/imu/imu`, and its rows read as records of
-`t` then the quantities the signal's type declares. A device kernel writes each
+The rows the Recorder keeps for one signal over a run, each stamped with its sim time: `history()`
+reads them oldest first as one structured array, and `latest()` reads the newest as one record. A
+history sits under its writer's path then the signal's name, `vehicle/sensors/imu/imu`, and the
+plant's under `vehicle/body/<label>` and `vehicle/joints/<label>`. Every history's rows read as
+records of `t` then the quantities the signal's type declares. A device kernel writes each
 tick's row into the history's staging buffer, a few thousand rows. Each time the buffer fills, the
 rows drain onto host blocks that grow with the run. So device memory stays fixed and the Recorder
 drops no row.

@@ -1,33 +1,28 @@
 """Recorder and History: every row a run records, with a fixed footprint on the device.
 
-A :class:`History` is one body's, joint's or signal's rows over a run. A device kernel writes one row per
-tick into its staging buffers, the row's values and its sim time, at the slot the device counter names, so
-the write joins the captured graph with no host readback. The loop commits one row per tick on the host,
-and each time the staging buffers fill they drain: the rows copy onto the end of the host blocks, which
-grow with the run, and the kernel writes slot 0 again. So device memory stays at ``staging`` rows per
-history and the Recorder drops no row. The host reads a history on demand: ``latest`` reads the newest row
-off the device, ``history`` every row, the blocks then the rows still staged.
+A :class:`History` is one signal's rows over a run. A device kernel writes one row per tick into its staging
+buffers, the row's values and its sim time, at the slot the device counter names, so the write joins the
+captured graph with no host readback. The loop commits one row per tick on the host, and each time the
+staging buffers fill they drain: the rows copy onto the end of the host blocks, which grow with the run,
+and the kernel writes slot 0 again. So device memory stays at ``staging`` rows per history and the Recorder
+drops no row. The host reads a history on demand: ``latest`` reads the newest row off the device, as one
+record, ``history`` every row, the blocks then the rows still staged, as one structured array.
 
-The :class:`Recorder` holds the histories by key and records everything itself: :meth:`watch` registers
-one history per body and per joint from the physics' model, :meth:`tap` one per device signal a component
-writes, under the writer's path then the signal's name, :meth:`record` snapshots them all in the record
-stage, and :meth:`commit` counts the tick's row and drains the staging buffers when full. No component
-states a recording member.
+The :class:`Recorder` holds the histories by key and records everything itself: :meth:`tap` registers one
+history per device signal a component writes, under the writer's path then the signal's name, the plant's
+bodies and joints among them, :meth:`record` snapshots them all in the record stage, and :meth:`commit`
+counts the tick's row and drains the staging buffers when full. No component states a recording member.
 """
 
 from __future__ import annotations
 
 import threading
-from collections.abc import Callable
 from typing import Any
 
 import numpy as np
 import warp as wp
 
-from nexus_sim._src.core.labels import leaf_keys
 from nexus_sim._src.core.signals import Signal
-
-from .state import BODY_FIELDS, BODY_WIDTH, decode_body, make_decode_joint, record_body, record_joint
 
 STAGING = 4096  # rows a staging buffer holds: about 16 s at 250 Hz, the most a SIGKILL can lose
 
@@ -53,7 +48,7 @@ def record_signal(
 
 
 class History:
-    """One body's, joint's or signal's rows over a run.
+    """One signal's rows over a run.
 
     A row is ``width`` values of ``dtype``, a Warp element type, and its sim time. The writing kernel takes
     :attr:`values`, the device staging buffer of ``staging`` rows, :attr:`times`, their sim times,
@@ -61,24 +56,22 @@ class History:
     ``times[slot] = dt × counter``: a kernel argument freezes at capture and the counter doesn't. The host
     reconstructs nothing.
 
-    ``fields`` is the declared row schema: ordered ``(name, n_values)`` pairs that cover the row, such as
-    ``(("position", 3), ("quat_xyzw", 4), …)`` for a body or a struct's fields for a signal. It's the one
-    declaration everything downstream derives from: :meth:`arrays`, the per-quantity readback, and the
-    series the Logger writes. ``decode`` turns one row, its time and its values, into the read type the
-    plant keeps, ``BodyState`` or ``JointState``; with none, the rows read as records of ``t`` then the
-    fields, a signal's shape. ``source`` names the writing class, ``ImuSensor`` say: kind metadata for tools.
-    ``path`` is the writer's path below the process root and ``row`` the row's name under it, the signal's,
-    or ``None`` for the plant, whose key is its path.
+    ``fields`` is the declared row schema: ordered ``(name, n_values)`` pairs that cover the row, a struct's
+    fields for a struct signal, such as ``(("position", 3), ("orientation", 4), …)`` for a body, or one
+    quantity named after a value-typed signal. It's the one declaration everything downstream derives from:
+    the records a row reads as, :meth:`arrays`, the per-quantity readback, and the series the Logger writes.
+    ``source`` names the writing class, ``ImuSensor`` say: kind metadata for tools. ``path`` is the writer's
+    path below the process root and ``row`` the signal's name under it.
     """
 
     def __init__(
         self,
         width: int,
         dt: float,
-        decode: Callable[[float, np.ndarray], object] | None,
+        fields: tuple[tuple[str, int], ...],
+        *,
         staging: int = STAGING,
         dtype: Any = float,
-        fields: tuple[tuple[str, int], ...] | None = None,
         source: str | None = None,
         path: str | None = None,
         row: str | None = None,
@@ -87,7 +80,7 @@ class History:
         self.dt = float(dt)
         self.staging = int(staging)
         self.dtype = dtype
-        self.fields = tuple((str(n), int(w)) for n, w in fields) if fields is not None else None
+        self.fields = tuple((str(n), int(w)) for n, w in fields)
         self.source = source
         self.path = path
         self.row = row
@@ -95,10 +88,9 @@ class History:
         self.times = wp.zeros(self.staging, dtype=wp.float64)  # the staged rows' sim times
         self.counter = wp.zeros(1, dtype=int)  # rows written so far; advances IN the graph
         self.rows = 0  # rows the loop has committed: the host's count, which decides the drains
-        self._decode = decode
         self._blocks: list[tuple[np.ndarray, np.ndarray]] = []  # the drained (times, values), oldest first
         self._lock = threading.Lock()  # serialise the readback: one consistent (counter, buffers) per reader
-        if self.fields is not None and not self._structured and sum(w for _, w in self.fields) != self._columns:
+        if not self._structured and sum(w for _, w in self.fields) != self._columns:
             raise ValueError(
                 f"fields {self.fields} cover {sum(w for _, w in self.fields)} values but width is {self.width}"
             )
@@ -134,11 +126,12 @@ class History:
         with self._lock:  # one consistent readback; .numpy() syncs, so it's the last completed tick's rows
             return int(self.counter.numpy()[0]), self.times.numpy(), self.values.numpy()
 
-    def latest(self) -> object:
-        """Return the most recently written row, decoded, or as a record for a signal's history.
+    def latest(self) -> np.void:
+        """Return the most recently written row as one record: ``t``, the tick's sim time, then each declared
+        quantity, ``row["position"]``.
 
         Reads one row off the device, not the whole staging buffer. That matters because this is the
-        per-tick read: ``Sim.wait_until`` calls it every control tick for the sim clock.
+        per-tick read: a script's predicate between steps.
 
         Raises:
             RuntimeError: No row exists yet: sim not started or not stepped.
@@ -149,16 +142,13 @@ class History:
                 raise RuntimeError("History has no row yet (sim not started / not stepped)")
             slot = (c - 1) % self.staging
             t, row = self.times[slot : slot + 1].numpy(), self.values[slot : slot + 1].numpy()
-        return self._decoded(t, row)[0]
+        return self._records(t, row)[0]
 
-    def history(self) -> object:
-        """Return every row, oldest first: decoded, or as one structured array for a signal's history."""
-        return self._decoded(*self._rows(0, None))
-
-    def _decoded(self, times: np.ndarray, values: np.ndarray) -> object:
-        if self._decode is not None:
-            return [self._decode(float(t), v) for t, v in zip(times, values, strict=True)]
-        return self._records(times, values)
+    def history(self) -> np.ndarray:
+        """Return every row, oldest first, as one structured array: ``t`` then each declared quantity, with the
+        value's own type, ``rows["position"][:, 2]``.
+        """
+        return self._records(*self._rows(0, None))
 
     def _records(self, times: np.ndarray, values: np.ndarray) -> np.ndarray:
         """The rows as one structured array: ``t`` then each declared quantity, with the value's own type."""
@@ -218,12 +208,7 @@ class History:
         """The rows ``[start, stop)`` as one array per declared quantity, ``{"t": (N,), name: (N,) |
         (N, w)}``, oldest first, straight off the rows with no per-row decode and the value's own type.
         Width-1 quantities come back 1-D. ``N == 0`` before the first tick.
-
-        Raises:
-            ValueError: The history declared no ``fields`` schema.
         """
-        if self.fields is None:
-            raise ValueError("history declared no fields schema (register with fields=...)")
         times, values = self._rows(start, stop)
         return {"t": times.copy(), **self._split(values)}
 
@@ -246,54 +231,17 @@ class Recorder:
     """The histories of a run, by key, and the record taps.
 
     A history's key is its writer's path below the process root, the path its rows take in a recording,
-    then its row's name for a signal: ``vehicle/body/<label>`` and ``vehicle/joints/<label>`` for the
-    plant, which :meth:`watch` registers, and ``<path>/<signal>`` for a signal, such as
-    ``vehicle/sensors/imu/imu``, which :meth:`tap` registers. ``base_body`` is the base body's history,
-    the flown path's source.
+    then its signal's name: ``vehicle/body/<label>`` and ``vehicle/joints/<label>`` for the plant's outputs,
+    which the physics writes under its path ``vehicle``, and ``vehicle/sensors/imu/imu`` for a sensor's
+    sample, each of which :meth:`tap` registers.
     """
 
     def __init__(self, dt: float, staging: int = STAGING):
         self._dt = float(dt)
         self.staging = int(staging)
         self.histories: dict[str, History] = {}
-        self.base_body: History | None = None
         self.rows = 0  # rows committed so far, the same for every history
-        self._body_taps: list[tuple[History, int]] = []
-        self._joint_taps: list[tuple[History, int, int, int, int]] = []
-        self._signal_taps: list[tuple[History, wp.array]] = []
-        self._state = None
-
-    def history(
-        self,
-        name: str,
-        *,
-        width: int,
-        decode: Callable[[float, np.ndarray], object],
-        dtype: Any = float,
-        fields: tuple[tuple[str, int], ...] | None = None,
-        source: str | None = None,
-    ) -> History:
-        """Register a history of float rows, the plant's: a ``width``-element row buffer with its decode and
-        its declared ``fields`` schema and ``source`` metadata; see :class:`History`.
-
-        Idempotent for a re-registration with the same width/dtype/fields/source, which returns the
-        existing history, but a duplicate name with a different shape raises: two components must never
-        silently share one buffer, for example two Inertial Measurement Unit (IMU) instances both named
-        ``imu``; give them distinct instance names instead: ``imu_bosch`` / ``imu_murata``.
-        """
-        h = self.histories.get(name)
-        if h is not None:
-            declared = tuple((str(n), int(w)) for n, w in fields) if fields is not None else None
-            if (h.width, h.dtype, h.fields, h.source) != (int(width), dtype, declared, source):
-                raise ValueError(
-                    f"history {name!r} is already registered with a different shape "
-                    f"(width={h.width}, dtype={h.dtype}, fields={h.fields}, source={h.source}): "
-                    "distinct components need distinct instance names"
-                )
-            return h
-        h = History(width, self._dt, decode, self.staging, dtype, fields=fields, source=source, path=name)
-        self.histories[name] = h
-        return h
+        self._taps: list[tuple[History, wp.array]] = []
 
     def tap(self, path: str, signal: Signal, *, source: str | None = None) -> History:
         """Register the history of a device signal a component writes, keyed ``<path>/<signal>``, and tap its
@@ -316,76 +264,22 @@ class Recorder:
         h = History(
             width,
             self._dt,
-            None,
-            self.staging,
-            signal.type,
-            fields=_quantities(signal, width),
+            _quantities(signal, width),
+            staging=self.staging,
+            dtype=signal.type,
             source=source,
             path=path,
             row=signal.name,
         )
         self.histories[key] = h
-        self._signal_taps.append((h, src))
+        self._taps.append((h, src))
         return h
 
-    def watch(self, physics) -> None:
-        """Register one history per body, ``vehicle/body/<label>``, and per joint, ``vehicle/joints/<label>``,
-        of the plant's model, from its labels: every body and joint addressable by name. The base body's
-        history, that of ``physics.base_index``, becomes :attr:`base_body`. A physics with no model, a
-        stand-in, registers nothing.
-        """
-        model = getattr(physics, "model", None)
-        if model is None:
-            return
-        self._state = physics.current_state
-        src = type(physics).__name__
-        body_keys = leaf_keys(
-            [str(k) for k in model.body_label]
-        )  # friendly names: leaf when unique, else the full path
-        self._body_taps = [
-            (
-                self.history(
-                    f"vehicle/body/{key}", width=BODY_WIDTH, decode=decode_body, fields=BODY_FIELDS, source=src
-                ),
-                i,
-            )
-            for i, key in enumerate(body_keys)
-        ]
-        self.base_body = self._body_taps[int(physics.base_index)][0]
-        self._joint_taps = []
-        if model.joint_count and self._state.joint_q is not None:
-            joint_keys = leaf_keys([str(k) for k in model.joint_label])
-            qs = model.joint_q_start.numpy()  # length joint_count+1, with a sentinel, → clean per-joint slices
-            qds = model.joint_qd_start.numpy()
-            for j, key in enumerate(joint_keys):
-                nq, nqd = int(qs[j + 1] - qs[j]), int(qds[j + 1] - qds[j])
-                h = self.history(
-                    f"vehicle/joints/{key}",
-                    width=nq + nqd,
-                    decode=make_decode_joint(nq, nqd),
-                    fields=(("q", nq), ("qd", nqd)),
-                    source=src,
-                )
-                self._joint_taps.append((h, int(qs[j]), nq, int(qds[j]), nqd))
-
     def record(self) -> None:
-        """The record taps: snapshot every body and joint of the live state, and every tapped signal, into
-        their histories, device-only, so the launches join the captured graph. The loop's record stage runs
-        this each tick.
+        """The record taps: snapshot every tapped signal into its history, device-only, so the launches join
+        the captured graph. The loop's record stage runs this each tick.
         """
-        if self._state is not None:
-            bq, bqd = self._state.body_q, self._state.body_qd
-            for h, i in self._body_taps:
-                wp.launch(record_body, dim=1, inputs=(bq, bqd, i, h.dt, h.staging, h.values, h.times, h.counter))
-            if self._joint_taps:
-                jq, jqd = self._state.joint_q, self._state.joint_qd
-                for h, qs, nq, qds, nqd in self._joint_taps:
-                    wp.launch(
-                        record_joint,
-                        dim=1,
-                        inputs=(jq, jqd, qs, nq, qds, nqd, h.dt, h.staging, h.values, h.times, h.counter),
-                    )
-        for h, src in self._signal_taps:  # the generic kernel infers a Python float as float32, so cast
+        for h, src in self._taps:  # the generic kernel infers a Python float as float32, so cast
             wp.launch(record_signal, dim=1, inputs=(src, wp.float64(h.dt), h.staging, h.values, h.times, h.counter))
 
     def commit(self) -> tuple[int, int] | None:

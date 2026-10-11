@@ -13,7 +13,6 @@ pytest.importorskip("pxr")
 import warp as wp
 
 from nexus_sim._src.api.sim import Sim
-from nexus_sim._src.build.assembly import build_scenario
 from nexus_sim._src.core import Clock, Loop
 from nexus_sim._src.core.interfaces import Component, Stage, Tick
 from nexus_sim._src.core.schema import PoseTwist, SimTime
@@ -23,6 +22,7 @@ from nexus_sim._src.guidance import MissionGuidance
 from nexus_sim._src.physics import NewtonPhysics
 from nexus_sim._src.physics.vehicle import VehicleUsd
 from nexus_sim._src.vehicle.estimators import GroundTruthEstimator
+from tests.usd.sensor_vehicle import scenario
 from tests.vehicle import quad
 
 DEVICES = ["cpu", pytest.param("cuda:0", marks=pytest.mark.gpu)]
@@ -86,7 +86,7 @@ def test_each_reader_gets_the_base_bodys_true_pose_and_twist_with_no_noise_and_n
     the bit, the base body's row the Recorder holds for that tick, and the seed row in the pass before the first
     tick.
     """
-    cfg = build_scenario()
+    cfg = scenario()
     cfg["physics"]["force_cpu"] = device == "cpu"
     cfg["physics"]["spawn"] = {"pos": (0.0, 0.0, 2.0)}
     guidance = _KeepingGuidance()
@@ -105,7 +105,7 @@ def test_each_reader_gets_the_base_bodys_true_pose_and_twist_with_no_noise_and_n
         with Sim._from_loop(orch, guidance=guidance) as sim:
             sim.run()
             rows = sim[f"vehicle/body/{sim.base_body}"].history()
-    truth = [[*r.position, *r.quat_xyzw, *r.velocity, *r.angular_velocity] for r in rows]
+    truth = [[*r["position"], *r["orientation"], *r["linear_velocity"], *r["angular_velocity"]] for r in rows]
 
     assert (
         np.array_equal(_bits(guidance.kept), _bits(truth)[:, :3]),
@@ -113,31 +113,32 @@ def test_each_reader_gets_the_base_bodys_true_pose_and_twist_with_no_noise_and_n
     ) == (True, True)
 
 
-class _TwoBodies:
-    """A physics state of two bodies, each with its own pose and twist: body 1 is the vehicle's base."""
+class _TwoBodies(Component):
+    """A stand-in plant whose `state` stage writes two bodies' poses, `body/a` and `body/b`, each its own."""
 
     def __init__(self):
-        self.body_q = wp.array(
-            np.array([[9.0, 9.0, 9.0, 0.0, 0.0, 0.0, 1.0], [1.0, 2.0, 3.0, 0.5, -0.5, 0.5, 0.5]], dtype=np.float32),
-            dtype=wp.transform,
-        )
-        self.body_qd = wp.array(
-            np.array([[9.0, 9.0, 9.0, 9.0, 9.0, 9.0], [4.0, 5.0, 6.0, 7.0, 8.0, 9.5]], dtype=np.float32),
-            dtype=wp.spatial_vector,
-        )
+        self.a = Signal("body/a", PoseTwist, shape=(1,))
+        self.b = Signal("body/b", PoseTwist, shape=(1,))
+
+    def stages(self):
+        return [Stage("state", "device", lambda tick: None, writes=(self.a, self.b))]
 
 
 @pytest.mark.usefixtures("warp_cpu")
-def test_the_passthrough_writes_the_base_bodys_pose_and_twist_not_body_zeros():
-    """The passthrough writes the pose and twist of the body the loop names as the base, not body 0's.
+def test_the_passthrough_writes_the_pose_its_input_holds_not_another_bodys():
+    """The passthrough writes the pose and twist of the body a connection wires its `pose` input to, not another's.
 
-    Given a physics state of two bodies and a tick that names body 1 the base, when the passthrough's stage
-    runs, then its estimate holds body 1's position, quaternion, linear velocity and angular velocity.
+    Given a stand-in plant that writes two bodies' poses and the passthrough estimator whose `pose` input a
+    connection wires to the second body's output, when the plant writes and the passthrough's stage runs,
+    then its estimate holds the second body's position, quaternion, linear velocity and angular velocity.
     """
-    estimator = GroundTruthEstimator()
+    plant, estimator = _TwoBodies(), GroundTruthEstimator()
     stage = estimator.stages()[0]
-    wire([Bound(stage, estimator, "estimator")])
-    stage.run(Tick(state=_TwoBodies(), t=SimTime(), dt=0.004, base=1))
+    ring = [Bound(plant.stages()[0], plant, "physics"), Bound(stage, estimator, "estimator")]
+    wire(ring, [(estimator, "pose", plant, "body/b")])
+    plant.a.write([((9.0, 9.0, 9.0), (0.0, 0.0, 0.0, 1.0), (9.0, 9.0, 9.0), (9.0, 9.0, 9.0))])
+    plant.b.write([((1.0, 2.0, 3.0), (0.5, -0.5, 0.5, 0.5), (4.0, 5.0, 6.0), (7.0, 8.0, 9.5))])
+    stage.run(Tick(state=None, t=SimTime(), dt=0.004))
 
     row = _row(estimator.estimate.read()[0])
 

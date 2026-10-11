@@ -58,10 +58,14 @@ class _Physics:
         wp.launch(_bump, dim=1, inputs=[self.steps])
         return state
 
+    def publish(self, state):
+        pass
+
     def stages(self):
         return [
             Stage("clear", "device", lambda tick: self.clear_forces(tick.state)),
             Stage("step", "device", lambda tick: self.step(tick.state, tick.dt)),
+            Stage("state", "device", lambda tick: self.publish(tick.state)),
         ]
 
 
@@ -383,7 +387,7 @@ def test_physics_substeps_run_that_many_physics_steps_per_tick_when_captured():
 
 
 class _Noting(_Physics):
-    """Device physics whose ``clear`` and ``step`` note when they run."""
+    """Device physics whose ``clear``, ``step`` and ``state`` note when they run."""
 
     def __init__(self, notes):
         super().__init__()
@@ -395,6 +399,9 @@ class _Noting(_Physics):
     def step(self, state, dt):
         self.notes.append("step")
         return state
+
+    def publish(self, state):
+        self.notes.append("state")
 
 
 class _CommandElement(Component):
@@ -419,11 +426,11 @@ class _ForceElement(Component):
 
 def test_a_tick_runs_clear_the_command_elements_the_force_elements_and_step_once_per_substep():
     """A tick runs `clear`, the command elements, the force elements and `step`, in that order, once per
-    physics substep.
+    physics substep, then `state` once.
 
     Given a loop with stand-in physics, a stand-in command element and a stand-in force element that each
     note when they run, when one tick runs with two physics substeps, then the notes read clear, command,
-    force, step, twice over.
+    force, step, twice over, then state, after the one `state` the settled state got before the first tick.
     """
     notes = []
     with wp.ScopedDevice("cpu"):
@@ -438,7 +445,7 @@ def test_a_tick_runs_clear_the_command_elements_the_force_elements_and_step_once
         )
         orch.step()
         orch.close()
-    assert notes == ["clear", "command", "force", "step"] * 2
+    assert notes == ["state", *["clear", "command", "force", "step"] * 2, "state"]
 
 
 @pytest.mark.parametrize("role", ["commands", "forces"])

@@ -23,6 +23,7 @@ t = clock.advance()
 [clear → command elements → force elements → step] × substeps
                                           # command buffer → Newton's control inputs; state → per-body
                                           # forces; step: Newton's actuators, then the solver
+[state]                                   # the plant's outputs: a PoseTwist per body, a struct per joint
 [record]                                  # the recorder's device taps
 ```
 
@@ -30,9 +31,10 @@ Every component states its [stages](concepts.md#stage), and the loop cuts the
 [ring](concepts.md#ring) at the host stages, so each [segment](concepts.md#segment) replays as
 one CUDA graph. See [Execution](execution.md#stages-and-segments).
 
-The **site is resolved once at build**, not sampled per tick: the scene's geodetic origin gives the
-magnetic field, the air pressure and temperature, and gravity, and the sensors that read them take
-them as constructor arguments, the same way every other sensor parameter arrives. One gravity value
+The build resolves the **site once**, and nothing samples it per tick. The geodetic origin the
+scene's `PhysicsScene` authors gives the magnetic field, the air pressure and temperature, and
+gravity. The sensors that read them take them as constructor arguments, the same way every other
+sensor parameter arrives. One gravity value
 reaches both the physics and the Inertial Measurement Unit (IMU). A **camera is a sensor**: each frame
 the Kit peer renders reaches its reader as a signal, an `Image`, so a vision estimator or controller
 reads frames as it reads any sensor.
@@ -187,9 +189,9 @@ Observability is cross-cutting, split into a **write** side and a **read** side:
   Recorder's histories in blocks. A component logs live only a value with no fixed width, such as a
   camera's frame or a guidance's markers.
 - **The [Recorder](concepts.md#recorder).** The Recorder keeps a [history](concepts.md#history) of
-  every body, every joint and every device signal a component writes. Body poses and velocities
-  read as `BodyState` and `JointState`. A signal's rows read as records of `t` then the quantities
-  its type declares. No component records itself: once the loop wires the ring, it hands the
+  every device signal a component writes, the plant's bodies and joints among them, which the physics
+  writes as signals, as every component does. Every history's rows read as records of `t` then the
+  quantities its type declares. No component records itself: once the loop wires the ring, it hands the
   Recorder every device signal, and the Recorder taps each buffer in the record stage. A device kernel writes each
   tick's row into a small staging buffer. The buffer drains onto host blocks that grow with the run,
   so device memory stays fixed and the Recorder drops no row. A caller reads a history on demand

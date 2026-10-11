@@ -37,18 +37,19 @@ class SimTime:
 
 @wp.struct
 class PoseTwist:
-    """The pose and twist of the vehicle's base body in world axes: the estimate an estimator writes, and
-    the guidance and the controllers read, as the signal ``estimate`` of shape ``(1,)``.
+    """The pose and twist of one body in world axes: what the plant writes per body, as the signal
+    ``body/<label>`` of shape ``(1,)``, and the estimate an estimator writes, as the signal ``estimate``,
+    which the guidance and the controllers read.
     """
 
     position: wp.vec3
-    """The base body's origin, metres."""
+    """The body's origin, metres."""
     orientation: wp.quat
-    """The base body's orientation, a quaternion in ``(x, y, z, w)`` order."""
+    """The body's orientation, a quaternion in ``(x, y, z, w)`` order."""
     linear_velocity: wp.vec3
-    """The velocity of the base body's center of mass, m/s."""
+    """The velocity of the body's center of mass, m/s."""
     angular_velocity: wp.vec3
-    """The base body's angular velocity, rad/s."""
+    """The body's angular velocity, rad/s."""
 
 
 @wp.struct

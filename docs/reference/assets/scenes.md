@@ -29,12 +29,12 @@ simulates every physics prim of the same scene without a render.
 | `empty` | Flat ground, no static geometry, the default. A sky-only USD, because every scene carries its own lighting. |
 | `slalom` | Three obstacle pillars for the sampling Model Predictive Control (MPC) demo, cost-only by authored `physics:collisionEnabled = false`. The Signed Distance Field (SDF) avoidance cost includes them, and the solver never contacts them. Avoidance is entirely the controller's job. |
 | `powerline` | An overhead power line on wooden poles beside a road at sunset, 50 m square. The road runs up a smooth 3 m drop and turns 90 degrees. The line follows it past firs, ferns, and boulders. Invisible capsules make the poles, arms and wires collide, while the plants and rocks don't. The benchmark matrix flies an inspection over the line here, see [Benchmarking](../benchmarking.md). `scripts/assets/author_powerline_scene.py` builds it from [Poly Haven](https://polyhaven.com) assets, all [CC0](https://polyhaven.com/license), listed with their authors in [Scene sources](#scene-sources). |
-| `cesium` | A live-streamed globe of Google Photorealistic 3D Tiles through Cesium for Omniverse. Anchored at the catalog default origin, Seattle. Fly it over any location with `--geo <lat>,<lon>`, for example San Francisco with `--geo 37.7942,-122.3954`. Streams only where there is a renderer. Needs `CESIUM_ION_TOKEN`, see [Running](../../guide/running.md). |
+| `cesium` | A live-streamed globe of Google Photorealistic 3D Tiles through Cesium for Omniverse. Its origin is near Seattle. An override layer flies it over any location, see [Running](../../guide/running.md#worlds-for-the-fpv-camera). Streams only where there is a renderer. Needs `CESIUM_ION_TOKEN`. |
 
 ## What every scene file carries
 
 The converters and authoring scripts, in `scripts/assets/scene_root.py`, normalize scene assets
-onto three conventions:
+onto four conventions:
 
 - **One root prim**: a plain `Xform`, the `defaultPrim` with no transform ops, holding everything.
   The renderer opens the scene USD as its **root stage** and places the catalog `start` with a
@@ -46,26 +46,30 @@ onto three conventions:
 - **Its render recipe, when it needs one**: stage render settings in the root layer's
   `customLayerData.renderSettings`, which Kit auto-applies when the stage opens. The cesium scene
   uses one for its fog, tone-map, and bloom grade. No applier code.
+- **Where it sits on Earth**: a `PhysicsScene` prim at `/World/PhysicsScene` that applies
+  `NexusSceneAPI` and authors `nexus:geodeticOrigin`, the latitude, longitude, and altitude of
+  the world origin, which is the start point. It anchors the sensors, the Global Positioning
+  System (GPS) among them, and a Cesium globe. A run fails on a scene whose `PhysicsScene`
+  authors no origin, and an override layer moves it. The prim sits under `/World`, never at
+  `/PhysicsScene`, where a vehicle keeps its own, so a layer that moves the origin composes over
+  the scene alone. For the cesium globe the altitude is the WGS84 *ellipsoidal* height of the
+  street. For a flat scene it's the height over mean sea level.
 
 The cesium scene is exempt from the root-prim rule: its geographic reference anchors it, with no
-`start`, and each `/Cesium*` prim lives at an authored absolute path.
+`start`, and each `/Cesium*` prim lives at an authored absolute path. Its `/World` holds only its
+`PhysicsScene`.
 
-## Placement: `start` and `geodetic_origin`
+## Placement: `start`
 
 The converters normalize scene assets to Z-up meters with the XY origin at the center of the
-scan's bounding box. *The asset doesn't bake in where the drone starts.* Two catalog fields place
-a scene:
+scan's bounding box. *The asset doesn't bake in where the drone starts.* The catalog field `start`
+places a scene:
 
 - `start: [x, y, z]`: the scene-frame point the runtime moves to the world origin, so the
   drone, placed at the origin on the z=0 physics ground, starts on that surface.
   `scripts/assets/spawn_site.py` suggests one. Tweaking it takes a catalog edit, no reconversion.
   The physics ground is an endless plane at the start's height, so no ground a vehicle touches can
   lie below the start: a scene with a slope starts at its foot.
-- `geodetic_origin: { lat, lon[, alt] }`: where the **world origin**, which is the start point,
-  sits on Earth. It initializes the Hardware In The Loop (HIL) Global Positioning System (GPS) and
-  anchors a Cesium globe. `alt` is the WGS84 *ellipsoidal* height of the start surface. It's
-  optional and serves GPS realism only. The cesium scene measures it from the streamed tiles
-  instead.
 
 ## Scene sources
 

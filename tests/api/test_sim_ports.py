@@ -18,8 +18,10 @@ from nexus_sim._src.api.sim import Sim
 from nexus_sim._src.config import Catalog, LaunchConfig
 from nexus_sim._src.core.interfaces import Component, Stage
 from nexus_sim._src.core.loop import Loop
-from nexus_sim._src.core.schema import SimTime
+from nexus_sim._src.core.schema import PoseTwist, SimTime
+from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
+from tests.usd import sensor_vehicle as sv
 
 # --- the stand-in core components, as tests/core builds the loop -----------------------------------
 
@@ -44,6 +46,9 @@ class _Clock:
 class _Physics:
     base_body = "body_frd"
 
+    def __init__(self):
+        self.body = Signal("body/body_frd", PoseTwist, shape=(1,))  # the one output a reader of the pose takes
+
     def reset(self):
         return {"q": 0}
 
@@ -57,6 +62,7 @@ class _Physics:
         return [
             Stage("clear", "device", lambda tick: self.clear_forces(tick.state)),
             Stage("step", "device", lambda tick: self.step(tick.state, tick.dt)),
+            Stage("state", "device", lambda tick: None, writes=(self.body,)),
         ]
 
 
@@ -143,7 +149,7 @@ def _run(tmp_path, *, layer: str | None = None, peers: dict | None = None) -> Lo
     catalog = Catalog.from_dict(
         {
             "vehicles": {"astro": {"usd": {"url": blob.as_uri(), "sha256": sha, "filename": blob.name}}},
-            "scenes": {"empty": {}},
+            "scenes": {"empty": {"usd": sv.SCENE_REF}},
         }
     )
     spec = {"vehicle": "astro", "scene": "empty"}

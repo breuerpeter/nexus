@@ -73,7 +73,11 @@ class _Physics:
         return _State()
 
     def stages(self):
-        return [Stage("clear", "device", lambda tick: None), Stage("step", "device", lambda tick: None)]
+        return [
+            Stage("clear", "device", lambda tick: None),
+            Stage("step", "device", lambda tick: None),
+            Stage("state", "device", lambda tick: None),
+        ]
 
 
 class _Counter(Component):
@@ -206,20 +210,21 @@ def _orch(sensors, controller, **kw):
 
 def _stopped(tmp_path, controller, *, sensors=(), guidance=None) -> tuple[str, int]:
     """Fly the fixture quad of `tests/vehicle/quad.py` around `controller`, with `sensors` beside its own, the
-    passthrough estimator and `guidance`, on real physics, and return the message of the `ValueError` the run stops with and the rows
-    its recording holds: the warm pass records the first row, so a run that stopped before any stage ran
-    holds none.
+    passthrough estimator and `guidance`, on real physics, and return the message of the `ValueError` the run stops with and the
+    histories its recording holds: the loop taps the signals once it wires the ring, so a run that stopped
+    before any stage ran holds none.
     """
     pytest.importorskip("newton")
     pytest.importorskip("pxr")
     from nexus_sim._src.api.sim import Sim
-    from nexus_sim._src.build.assembly import assemble, build_scenario, resolve_device
+    from nexus_sim._src.build.assembly import assemble, resolve_device
     from nexus_sim._src.physics import NewtonPhysics
     from nexus_sim._src.physics.vehicle import VehicleUsd
     from nexus_sim._src.vehicle.estimators import GroundTruthEstimator
+    from tests.usd.sensor_vehicle import scenario
     from tests.vehicle import quad
 
-    cfg = build_scenario()
+    cfg = scenario()
     cfg["physics"]["force_cpu"] = True
     resolve_device(cfg)
     vehicle_usd = VehicleUsd({"usd_path": str(quad.author(tmp_path / "quad.usda"))})
@@ -238,7 +243,7 @@ def _stopped(tmp_path, controller, *, sensors=(), guidance=None) -> tuple[str, i
     with Sim._from_loop(orch, guidance=guidance) as sim:
         with pytest.raises(ValueError) as e:
             sim.run()
-        return str(e.value), len(sim["vehicle/body/body"].history())
+        return str(e.value), len(sim)
 
 
 @pytest.mark.parametrize("device", DEVICES)
@@ -305,12 +310,12 @@ def test_a_device_stage_that_reads_a_host_signal_fails_the_run_naming_the_stage_
 
     Given a `TrackingGuidance` and a stand-in controller whose device stage reads the `ReferenceTrajectory` it
     writes, when the run starts, then it fails before any stage runs, and the error names that stage and the
-    setpoint. It flies the fixture quad, and no stage ran, so the recording holds no row.
+    setpoint. It flies the fixture quad, and no stage ran, so the recording holds no history.
     """
     guidance = TrackingGuidance(planner=lambda waypoints: _Reference())
     guidance.set_mission([(1.0, 0.0, 2.0)])
-    message, rows = _stopped(tmp_path, _SteerOnDevice(), guidance=guidance)
-    assert (all(word in message for word in ("steer", "setpoint")), rows) == (True, 0)
+    message, histories = _stopped(tmp_path, _SteerOnDevice(), guidance=guidance)
+    assert (all(word in message for word in ("steer", "setpoint")), histories) == (True, 0)
 
 
 @pytest.mark.usefixtures("warp_cpu")
@@ -320,21 +325,23 @@ def test_two_components_that_write_one_signal_a_third_reads_fail_the_run_naming_
 
     Given two stand-in sensors whose device stages write one signal and a stand-in controller that reads it,
     when the run starts, then it fails before any stage runs, and the error names both sensors. It flies the
-    fixture quad, and no stage ran, so the recording holds no row.
+    fixture quad, and no stage ran, so the recording holds no history.
     """
     writers = [_Counter("first_counter"), _Counter("second_counter")]
-    message, rows = _stopped(tmp_path, _CountReader(), sensors=writers)
-    assert (all(name in message for name in ("first_counter", "second_counter")), rows) == (True, 0)
+    message, histories = _stopped(tmp_path, _CountReader(), sensors=writers)
+    assert (all(name in message for name in ("first_counter", "second_counter")), histories) == (True, 0)
 
 
 class _Writer(Component):
-    """A sensor on the prim `path`, named after its leaf, whose host stage writes `value` to the signal `count`."""
+    """A sensor on the prim `path`, named after its leaf, whose host stage writes `value` to the signal `count`, or
+    to the signal named `signal`.
+    """
 
-    def __init__(self, path: str, value: int):
+    def __init__(self, path: str, value: int, signal: str = "count"):
         self.prim_path = path
         self.name = path.rsplit("/", 1)[-1]
         self.value = value
-        self.count = Signal("count", Count, shape=(1,))
+        self.count = Signal(signal, Count, shape=(1,))
 
     def stages(self):
         return [Stage("write", "host", lambda tick: self.count.write([(self.value,)]), writes=(self.count,))]
@@ -352,6 +359,25 @@ class _Reader(Component):
         return [Stage("read", "host", lambda tick: None, reads=(self.count,))]
 
 
+def test_a_connection_wires_an_input_to_a_writers_output_of_another_name():
+    """A connection wires an input to a writer's output of another name, and without one the input has no writer.
+
+    Given a sensor whose host stage writes 7 to its signal `tally` and an estimator whose host stage reads
+    `count`, when the loop wires them with a link from the estimator's `count` to the sensor's `tally`, then
+    the estimator reads 7; and with no link, the wiring fails and names the estimator and `count`.
+    """
+    writer, reader = _Writer("/vehicle/body/A", 7, signal="tally"), _Reader()
+    pairs = [(writer, "sensor"), (reader, "estimator")]
+    ring = [Bound(stage, c, role) for c, role in pairs for stage in c.stages()]
+    wire(ring, [(reader, "count", writer, "tally")])
+    writer.count.write([(7,)])
+    read = int(reader.count.read()[0]["n"])
+    with pytest.raises(ValueError) as e:
+        wire(ring)
+
+    assert (read, "_Reader" in str(e.value), "'count'" in str(e.value)) == (7, True, True)
+
+
 def _read(writers, reader, connections=None):
     """What `reader` reads once `writers` have each written their value, wired as the loop wires them, with
     `connections`, by the reader's prim, the signal and the prim it names, which the builder resolves to the
@@ -360,7 +386,7 @@ def _read(writers, reader, connections=None):
     pairs = [*((w, "sensor") for w in writers), (reader, "estimator")]
     by_prim = {c.prim_path: c for c, _ in pairs}
     links = [
-        (by_prim[reader_prim], signal, by_prim[writer_prim])
+        (by_prim[reader_prim], signal, by_prim[writer_prim], signal)
         for reader_prim, inputs in (connections or {}).items()
         for signal, writer_prim in inputs.items()
     ]

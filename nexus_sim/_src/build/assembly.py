@@ -93,10 +93,9 @@ def assemble(
 
     dt = cfg["physics"]["dt"]
     rtf = cfg["physics"].get("rtf", 0)
-    # The site: the scene's geodetic origin, which the run's builder threaded into the cfg, and the
-    # ambient values resolved from it once, here, for the sensors that read them.
-    gps = cfg["sensors"]["gps"]["init"]
-    site = Site.at(gps["lat"], gps["lon"], gps["alt"])
+    # The site: the geodetic origin the scene's PhysicsScene authors, which the run's builder threaded
+    # into the cfg, and the ambient values resolved from it once, here, for the sensors that read them.
+    site = Site.at(*cfg["geodetic_origin"])
     commands, forces = rotor_chain(physics, vehicle_usd)  # from the vehicle USD's rotors, not cfg
 
     seedtree = SeedTree(cfg.get("seed", 42))  # the run's builder threads runtime.seed; string-name path keeps 42
@@ -141,15 +140,11 @@ def assemble(
     )
 
 
-# Default scenario; its Global Positioning System (GPS) origin is Seattle.
+# Default scenario. No sensor entry, by design: the scene's PhysicsScene authors its geodetic origin,
+# and the sensor suite, which sensors exist + their noise/mount params, lives in the vehicle USD as
+# applied sensor schemas, the same as the actuator entry below.
 DEFAULT_SCENARIO = {
     "physics": {"enabled": True, "dt": 0.004, "force_cpu": False, "rtf": 0, "solver": "mujoco"},
-    # sensors.gps.init is the scene's geodetic origin, a world property, so it stays config. The
-    # sensor suite itself, which sensors exist + their noise/mount params, lives in the vehicle
-    # USD as applied sensor schemas, the same as the actuator entry below.
-    "sensors": {
-        "gps": {"init": {"lat": 47.747944, "lon": -122.163917, "alt": 5.02}},
-    },
     # No rotor entry, by design. The aero/thrust map (rpm_max, ct, cd, tau, aero_h, aero_hforce)
     # lives in the vehicle USD, declared per rotor on its body, its motor and its joint, and
     # VehicleUsd.actuator_params() reads it; since the USD is content-hashed, the vehicle hash pins the
@@ -205,15 +200,17 @@ def build_loop(
     ``peers`` are the processes the build started for this run, which the loop stops when the run ends.
     ``ports`` is the run's port map, the links that leave the run, which ``Sim.ports`` exposes.
     ``connections`` are the vehicle's, by prim: for a reader's prim, each signal it reads and the prim
-    whose component writes it; ``prims`` names the controller and the estimator by their prims, as the
-    assembly names each sensor, so the loop takes each connection between the two components.
+    whose component writes it, or the body's or joint's prim whose output the plant writes; ``prims`` names
+    the controller and the estimator by their prims, as the assembly names each sensor, so the loop takes each
+    connection between the two components, or between the reader and the plant's output.
     ``settings`` is the run's effective configuration, which the loop keeps for a caller to read back
     and the logger shows in the viewer's Settings tab; the run's builder passes the tested-config receipt.
     ``preroll_timeout`` covers the boot of a controller with a peer, since an autopilot in a container
     needs a generous window.
 
     Raises:
-        ValueError: A connection names a prim that declares no component; the message names both prims.
+        ValueError: A connection names a prim that declares no component and is no body or joint of the
+            model; the message names both prims.
     """
     logger.info(f"device: {resolve_device(cfg)}")
     if vehicle_usd is None:
@@ -234,10 +231,16 @@ def build_loop(
         for signal, writer in inputs.items():
             if reader not in by_prim:
                 raise ValueError(f"{reader} connects {signal!r} to {writer}, and declares no component itself")
-            if writer not in by_prim:
+            if writer in by_prim:
+                links.append((by_prim[reader], signal, by_prim[writer], signal))
+            elif writer in physics.outputs.by_label:
+                links.append((by_prim[reader], signal, physics, physics.outputs.by_label[writer].name))
+            else:
                 who = type(by_prim[reader]).__name__
-                raise ValueError(f"{who} on {reader} connects {signal!r} to {writer}, which declares no component")
-            links.append((by_prim[reader], signal, by_prim[writer]))
+                raise ValueError(
+                    f"{who} on {reader} connects {signal!r} to {writer}, which declares no component and is no "
+                    "body or joint of the model"
+                )
     return Loop(
         clock=a.clock,
         physics=a.physics,

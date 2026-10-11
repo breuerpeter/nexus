@@ -15,7 +15,6 @@ from .catalog import (
 )
 from .models import (
     AssetRef,
-    GeodeticOrigin,
     LaunchConfig,
     Output,
     Px4Spec,
@@ -28,7 +27,6 @@ __all__ = [
     "AssetRef",
     "Catalog",
     "CatalogError",
-    "GeodeticOrigin",
     "LaunchConfig",
     "NoMatchError",
     "Output",

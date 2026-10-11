@@ -102,8 +102,8 @@ def main() -> None:
         sim.run()
 
     states = sim[f"vehicle/body/{sim.base_body}"].history()
-    traj = np.array([s.position for s in states])
-    quats = np.array([s.quat_xyzw for s in states])  # xyzw order
+    traj = np.asarray(states["position"], dtype=float)
+    quats = np.asarray(states["orientation"], dtype=float)  # xyzw order
     qx, qy, qz, qw = quats[:, 0], quats[:, 1], quats[:, 2], quats[:, 3]
     # thrust/up axis · world +z: −body z, since the vehicle's Universal Scene Description (USD) has
     # Forward Right Down (FRD) authoring
@@ -114,7 +114,7 @@ def main() -> None:
     # Nose-first: while cruising, the body +x axis should track the horizontal velocity direction, the
     # guidance's velocity-aligned yaw reference. Body +x in world (x,y) compared to the horizontal velocity,
     # over the moving steps; the check skips near-hover steps, where nothing constrains the heading.
-    vel = np.array([s.velocity for s in states])  # world linear velocity
+    vel = np.asarray(states["linear_velocity"], dtype=float)  # world linear velocity
     bx = np.stack([1.0 - 2.0 * (qy * qy + qz * qz), 2.0 * (qx * qy + qw * qz)], axis=1)  # body +x, world (x, y)
     bx /= np.linalg.norm(bx, axis=1, keepdims=True) + 1e-9
     vh = vel[:, :2]

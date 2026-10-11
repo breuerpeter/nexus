@@ -102,9 +102,9 @@ def dump_run(
     d = _out_dir(out_dir)
     states = sim[f"vehicle/body/{sim.base_body}"].history()
     arrays: dict[str, np.ndarray] = {
-        "est_t": np.array([s.t for s in states], dtype=np.float64),
-        "est_pos": np.array([s.position for s in states], dtype=np.float64),
-        "est_quat_xyzw": np.array([s.quat_xyzw for s in states], dtype=np.float64),
+        "est_t": np.asarray(states["t"], dtype=np.float64),
+        "est_pos": np.asarray(states["position"], dtype=np.float64),
+        "est_quat_xyzw": np.asarray(states["orientation"], dtype=np.float64),
     }
     if reference is not None:
         if reference_t0 is None:

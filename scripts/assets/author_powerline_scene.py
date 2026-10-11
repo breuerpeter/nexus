@@ -714,6 +714,10 @@ def author(out_path: str) -> str:
             placed.append((x, y, r))
             n += 1
 
+    from scene_root import WOODINVILLE, author_origin
+
+    author_origin(stage, WOODINVILLE)
+
     # One flat layer before packaging: the packager rewrites a nested layer's texture paths to its
     # own folders, which the nested layer then can't resolve; flattened, every path sits in one layer.
     flat_usd = tempfile.mktemp(suffix=".usdc")

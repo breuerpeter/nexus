@@ -18,7 +18,7 @@ pytest.importorskip("pxr")
 import warp as wp
 
 from nexus_sim._src.api.sim import Sim
-from nexus_sim._src.build.assembly import assemble, build_loop, build_scenario, resolve_device
+from nexus_sim._src.build.assembly import assemble, build_loop, resolve_device
 from nexus_sim._src.build.launch import resolve_vehicle_usd
 from nexus_sim._src.config import LaunchConfig
 from nexus_sim._src.core import Clock
@@ -29,7 +29,7 @@ from nexus_sim._src.physics import NewtonPhysics
 from nexus_sim._src.physics.vehicle import VehicleUsd
 from nexus_sim._src.scene.site import GRAVITY
 from nexus_sim.examples._lib import Rotors, build_rotor_mixer_from_model
-from tests.usd.sensor_vehicle import HostController
+from tests.usd.sensor_vehicle import HostController, scenario
 from tests.vehicle import quad
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")
@@ -167,7 +167,7 @@ def _loop(path, controller, *, commands=(), forces=()):
     """The run the quad at `path` builds around `controller`, with stand-in command elements and force
     elements built by `commands` and `forces`, each a callable of the physics, beside the rotors' own.
     """
-    cfg = build_scenario()
+    cfg = scenario()
     cfg["physics"]["force_cpu"] = True
     resolve_device(cfg)
     vehicle_usd = VehicleUsd({"usd_path": str(path)})
@@ -188,7 +188,7 @@ def _rotors(path, controller):
     """The run the quad at `path` builds around `controller` with the examples' `Rotors` in place of the
     rotor chain, the Newton motors idle, as the Proportional Integral Derivative (PID) example flies.
     """
-    cfg = build_scenario()
+    cfg = scenario()
     cfg["physics"]["force_cpu"] = True
     resolve_device(cfg)
     vehicle_usd = VehicleUsd({"usd_path": str(path)})
@@ -212,7 +212,8 @@ def _flown(orch) -> tuple[float, float | None]:
     with wp.ScopedDevice("cpu"), Sim._from_loop(orch) as sim:
         sim.run()
         rows = sim["vehicle/body/body"].history_arrays()["position"]
-        joint = sim["vehicle/joints/gimbal_joint"].history()[-1].q[0] if "vehicle/joints/gimbal_joint" in sim else None
+        gimbal = sim["vehicle/joints/gimbal_joint"] if "vehicle/joints/gimbal_joint" in sim else None
+        joint = float(gimbal.latest()["q"][0]) if gimbal is not None else None
     return float(rows[-1][2] - rows[0][2]), joint
 
 
@@ -220,7 +221,7 @@ def fly_shipped(steps: int = STREAM_TICKS) -> np.ndarray:
     """Fly `astro_max_base` through the command stream on the CPU device: every body's pose per tick,
     ``(steps, bodies, 7)``.
     """
-    cfg = build_scenario()
+    cfg = scenario()
     cfg["physics"]["force_cpu"] = True
     vehicle_usd, _ = resolve_vehicle_usd(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
     orch = build_loop("astro_max_base", cfg, vehicle_usd, controller=_Stream(), max_steps=steps)
@@ -261,16 +262,16 @@ def test_a_controller_whose_controls_are_narrower_than_a_reader_needs_fails_the_
     Given the fixture quad with four rotors and a controller whose controls hold three values, when the run
     starts, then it fails before any stage runs, and the error names the controller, the reader, 3 and 4;
     once with the rotors' command element and once with the examples' `Rotors`. No stage ran, so the
-    recording holds no row.
+    recording holds no history.
     """
     path = quad.author(tmp_path / "quad.usda")
     orch = quad.build(path, quad.FLIGHT_STEPS, _Narrow()) if reader == "RotorCommand" else _rotors(path, _Narrow())
     with wp.ScopedDevice("cpu"), Sim._from_loop(orch) as sim:
         with pytest.raises(ValueError) as e:
             sim.run()
-        rows = len(sim["vehicle/body/body"].history())
+        histories = len(sim)
     named = all(re.search(rf"\b{word}\b", str(e.value)) for word in ("_Narrow", reader, "3", "4"))
-    assert (named, rows) == (True, 0)
+    assert (named, histories) == (True, 0)
 
 
 def test_an_input_no_component_writes_fails_the_run_naming_the_reader_and_the_signal(tmp_path):
@@ -279,15 +280,15 @@ def test_an_input_no_component_writes_fails_the_run_naming_the_reader_and_the_si
 
     Given the fixture quad and a controller that writes no controls, when the run starts, then it fails before
     any stage runs, and the error names the rotors' command element and the controls. No stage ran, so the
-    recording holds no row.
+    recording holds no history.
     """
     orch = quad.build(quad.author(tmp_path / "quad.usda"), quad.FLIGHT_STEPS, _Silent())
     with wp.ScopedDevice("cpu"), Sim._from_loop(orch) as sim:
         with pytest.raises(ValueError) as e:
             sim.run()
-        rows = len(sim["vehicle/body/body"].history())
+        histories = len(sim)
     named = all(word in str(e.value) for word in ("RotorCommand", "controls"))
-    assert (named, rows) == (True, 0)
+    assert (named, histories) == (True, 0)
 
 
 def test_a_rotor_whose_joint_no_newton_actuator_drives_fails_the_build_naming_the_rotor(tmp_path):
@@ -309,7 +310,7 @@ def test_a_newton_actuator_on_a_joint_that_is_no_rotor_still_drives_its_joint(tm
     _turn_joint(orch.physics, quad.GIMBAL_JOINT, SERVO_RAD)
     with wp.ScopedDevice("cpu"), Sim._from_loop(orch) as sim:
         sim.run()
-        angles = [row.q[0] for row in sim["vehicle/joints/gimbal_joint"].history()]
+        angles = sim["vehicle/joints/gimbal_joint"].history()["q"][:, 0].tolist()
     assert (round(angles[0], 1), abs(angles[-1]) < SETTLED) == (SERVO_RAD, True)
 
 
