@@ -86,7 +86,6 @@ PINNED = [
     "PositionGoal",
     "ReferenceTrajectory",
     "Registry",
-    "SensorRun",
     "Signal",
     "Sim",
     "SimTime",

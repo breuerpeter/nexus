@@ -341,9 +341,8 @@ class Sim:
             raise RuntimeError("enter the Sim context first (`with nx.Sim(...) as sim:`)")
         return Histories(self._orch.recorder.histories, ("vehicle/body/", "vehicle/joints/"))
 
-    @property
-    def histories(self):
-        """One view over every recorded history, keyed by its path below the run's root.
+    def __getitem__(self, path: str):
+        """The recorded history at ``path``, the history's path below the run's root: a script indexes the run.
 
         A stub with the signature the tests call, #44: its body comes with the change.
         """
