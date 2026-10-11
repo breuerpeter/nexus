@@ -49,6 +49,9 @@ class "StandInEstimatorAPI" (
     rel nexus:inputs:mag (
         doc = "The magnetometer whose sample the stand-in estimator reads, of the ones the vehicle declares."
     )
+    rel nexus:inputs:pose (
+        doc = "The body whose pose and twist the stand-in estimator reads, of the ones the plant writes; none: the base body."
+    )
 }
 
 class "StandInNoRoleAPI" (

@@ -82,11 +82,11 @@ def _series_names(field: str, width: int) -> list[str]:
     """Legend names for a multi-column quantity's series, one per column: kinematic vectors get
     their conventional component names; anything else gets an index.
     """
-    if field in ("position", "velocity"):
+    if field in ("position", "linear_velocity"):
         return ["x", "y", "z"]
     if field == "angular_velocity":
         return ["wx", "wy", "wz"]
-    if field == "quat_xyzw":
+    if field == "orientation":
         return ["qx", "qy", "qz", "qw"]
     return [f"{field}[{i}]" for i in range(width)]
 
@@ -809,7 +809,10 @@ class Logger:
                 arrays = h.arrays(start, stop)
                 if np.asarray(arrays["t"]).size == 0:
                     continue
-                block.append((key, getattr(h, "path", None) or key, getattr(h, "source", None), tuple(fields), arrays))
+                # The tab tree groups a history by its instance's path, the writer's for a component's signal.
+                # The plant's outputs name their instance in the signal, `body/<label>`, so their key is it.
+                path = key if "/" in (getattr(h, "row", None) or "") else getattr(h, "path", None) or key
+                block.append((key, path, getattr(h, "source", None), tuple(fields), arrays))
             if not block:
                 return
             if self._recording is None:
@@ -884,7 +887,7 @@ class Logger:
             return
         base = rows[self._base]
         t = base["t"]
-        pos, quat = base["position"].astype(np.float32), base["quat_xyzw"].astype(np.float32)
+        pos, quat = base["position"].astype(np.float32), base["orientation"].astype(np.float32)
         rr.send_columns(
             BODY_ENTITY,
             indexes=[rr.TimeColumn("time", duration=t)],
@@ -900,7 +903,7 @@ class Logger:
                 body = rows[parent] if 0 <= parent < len(rows) else None
                 if body is None:
                     continue
-                bp, bq = body["position"].astype(np.float64), body["quat_xyzw"].astype(np.float64)
+                bp, bq = body["position"].astype(np.float64), body["orientation"].astype(np.float64)
                 sp, sq = (
                     np.tile(xf[:3].astype(np.float64), (len(t), 1)),
                     np.tile(xf[3:7].astype(np.float64), (len(t), 1)),
@@ -941,12 +944,12 @@ class Logger:
                     ),
                     static=True,
                 )
-        bp, bq = base["position"].astype(np.float64), base["quat_xyzw"].astype(np.float64)
+        bp, bq = base["position"].astype(np.float64), base["orientation"].astype(np.float64)
         inv = _quat_conj(bq)
         for i, path in enumerate(paths):
             if i == self._base or rows[i] is None:
                 continue
-            p, q = rows[i]["position"].astype(np.float64), rows[i]["quat_xyzw"].astype(np.float64)
+            p, q = rows[i]["position"].astype(np.float64), rows[i]["orientation"].astype(np.float64)
             rr.send_columns(
                 path,
                 indexes=[rr.TimeColumn("time", duration=base["t"])],

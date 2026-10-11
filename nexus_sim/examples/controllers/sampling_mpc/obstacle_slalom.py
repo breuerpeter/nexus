@@ -68,8 +68,8 @@ def main() -> None:
         sim.run()
 
     traj = sim[f"vehicle/body/{sim.base_body}"].history()
-    q = np.array([s.position for s in traj])
-    quats = np.array([s.quat_xyzw for s in traj])  # xyzw order
+    q = np.asarray(traj["position"], dtype=float)
+    quats = np.asarray(traj["orientation"], dtype=float)  # xyzw order
     reached = guidance.reached
 
     # Clearance to the nearest pillar axis in xy → must exceed the pillar radius, so it cleared every pillar.
@@ -84,7 +84,7 @@ def main() -> None:
     tilt = np.degrees(np.arccos(np.clip(up_z, -1.0, 1.0)))
     # Nose-first: while cruising, the body +x axis should track the horizontal velocity direction, the
     # velocity-aligned heading cost. Body +x in world xy compared to the horizontal velocity, over the moving steps.
-    vel = np.array([s.velocity for s in traj])  # world linear velocity
+    vel = np.asarray(traj["linear_velocity"], dtype=float)  # world linear velocity
     bx = np.stack([1.0 - 2.0 * (qy * qy + qz * qz), 2.0 * (qx * qy + qw * qz)], axis=1)  # body +x, world xy
     bx /= np.linalg.norm(bx, axis=1, keepdims=True) + 1e-9
     sp = np.linalg.norm(vel[:, :2], axis=1)

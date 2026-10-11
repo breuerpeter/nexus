@@ -11,7 +11,7 @@ of the public surface. Import from `nexus_sim`, never from `nexus_sim._src`.
 
 <div class="grid cards" markdown>
 
--   **[Simulation](simulation.md)**: `Sim`, the one entry to a run, which a script drives and indexes by path for any recorded history, and the `BodyState` and `JointState` rows of the plant.
+-   **[Simulation](simulation.md)**: `Sim`, the one entry to a run, which a script drives and indexes by path for any recorded history, the plant's bodies and joints among them.
 -   **[Components, registry, and peers](components.md)**: `Component`, the one contract every role fills, with `Stage`, `Tick` and `Signal`. `Registry` and `register` map a declaration to its class, and `Peer` is the contract a process the run starts fills.
 -   **[Signal types](core.md)**: `SimTime`, `PoseTwist`, the setpoint types and each shipped sensor's sample type, what a component's signals carry.
 -   **[Configuration](configuration.md)**: `LaunchConfig` for the launch configuration and `Catalog` for the vehicle and scene catalog.

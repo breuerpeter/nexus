@@ -72,6 +72,7 @@ class _Physics:
         return [
             Stage("clear", "device", lambda tick: self.clear_forces(tick.state)),
             Stage("step", "device", lambda tick: self.step(tick.state, tick.dt)),
+            Stage("state", "device", lambda tick: None),
         ]
 
 

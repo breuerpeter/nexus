@@ -717,7 +717,9 @@ def test_a_px4_run_takes_no_estimator_stage(tmp_path, warp_cpu, caplog):
     loop.close()
 
     plans = [r.getMessage() for r in caplog.records if r.getMessage().startswith("stage plan:")]
-    assert plans == ["stage plan: eager(clear -> rotors -> propellers -> step -> record) host(truth) host(exchange)"]
+    assert plans == [
+        "stage plan: eager(clear -> rotors -> propellers -> step -> state -> record) host(truth) host(exchange)"
+    ]
 
 
 def test_a_layer_path_that_does_not_exist_fails_before_any_peer_starts(tmp_path, daemon):

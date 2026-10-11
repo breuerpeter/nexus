@@ -16,8 +16,10 @@ import pytest
 pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
+import nexus_sim as nx
 from nexus_sim._src.core.schema import ImuSample, MagSample
 from nexus_sim._src.core.signals import Signal
+from nexus_sim._src.vehicle.estimators import GroundTruthEstimator
 from tests.usd import sensor_vehicle as sv
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")
@@ -167,3 +169,89 @@ def test_a_connection_that_names_a_prim_which_writes_none_of_the_signals_its_rea
         (True, True, 0),
         (True, True, 0),
     )
+
+
+# The plant's bodies a connection can name, #275: the fixture vehicle's first rotor body, under the base body,
+# and a path that holds no prim.
+ROTOR = f"{sv.BODY}/rotor_1"
+NOWHERE = f"{sv.ROOT}/Nowhere"
+POSE_TICKS = 5
+
+
+class _Passthrough(GroundTruthEstimator):
+    """The passthrough estimator built from the stand-in schema: it takes the schema's keyword arguments and reads none."""
+
+    def __init__(self, **kwargs):
+        super().__init__()
+
+
+def _pose_rows(folder, estimator_text: str) -> tuple:
+    """The estimate rows and each body's rows, by the body's label, of a run of the fixture vehicle, the
+    passthrough estimator declared on its scope with `estimator_text`, stepped 5 ticks, each as `history()`
+    gives them.
+    """
+    path = sv.vehicle(folder, estimator=estimator_text)
+    loop = sv.build(path, components=sv.components(StandInEstimatorAPI=_Passthrough))
+    with nx.Sim._from_loop(loop) as sim:
+        for _ in range(POSE_TICKS):
+            assert sim.step()
+        estimate = next(sim[key] for key in sim if key.endswith("/estimate")).history()
+        bodies = {key.rsplit("/", 1)[-1]: sim[key].history() for key in sim if key.startswith("vehicle/body/")}
+    return estimate, bodies
+
+
+def _pose_twist(rows) -> bytes:
+    """Each row's position and linear velocity, 32-bit floats as bytes, so two histories compare to the bit; no
+    bytes when a row has no such field.
+    """
+    out = []
+    for row in rows:
+        names = getattr(getattr(row, "dtype", None), "names", None) or ()
+        if "position" not in names or "linear_velocity" not in names:
+            return b""
+        out.append([*np.ravel(row["position"]), *np.ravel(row["linear_velocity"])])
+    return np.asarray(out, dtype=np.float32).tobytes()
+
+
+def _before(rows) -> list:
+    """The row each tick's flight stack read: the settled state for the seed row and the row before for each tick."""
+    return [rows[0], *rows[:-1]] if len(rows) else []
+
+
+def test_the_estimator_reads_the_body_a_connection_on_its_prim_names_and_the_base_body_with_none(tmp_path):
+    """The estimator reads the plant's signal: a connection on its prim wires its `pose` input to the body the
+    target names, and with no connection it takes the base body.
+
+    Given the fixture vehicle with the passthrough estimator on a scope that authors
+    `nexus:inputs:pose = </vehicle/body/rotor_1>`, when the run steps 5 ticks, then each estimate row equals,
+    to the bit, the rotor body's row of the tick before, the settled state for the seed row; and given the
+    same estimator with no connection, each equals the base body's.
+    """
+    for name in ("rotor", "base"):
+        (tmp_path / name).mkdir()
+    estimate, bodies = _pose_rows(tmp_path / "rotor", _connection("pose", ROTOR))
+    rotor = _pose_twist(_before(bodies.get("rotor_1", [])))
+    estimate_base, bodies_base = _pose_rows(tmp_path / "base", "")
+    base = _pose_twist(_before(bodies_base.get("body", [])))
+    read = (len(estimate), _pose_twist(estimate) == rotor, len(estimate_base), _pose_twist(estimate_base) == base)
+
+    assert read == (POSE_TICKS + 1, True, POSE_TICKS + 1, True)
+
+
+def test_a_connection_of_a_bodys_pose_to_a_prim_that_is_no_body_and_declares_no_component_fails_the_build(
+    tmp_path,
+):
+    """A connection of a body's pose whose target is no body and declares no component fails the build and
+    names the reader, the input and the target.
+
+    Given the fixture vehicle with the passthrough estimator on a scope whose `nexus:inputs:pose` targets
+    `/vehicle/Nowhere`, when the run builds, then it raises `ValueError` naming the estimator's scope, `pose`
+    and `/vehicle/Nowhere`.
+    """
+    with pytest.raises(ValueError) as e:
+        path = sv.vehicle(tmp_path, estimator=_connection("pose", NOWHERE))
+        sv.build(path, components=sv.components(StandInEstimatorAPI=_Passthrough))
+    message = str(e.value)
+    named = [f"{sv.ROOT}/Estimator" in message, re.search(r"\bpose\b", message) is not None, NOWHERE in message]
+
+    assert named == [True, True, True], message

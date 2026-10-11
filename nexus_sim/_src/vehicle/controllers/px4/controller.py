@@ -39,7 +39,7 @@ from pymavlink import mavutil
 from nexus_sim._src import transform
 from nexus_sim._src.core import logger
 from nexus_sim._src.core.interfaces import Component, Stage
-from nexus_sim._src.core.schema import BaroSample, GpsSample, ImuSample, MagSample
+from nexus_sim._src.core.schema import BaroSample, GpsSample, ImuSample, MagSample, PoseTwist
 from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.peers.px4_sitl import HIL_PORT
 
@@ -132,6 +132,9 @@ class Px4MavlinkController(Component):
         self.mag = Signal("mag", MagSample, shape=(1,), default=_NO_MAG)
         self.baro = Signal("baro", BaroSample, shape=(1,), default=_NO_BARO)
         self.gps = Signal("gps", GpsSample, shape=(1,), default=_NO_GPS)
+        # The vehicle's true pose and twist, the plant's output for the base body: the ground truth the
+        # exchange sends.
+        self.pose = Signal("pose", PoseTwist, shape=(1,))
         # The controls PX4 sends back each exchange: HIL_ACTUATOR_CONTROLS carries 16 channels, so the signal is
         # 16 wide, and the command elements read the leading channels their rotors take.
         self.controls = Signal("controls", wp.float32, shape=(1, 16))
@@ -196,12 +199,12 @@ class Px4MavlinkController(Component):
 
     def stages(self):
         """The ``truth`` and ``exchange`` host stages: the MAVLink lockstep round-trip blocks on the peer, so
-        it runs between graph replays. The ``exchange`` stage reads the four sensors' samples and writes the
-        controls.
+        it runs between graph replays. The ``truth`` stage reads the base body's pose, and the ``exchange``
+        stage reads the four sensors' samples and writes the controls.
         """
         reads = (self.imu, self.mag, self.baro, self.gps)
         return [
-            Stage("truth", "host", self._truth),
+            Stage("truth", "host", self._truth, reads=(self.pose,)),
             Stage("exchange", "host", self._exchange, reads=reads, writes=(self.controls,)),
         ]
 
@@ -218,11 +221,12 @@ class Px4MavlinkController(Component):
 
     def _truth(self, tick) -> None:
         """Copy the base body's true attitude and rates to the host, in PX4's frames, for the ground truth
-        ``exchange`` sends: the vehicle's state, not a sensor reading, so no sensor's mount changes it.
+        ``exchange`` sends: the vehicle's state the plant writes, not a sensor reading, so no sensor's mount
+        changes it.
         """
-        i = tick.base
-        q = transform.quat_xyzw(tick.state.body_q[i : i + 1].numpy()[0])
-        omega_world = tick.state.body_qd[i : i + 1].numpy()[0][3:6]
+        pose = self.pose.read()[0]
+        q = transform.quat_from_xyzw(pose["orientation"])
+        omega_world = pose["angular_velocity"]
         self._attitude = transform.body_quat_ned(q)
         self._rates = tuple(
             float(x) for x in transform.world_to_body(q, omega_world)

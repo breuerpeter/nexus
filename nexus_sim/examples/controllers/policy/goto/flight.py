@@ -107,7 +107,7 @@ def main() -> None:
         wall = time.time() - t0
 
     traj = sim[f"vehicle/body/{sim.base_body}"].history()
-    final_pos = np.asarray(traj[-1].position) if traj else np.full(3, np.nan)
+    final_pos = np.asarray(traj[-1]["position"], dtype=float) if len(traj) else np.full(3, np.nan)
     reached = guidance.reached
     # Measure to the goal the policy is actively tracking, clamped to the last waypoint on completion,
     # not the last one already passed, so a steps-truncated run reports the live tracking error.

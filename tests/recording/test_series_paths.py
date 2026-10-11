@@ -31,7 +31,7 @@ def test_each_recorded_series_sits_under_its_historys_key(recorded_flight, rrd_r
 
     assert ({key: sorted(fields.get(key, ())) for key in keys}, old) == (
         {
-            "/sim/vehicle/body/body_frd": ["angular_velocity", "position", "quat_xyzw", "velocity"],
+            "/sim/vehicle/body/body_frd": ["angular_velocity", "linear_velocity", "orientation", "position"],
             "/sim/vehicle/joints/rotor_1_ccw_joint": ["q", "qd"],
             "/sim/vehicle/sensors/imu/imu": ["accel", "gyro", "time"],
         },
@@ -105,4 +105,39 @@ def test_each_quantity_of_a_history_is_one_series_at_sim_key_field_with_no_serie
         dict.fromkeys(wanted, FLIGHT_TICKS + 1),
         [],
         {"Sensors": True, "Estimators": True, "Controllers": True},
+    )
+
+
+def test_the_recording_holds_a_bodys_four_fields_a_joints_q_and_qd_and_the_base_bodys_pose(recorded_flight, rrd_rows):
+    """The recording holds a body's series at `sim/vehicle/body/<label>/<field>` for the four fields, a joint's
+    at `sim/vehicle/joints/<label>/q` and `/qd`, and the base body's pose at `sim/vehicle/body` as today.
+
+    Given the session's recorded flight of the camera vehicle, when it ends, then the `.rrd` holds `position`,
+    `orientation`, `linear_velocity` and `angular_velocity` under `sim/vehicle/body/body_frd`, `q` and `qd`
+    under each rotor joint's entity, `Transform3D` columns at `sim/vehicle/body`, and no body's or joint's
+    entity ending in `quat_xyzw` or `velocity`.
+    """
+    rows = rrd_rows(recorded_flight)
+    fields: dict[str, set[str]] = {}
+    for entity, _, columns in rows:
+        if "Scalars:scalars" in columns:
+            key, field = entity.rsplit("/", 1)
+            fields.setdefault(key, set()).add(field)
+    joints = {key: tuple(sorted(held)) for key, held in fields.items() if key.startswith("/sim/vehicle/joints/")}
+    posed = any(
+        entity == "/sim/vehicle/body" and any(column.startswith("Transform3D") for column in columns)
+        for entity, _, columns in rows
+    )
+    plant = {
+        key: held for key, held in fields.items() if key.startswith(("/sim/vehicle/body/", "/sim/vehicle/joints/"))
+    }
+    old = sorted(f"{key}/{f}" for key, held in plant.items() for f in held if f in ("quat_xyzw", "velocity"))
+    body = sorted(fields.get("/sim/vehicle/body/body_frd", ()))
+
+    assert (body, set(joints.values()), len(joints) > 0, posed, old) == (
+        ["angular_velocity", "linear_velocity", "orientation", "position"],
+        {("q", "qd")},
+        True,
+        True,
+        [],
     )

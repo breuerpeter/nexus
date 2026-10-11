@@ -30,7 +30,11 @@ class _Physics:
         return None
 
     def stages(self):
-        return [Stage("clear", "device", lambda tick: None), Stage("step", "device", lambda tick: None)]
+        return [
+            Stage("clear", "device", lambda tick: None),
+            Stage("step", "device", lambda tick: None),
+            Stage("state", "device", lambda tick: None),
+        ]
 
 
 class _Stamper(Component):

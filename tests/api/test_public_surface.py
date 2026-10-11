@@ -17,7 +17,7 @@ import pytest
 def test_top_level_exports_exist():
     import nexus_sim as nx
 
-    for name in ("Sim", "BodyState", "JointState", "logger"):
+    for name in ("Sim", "logger"):
         assert hasattr(nx, name), f"nexus_sim.{name} should be a public export"
         assert name in nx.__all__, f"nexus_sim.{name} should be listed in __all__"
 
@@ -68,16 +68,14 @@ _IMPORT_LINE = re.compile(r"^from nexus_sim import (.+)$", re.MULTILINE)
 # The public surface, pinned: every name `import nexus_sim` exports, sorted. A removed name needs no test of its
 # absence: it leaves this list. The run's entry and its helpers, the component contract with its stage, tick,
 # signal and sensor-run types, the registry and its registration call, the peer contract, the catalog and the
-# launch config, the plant's read types, the signal value types a component reads or writes, and the logger.
+# launch config, the signal value types a component reads or writes, and the logger.
 PINNED = [
     "BaroSample",
-    "BodyState",
     "Catalog",
     "Component",
     "GpsSample",
     "Image",
     "ImuSample",
-    "JointState",
     "LaunchConfig",
     "MagSample",
     "Peer",
@@ -196,3 +194,19 @@ def test_the_public_surface_names_no_measurement():
     )
     out = subprocess.run([sys.executable, "-c", code], check=False, capture_output=True, text=True)
     assert out.stdout.strip() == "False True", out.stderr
+
+
+def test_bodystate_and_jointstate_leave_the_public_surface():
+    """`BodyState` and `JointState` leave the public surface.
+
+    Given a fresh interpreter, when it imports `nexus_sim`, then neither name is in `nexus_sim.__all__` and
+    `nexus_sim.BodyState` raises `AttributeError`.
+    """
+    code = (
+        "import nexus_sim as nx\n"
+        "print('>', [n for n in ('BodyState', 'JointState') if n in nx.__all__], end=' ')\n"
+        "try:\n    nx.BodyState\nexcept AttributeError:\n    print('raises')\nelse:\n    print('resolves')"
+    )
+    out = subprocess.run([sys.executable, "-c", code], check=False, capture_output=True, text=True)
+
+    assert out.stdout.strip() == "> [] raises", out.stdout + out.stderr
