@@ -11,7 +11,7 @@ port of NVIDIA's ``example_diffsim_drone``, and the counterpart to ``waypoint_tr
 
 **The shape.** A zero-arg, self-contained script: it assembles its own loop, the
 example-owned :mod:`assembly` that wraps controller + actuator + physics around the core components,
-and hosts it via ``Sim._from_loop`` + ``sim.guidance``. The vehicle is the catalog
+and hosts it via ``Sim._from_loop``, holding its guidance. The vehicle is the catalog
 ``astro-max`` and the obstacle pillars ride in the catalog ``slalom`` scene, a
 Universal Scene Description (USD) file of cost-only capsules. The guidance sequences the waypoints:
 ``set_mission`` → advance on arrival → the next goal on the tick; the controller logs its MPC horizon to

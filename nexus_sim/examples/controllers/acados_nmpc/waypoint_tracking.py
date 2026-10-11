@@ -7,7 +7,7 @@ counterpart: a differentiable-simulation sampling MPC for the obstacle-avoidance
 can't easily handle.
 
 **The shape.** A zero-arg, self-contained script: it assembles its own loop, the example-owned
-:mod:`assembly`, and hosts it via ``Sim._from_loop`` + ``sim.guidance``. The min-snap +
+:mod:`assembly`, and hosts it via ``Sim._from_loop``, holding its guidance. The min-snap +
 differential-flatness planner lives with the **guidance**: ``guidance.set_mission(WAYPOINTS)``
 plans the whole-path flat-state reference and writes it to the setpoint the NMPC reads, as a
 ``ReferenceTrajectory``; the controller just *tracks* it. The flat-state reference, position + attitude +

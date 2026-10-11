@@ -8,7 +8,7 @@ the bit-exact Newton CPU physics, the bit-reproducible CI gate real PX4 can't gi
 ``design_opt/gain_tuning.py`` tunes, and this flight deploys that example's proven configuration,
 the collapsed single-body plant + stable gains. This flight is the smallest end-to-end demo of
 an example's shape: assemble the loop, the example-owned :mod:`assembly`, host it via
-``Sim._from_loop``, fly its mission through ``sim.guidance``.
+``Sim._from_loop``, fly its mission through the guidance it holds.
 
 **The shape.** A zero-arg, self-contained script. On CUDA the whole tick captures into one CUDA
 graph, controller + actuator + physics + sensors; on CPU it runs

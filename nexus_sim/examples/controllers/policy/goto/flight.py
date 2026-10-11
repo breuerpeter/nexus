@@ -9,7 +9,7 @@ same per-rotor model the policy trained against, closing the loop: train on Isaa
 deploy on the core.
 
 **The shape.** A zero-arg, self-contained script: it assembles its own loop, the
-example-owned :mod:`assembly`, and hosts it via ``Sim._from_loop`` + ``sim.guidance``. The
+example-owned :mod:`assembly`, and hosts it via ``Sim._from_loop``, holding its guidance. The
 controller builds its observation from the estimate the passthrough estimator writes, the single
 train↔deploy obs source, and runs its TorchScript inference in a host stage; everything else runs CUDA-graph
 captured. A geofence guidance sequences the waypoints, advancing on arrival, since the policy is

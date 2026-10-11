@@ -418,10 +418,10 @@ def main():
             f"{name} flight: final {d[-1]:.3f} m, closest {d.min():.3f} m, hold-error {hold:.3f} m"
             + (f"  ({rrd})" if rrd else "")
         )
-        return d[-1], reached, hold, sim
+        return d[-1], reached, hold, sim, guidance
 
-    base_final, base_reached, _, _ = fly(BASE, "baseline")
-    _opt_final, opt_reached, opt_hold, opt_sim = fly(gopt, "optimized")
+    base_final, base_reached, _, _, _ = fly(BASE, "baseline")
+    _opt_final, opt_reached, opt_hold, opt_sim, opt_guidance = fly(gopt, "optimized")
     # Evaluation artifacts first, before any gate can raise, because a failed run must still leave its
     # trajectory for diagnosis: the tuned deploy flight + the tuning-quality metrics. The CI harness
     # gates the gradient cosine and hold error, and monitors position Absolute Pose Error (APE) + the
@@ -432,7 +432,7 @@ def main():
         "opt_final_m": round(float(_opt_final), 4),
         "base_final_m": round(float(base_final), 4),
     }
-    dump_run(opt_sim, "gain_tuning", stats=stats, waypoints=[GOAL], arrival_times=opt_sim.guidance.arrival_times)
+    dump_run(opt_sim, "gain_tuning", stats=stats, waypoints=[GOAL], arrival_times=opt_guidance.arrival_times)
     # The win is HOLDING the waypoint: the tuned controller reaches and stays, hold-error small with no
     # flying through, where the mistuned baseline never gets there.
     assert opt_reached and opt_hold < 0.3, f"tuned controller flew through / didn't hold (hold-error {opt_hold:.3f} m)"
