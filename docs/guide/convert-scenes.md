@@ -45,10 +45,10 @@ center of the scan's bounding box, but bakes in no start point.
 
 ```bash
 uv run python scripts/assets/spawn_site.py "$NEXUS_DATA/scans/my_site_splat.usdz" \
-    --geo <lat>,<lon>,<alt>   # the converter's "scene origin" trace
+    --origin <lat>,<lon>,<alt>   # the converter's "scene origin" trace
 ```
 
-Prints the catalog `start:`, a flat open-terrain spot near the scene center, and, with `--geo`,
+Prints the catalog `start:`, a flat open-terrain spot near the scene center, and, with `--origin`,
 the scene's geodetic origin measured **at that start**, as the command that authors it. Both are
 advisory: eyeball, tweak numbers, no reconversion. A mesh carries no geodesy, so reuse the sibling
 splat's origin trace.

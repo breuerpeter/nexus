@@ -9,9 +9,9 @@ This tool suggests one. It's advisory: eyeball the result, tweak the numbers in
 
 Host-runnable with usd-core + numpy and no Kit::
 
-    uv run python scripts/assets/spawn_site.py <scene.usdz> [--geo lat,lon,alt]
+    uv run python scripts/assets/spawn_site.py <scene.usdz> [--origin lat,lon,alt]
 
-``--geo`` is the geodetic anchor of the scene frame's origin, which the splat converter traces as
+``--origin`` is the geodetic anchor of the scene frame's origin, which the splat converter traces as
 "scene origin: …"; with it, the tool also prints the scene's geodetic origin: the lat/lon plus
 ellipsoidal alt of the picked start point, which is the world origin the runtime places it at, as the
 ``author_scene_origin.py`` command that authors it on the scene's ``PhysicsScene``.
@@ -143,7 +143,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="spawn_site", description=__doc__.splitlines()[0])
     p.add_argument("usd", help="converted scene USD (photogrammetry mesh or Gaussian splat)")
     p.add_argument(
-        "--geo",
+        "--origin",
         default=None,
         metavar="LAT,LON,ALT",
         help="geodetic anchor of the scene frame's origin (the converter's 'scene origin' trace);"
@@ -157,10 +157,10 @@ def main(argv=None) -> None:
     x, y, z, how = pick_spawn_site(scene_points(args.usd))
     print(f"pick: {how}")
     print(f"catalog scene entry:  start: [{x:.1f}, {y:.1f}, {z:.1f}]")
-    if args.geo:
+    if args.origin:
         import math
 
-        lat0, lon0, alt0 = (float(v) for v in args.geo.split(","))
+        lat0, lon0, alt0 = (float(v) for v in args.origin.split(","))
         r_earth = 6371008.8
         lat = lat0 + math.degrees(y / r_earth)
         lon = lon0 + math.degrees(x / (r_earth * math.cos(math.radians(lat0))))

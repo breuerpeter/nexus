@@ -16,7 +16,7 @@ pyproj needed → recenter XY on the bbox center → ``write_gaussian_splat_usd`
 Where the drone starts isn't baked in: the catalog scene's ``start``, suggested by
 ``scripts/assets/spawn_site.py``, places the chosen surface point at the world origin at load time.
 The traced "scene origin" lat/lon/alt is the geodetic anchor of the scene frame: feed it to
-``spawn_site.py --geo`` to get the scene's geodetic origin, the geo of the start point, which
+``spawn_site.py --origin`` to get the scene's geodetic origin, the geo of the start point, which
 ``author_scene_origin.py`` authors on the scene's ``PhysicsScene``.
 
 Kit-only: run from the host with plain Python, it starts the Kit image with this file and boots Kit
@@ -79,7 +79,7 @@ def convert_splat(tiles_dir, out_usdz, *, max_geometric_error=0.0) -> str:
     print(
         f"[site_scan_splat] scene origin: lat {lat0:.6f}, lon {lon0:.6f}, alt {ref_geo[2]:.1f} m "
         f"(geo of the scene frame's origin/z=0; WGS84 ellipsoidal alt), pass to "
-        f"`spawn_site.py --geo` to get the scene's geodetic origin at the picked start",
+        f"`spawn_site.py --origin` to get the scene's geodetic origin at the picked start",
         file=sys.stderr,
     )
 

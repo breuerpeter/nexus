@@ -7,7 +7,7 @@ scan, and writes a new package beside it, every other file unchanged:
     uv run python scripts/assets/author_scene_origin.py <scene.usdz> <out.usdz> --origin <lat>,<lon>,<alt>
 
 The latitude and the longitude are degrees, and the altitude is metres over mean sea level, or for a
-streamed globe the surface's WGS84 ellipsoidal height. ``spawn_site.py --geo`` gives a scan's origin at
+streamed globe the surface's WGS84 ellipsoidal height. ``spawn_site.py --origin`` gives a scan's origin at
 its start. Then prepare the package for upload with ``prepare_asset_upload.py --scene``.
 """
 
@@ -18,8 +18,6 @@ import sys
 import tempfile
 import zipfile
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent))  # `scene_root` beside this file, run from any folder
 
 from scene_root import author_origin
 
