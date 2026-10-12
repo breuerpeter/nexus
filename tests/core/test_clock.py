@@ -10,10 +10,10 @@ pytest.importorskip("warp")
 
 import warp as wp
 
-from nexus_sim._src.core.clock import Clock
-from nexus_sim._src.core.interfaces import Component, Stage
-from nexus_sim._src.core.loop import Loop
-from nexus_sim._src.core.signals import Signal
+from nexus_uav._src.core.clock import Clock
+from nexus_uav._src.core.interfaces import Component, Stage
+from nexus_uav._src.core.loop import Loop
+from nexus_uav._src.core.signals import Signal
 
 DEVICES = ["cpu", pytest.param("cuda:0", marks=pytest.mark.gpu)]
 

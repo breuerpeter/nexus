@@ -2,10 +2,10 @@
 
 import warp as wp
 
-from nexus_sim import Component
-from nexus_sim._src.core.interfaces import Stage
-from nexus_sim._src.core.schema import PoseTwist
-from nexus_sim._src.core.signals import Signal
+from nexus_uav import Component
+from nexus_uav._src.core.interfaces import Stage
+from nexus_uav._src.core.schema import PoseTwist
+from nexus_uav._src.core.signals import Signal
 
 
 @wp.kernel

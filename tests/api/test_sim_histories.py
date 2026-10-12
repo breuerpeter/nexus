@@ -10,7 +10,7 @@ import pytest
 pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
-import nexus_sim as nx
+import nexus_uav as nx
 from tests.usd import sensor_vehicle as sv
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")

@@ -5,7 +5,7 @@ description: "The vehicles and scenes nexus loads: the airframes it flies and th
 # Assets
 
 The named assets nexus loads at launch, both resolved from the catalog
-at `nexus_sim/_src/config/catalog.yaml`: the **vehicles** it flies and the **scenes**
+at `nexus_uav/_src/config/catalog.yaml`: the **vehicles** it flies and the **scenes**
 it flies them in.
 
 <div class="grid cards" markdown>

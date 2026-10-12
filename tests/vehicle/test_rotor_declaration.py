@@ -15,8 +15,8 @@ pytest.importorskip("pxr")
 import newton
 import warp as wp
 
-from nexus_sim._src.physics.vehicle import VehicleUsd, parse_rotors
-from nexus_sim._src.vehicle.rotors import find_rotor_joints
+from nexus_uav._src.physics.vehicle import VehicleUsd, parse_rotors
+from nexus_uav._src.vehicle.rotors import find_rotor_joints
 from tests.vehicle.quad import LIFT_CT, ROOT, WEAK_CT
 from tests.vehicle.quad import author as _author
 from tests.vehicle.quad import build as _build

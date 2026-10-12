@@ -13,12 +13,12 @@ authors = [{ name = "Peter Breuer" }]
 # core nexus environment. It depends on the core via an editable path source (see [tool.uv.sources]);
 # training + the core's policy deploy then share the same Newton 1.3.0.
 dependencies = [
-    "nexus-sim",
+    "nexus-uav",
     "isaaclab[all,newton]==3.0.0b2",
 ]
 
 [tool.uv.sources]
-nexus-sim = { path = "..", editable = true }
+nexus-uav = { path = "..", editable = true }
 warp-lang = { index = "nvidia" }
 
 [[tool.uv.index]]

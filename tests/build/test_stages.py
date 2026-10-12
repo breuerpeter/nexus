@@ -13,11 +13,11 @@ pytest.importorskip("warp")
 
 import warp as wp
 
-from nexus_sim._src.api.sim import Sim
-from nexus_sim._src.build.launch import resolve_vehicle_usd
-from nexus_sim._src.config import LaunchConfig
-from nexus_sim._src.guidance import TrackingGuidance
-from nexus_sim.examples.controllers.pid.assembly import build_pid_loop
+from nexus_uav._src.api.sim import Sim
+from nexus_uav._src.build.launch import resolve_vehicle_usd
+from nexus_uav._src.config import LaunchConfig
+from nexus_uav._src.guidance import TrackingGuidance
+from nexus_uav.examples.controllers.pid.assembly import build_pid_loop
 from tests.usd import sensor_vehicle as sv
 
 # The Secure Hash Algorithm (SHA) 256 digest of main's 200-tick PID body poses, float32 (200, 5, 7),

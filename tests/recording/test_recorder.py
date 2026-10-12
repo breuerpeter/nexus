@@ -8,12 +8,12 @@ import numpy as np
 import pytest
 import warp as wp
 
-from nexus_sim._src.core.interfaces import Stage
-from nexus_sim._src.core.schema import ImuSample, PoseTwist
-from nexus_sim._src.core.signals import Signal, wire
-from nexus_sim._src.core.stages import Bound
-from nexus_sim._src.physics.outputs import joint_struct, write_body, write_joint
-from nexus_sim._src.recording import History, Recorder
+from nexus_uav._src.core.interfaces import Stage
+from nexus_uav._src.core.schema import ImuSample, PoseTwist
+from nexus_uav._src.core.signals import Signal, wire
+from nexus_uav._src.core.stages import Bound
+from nexus_uav._src.physics.outputs import joint_struct, write_body, write_joint
+from nexus_uav._src.recording import History, Recorder
 
 DT = 0.004
 

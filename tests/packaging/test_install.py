@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_an_installed_package_resolves_a_warp_below_the_first_broken_one(tmp_path):
-    """A project that installs `nexus-sim` resolves a `warp-lang` below 1.16.0, the first version whose
+    """A project that installs `nexus-uav` resolves a `warp-lang` below 1.16.0, the first version whose
     physics build fails.
 
     The lock and `[tool.uv.sources]` never reach a consumer, so the test resolves a wheel built from
@@ -18,7 +18,7 @@ def test_an_installed_package_resolves_a_warp_below_the_first_broken_one(tmp_pat
     wheels = tmp_path / "wheels"
     subprocess.run(["uv", "build", "--wheel", "-o", str(wheels), str(ROOT)], check=True, capture_output=True)
     wheel = next(wheels.glob("*.whl"))
-    (tmp_path / "requirements.in").write_text(f"nexus-sim @ {wheel.as_uri()}\n")
+    (tmp_path / "requirements.in").write_text(f"nexus-uav @ {wheel.as_uri()}\n")
 
     out = subprocess.run(
         [

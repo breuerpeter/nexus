@@ -36,8 +36,8 @@ def test_captured_sensor_noise_dithers_per_replay():
     sensor -> Global Positioning System (GPS)/position fusion never starts -> won't arm, the real bug
     behind the captured PX4 flight.
     """
-    from nexus_sim._src.core.schema import SimTime
-    from nexus_sim._src.vehicle.sensors import ImuSensor
+    from nexus_uav._src.core.schema import SimTime
+    from nexus_uav._src.vehicle.sensors import ImuSensor
 
     with wp.ScopedDevice("cuda:0"):
         view = _WarpView((0.0, 0.0, 1.0), (0.0, 0.0, 0.0, 1.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
@@ -60,8 +60,8 @@ def test_captured_px4_sensors_match_eager():
     and a replay writes the samples an eager run writes, so the PX4 device region is capturable. Validated
     with noise off so the result is step-independent.
     """
-    from nexus_sim._src.core.schema import SimTime
-    from nexus_sim._src.vehicle.sensors import BaroSensor, GpsSensor, ImuSensor, MagSensor
+    from nexus_uav._src.core.schema import SimTime
+    from nexus_uav._src.vehicle.sensors import BaroSensor, GpsSensor, ImuSensor, MagSensor
 
     with wp.ScopedDevice("cuda:0"):
         view = _WarpView((1.0, -2.0, 3.0), (0.0, 0.0, 0.0, 1.0), (0.5, -0.1, 0.2), (0.3, -0.4, 0.5))

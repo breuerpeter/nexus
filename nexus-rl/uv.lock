@@ -1030,17 +1030,17 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "isaaclab", extra = ["all", "newton"], marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nexus-sim", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "nexus-uav", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "isaaclab", extras = ["all", "newton"], specifier = "==3.0.0b2" },
-    { name = "nexus-sim", editable = "../" },
+    { name = "nexus-uav", editable = "../" },
 ]
 
 [[package]]
-name = "nexus-sim"
+name = "nexus-uav"
 version = "0.1.0"
 source = { editable = "../" }
 dependencies = [
@@ -1066,7 +1066,7 @@ requires-dist = [
     { name = "matplotlib", marker = "extra == 'acados'" },
     { name = "newton", extras = ["sim"], specifier = "==1.3.0" },
     { name = "newton-usd-schemas", specifier = ">=0.3.1" },
-    { name = "nexus-sim", extras = ["policy", "examples"], marker = "extra == 'all'" },
+    { name = "nexus-uav", extras = ["policy", "examples"], marker = "extra == 'all'" },
     { name = "numpy" },
     { name = "pydantic", specifier = ">=2.0.0" },
     { name = "pymavlink", specifier = ">=2.4.49" },

@@ -17,7 +17,7 @@ its missions.
 A flight constructs its guidance from the parameters of the guidance, hands it to the loop, and keeps
 the object. It sets the mission on it before the run and reads its telemetry after. `Sim` gives no
 role an accessor of its own. The classes are **internal**: an example imports them from
-`nexus_sim._src.guidance`, not from the top-level package.
+`nexus_uav._src.guidance`, not from the top-level package.
 
 ```python
 guidance = MissionGuidance(reached_m=0.3, final_hold_s=2.0)
@@ -29,5 +29,5 @@ with nx.Sim._from_loop(orch, guidance=guidance) as sim:
 The guidance logs its waypoint markers at `sim/guidance/waypoints/wp_<i>` and a tracked reference at
 `sim/guidance/reference`.
 
-::: nexus_sim._src.guidance.mission.MissionGuidance
-::: nexus_sim._src.guidance.tracking.TrackingGuidance
+::: nexus_uav._src.guidance.mission.MissionGuidance
+::: nexus_uav._src.guidance.tracking.TrackingGuidance

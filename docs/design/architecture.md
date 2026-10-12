@@ -148,7 +148,7 @@ PX4 takes no guidance, because its own navigator sequences its missions, and no 
 loop. It takes no estimator either, because its own estimator runs in its peer and takes the
 sensors' values over the lockstep link. A script commands it over its offboard [link](concepts.md#link), a MAVLink link of its own beside the lockstep
 link. The run owns that link's address and names it in its [port map](concepts.md#port-map), and the script opens its own
-client there: [`nexus_sim.px4.OffboardClient`](../reference/api/px4.md) on `sim.ports["offboard"]`.
+client there: [`nexus_uav.px4.OffboardClient`](../reference/api/px4.md) on `sim.ports["offboard"]`.
 [Conventions](conventions.md#who-owns-an-address) states the rule.
 
 ## Actuators
@@ -218,8 +218,8 @@ exactly what it simulated. Vehicle assets are content-addressed. The
 
 ## Packaging
 
-The framework ships as a single **`nexus_sim`** package in one `uv` project. All source lives under
-`nexus_sim/_src/<area>/` and the public API is re-exported from `nexus_sim`. Never import from
+The framework ships as a single **`nexus_uav`** package in one `uv` project. All source lives under
+`nexus_uav/_src/<area>/` and the public API is re-exported from `nexus_uav`. Never import from
 `_src`. Extras isolate the heavy optional dependencies, such as `policy` for Torch and `acados` for
 the Nonlinear Model Predictive Control (NMPC) example, rather than separate packages. Neither peer is an extra. The Kit render peer's program
 ships in the wheel as package data and mounts into NVIDIA's Isaac Sim image, which each machine

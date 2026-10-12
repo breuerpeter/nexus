@@ -12,8 +12,8 @@ import pytest
 pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
-import nexus_sim as nx
-from nexus_sim._src.core.interfaces import Component, Stage
+import nexus_uav as nx
+from nexus_uav._src.core.interfaces import Component, Stage
 from tests.usd import sensor_vehicle as sv
 from tests.usd.sensor_vehicle import HostController
 

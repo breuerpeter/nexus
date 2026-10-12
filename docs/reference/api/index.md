@@ -4,10 +4,10 @@ description: "The public API of nexus, from Sim and the component contract to th
 
 # API reference
 
-The complete public API of `nexus_sim`. Everything documented here is importable directly from the
-top-level package, for example `from nexus_sim import Sim`, except PX4's own names, which sit in a
-namespace beside it, `nexus_sim.px4`. The `_src` layout is an implementation detail and **isn't** part
-of the public surface. Import from `nexus_sim`, never from `nexus_sim._src`.
+The complete public API of `nexus_uav`. Everything documented here is importable directly from the
+top-level package, for example `from nexus_uav import Sim`, except PX4's own names, which sit in a
+namespace beside it, `nexus_uav.px4`. The `_src` layout is an implementation detail and **isn't** part
+of the public surface. Import from `nexus_uav`, never from `nexus_uav._src`.
 
 <div class="grid cards" markdown>
 
@@ -16,8 +16,8 @@ of the public surface. Import from `nexus_sim`, never from `nexus_sim._src`.
 -   **[Signal types](core.md)**: `SimTime`, `PoseTwist`, the setpoint types and each shipped sensor's sample type, what a component's signals carry.
 -   **[Configuration](configuration.md)**: `LaunchConfig` for the launch configuration and `Catalog` for the vehicle and scene catalog.
 -   **[Estimator](estimator.md)**: the role that writes the estimate, the vehicle's pose and twist the guidance and the controllers read. Its shipped class is internal, as the guidance's are.
--   **[Guidance](guidance.md)**: the role that turns a mission into a controller's setpoint, which a flight constructs and holds. Its classes are internal, so the page is the one exception to importing from `nexus_sim`.
--   **[PX4](px4.md)**: `OffboardClient`, the client a script opens on PX4's offboard link, and the mission plan types, imported from `nexus_sim.px4`.
+-   **[Guidance](guidance.md)**: the role that turns a mission into a controller's setpoint, which a flight constructs and holds. Its classes are internal, so the page is the one exception to importing from `nexus_uav`.
+-   **[PX4](px4.md)**: `OffboardClient`, the client a script opens on PX4's offboard link, and the mission plan types, imported from `nexus_uav.px4`.
 -   **[Logging](logging.md)**: `logger`, the framework logger, which writes to the console and tees into the Rerun recording.
 
 </div>

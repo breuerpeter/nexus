@@ -28,7 +28,7 @@ def _resolve_astro_max_usd() -> str:
     """Resolve the Astro Max USD for Isaac Lab to load: the **hosted, content-addressed catalog
     asset**, the same source the standalone runtime resolves; cached, so offline after the first fetch.
     """
-    from nexus_sim import Catalog
+    from nexus_uav import Catalog
 
     # The fetch has a bounded timeout, and a sha mismatch raises ValueError, so an integrity failure
     # surfaces loudly instead of silently using a stale local file.

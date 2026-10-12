@@ -12,9 +12,9 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from nexus_sim._src.core.schema import SimTime
-from nexus_sim._src.peers.kit.runner import KIT_DIR, KitPeer, KitPeerError
-from nexus_sim._src.rendering.link import KitRenderer
+from nexus_uav._src.core.schema import SimTime
+from nexus_uav._src.peers.kit.runner import KIT_DIR, KitPeer, KitPeerError
+from nexus_uav._src.rendering.link import KitRenderer
 
 wire = runpy.run_path(str(KIT_DIR / "link.py"))
 

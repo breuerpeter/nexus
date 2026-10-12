@@ -4,9 +4,9 @@ logger scoped to that path. Warp-free stand-ins, as in test_loop_ambient.py.
 
 import pytest
 
-from nexus_sim._src.core.interfaces import Component, Stage
-from nexus_sim._src.core.loop import Loop
-from nexus_sim._src.core.schema import SimTime
+from nexus_uav._src.core.interfaces import Component, Stage
+from nexus_uav._src.core.loop import Loop
+from nexus_uav._src.core.schema import SimTime
 
 
 class _Clock:

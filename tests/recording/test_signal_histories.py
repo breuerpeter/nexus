@@ -20,11 +20,11 @@ pytest.importorskip("pxr")
 
 import warp as wp
 
-import nexus_sim as nx
-from nexus_sim._src.core.interfaces import Component, Stage
-from nexus_sim._src.core.registry import Registry
-from nexus_sim._src.core.signals import Signal
-from nexus_sim._src.vehicle.estimators import GroundTruthEstimator
+import nexus_uav as nx
+from nexus_uav._src.core.interfaces import Component, Stage
+from nexus_uav._src.core.registry import Registry
+from nexus_uav._src.core.signals import Signal
+from nexus_uav._src.vehicle.estimators import GroundTruthEstimator
 from tests.conftest import fly_recorded
 from tests.usd import sensor_vehicle as sv
 
@@ -387,7 +387,7 @@ def test_a_signal_with_no_fixed_width_keeps_no_history_and_its_component_logs_it
     `sim/vehicle/sensors/lidar/lidar`. A history shows in the `.rrd` as a series under its writer's path, so none
     sits under the camera's, the lidar's or the guidance's.
     """
-    from nexus_sim._src.peers.kit.fake import KitFake
+    from nexus_uav._src.peers.kit.fake import KitFake
 
     kit = functools.partial(KitFake, points=[POINT])
     rrd = fly_recorded(tmp_path, sv.vehicle(tmp_path, FPVCAM + LIDAR), scene=sv.SCENE, ticks=30, kit=kit)
@@ -414,7 +414,7 @@ def test_an_input_no_component_writes_keeps_no_history(tmp_path):
     Given the fixture vehicle with an IMU and no GPS on the PX4 fake, when the run steps 3 ticks, then the
     Recorder holds no history whose key ends in `gps`.
     """
-    from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
+    from nexus_uav._src.peers.px4_sitl.fake import Px4Fake
 
     loop = sv.build(sv.vehicle(tmp_path, IMU, px4=True), components=Registry(), peers={"px4_sitl": Px4Fake})
     with _flown(loop, 3):

@@ -10,9 +10,9 @@ import pytest
 
 pytest.importorskip("pxr")
 
-from nexus_sim._src.vehicle.sensors.rtx_camera import RtxCameraSensor
-from nexus_sim._src.vehicle.sensors.rtx_lidar import RtxLidarSensor
-from nexus_sim._src.vehicle.sensors.rtx_thermal import RtxThermalSensor
+from nexus_uav._src.vehicle.sensors.rtx_camera import RtxCameraSensor
+from nexus_uav._src.vehicle.sensors.rtx_lidar import RtxLidarSensor
+from nexus_uav._src.vehicle.sensors.rtx_thermal import RtxThermalSensor
 from tests.usd import sensor_vehicle as sv
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")

@@ -9,7 +9,7 @@ import pytest
 pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
-import nexus_sim as nx
+import nexus_uav as nx
 from tests.recording import _flight
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")

@@ -10,10 +10,10 @@ pytest.importorskip("pxr")
 
 import warp as wp
 
-from nexus_sim._src.build.assembly import build_scenario
-from nexus_sim._src.core.schema import PoseTwist
-from nexus_sim._src.physics import NewtonPhysics, VehicleUsd
-from nexus_sim._src.physics.outputs import joint_struct
+from nexus_uav._src.build.assembly import build_scenario
+from nexus_uav._src.core.schema import PoseTwist
+from nexus_uav._src.physics import NewtonPhysics, VehicleUsd
+from nexus_uav._src.physics.outputs import joint_struct
 from tests.vehicle import quad
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")

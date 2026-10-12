@@ -15,7 +15,7 @@ The framework requires **Python 3.12**, **Linux**, and a **CUDA-capable GPU**.
 From PyPI:
 
 ```bash
-pip install nexus-sim
+pip install nexus-uav
 ```
 
 Optional extras: `policy` for PyTorch, `examples` for jerk-limited trajectories, `upload` for S3
@@ -52,12 +52,12 @@ Launch the [Rerun](https://rerun.io) viewer, then fly the sampling Model Predict
 obstacle slalom and watch it live:
 
 ```bash
-uv pip install nexus-sim
-uv run -m nexus_sim.examples sampling_mpc
+uv pip install nexus-uav
+uv run -m nexus_uav.examples sampling_mpc
 uv run rerun ~/.cache/nexus/logs/*.rrd
 ```
 
-List every example with `uv run -m nexus_sim.examples --list`. Each example is zero-arg, its
+List every example with `uv run -m nexus_uav.examples --list`. Each example is zero-arg, its
 configuration lives in the script, and it records an interactive `.rrd` of its flight.
 
 ## Next steps

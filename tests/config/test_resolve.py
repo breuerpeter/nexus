@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-import nexus_sim
-from nexus_sim._src.config import Catalog, LaunchConfig, NoMatchError, TestedConfig, resolve
+import nexus_uav
+from nexus_uav._src.config import Catalog, LaunchConfig, NoMatchError, TestedConfig, resolve
 
 # A scene's file, which a test that resolves with no fetch never reads.
 EMPTY = {"url": "file:///empty.usdz", "sha256": "0"}
@@ -185,7 +185,7 @@ def test_a_launch_that_names_a_dropped_variant_fails_before_it_flies(tmp_path, m
     """
     monkeypatch.chdir(tmp_path)  # no nexus.catalog.yaml beside the run
     with pytest.raises(NoMatchError, match="no vehicle named 'astro_max_fpv_lr1'"):
-        with nexus_sim.Sim(vehicle="astro_max_fpv_lr1", scene="empty"):
+        with nexus_uav.Sim(vehicle="astro_max_fpv_lr1", scene="empty"):
             pass
 
 

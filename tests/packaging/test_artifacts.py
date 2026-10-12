@@ -54,18 +54,18 @@ def test_the_sdist_holds_no_tests(sdist_files):
 def test_the_wheel_holds_every_file_the_code_reads(wheel_files):
     """The wheel still holds every file the code reads."""
     read = {
-        "nexus_sim/_src/usd/plugInfo.json",
-        "nexus_sim/_src/usd/generatedSchema.usda",
-        "nexus_sim/_src/usd/released.json",
-        "nexus_sim/_src/config/catalog.yaml",
-        "nexus_sim/_src/peers/px4_sitl/px4.ref",
-        "nexus_sim/_src/peers/px4_sitl/image/Dockerfile",
-        "nexus_sim/examples/controllers/px4/box.plan",
-        "nexus_sim/_src/peers/kit/peer-src/cesium_globe.py",
-        "nexus_sim/_src/peers/kit/peer-src/kit_benchmark.py",
-        "nexus_sim/_src/peers/kit/peer-src/link.py",
-        "nexus_sim/_src/peers/kit/peer-src/render.py",
-        "nexus_sim/_src/peers/kit/peer-src/serve.py",
-        "nexus_sim/py.typed",
+        "nexus_uav/_src/usd/plugInfo.json",
+        "nexus_uav/_src/usd/generatedSchema.usda",
+        "nexus_uav/_src/usd/released.json",
+        "nexus_uav/_src/config/catalog.yaml",
+        "nexus_uav/_src/peers/px4_sitl/px4.ref",
+        "nexus_uav/_src/peers/px4_sitl/image/Dockerfile",
+        "nexus_uav/examples/controllers/px4/box.plan",
+        "nexus_uav/_src/peers/kit/peer-src/cesium_globe.py",
+        "nexus_uav/_src/peers/kit/peer-src/kit_benchmark.py",
+        "nexus_uav/_src/peers/kit/peer-src/link.py",
+        "nexus_uav/_src/peers/kit/peer-src/render.py",
+        "nexus_uav/_src/peers/kit/peer-src/serve.py",
+        "nexus_uav/py.typed",
     }
     assert sorted(read - wheel_files) == []

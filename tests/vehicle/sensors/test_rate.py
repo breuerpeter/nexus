@@ -3,7 +3,7 @@
 import pytest
 import warp as wp
 
-from nexus_sim._src.vehicle.sensors.rate import checked_rate, due
+from nexus_uav._src.vehicle.sensors.rate import checked_rate, due
 
 
 def test_a_sample_whose_due_time_falls_on_a_tick_is_due_at_that_tick_and_not_a_nanosecond_before():

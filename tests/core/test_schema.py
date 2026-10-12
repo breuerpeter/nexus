@@ -1,6 +1,6 @@
 """The tick's sim time: whole nanoseconds, which a stage reads in seconds and a ``HIL_*`` message in microseconds."""
 
-from nexus_sim._src.core.schema import SimTime
+from nexus_uav._src.core.schema import SimTime
 
 
 def test_a_sim_time_holds_whole_nanoseconds_and_reads_them_in_seconds_and_microseconds():
