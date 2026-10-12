@@ -48,7 +48,7 @@ def test_a_script_reads_any_history_by_indexing_the_run_with_its_path(tmp_path):
             for path in ("vehicle/sensors/imu/imu", "vehicle/controllers/stand_in/controls", "vehicle/body/body")
         )
         read = None not in (imu, controls, body) and (
-            float(imu.latest()["t"]),
+            float(imu.history()[-1]["t"]),
             len(controls.history()),
             len(body.history()),
         )

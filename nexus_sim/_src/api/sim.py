@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from nexus_sim._src.api.args import save_run_artifacts, sim_argparser  # noqa: F401  # re-export; defs are import-light
 from nexus_sim._src.build.launch import build_from_launch
@@ -70,8 +70,8 @@ class Sim:
         ```python
         with Sim("astro_max_base", scene="empty") as sim:
             sim.start()
-            body = sim[f"vehicle/body/{sim.base_body}"]
-            sim.wait_until(lambda: body.latest()["position"][2] > 1.0, sim_timeout=30.0)
+            body = f"vehicle/body/{sim.base_body}"
+            sim.wait_until(lambda: sim.read(body).position[2] > 1.0, sim_timeout=30.0)
         ```
     """
 
@@ -267,7 +267,7 @@ class Sim:
         generator, setup, loop and teardown. Bounded by ``max_steps``, the guidance's mission end, or,
         for PX4, the peer disconnecting; ``stop()`` ends it early.
 
-        Read any history, ``sim[path]``, with ``.latest()`` or ``.history()``, after it returns. A script
+        Read any history, ``sim[path]``, with ``.history()``, after it returns. A script
         that wants to observe or command mid-flight uses :meth:`step` or :meth:`wait_until` instead.
 
         Raises:
@@ -303,10 +303,13 @@ class Sim:
         self.stop()
 
     # -- the recorded histories, by path: the run is a mapping --
-    def _histories(self) -> dict[str, History]:
+    def _loop(self) -> Loop:
         if self._orch is None:
             raise RuntimeError("enter the Sim context first (`with nx.Sim(...) as sim:`)")
-        return self._orch.recorder.histories
+        return self._orch
+
+    def _histories(self) -> dict[str, History]:
+        return self._loop().recorder.histories
 
     def __getitem__(self, path: str) -> History:
         """The recorded history at ``path``, its path below the run's root, as the recording names it.
@@ -315,13 +318,13 @@ class Sim:
         ``sim["vehicle/controllers/px4/controls"]``
         the controls PX4 wrote, ``sim["vehicle/body/body_frd"]`` the base body's pose and twist and
         ``sim["vehicle/joints/rotor_1_joint"]`` a joint's, ground truth in the world frame, Z-up FLU. Each is a
-        :class:`~nexus_sim._src.recording.History`, with ``.latest()``, ``.history()`` and ``.arrays()``.
+        :class:`~nexus_sim._src.recording.History`, with ``.history()`` and ``.arrays()``.
         Every history reads one way: a row is a record of ``t``, the tick's sim time, then the fields the
         signal's type declares, ``row["accel"]`` for the IMU and ``row["position"]``, ``row["orientation"]``,
         ``row["linear_velocity"]`` and ``row["angular_velocity"]`` for a body, ``row["q"]`` and ``row["qd"]``
-        for a joint; ``history()`` gives every row as one structured array, ``rows["position"][:, 2]``. Use
-        :attr:`base_body` for the base body without hardcoding its name:
-        ``sim[f"vehicle/body/{sim.base_body}"].latest()``.
+        for a joint; ``history()`` gives every row as one structured array, ``rows["position"][:, 2]``, and
+        ``history()[-1]`` the newest row. :meth:`read` gives a signal's live value. Use :attr:`base_body` for the
+        base body without hardcoding its name: ``sim[f"vehicle/body/{sim.base_body}"].history()``.
 
         Raises:
             RuntimeError: Accessed before entering the ``Sim`` context.
@@ -339,6 +342,34 @@ class Sim:
     def __contains__(self, path: object) -> bool:
         return path in self._histories()
 
+    def read(self, path: str) -> Any:
+        """The live value of the signal at ``path``, typed by the signal: what its writer wrote on the last tick.
+
+        ``path`` is the writer's path below the run's root then the signal's name, as a history's key, and a
+        signal that keeps no history, a camera's frame say, has one too. ``sim.read(f"vehicle/body/{sim.base_body}")``
+        is the base body's :class:`~nexus_sim.PoseTwist`, so ``.position[2]`` is its height, and
+        ``sim.read("vehicle/controllers/px4/controls")`` the 16 controls PX4 wrote, one array. A device signal
+        reads without its leading axis of one, as an instance of its struct or an array of its other axes, and
+        a host signal as the object its writer wrote. The value is a copy, which later ticks leave alone.
+
+        Raises:
+            RuntimeError: Called before entering the ``Sim`` context.
+            KeyError: No component writes a signal at ``path``.
+        """
+        return self._loop().signals[path].read()
+
+    @property
+    def time(self) -> float:
+        """The sim time of the last tick, seconds: 0.0 before the first tick.
+
+        Read off the loop's host clock, so it costs no device copy, and :meth:`wait_until` and :meth:`sleep`
+        read it every tick. Every history's newest row carries the same time.
+
+        Raises:
+            RuntimeError: Read before entering the ``Sim`` context.
+        """
+        return self._loop().clock.now().sim_time
+
     @property
     def base_body(self) -> str:
         """The base body's label, discovered from the model, not hardcoded: the body under ``vehicle/body/``
@@ -347,19 +378,6 @@ class Sim:
         return self._orch.physics.base_body
 
     # -- sim-time waits, robust to the sim's real-time factor --
-    def _clock_t(self) -> float:
-        """Current sim time, the lockstep clock: the sim-time budget basis for the waits that follow.
-
-        Read straight off the loop's ``Clock``, which holds it host-side, so this is free:
-        :meth:`wait_until` and :meth:`sleep` call it *every* control tick, and reading it off the
-        base body's history instead meant a device-to-host copy per tick, ~0.08 ms against a 4 ms
-        budget, 6% of a PX4 run's wall time. Same quantity either way: the Recorder stamps each row with
-        the device clock's time, which advances with this one.
-
-        Returns 0.0 before the first tick; sim time starts at 0.
-        """
-        return self._orch.clock.now().sim_time
-
     def wait_until(self, predicate: Callable[[], bool], sim_timeout: float) -> None:
         """Step the sim until ``predicate()`` is true, or ``sim_timeout`` sim seconds elapse.
 
@@ -377,14 +395,14 @@ class Sim:
                 true, or the run ended first: mission complete, ``max_steps``, or the peer
                 disconnected.
         """
-        t0 = self._clock_t()
+        t0 = self.time
         while True:
             ran = self.step()
             if predicate():
                 return
             if not ran:
                 raise TimeoutError("the run ended before the condition was met")
-            if self._clock_t() - t0 >= sim_timeout:
+            if self.time - t0 >= sim_timeout:
                 raise TimeoutError(f"condition not met within {sim_timeout}s sim-time")
 
     def sleep(self, sim_seconds: float) -> None:
@@ -396,8 +414,8 @@ class Sim:
         Args:
             sim_seconds: Amount of sim time to wait, in seconds.
         """
-        t0 = self._clock_t()
-        while self._clock_t() - t0 < sim_seconds:
+        t0 = self.time
+        while self.time - t0 < sim_seconds:
             if not self.step():
                 break
 

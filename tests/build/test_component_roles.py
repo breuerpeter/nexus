@@ -38,9 +38,9 @@ class _EstimateGuidance(Component):
         return [Stage("guide", "host", self._guide, reads=(self.estimate,), writes=(self.setpoint,))]
 
     def _guide(self, tick):
-        estimate = self.estimate.read()[0]
+        estimate = self.estimate.read()
         fields = ("position", "orientation", "linear_velocity", "angular_velocity")
-        self.seen.append([float(x) for name in fields for x in estimate[name]])
+        self.seen.append([float(x) for name in fields for x in getattr(estimate, name)])
         return True
 
 
@@ -134,7 +134,7 @@ def test_a_component_builds_in_the_role_its_schema_states_whatever_methods_its_c
     loop = sv.build(path, components=sv.components(StandInSensorAPI=_ConnectingSensor, StandInEstimatorAPI=reader))
     controller = loop.controller
     sv.steps(loop, 2)
-    gains = [float(gain["value"][0]) for _, gain in reader.kept]
+    gains = [float(gain.value) for _, gain in reader.kept]
     assert (gains, type(controller)) == ([0.0, 2.5, 2.5], sv.Controller)
 
 

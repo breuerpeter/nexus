@@ -58,9 +58,15 @@ def _held(tmp_path, ticks: int, prims: dict[str, str], **kw) -> list[dict]:
     return [dict(zip(prims, row[1:], strict=True)) for row in reader.kept[1:]]
 
 
+def _record(sample) -> np.void:
+    """A sample, an instance of its struct, as one numpy record of its fields."""
+    return np.array(sample.numpy_value(), dtype=sample.numpy_dtype())[()]
+
+
 def _raw(sample) -> tuple[bytes, ...]:
     """A sample's fields, each as its bytes, which leaves out the struct's padding: it holds no field."""
-    return tuple(sample[name].tobytes() for name in sample.dtype.names)
+    record = _record(sample)
+    return tuple(record[name].tobytes() for name in record.dtype.names)
 
 
 def _new_samples(held: list[dict], kind: str) -> list[int]:
@@ -71,7 +77,8 @@ def _new_samples(held: list[dict], kind: str) -> list[int]:
 
 def _fields(tick: dict) -> list[float]:
     """Every field of every sample a tick held, as one flat list of floats, each sample's time first."""
-    return [float(x) for sample in tick.values() for name in sample.dtype.names for x in np.ravel(sample[name])]
+    records = [_record(sample) for sample in tick.values()]
+    return [float(x) for record in records for name in record.dtype.names for x in np.ravel(record[name])]
 
 
 def test_a_sensor_gives_a_new_sample_only_when_its_declared_rate_makes_one_due(tmp_path):
@@ -169,7 +176,7 @@ def test_an_imu_slower_than_the_tick_reads_the_true_specific_force_from_the_firs
     imu = _prim("imu", 125, "float nexus:accNoise = 0\nfloat nexus:gyroNoise = 0")
     held = _held(tmp_path, 250, {"imu": imu}, fall_from=FALL_FROM)
 
-    accel = np.array([tick["imu"]["accel"] for tick in held if float(tick["imu"]["time"].ravel()[0]) > 0.0])
+    accel = np.array([[*tick["imu"].accel] for tick in held if float(tick["imu"].time) > 0.0])
     assert np.abs(accel).max() < 1e-3
 
 

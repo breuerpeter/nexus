@@ -63,7 +63,7 @@ class Guidance(Component):
 
     def _run(self, tick: Tick) -> None:
         # One host copy of the estimate per tick, trivial next to a controller's host stage.
-        pos = self.estimate.read()[0]["position"].astype(float)
+        pos = np.asarray(self.estimate.read().position, dtype=float)
         self._tick(pos, float(tick.t.sim_time))
         if self._commanded is not None:
             self._write(self._commanded)

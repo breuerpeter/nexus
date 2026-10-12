@@ -22,7 +22,8 @@ It records what it flew in its receipt, a `TestedConfig`.
 `Sim` is the one public entry to a run. It builds a run from its arguments, the vehicle, the scene,
 the catalog, the override layer and the registry, and drives the loop on the caller's thread, one
 tick per `step`. A script reads the run through it: any recorded [history](#history) by indexing the
-run with the history's path, `sim["vehicle/sensors/imu/imu"]`, and the port map through `sim.ports`.
+run with the history's path, `sim["vehicle/sensors/imu/imu"]`, a [signal](#signal)'s live value by the
+same path, `sim.read(path)`, the sim time through `sim.time`, and the port map through `sim.ports`.
 
 ### Catalog
 
@@ -219,7 +220,7 @@ into the recording.
 ### History
 
 The rows the Recorder keeps for one signal over a run, each stamped with its sim time: `history()`
-reads them oldest first as one structured array, and `latest()` reads the newest as one record. A
+reads them oldest first as one structured array, and `history()[-1]` is the newest row. A
 history sits under its writer's path then the signal's name, `vehicle/sensors/imu/imu`, and the
 plant's under `vehicle/body/<label>` and `vehicle/joints/<label>`. Every history's rows read as
 records of `t` then the quantities the signal's type declares. A device kernel writes each

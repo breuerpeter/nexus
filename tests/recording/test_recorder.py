@@ -57,13 +57,13 @@ def _heights(rows) -> list[float]:
 
 def test_a_bodys_history_reads_as_records_of_t_then_the_pose_twists_fields():
     """A body's history, the plant's `PoseTwist` signal tapped, reads as records of `t` then `position`,
-    `orientation`, `linear_velocity` and `angular_velocity`: `latest()` one record, `history()` every row.
+    `orientation`, `linear_velocity` and `angular_velocity`: `history()` every row, each one record.
     """
     rec, body, h = _body_history()
     for z in (1.0, 2.0, 3.0):
         _write(rec, body, _FakeView(z))
         rec.commit()
-    latest = h.latest()
+    latest = h.history()[-1]
 
     assert (
         h.history().dtype.names,
@@ -94,7 +94,7 @@ def test_a_joints_history_reads_as_records_of_q_and_qd_of_the_joints_own_widths(
     wp.launch(write_joint, dim=1, inputs=(jq, jqd, 1, 1, 1, 1), outputs=(joint.buffer,))
     _record(rec)
     rec.commit()
-    row = h.latest()
+    row = h.history()[-1]
 
     assert (row.dtype.names, row["q"].tolist(), row["qd"].tolist()) == (("t", "q", "qd"), [0.25], [1.5])
 
@@ -107,7 +107,7 @@ def test_a_history_past_its_staging_buffer_holds_every_row_oldest_first():
     for z in (1.0, 2.0, 3.0, 4.0, 5.0, 6.0):
         _write(rec, body, _FakeView(z))
         rec.commit()
-    assert (_heights(h.history()), float(h.latest()["position"][2])) == ([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 6.0)
+    assert (_heights(h.history()), float(h.history()[-1]["position"][2])) == ([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 6.0)
 
 
 def test_a_commit_that_fills_the_staging_buffer_reports_the_drain():
@@ -135,12 +135,6 @@ def test_arrays_reads_a_row_range_across_blocks_and_the_staged_rows():
         [1.0, 2.0, 3.0, 4.0],
         [9.0, 10.0],
     )
-
-
-def test_history_latest_before_any_row_raises():
-    _, _, h = _body_history()
-    with pytest.raises(RuntimeError):
-        h.latest()
 
 
 def test_a_second_tap_of_one_key_raises():
@@ -228,7 +222,7 @@ def test_the_record_stage_copies_each_tapped_signals_value_into_a_row_of_t_then_
         _record(rec)
         rec.commit()
     rows = rec.histories["vehicle/sensors/imu/imu"].history()
-    newest = rec.histories["vehicle/controllers/px4/controls"].latest()
+    newest = rec.histories["vehicle/controllers/px4/controls"].history()[-1]
 
     assert (
         rows["t"].tolist(),

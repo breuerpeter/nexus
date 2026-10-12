@@ -10,6 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 pytest.importorskip("newton")
@@ -60,9 +61,14 @@ def _signals(*names: str) -> list[Signal]:
     return [Signal(name, types[name], shape=(1,)) for name in names]
 
 
+def _record(sample) -> np.void:
+    """A sample, an instance of its struct, as one numpy record of its fields."""
+    return np.array(sample.numpy_value(), dtype=sample.numpy_dtype())[()]
+
+
 def _flat(sample, name: str) -> list[float]:
     """The field `name` of a sensor's sample, as a flat list of floats."""
-    return [float(x) for x in sample[name].reshape(-1)]
+    return [float(x) for x in np.ravel(getattr(sample, name))]
 
 
 def _reading(tmp_path, body: str = "", *, signals: list[Signal], ticks: int, **kw) -> tuple:
@@ -125,7 +131,8 @@ def _samples(tmp_path, name: str, seed: int) -> list[tuple]:
     signals = _signals("imu", "mag", "baro", "gps")
     _, kept = _reading(folder, IMU + MAG + BARO + GPS, signals=signals, ticks=100, seed=seed)
     # Each field's bits, not the sample's: a struct's padding holds no value.
-    return [tuple(sample[name].tobytes() for sample in row[1:] for name in sample.dtype.names) for row in kept]
+    records = [[_record(sample) for sample in row[1:]] for row in kept]
+    return [tuple(record[name].tobytes() for record in row for name in record.dtype.names) for row in records]
 
 
 def test_two_runs_with_one_seed_give_equal_sensor_samples_and_another_seed_gives_different_ones(tmp_path):
@@ -326,7 +333,7 @@ with wp.ScopedDevice("cpu"):
         seeds.append(own.seed)
         paths.append(own.path)
         sv.steps(loop, 2)
-        gains.append(float(reader.kept[-1][1]["value"][0]))
+        gains.append(float(reader.kept[-1][1].value))
 print(">", type(own).__module__, seeds[0] == seeds[1], seeds[0] != seeds[2], paths, gains)
 """
     env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(site), str(ROOT)])}
@@ -370,10 +377,10 @@ with wp.ScopedDevice("cpu"):
     path = sv.vehicle(pathlib.Path({str(tmp_path)!r}), prims, estimator="")
     loop = sv.build(path, components=sv.components(StandInEstimatorAPI=reader))
     sv.steps(loop, 2)
-print(">", [[float(v) for v in gain["value"]] for _, gain in reader.kept])
+print(">", [float(gain.value) for _, gain in reader.kept])
 """
     env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(site), str(ROOT)])}
     r = subprocess.run([sys.executable, "-c", code], check=False, cwd=tmp_path, env=env, capture_output=True, text=True)
     lines = [line[2:] for line in r.stdout.splitlines() if line.startswith("> ")]
 
-    assert lines == ["[[0.0], [2.5], [2.5]]"], r.stderr[-2000:]
+    assert lines == ["[0.0, 2.5, 2.5]"], r.stderr[-2000:]

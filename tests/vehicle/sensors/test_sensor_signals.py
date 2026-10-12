@@ -68,7 +68,7 @@ POINT = (1.0, 2.0, 3.0)
 
 def _field(sample, name: str) -> np.ndarray:
     """The field `name` of a sensor's sample, as a flat array of floats."""
-    return np.asarray(sample[name], dtype=float).reshape(-1)
+    return np.asarray(getattr(sample, name), dtype=float).reshape(-1)
 
 
 def _close(value, expected, tol: float) -> bool:

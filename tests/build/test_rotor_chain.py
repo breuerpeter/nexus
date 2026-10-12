@@ -215,7 +215,7 @@ def _flown(orch) -> tuple[float, float | None]:
         sim.run()
         rows = sim["vehicle/body/body"].history_arrays()["position"]
         gimbal = sim["vehicle/joints/gimbal_joint"] if "vehicle/joints/gimbal_joint" in sim else None
-        joint = float(gimbal.latest()["q"][0]) if gimbal is not None else None
+        joint = float(gimbal.history()[-1]["q"][0]) if gimbal is not None else None
     return float(rows[-1][2] - rows[0][2]), joint
 
 

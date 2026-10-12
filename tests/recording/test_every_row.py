@@ -43,7 +43,7 @@ def test_a_history_holds_every_row_of_a_run_with_no_step_cap(tmp_path):
         for _ in range(TICKS):
             assert sim.step()
         history = sim[f"vehicle/body/{sim.base_body}"].history()
-        latest = sim[f"vehicle/body/{sim.base_body}"].latest()
+        latest = sim[f"vehicle/body/{sim.base_body}"].history()[-1]
 
     assert (history["t"].tolist(), latest["t"]) == (
         pytest.approx([k * DT for k in range(TICKS + 1)]),

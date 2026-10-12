@@ -64,9 +64,10 @@ class Signal:
         return wp.types.type_is_struct(self.type) or wp.types.type_is_value(self.type)
 
     def read(self) -> Any:
-        """The signal's value on the host: a copy of a device buffer, or the object a host buffer holds. A
-        list input reads one value per writer, or its default when no component writes the signal. The copy
-        is explicit, since Warp's ``numpy()`` shares a buffer's memory on the CPU device.
+        """The signal's value on the host, typed by the signal: a device buffer without its leading axis of one,
+        as an instance of its struct, ``read().position``, or as an array of its other axes, and the object a host
+        buffer holds. A device value is a copy, which later writes leave alone. A list input reads one value per
+        writer, or its default when no component writes the signal.
         """
         if typing.get_origin(self.type) is list:
             return [_value(buffer) for buffer in self.buffer] if self.buffer else self.default
@@ -89,8 +90,14 @@ class Signal:
 
 
 def _value(buffer: Any) -> Any:
-    """A buffer's value on the host: a copy of a Warp array, or the object a host buffer holds."""
-    return buffer.numpy().copy() if isinstance(buffer, wp.array) else buffer.value
+    """A buffer's value on the host: the first element of a Warp array, as a struct instance or a copy of its
+    array, since Warp's ``numpy()`` shares a buffer's memory on the CPU device, or the object a host buffer holds.
+    """
+    if not isinstance(buffer, wp.array):
+        return buffer.value
+    if wp.types.type_is_struct(buffer.dtype):
+        return buffer.list()[0]
+    return buffer.numpy()[0].copy()
 
 
 def _name(component: object) -> str:
@@ -127,10 +134,11 @@ def wire(ring: list[Bound], connections: Iterable[tuple[object, str, object]] | 
             ``nexus:inputs:<signal>`` the vehicle authors, a body's or joint's prim among the targets.
 
     Raises:
-        ValueError: A device stage declares a host signal, a device signal has no shape, two components
-            write one signal that a third reads through neither a connection nor a list, a connection names
-            a writer that writes no such signal, a reader and its writer disagree on the type, a reader needs
-            more of an axis than its writer's buffer holds, or an input has neither a writer nor a default.
+        ValueError: A device stage declares a host signal, a device signal has no shape or a leading axis
+            other than one, two components write one signal that a third reads through neither a connection
+            nor a list, a connection names a writer that writes no such signal, a reader and its writer
+            disagree on the type, a reader needs more of an axis than its writer's buffer holds, or an input
+            has neither a writer nor a default.
             The message names both ends, or the stage or the reader and the signal.
     """
     writes, reads = _declared(ring)
@@ -153,7 +161,8 @@ def _declared(ring: list[Bound]) -> tuple[dict, dict]:
     """Every signal the ring's stages write and read, by name, each beside the stage that declares it.
 
     Raises:
-        ValueError: A device stage declares a host signal, or a device signal has no shape.
+        ValueError: A device stage declares a host signal, or a device signal has no shape or a leading
+            axis other than one.
     """
     writes: dict[str, list[tuple[Bound, Signal]]] = {}
     reads: dict[str, list[tuple[Bound, Signal]]] = {}
@@ -172,6 +181,11 @@ def _declared(ring: list[Bound]) -> tuple[dict, dict]:
                     )
                 if signal.device and signal.shape is None:
                     raise ValueError(f"{_owner(bound)} declares the device signal {signal.name!r} with no shape")
+                if signal.device and signal.shape[0] != 1:
+                    raise ValueError(
+                        f"{_owner(bound)} declares the device signal {signal.name!r} with shape {signal.shape}: a "
+                        "device signal's leading axis is one, which a read drops"
+                    )
                 table.setdefault(signal.name, []).append((bound, signal))
     return writes, reads
 
