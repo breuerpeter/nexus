@@ -23,7 +23,7 @@ class _StandInImu(Component):
 
     ran = False
 
-    def __init__(self, run, **kwargs):
+    def __init__(self, model, path, **kwargs):
         pass  # the IMU schema's keyword arguments, which it doesn't read
 
     def stages(self):

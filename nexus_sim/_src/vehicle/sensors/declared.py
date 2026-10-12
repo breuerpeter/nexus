@@ -2,19 +2,22 @@
 
 The vehicle's Universal Scene Description (USD) file is the one authority for its sensors. A sensor's
 schema states the sensor role. Its prim sits under the rigid body it rides, and that parent body is the
-mount. The registry maps the prim's schema to a class, the schema's attributes are the class's keyword arguments, and the class
-takes the run's values, a :class:`~nexus_sim._src.core.interfaces.SensorRun`, as its first argument.
+mount. The registry maps the prim's schema to a class, and the class takes the model and the prim's path,
+the label of the site Newton loaded the prim as, then the sensor's noise seed and the schema's attributes
+as keyword arguments. The class reads its body and its mount from the model, so the builder places nothing.
 
 A class states the peers it requires in a ``requires`` tuple, such as ``("kit",)`` on the RTX sensors.
-The build starts each required peer once and hands the class its link. No vehicle names such a peer.
+The build starts each required peer once, and the loop hands the class the peer's link at ``connect``.
+No vehicle names such a peer.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
+
 from nexus_sim._src.core.components import ComponentSpec, resolve_components
-from nexus_sim._src.core.interfaces import SensorRun
 from nexus_sim._src.core.registry import Registry
 
 
@@ -35,30 +38,44 @@ def requires(spec: ComponentSpec, peer: str) -> bool:
     return peer in spec.cls.requires
 
 
-def build_sensors(specs: list[ComponentSpec], *, usd_path: str | Path, model, seedtree, dt: float, site, link=None):
-    """Build each sensor of `specs` from its class, the run's values and its schema's keyword arguments.
+def _rigid_mount(prim, schema: str) -> None:
+    """Fail a sensor whose prim's transform scales, shears or mirrors it: a mount only moves and turns.
+
+    Raises:
+        ValueError: The prim's transform isn't rigid; the message names the prim.
+    """
+    from pxr import UsdGeom
+
+    m = np.array(UsdGeom.Xformable(prim).GetLocalTransformation())[:3, :3]
+    if not np.allclose(m @ m.T, np.eye(3), atol=1e-6) or np.linalg.det(m) < 0.0:
+        raise ValueError(
+            f"{prim.GetPath()}: {schema} declares a sensor, whose mount only moves and turns, and this prim's "
+            "transform scales, shears or mirrors it; author a translation and a rotation alone"
+        )
+
+
+def build_sensors(specs: list[ComponentSpec], *, usd_path: str | Path, model, seedtree):
+    """Build each sensor of `specs` from its class: the model and its prim's path, then its seed and its
+    schema's keyword arguments.
 
     Args:
         specs: The sensors to build, from :func:`sensor_specs`.
-        usd_path: The vehicle file that declares them.
-        model: The physics model, whose body labels are the prim paths of the vehicle's rigid bodies.
+        usd_path: The vehicle file that declares them, for the sensor role's place checks.
+        model: The physics model, whose body labels are the prim paths of the vehicle's rigid bodies and
+            whose site labels are the paths of the sensors' prims.
         seedtree: The run's seed tree; each sensor's seed comes from it and the sensor's prim path.
-        dt: The control tick, seconds.
-        site: Where the run flies and its ambient values.
-        link: The link a class that requires a peer takes; a class that requires none gets ``None``.
 
     Returns:
         The sensors, in the order of `specs`, each named after its prim, in lower case.
 
     Raises:
-        ValueError: A sensor's prim doesn't sit under a rigid body of the model, or two sensors' prims share
-            a name; the message names the prims.
+        ValueError: A sensor's prim doesn't sit under a rigid body of the model, its transform scales, shears
+            or mirrors the mount, or two sensors' prims share a name; the message names the prims.
     """
-    from pxr import Usd, UsdGeom
+    from pxr import Usd
 
     stage = Usd.Stage.Open(str(usd_path), Usd.Stage.LoadAll)
     bodies = [str(label) for label in model.body_label]
-    coms = model.body_com.numpy()
     named: dict[str, str] = {}
     for spec in specs:
         name = spec.prim.rsplit("/", 1)[-1].lower()
@@ -77,23 +94,8 @@ def build_sensors(specs: list[ComponentSpec], *, usd_path: str | Path, model, se
                 f"{spec.prim}: {spec.schema} declares a sensor, and its parent {parent} isn't a rigid body "
                 "of the vehicle; put the sensor's prim under the body it rides"
             )
-        local = UsdGeom.Xformable(prim).GetLocalTransformation()
-        t = local.ExtractTranslation()
-        q = local.ExtractRotationQuat()  # a rigid mount's rotation; a class that needs one checks the prim
-        body = bodies.index(parent)
-        run = SensorRun(
-            seed=seedtree.seed_for(spec.prim),
-            dt=dt,
-            site=site,
-            body=body,
-            mount=(float(t[0]), float(t[1]), float(t[2])),
-            rotation=(*(float(x) for x in q.GetImaginary()), float(q.GetReal())),
-            com=tuple(float(x) for x in coms[body]),
-            path=spec.prim,
-            prim=prim,
-            link=link if spec.cls.requires else None,
-        )
-        sensor = spec.cls(run, **spec.kwargs)
+        _rigid_mount(prim, spec.schema)
+        sensor = spec.cls(model, spec.prim, seed=seedtree.seed_for(spec.prim), **spec.kwargs)
         # The instance is the prim that declares it: its name, in lower case, ends a recorded row's path
         # and keys the Recorder's history.
         sensor.name = spec.prim.rsplit("/", 1)[-1].lower()

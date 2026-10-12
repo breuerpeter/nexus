@@ -58,7 +58,7 @@ class _Keeper(Component):
         self._stamper = stamper
         self.kept = []
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):

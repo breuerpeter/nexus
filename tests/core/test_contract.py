@@ -27,7 +27,7 @@ class _Lifecycle(Component):
         super().__init__()
         self.lifecycle: list[str] = []
 
-    def connect(self):
+    def connect(self, links):
         self.lifecycle.append("connect")
 
     def close(self):
@@ -41,7 +41,7 @@ class _WaitingSensor(_Lifecycle):
 
     instances: ClassVar[list] = []
 
-    def __init__(self, run, **kwargs):
+    def __init__(self, model, path, **kwargs):
         super().__init__()
         self.times: list[float] = []
         type(self).instances.append(self)

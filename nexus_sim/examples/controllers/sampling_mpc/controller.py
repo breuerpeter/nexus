@@ -312,7 +312,7 @@ class SamplingMPCController(Component):
         self._k = 0
         self._logger = None  # the loop hands over the Logger, None when off; gates the horizon viz
 
-    def connect(self) -> None:
+    def connect(self, links) -> None:
         pass
 
     def stages(self):

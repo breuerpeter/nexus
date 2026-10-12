@@ -66,7 +66,7 @@ class Scene(_Base):
     pillars; a USD without physics schemas is the visual world, referenced by the renderer,
     never the builder, since a colliding photogrammetry/splat USD is the known model-build failure.
     Its ``PhysicsScene`` prim authors where it sits on Earth either way, see
-    ``nexus_sim._src.scene.origin``.
+    ``nexus_sim._src.scene.world``.
     """
 
     usd: AssetRef

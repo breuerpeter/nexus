@@ -122,9 +122,9 @@ def _scene_usd(tmp_path, name, body: bytes) -> dict:
 
 def test_scene_threads_uniformly_and_anchors_at_its_origin(tmp_path, monkeypatch):
     """A scene is *data*: its USD + start thread into the cfg for the one uniform ingestion, where
-    physics parses the UsdPhysics prims and a renderer shows everything, with no routing anywhere,
-    and the geodetic origin its PhysicsScene authors reaches the cfg, which anchors *both* the render
-    world and the sensors, so the Ground Control Station (GCS) minimap matches the camera feed.
+    physics parses the UsdPhysics prims, reads the geodetic origin its PhysicsScene authors into the
+    model, which anchors *both* the render world and the sensors, so the Ground Control Station (GCS)
+    minimap matches the camera feed, and a renderer shows everything, with no routing anywhere.
     Runtime-*neutral* since the controller unbind: the run's builder does this for every runtime.
     """
     import nexus_sim._src.build.launch as L
@@ -154,11 +154,7 @@ def test_scene_threads_uniformly_and_anchors_at_its_origin(tmp_path, monkeypatch
     assert L.build_from_launch(lc, catalog=reg, cache_dir=tmp_path / "cache") == "ORCH"
 
     cfg = captured["cfg"]
-    assert (cfg["scene_usd_path"] is not None, cfg["scene_start"], cfg["geodetic_origin"]) == (
-        True,
-        (10.0, -94.0, -8.5),
-        (37.7942, -122.3954, -30.5),
-    )
+    assert (cfg["scene_usd_path"] is not None, cfg["scene_start"]) == (True, (10.0, -94.0, -8.5))
 
 
 def test_build_from_launch_starts_the_px4_peer_before_the_assembly(tmp_path, monkeypatch, daemon):
@@ -263,7 +259,7 @@ class _StandInController(Component):
     def __init__(self, **kwargs):
         self.kwargs = kwargs
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):

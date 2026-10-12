@@ -27,7 +27,7 @@ from nexus_sim._src.core.loop import Loop
 from nexus_sim._src.core.signals import Signal
 from nexus_sim._src.physics import NewtonPhysics
 from nexus_sim._src.physics.vehicle import VehicleUsd
-from nexus_sim._src.scene.site import GRAVITY
+from nexus_sim._src.scene.world import GRAVITY
 from nexus_sim.examples._lib import Rotors, build_rotor_mixer_from_model
 from tests.usd.sensor_vehicle import HostController, scenario
 from tests.vehicle import quad
@@ -68,7 +68,7 @@ class _Narrow(Component):
     def __init__(self):
         self.controls = Signal("controls", wp.float32, shape=(1, 3))
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def stages(self):
@@ -81,7 +81,7 @@ class _Narrow(Component):
 class _Silent(Component):
     """A device-native controller that writes no controls."""
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def stages(self):

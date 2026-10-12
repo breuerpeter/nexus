@@ -40,7 +40,7 @@ class _Actuator(Component):
 class _Controller(Component):
     """One device stage that commands nothing, so the body flies under gravity alone."""
 
-    def connect(self) -> None:
+    def connect(self, links) -> None:
         pass
 
     def stages(self):

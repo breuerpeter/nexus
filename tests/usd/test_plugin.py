@@ -81,7 +81,8 @@ def test_the_conformance_fixture_applies_every_component_and_peer_schema_the_plu
     """The conformance fixture applies every component and peer schema the plugin defines.
 
     Given the plugin and the fixture, when a test lists the schemas each defines and applies, leaving out
-    the role schemas, which a component schema includes as a built-in, then the two sets are equal.
+    the built-ins a component schema includes, the role schemas and Newton's site schema, then the two sets
+    are equal.
     """
     from pxr import Usd
 
@@ -90,7 +91,8 @@ def test_the_conformance_fixture_applies_every_component_and_peer_schema_the_plu
 
     stage = Usd.Stage.Open(str(FIXTURE))
     roles = {f"Nexus{name}RoleAPI" for name in ("Sensor", "Estimator", "Controller", "Force")}
-    applied = {name for prim in stage.Traverse() for name in prim.GetAppliedSchemas()} - roles
+    built_ins = roles | {"NewtonSiteAPI"}
+    applied = {name for prim in stage.Traverse() for name in prim.GetAppliedSchemas()} - built_ins
     sensors = {f"Nexus{name}API" for name in ("Imu", "Mag", "Baro", "Gps", "Camera", "ThermalCamera", "Lidar")}
     # The scene schema sits on a scene's PhysicsScene, never on a vehicle such as the fixture.
     components = set(schema_names()) - roles - {"NexusSceneAPI"}

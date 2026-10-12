@@ -116,7 +116,7 @@ class _ExchangeController(Component):
         self.setpoint = Signal("setpoint", setpoint, shape=(1,) if setpoint is wp.vec3 else None)
         self.exchanges = []
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):
@@ -142,7 +142,7 @@ class _DeviceController(Component):
         self.setpoint = Signal("setpoint", wp.vec3, shape=(1,))
         self.held = []
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):
@@ -155,7 +155,7 @@ class _DeviceController(Component):
 class _NoSetpointController(Component):
     """A controller that reads no setpoint, the shape of PX4's."""
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):

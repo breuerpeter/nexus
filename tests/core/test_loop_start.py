@@ -116,7 +116,7 @@ class _Controller(Component):
         self.setpoint = Signal("setpoint", wp.vec3, shape=(1,))
         self._reads = (self.setpoint,) if guided else ()
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):
@@ -140,7 +140,7 @@ class _LatePeerController(Component):
     def attached(self):
         return self._polls >= 3
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):

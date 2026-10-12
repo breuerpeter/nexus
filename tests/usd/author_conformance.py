@@ -13,7 +13,7 @@ import nexus_sim  # noqa: F401  # registers the nexus schema plugin
 
 
 def author(out: Path) -> None:
-    """Write the fixture to `out`: PX4 and its Software In The Loop (SITL) peer on a scope under the default prim, one body under it with an Inertial Measurement Unit (IMU) on a lever arm and one prim for each other sensor schema, and one rotor body with a propeller."""
+    """Write the fixture to `out`: PX4 and its Software In The Loop (SITL) peer on a scope under the default prim, one body under it with an Inertial Measurement Unit (IMU) on a lever arm and one prim for each other sensor schema, each analytic sensor a sphere of 1 cm, and one rotor body with a propeller."""
     stage = Usd.Stage.CreateNew(str(out))
     UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
     UsdGeom.SetStageMetersPerUnit(stage, 1.0)
@@ -24,13 +24,16 @@ def author(out: Path) -> None:
     controller.GetAttribute("nexus:airframe").Set("astro_max")
     controller.ApplyAPI("NexusPx4SitlAPI")
     UsdGeom.Xform.Define(stage, "/Vehicle/body")
-    imu = UsdGeom.Xform.Define(stage, "/Vehicle/body/Imu")
+    imu = UsdGeom.Sphere.Define(stage, "/Vehicle/body/Imu")
+    imu.GetRadiusAttr().Set(0.01)
     imu.AddTranslateOp().Set(Gf.Vec3d(0.01, -0.02, 0.03))
     prim = imu.GetPrim()
     prim.ApplyAPI("NexusImuAPI")
     prim.GetAttribute("nexus:accNoise").Set(0.05)
     for name, schema in (("Mag", "NexusMagAPI"), ("Baro", "NexusBaroAPI"), ("Gps", "NexusGpsAPI")):
-        UsdGeom.Xform.Define(stage, f"/Vehicle/body/{name}").GetPrim().ApplyAPI(schema)
+        sphere = UsdGeom.Sphere.Define(stage, f"/Vehicle/body/{name}")
+        sphere.GetRadiusAttr().Set(0.01)
+        sphere.GetPrim().ApplyAPI(schema)
     UsdGeom.Camera.Define(stage, "/Vehicle/body/Cam").GetPrim().ApplyAPI("NexusCameraAPI")
     UsdGeom.Camera.Define(stage, "/Vehicle/body/Ir").GetPrim().ApplyAPI("NexusThermalCameraAPI")
     # OpenUSD doesn't know Kit's lidar type here, so it can't check the schema against it.

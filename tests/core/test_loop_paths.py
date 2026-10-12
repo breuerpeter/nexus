@@ -43,7 +43,7 @@ class _Component(Component):
     def set_logger(self, logger):
         self.handed = logger
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):

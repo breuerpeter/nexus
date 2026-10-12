@@ -120,7 +120,7 @@ class _EstimateReader(Component):
         self.estimate = Signal("estimate", PoseTwist, shape=(1,))
         self.seen = wp.zeros(1, dtype=float)
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):

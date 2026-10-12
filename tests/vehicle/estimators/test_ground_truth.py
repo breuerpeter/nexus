@@ -50,7 +50,7 @@ class _KeepingController(Component):
         self.setpoint = Signal("setpoint", wp.vec3, shape=(1,))
         self.kept = []
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):
