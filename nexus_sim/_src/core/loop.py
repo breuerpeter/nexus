@@ -108,6 +108,7 @@ class Loop:
         forces: Iterable[Component] = (),
         actuator: Component | None = None,
         renderer: object | None = None,
+        links: Mapping[str, object] | None = None,
         peers: Iterable[Peer] = (),
         ports: Mapping[str, dict] | None = None,
         connections: Iterable[tuple[Component, str, Component]] | None = None,
@@ -159,6 +160,10 @@ class Loop:
                 :class:`~nexus_sim._src.rendering.KitRenderer`: the loop calls only
                 ``on_physics_ready()``/``close()``; the host-rate RTX camera *sensors* drive
                 rendering itself in a host stage.
+            links: The link of each peer the run holds, by the peer's name, such as the Kit render peer's
+                :class:`~nexus_sim._src.rendering.KitRenderer` under ``kit``: the loop hands a component
+                the links of the peers its ``requires`` names when it connects it, and fails a component
+                that requires a peer with no link here. ``None`` holds no link.
             peers: The peers the build started for this run, for example the PX4 Software In The
                 Loop (SITL) container. The loop stops each when the run ends, whether it ran out,
                 stopped early or never stepped; it starts none, since a peer boots while the build
@@ -206,6 +211,7 @@ class Loop:
         self.estimator = estimator  # the loop reads it when it builds the ring, at the first step
         self.guidance = guidance  # the loop reads it when it builds the ring, at the first step
         self.renderer = renderer
+        self.links = dict(links or {})
         self.peers = list(peers)
         self.ports = PortMap() if ports is None else ports
         self.connections = list(connections or ())
@@ -517,7 +523,7 @@ class Loop:
             waiting = [c for c in components if not c.attached]
             for c in components:
                 if not any(c is w for w in waiting):
-                    c.connect()
+                    c.connect(self._links_for(c))
                     self._connected.append(c)
             # The warm pass, over the settled state. A guidance's warm stage runs between the sensors'
             # and the controller's and writes its setpoint, so the controller holds the first goal
@@ -530,7 +536,7 @@ class Loop:
             self._commit()
             graphs = self._capture(segments, tick) if captured else None
             for c in waiting:
-                c.connect()  # bind the peer's port and start listening
+                c.connect(self._links_for(c))  # bind the peer's port and start listening
                 self._connected.append(c)
             self._seed(ring, tick, waiting)
             yield from self._loop(segments, graphs, tick)
@@ -559,6 +565,19 @@ class Loop:
                 self._close_components()
             finally:
                 self._stop_peers()
+
+    def _links_for(self, component) -> dict:
+        """The link of each peer `component` requires, by the peer's name, which its ``connect`` takes.
+
+        Raises:
+            ValueError: The component requires a peer this run holds no link to; the message names both.
+        """
+        missing = [name for name in component.requires if name not in self.links]
+        if missing:
+            raise ValueError(
+                f"{_instance(component)} requires the peer {' and '.join(missing)}, and this run holds no link to it"
+            )
+        return {name: self.links[name] for name in component.requires}
 
     def components(self) -> list:
         """Every component of the run, in ring order: the sensors, the estimator, the guidance, the controller,

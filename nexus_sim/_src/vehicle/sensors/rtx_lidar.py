@@ -26,7 +26,9 @@ class RtxLidarSensor(RtxMountedSensor):
     ``/ExternalSimulationTime`` clock the peer drives from the host's sim time.
 
     Args:
-        run: The run's values: the ``OmniLidar`` prim, the model body it rides and the render link.
+        model: Newton's model, whose body the ``OmniLidar`` prim sits under the sensor rides.
+        path: The path of the ``OmniLidar`` prim on the vehicle's stage.
+        seed: The sensor's noise seed, which a lidar doesn't draw on.
         rate: How often the lidar gives a full scan, hertz; authoring bakes the scan's own tick rate.
     """
 
@@ -34,8 +36,8 @@ class RtxLidarSensor(RtxMountedSensor):
     output = "points"
     width = height = 128  # the render product the annotator reads; the scan pattern is the prim's own
 
-    def __init__(self, run, rate: float = 10.0):
-        super().__init__(run, rate=rate, out=Signal("lidar", PointCloud))
+    def __init__(self, model, path: str, *, seed: int = 0, rate: float = 10.0):
+        super().__init__(model, path, seed=seed, rate=rate, out=Signal("lidar", PointCloud))
 
     def emit(self, arrays: dict, t_shown: float) -> None:
         pts = arrays.get("points")

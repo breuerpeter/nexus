@@ -89,7 +89,7 @@ class _Controller(Component):
         self.q = Signal("q", _Reading)
         self.last = None
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def exchange(self, t, timeout):

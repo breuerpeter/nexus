@@ -58,11 +58,11 @@ class _ConnectingSensor(Component):
     its gain to the signal `gain`.
     """
 
-    def __init__(self, run, gain: float = 1.0):
+    def __init__(self, model, path, *, seed: int = 0, gain: float = 1.0):
         self.gain = float(gain)
         self.out = Signal("gain", Gain, shape=(1,))
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):

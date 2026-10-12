@@ -29,7 +29,7 @@ DEVICES = ["cpu", pytest.param("cuda:0", marks=pytest.mark.gpu)]
 # Where a falling run starts: 2 m over the ground, level and nose north, so its Forward Right Down (FRD)
 # body axes are the North East Down (NED) axes, and it falls 8 mm in 10 ticks.
 FALL_FROM = (0.0, 0.0, 2.0)
-# The default site, Woodinville: its origin, and the World Magnetic Model (WMM) field there as an NED
+# The fixture scene's origin, Woodinville, and the World Magnetic Model (WMM) field there as an NED
 # vector in gauss, from PX4's coarse table: declination 15.5°, inclination 69.4°, strength 0.539.
 WOODINVILLE = (47.747944, -122.163917)
 WOODINVILLE_NED = (0.182, 0.051, 0.504)
@@ -39,7 +39,7 @@ FIELD_TOL = 0.015
 PRESSURE_AT_2_M = 1013.01
 
 # One Inertial Measurement Unit (IMU), magnetometer, barometer and Global Positioning System (GPS)
-# receiver on the base body, each with no noise, so a reading is the value the site and the body give it.
+# receiver on the base body, each with no noise, so a reading is the value the world and the body give it.
 QUIET = (
     sv.prim("Imu0", "NexusImuAPI", "float nexus:accNoise = 0\nfloat nexus:gyroNoise = 0")
     + sv.prim("Mag0", "NexusMagAPI", "float3 nexus:noise = (0, 0, 0)")
@@ -85,7 +85,7 @@ def test_an_estimator_reads_the_imu_magnetometer_barometer_and_gps_each_as_a_sig
     magnetometer, barometer and Global Positioning System (GPS) receiver, and a stand-in estimator whose host
     stage reads the four sensors' signals, when the run steps 10 ticks, eagerly on the CPU device and captured
     on a CUDA device, then on each tick the estimator reads a gyro and, from the second tick, an accelerometer
-    of zero within 1e-3, the site's magnetic field, the pressure at the vehicle's height and the site's latitude
+    of zero within 1e-3, the scene's magnetic field, the pressure at the vehicle's height and the origin's latitude
     and longitude, each with that tick's sim time.
     """
     reader = sv.estimator(

@@ -1,4 +1,4 @@
-"""The model's gravity is the site's, one value, whatever the vehicle Universal Scene Description (USD)
+"""The model's gravity is the world's, one value, whatever the vehicle Universal Scene Description (USD)
 file authors on its ``PhysicsScene``. Real build on the Warp CPU backend; skipped without pxr or newton.
 """
 
@@ -28,7 +28,7 @@ def _author_vehicle_with_gravity(path: str, magnitude: float) -> None:
 
 
 def test_model_gravity_is_the_sites_whatever_the_vehicle_usd_authors(tmp_path):
-    """A run's model gravity is the site's 9.81 whatever the vehicle USD's `PhysicsScene` authors."""
+    """A run's model gravity is the world's 9.81 whatever the vehicle USD's `PhysicsScene` authors."""
     from nexus_sim._src.physics.physics import NewtonPhysics
     from nexus_sim._src.physics.vehicle import VehicleUsd
 

@@ -72,13 +72,16 @@ _MAST_JOINT = f"""
 """
 
 
-def prim(name: str, schema: str | None, attrs: str = "", *, kind: str = "Xform", translate=None) -> str:
+def prim(name: str, schema: str | None, attrs: str = "", *, kind: str = "Sphere", translate=None) -> str:
     """The text of one prim named `name` of type `kind` that applies `schema`, or none, and authors `attrs`.
 
     `attrs` is one attribute per line, such as `float nexus:noise = 0.09`. `translate` moves the prim
-    from its parent's origin.
+    from its parent's origin. The default kind is a `Sphere` of 1 cm, the geometry prim an analytic
+    sensor's schema sits on, which Newton loads as a site.
     """
     lines = [line.strip() for line in attrs.strip().splitlines() if line.strip()]
+    if kind == "Sphere" and not any(line.startswith("double radius") for line in lines):
+        lines.insert(0, "double radius = 0.01")
     if translate is not None:
         lines += [
             f"double3 xformOp:translate = {tuple(translate)}",
@@ -180,10 +183,13 @@ class Controller(HostController):
 
 
 class StandInSensor(Component):
-    """A stand-in sensor: it keeps the run's values and its keyword arguments, and its one host stage does nothing."""
+    """A stand-in sensor: it keeps the model, its prim's path and its keyword arguments, and its one host stage does
+    nothing.
+    """
 
-    def __init__(self, run, **kwargs):
-        self.run = run
+    def __init__(self, model, path, **kwargs):
+        self.model = model
+        self.path = path
         self.kwargs = kwargs
 
     def stages(self):
@@ -258,15 +264,69 @@ def components(**entries) -> Registry:
 
 
 def scenario() -> dict:
-    """The default scenario at the fixture scene's geodetic origin, for a test that builds its run's cfg by hand
-    and adds no scene to the model.
+    """The default scenario in the fixture scene, an empty world whose ``PhysicsScene`` authors its origin, for
+    a test that builds its run's cfg by hand: the model takes the origin from the scene.
     """
     from nexus_sim._src.build.assembly import build_scenario
-    from nexus_sim._src.scene.origin import geodetic_origin
 
     cfg = build_scenario()
-    cfg["geodetic_origin"] = geodetic_origin(SCENE)
+    cfg["scene_usd_path"] = SCENE
     return cfg
+
+
+# The world's values a hand-built model holds: an origin at 47.6, -122.3, 5 m, and a field of
+# (0.21, 0.05, 0.43) gauss as a North East Down (NED) vector.
+ORIGIN = (47.6, -122.3, 5.0)
+FIELD_NED = (0.21, 0.05, 0.43)
+
+
+def model(
+    *,
+    bodies: int = 1,
+    mount=(0.0, 0.0, 0.0),
+    rotation=(0.0, 0.0, 0.0, 1.0),
+    com=(0.0, 0.0, 0.0),
+    origin=ORIGIN,
+    field_ned=FIELD_NED,
+    pressure: float = 1013.25,
+    temperature: float = 25.0,
+):
+    """A model of `bodies` free bodies, each with a site under it, for a sensor built by hand, and the labels of
+    the sites, one per body.
+
+    Body 0 carries the fixture's base body's label, and each body after it that label with its index appended.
+    Each body's site sits at `mount`, turned by `rotation`, a quaternion (x, y, z, w), in the body's axes, and
+    each body's center of mass at `com`. The world's values come from the arguments: `origin`, the field
+    `field_ned` turned into the world's axes, `pressure` at sea level and `temperature`; gravity is the world's
+    9.81.
+    """
+    import newton
+
+    from nexus_sim._src.scene import world
+
+    builder = newton.ModelBuilder()
+    world.declare(builder)
+    n, e, d = field_ned
+    builder.custom_attributes[world.ORIGIN].values[0] = wp.vec3d(*(float(x) for x in origin))
+    builder.custom_attributes[world.FIELD].values[0] = wp.vec3(n, -e, -d)
+    builder.custom_attributes[world.PRESSURE].values[0] = wp.float32(pressure)
+    builder.custom_attributes[world.TEMPERATURE].values[0] = wp.float32(temperature)
+    sites = []
+    for i in range(bodies):
+        label = BODY if i == 0 else f"{BODY}{i}"
+        body = builder.add_body(
+            com=wp.vec3(*(float(x) for x in com)), inertia=wp.mat33(np.eye(3) * 0.01), mass=1.0, label=label
+        )
+        sites.append(f"{label}/site")
+        builder.add_site(body, xform=wp.transform(tuple(mount), wp.quat(*rotation)), label=sites[-1])
+    builder.gravity = -world.GRAVITY
+    return builder.finalize(), sites
+
+
+def mounted(**kw):
+    """A one-body model of :func:`model` and the label of its site, for ``cls(*mounted(), ...)``."""
+    built, (site,) = model(bodies=1, **kw)
+    return built, site
 
 
 def build(

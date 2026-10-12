@@ -30,7 +30,7 @@ from tests.usd import sensor_vehicle as sv
 DEVICES = ["cpu", pytest.param("cuda:0", marks=pytest.mark.gpu)]
 DT = 0.004  # the fixture's 250 Hz tick
 TICKS = 5
-# The fixture scene's site, Woodinville: its latitude, which a GPS at the origin reads.
+# The fixture scene's origin, Woodinville: its latitude, which a GPS at the origin reads.
 WOODINVILLE_LAT = 47.747944
 IMU = sv.prim("Imu", "NexusImuAPI")
 GPS = sv.prim("Gps", "NexusGpsAPI")
@@ -54,7 +54,7 @@ class _TickWriter(Component):
     def __init__(self, **kwargs):
         self.controls = Signal("controls", wp.float32, shape=(1, 16))
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):
@@ -210,13 +210,13 @@ def test_a_historys_row_is_one_record_t_then_the_signals_quantities_as_its_type_
     """A history's row is one record, `t` then the signal's quantities, each with the type and width its
     signal's type declares, and a value-typed signal is one quantity named after the signal.
 
-    Given the fixture vehicle with an IMU and a GPS at a site at latitude 47.3977, and the stand-in controller,
+    Given the fixture vehicle with an IMU and a GPS at an origin at latitude 47.3977, and the stand-in controller,
     when the run steps one tick, then the newest row of `sim["vehicle/sensors/imu/imu"]` is a record whose dtype names `t`,
     `time`, `accel` and `gyro`, with `accel` and `gyro` float32 of width 3, the `lat` of the newest row of
-    `sim["vehicle/sensors/gps/gps"]` is float64 within 1e-9 degrees of the site's, the controls' newest row holds
+    `sim["vehicle/sensors/gps/gps"]` is float64 within 1e-9 degrees of the origin's, the controls' newest row holds
     `controls`, 4 float32, one per rotor the stand-in commands, and `history()` gives the rows as one array and
     `arrays()` one array per quantity.
-    The fixture scene's site is Woodinville, so the latitude read is its.
+    The fixture scene's origin is Woodinville, so the latitude read is its.
     """
     loop = _build(tmp_path, IMU + GPS)
     with _flown(loop, 1) as sim:

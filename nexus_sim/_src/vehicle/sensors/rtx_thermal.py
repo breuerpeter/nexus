@@ -39,7 +39,9 @@ class RtxThermalSensor(RtxMountedSensor):
       a Pt-annotated product created after frames have rendered stays permanently empty, measured.
 
     Args:
-        run: The run's values: the ``Camera`` prim, the model body it rides and the render link.
+        model: Newton's model, whose body the ``Camera`` prim sits under the sensor rides.
+        path: The path of the ``Camera`` prim on the vehicle's stage.
+        seed: The sensor's noise seed, which the camera doesn't draw on: its grain is its own.
         width: Width of the render, pixels: twice the width of the image.
         height: Height of the render, pixels: twice the height of the image.
         rate: How often the camera gives a frame, hertz.
@@ -60,19 +62,23 @@ class RtxThermalSensor(RtxMountedSensor):
     AMBIENT_SIGMA = 0.02
     NOISE_SIGMA = 0.008  # NETD-style grain
 
-    def __init__(self, run, width: int = 1280, height: int = 1024, rate: float = 24.0):
+    def __init__(self, model, path: str, *, seed: int = 0, width: int = 1280, height: int = 1024, rate: float = 24.0):
         # What comes back is smaller than the declared size, the renderer's internal grid, so nothing
         # downstream of the render can assume these numbers; see _emit_size.
-        prim = run.prim
         self.width = int(width)
         self.height = int(height)
-        # authored intrinsics -> the Rerun Pinhole; logged on the first frame, at the EMITTED size
+        self._focal_mm = 12.0
+        self._h_aperture_mm = 36.0
+        self._v_aperture_mm: float | None = None
+        self._frustum_logged = False
+        self._rng = np.random.default_rng(0)
+        super().__init__(model, path, seed=seed, rate=rate, out=Signal("thermal_camera", Image))
+
+    def _read_prim(self, prim) -> None:
+        """The authored intrinsics -> the Rerun Pinhole, logged on the first frame, at the EMITTED size."""
         self._focal_mm = float(prim.GetAttribute("focalLength").Get() or 12.0)
         self._h_aperture_mm = float(prim.GetAttribute("horizontalAperture").Get() or 36.0)
         self._v_aperture_mm = float(prim.GetAttribute("verticalAperture").Get() or 0.0) or None
-        self._frustum_logged = False
-        self._rng = np.random.default_rng(0)
-        super().__init__(run, rate=rate, out=Signal("thermal_camera", Image))
 
     def set_logger(self, logger_) -> None:
         """Take the Logger, but defer the pinhole: it needs the emitted image size, and no frame

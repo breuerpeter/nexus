@@ -5,7 +5,8 @@
 # "builder" for the run's builder, and "operator" for the ground operator, the person and the apps
 # that fly the aircraft. "channel" stays for an actuator channel, PX4's 16 controls, and goes for
 # what the Recorder keeps: a history. "seam" went with the per-role contracts: a role and the one
-# component contract say what it said.
+# component contract say what it said. "site" stays for Newton's placement point on a body and goes
+# for where the scene sits on Earth, its origin, and for the world's values that follow from it.
 extends: existence
 message: "'%s' is a retired word: docs/design/concepts.md names the one to use."
 link: https://breuerpeter.github.io/nexus/design/concepts/
@@ -34,3 +35,8 @@ tokens:
   - "channels?'? (?:keys?|rings?|histor(?:y|ies)|device buffers?)"
   - "channel keys?"
   - "RecordChannel|ChannelMap"
+  - "site'?s? (?:gravity|field|magnetic|pressure|temperature|ambient|values?|geodetic|latitude|longitude|origin)"
+  - "site it flies at"
+  - "ambient values?"
+  - "(?:run's|scene's|default) site"
+  - "SensorRun"

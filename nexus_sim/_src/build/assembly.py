@@ -3,7 +3,7 @@
 Controller-agnostic by construction: the assembly wires the plant, ``NewtonPhysics`` from nexus_sim's
 own ModelBuilder + solvers, the shipped rotor chain, the rotors' command element and the propellers' force
 element around the Newton motors physics steps, the sensor suite authored in
-Universal Scene Description (USD) with the site's ambient values, and the Rerun sink around a
+Universal Scene Description (USD) over the model's sites and world values, and the Rerun sink around a
 **caller-supplied controller**. Which controller flies is a decision one layer up: the run's builder
 builds the controller the vehicle USD declares, and the example controllers self-assemble beside their flight
 scripts in ``nexus_sim/examples/controllers/*/assembly.py``, reusing the helpers here,
@@ -12,8 +12,8 @@ scripts in ``nexus_sim/examples/controllers/*/assembly.py``, reusing the helpers
 Rendering enters through one argument, injected per build: ``renderer_factory``, from
 :func:`~nexus_sim._src.rendering.rtx_renderer`, or ``None``, which renders nothing. After the physics
 build, since the render poses the stage prims from the model's bodies, its ``link`` gives the render
-link, the sensors build in one pass, each RTX sensor over that link, and its ``finish`` hands the link
-those sensors.
+link, the sensors build in one pass, its ``finish`` hands the link the RTX sensors, and the loop hands
+each of them the link at ``connect``, under the name of the peer their class requires.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ import warp as wp
 from nexus_sim._src.core import Clock, Loop, SeedTree, logger
 from nexus_sim._src.physics import NewtonPhysics
 from nexus_sim._src.recording import Recorder
-from nexus_sim._src.scene import Site
+from nexus_sim._src.vehicle.sensors.rtx_sensor import PEER
 
 
 @dataclass(slots=True)
@@ -78,14 +78,12 @@ def assemble(
     rerun: bool = False,
     viewer: bool = True,
     debug: bool = False,
-    link=None,
     components=None,
     settings: dict | None = None,
 ) -> Assembly:
     """Assemble the shared core components around the constructed ``physics`` and the
     caller-supplied ``controller``; which controller flies is the launch layer's decision.
-    ``link`` is the render link a sensor whose class requires the Kit peer takes, and ``components``
-    the registry that resolves each sensor's schema, ``None`` for the default one.
+    ``components`` is the registry that resolves each sensor's schema, ``None`` for the default one.
     ``settings`` is the run's effective configuration for the viewer's Settings tab; the launch
     glue passes the tested-config receipt.
     """
@@ -93,27 +91,16 @@ def assemble(
 
     dt = cfg["physics"]["dt"]
     rtf = cfg["physics"].get("rtf", 0)
-    # The site: the geodetic origin the scene's PhysicsScene authors, which the run's builder threaded
-    # into the cfg, and the ambient values resolved from it once, here, for the sensors that read them.
-    site = Site.at(*cfg["geodetic_origin"])
     commands, forces = rotor_chain(physics, vehicle_usd)  # from the vehicle USD's rotors, not cfg
 
     seedtree = SeedTree(cfg.get("seed", 42))  # the run's builder threads runtime.seed; string-name path keeps 42
     # The sensors come from the schemas the vehicle USD applies, the single, hash-pinned source, the
-    # same as the preceding rotor chain; only the site stays config, since it's a world property,
-    # not a vehicle one. A vehicle that declares no sensor builds: which sensors a flight needs is its
-    # controller's matter.
+    # same as the preceding rotor chain. Each reads its site and the world's values, which the scene's
+    # PhysicsScene authors, from the model. A vehicle that declares no sensor builds: which sensors a
+    # flight needs is its controller's matter.
     usd_path = vehicle_usd.cfg["usd_path"]
     specs = sensor_specs(usd_path, components)
-    sensors = build_sensors(
-        specs,
-        usd_path=usd_path,
-        model=physics.model,
-        seedtree=seedtree,
-        dt=dt,
-        site=site,
-        link=link,
-    )
+    sensors = build_sensors(specs, usd_path=usd_path, model=physics.model, seedtree=seedtree)
     # The central Rerun recording, §10: built here because it needs the physics Model; the import is
     # lazy so rerun is only pulled in when logging is on. Resilient: a logging stack that fails to
     # build must never block the flight; warn and fly without the sink.
@@ -140,9 +127,10 @@ def assemble(
     )
 
 
-# Default scenario. No sensor entry, by design: the scene's PhysicsScene authors its geodetic origin,
-# and the sensor suite, which sensors exist + their noise/mount params, lives in the vehicle USD as
-# applied sensor schemas, the same as the actuator entry below.
+# Default scenario. No sensor entry, by design: the scene's PhysicsScene authors its geodetic origin
+# and the world's values, which the model holds, and the sensor suite, which sensors exist + their
+# noise/mount params, lives in the vehicle USD as applied sensor schemas, the same as the actuator
+# entry below.
 DEFAULT_SCENARIO = {
     "physics": {"enabled": True, "dt": 0.004, "force_cpu": False, "rtf": 0, "solver": "mujoco"},
     # No rotor entry, by design. The aero/thrust map (rpm_max, ct, cd, tau, aero_h, aero_hforce)
@@ -219,12 +207,11 @@ def build_loop(
     renderer = renderer_factory.link(physics, vehicle_usd) if renderer_factory else None
     a = assemble(
         physics, vehicle_usd, cfg,
-        controller=controller, rerun=rerun, viewer=viewer, debug=debug, link=renderer, components=components,
-        settings=settings,
+        controller=controller, rerun=rerun, viewer=viewer, debug=debug, components=components, settings=settings,
     )  # fmt: skip
     if renderer_factory:
         rtx = [s for s in a.sensors if s.requires]
-        renderer_factory.finish(renderer, rtx, vehicle_usd, cfg)
+        renderer_factory.finish(renderer, rtx, vehicle_usd, cfg, physics.model)
     by_prim = {**a.prims, **(prims or {})}
     links = []
     for reader, inputs in (connections or {}).items():
@@ -252,6 +239,7 @@ def build_loop(
         logger=a.logger,
         recorder=Recorder(dt=a.clock.dt),
         renderer=renderer,
+        links={} if renderer is None else {PEER: renderer},
         peers=peers,
         ports=ports,
         connections=links,

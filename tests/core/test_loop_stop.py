@@ -61,7 +61,7 @@ class _Controller(Component):
     def __init__(self):
         self.closed = False
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def exchange(self, t, timeout):

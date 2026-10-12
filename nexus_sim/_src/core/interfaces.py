@@ -10,7 +10,7 @@ The fixed parts, the clock and the physics, keep contracts of their own, which n
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
@@ -64,39 +64,6 @@ class Stage:
     writes: tuple[Signal, ...] = ()
 
 
-@dataclass(frozen=True, slots=True)
-class SensorRun:
-    """The run's values the builder hands a sensor's class as its first argument, before the keyword
-    arguments the sensor's schema gives.
-
-    Attributes:
-        seed: The sensor's own noise seed, from the run's seed and the prim that declares the sensor,
-            so two sensors of one kind draw different noise and a run repeats bit for bit.
-        dt: The control tick, seconds.
-        site: Where the run flies and its ambient values, a :class:`~nexus_sim._src.scene.site.Site`.
-        body: The index of the model body the sensor rides: the parent of its prim.
-        mount: The translation of the sensor's prim from its body's origin, metres, in the body's axes.
-        rotation: The rotation of the sensor's prim in its body's axes, a quaternion ``(x, y, z, w)``: it
-            turns a vector in the sensor's axes into the body's.
-        com: The center of mass of the body the sensor rides, metres from the body's origin, in its axes.
-        path: The path of the prim that declares the sensor.
-        prim: That prim on the vehicle's stage, for a sensor that reads what it authors, such as a
-            camera's optics.
-        link: The link to the peer the sensor's class requires, or ``None`` when it requires none.
-    """
-
-    seed: int = 0
-    dt: float = 0.0
-    site: Any = None
-    body: int = 0
-    mount: tuple[float, float, float] = (0.0, 0.0, 0.0)
-    rotation: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0)
-    com: tuple[float, float, float] = (0.0, 0.0, 0.0)
-    path: str = ""
-    prim: Any = None
-    link: Any = None
-
-
 class Component:
     """The contract every component fills, whatever its role.
 
@@ -111,7 +78,8 @@ class Component:
             recorded histories. The builder sets it for a declared component from its prim; ``None`` reads
             as the class's name.
         requires: The names of the peers the class needs, such as ``("kit",)`` for an RTX sensor: the builder
-            starts each once, whatever the number of components that require it, and hands the class its link.
+            starts each once, whatever the number of components that require it, and the loop hands the
+            component each one's link at :meth:`connect`.
         attached: Whether the component's peer has dialed in. ``True`` for a component with no peer, the
             default. A component that reads ``False`` before it connects waits on a peer: the loop connects
             it after the graph capture, so a peer that dials in early waits on no kernel load, and holds the
@@ -129,9 +97,13 @@ class Component:
         """
         return []
 
-    def connect(self) -> None:
+    def connect(self, links: Mapping[str, Any]) -> None:
         """Open what the component needs for the run: bind a port, load a model. Nothing by default. The loop
         connects a component before the warm pass, or after the graph capture when it waits on a peer.
+
+        Args:
+            links: The link of each peer the class requires, by the peer's name, as ``requires`` lists them:
+                the run started the peer and holds its link. Empty for a class that requires none.
         """
 
     def close(self) -> None:

@@ -242,7 +242,7 @@ class AcadosNMPCController(Component):
         os.makedirs(self.codegen_dir, exist_ok=True)
         return AcadosOcpSolver(ocp, json_file=os.path.join(self.codegen_dir, "acados_ocp.json"), verbose=False)
 
-    def connect(self) -> None:
+    def connect(self, links) -> None:
         pass
 
     def stages(self):

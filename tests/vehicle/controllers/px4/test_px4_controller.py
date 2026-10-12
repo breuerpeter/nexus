@@ -10,13 +10,13 @@ import pytest
 import warp as wp
 
 from nexus_sim._src.core.clock import DeviceClock
-from nexus_sim._src.core.interfaces import Component, SensorRun, Stage
+from nexus_sim._src.core.interfaces import Component, Stage
 from nexus_sim._src.core.schema import PoseTwist, SimTime
 from nexus_sim._src.core.signals import Signal, wire
 from nexus_sim._src.core.stages import Bound
-from nexus_sim._src.scene import Site
 from nexus_sim._src.vehicle.controllers.px4 import controller as ctrl
 from nexus_sim._src.vehicle.sensors import BaroSensor, GpsSensor, ImuSensor
+from tests.usd import sensor_vehicle as sv
 
 
 class _FakeMav:
@@ -76,8 +76,11 @@ def link(monkeypatch):
     return far
 
 
-# The run's values each sensor here takes: a 4 ms tick and a site at 47.6, -122.3, 5 m.
-_RUN = SensorRun(seed=1, dt=0.004, site=Site(lat=47.6, lon=-122.3, alt=5.0, mag_ned=(0.21, 0.05, 0.43)))
+def _on():
+    """A one-body model with one site, which each sensor here takes, and the site: the world's origin at
+    47.6, -122.3, 5 m.
+    """
+    return sv.mounted()
 
 
 class _AtRest:
@@ -116,7 +119,7 @@ def _exchange(*sensors, ticks: int) -> None:
     wire(ring, [(controller, "pose", plant, "body/body")])  # the link the loop adds for an unconnected pose
     plant.body.write([((0.0, 0.0, 1.0), (0.0, 0.0, 0.0, 1.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))])
     next(stage for stage in controller.stages() if stage.name == "truth").run(None)
-    controller.connect()
+    controller.connect({})
     state, now = _AtRest(), 0.0
     for tick in range(ticks):
         clock.time.write([now])
@@ -134,7 +137,7 @@ def test_hil_sensor_marks_a_sensors_fields_updated_only_on_an_exchange_with_a_ne
     `HIL_SENSOR` mark the IMU's fields updated on each, and the barometer's pressure fields on the first and
     the third: `0x1E3F, 0x3F, 0x1E3F, 0x3F`.
     """
-    _exchange(ImuSensor(_RUN), BaroSensor(_RUN, rate=125.0), ticks=4)
+    _exchange(ImuSensor(*_on()), BaroSensor(*_on(), rate=125.0), ticks=4)
 
     assert [args[-2] for args in link.sent["HIL_SENSOR"]] == [0x1E3F, 0x3F, 0x1E3F, 0x3F]
 
@@ -146,7 +149,7 @@ def test_hil_gps_and_the_true_state_go_out_with_each_new_gps_sample_and_on_no_ot
     sample it and exchange, then one `HIL_GPS` and one `HIL_STATE_QUATERNION` go out on the first and on the third,
     stamped 0 and 8 ms.
     """
-    _exchange(GpsSensor(_RUN, rate=125.0), ticks=4)
+    _exchange(GpsSensor(*_on(), rate=125.0), ticks=4)
 
     stamps = [[args[0] for args in link.sent[kind]] for kind in ("HIL_GPS", "HIL_STATE_QUATERNION")]
     assert stamps == [[0, 8000], [0, 8000]]
@@ -154,14 +157,14 @@ def test_hil_gps_and_the_true_state_go_out_with_each_new_gps_sample_and_on_no_ot
 
 def test_connect_listens_on_the_runs_hil_port(bind):
     c = ctrl.Px4MavlinkController(port=4563)
-    c.connect()
+    c.connect({})
     assert bind == ["tcpin:0.0.0.0:4563"]
 
 
 def test_connect_addresses_the_runs_px4_system_id(bind):
     """PX4's system id is its instance + 1; the run hands it over, since the controller knows no instance."""
     c = ctrl.Px4MavlinkController(target_system=4)
-    c.connect()
+    c.connect({})
     assert c.mav.target_system == 4
 
 

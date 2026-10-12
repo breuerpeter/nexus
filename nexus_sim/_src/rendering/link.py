@@ -76,12 +76,15 @@ class KitRenderer:
             before :meth:`on_physics_ready`.
         sensors: The RTX sensors, each with ``path``, ``output``, ``width``, ``height``, ``body``,
             ``mount``, ``take_due(now)`` and ``emit(arrays, t_shown)``; a factory can fill them later
-            too, since each sensor holds this renderer.
+            too, since the loop hands each sensor this renderer at ``connect``.
+        stage: The vehicle's stage, which an RTX sensor reads its prim from at ``connect``: its mount, and
+            a camera its optics. ``None`` for a link whose sensors read no prim.
     """
 
-    def __init__(self, peer: KitPeer, *, bodies: list, setup: dict | None = None, sensors: list = ()):
+    def __init__(self, peer: KitPeer, *, bodies: list, setup: dict | None = None, sensors: list = (), stage=None):
         self._peer = peer
         self._bodies = list(bodies)
+        self.stage = stage
         self.setup = dict(setup or {})
         self.sensors = list(sensors)
         self._sock: socket.socket | None = None

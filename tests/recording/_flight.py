@@ -59,7 +59,7 @@ class Controller(Component):
     def __init__(self, act=None):
         self._act = act or (lambda tick: None)
 
-    def connect(self) -> None:
+    def connect(self, links) -> None:
         pass
 
     def stages(self):
