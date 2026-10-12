@@ -699,7 +699,7 @@ def test_a_px4_run_takes_no_estimator_stage(tmp_path, warp_cpu, caplog):
     """A PX4 run takes no estimator stage.
 
     Given the fixture vehicle, which declares no sensor, on the PX4 fake, when the run takes its first tick, then
-    its logged stage plan holds the device segment and PX4's `truth` and `exchange` host stages, with no
+    its logged stage plan holds PX4's `truth` and `exchange` host stages between the device segments, with no
     estimator stage.
     """
     loop, _ = _px4_run(tmp_path, "cpu")
@@ -709,7 +709,8 @@ def test_a_px4_run_takes_no_estimator_stage(tmp_path, warp_cpu, caplog):
 
     plans = [r.getMessage() for r in caplog.records if r.getMessage().startswith("stage plan:")]
     assert plans == [
-        "stage plan: eager(clear -> rotors -> propellers -> step -> state -> record) host(truth) host(exchange)"
+        "stage plan: eager(clock -> clear -> rotors -> propellers -> step -> state) host(truth) host(exchange) "
+        "eager(record)"
     ]
 
 

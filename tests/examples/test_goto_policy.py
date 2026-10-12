@@ -111,12 +111,12 @@ def test_a_policy_flies_the_same_path_every_time(torchscript_policy):
 
 
 @pytest.mark.usefixtures("warp_cpu")  # the build's force_cpu sets the device; the scope puts it back
-def test_a_run_with_a_guidance_and_a_host_exchange_runs_one_device_segment_per_tick(torchscript_policy, caplog):
-    """A run with a guidance and a controller that exchanges on the host runs one device segment per tick,
-    not two.
+def test_a_run_with_a_guidance_and_a_host_exchange_runs_two_device_segments_per_tick(torchscript_policy, caplog):
+    """A run with a guidance and a controller that exchanges on the host runs two device segments per tick: one
+    that steps the plant before the host stages, and one that records the tick after them.
 
     Given the policy example's run on the CPU device with a TorchScript stand-in policy and its guidance,
-    when it takes its first tick, then its logged stage plan holds one device segment.
+    when it takes its first tick, then its logged stage plan holds two device segments.
     """
     cfg = scenario()
     cfg["physics"]["force_cpu"] = True
@@ -127,4 +127,4 @@ def test_a_run_with_a_guidance_and_a_host_exchange_runs_one_device_segment_per_t
     with caplog.at_level(logging.INFO, logger="nexus"), nx.Sim._from_loop(orch, guidance=guidance) as sim:
         sim.run()
     plan = next(m for m in (r.getMessage() for r in caplog.records) if m.startswith("stage plan:"))
-    assert plan.count("eager(") + plan.count("graph(") == 1
+    assert plan.count("eager(") + plan.count("graph(") == 2

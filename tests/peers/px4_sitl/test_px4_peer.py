@@ -537,11 +537,10 @@ def test_the_fake_px4_receives_a_hil_sensor_each_tick_and_the_state_with_each_gp
     kinds = [msg.get_type() for msg in list(loop.peers[0].last.every)]
     loop.close()
 
-    # The seed pass before the first tick exchanges once more, so 501 reach the fake. The messages before the
-    # last `HIL_SENSOR` are those of whole exchanges, which the fake has read to the end.
+    # The messages before the last `HIL_SENSOR` are those of whole exchanges, which the fake has read to the end.
     whole = kinds[: len(kinds) - kinds[::-1].index("HIL_SENSOR") - 1]
     gps, state = whole.count("HIL_GPS"), whole.count("HIL_STATE_QUATERNION")
-    assert (kinds.count("HIL_SENSOR"), gps > 0, state == gps) == (501, True, True), (gps, state)
+    assert (kinds.count("HIL_SENSOR"), gps > 0, state == gps) == (500, True, True), (gps, state)
 
 
 def _shipped(monkeypatch) -> Loop:
@@ -579,8 +578,9 @@ def test_px4_receives_each_sensor_of_a_shipped_vehicle_at_its_declared_rate(daem
 def test_the_controller_gets_the_fake_px4s_hover_command_every_tick(daemon, catalog, monkeypatch, tmp_path):
     """The fake PX4 answers each `HIL_SENSOR` with the fixed hover command.
 
-    Given a run with the fake PX4, when it steps 500 ticks, then the controller hands the loop the same
-    command with thrust on it every tick.
+    Given a run with the fake PX4, when it steps 500 ticks, then the first tick's physics step applies the
+    controls at rest, since PX4 has sent none before it, and every later tick the same command with thrust on
+    it, the one PX4 sent on the tick before.
     """
     commands = _Commands()
 
@@ -602,8 +602,13 @@ def test_the_controller_gets_the_fake_px4s_hover_command_every_tick(daemon, cata
     _step(loop, 500)
     loop.close()
 
-    ticks = commands.seen[-500:]
-    assert (len(ticks), len(set(ticks)), any(v > 0 for v in (ticks[0] if ticks else ()))) == (500, 1, True), set(ticks)
+    first, ticks = commands.seen[0], commands.seen[1:]
+    assert (any(first), len(ticks), len(set(ticks)), any(v > 0 for v in (ticks[0] if ticks else ()))) == (
+        False,
+        499,
+        1,
+        True,
+    ), set(ticks)
 
 
 def test_the_px4_controller_is_built_the_same_way_whichever_process_answers(

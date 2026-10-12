@@ -105,7 +105,7 @@ def build(
     mb = newton.ModelBuilder()
     VehicleUsd({"usd_path": usd}).build(mb)
     model = mb.finalize()
-    recorder = {} if staging is None else {"recorder": Recorder(dt=DT, staging=staging)}
+    recorder = {} if staging is None else {"recorder": Recorder(staging=staging)}
     orch = Loop(
         clock=Clock(DT),
         physics=NewtonPhysics(model=model, cfg=cfg),

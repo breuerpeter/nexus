@@ -1,7 +1,7 @@
 """Recorder and History: every row a run records, with a fixed footprint on the device.
 
 A :class:`History` is one signal's rows over a run. A device kernel writes one row per tick into its staging
-buffers, the row's values and its sim time, at the slot the device counter names, so the write joins the
+buffers, the row's values and the device clock's sim time, at the slot the device counter names, so the write joins the
 captured graph with no host readback. The loop commits one row per tick on the host, and each time the
 staging buffers fill they drain: the rows copy onto the end of the host blocks, which grow with the run,
 and the kernel writes slot 0 again. So device memory stays at ``staging`` rows per history and the Recorder
@@ -30,18 +30,18 @@ STAGING = 4096  # rows a staging buffer holds: about 16 s at 250 Hz, the most a 
 @wp.kernel
 def record_signal(
     src: wp.array(dtype=Any),
-    dt: wp.float64,
+    time: wp.array(dtype=wp.float64),
     staging: int,
     values: wp.array2d(dtype=Any),
     times: wp.array(dtype=wp.float64),
     counter: wp.array(dtype=int),
 ):
-    """Copy a signal's buffer, flat, into the row the device counter names, and stamp the row's time. One
-    generic kernel serves every signal type: a struct, a value type or a row of floats.
+    """Copy a signal's buffer, flat, into the row the device counter names, and stamp the row with the tick's
+    sim time, ``time``. One generic kernel serves every signal type: a struct, a value type or a row of floats.
     """
     c = counter[0]  # rows written so far; advances per graph replay, on the device, not a frozen kernel arg
     s = c % staging  # the staging slot: the host drains the buffer before the slot comes round again
-    times[s] = dt * wp.float64(c)
+    times[s] = time[0]
     for k in range(src.shape[0]):
         values[s, k] = src[k]
     counter[0] = c + 1
@@ -52,8 +52,8 @@ class History:
 
     A row is ``width`` values of ``dtype``, a Warp element type, and its sim time. The writing kernel takes
     :attr:`values`, the device staging buffer of ``staging`` rows, :attr:`times`, their sim times,
-    :attr:`counter`, the rows written so far, which advances on the device, and ``dt``, and stamps
-    ``times[slot] = dt × counter``: a kernel argument freezes at capture and the counter doesn't. The host
+    :attr:`counter`, the rows written so far, which advances on the device, and the device clock's time, which
+    stamps the row: a kernel argument freezes at capture, and the counter and the clock don't. The host
     reconstructs nothing.
 
     ``fields`` is the declared row schema: ordered ``(name, n_values)`` pairs that cover the row, a struct's
@@ -67,7 +67,6 @@ class History:
     def __init__(
         self,
         width: int,
-        dt: float,
         fields: tuple[tuple[str, int], ...],
         *,
         staging: int = STAGING,
@@ -77,7 +76,6 @@ class History:
         row: str | None = None,
     ):
         self.width = int(width)
-        self.dt = float(dt)
         self.staging = int(staging)
         self.dtype = dtype
         self.fields = tuple((str(n), int(w)) for n, w in fields)
@@ -236,8 +234,7 @@ class Recorder:
     sample, each of which :meth:`tap` registers.
     """
 
-    def __init__(self, dt: float, staging: int = STAGING):
-        self._dt = float(dt)
+    def __init__(self, staging: int = STAGING):
         self.staging = int(staging)
         self.histories: dict[str, History] = {}
         self.rows = 0  # rows committed so far, the same for every history
@@ -263,7 +260,6 @@ class Recorder:
         width = int(src.shape[0])
         h = History(
             width,
-            self._dt,
             _quantities(signal, width),
             staging=self.staging,
             dtype=signal.type,
@@ -275,12 +271,15 @@ class Recorder:
         self._taps.append((h, src))
         return h
 
-    def record(self) -> None:
+    def record(self, time: wp.array) -> None:
         """The record taps: snapshot every tapped signal into its history, device-only, so the launches join
         the captured graph. The loop's record stage runs this each tick.
+
+        Args:
+            time: The tick's sim time on the device, the device clock's signal ``time``, which stamps each row.
         """
-        for h, src in self._taps:  # the generic kernel infers a Python float as float32, so cast
-            wp.launch(record_signal, dim=1, inputs=(src, wp.float64(h.dt), h.staging, h.values, h.times, h.counter))
+        for h, src in self._taps:
+            wp.launch(record_signal, dim=1, inputs=(src, time, h.staging, h.values, h.times, h.counter))
 
     def commit(self) -> tuple[int, int] | None:
         """Count the row every history gained this tick, and drain the staging buffers when full.

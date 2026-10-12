@@ -106,7 +106,7 @@ class _Plant(Component):
 def _exchange(*sensors, ticks: int) -> None:
     """Wire a PX4 controller, connected, to `sensors` as a run wires them, with the tick's sim time on the device
     in a clock's signal, and run `ticks` ticks of 4 ms from 0 s: on each, every sensor samples a body at rest,
-    then the controller exchanges. The tick's time grows by 4 ms a tick in float64, as the device clock adds it.
+    then the controller exchanges. The tick's time is the tick count times 4 ms, as the device clock keeps it.
     """
     clock, plant, controller = DeviceClock(0.004), _Plant(), ctrl.Px4MavlinkController()
     pairs = [
@@ -120,13 +120,13 @@ def _exchange(*sensors, ticks: int) -> None:
     plant.body.write([((0.0, 0.0, 1.0), (0.0, 0.0, 0.0, 1.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))])
     next(stage for stage in controller.stages() if stage.name == "truth").run(None)
     controller.connect({})
-    state, now = _AtRest(), 0.0
+    state = _AtRest()
     for tick in range(ticks):
-        clock.time.write([now])
+        t = SimTime(tick * 4_000_000 / 1e9, tick)
+        clock.set(t)
         for sensor in sensors:
-            sensor.sample_wp(state, SimTime(now, tick))
-        controller.exchange(SimTime(now, tick), timeout=0.1)
-        now += 0.004
+            sensor.sample_wp(state, t)
+        controller.exchange(t, timeout=0.1)
 
 
 def test_hil_sensor_marks_a_sensors_fields_updated_only_on_an_exchange_with_a_new_sample_of_it(link, warp_cpu):

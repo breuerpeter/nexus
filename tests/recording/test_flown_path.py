@@ -79,7 +79,7 @@ def flight_paths(tmp_path_factory, rrd_entities):
             sensors=[],
             controller=_Controller(),
             logger=Logger(model, serve=False, record_to_rrd=rrd),
-            recorder=Recorder(dt=DT),
+            recorder=Recorder(),
             max_steps=STEPS,
         )
         orch.run()

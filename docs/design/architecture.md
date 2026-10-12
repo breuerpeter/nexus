@@ -129,8 +129,7 @@ state read the estimate, never the physics state, so a controller written agains
 estimator. The estimator belongs to the vehicle's flight stack, beside its controller, so the run
 doesn't name it: each example's assembly constructs it today. One estimator ships, `GroundTruthEstimator`,
 a passthrough that hands on the base body's true pose and twist with no noise and no delay. Its stage
-also runs once over the settled state before the first tick, so the guidance's first stage reads an
-estimate. A run whose guidance or controller reads the estimate, and that has no estimator, fails
+also runs in the [start](concepts.md#start), so the guidance's first stage reads an estimate. A run whose guidance or controller reads the estimate, and that has no estimator, fails
 before any stage runs, with an error that names the readers and the estimator.
 
 **What to fly is separate from how it flies.** A controller that takes setpoints flies the mission

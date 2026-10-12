@@ -6,7 +6,8 @@
 # that fly the aircraft. "channel" stays for an actuator channel, PX4's 16 controls, and goes for
 # what the Recorder keeps: a history. "seam" went with the per-role contracts: a role and the one
 # component contract say what it said. "site" stays for Newton's placement point on a body and goes
-# for where the scene sits on Earth, its origin, and for the world's values that follow from it.
+# for where the scene sits on Earth, its origin, and for the world's values that follow from it. The warm
+# pass and the seed pass went with the start: one pass over the settled state at sim time zero.
 extends: existence
 message: "'%s' is a retired word: docs/design/concepts.md names the one to use."
 link: https://breuerpeter.github.io/nexus/design/concepts/
@@ -40,3 +41,6 @@ tokens:
   - "ambient values?"
   - "(?:run's|scene's|default) site"
   - "SensorRun"
+  - '(?:warm|seed) pass(?:es)?'
+  - 'warm stages?'
+  - 'seed (?:rows?|exchanges?)'

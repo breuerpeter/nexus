@@ -252,7 +252,7 @@ def test_a_controller_holds_the_first_goal_before_its_own_first_stage():
 
     Given a run whose controller records the goal it holds each time its device stage runs and a
     `MissionGuidance` that holds its mission before the run, when the run takes its first tick, then
-    every run of that stage, the warm pass included, held the first goal.
+    every run of that stage, the start's included, held the first goal.
     """
     with wp.ScopedDevice("cpu"):
         controller = _DeviceController()
@@ -262,13 +262,16 @@ def test_a_controller_holds_the_first_goal_before_its_own_first_stage():
         orch.step()
         orch.close()
     held = [tuple(float(v) for v in sp[0]) for sp in controller.held]
-    # The stage runs once in the warm pass and once on the first tick.
+    # The stage runs once in the start and once on the first tick.
     assert held == [GOALS[0], GOALS[0]]
 
 
-def test_a_tracking_controller_holds_its_planned_reference_from_its_first_exchange():
-    """A tracking controller holds its planned reference from its first exchange, and the plan waits
-    for the run's first tick: the seed exchange, over the settled state, held no reference.
+def test_a_tracking_controller_holds_its_planned_reference_from_its_first_exchange_the_starts():
+    """A tracking controller holds its planned reference from its first exchange, which runs in the start.
+
+    Given a `TrackingGuidance` with a planner and a controller with an exchange host stage, when the run takes
+    its first tick, then the controller's first exchange ran at `0.0` and held the planned reference, and
+    `reference_started_at` is `0.0`.
     """
     reference = _Reference()
     with wp.ScopedDevice("cpu"):
@@ -277,15 +280,18 @@ def test_a_tracking_controller_holds_its_planned_reference_from_its_first_exchan
         guidance = TrackingGuidance(planner=lambda waypoints: reference)
         guidance.set_mission([(2.0, 0.5, 3.5), (3.0, 2.0, 4.0)])
         orch = _orch(controller, physics, guidance=guidance)
-        orch.step()  # the run's first tick; its exchange is the last one the controller kept
+        orch.step()
         orch.close()
-    _, _, seeded = controller.exchanges[0]  # the seed exchange, before any tick
-    sim_time, _, setpoint = controller.exchanges[-1]
-    assert (seeded, setpoint.reference, guidance.reference_started_at) == (None, reference, sim_time)
+    sim_time, _, setpoint = controller.exchanges[0]
+    held = getattr(setpoint, "reference", None)
+    assert (sim_time, held, guidance.reference_started_at) == (0.0, reference, 0.0)
 
 
-def test_a_run_whose_stages_are_all_device_stages_stays_one_captured_segment_with_a_guidance(caplog):
-    """A run whose stages are all device stages stays one captured segment with a guidance."""
+def test_a_device_controller_with_a_host_guidance_runs_in_two_captured_segments(caplog):
+    """A run whose controller has only device stages runs in two captured segments with a host guidance: the
+    physics step, the sensors and the estimator before the guidance's host stage, and the controller and the
+    record stage after it.
+    """
     with wp.ScopedDevice("cpu"), caplog.at_level(logging.INFO, logger="nexus"):
         controller = _DeviceController()
         guidance = MissionGuidance()
@@ -295,7 +301,7 @@ def test_a_run_whose_stages_are_all_device_stages_stays_one_captured_segment_wit
         orch.close()
     plan = next(m for m in (r.getMessage() for r in caplog.records) if m.startswith("stage plan:"))
     # A device segment reads `graph(...)` when it captures and `eager(...)` on the CPU device.
-    assert (plan.count("graph(") + plan.count("eager("), plan.count("host(")) == (1, 1)
+    assert (plan.count("graph(") + plan.count("eager("), plan.count("host(")) == (2, 1)
 
 
 def test_a_runs_on_tick_hook_and_its_guidance_both_run():

@@ -84,9 +84,10 @@ def test_an_estimator_reads_the_imu_magnetometer_barometer_and_gps_each_as_a_sig
     Given the falling fixture vehicle, level and nose north, with one quiet Inertial Measurement Unit (IMU),
     magnetometer, barometer and Global Positioning System (GPS) receiver, and a stand-in estimator whose host
     stage reads the four sensors' signals, when the run steps 10 ticks, eagerly on the CPU device and captured
-    on a CUDA device, then on each tick the estimator reads a gyro and, from the second tick, an accelerometer
-    of zero within 1e-3, the scene's magnetic field, the pressure at the vehicle's height and the origin's latitude
-    and longitude, each with that tick's sim time.
+    on a CUDA device, then in the start and on each tick the estimator reads a gyro and, from the first tick, an
+    accelerometer of zero within 1e-3, the scene's magnetic field, the pressure at the vehicle's height and the
+    origin's latitude and longitude, each with that tick's sim time. The start's accelerometer, which has no
+    earlier velocity to difference, stays out.
     """
     reader = sv.estimator(
         Signal("imu", ImuSample, shape=(1,)),
@@ -114,7 +115,7 @@ def test_an_estimator_reads_the_imu_magnetometer_barometer_and_gps_each_as_a_sig
         for tick, (t, imu, mag, baro, gps) in enumerate(reader.kept)
     ]
 
-    assert read == [(True,) * 6] * 10, reader.kept
+    assert read == [(True,) * 6] * 11, reader.kept
 
 
 def _firsts(kept: list, column: int) -> list[tuple[float, object]]:

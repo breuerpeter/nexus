@@ -57,7 +57,7 @@ class _FakeOrch:
             device = self.body.buffer.device  # record where the history lives, whatever the default device is now
             v = _FakeView(device)
             wp.launch(write_body, dim=1, inputs=(v.body_q, v.body_qd, 0), outputs=(self.body.buffer,), device=device)
-            self.recorder.record()
+            self.recorder.record(wp.array([(self.steps - 1) * 0.004], dtype=wp.float64, device=device))
             wp.synchronize()
             self.recorder.commit()
         return True

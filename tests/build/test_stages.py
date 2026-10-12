@@ -1,5 +1,5 @@
 """The Proportional Integral Derivative (PID) example on the stage loop: the trajectory main recorded,
-the seed row ``Sim.start()`` returns with, and the run a guidance of another setpoint type stops. The
+the start's row ``Sim.start()`` returns with, and the run a guidance of another setpoint type stops. The
 CUDA tests are `gpu`; each test scopes the device it uses, so the default device is the same after it.
 """
 
@@ -60,7 +60,7 @@ def test_pid_on_cuda_flies_the_trajectory_main_recorded():
 @pytest.mark.parametrize("device", ["cpu", pytest.param("cuda:0", marks=pytest.mark.gpu)])
 def test_start_returns_with_the_seed_row_and_the_first_tick_recorded(device, tmp_path):
     """``Sim.start()`` returns with one observation row recorded and the capture done, for every
-    controller kind: the pid example's base body holds two rows after ``start()``, the settled seed row
+    controller kind: the pid example's base body holds two rows after ``start()``, the start's row
     and the first tick's. It flies the local fixture vehicle of ``tests/usd/sensor_vehicle.py``.
     """
     with (

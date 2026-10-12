@@ -2,15 +2,15 @@
 
 A tick is an ordered ring of stages, per docs/design/execution.md. Every component states its
 per-tick work as a list of ``Stage``: a device stage joins a CUDA graph, a host stage runs between
-graph replays. The loop lays the stages out in the canonical order, sensors -> estimator -> guidance ->
-controller -> [clear -> the command elements -> the force elements -> step] per physics substep -> record,
-cuts the ring at its host stages and
-rotates it to start after the last cut, so each maximal run of device stages becomes one CUDA
-graph, the Real Time Factor (RTF) lever, and the host stages run between
-replays. One partition and one loop serve every arrangement: PX4, whose ``exchange`` host stage
-blocks on its peer, a Model Predictive Control (MPC) solver that runs on the host, and a
-device-native Proportional Integral Derivative (PID) law whose whole ring is one graph. On a CPU device the same segments run stage by stage, the bit-exact
-determinism gate. GPU physics is tolerance-gated, not bit-exact, so capture is an RTF optimization
+graph replays. The loop lays the stages out in the canonical order, clock -> [clear -> the command elements
+-> the force elements -> step] per physics substep -> state -> sensors -> estimator -> guidance ->
+controller -> record, and cuts the ring at its host stages, so each maximal run of device stages becomes
+one CUDA graph, the Real Time Factor (RTF) lever, and the host stages run between replays. The physics
+step opens a tick, so every row the tick records describes the state at the tick's time. One partition
+and one loop serve every arrangement: PX4, whose ``exchange`` host stage blocks on its peer, a Model
+Predictive Control (MPC) solver that runs on the host, and a device-native Proportional Integral
+Derivative (PID) law whose whole ring is one graph. On a CPU device the same segments run stage by stage,
+the bit-exact determinism gate. GPU physics is tolerance-gated, not bit-exact, so capture is an RTF optimization
 layered over the same component semantics.
 """
 
@@ -31,7 +31,7 @@ from .ports import PortMap
 from .profiling import LoopProfiler
 from .schema import PoseTwist
 from .signals import _declared, wire
-from .stages import Bound, build_ring, opening, partition, plan_line, seed_stages, stages_of, warm_stages
+from .stages import Bound, build_ring, partition, plan_line, start_stages
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
@@ -78,8 +78,8 @@ def _sensor_names(sensors: list) -> list[str]:
 class Loop:
     """Fixed-order, deterministic per-tick driver over typed component boundaries.
 
-    Runs the ring of stages every component states, sensors -> estimator -> guidance -> controller ->
-    actuate and step -> record, per docs/design/execution.md. Before any stage runs, it wires the signals the stages
+    Runs the ring of stages every component states, actuate and step -> sensors -> estimator -> guidance ->
+    controller -> record, per docs/design/execution.md. Before any stage runs, it wires the signals the stages
     declare: each input meets the one output of its name, and a pair that disagrees on the type or
     the shape stops the run. On a CUDA device each maximal run of device stages
     replays as one CUDA graph and the host stages run between replays; on a CPU device the same
@@ -134,8 +134,8 @@ class Loop:
             sensors: Iterable of sensors, each a device stage that writes its sample to a signal of its
                 own type, or a host stage for a sensor whose work leaves the process. Stored as a list.
             controller: The controller: its stages write the controls the command elements read. One with
-                a peer reads ``attached`` false until the peer dials in, which holds the seed pass's clock,
-                as any component that waits on a peer does.
+                a peer reads ``attached`` false until the peer dials in, which holds the sim clock, as any
+                component that waits on a peer does.
             estimator: Optional estimator, for a guidance or a controller that reads the vehicle's state:
                 its stages run each tick after the sensors' and before the guidance's, and write the
                 estimate, the base body's pose and twist, which the guidance and the controller read in
@@ -187,8 +187,8 @@ class Loop:
             on_tick: Optional post-step observer called as ``on_tick(state, t, steps)``
                 after recording: an output-only hook for demos and tests to read the live state,
                 for example to capture a trajectory.
-            preroll_timeout: Seconds to wait for the controller to establish lockstep
-                during preroll before raising ``ConnectionError``.
+            preroll_timeout: Seconds to wait for a peer to dial in, and again for its first answer,
+                before raising ``ConnectionError``.
             exchange_timeout: Per-tick timeout in seconds for the blocking
                 ``controller.exchange`` in the steady loop.
             max_steps: Bound on control steps for the steady loop. ``None`` runs until
@@ -277,8 +277,8 @@ class Loop:
         # coarse rate, for example 50 Hz, over finer physics integration, matching its training.
         self.physics_substeps = int(physics_substeps)
         self.settings = settings
-        # The tick's sim time on the device, for a run with a stage that reads it; the ring sets it.
-        self._device_clock: DeviceClock | None = None
+        # The tick's sim time on the device, which the ring's first stage advances and the record stage stamps.
+        self._device_clock = DeviceClock(self.clock.dt)
 
     # -- component-owned logging --------------------------------------------------
     def _scoped(self, path: str):
@@ -298,7 +298,7 @@ class Loop:
     # -- recording, the read-side twin of logging -----------------------------------
     def _tap_signals(self, ring: list[Bound]) -> None:
         """Hand the Recorder every device signal a component's stage writes, with the writer's path, so it
-        registers one history each. After the loop wires the ring and before the warm pass, so every history's
+        registers one history each. After the loop wires the ring and before the start, so every history's
         buffer exists before any capture. The loop's own clock has no path, so its ``time`` keeps no history: every
         row carries the tick's time.
         """
@@ -330,20 +330,14 @@ class Loop:
             if signal.type is PoseTwist and (id(bound.component), name) not in named
         ]
 
-    def _publish_settled(self, ring: list[Bound], tick) -> None:
-        """Run the physics' ``state`` stage once over the settled state, before the warm pass, so the plant's
-        outputs hold that state when the estimator's warm stage and the seed row read them. The ring runs it
-        again at each tick's end.
-        """
-        next(b.stage for b in ring if b.role == "physics" and b.stage.name == "state").run(tick)
-
     def _record_tick(self) -> None:
-        """The record stage: the Recorder snapshots every tapped signal into its history. A device stage, no D2H, so it replays with its graph. A no-op with no Recorder, leaving
-        that graph the same byte for byte.
+        """The record stage: the Recorder snapshots every tapped signal into its history, stamped with the
+        device clock's time. A device stage, no D2H, so it replays with its graph. A no-op with no Recorder,
+        leaving that graph the same byte for byte.
         """
         if self.recorder is None:
             return
-        self.recorder.record()
+        self.recorder.record(self._device_clock.time.buffer)
 
     def _commit(self) -> None:
         """Count the row the record stage wrote this tick. When that fills the staging buffers, the
@@ -394,7 +388,7 @@ class Loop:
         # sim time; a run faster than the ~1 s live cadence would otherwise never show a reading.
         stats = self.run_stats  # empty until a run has looped
         if stats.get("rtf"):
-            self.logger.set_time(stats["control_steps"] * self.clock.dt)
+            self.logger.set_time(self.clock.now().sim_time)
             self.logger.log_rtf(float(stats["rtf"]))
         if stats:
             self.logger.log_profile(stats)  # steps + RTF + the loop profiler's breakdown, for the Profile tab
@@ -450,10 +444,10 @@ class Loop:
         ``run()``, which exhausts it, and ``Sim.step()``, which advances it one tick.
 
         Resets physics, which builds and settles the vehicle at the NED origin, builds the ring of
-        stages and partitions it, runs the warm pass over the settled state, records the seed row,
-        captures each device segment on CUDA, runs the seed pass of the controller's host stages, the
-        preroll for a controller with a peer, then loops. Every controller advances one tick per
-        ``next()``. Teardown, renderer,
+        stages and partitions it, runs the start over the settled state at sim time zero, which records the
+        first row, captures each device segment on CUDA, waits for a peer to dial in, then loops. Every
+        controller advances one tick per ``next()``, but the first, which runs a peer's preroll ticks too.
+        Teardown, renderer,
         controller and logs, runs in the ``finally``, whether the generator runs out, on run to
         completion or peer disconnect, or closes early, via :meth:`close` on ``stop()`` mid-step.
         The live RTF lands in ``run_stats``. For the span of the run SIGTERM and SIGHUP end it as
@@ -480,6 +474,7 @@ class Loop:
                 # Here, since a flight can hand the guidance over after construction.
                 self.add_loggable(self.guidance, "guidance")
             ring = build_ring(
+                clock=self._device_clock,
                 sensors=self.sensors,
                 estimator=self.estimator,
                 guidance=self.guidance,
@@ -492,11 +487,6 @@ class Loop:
                 substeps=self.physics_substeps,
             )
             self._check_estimator(ring)
-            # The tick's sim time on the device, for a stage that reads it: the clock's stage opens each tick.
-            reads_time = any(s.name == "time" for b in ring for s in b.stage.reads)
-            self._device_clock = DeviceClock(self.clock.dt) if reads_time else None
-            if self._device_clock is not None:
-                ring = opening(ring, stages_of(self._device_clock, "clock"))
             # Every signal a stage declares gets its buffer before any stage runs.
             wire(ring, [*self.connections, *self._default_links(ring)])
             self._tap_signals(ring)  # one history per device signal the ring's stages write
@@ -508,13 +498,12 @@ class Loop:
                 state=state,
                 t=self.clock.now(),
                 dt=self.clock.dt / self.physics_substeps,
+                timeout=self.exchange_timeout,  # the start's host stages wait on a peer no longer than a tick's
                 base=getattr(self.physics, "base_index", 0),  # a physics that finds none has body 0 as base
             )
-            if self._device_clock is not None:
-                self._device_clock.time.write([tick.t.sim_time])
-            self._publish_settled(ring, tick)
+            self._device_clock.set(tick.t)
             # A component attached from the start has no peer: it connects first, which reserves its
-            # device buffers before the warm pass. One that waits on a peer connects after the capture,
+            # device buffers before the start. One that waits on a peer connects after the capture,
             # so every kernel the loop launches has loaded before the peer is up: from the moment PX4
             # dials in, it logs a ``poll timeout`` error for each second of wall time that brings no
             # message. The component's own ``attached`` says which.
@@ -525,21 +514,19 @@ class Loop:
                 if not any(c is w for w in waiting):
                     c.connect(self._links_for(c))
                     self._connected.append(c)
-            # The warm pass, over the settled state. A guidance's warm stage runs between the sensors'
-            # and the controller's and writes its setpoint, so the controller holds the first goal
-            # before its own first stage. The log opens at the settled state's time, so the markers a
-            # guidance logs here sit on the timeline.
+            # The start: the ring without the clock and the physics substeps, once, over the settled state at
+            # sim time zero, so the first tick's step applies the controls it computes and its row is the first.
+            # The log opens at the settled state's time, so the markers a guidance logs here sit on the timeline.
             self._begin_log(tick.t)
-            for st in warm_stages(ring):
+            for st in start_stages(ring, waiting):
                 st.run(tick)
-            self._record_tick()  # the settled pre-flight row, the datum every climb measures against
             self._commit()
             graphs = self._capture(segments, tick) if captured else None
             for c in waiting:
                 c.connect(self._links_for(c))  # bind the peer's port and start listening
                 self._connected.append(c)
-            self._seed(ring, tick, waiting)
-            yield from self._loop(segments, graphs, tick)
+            self._attach(ring, tick, waiting)
+            yield from self._loop(segments, graphs, tick, waiting)
         except ConnectionError as e:
             logger.info(
                 str(e)
@@ -655,50 +642,27 @@ class Loop:
             except Exception as exc:
                 logger.warning(f"stopping a peer failed ({exc})")
 
-    def _seed(self, ring, tick, waiting: list) -> None:
-        """The seed pass, for a controller with a host stage: one pass of the sensors' warm stages and
-        the controller's stages over the settled state, whose final exchange writes the controls the
-        first tick applies. Each pass advances the sim clock, and its mirror on the device with it. The
-        loop holds the sim clock until every component in ``waiting`` has attached, so a peer's first
-        stamp is near zero, and runs each one's host stages meanwhile, its way to its peer. The pass
-        repeats, re-sampling the static settled state so noise dithers into a live feed, until the
-        first controls arrive or the preroll times out. A controller whose stages are all device stages,
-        with no component waiting, gets no pass: the warm pass seeded it.
+    def _attach(self, ring, tick, waiting: list) -> None:
+        """Hold the sim clock until every component in ``waiting`` has attached, running each one's host stages
+        meanwhile, its way to its peer: time spent waiting would start a peer's clock late, and PX4 times its
+        boot checks from its first stamp.
 
         Raises:
-            ConnectionError: A component never attached, or no controls arrived, within
-                ``preroll_timeout``.
+            ConnectionError: A component never attached within ``preroll_timeout``.
         """
-        stages = seed_stages(ring)
-        if not waiting and all(st.kind == "device" for st in stages):
+        if not waiting:
             return
         names = " and ".join(_instance(c) for c in waiting)
-        if waiting:
-            logger.info(f"Waiting for {names} to attach...")
+        logger.info(f"Waiting for {names} to attach...")
         tick.timeout = 0.05
+        polls = [b.stage for b in ring if b.stage.kind == "host" and any(b.component is c for c in waiting)]
         deadline = time.monotonic() + self.preroll_timeout
-        seeded = {id(st) for st in stages}
-        while time.monotonic() < deadline:
-            # Hold the sim clock until every peer has dialed in: time spent waiting would start a peer's
-            # clock late, and PX4 times its boot checks from its first stamp.
-            pending = [c for c in waiting if not c.attached]
-            if pending:
-                tick.t = self.clock.now()
-            else:
-                tick.t = self.clock.advance()
-                if self._device_clock is not None:
-                    self._device_clock.advance()
-            polls = [
-                b.stage
-                for b in ring
-                if b.stage.kind == "host" and id(b.stage) not in seeded and any(b.component is c for c in pending)
-            ]
-            answered = all(st.run(tick) is not False for st in [*stages, *polls])
-            if answered and not pending:
-                if waiting:
-                    logger.info(f"{names} attached: lockstep established")
-                return
-        raise ConnectionError(f"{names or 'the controller'} did not respond within {self.preroll_timeout}s")
+        while not all(c.attached for c in waiting):
+            if time.monotonic() > deadline:
+                raise ConnectionError(f"{names} did not attach within {self.preroll_timeout}s")
+            for st in polls:
+                st.run(tick)
+        logger.info(f"{names} attached")
 
     def _open_tick(self, tick) -> bool:
         """Advance the clock and open the tick's log, before any host stage, so the Model Predictive
@@ -711,10 +675,10 @@ class Loop:
 
     def _capture(self, segments, tick) -> list:
         """Capture each device segment into its own CUDA graph, serially, before the first tick. Any
-        other stream operation during a capture kills it, so the warm pass and the seed row complete
-        first, and nothing else touches the device until the loop replays.
+        other stream operation during a capture kills it, so the start completes first, and nothing else
+        touches the device until the loop replays.
         """
-        wp.synchronize()  # complete the warm pass and the seed row before a capture opens
+        wp.synchronize()  # complete the start before a capture opens
         graphs = []
         for seg in segments:
             if seg.kind != "device":
@@ -726,13 +690,18 @@ class Loop:
             graphs.append(cap.graph)
         return graphs
 
-    def _loop(self, segments, graphs, tick):
+    def _loop(self, segments, graphs, tick, waiting: list):
         """The steady loop as a generator: one control tick per ``yield``, which step() drives.
         Each tick advances the clock, opens its log, then runs the segments in ring order: a device
         segment replays its graph, or runs stage by stage without one, and a host stage runs on the
         host between replays. A host stage that reports its peer gone ends the run, and so does a tick
-        a stage marked done, once it completes. The ``finally``
+        a stage marked done, once it completes. While the peers of ``waiting`` boot, the preroll, a tick
+        whose host stage gets no answer still steps, records its row and moves on, with no ``yield``, until
+        the first tick that every host stage answers, within ``preroll_timeout``. The ``finally``
         stamps the RTF, so it runs whether the generator runs out or closes early on stop.
+
+        Raises:
+            ConnectionError: A peer stopped answering, or gave no first answer within ``preroll_timeout``.
         """
         count = 0
         t0 = time.monotonic()  # for the end-to-end RTF, sim-time advanced / wall-time, of the live run
@@ -741,7 +710,9 @@ class Loop:
         warmup_steps = 250
         t_warm = None
         steps_warm = 0
-        tick.timeout = self.exchange_timeout
+        prerolling = bool(waiting)
+        tick.timeout = 0.05 if prerolling else self.exchange_timeout
+        deadline = time.monotonic() + self.preroll_timeout
         replay = wp.capture_launch if graphs is not None else None
         prof = self._make_profiler("graph" if graphs is not None else "eager")
         try:
@@ -751,17 +722,20 @@ class Loop:
                 if count == warmup_steps:
                     t_warm, steps_warm = time.monotonic(), count
                 opened = False
+                answered = True
                 for i, seg in enumerate(segments):
                     if seg.kind == "host":
                         if not opened:
                             opened = self._open_tick(tick)
                         st = seg.stages[0]
-                        if st.run(tick) is False:  # the peer stopped answering: a run's normal end
-                            count -= 1  # the disconnect tick didn't advance the sim
-                            owner = type(self._owners.get(id(st), self.controller)).__name__
-                            raise ConnectionError(
-                                f"{owner} disconnected (no answer from its peer in its {st.name} stage)"
-                            )
+                        if st.run(tick) is False:
+                            answered = False
+                            if not prerolling:  # the peer stopped answering: a run's normal end
+                                count -= 1  # the disconnect tick didn't advance the sim
+                                owner = type(self._owners.get(id(st), self.controller)).__name__
+                                raise ConnectionError(
+                                    f"{owner} disconnected (no answer from its peer in its {st.name} stage)"
+                                )
                         prof.mark(st.name)
                     elif replay is not None:
                         prof.gpu_begin()
@@ -783,6 +757,15 @@ class Loop:
                 self.clock.throttle()  # no-op unless rtf>0, the interactive real-time throttle
                 prof.mark("log")
                 prof.tick_end()
+                if prerolling:
+                    names = " and ".join(_instance(c) for c in waiting)
+                    if not answered:
+                        if time.monotonic() > deadline:
+                            raise ConnectionError(f"{names} did not answer within {self.preroll_timeout}s")
+                        continue  # a preroll tick: the peer is still booting
+                    prerolling = False
+                    tick.timeout = self.exchange_timeout
+                    logger.info(f"{names}: lockstep established")
                 yield  # one control tick complete: step() returns here
         finally:
             self._record_rtf(count, t0, t_warm, steps_warm)

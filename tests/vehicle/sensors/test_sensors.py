@@ -237,14 +237,15 @@ def test_each_analytic_sensors_sample_carries_the_sim_time_the_signal_time_holds
 
 def _sample_times(sensor, view, ticks: int) -> list[float]:
     """The time of the sample `sensor`, wired, holds on each of `ticks` ticks of 4 ms from 0 s, as it samples `view`
-    on each. The tick's time grows by 4 ms a tick in float64, as the device clock adds it.
+    on each. The tick's time is the tick count times 4 ms, in whole nanoseconds, as the device clock keeps it.
     """
-    now, held = 0.0, []
+    held = []
     for tick in range(ticks):
+        now = tick * 4_000_000 / 1e9
+        sensor.time_ns.write([tick * 4_000_000])
         sensor.time.write([now])
         sensor.sample_wp(view, SimTime(now, tick))
         held.append(float(sensor.out.read()[0]["time"]))
-        now += 0.004
     return held
 
 
@@ -263,12 +264,11 @@ def test_each_analytic_sensor_at_a_declared_rate_samples_only_on_its_due_ticks(c
     assert held == pytest.approx([0.0] * 5 + [0.02] * 5, abs=1e-12)
 
 
-def test_a_sensor_whose_rate_divides_the_tick_rate_samples_every_nth_tick_though_the_clock_sums_in_float64():
-    """A sensor whose rate divides the tick rate samples every n-th tick, though the clock sums its ticks in float64.
+def test_a_sensor_whose_rate_divides_the_tick_rate_samples_every_nth_tick():
+    """A sensor whose rate divides the tick rate samples every n-th tick.
 
     Given a barometer at 50 Hz, wired alone, when it samples a body at rest on 2000 ticks of 4 ms, 8 s, then it
-    takes a new sample on every fifth tick and on no other. The summed tick time falls a rounding error short of
-    a due time first after about 4 s.
+    takes a new sample on every fifth tick and on no other.
     """
     view = _WarpView((0.0, 0.0, 1.0), (0.0, 0.0, 0.0, 1.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
 
@@ -288,6 +288,7 @@ def test_an_imu_slower_than_the_tick_differences_the_velocity_over_the_time_sinc
     sensor = sv.wired(ImuSensor(*_on(), seed=_SEED, acc_noise=0.0, gyro_noise=0.0, rate=125.0))
     for tick in range(3):
         fall = (0.0, 0.0, _GRAVITY_WORLD[2] * 0.004 * tick)  # the velocity after `tick` ticks of free fall
+        sensor.time_ns.write([tick * 4_000_000])
         sensor.time.write([0.004 * tick])
         sample = _sample(
             sensor, _WarpView((0, 0, 1), (0.0, 0.0, 0.0, 1.0), fall, (0, 0, 0)), SimTime(0.004 * tick, tick)
