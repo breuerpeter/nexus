@@ -117,7 +117,9 @@ def test_a_sensor_built_from_a_schema_gets_the_runs_site_values(tmp_path):
 
 
 def _samples(tmp_path, name: str, seed: int) -> list[tuple]:
-    """Every sensor sample an estimator reads in 100 ticks of the fixture with noise on, built with `seed`."""
+    """Every sensor sample an estimator reads in the start and 100 ticks of the fixture with noise on, built with
+    `seed`.
+    """
     folder = tmp_path / name
     folder.mkdir()
     signals = _signals("imu", "mag", "baro", "gps")
@@ -130,11 +132,11 @@ def test_two_runs_with_one_seed_give_equal_sensor_samples_and_another_seed_gives
     """Two runs with one seed give equal sensor samples, and another seed gives different ones.
 
     Given the fixture with noise on, when two runs with seed 7 and a third with seed 8 each step 100
-    ticks, then the first two agree sample for sample and the third differs.
+    ticks, then the first two agree sample for sample, the start's included, and the third differs.
     """
     first, second, other = _samples(tmp_path, "a", 7), _samples(tmp_path, "b", 7), _samples(tmp_path, "c", 8)
 
-    assert (len(first), first == second, first == other) == (100, True, False)
+    assert (len(first), first == second, first == other) == (101, True, False)
 
 
 def test_a_vehicle_with_two_magnetometers_builds_both_and_each_draws_its_own_noise(tmp_path):
@@ -342,8 +344,8 @@ def test_a_projects_own_sensor_writes_its_output_as_a_signal_of_the_projects_own
 
     Given the stand-in package under `tests/usd/stand_in`, installed with its sensor schema and a signal type
     of its own, and the fixture applying the schema with a gain of 2.5, when the run steps two ticks, then a
-    stand-in estimator that reads that sensor's signal reads 2.5 on both. A child process, so the installed
-    package changes no module state here.
+    stand-in estimator that reads that sensor's signal reads 2.5 on both, and 0 in the start, which leaves a
+    sensor's host stage out. A child process, so the installed package changes no module state here.
     """
     site = tmp_path / "site"
     subprocess.run(
@@ -371,4 +373,4 @@ print(">", [[float(v) for v in gain["value"]] for _, gain in reader.kept])
     r = subprocess.run([sys.executable, "-c", code], check=False, cwd=tmp_path, env=env, capture_output=True, text=True)
     lines = [line[2:] for line in r.stdout.splitlines() if line.startswith("> ")]
 
-    assert lines == ["[[2.5], [2.5]]"], r.stderr[-2000:]
+    assert lines == ["[[0.0], [2.5], [2.5]]"], r.stderr[-2000:]

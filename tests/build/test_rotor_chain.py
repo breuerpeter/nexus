@@ -54,10 +54,12 @@ def stream(step: int) -> np.ndarray:
 
 
 class _Stream(HostController):
-    """Answers the preroll at once and sends the command the stream holds for the tick."""
+    """Answers at once and sends the command the stream holds for the tick it drives: the controls an exchange
+    writes on one tick drive the next tick's physics step.
+    """
 
     def exchange(self, t, timeout=None):
-        return stream(min(t.step_index, STREAM_TICKS - 1))
+        return stream(min(t.step_index + 1, STREAM_TICKS - 1))
 
 
 class _Narrow(Component):

@@ -249,6 +249,7 @@ def wired(sensor, time: float = 0.0):
     pairs = ((clock, "clock"), (sensor, "sensor"))
     wire([Bound(stage, component, role) for component, role in pairs for stage in component.stages()])
     clock.time.write([time])
+    clock.time_ns.write([round(time * 1e9)])
     return sensor
 
 

@@ -48,18 +48,15 @@ class Stage:
     """One unit of a component's per-tick work, the shape every loop component states in its
     ``stages()``. A ``device`` stage joins the CUDA graph; a ``host`` stage runs between graph replays.
     ``run(tick)`` does the work; a host stage returns ``False`` when it produced nothing because its
-    peer didn't answer, which the preroll retries and the steady loop ends the run on. A ``warm``
-    sensor, estimator or controller stage runs in the seed pass over the settled state, before any
-    capture, so every device buffer it allocates exists first, and the guidance's first stage reads an
-    estimate. A ``warm`` guidance stage runs in that pass too,
-    so the controller holds the guidance's first setpoint before its own first stage. ``reads`` and
-    ``writes`` are the signals the stage reads and writes, which the loop wires before any stage runs.
+    peer didn't answer, which a peer's preroll ticks on through and the steady loop ends the run on. Every
+    stage but the clock's, the physics substeps' and a sensor's host stage also runs once in the start, over
+    the settled state at sim time zero, before any capture. ``reads`` and ``writes`` are the signals the stage
+    reads and writes, which the loop wires before any stage runs.
     """
 
     name: str
     kind: Literal["device", "host"]
     run: Callable[[Tick], Any]
-    warm: bool = True
     reads: tuple[Signal, ...] = ()
     writes: tuple[Signal, ...] = ()
 
@@ -114,8 +111,8 @@ class Component:
             starts each once, whatever the number of components that require it, and hands the class its link.
         attached: Whether the component's peer has dialed in. ``True`` for a component with no peer, the
             default. A component that reads ``False`` before it connects waits on a peer: the loop connects
-            it after the graph capture, so a peer that dials in early waits on no kernel load, and holds the
-            sim clock until it reads ``True``.
+            it after the graph capture, so a peer that dials in early waits on no kernel load, holds the sim
+            clock until it reads ``True``, then ticks until the peer first answers.
     """
 
     name: str | None = None
@@ -131,7 +128,7 @@ class Component:
 
     def connect(self) -> None:
         """Open what the component needs for the run: bind a port, load a model. Nothing by default. The loop
-        connects a component before the warm pass, or after the graph capture when it waits on a peer.
+        connects a component before the start, or after the graph capture when it waits on a peer.
         """
 
     def close(self) -> None:
@@ -171,6 +168,6 @@ class Physics(Protocol):
         """The ``clear``, ``step`` and ``state`` stages; the loop runs ``clear``, the command elements, the force
         elements and ``step`` once per physics substep, ``step`` steps Newton's actuators before the solver, and
         ``state`` runs once per tick after the last substep and writes the plant's outputs, one signal per body,
-        ``body/<label>``, and per joint, ``joints/<label>``, from the stepped state; the loop runs it once more
-        over the settled state before the warm pass.
+        ``body/<label>``, and per joint, ``joints/<label>``, from the stepped state; the start runs it once
+        over the settled state.
         """

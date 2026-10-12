@@ -201,8 +201,8 @@ class Sim:
             self._orch = build_from_launch(self._launch, cache_dir=self._cache_dir, components=self._registry)
         if self._orch.recorder is None:
             # A self-assembled loop that brought no Recorder gets one: the loop hands it the plant and
-            # each sensor at its first step. dt → the per-row sim time, counter × dt.
-            self._orch.recorder = Recorder(dt=self._orch.clock.dt)
+            # each sensor at its first step.
+            self._orch.recorder = Recorder()
         # A run whose controller takes no setpoint, as PX4's does, wires nothing here: a script opens
         # its own client on the offboard link, from sim.ports, after start(), and the run is
         # step-driven the same way as any other.
@@ -234,11 +234,11 @@ class Sim:
         """Drive the run's setup, returning once the first control tick has completed.
 
         One step: the loop's first ``step()`` runs physics reset, the wait for the Kit
-        render peer to boot and warm its stage when the vehicle renders, the seed row and the graph
-        capture, ``controller.connect()``, which binds the HIL port PX4 dials, and the preroll wait
-        for the peer, then flies one tick.
-        So for a PX4 sim this is the "lockstep is up" verb, and it returns with one observation
-        row already recorded and the captured graph replayed once.
+        render peer to boot and warm its stage when the vehicle renders, the start, which records the
+        row at sim time zero, and the graph capture, ``controller.connect()``, which binds the HIL port
+        PX4 dials, the wait for the peer to dial in, and the preroll ticks while it boots, then flies one tick.
+        So for a PX4 sim this is the "lockstep is up" verb, and it returns with a row recorded for every
+        tick so far and the captured graph replayed.
 
         Idempotent: a second call is a no-op once the run has started. Optional for a run with
         a setpoint controller, where :meth:`run` and :meth:`step` drive the same setup.
@@ -353,8 +353,8 @@ class Sim:
         Read straight off the loop's ``Clock``, which holds it host-side, so this is free:
         :meth:`wait_until` and :meth:`sleep` call it *every* control tick, and reading it off the
         base body's history instead meant a device-to-host copy per tick, ~0.08 ms against a 4 ms
-        budget, 6% of a PX4 run's wall time. Same quantity either way: the Recorder stamps
-        ``t = dt × row counter`` and the clock advances ``dt`` per tick.
+        budget, 6% of a PX4 run's wall time. Same quantity either way: the Recorder stamps each row with
+        the device clock's time, which advances with this one.
 
         Returns 0.0 before the first tick; sim time starts at 0.
         """

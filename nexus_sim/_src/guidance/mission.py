@@ -16,7 +16,7 @@ class MissionGuidance(Guidance):
 
     The stage runs each tick before the controller's: it detects arrival at the active goal, writes the
     next goal to the setpoint, a ``PositionGoal`` the controller reads, and marks the tick done once the
-    final goal has held for ``final_hold_s``, which ends the run. The stage is a warm stage, so the
+    final goal has held for ``final_hold_s``, which ends the run. The start runs the stage too, so the
     controller holds the first goal before its own first stage; a mission of two or more goals advances
     between graph replays.
 

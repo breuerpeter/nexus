@@ -45,8 +45,8 @@ def _rated(rates: dict) -> dict[str, str]:
 
 def _held(tmp_path, ticks: int, prims: dict[str, str], **kw) -> list[dict]:
     """Fly the fixture with the sensor prims `prims`, by kind, and return the sample each sensor's signal held, by
-    kind, on the tick before the last `ticks` ticks and on each of them. `kw` goes to the build, such as
-    `fall_from`, `seed` or `device`.
+    kind, on the tick before the last `ticks` ticks and on each of them. The start's reading stays out. `kw` goes
+    to the build, such as `fall_from`, `seed` or `device`.
     """
     reader = sv.estimator(*(Signal(kind, SAMPLE[kind], shape=(1,)) for kind in prims))
     loop = sv.build(
@@ -55,7 +55,7 @@ def _held(tmp_path, ticks: int, prims: dict[str, str], **kw) -> list[dict]:
         **kw,
     )
     sv.steps(loop, ticks + 1)
-    return [dict(zip(prims, row[1:], strict=True)) for row in reader.kept]
+    return [dict(zip(prims, row[1:], strict=True)) for row in reader.kept[1:]]
 
 
 def _raw(sample) -> tuple[bytes, ...]:

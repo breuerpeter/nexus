@@ -71,8 +71,9 @@ def test_of_two_imus_a_reader_reads_the_one_that_a_connection_on_its_prim_names(
 
     Given the falling fixture vehicle with two Inertial Measurement Units (IMU), one quiet and one with an
     accelerometer noise of 0.5 m/s^2, and a stand-in estimator whose prim connects its IMU input to the quiet
-    one, when the run steps 10 ticks, then from the second tick every accelerometer reading it gets is zero
-    within 1e-3 m/s^2; and once connected to the noisy one, then its readings vary.
+    one, when the run steps 10 ticks, then on every tick every accelerometer reading it gets is zero within 1e-3
+    m/s^2; and once connected to the noisy one, then its readings vary. The start's reading, which has no
+    earlier velocity to difference, stays out.
     """
 
     def readings(name: str, target: str) -> list[np.ndarray]:
@@ -90,7 +91,7 @@ def test_of_two_imus_a_reader_reads_the_one_that_a_connection_on_its_prim_names(
         all(_zero(accel) for accel in quiet),
         len(noisy),
         len({accel.tobytes() for accel in noisy}),
-    ) == (9, True, 9, 9), (quiet, noisy)
+    ) == (10, True, 10, 10), (quiet, noisy)
 
 
 def test_a_reader_that_takes_every_imu_as_a_list_reads_each_ones_sample_on_every_tick_in_declared_order(tmp_path):
@@ -98,8 +99,8 @@ def test_a_reader_that_takes_every_imu_as_a_list_reads_each_ones_sample_on_every
 
     Given the falling fixture vehicle with two Inertial Measurement Units (IMU), the quiet one declared first
     and one with an accelerometer noise of 0.5 m/s^2 second, and a stand-in estimator that reads every IMU as
-    a list, when the run steps 10 ticks, then on each tick from the second it reads two samples, the first
-    zero within 1e-3 m/s^2 and the second not.
+    a list, when the run steps 10 ticks, then on each tick it reads two samples, the first zero within 1e-3
+    m/s^2 and the second not. The start's reading, which has no earlier velocity to difference, stays out.
     """
     reader = sv.estimator(Signal("imu", list[ImuSample], shape=(1,)))
     path = sv.vehicle(tmp_path, IMUS, estimator="")
@@ -109,7 +110,7 @@ def test_a_reader_that_takes_every_imu_as_a_list_reads_each_ones_sample_on_every
         for _, imus in reader.kept[1:]
     ]
 
-    assert read == [(2, True, False)] * 9, reader.kept
+    assert read == [(2, True, False)] * 10, reader.kept
 
 
 def test_a_list_input_with_no_sensor_of_its_kind_reads_its_default_and_without_one_fails_the_build(tmp_path):
@@ -118,7 +119,7 @@ def test_a_list_input_with_no_sensor_of_its_kind_reads_its_default_and_without_o
     Given the fixture vehicle with no Inertial Measurement Unit (IMU) and a stand-in estimator that reads every
     IMU as a list with no default, when the vehicle builds, then it fails before any stage runs, and the error
     names the estimator and the IMU's signal; and once with a default of no samples, then the run steps 3 ticks
-    and the estimator reads no sample on each.
+    and the estimator reads no sample in the start or on any tick.
     """
     for name in ("strict", "lenient"):
         (tmp_path / name).mkdir()
@@ -128,7 +129,7 @@ def test_a_list_input_with_no_sensor_of_its_kind_reads_its_default_and_without_o
     path = sv.vehicle(tmp_path / "lenient", estimator="")
     sv.steps(sv.build(path, components=sv.components(StandInEstimatorAPI=lenient)), 3)
 
-    assert (_names(message, "imu"), strict.runs, [len(imus) for _, imus in lenient.kept]) == (True, 0, [0, 0, 0]), (
+    assert (_names(message, "imu"), strict.runs, [len(imus) for _, imus in lenient.kept]) == (True, 0, [0, 0, 0, 0]), (
         message
     )
 
@@ -213,26 +214,21 @@ def _pose_twist(rows) -> bytes:
     return np.asarray(out, dtype=np.float32).tobytes()
 
 
-def _before(rows) -> list:
-    """The row each tick's flight stack read: the settled state for the seed row and the row before for each tick."""
-    return [rows[0], *rows[:-1]] if len(rows) else []
-
-
 def test_the_estimator_reads_the_body_a_connection_on_its_prim_names_and_the_base_body_with_none(tmp_path):
     """The estimator reads the plant's signal: a connection on its prim wires its `pose` input to the body the
     target names, and with no connection it takes the base body.
 
     Given the fixture vehicle with the passthrough estimator on a scope that authors
     `nexus:inputs:pose = </vehicle/body/rotor_1>`, when the run steps 5 ticks, then each estimate row equals,
-    to the bit, the rotor body's row of the tick before, the settled state for the seed row; and given the
-    same estimator with no connection, each equals the base body's.
+    to the bit, the rotor body's row of the same tick; and given the same estimator with no connection, each
+    equals the base body's.
     """
     for name in ("rotor", "base"):
         (tmp_path / name).mkdir()
     estimate, bodies = _pose_rows(tmp_path / "rotor", _connection("pose", ROTOR))
-    rotor = _pose_twist(_before(bodies.get("rotor_1", [])))
+    rotor = _pose_twist(bodies.get("rotor_1", []))
     estimate_base, bodies_base = _pose_rows(tmp_path / "base", "")
-    base = _pose_twist(_before(bodies_base.get("body", [])))
+    base = _pose_twist(bodies_base.get("body", []))
     read = (len(estimate), _pose_twist(estimate) == rotor, len(estimate_base), _pose_twist(estimate_base) == base)
 
     assert read == (POSE_TICKS + 1, True, POSE_TICKS + 1, True)

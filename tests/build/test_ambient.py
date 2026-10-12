@@ -67,9 +67,8 @@ def _catalog(tmp_path):
 
 
 def _settled(launch, catalog):
-    """Build the run *launch* names, settle it on the ground and run its seed pass; the run and each sensor's
-    sample of the settled state, by signal. A tick's exchange follows its step, so the settled state's samples
-    are the seed pass's, and the run flies no tick.
+    """Build the run *launch* names, settle it on the ground and run its start; the run and each sensor's
+    sample of the settled state, by signal. The start samples the settled state, and the run flies no tick.
 
     The build's ``force_cpu`` sets the Warp device, and the scope puts it back; a module fixture runs
     before the function-scoped ``warp_cpu`` fixture would.

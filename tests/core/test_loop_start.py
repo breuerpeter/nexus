@@ -180,7 +180,7 @@ def test_the_start_runs_each_stage_once_in_ring_order_at_sim_time_zero_over_the_
     wrote one row at `0.0`.
     """
     journal = []
-    recorder = Recorder(dt=DT)
+    recorder = Recorder()
     with wp.ScopedDevice("cpu"):
         loop, _ = _loop(journal, _Controller(journal, "host"), recorder=recorder)
         loop.step()

@@ -51,21 +51,31 @@ run down.
 One control step of the loop: each stage in the ring runs once, and the physics steps its
 substeps. `Tick` is the loop's own context, which it hands every stage: the time and the physics
 state. A value one component passes to another, such as a sensor's sample, is a [signal](#signal),
-not a field of the tick.
+not a field of the tick. The sim time is a whole number of nanoseconds, the tick count times the tick,
+and the first tick is step one. Every row a tick records describes the state at the tick's time.
+
+### Start
+
+The ring without the clock's stage and the physics substeps, which the loop runs once over the settled
+state at sim time zero, before the first tick and before any capture. It records the first row, and the
+first tick's step applies the controls it computes. A sensor's host stage stays out, and so does each
+host stage of a component that waits on a [peer](#peer). While that peer boots, the preroll, the loop
+holds the clock until the peer dials in, then runs ordinary ticks until its first answer.
 
 ### Stage
 
 One unit of a component's per-tick work, a `Stage`. A device stage is a launch over persistent
 device buffers, which a CUDA graph replays. A host stage runs on the host between graph replays: a
-peer's exchange, a solve, or an inference. A warm stage also runs once over the settled state,
-before the first tick.
+peer's exchange, a solve, or an inference. The [start](#start) runs most stages once before the first
+tick.
 
 ### Ring
 
-The stages one tick runs, in the loop's fixed order. The sensors come first, then the estimator, the
-guidance, and the controller. Once per physics substep, `clear`, the command elements, the force elements, and
-`step` follow, then `state`, which writes the plant's outputs, one signal per body and per joint, and the
-record stage comes last. `build_ring` lays the ring out.
+The stages one tick runs, in the loop's fixed order. The clock's stage comes first, then, once per physics
+substep, `clear`, the command elements, the force elements, and `step`, then `state`, which writes the
+plant's outputs, one signal per body and per joint. The sensors, the estimator, the guidance, and the
+controller follow, over the state the step left, and the record stage comes last. `build_ring` lays the
+ring out.
 
 ### Segment
 

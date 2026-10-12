@@ -250,7 +250,7 @@ def build_loop(
         controller=a.controller,
         estimator=estimator,
         logger=a.logger,
-        recorder=Recorder(dt=a.clock.dt),
+        recorder=Recorder(),
         renderer=renderer,
         peers=peers,
         ports=ports,

@@ -78,19 +78,6 @@ def test_a_guidance_constructs_from_its_own_parameters():
     ]
 
 
-def test_a_mission_guidance_states_one_warm_host_stage():
-    """A mission guidance's stage runs in the warm pass, so the controller holds the first goal before
-    its own first stage.
-    """
-    assert [(st.name, st.kind, st.warm) for st in MissionGuidance().stages()] == [("guidance", "host", True)]
-
-
-def test_a_tracking_guidance_states_one_host_stage_that_waits_for_the_first_tick():
-    """A tracking guidance's stage stays out of the warm pass, so its plan waits for the run's first tick."""
-    stages = TrackingGuidance(planner=_Reference).stages()
-    assert [(st.name, st.kind, st.warm) for st in stages] == [("guidance", "host", False)]
-
-
 def test_a_guidance_writes_the_active_goal_to_its_setpoint():
     """A guidance writes the active goal to its setpoint.
 

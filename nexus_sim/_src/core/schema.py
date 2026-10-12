@@ -32,7 +32,7 @@ class SimTime:
     @property
     def time_usec(self) -> int:
         """Simulation time in integer microseconds, the ``HIL_*`` timestamp unit."""
-        return int(self.sim_time * 1e6)
+        return round(self.sim_time * 1e6)
 
 
 @wp.struct

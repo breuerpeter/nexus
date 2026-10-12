@@ -6,7 +6,6 @@ from collections.abc import Callable
 
 import numpy as np
 
-from nexus_sim._src.core.interfaces import Stage
 from nexus_sim._src.core.schema import ReferenceTrajectory, Setpoint
 from nexus_sim._src.core.signals import Signal
 
@@ -16,12 +15,12 @@ _DISPLAY_REACHED_M = 0.3  # the marker turns green this close to a waypoint the 
 
 
 class TrackingGuidance(Guidance):
-    """Plan the whole-path reference once, on the run's first tick, and write it to the setpoint.
+    """Plan the whole-path reference once, in the run's start, and write it to the setpoint.
 
     The planner takes the mission's waypoints and returns a reference that exposes ``set_start``,
-    ``duration`` and ``reference_path``. The guidance plans on the run's first tick, which gives it the
+    ``duration`` and ``reference_path``. The guidance plans in the run's start, which gives it the
     start position, and writes a ``ReferenceTrajectory`` to the setpoint, a host signal the controller
-    reads at that tick's exchange. It marks the tick done once the trajectory's duration plus
+    reads at the start's exchange. It marks the tick done once the trajectory's duration plus
     ``final_hold_s`` has passed, which ends the run. ``reference_started_at`` is the sim time of that
     write, the reference clock's anchor, which post-run evaluation reads.
 
@@ -38,15 +37,8 @@ class TrackingGuidance(Guidance):
         self._planned = False
         self.reference_started_at: float | None = None
 
-    def stages(self) -> list[Stage]:
-        """One host stage, ``guidance``, which reads the estimate, writes the setpoint and stays out of the
-        warm pass. The controller starts the reference's clock at the exchange that first reads it, and
-        ``reference_started_at`` names that tick, so the plan waits for the run's first tick.
-        """
-        return [Stage("guidance", "host", self._run, warm=False, reads=(self.estimate,), writes=(self.setpoint,))]
-
     def set_mission(self, setpoints: list[Setpoint]) -> None:
-        """Set the waypoints the reference flies through; the plan waits for the first tick.
+        """Set the waypoints the reference flies through; the guidance plans them in the run's start.
 
         Args:
             setpoints: Ordered waypoints, each a :class:`PositionGoal` or a bare ``(x, y, z)`` position.

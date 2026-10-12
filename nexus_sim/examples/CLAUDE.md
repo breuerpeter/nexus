@@ -23,7 +23,7 @@ in the script, and it records its flight `.rrd`. The launcher map is `_EXAMPLES`
   reads the signal `observation`, which its observation sensor writes, and writes its `(1, nr)`
   `controls` signal. The loop never calls `exchange` itself. A controller that reads `attached` false
   before it connects waits on a peer: it connects after the capture, so its device buffers exist from
-  construction. One attached from the start connects before the warm pass.
+  construction. One with no peer connects before the start.
 - An example hands the loop its rotor chain in one of two ways. One that sums the rotor wrench on
   the base body, the PID, policy and sampling MPC examples, passes `_lib`'s `Rotors` as the loop's
   `actuator`, the old actuator stage the loop keeps for it. Where such an example keeps the articulated

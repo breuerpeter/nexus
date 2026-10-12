@@ -33,7 +33,7 @@ from nexus_sim._src.core.signals import Signal
 
 class DeviceSensor(Component):
     """A sensor whose work is one device stage, named after the sensor, over ``sample_wp``. The stage reads
-    the tick's sim time, the signal ``time``, and writes the sensor's sample, stamped with it, to its output
+    the tick's sim time, the signals ``time`` and ``time_ns``, and writes the sensor's sample, stamped with it, to its output
     signal ``out`` on a tick that its rate makes due. On any other tick the kernel writes nothing, so the
     signal holds the last sample. The sensor records nothing itself: the Recorder keeps the signal's history.
 
@@ -50,14 +50,15 @@ class DeviceSensor(Component):
 
     def __init__(self, output: str, sample, run, rate: float = 0.0):
         self.time = Signal("time", wp.float64, shape=(1,))
+        self.time_ns = Signal("time_ns", wp.int64, shape=(1,))
         self.out = Signal(output, sample, shape=(1,))
         self.rate = float(rate)
         if not self.rate >= 0.0:  # a rate that's not a number fails too
             raise ValueError(
                 f"{run.path}: the sensor's nexus:rate is {self.rate:g} Hz; a rate is 0, a sample every tick, or more"
             )
-        self.period = 1.0 / self.rate if self.rate > 0.0 else 0.0  # seconds from one sample to the next
-        self._start = wp.zeros(1, dtype=wp.float64)  # the sim time of the first sample
+        self.period = round(1e9 / self.rate) if self.rate > 0.0 else 0  # nanoseconds from one sample to the next
+        self._start = wp.zeros(1, dtype=wp.int64)  # the sim time of the first sample, nanoseconds
         self._taken = wp.zeros(1, dtype=int)  # how many samples the sensor has taken
 
     def stages(self) -> list[Stage]:
@@ -66,7 +67,7 @@ class DeviceSensor(Component):
                 self.name,
                 "device",
                 lambda tick: self.sample_wp(tick.state, tick.t),
-                reads=(self.time,),
+                reads=(self.time, self.time_ns),
                 writes=(self.out,),
             )
         ]
@@ -110,23 +111,19 @@ def _noise(seed: int, step: int, axis: int, sigma: float) -> float:
     return sigma * wp.randn(r)
 
 
-# A due time this close after a tick falls on it. The clock adds each tick to the sim time in float64, so a due
-# time that falls on a tick can land a rounding error after it, which would put the sample one tick late.
-_SLACK = wp.constant(wp.float64(1.0e-6))  # seconds
-
-
 @wp.func
-def _due(now: wp.float64, period: wp.float64, start: wp.array(dtype=wp.float64), taken: wp.array(dtype=int)) -> bool:
+def _due(now: wp.int64, period: wp.int64, start: wp.array(dtype=wp.int64), taken: wp.array(dtype=int)) -> bool:
     """Whether a sample is due at sim time ``now``; a due sample counts toward the next one's due time. The k-th
     sample after the first is due at the first's time plus k periods: absolute due times, as the RTX sensors keep,
-    so a rate that doesn't divide the tick rate neither quantises nor drifts. A period of 0 makes every tick due.
+    so a rate that doesn't divide the tick rate neither quantises nor drifts. The times are whole nanoseconds, as
+    the clock keeps them, so a due time that falls on a tick compares exactly. A period of 0 makes every tick due.
 
     The count ``taken`` lives on the device, so a graph replay counts too, and it indexes each sample's noise. A
     count baked at capture would freeze the sensor stream, which PX4's Extended Kalman Filter (EKF) flags as a
     stuck sensor: no GPS/position fusion, so it won't arm.
     """
     k = taken[0]
-    if k > 0 and period > wp.float64(0.0) and now < start[0] + wp.float64(k) * period - _SLACK:
+    if k > 0 and period > wp.int64(0) and now < start[0] + wp.int64(k) * period:
         return False
     if k == 0:
         start[0] = now
@@ -150,14 +147,15 @@ def imu_kernel(
     prev_lin: wp.array(dtype=wp.vec3),
     prev_ang: wp.array(dtype=wp.vec3),
     time: wp.array(dtype=wp.float64),
-    period: wp.float64,
-    start: wp.array(dtype=wp.float64),
+    time_ns: wp.array(dtype=wp.int64),
+    period: wp.int64,
+    start: wp.array(dtype=wp.int64),
     taken: wp.array(dtype=int),
     ticks: wp.array(dtype=int),  # the ticks since the last sample
     sample: wp.array(dtype=ImuSample),
 ):
     ticks[0] = ticks[0] + 1
-    if not _due(time[0], period, start, taken):
+    if not _due(time_ns[0], period, start, taken):
         return
     interval = dt * wp.float32(ticks[0])  # the time since the last sample, over which the velocity changed
     ticks[0] = 0
@@ -202,12 +200,13 @@ def mag_kernel(
     sigma: wp.vec3,
     body: int,  # the model body the sensor rides
     time: wp.array(dtype=wp.float64),
-    period: wp.float64,
-    start: wp.array(dtype=wp.float64),
+    time_ns: wp.array(dtype=wp.int64),
+    period: wp.int64,
+    start: wp.array(dtype=wp.int64),
     taken: wp.array(dtype=int),
     sample: wp.array(dtype=MagSample),
 ):
-    if not _due(time[0], period, start, taken):
+    if not _due(time_ns[0], period, start, taken):
         return
     st = taken[0]
     q = wp.transform_get_rotation(body_q[body])
@@ -234,12 +233,13 @@ def baro_kernel(
     body: int,  # the model body the sensor rides
     temperature: float,
     time: wp.array(dtype=wp.float64),
-    period: wp.float64,
-    start: wp.array(dtype=wp.float64),
+    time_ns: wp.array(dtype=wp.int64),
+    period: wp.int64,
+    start: wp.array(dtype=wp.int64),
     taken: wp.array(dtype=int),
     sample: wp.array(dtype=BaroSample),
 ):
-    if not _due(time[0], period, start, taken):
+    if not _due(time_ns[0], period, start, taken):
         return
     st = taken[0]
     alt = wp.transform_get_translation(body_q[body])[2]  # z up in sim
@@ -262,12 +262,13 @@ def gps_kernel(
     body: int,  # the model body the sensor rides
     fix_type: int,
     time: wp.array(dtype=wp.float64),
-    period: wp.float64,
-    start: wp.array(dtype=wp.float64),
+    time_ns: wp.array(dtype=wp.int64),
+    period: wp.int64,
+    start: wp.array(dtype=wp.int64),
     taken: wp.array(dtype=int),
     sample: wp.array(dtype=GpsSample),
 ):
-    if not _due(time[0], period, start, taken):
+    if not _due(time_ns[0], period, start, taken):
         return
     p = wp.transform_get_translation(body_q[body])
     v = wp.spatial_top(body_qd[body])  # world linear vel
@@ -358,6 +359,7 @@ class ImuSensor(DeviceSensor):
                 self._prev_lin,
                 self._prev_ang,
                 self.time.buffer,
+                self.time_ns.buffer,
                 self.period,
                 self._start,
                 self._taken,
@@ -399,6 +401,7 @@ class MagSensor(DeviceSensor):
                 self._sigma,
                 self.body,
                 self.time.buffer,
+                self.time_ns.buffer,
                 self.period,
                 self._start,
                 self._taken,
@@ -432,6 +435,7 @@ class BaroSensor(DeviceSensor):
                 self.body,
                 self.temperature,
                 self.time.buffer,
+                self.time_ns.buffer,
                 self.period,
                 self._start,
                 self._taken,
@@ -470,6 +474,7 @@ class GpsSensor(DeviceSensor):
                 self.body,
                 self.fix_type,
                 self.time.buffer,
+                self.time_ns.buffer,
                 self.period,
                 self._start,
                 self._taken,
