@@ -18,8 +18,8 @@ def test_a_sample_whose_due_time_falls_on_a_tick_is_due_at_that_tick_and_not_a_n
     assert (on_tick, before) == (True, False)
 
 
-def test_a_negative_rate_fails_and_the_message_names_where_the_sensor_is_declared():
-    """A negative rate fails, and the message names where the sensor is declared.
+def test_a_negative_rate_fails_and_the_message_names_the_prim_that_declares_the_sensor():
+    """A negative rate fails, and the message names the prim that declares the sensor.
 
     Given the rate -1 for the prim `/vehicle/body/Cam`, then the check raises and the message holds that path.
     """

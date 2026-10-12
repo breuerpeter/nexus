@@ -30,7 +30,8 @@ def due(elapsed: wp.int64, taken: int, rate: wp.float64) -> bool:
     """Whether a sensor at `rate` hertz that has taken `taken` samples has its next one due `elapsed`
     nanoseconds after its first. A kernel calls it, and a host stage calls it from Python with Warp scalars.
 
-    The products are exact in float64 below 2**53: for a rate of whole hertz, that is 10 h of sim time at 250 Hz.
+    The products are exact in float64 below 2**53: a rate of whole hertz stays below it for 10 h of sim time
+    at 250 Hz.
     """
     if taken == 0 or rate <= wp.float64(0.0):
         return True
