@@ -75,7 +75,7 @@ class KitRenderer:
         setup: The scene and vehicle fields of the setup message; a factory can fill it later,
             before :meth:`on_physics_ready`.
         sensors: The RTX sensors, each with ``path``, ``output``, ``width``, ``height``, ``body``,
-            ``mount``, ``take_due(now)`` and ``emit(arrays, t_shown)``; a factory can fill them later
+            ``mount``, ``due(now_ns)`` and ``emit(arrays, t_shown)``; a factory can fill them later
             too, since the loop hands each sensor this renderer at ``connect``.
         stage: The vehicle's stage, which an RTX sensor reads its prim from at ``connect``: its mount, and
             a camera its optics. ``None`` for a link whose sensors read no prim.
@@ -194,7 +194,7 @@ class KitRenderer:
         if now == self._last_t:
             return  # a sibling sensor already did this tick's work
         self._last_t = now
-        due = [i for i, s in enumerate(self.sensors) if s.take_due(now)]
+        due = [i for i, s in enumerate(self.sensors) if s.due(t.time_ns)]
         if not due:
             return
         self._take()

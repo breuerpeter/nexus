@@ -37,6 +37,8 @@ from nexus_sim._src.core.interfaces import Component, Stage
 from nexus_sim._src.core.schema import BaroSample, GpsSample, ImuSample, MagSample
 from nexus_sim._src.core.signals import Signal
 
+from .rate import checked_rate, due
+
 
 def site_index(model, site: str) -> int:
     """The index of the site of `model` labelled `site`, the path of the prim Newton loaded it from.
@@ -86,12 +88,7 @@ class DeviceSensor(Component):
         self.body = int(model.shape_body.numpy()[self.site])
         if self.body < 0:
             raise ValueError(f"{site}: the site sits on no body; put the sensor's prim under the body it rides")
-        self.rate = float(rate)
-        if not self.rate >= 0.0:  # a rate that's not a number fails too
-            raise ValueError(
-                f"{site}: the sensor's nexus:rate is {self.rate:g} Hz; a rate is 0, a sample every tick, or more"
-            )
-        self.period = round(1e9 / self.rate) if self.rate > 0.0 else 0  # nanoseconds from one sample to the next
+        self.rate = checked_rate(rate, site)
         self._start = wp.zeros(1, dtype=wp.int64)  # the sim time of the first sample, nanoseconds
         self._taken = wp.zeros(1, dtype=int)  # how many samples the sensor has taken
 
@@ -129,18 +126,16 @@ def _noise(seed: int, step: int, axis: int, sigma: float) -> float:
 
 
 @wp.func
-def _due(now: wp.int64, period: wp.int64, start: wp.array(dtype=wp.int64), taken: wp.array(dtype=int)) -> bool:
-    """Whether a sample is due at sim time ``now``; a due sample counts toward the next one's due time. The k-th
-    sample after the first is due at the first's time plus k periods: absolute due times, as the RTX sensors keep,
-    so a rate that doesn't divide the tick rate neither quantises nor drifts. The times are whole nanoseconds, as
-    the clock keeps them, so a due time that falls on a tick compares exactly. A period of 0 makes every tick due.
+def _due(now: wp.int64, rate: wp.float64, start: wp.array(dtype=wp.int64), taken: wp.array(dtype=int)) -> bool:
+    """Whether a sample is due at sim time ``now``, in nanoseconds, by every sensor's rule, :func:`.rate.due`; a
+    due sample counts toward the next one's due time.
 
-    The count ``taken`` lives on the device, so a graph replay counts too, and it indexes each sample's noise. A
-    count baked at capture would freeze the sensor stream, which PX4's Extended Kalman Filter (EKF) flags as a
-    stuck sensor: no GPS/position fusion, so it won't arm.
+    The first sample's time and the count ``taken`` live on the device, so a graph replay counts too, and the count
+    indexes each sample's noise. A count baked at capture would freeze the sensor stream, which PX4's Extended
+    Kalman Filter (EKF) flags as a stuck sensor: no GPS/position fusion, so it won't arm.
     """
     k = taken[0]
-    if k > 0 and period > wp.int64(0) and now < start[0] + wp.int64(k) * period:
+    if not due(now - start[0], k, rate):
         return False
     if k == 0:
         start[0] = now
@@ -172,12 +167,12 @@ def imu_kernel(
     prev_t: wp.array(dtype=wp.float64),  # the sim time of the last sample
     time: wp.array(dtype=wp.float64),
     time_ns: wp.array(dtype=wp.int64),
-    period: wp.int64,
+    rate: wp.float64,
     start: wp.array(dtype=wp.int64),
     taken: wp.array(dtype=int),
     sample: wp.array(dtype=ImuSample),
 ):
-    if not _due(time_ns[0], period, start, taken):
+    if not _due(time_ns[0], rate, start, taken):
         return
     st = taken[0]
     q = wp.transform_get_rotation(body_q[body])
@@ -232,12 +227,12 @@ def mag_kernel(
     body: int,  # the model body the sensor rides
     time: wp.array(dtype=wp.float64),
     time_ns: wp.array(dtype=wp.int64),
-    period: wp.int64,
+    rate: wp.float64,
     start: wp.array(dtype=wp.int64),
     taken: wp.array(dtype=int),
     sample: wp.array(dtype=MagSample),
 ):
-    if not _due(time_ns[0], period, start, taken):
+    if not _due(time_ns[0], rate, start, taken):
         return
     st = taken[0]
     q = wp.transform_get_rotation(body_q[body])
@@ -265,12 +260,12 @@ def baro_kernel(
     body: int,  # the model body the sensor rides
     time: wp.array(dtype=wp.float64),
     time_ns: wp.array(dtype=wp.int64),
-    period: wp.int64,
+    rate: wp.float64,
     start: wp.array(dtype=wp.int64),
     taken: wp.array(dtype=int),
     sample: wp.array(dtype=BaroSample),
 ):
-    if not _due(time_ns[0], period, start, taken):
+    if not _due(time_ns[0], rate, start, taken):
         return
     st = taken[0]
     world = _world(body_world, body)
@@ -293,12 +288,12 @@ def gps_kernel(
     fix_type: int,
     time: wp.array(dtype=wp.float64),
     time_ns: wp.array(dtype=wp.int64),
-    period: wp.int64,
+    rate: wp.float64,
     start: wp.array(dtype=wp.int64),
     taken: wp.array(dtype=int),
     sample: wp.array(dtype=GpsSample),
 ):
-    if not _due(time_ns[0], period, start, taken):
+    if not _due(time_ns[0], rate, start, taken):
         return
     origin = geodetic_origin[_world(body_world, body)]
     ref_lat = origin[0]
@@ -391,7 +386,7 @@ class ImuSensor(DeviceSensor):
                 self._prev_t,
                 self.time.buffer,
                 self.time_ns.buffer,
-                self.period,
+                self.rate,
                 self._start,
                 self._taken,
             ),
@@ -446,7 +441,7 @@ class MagSensor(DeviceSensor):
                 self.body,
                 self.time.buffer,
                 self.time_ns.buffer,
-                self.period,
+                self.rate,
                 self._start,
                 self._taken,
             ),
@@ -492,7 +487,7 @@ class BaroSensor(DeviceSensor):
                 self.body,
                 self.time.buffer,
                 self.time_ns.buffer,
-                self.period,
+                self.rate,
                 self._start,
                 self._taken,
             ),
@@ -536,7 +531,7 @@ class GpsSensor(DeviceSensor):
                 self.fix_type,
                 self.time.buffer,
                 self.time_ns.buffer,
-                self.period,
+                self.rate,
                 self._start,
                 self._taken,
             ),

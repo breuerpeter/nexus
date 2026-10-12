@@ -79,7 +79,9 @@ class RtxRendererFactory:
         rtx = RtxConfig(cfg.get("rtx"))
         renderer.sensors = sensors
         pos, att = vehicle_usd.spawn_pose()
-        rates = [s.rate for s in sensors if s.output != "points"]
+        tick = cfg["physics"]["dt"]
+        # A camera's frame period: its rate's, and the tick's when its rate makes every tick due.
+        periods = [max(tick, 1.0 / s.rate) if s.rate > 0.0 else tick for s in sensors if s.output != "points"]
         benchmark = Path.home() / ".cache" / "nexus" / "logs" / f"benchmark-{int(time.time())}.json"
         renderer.setup = {
             "scene": cfg.get("scene_usd_path"),
@@ -91,8 +93,8 @@ class RtxRendererFactory:
             ),
             "vehicle": str(vehicle_usd.cfg["usd_path"]),
             "spawn": {"pos": [float(v) for v in pos], "quat_xyzw": [float(v) for v in att]},
-            # The highest declared camera rate; the vehicle's file is the authority.
-            "render_dt": 1.0 / (max(rates) if rates else rtx.render_hz),
+            # The shortest camera frame period the vehicle's file declares; the file is the authority.
+            "render_dt": min(periods) if periods else 1.0 / rtx.render_hz,
             "benchmark": str(benchmark) if diagnostics.benchmark else None,
         }
 

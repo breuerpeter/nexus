@@ -52,7 +52,7 @@ class _Clock:
         return self._t
 
     def advance(self):
-        self._t = SimTime(self._t.sim_time + self.dt, self._t.step_index + 1)
+        self._t = SimTime(self._t.time_ns + round(self.dt * 1e9), self._t.step_index + 1)
         return self._t
 
     def throttle(self):

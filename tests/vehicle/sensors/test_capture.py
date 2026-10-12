@@ -42,9 +42,9 @@ def test_captured_sensor_noise_dithers_per_replay():
     with wp.ScopedDevice("cuda:0"):
         view = _WarpView((0.0, 0.0, 1.0), (0.0, 0.0, 0.0, 1.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
         s = sv.wired(ImuSensor(*_on(), seed=42))  # noise on, the default
-        s.sample_wp(view, SimTime(0.0, 0))  # warmup: the first sample seeds the earlier velocities
+        s.sample_wp(view, SimTime(0, 0))  # warmup: the first sample seeds the earlier velocities
         with wp.ScopedCapture() as cap:
-            s.sample_wp(view, SimTime(0.0, 0))
+            s.sample_wp(view, SimTime(0, 0))
         wp.capture_launch(cap.graph)
         wp.synchronize()
         a = s.out.read()
@@ -76,16 +76,16 @@ def test_captured_px4_sensors_match_eager():
 
         eager = fresh()
         for s in eager:
-            s.sample_wp(view, SimTime(0.0, 0))
+            s.sample_wp(view, SimTime(0, 0))
         eager_imu, eager_mag, eager_baro, eager_gps = (s.out.read() for s in eager)
 
         cap_sensors = fresh()
         # warmup: the first sample of the Inertial Measurement Unit (IMU) seeds its earlier velocities before the capture
         for s in cap_sensors:
-            s.sample_wp(view, SimTime(0.0, 0))
+            s.sample_wp(view, SimTime(0, 0))
         with wp.ScopedCapture() as cap:
             for s in cap_sensors:
-                s.sample_wp(view, SimTime(0.0, 0))
+                s.sample_wp(view, SimTime(0, 0))
         wp.capture_launch(cap.graph)
         wp.synchronize()
         imu, mag, baro, gps = (s.out.read() for s in cap_sensors)

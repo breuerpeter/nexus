@@ -61,7 +61,7 @@ def test_a_warp_observation_keeps_the_pid_path_on_the_device(tmp_path):
     assert pid.observation.read().shape == (12,)
 
     # 2. exchange runs the law + moment mixer on-device -> Warp Controls = nr per-rotor commands, no host hop
-    controls = pid.exchange(SimTime(0.0, 0))
+    controls = pid.exchange(SimTime(0, 0))
     assert _is_warp_array(controls.command)
     assert controls.command.numpy().reshape(-1).shape == (mixer.nr,)
 
@@ -80,6 +80,6 @@ def test_numpy_observation_takes_host_path():
     )  # law-only, no mixer: the host path returns the raw moments
     # The provider's state builds a NumPy observation: level, at rest, at the goal's height.
     pid.bind_state_provider(lambda: ((0.0, 0.0, 1.5), (1.0, 0.0, 0.0, 0.0), (0, 0, 0), (0, 0, 0)))
-    controls = pid.exchange(SimTime(0.0, 0))
+    controls = pid.exchange(SimTime(0, 0))
     assert isinstance(controls.command, np.ndarray)  # host path preserved: numpy per-rotor commands
     assert controls.command.shape == (4,)

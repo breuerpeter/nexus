@@ -122,7 +122,7 @@ def _exchange(*sensors, ticks: int) -> None:
     controller.connect({})
     state = _AtRest()
     for tick in range(ticks):
-        t = SimTime(tick * 4_000_000 / 1e9, tick)
+        t = SimTime(tick * 4_000_000, tick)
         clock.set(t)
         for sensor in sensors:
             sensor.sample_wp(state, t)

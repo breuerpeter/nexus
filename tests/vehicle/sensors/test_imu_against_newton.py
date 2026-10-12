@@ -150,7 +150,7 @@ def _gaps(usd_path: str, *, spin=(0.0, 0.0, 0.0), hinge_rate: float = 0.0) -> tu
     state.joint_qd.assign(rates)
     newton.eval_fk(model, state.joint_q, state.joint_qd, state)
 
-    imu.sample_wp(state, SimTime(0.0, 0))  # the first sample only seeds the IMU's earlier velocities
+    imu.sample_wp(state, SimTime(0, 0))  # the first sample only seeds the IMU's earlier velocities
     ours, theirs = [], []
     for k in range(TICKS):
         t = k * DT
@@ -162,7 +162,7 @@ def _gaps(usd_path: str, *, spin=(0.0, 0.0, 0.0), hinge_rate: float = 0.0) -> tu
         solver.step(state, other, None, None, DT)
         state, other = other, state
         reference.update(state)
-        imu.sample_wp(state, SimTime((k + 1) * DT, k + 1))
+        imu.sample_wp(state, SimTime(round((k + 1) * DT * 1e9), k + 1))
         sample = imu.out.read()
         ours.append((*np.asarray(sample.gyro).tolist(), *np.asarray(sample.accel).tolist()))
         theirs.append((*reference.gyroscope.numpy()[0], *reference.accelerometer.numpy()[0]))
