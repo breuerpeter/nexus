@@ -11,8 +11,9 @@ from nexus_sim import ImuSample, MagSample, BaroSample, GpsSample, Image, PointC
 
 A [signal](../../design/concepts.md#signal) carries one of these types between components, and a
 component's stage declares its signals with them: `Signal("estimate", PoseTwist, shape=(1,))`. A
-Warp struct lives on the device, and a host stage reads it as a record, `row["accel"]`. The controls
-a controller writes are a plain device row of `wp.float32`, one per actuator, so they have no type here.
+Warp struct lives on the device, and a host stage reads it as an instance of its type,
+`read().accel`. The controls a controller writes are a plain device row of `wp.float32`, one per
+actuator, so they have no type here.
 
 ::: nexus_sim.SimTime
 ::: nexus_sim.PoseTwist
