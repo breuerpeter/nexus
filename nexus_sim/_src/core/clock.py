@@ -30,7 +30,7 @@ class Clock:
         self.dt = dt
         self.dt_ns = round(dt * 1e9)
         self.rtf = rtf
-        self._t = SimTime(0.0, 0)
+        self._t = SimTime(0, 0)
         self._deadline: float | None = None  # cumulative wall-clock pace target
 
     def now(self) -> SimTime:
@@ -39,7 +39,7 @@ class Clock:
     def advance(self) -> SimTime:
         """Count one tick, and return the new time."""
         step = self._t.step_index + 1
-        self._t = SimTime(step * self.dt_ns / 1e9, step)
+        self._t = SimTime(step * self.dt_ns, step)
         return self._t
 
     def throttle(self) -> None:
@@ -94,7 +94,7 @@ class DeviceClock:
 
     def set(self, t: SimTime) -> None:
         """Set the time to ``t``, from the host, before the first tick."""
-        self.time_ns.write([t.step_index * self.dt_ns])
+        self.time_ns.write([t.time_ns])
         self.time.write([t.sim_time])
 
     def advance(self) -> None:

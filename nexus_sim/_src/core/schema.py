@@ -20,19 +20,26 @@ import warp as wp
 class SimTime:
     """Sim-time and step index for the current tick.
 
-    The single authoritative time source for ``HIL_*`` MAVLink timestamps,
-    so every component shares one consistent clock derived from the simulation.
+    The single authoritative time source for ``HIL_*`` MAVLink timestamps and the sensors' due times,
+    so every component shares one consistent clock derived from the simulation. The time is a whole
+    number of nanoseconds, as gz-sim keeps it, so a time that falls on a tick compares exactly; a
+    stage reads it in seconds.
     """
 
-    sim_time: float = 0.0
-    """Elapsed simulation time since reset, in seconds."""
+    time_ns: int = 0
+    """Elapsed simulation time since reset, in whole nanoseconds."""
     step_index: int = 0
     """Zero-based index of the current simulation step (integer tick counter)."""
 
     @property
+    def sim_time(self) -> float:
+        """Elapsed simulation time since reset, in seconds."""
+        return self.time_ns / 1e9
+
+    @property
     def time_usec(self) -> int:
         """Simulation time in integer microseconds, the ``HIL_*`` timestamp unit."""
-        return round(self.sim_time * 1e6)
+        return round(self.time_ns / 1e3)
 
 
 @wp.struct
