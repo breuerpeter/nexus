@@ -16,7 +16,7 @@ from __future__ import annotations
 from _michroma import OUT_DIR, REPO_ROOT, VIEW_H, layout_text, load_font
 
 # ── CONFIG ───────────────────────────────────────────────────────────────────
-TEXT = "GPU-accelerated drone simulation"
+TEXT = "Flight stack simulation with Newton"
 TRACKING = 90  # extra letter-spacing in font units at Units Per Em (UPM) 2048: geometric-tagline air
 PAD = 4  # ink padding on each side, in font units
 

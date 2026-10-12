@@ -1,7 +1,8 @@
 # nexus
 
-This repo holds a GPU-accelerated drone simulation framework: a `uv` **project** with the
-framework as a single `nexus_sim` package and the docs site at the repo root. The Isaac Lab RL
+Built on Newton, Warp and OpenUSD, nexus lets you develop drone subsystems and test them as part of
+the full flight stack. This repo holds it: a `uv` **project** with the framework as a single
+`nexus_sim` package and the docs site at the repo root. The Isaac Lab RL
 training app lives under `nexus-rl/` as a **separate `uv` project** with its own virtual
 environment, which depends on `nexus-sim` via an editable path source. That keeps the heavy,
 prerelease-pinned Isaac Lab stack out of the core environment. Run it with
@@ -74,7 +75,7 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
   writes each drained block and the last at teardown, `docs/reference/api/logging.md`. A component
   logs live, through `set_logger`, only a value with no fixed width, such as a camera's frame. No
   component states a per-tick log step, and `Sim` takes no `observe`. The Logger logs the scene's
-  meshes once through NVIDIA Newton's viewer base class, never `ViewerRerun`.
+  meshes once through Newton's viewer base class, never `ViewerRerun`.
 - **Every script lives under `scripts/`**, and `docs/guide/contributing/scripts.md` or another page
   names each one a reader runs, `tests/docs/test_scripts.py`. `scripts/ground/` is the one
   exception: #43 deletes it.

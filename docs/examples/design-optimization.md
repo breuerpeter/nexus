@@ -1,5 +1,5 @@
 ---
-description: "Back-propagate through a closed-loop flight to tune a Proportional Integral Derivative (PID) controller and recover a mass, using nexus's differentiable simulation."
+description: "Back-propagate through a closed-loop flight to tune a Proportional Integral Derivative (PID) controller and recover a mass, through Newton's differentiable simulation."
 ---
 
 # Differentiable design optimization

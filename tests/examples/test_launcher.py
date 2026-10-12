@@ -1,4 +1,4 @@
-"""The `python -m nexus_sim.examples <name>` launcher, which mirrors NVIDIA Newton's."""
+"""The `python -m nexus_sim.examples <name>` launcher, which mirrors Newton's."""
 
 from __future__ import annotations
 

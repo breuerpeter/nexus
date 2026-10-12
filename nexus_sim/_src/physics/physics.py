@@ -1,4 +1,4 @@
-"""Physics, backed by NVIDIA Newton.
+"""Physics, backed by Newton.
 
 Owns the model build + solver + double-buffered step + the settle after
 placing the vehicle. Consumes a per-body Wrench at the shared ``state.body_f`` buffer, which the force

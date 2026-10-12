@@ -396,7 +396,7 @@ def test_write_poses_a_body_whose_label_is_a_full_path(tmp_path):
 
 @pytest.mark.usefixtures("warp_cpu")
 def test_the_scene_is_logged_once_and_the_body_rides_the_rows_written(tmp_path):
-    """The Logger logs each shape batch's mesh once, at construction, through NVIDIA Newton's viewer
+    """The Logger logs each shape batch's mesh once, at construction, through Newton's viewer
     base class, and each write poses the base body and the batch from the body's rows.
     """
     pytest.importorskip("pxr")

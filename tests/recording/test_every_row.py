@@ -79,7 +79,7 @@ def test_a_hard_kill_loses_at_most_one_block(tmp_path):
 def test_each_mesh_is_logged_once_and_each_bodys_pose_rides_the_histories_as_columns(tmp_path, rrd_rows):
     """The Logger logs each mesh once, and each body's pose rides the histories as columns.
 
-    Given a recorded run of a fixture with a box shape, which NVIDIA Newton's viewer logs as a mesh,
+    Given a recorded run of a fixture with a box shape, which Newton's viewer logs as a mesh,
     when it steps 50 ticks and ends, then the `.rrd` holds one static mesh row per shape, a transform
     row per history row at the base body's entity, the start and the 50 ticks, and no entity holds 51
     mesh rows.
