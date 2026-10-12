@@ -1,5 +1,5 @@
 site_name: nexus
-site_description: GPU-accelerated drone simulation
+site_description: Flight stack simulation with Newton
 site_url: https://breuerpeter.github.io/nexus/
 repo_url: https://github.com/breuerpeter/nexus
 repo_name: breuerpeter/nexus

@@ -1,6 +1,6 @@
 """A short recorded flight of a one-body vehicle on the Warp CPU backend, for the recording tests.
 
-:func:`build` wires the run: the loop on real NVIDIA Newton physics, a Logger that writes an ``.rrd``,
+:func:`build` wires the run: the loop on real Newton physics, a Logger that writes an ``.rrd``,
 and a Recorder whose staging buffer holds ``staging`` rows, so a test crosses a drain in a few ticks. A
 stand-in controller commands nothing, so the body falls under gravity alone. :func:`rows` and
 :func:`times` read one entity of a written ``.rrd`` through Rerun's reader.

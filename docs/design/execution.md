@@ -11,6 +11,11 @@ user-facing control is `--device {auto,cpu,cuda}`, as in
 when one is present. The [loop](concepts.md#loop) builds the tick from the stages each component states
 and captures graphs on CUDA.
 
+NVIDIA Warp, the GPU compute framework that Newton builds on, uses Just In Time (JIT) compilation to
+turn the Python kernels of the loop and of Newton into C++ and CUDA. Every tick dispatches many such
+kernels: on an NVIDIA GPU they run in parallel across its cores. The same kernels also run on a CPU
+unchanged, but serially, so the CPU is a slower fallback.
+
 ## Stages and segments
 
 A [tick](concepts.md#tick) runs the [ring](concepts.md#ring) of [stages](concepts.md#stage) the
@@ -174,7 +179,7 @@ rate takes its next sample one period later. Initialization computes the magneti
 scenario's Global Positioning System (GPS) origin. An inconsistent field gives PX4 an invalid heading
 estimate, and it can't arm.
 
-**The PID law is the determinism authority.** The built-in PID, flown through the
+**The PID law is the determinism authority.** The example PID, flown through the
 unchanged loop on the CPU backend, reproduces bit-for-bit run-to-run. Real PX4 SITL is
 instead *tolerance-gated*. The PX4 multi-threaded work-queue interleaves same-tick estimator and
 controller threads in an OS-dependent order. So armed flight isn't bit-reproducible, even though

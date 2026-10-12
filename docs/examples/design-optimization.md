@@ -1,5 +1,5 @@
 ---
-description: "Back-propagate through a closed-loop flight to tune a Proportional Integral Derivative (PID) controller and recover a mass, using nexus's differentiable simulation."
+description: "Back-propagate through a closed-loop flight to tune a Proportional Integral Derivative (PID) controller and recover a mass, through Newton's differentiable simulation."
 ---
 
 # Differentiable design optimization
@@ -8,7 +8,7 @@ description: "Back-propagate through a closed-loop flight to tune a Proportional
 **tune a controller**, in `gain_tuning.py`, and **recover a physical parameter**, in
 `mass_recovery.py`.
 
-- **On the real vehicle, the headline:** gradient descent on the gains of the built-in PID flies
+- **On the real vehicle, the headline:** gradient descent on the gains of the example PID flies
   the production astro-max to a far waypoint and makes it settle. That vehicle is the multi-body
   Universal Scene Description (USD) model with the per-rotor actuator kernel and
   `SolverFeatherstone`. **Truncated Back-Propagation Through Time (BPTT)** bounds the long-horizon

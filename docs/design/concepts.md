@@ -133,7 +133,7 @@ to stand in for a real estimator, and PX4's controller, to send PX4 its ground t
 
 ### Physics
 
-The part that steps NVIDIA Newton's model, `NewtonPhysics`. Its `step` steps every Newton actuator
+The part that steps Newton's model, `NewtonPhysics`. Its `step` steps every Newton actuator
 the vehicle declares, then the solver. It's a fixed part, as the clock, the Recorder, and the
 Logger are: the framework's own, configured by settings, never declared.
 

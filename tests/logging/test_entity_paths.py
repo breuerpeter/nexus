@@ -113,7 +113,7 @@ def test_a_debug_run_writes_one_frame_per_body_at_sim_vehicle_body_label(tmp_pat
 
 
 def test_the_scene_rows_sit_under_sim_model(recorded_flight, rrd_rows):
-    """The scene's rows sit under `sim/model/`, named as NVIDIA Newton's viewer base class names the
+    """The scene's rows sit under `sim/model/`, named as Newton's viewer base class names the
     shape batches.
 
     Given a recorded flight of a vehicle with mesh shapes over a ground plane, when it ends, then the

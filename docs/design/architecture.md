@@ -1,11 +1,12 @@
 ---
-description: "How nexus works: a fixed-order deterministic sim loop of typed, replaceable components. The data model, interfaces, the estimator, guidance and controllers, actuators, observability, configuration, and packaging."
+description: "How nexus works: a fixed-order, deterministic loop of components in roles around Newton's physics. The data model, interfaces, the estimator, guidance and controllers, actuators, observability, configuration, and packaging."
 ---
 
 # Architecture
 
-The framework is an **imperative, fixed-order, deterministic simulation loop** in which every concern is
-a replaceable [component](concepts.md#component) behind a typed interface. The
+At the heart of nexus is an **imperative, fixed-order, deterministic loop** around Newton's physics.
+Each part of the flight stack is a [component](concepts.md#component) in a fixed
+[role](concepts.md#role), on one contract, and so is each part of the plant except the physics. The
 [loop](concepts.md#loop), the class [`Loop`](../reference/api/core.md), steps the
 components in a fixed order each [tick](concepts.md#tick), and [`Sim`](concepts.md#sim) builds
 and drives it.
@@ -113,7 +114,7 @@ same loop:
   connection on its prim, such as `nexus:inputs:imu`, picks the one PX4 receives. Its work is two
   **host stages**, `truth` and `exchange`, outside graph capture and not differentiable, and a lost
   connection ends the run.
-- **`PidController`**: the device-native, differentiable built-in, a
+- **`PidController`**: the device-native, differentiable example, a
   PID controller whose gains are Warp arrays with gradients, so
   it doubles as the [design-optimization](../examples/design-optimization.md) parameter set and the
   [determinism authority](execution.md#determinism).
@@ -153,7 +154,7 @@ client there: [`nexus_sim.px4.OffboardClient`](../reference/api/px4.md) on `sim.
 
 ## Actuators
 
-The rotor chain has three parts, split along NVIDIA Newton's model, so nothing in nexus overlaps
+The rotor chain has three parts, split along Newton's model, so nothing in nexus overlaps
 Newton's actuator.
 
 - The rotors' **[command element](concepts.md#role)** scales each command to a rotor-speed target,

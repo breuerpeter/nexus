@@ -1,5 +1,5 @@
 """Record the Astro Max RL training as a Rerun ``.rrd``: a **swarm of the real Astro Max model**
-improving over training. It logs the actual Newton geometry through NVIDIA Newton's ``ViewerRerun``,
+improving over training. It logs the actual Newton geometry through Newton's ``ViewerRerun``,
 so you see the real multirotor meshes, not markers, flying to their goals, and replays progressively
 trained policies so the swarm goes from crashing to clean convergence.
 
@@ -71,7 +71,7 @@ def _blueprint() -> rrb.Blueprint:
 
 
 def _file_viewer(out: str) -> ViewerRerun:
-    """NVIDIA Newton's Rerun viewer writing ``out`` and nothing else. Its constructor also opens a
+    """Newton's Rerun viewer writing ``out`` and nothing else. Its constructor also opens a
     native viewer window, which a headless box has no display for, and that would replace the file
     sink. So the call that opens it does nothing for the constructor's span. Upstream has no file-only
     mode yet.
