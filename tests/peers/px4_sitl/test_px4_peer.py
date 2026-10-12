@@ -471,7 +471,7 @@ class _Commands(Component):
 
     def stages(self):
         def keep(tick):
-            self.seen.append(tuple(self.controls.read()[0].tolist()))
+            self.seen.append(tuple(self.controls.read().tolist()))
 
         return [Stage("forces", "host", keep, reads=(self.controls,))]
 

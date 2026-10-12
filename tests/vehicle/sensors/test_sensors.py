@@ -54,7 +54,7 @@ def _sample(sensor, view, t: SimTime | None = None):
     if t is not None:
         sensor.time.write([t.sim_time])
     sensor.sample_wp(view, t or SimTime(0, 0))
-    return sensor.out.read()[0]
+    return sensor.out.read()
 
 
 def test_imu_gyro_parity():
@@ -62,7 +62,7 @@ def test_imu_gyro_parity():
     sample = _sample(sv.wired(ImuSensor(*_on(), seed=_SEED, acc_noise=0.0, gyro_noise=0.0)), view)
     q = transform.quat_from_xyzw(_Q)
     gyro_ref = transform.world_to_body(q, (0.3, -0.4, 0.5))
-    np.testing.assert_allclose(sample["gyro"], gyro_ref, atol=1e-5)
+    np.testing.assert_allclose(sample.gyro, gyro_ref, atol=1e-5)
 
 
 def test_imu_accel_finite_diff_parity():
@@ -75,7 +75,7 @@ def test_imu_accel_finite_diff_parity():
     grav_b = transform.world_to_body(q, _GRAVITY_WORLD)
     acc_b = transform.world_to_body(q, acc_com)  # zero mount -> no lever arm
     ref = [acc_b[i] - grav_b[i] for i in range(3)]
-    np.testing.assert_allclose(sample["accel"], ref, atol=1e-4)
+    np.testing.assert_allclose(sample.accel, ref, atol=1e-4)
 
 
 def test_mag_parity():
@@ -84,7 +84,7 @@ def test_mag_parity():
     q = transform.quat_from_xyzw(_Q)
     mag_b = transform.world_to_body(q, transform.mag_ned_to_world(_MAG_NED))
     ref = [mag_b[0] + 0.01, mag_b[1] - 0.02, mag_b[2] + 0.0]
-    np.testing.assert_allclose(sample["field"], ref, atol=1e-5)
+    np.testing.assert_allclose(sample.field, ref, atol=1e-5)
 
 
 def test_baro_and_gps_parity():
@@ -92,13 +92,13 @@ def test_baro_and_gps_parity():
     view = _WarpView(pos, _Q, (1.5, -0.5, 0.2), (0, 0, 0))
     baro = _sample(sv.wired(BaroSensor(*_on(), seed=_SEED, noise=0.0)), view)
     gps = _sample(sv.wired(GpsSensor(*_on(), seed=_SEED)), view)
-    assert float(baro["pressure"]) == pytest.approx(1013.25 * (1 - 2.25577e-5 * 30.0) ** 5.25588, abs=1e-3)
-    assert float(baro["altitude"]) == pytest.approx(30.0, abs=1e-4)
+    assert float(baro.pressure) == pytest.approx(1013.25 * (1 - 2.25577e-5 * 30.0) ** 5.25588, abs=1e-3)
+    assert float(baro.altitude) == pytest.approx(30.0, abs=1e-4)
     lat, lon, alt = transform.gps_from_local(47.6, -122.3, 5.0, pos)
-    assert (float(gps["lat"]), float(gps["lon"]), float(gps["alt"])) == pytest.approx((lat, lon, alt), abs=1e-6)
+    assert (float(gps.lat), float(gps.lon), float(gps.alt)) == pytest.approx((lat, lon, alt), abs=1e-6)
     # world -> North East Down (NED): ve = -vy, vd = -vz
-    assert [float(v) for v in gps["velocity"]] == pytest.approx((1.5, 0.5, -0.2))
-    assert float(gps["ground_speed"]) == pytest.approx(math.hypot(1.5, -0.5), abs=1e-5)
+    assert [float(v) for v in gps.velocity] == pytest.approx((1.5, 0.5, -0.2))
+    assert float(gps.ground_speed) == pytest.approx(math.hypot(1.5, -0.5), abs=1e-5)
 
 
 def test_world_to_ned_is_a_proper_rotation():
@@ -115,20 +115,20 @@ def test_world_to_ned_is_a_proper_rotation():
         return _sample(sv.wired(GpsSensor(*_on(), seed=_SEED)), _WarpView(pos, (0.0, 0.0, 0.0, 1.0), vel, (0, 0, 0)))
 
     # The world offset that moves one metre along each NED axis, read out of the position map.
-    assert float(gps_at((1.0, 0.0, 0.0))["lat"]) == pytest.approx(ref_lat + 1.0 / 111000.0, abs=1e-12)  # n = +x
-    assert float(gps_at((0.0, -1.0, 0.0))["lon"]) == pytest.approx(ref_lon + inv_lon_scale, abs=1e-12)  # e = -y
-    assert float(gps_at((0.0, 0.0, -1.0))["alt"]) == pytest.approx(ref_alt - 1.0, abs=1e-9)  # d = -z
+    assert float(gps_at((1.0, 0.0, 0.0)).lat) == pytest.approx(ref_lat + 1.0 / 111000.0, abs=1e-12)  # n = +x
+    assert float(gps_at((0.0, -1.0, 0.0)).lon) == pytest.approx(ref_lon + inv_lon_scale, abs=1e-12)  # e = -y
+    assert float(gps_at((0.0, 0.0, -1.0)).alt) == pytest.approx(ref_alt - 1.0, abs=1e-9)  # d = -z
     n_world, e_world, d_world = (1.0, 0.0, 0.0), (0.0, -1.0, 0.0), (0.0, 0.0, -1.0)
 
     # The velocity map's east axis must be the position map's, or the Extended Kalman Filter (EKF) gets
     # GPS position and GPS velocity disagreeing in sign: the #61 runaway.
-    assert float(gps_at((0.0, 0.0, 0.0), vel=e_world)["velocity"][1]) == pytest.approx(1.0, abs=1e-9)
+    assert float(gps_at((0.0, 0.0, 0.0), vel=e_world).velocity[1]) == pytest.approx(1.0, abs=1e-9)
 
     # The mag map's basis images, read out of the magnetometer at identity attitude.
     for ned, want in ((n_world, n_world), ((0.0, 1.0, 0.0), e_world), ((0.0, 0.0, 1.0), d_world)):
         mag = sv.wired(MagSensor(*_on(field_ned=ned), seed=_SEED, noise=(0.0, 0.0, 0.0)))
         sample = _sample(mag, _WarpView((0, 0, 1), (0.0, 0.0, 0.0, 1.0), (0, 0, 0), (0, 0, 0)))
-        np.testing.assert_allclose(sample["field"], want, atol=1e-6)
+        np.testing.assert_allclose(sample.field, want, atol=1e-6)
 
     np.testing.assert_allclose(np.cross(n_world, e_world), d_world, atol=1e-12)
 
@@ -157,7 +157,7 @@ def test_a_magnetometer_barometer_and_gps_read_the_body_their_site_sits_on():
 
     # The field in body 1's axes, as in the known-attitude case that follows: (-0.05, -0.21, -0.43).
     np.testing.assert_allclose(
-        [float(baro["altitude"]), float(gps["alt"]), *mag["field"]], [30.0, 35.0, -0.05, -0.21, -0.43], atol=1e-5
+        [float(baro.altitude), float(gps.alt), *mag.field], [30.0, 35.0, -0.05, -0.21, -0.43], atol=1e-5
     )
 
 
@@ -198,7 +198,7 @@ def test_mag_known_attitude():
     sample = _sample(sv.wired(MagSensor(*_on(), seed=_SEED, noise=(0.0, 0.0, 0.0))), view)
     # mag_ned (0.21, 0.05, 0.43) -> world (n, -e, -d) = (0.21, -0.05, -0.43); R(q)^-1 maps
     # (x, y, z) -> (y, -x, z), giving body (-0.05, -0.21, -0.43).
-    np.testing.assert_allclose(sample["field"], [-0.05, -0.21, -0.43], atol=1e-6)
+    np.testing.assert_allclose(sample.field, [-0.05, -0.21, -0.43], atol=1e-6)
 
 
 def test_seed_for_is_deterministic_and_named():
@@ -215,7 +215,7 @@ def test_imu_noise_is_run_to_run_bit_identical():
         s = sv.wired(ImuSensor(*_on(), seed=_SEED))  # default noise on
         _sample(s, view)
         sample = _sample(s, view, SimTime(4_000_000, 1))
-        return (*sample["accel"].tolist(), *sample["gyro"].tolist())
+        return (*np.asarray(sample.accel).tolist(), *np.asarray(sample.gyro).tolist())
 
     assert run() == run()  # same seed + step -> bit-for-bit the same Warp noise
 
@@ -232,7 +232,7 @@ def test_each_analytic_sensors_sample_carries_the_sim_time_the_signal_time_holds
     sensor = sv.wired(cls(*_on(), seed=_SEED), time=1.25)
     sensor.sample_wp(view, SimTime(1_250_000_000, 0))
 
-    assert float(sensor.out.read()[0]["time"]) == 1.25
+    assert float(sensor.out.read().time) == 1.25
 
 
 def _sample_times(sensor, view, ticks: int) -> list[float]:
@@ -245,7 +245,7 @@ def _sample_times(sensor, view, ticks: int) -> list[float]:
         sensor.time_ns.write([tick * 4_000_000])
         sensor.time.write([now])
         sensor.sample_wp(view, SimTime(tick * 4_000_000, tick))
-        held.append(float(sensor.out.read()[0]["time"]))
+        held.append(float(sensor.out.read().time))
     return held
 
 
@@ -294,4 +294,4 @@ def test_an_imu_slower_than_the_tick_differences_the_velocity_over_the_time_sinc
             sensor, _WarpView((0, 0, 1), (0.0, 0.0, 0.0, 1.0), fall, (0, 0, 0)), SimTime(4_000_000 * tick, tick)
         )
 
-    np.testing.assert_allclose(sample["accel"], [0.0, 0.0, 0.0], atol=1e-4)
+    np.testing.assert_allclose(sample.accel, [0.0, 0.0, 0.0], atol=1e-4)

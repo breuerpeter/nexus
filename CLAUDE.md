@@ -45,7 +45,8 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
   signal, as wide as its actuators. The registry, `Registry`, maps each schema to its class: a
   project registers through the `nexus.registry` entry-point group, and a test hands a run its
   stand-ins through `Sim(registry=...)`. A script reads any recorded history by indexing the run
-  with the history's path, `sim["vehicle/sensors/imu/imu"]`, and `Sim` gives no role an accessor.
+  with the history's path, `sim["vehicle/sensors/imu/imu"]`, a signal's live value with
+  `sim.read(path)`, and `Sim` gives no role an accessor.
   `docs/guide/your-own-component.md` walks a project through it.
 - **`evo` is GPLv3** → it lives only in the `ci` dependency-group and never ships as a dependency.
   Examples dump plain `.npz` and JSON files, and only `scripts/ci/evaluate_examples.py` imports

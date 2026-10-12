@@ -120,8 +120,8 @@ def _mode(heartbeat) -> tuple[int, int]:
 
 def _fly(sim, seconds: float) -> None:
     """Step the sim for ``seconds`` of sim time. Unlike ``sim.sleep``, it raises when the run ends first."""
-    until = sim[f"vehicle/body/{sim.base_body}"].latest()["t"] + seconds
-    sim.wait_until(lambda: sim[f"vehicle/body/{sim.base_body}"].latest()["t"] >= until, sim_timeout=seconds + 1.0)
+    until = sim.time + seconds
+    sim.wait_until(lambda: sim.time >= until, sim_timeout=seconds + 1.0)
 
 
 def _retry_until(sim, done, send, *, sim_timeout: float) -> None:
@@ -165,7 +165,7 @@ def run_with_no_gcs():
             )
             sim.wait_until(lambda: link.px4.system_status == mavutil.mavlink.MAV_STATE_STANDBY, sim_timeout=120.0)
             sim.wait_until(
-                lambda: sim[f"vehicle/body/{sim.base_body}"].latest()["t"] > _DATALINK_TIMEOUT_S,
+                lambda: sim.time > _DATALINK_TIMEOUT_S,
                 sim_timeout=60.0,
             )
             _retry_until(

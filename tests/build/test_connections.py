@@ -44,7 +44,7 @@ def _connection(signal: str, target: str) -> str:
 
 def _accel(sample) -> np.ndarray:
     """An IMU sample's accelerometer reading, as a flat array of floats."""
-    return np.asarray(sample["accel"], dtype=float).reshape(-1)
+    return np.asarray(sample.accel, dtype=float).reshape(-1)
 
 
 def _zero(accel) -> bool:

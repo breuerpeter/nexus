@@ -298,15 +298,15 @@ class AcadosNMPCController(Component):
             self._step += 1
             return Controls(command=self._hover_throttle())
 
-        est = self.estimate.read()[0]  # world frame
+        est = self.estimate.read()  # world frame
 
         # measured state → NMPC state. The estimate's angular velocity is in world axes; the model uses a
         # body-frame rate, so rotate ω into the body frame. Quaternion order: warp xyzw → model wxyz.
-        pos = est["position"].astype(np.float64)
-        qx, qy, qz, qw = (float(x) for x in est["orientation"])
+        pos = np.asarray(est.position, dtype=np.float64)
+        qx, qy, qz, qw = (float(x) for x in est.orientation)
         rot = _quat_to_rot_np(qw, qx, qy, qz)  # world ← real Forward Right Down (FRD) body
-        vel = est["linear_velocity"].astype(np.float64)
-        omega_body = rot.T @ est["angular_velocity"].astype(np.float64)  # ω in the real FRD body frame
+        vel = np.asarray(est.linear_velocity, dtype=np.float64)
+        omega_body = rot.T @ np.asarray(est.angular_velocity, dtype=np.float64)  # ω in the real FRD body frame
         # FRD → NMPC-upright adapter. The framework's vehicle USDs carry the FRD convention, body +z down and
         # thrust along −body z, handled by the production aero kernel's sign, but the NMPC model stands
         # upright, thrust = +body z. Re-express the measured attitude/rate in the NMPC's frame via the fixed

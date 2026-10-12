@@ -180,13 +180,13 @@ class TrainedPolicyController(Component):
         exchange copies it to the host first.
         """
         if self.setpoint.buffer is not None:  # wired by the loop: fly to the goal the guidance writes
-            self.goal_w[:] = self.setpoint.read()[0]
-        est = self.estimate.read()[0]  # world frame
+            self.goal_w[:] = self.setpoint.read()
+        est = self.estimate.read()  # world frame
         obs = build_observation(
-            pos_w=est["position"],
-            quat_xyzw=est["orientation"],
-            lin_vel_w=est["linear_velocity"],
-            ang_vel_w=est["angular_velocity"],
+            pos_w=np.asarray(est.position),
+            quat_xyzw=np.asarray(est.orientation),
+            lin_vel_w=np.asarray(est.linear_velocity),
+            ang_vel_w=np.asarray(est.angular_velocity),
             goal_w=self.goal_w,
             prev_action=self._prev_action,
         )

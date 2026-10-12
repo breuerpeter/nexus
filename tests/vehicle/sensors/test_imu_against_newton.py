@@ -163,8 +163,8 @@ def _gaps(usd_path: str, *, spin=(0.0, 0.0, 0.0), hinge_rate: float = 0.0) -> tu
         state, other = other, state
         reference.update(state)
         imu.sample_wp(state, SimTime(round((k + 1) * DT * 1e9), k + 1))
-        sample = imu.out.read()[0]
-        ours.append((*sample["gyro"].tolist(), *sample["accel"].tolist()))
+        sample = imu.out.read()
+        ours.append((*np.asarray(sample.gyro).tolist(), *np.asarray(sample.accel).tolist()))
         theirs.append((*reference.gyroscope.numpy()[0], *reference.accelerometer.numpy()[0]))
     ours, theirs = np.array(ours), np.array(theirs)
     gap = np.abs(ours - theirs)

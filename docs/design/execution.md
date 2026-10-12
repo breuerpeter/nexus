@@ -43,9 +43,11 @@ signals it reads and the signals it writes, so a component's inputs and outputs 
 stages.
 
 A signal's type fixes where its buffer lives. A signal whose type is a Warp struct or a Warp value type,
-such as `wp.float32`, lives on the device: its buffer is a Warp array. Device stages read and write
-it in their kernels, and a host stage reads it with a copy and writes it in place between graph replays.
-Any other type is a host type, whose buffer holds one object. Core ships the types of the values between
+such as `wp.float32`, lives on the device: its buffer is a Warp array whose leading axis is one. Device
+stages read and write it in their kernels. A host stage writes it in place between graph replays and
+reads it with a copy. The copy takes the signal's type: a struct reads as one instance of its type,
+`read().position`, and a value type as an array without the leading axis. Any other type is a host
+type, whose buffer holds one object. Core ships the types of the values between
 [roles](concepts.md#role):
 
 - The controls, the per-actuator commands a controller writes and the command elements read, are a row
@@ -102,6 +104,7 @@ stops before any stage runs, with an error that names both ends, when:
   wider buffer, as the rotors read the first four of the 16 controls PX4 sends
 - an input has no writer, and its component gives no default
 - a device stage declares a host signal
+- a device signal has no shape, or a leading axis other than one
 - two components write one signal that a third reads through neither a connection nor a list
 - a connection names a prim whose component writes no such signal
 - a guidance or a controller reads the estimate, and the run has no estimator to write it

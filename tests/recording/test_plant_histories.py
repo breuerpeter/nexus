@@ -48,18 +48,18 @@ def _flown(path, ticks: int, controller=None):
 
 def test_a_bodys_history_reads_as_a_signals_does_one_structured_array_one_record_one_array_per_quantity(tmp_path):
     """A body's history reads as a signal's does: `history()` one structured array of `t` then `position`,
-    `orientation`, `linear_velocity` and `angular_velocity`, `latest()` one record and `arrays()` one array per
+    `orientation`, `linear_velocity` and `angular_velocity`, its last row one record and `arrays()` one array per
     quantity, holding the state the plant holds.
 
     Given the fixture quad at rest on the CPU device, when the run steps 5 ticks, then
     `sim[f"vehicle/body/{sim.base_body}"].history()` has 6 rows whose dtype names `t`, `position (3,)`,
-    `orientation (4,)`, `linear_velocity (3,)` and `angular_velocity (3,)`, float32, `latest()["position"][2]`
+    `orientation (4,)`, `linear_velocity (3,)` and `angular_velocity (3,)`, float32, `history()[-1]["position"][2]`
     is the base body's height over the ground and `arrays()["position"]` has shape `(6, 3)`.
     """
     at_rest = quad.Commands((0.0, 0.0, 0.0, 0.0))
     with _flown(quad.author(tmp_path / "quad.usda"), TICKS, controller=at_rest) as sim:
         body = sim[f"vehicle/body/{sim.base_body}"]
-        rows, latest, arrays = body.history(), body.latest(), body.arrays()
+        rows, latest, arrays = body.history(), body.history()[-1], body.arrays()
     shapes = _shapes(rows)
     height = float(np.ravel(latest["position"])[2]) if _shapes(latest) else None
 

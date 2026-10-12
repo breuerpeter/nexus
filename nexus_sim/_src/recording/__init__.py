@@ -11,9 +11,9 @@ into the recording. No component records itself: the Recorder taps each signal's
 A history's key is its writer's path below the process root, the path its rows take in a recording, then
 the signal's name, and a script reads a history by that key, indexing the run: the plant's,
 ``sim["vehicle/body/<label>"]`` and ``sim["vehicle/joints/<label>"]``, and every other component's,
-``sim["vehicle/sensors/<name>/<signal>"]``. Every history reads one way: ``latest()`` is one record of
-``t`` then the quantities the signal's type declares, ``history()`` one structured array of them, and
-``arrays()`` one array per quantity, with the writing class along as ``source``.
+``sim["vehicle/sensors/<name>/<signal>"]``. Every history reads one way: ``history()`` is one structured
+array of ``t`` then the quantities the signal's type declares, and ``arrays()`` one array per quantity, with
+the writing class along as ``source``.
 """
 
 from .recorder import History, Recorder

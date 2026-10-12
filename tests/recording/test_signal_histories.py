@@ -327,9 +327,9 @@ def test_a_historys_row_is_one_record_t_then_the_signals_quantities_as_its_type_
     """
     loop = _build(tmp_path, IMU + GPS)
     with _flown(loop, 1) as sim:
-        imu, gps = (_record(sim[f"vehicle/sensors/{name}/{name}"].latest()) for name in ("imu", "gps"))
+        imu, gps = (_record(sim[f"vehicle/sensors/{name}/{name}"].history()[-1]) for name in ("imu", "gps"))
         key = next((k for k in loop.recorder.histories if k.endswith("/controls")), None)
-        controls = _record(loop.recorder.histories[key].latest()) if key is not None else None
+        controls = _record(loop.recorder.histories[key].history()[-1]) if key is not None else None
         rows = sim["vehicle/sensors/imu/imu"].history()
         arrays = sim["vehicle/sensors/imu/imu"].arrays()
     lat = float(gps["lat"]) if gps is not None and "lat" in gps.dtype.names else None

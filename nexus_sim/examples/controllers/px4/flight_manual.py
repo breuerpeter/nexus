@@ -67,7 +67,7 @@ def main() -> int:
             # The script opens the offboard client itself, after start(), and closes it on the way
             # out. Entering it returns at once: PX4 runs on the sim's clock, so the wait for its
             # heartbeat steps the sim.
-            spawn_alt = float(sim[f"vehicle/body/{sim.base_body}"].latest()["position"][2])
+            spawn_alt = float(sim.read(f"vehicle/body/{sim.base_body}").position[2])
             with OffboardClient(f"udpin:0.0.0.0:{link['port']}", system_id=link["system_id"]) as op:
                 sim.wait_until(lambda: op.connected, sim_timeout=args.timeout)
                 # SITL's rcS already sets this, but it's a runtime default rather than a compiled-in

@@ -47,12 +47,12 @@ def test_captured_sensor_noise_dithers_per_replay():
             s.sample_wp(view, SimTime(0, 0))
         wp.capture_launch(cap.graph)
         wp.synchronize()
-        a = s.out.read()[0]
+        a = s.out.read()
         wp.capture_launch(cap.graph)
         wp.synchronize()
-        b = s.out.read()[0]
+        b = s.out.read()
         # the accelerometer's and the gyro's noise dithers across replays
-        assert not np.allclose([*a["accel"], *a["gyro"]], [*b["accel"], *b["gyro"]])
+        assert not np.allclose([*a.accel, *a.gyro], [*b.accel, *b.gyro])
 
 
 def test_captured_px4_sensors_match_eager():
@@ -77,7 +77,7 @@ def test_captured_px4_sensors_match_eager():
         eager = fresh()
         for s in eager:
             s.sample_wp(view, SimTime(0, 0))
-        eager_imu, eager_mag, eager_baro, eager_gps = (s.out.read()[0] for s in eager)
+        eager_imu, eager_mag, eager_baro, eager_gps = (s.out.read() for s in eager)
 
         cap_sensors = fresh()
         # warmup: the first sample of the Inertial Measurement Unit (IMU) seeds its earlier velocities before the capture
@@ -88,12 +88,12 @@ def test_captured_px4_sensors_match_eager():
                 s.sample_wp(view, SimTime(0, 0))
         wp.capture_launch(cap.graph)
         wp.synchronize()
-        imu, mag, baro, gps = (s.out.read()[0] for s in cap_sensors)
+        imu, mag, baro, gps = (s.out.read() for s in cap_sensors)
 
         # noise off + static view -> deterministic, step-independent; captured == eager
-        np.testing.assert_allclose(imu["gyro"], eager_imu["gyro"], atol=1e-6)
-        np.testing.assert_allclose(mag["field"], eager_mag["field"])
-        assert float(baro["pressure"]) == pytest.approx(float(eager_baro["pressure"]))
-        assert [float(gps[f]) for f in ("lat", "lon", "alt")] == pytest.approx(
-            [float(eager_gps[f]) for f in ("lat", "lon", "alt")]
+        np.testing.assert_allclose(imu.gyro, eager_imu.gyro, atol=1e-6)
+        np.testing.assert_allclose(mag.field, eager_mag.field)
+        assert float(baro.pressure) == pytest.approx(float(eager_baro.pressure))
+        assert [float(getattr(gps, f)) for f in ("lat", "lon", "alt")] == pytest.approx(
+            [float(getattr(eager_gps, f)) for f in ("lat", "lon", "alt")]
         )
