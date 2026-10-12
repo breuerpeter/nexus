@@ -179,7 +179,7 @@ rate takes its next sample one period later. Initialization computes the magneti
 scenario's Global Positioning System (GPS) origin. An inconsistent field gives PX4 an invalid heading
 estimate, and it can't arm.
 
-**The PID law is the determinism authority.** The built-in PID, flown through the
+**The PID law is the determinism authority.** The example PID, flown through the
 unchanged loop on the CPU backend, reproduces bit-for-bit run-to-run. Real PX4 SITL is
 instead *tolerance-gated*. The PX4 multi-threaded work-queue interleaves same-tick estimator and
 controller threads in an OS-dependent order. So armed flight isn't bit-reproducible, even though
