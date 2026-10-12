@@ -88,7 +88,7 @@ def main() -> int:
             #    out. Entering it returns at once: PX4 runs on the sim's clock, so the wait for its
             #    heartbeat steps the sim.
             t_gcs = time.time()
-            spawn_alt = float(sim[f"vehicle/body/{sim.base_body}"].latest()["position"][2])
+            spawn_alt = float(sim.read(f"vehicle/body/{sim.base_body}").position[2])
             with OffboardClient(f"udpin:0.0.0.0:{link['port']}", system_id=link["system_id"]) as op:
                 sim.wait_until(lambda: op.connected, sim_timeout=timeout)
                 op.takeoff(TAKEOFF_ALT)  # returns at once; the client's pump arms once armable
@@ -98,7 +98,7 @@ def main() -> int:
                 # The yaw phase: hold the arrival position and altitude, sweeping the heading. The
                 # first goto anchors the local frame here, so (0, 0, alt) IS the hold position, and
                 # the world position right now IS that anchor, which every goto below is relative to.
-                anchor_x, anchor_y, _ = sim[f"vehicle/body/{sim.base_body}"].latest()["position"]
+                anchor_x, anchor_y, _ = sim.read(f"vehicle/body/{sim.base_body}").position
                 for heading in YAW_SWEEP:
                     # YAW_SWEEP is compass, PX4/NED, clockwise from north; goto takes world yaw, which
                     # runs the other way, so negate here and PX4 receives exactly the old headings.
@@ -120,7 +120,7 @@ def main() -> int:
                         # In the finally, so a leg that times out still records how far it got. Under
                         # a mirrored map that miss IS the diagnostic, and reporting 0.0 there would
                         # read as a clean flight on the one metric whose job is to catch it.
-                        x, y, _ = sim[f"vehicle/body/{sim.base_body}"].latest()["position"]
+                        x, y, _ = sim.read(f"vehicle/body/{sim.base_body}").position
                         err = math.hypot(x - (anchor_x + leg[0]), y - (anchor_y + leg[1]))
                         stats["east_err_m"] = round(max(stats["east_err_m"], err), 2)
                         nx.logger.info(f"[sitl] leg {leg}: world miss {err:.2f} m")

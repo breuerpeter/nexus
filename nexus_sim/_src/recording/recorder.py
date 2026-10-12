@@ -5,8 +5,8 @@ buffers, the row's values and its sim time, at the slot the device counter names
 captured graph with no host readback. The loop commits one row per tick on the host, and each time the
 staging buffers fill they drain: the rows copy onto the end of the host blocks, which grow with the run,
 and the kernel writes slot 0 again. So device memory stays at ``staging`` rows per history and the Recorder
-drops no row. The host reads a history on demand: ``latest`` reads the newest row off the device, as one
-record, ``history`` every row, the blocks then the rows still staged, as one structured array.
+drops no row. The host reads a history on demand: ``history`` reads every row, the blocks then the rows still
+staged, as one structured array.
 
 The :class:`Recorder` holds the histories by key and records everything itself: :meth:`tap` registers one
 history per device signal a component writes, under the writer's path then the signal's name, the plant's
@@ -125,24 +125,6 @@ class History:
     def _snapshot(self) -> tuple[int, np.ndarray, np.ndarray]:
         with self._lock:  # one consistent readback; .numpy() syncs, so it's the last completed tick's rows
             return int(self.counter.numpy()[0]), self.times.numpy(), self.values.numpy()
-
-    def latest(self) -> np.void:
-        """Return the most recently written row as one record: ``t``, the tick's sim time, then each declared
-        quantity, ``row["position"]``.
-
-        Reads one row off the device, not the whole staging buffer. That matters because this is the
-        per-tick read: a script's predicate between steps.
-
-        Raises:
-            RuntimeError: No row exists yet: sim not started or not stepped.
-        """
-        with self._lock:
-            c = int(self.counter.numpy()[0])
-            if c == 0:
-                raise RuntimeError("History has no row yet (sim not started / not stepped)")
-            slot = (c - 1) % self.staging
-            t, row = self.times[slot : slot + 1].numpy(), self.values[slot : slot + 1].numpy()
-        return self._records(t, row)[0]
 
     def history(self) -> np.ndarray:
         """Return every row, oldest first, as one structured array: ``t`` then each declared quantity, with the

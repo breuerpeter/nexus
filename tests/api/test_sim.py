@@ -110,7 +110,7 @@ def test_sim_start_drives_setup_observes_and_stops(monkeypatch):
         assert fake.steps == 1  # start() returns after one full control tick
         assert fake.threads == [threading.main_thread()]  # driven here, not on a sim thread
         assert fake.recorder is not None  # Sim handed the loop its Recorder
-        st = sim[f"vehicle/body/{sim.base_body}"].latest()  # name-keyed: the discovered airframe entity
+        st = sim[f"vehicle/body/{sim.base_body}"].history()[-1]  # name-keyed: the discovered airframe entity
         assert st["position"][2] == 4.0
     # __exit__ -> stop() ended the run and closed the tick generator
     assert fake._stop

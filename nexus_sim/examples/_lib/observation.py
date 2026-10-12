@@ -188,8 +188,8 @@ class WarpObservationSensor(Component):
         self.body_index = int(body_index)
         self._setpoint = setpoint
         # The observation each tick, the signal PID's stage reads: one persistent buffer, the same address
-        # every replay.
-        self.out = Signal("observation", wp.float32, shape=(OBS_DIM,))
+        # every replay, whose leading axis of one a read drops.
+        self.out = Signal("observation", wp.float32, shape=(1, OBS_DIM))
 
     def set_goal(self, pos) -> None:
         """Update the goal in place via ``.assign``: static address, capture-safe."""
@@ -213,7 +213,12 @@ class WarpObservationSensor(Component):
         so a device-native controller's stage reads it on the device and the loop stays one graph.
         """
         return [
-            Stage("observation", "device", lambda tick: self.sample_wp(tick.state, self.out.buffer), writes=(self.out,))
+            Stage(
+                "observation",
+                "device",
+                lambda tick: self.sample_wp(tick.state, self.out.buffer.flatten()),
+                writes=(self.out,),
+            )
         ]
 
 

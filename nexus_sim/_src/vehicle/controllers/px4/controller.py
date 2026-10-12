@@ -224,9 +224,9 @@ class Px4MavlinkController(Component):
         ``exchange`` sends: the vehicle's state the plant writes, not a sensor reading, so no sensor's mount
         changes it.
         """
-        pose = self.pose.read()[0]
-        q = transform.quat_from_xyzw(pose["orientation"])
-        omega_world = pose["angular_velocity"]
+        pose = self.pose.read()
+        q = transform.quat_from_xyzw(np.asarray(pose.orientation))
+        omega_world = np.asarray(pose.angular_velocity)
         self._attitude = transform.body_quat_ned(q)
         self._rates = tuple(
             float(x) for x in transform.world_to_body(q, omega_world)
@@ -236,7 +236,7 @@ class Px4MavlinkController(Component):
         """Whether `sample` of the sensor `kind` is new: it has a time, and not the time of the last one sent.
         A new sample becomes the last one sent.
         """
-        t = float(sample["time"])
+        t = float(sample.time)
         if math.isnan(t) or t == self._sent[kind]:
             return False
         self._sent[kind] = t
@@ -244,10 +244,10 @@ class Px4MavlinkController(Component):
 
     def exchange(self, t, timeout):
         time_usec = t.time_usec
-        imu, mag, baro, gps = (signal.read()[0] for signal in (self.imu, self.mag, self.baro, self.gps))
-        acc = [float(x) for x in imu["accel"]]
-        gyro = [float(x) for x in imu["gyro"]]
-        field = [float(x) for x in mag["field"]]
+        imu, mag, baro, gps = (signal.read() for signal in (self.imu, self.mag, self.baro, self.gps))
+        acc = [float(x) for x in imu.accel]
+        gyro = [float(x) for x in imu.gyro]
+        field = [float(x) for x in mag.field]
         fields = 0
         for kind, sample, bits in (("imu", imu, _IMU_FIELDS), ("mag", mag, _MAG_FIELDS), ("baro", baro, _BARO_FIELDS)):
             if self._new(kind, sample):
@@ -260,22 +260,22 @@ class Px4MavlinkController(Component):
             *acc,
             *gyro,
             *field,
-            float(baro["pressure"]),
+            float(baro.pressure),
             0.0,
-            float(baro["altitude"]),
-            float(baro["temperature"]),
+            float(baro.altitude),
+            float(baro.temperature),
             fields,
             0,
         )
 
         # HIL_GPS, plus the ground-truth HIL_STATE_QUATERNION, with each new sample of the receiver, so at its rate.
         if self._new("gps", gps):
-            lat = int(float(gps["lat"]) * 1e7)
-            lon = int(float(gps["lon"]) * 1e7)
-            alt = int(float(gps["alt"]) * 1000)
-            vn, ve, vd = (int(float(v) * 100) for v in gps["velocity"])
-            vel = int(float(gps["ground_speed"]) * 100)
-            fix_type, eph, epv, sats = int(gps["fix_type"]), 100, 100, 10
+            lat = int(float(gps.lat) * 1e7)
+            lon = int(float(gps.lon) * 1e7)
+            alt = int(float(gps.alt) * 1000)
+            vn, ve, vd = (int(float(v) * 100) for v in gps.velocity)
+            vel = int(float(gps.ground_speed) * 100)
+            fix_type, eph, epv, sats = int(gps.fix_type), 100, 100, 10
             if self.gps_fix_type < 2:
                 fix_type, eph, sats = 0, 9999, 0
             self.proto.hil_gps_send(

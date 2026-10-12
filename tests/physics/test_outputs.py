@@ -97,15 +97,15 @@ def test_the_state_stage_writes_each_bodys_pose_and_twist_and_each_joints_coordi
         stage = _state_stage(physics)
         stage.run(type("Tick", (), {"state": state, "dt": 0.004})())
         written = {s.name: s for s in stage.writes}
-        body, free = written["body/body"].read()[0], written["joints/joint_1"].read()[0]
+        body, free = written["body/body"].read(), written["joints/joint_1"].read()
         q, qd = state.body_q.numpy()[0], state.body_qd.numpy()[0]
         jq, jqd = state.joint_q.numpy(), state.joint_qd.numpy()
 
     assert (
-        body["position"].tolist(),
-        body["orientation"].tolist(),
-        body["linear_velocity"].tolist(),
-        body["angular_velocity"].tolist(),
-        free["q"].tolist(),
-        free["qd"].tolist(),
+        np.asarray(body.position).tolist(),
+        np.asarray(body.orientation).tolist(),
+        np.asarray(body.linear_velocity).tolist(),
+        np.asarray(body.angular_velocity).tolist(),
+        np.asarray(free.q).tolist(),
+        np.asarray(free.qd).tolist(),
     ) == (q[:3].tolist(), q[3:].tolist(), qd[:3].tolist(), qd[3:].tolist(), jq[:7].tolist(), jqd[:6].tolist())

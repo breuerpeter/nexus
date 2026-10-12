@@ -64,7 +64,7 @@ def _wired(guidance):
 
 def _goal(guidance) -> tuple[float, float, float]:
     """The goal the guidance's setpoint holds."""
-    return tuple(float(v) for v in guidance.setpoint.read()[0])
+    return tuple(float(v) for v in guidance.setpoint.read())
 
 
 def _tick(guidance, pos, sim_time) -> Tick:

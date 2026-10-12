@@ -244,7 +244,7 @@ def test_a_controller_reads_the_next_goal_on_the_tick_the_vehicle_arrives():
         orch.close()
     held = next(setpoint for _, pos, setpoint in controller.exchanges if pos == GOALS[0])
     holds_the_controller = any(value is controller for value in vars(guidance).values())
-    assert (tuple(float(v) for v in held[0]), holds_the_controller) == (GOALS[1], False)
+    assert (tuple(float(v) for v in held), holds_the_controller) == (GOALS[1], False)
 
 
 def test_a_controller_holds_the_first_goal_before_its_own_first_stage():
@@ -261,7 +261,7 @@ def test_a_controller_holds_the_first_goal_before_its_own_first_stage():
         orch = _orch(controller, _Physics([(0.0, 0.0, 0.0)]), guidance=guidance)
         orch.step()
         orch.close()
-    held = [tuple(float(v) for v in sp[0]) for sp in controller.held]
+    held = [tuple(float(v) for v in sp) for sp in controller.held]
     # The stage runs once in the warm pass and once on the first tick.
     assert held == [GOALS[0], GOALS[0]]
 

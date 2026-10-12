@@ -30,7 +30,7 @@ from .logging import logger
 from .ports import PortMap
 from .profiling import LoopProfiler
 from .schema import PoseTwist
-from .signals import _declared, wire
+from .signals import Signal, _declared, wire
 from .stages import Bound, build_ring, opening, partition, plan_line, seed_stages, stages_of, warm_stages
 
 if TYPE_CHECKING:
@@ -251,6 +251,10 @@ class Loop:
         # `Sim` can hand a self-assembled loop its Recorder after construction.
         self.recorder = recorder
         self._written = 0  # rows of every history the Logger has written
+        # Every signal a component writes, device and host, by its path: the writer's path then the signal's
+        # name, as its history's key. The loop fills it once it wires the ring, and a script reads a live value
+        # through it.
+        self.signals: dict[str, Signal] = {}
         # Hosting hooks; Sim drives these. on_tick is the per-tick observer,
         # post-step, fired as on_tick(state, t, steps) after recording: a demo and test hook to read the
         # live state, output-only. _stop is the cooperative teardown the host sets to end the steady loop.
@@ -291,13 +295,11 @@ class Loop:
 
     # -- recording, the read-side twin of logging -----------------------------------
     def _tap_signals(self, ring: list[Bound]) -> None:
-        """Hand the Recorder every device signal a component's stage writes, with the writer's path, so it
-        registers one history each. After the loop wires the ring and before the warm pass, so every history's
-        buffer exists before any capture. The loop's own clock has no path, so its ``time`` keeps no history: every
-        row carries the tick's time.
+        """Key every signal a component's stage writes by its path, the writer's path then the signal's name, and
+        hand the Recorder each device one, so it registers one history each. After the loop wires the ring and
+        before the warm pass, so every history's buffer exists before any capture. The loop's own clock has no
+        path, so its ``time`` keeps no history: every row carries the tick's time.
         """
-        if self.recorder is None:
-            return
         seen: set[int] = set()
         for bound in ring:
             path = self._paths.get(id(bound.component))
@@ -305,7 +307,8 @@ class Loop:
                 continue
             seen.add(id(bound.stage))
             for signal in bound.stage.writes:
-                if signal.device:
+                self.signals[f"{path}/{signal.name}"] = signal
+                if signal.device and self.recorder is not None:
                     self.recorder.tap(path, signal, source=type(bound.component).__name__)
 
     def _default_links(self, ring: list[Bound]) -> list[tuple]:
@@ -493,7 +496,7 @@ class Loop:
                 ring = opening(ring, stages_of(self._device_clock, "clock"))
             # Every signal a stage declares gets its buffer before any stage runs.
             wire(ring, [*self.connections, *self._default_links(ring)])
-            self._tap_signals(ring)  # one history per device signal the ring's stages write
+            self._tap_signals(ring)  # every written signal by its path, and one history per device one
             self._check_guidance(ring)
             segments = partition(ring)
             captured = _on_cuda()

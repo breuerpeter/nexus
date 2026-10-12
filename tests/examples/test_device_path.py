@@ -56,7 +56,7 @@ def test_a_warp_observation_keeps_the_pid_path_on_the_device(tmp_path):
     pid = PidController(goal_w=(0.0, 0.0, 1.5), thrust_to_weight=1.9, mixer=mixer, weight=mass * 9.81)
     pairs = ((sensor, "sensor"), (pid, "controller"))
     wire([Bound(stage, component, role) for component, role in pairs for stage in component.stages()])
-    sensor.sample_wp(state, sensor.out.buffer)
+    sensor.sample_wp(state, sensor.out.buffer.flatten())
     assert _is_warp_array(pid.observation.buffer)
     assert pid.observation.read().shape == (12,)
 

@@ -53,7 +53,7 @@ class _Controller(HostController):
         self.samples = {}
 
     def exchange(self, t, timeout=None):
-        self.samples = {signal.name: signal.read()[0] for signal in self.signals}
+        self.samples = {signal.name: signal.read() for signal in self.signals}
         return np.zeros(4)
 
 
@@ -90,7 +90,7 @@ def _settled(launch, catalog):
 
 
 def _field(samples):
-    return samples["mag"]["field"]
+    return samples["mag"].field
 
 
 @pytest.fixture(scope="module")
@@ -158,13 +158,13 @@ def test_a_scene_with_no_origin_reports_the_default_origin_on_gps(empty_scene):
     _, samples = empty_scene
     gps = samples["gps"]
 
-    assert (float(gps["lat"]), float(gps["lon"])) == pytest.approx(WOODINVILLE, abs=1e-4)
+    assert (float(gps.lat), float(gps.lon)) == pytest.approx(WOODINVILLE, abs=1e-4)
 
 
 def test_the_imu_reports_the_gravity_the_physics_applies(gravity_five_vehicle):
     """The IMU reports the gravity the physics applies, one value."""
     _, samples = gravity_five_vehicle
-    reported = math.hypot(*(float(a) for a in samples["imu"]["accel"]))
+    reported = math.hypot(*(float(a) for a in samples["imu"].accel))
 
     # The site's one gravity, 9.81: the model-gravity row pins the physics at it, and the IMU reads it.
     assert reported == pytest.approx(9.81, abs=0.1), f"the IMU reports {reported}"
@@ -177,6 +177,6 @@ def test_the_barometer_reports_the_sites_pressure_and_temperature(gravity_five_v
     isa_pressure = 1013.25 * (1 - 2.25577e-5 * altitude) ** 5.25588
     baro = samples["baro"]
 
-    assert (float(baro["pressure"]), float(baro["altitude"]), float(baro["temperature"])) == pytest.approx(
+    assert (float(baro.pressure), float(baro.altitude), float(baro.temperature)) == pytest.approx(
         (isa_pressure, altitude, 25.0), abs=0.1
     )

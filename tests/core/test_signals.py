@@ -299,7 +299,7 @@ def test_a_host_stage_keeps_the_copy_it_read_after_a_later_write(device):
         for _ in range(3):
             orch.step()
         orch.close()
-    assert [int(value[0]["n"]) for value in controller.kept[-3:]] == [1, 2, 3]
+    assert [int(value.n) for value in controller.kept[-3:]] == [1, 2, 3]
 
 
 @pytest.mark.usefixtures("warp_cpu")
@@ -370,7 +370,7 @@ def test_a_connection_wires_an_input_to_a_writers_output_of_another_name():
     ring = [Bound(stage, c, role) for c, role in pairs for stage in c.stages()]
     wire(ring, [(reader, "count", writer, "tally")])
     writer.count.write([(7,)])
-    read = int(reader.count.read()[0]["n"])
+    read = int(reader.count.read().n)
     with pytest.raises(ValueError) as e:
         wire(ring)
 
@@ -405,7 +405,7 @@ def test_of_two_writers_of_a_signal_a_reader_reads_the_one_a_connection_on_its_p
     writers = [_Writer("/vehicle/body/A", 1), _Writer("/vehicle/body/B", 2)]
     read = _read(writers, _Reader(), {"/vehicle/Estimator": {"count": "/vehicle/body/B"}})
 
-    assert int(read[0]["n"]) == 2
+    assert int(read.n) == 2
 
 
 @pytest.mark.usefixtures("warp_cpu")
@@ -418,7 +418,7 @@ def test_a_list_input_reads_every_writers_value_in_the_order_of_the_ring():
     writers = [_Writer("/vehicle/body/A", 1), _Writer("/vehicle/body/B", 2)]
     read = _read(writers, _Reader(list[Count]))
 
-    assert [int(value[0]["n"]) for value in read] == [1, 2]
+    assert [int(value.n) for value in read] == [1, 2]
 
 
 @pytest.mark.usefixtures("warp_cpu")

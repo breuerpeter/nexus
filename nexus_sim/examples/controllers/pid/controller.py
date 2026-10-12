@@ -76,7 +76,7 @@ class PidController(Component):
         self.setpoint = Signal("setpoint", wp.vec3, shape=(1,), default=[goal_w])
         # The 12-D observation the law reads, which the observation sensor writes, until #40 folds the sensor
         # into PID's stage.
-        self.observation = Signal("observation", wp.float32, shape=(OBS_DIM,))
+        self.observation = Signal("observation", wp.float32, shape=(1, OBS_DIM))
         self.thrust_to_weight = float(thrust_to_weight)
         self.hover = hover_action(thrust_to_weight)
         self.body_index = int(body_index)
@@ -180,7 +180,7 @@ class PidController(Component):
         persistent action buffer and returns Warp ``Controls``, with no host hop. The provider's NumPy
         observation takes the host ``act`` path.
         """
-        obs = self.observation.buffer
+        obs = None if self.observation.buffer is None else self.observation.buffer.flatten()
         if obs is None:
             provider = getattr(self, "_state_provider", None)
             if provider is None:
@@ -217,7 +217,7 @@ class PidController(Component):
 
     def _act_stage(self, tick) -> None:
         self._ensure_wp()
-        self.act_wp(self.observation.buffer, self._action_wp)  # law → moments, device-native
+        self.act_wp(self.observation.buffer.flatten(), self._action_wp)  # law → moments, device-native
         self._moment_mixer.cmd_wp(self._action_wp, out=self.controls.buffer)  # moments → per-rotor commands
 
     def bind_state_provider(self, fn) -> None:

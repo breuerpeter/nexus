@@ -15,13 +15,14 @@ in the script, and it records its flight `.rrd`. The launcher map is `_EXAMPLES`
 - Every component subclasses `Component`, the one contract, and states its per-tick work as
   `stages()`, a list of `Stage`, each declaring the `Signal`s it reads and writes. The three come
   from `nexus_sim`. A device signal's type is Warp's own, a struct or a value type such as
-  `wp.float32`. The loop wires them before any stage runs: a kernel takes a signal's `buffer`, and a
-  host stage calls its `read()` and `write()`. A controller that solves on the host states its own
-  host stage, `exchange`, over its `exchange(t, timeout)`, which writes its `controls` signal, one
-  `wp.float32` per rotor: the Model Predictive Control (MPC), acados, and policy examples. A
-  device-native law, the Proportional Integral Derivative (PID) example, states a device stage that
-  reads the signal `observation`, which its observation sensor writes, and writes its `(1, nr)`
-  `controls` signal. The loop never calls `exchange` itself. A controller that reads `attached` false
+  `wp.float32`, and its shape's leading axis is one. The loop wires them before any stage runs: a
+  kernel takes a signal's `buffer`, and a host stage calls its `write()` and its `read()`, which drops
+  that axis and gives a struct as an instance, `read().position`. A controller that solves on the
+  host states its own host stage, `exchange`, over its `exchange(t, timeout)`, which writes its
+  `controls` signal, one `wp.float32` per rotor: the Model Predictive Control (MPC), acados, and
+  policy examples. A device-native law, the Proportional Integral Derivative (PID) example, states a
+  device stage that reads the signal `observation`, which its observation sensor writes, and writes
+  its `(1, nr)` `controls` signal. The loop never calls `exchange` itself. A controller that reads `attached` false
   before it connects waits on a peer: it connects after the capture, so its device buffers exist from
   construction. One attached from the start connects before the warm pass.
 - An example hands the loop its rotor chain in one of two ways. One that sums the rotor wrench on

@@ -58,7 +58,7 @@ class _KeepingController(Component):
 
     def stages(self):
         def keep(tick):
-            self.kept.append(_row(self.estimate.read()[0]))
+            self.kept.append(_row(self.estimate.read()))
             return True
 
         return [Stage("keep", "host", keep, reads=(self.estimate, self.setpoint))]
@@ -67,7 +67,7 @@ class _KeepingController(Component):
 def _row(estimate) -> np.ndarray:
     """An estimate as a body's row in the Recorder: position, quaternion, linear and angular velocity."""
     fields = ("position", "orientation", "linear_velocity", "angular_velocity")
-    return np.concatenate([estimate[name] for name in fields])
+    return np.concatenate([np.asarray(getattr(estimate, name)) for name in fields])
 
 
 def _bits(values) -> np.ndarray:
@@ -140,6 +140,6 @@ def test_the_passthrough_writes_the_pose_its_input_holds_not_another_bodys():
     plant.b.write([((1.0, 2.0, 3.0), (0.5, -0.5, 0.5, 0.5), (4.0, 5.0, 6.0), (7.0, 8.0, 9.5))])
     stage.run(Tick(state=None, t=SimTime(), dt=0.004))
 
-    row = _row(estimator.estimate.read()[0])
+    row = _row(estimator.estimate.read())
 
     assert row.tolist() == [1.0, 2.0, 3.0, 0.5, -0.5, 0.5, 0.5, 4.0, 5.0, 6.0, 7.0, 8.0, 9.5]
