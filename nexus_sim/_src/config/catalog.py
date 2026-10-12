@@ -16,7 +16,7 @@ from nexus_sim._src.assets.resolver import hosted_url
 from nexus_sim._src.assets.resolver import resolve as fetch_asset
 from nexus_sim._src.core import logger
 
-from .models import AssetRef, GeodeticOrigin, _Base
+from .models import AssetRef, _Base
 
 
 def _expand_usd(data, kind: str, base: str | None):
@@ -59,17 +59,17 @@ class VehicleVariant(_Base):
 
 
 class Scene(_Base):
-    """Static-geometry asset + geo origin. ``usd: null`` = flat ground.
+    """A scene: its Universal Scene Description (USD) file, and where the vehicle starts in it.
 
     The scene USD is the single authority on its role: a USD that authors ``UsdPhysics``
     collision schemas is simulation geometry for the Newton ``ModelBuilder``, for example the slalom
     pillars; a USD without physics schemas is the visual world, referenced by the renderer,
     never the builder, since a colliding photogrammetry/splat USD is the known model-build failure.
-    The geo origin anchors the environment either way.
+    Its ``PhysicsScene`` prim authors where it sits on Earth either way, see
+    ``nexus_sim._src.scene.world``.
     """
 
-    usd: AssetRef | None = None
-    geodetic_origin: GeodeticOrigin | None = None
+    usd: AssetRef
     start: tuple[float, float, float] | None = None
     """The scene-frame point placed at the world origin: where the vehicle starts, on the z=0
     physics ground. ``None`` = the scene's own origin. Placement is per-scene catalog data, NOT

@@ -38,7 +38,7 @@ def test_a_script_reads_any_history_by_indexing_the_run_with_its_path(tmp_path):
     Given a recorded run on the fixture vehicle, when it ends, then `sim["vehicle/sensors/imu/imu"]` is the IMU's
     history, `sim["vehicle/controllers/stand_in/controls"]` the controller's and `sim["vehicle/body/body"]` the base
     body's, each read by its newest row and by all its rows: the IMU's newest row is the last tick's, and the controls and
-    the body each hold the seed row and one row per tick.
+    the body each hold the start's row and one row per tick.
     """
     with nx.Sim._from_loop(_build(tmp_path)) as sim:
         for _ in range(TICKS):

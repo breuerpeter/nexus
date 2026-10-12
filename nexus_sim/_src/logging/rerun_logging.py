@@ -7,7 +7,7 @@ logging-agnostic:
   time the loop drains the staging buffers it hands the Logger the drained rows, and the Logger
   appends them as columns: every declared quantity's series, the base body's pose, the scene's
   instance poses and the flown path. The last rows go out at teardown.
-* **the scene**: the Logger logs each mesh once, at start, through NVIDIA Newton's viewer base class,
+* **the scene**: the Logger logs each mesh once, at start, through Newton's viewer base class,
   which turns the physics ``Model``'s shapes into meshes and batches. Each body's pose then rides the
   histories as columns, so the scene costs nothing per tick and a static scene costs one write.
 * **events**: a `TextLog` handler attached to the ``newton`` logger, the one every
@@ -102,7 +102,7 @@ def recording_path(name: str) -> str:
     return os.path.expanduser(f"~/.cache/nexus/recordings/{name}.rrd")
 
 
-# The vehicle's mesh entity in the scene, named as NVIDIA Newton's viewer base class names its shape
+# The vehicle's mesh entity in the scene, named as Newton's viewer base class names its shape
 # batches: shape_0 is the ground plane, excluded; shape_1 is the base body. The 3D eye tracks it so the
 # vehicle stays centered.
 VEHICLE_SHAPE_ENTITY = f"/{ROOT}/model/shapes/shape_1"
@@ -296,7 +296,7 @@ def _quat_conj(q: np.ndarray) -> np.ndarray:
 
 
 class _Scene(ViewerBase):
-    """NVIDIA Newton's viewer base class with a store in place of a backend: ``set_model`` turns the
+    """Newton's viewer base class with a store in place of a backend: ``set_model`` turns the
     model's shapes into meshes and instance batches, and the base class hands each mesh here once. The
     Logger logs each mesh once from the store and poses the batches from the bodies' histories, so no
     scene call runs per tick. The other backend calls do nothing: the Logger never draws a state.
@@ -388,13 +388,13 @@ class Logger:
     Every producer writes through this one Logger, in-process through it, so both modes
     carry the same content.
 
-    The scene logs **in-process**, with no self-gRPC: each mesh once at start, through NVIDIA
-    Newton's viewer base class, and each body's pose as columns with each block. Every ``newton``
+    The scene logs **in-process**, with no self-gRPC: each mesh once at start, through Newton's
+    viewer base class, and each body's pose as columns with each block. Every ``newton``
     logger event lands under ``sim/logs``.
 
     Parameters
     ----------
-    model: NVIDIA Newton ``Model`` to visualise; ``None`` → events only, no scene.
+    model: Newton ``Model`` to visualise; ``None`` → events only, no scene.
     base: the index of the vehicle's base body in ``model``: its pose sits at ``sim/vehicle/body``
         and its history draws the flown path.
     serve: ``True`` serves live on :9876; ``False`` writes the ``.rrd``.
@@ -499,7 +499,7 @@ class Logger:
         return self._rrd_path
 
     def _log_scene(self) -> None:
-        """Log the scene once: each shape batch's mesh, static, at the name NVIDIA Newton's viewer base
+        """Log the scene once: each shape batch's mesh, static, at the name Newton's viewer base
         class gave the batch, under the sim's root, and the poses of each static batch, the ground plane
         and the scene's colliders, once. A batch on bodies keeps its instances' local transforms, and
         :meth:`write` poses it from the bodies' rows with each block. The Logger skips a batch the
@@ -1159,7 +1159,7 @@ def _log_frame_axes(entity: str, axis_length: float) -> None:
 def _viewer_static_exclusions(scene) -> list[str] | None:
     """Blueprint exclusions for every STATIC shape batch, chiefly the ground plane.
 
-    Read from the scene itself after ``set_model``: NVIDIA Newton's viewer base class names entities
+    Read from the scene itself after ``set_model``: Newton's viewer base class names entities
     per INSTANCING batch, ``/model/shapes/shape_N``, which the Logger logs under the sim's root, where
     N = order of first appearance of a unique
     geometry, static, flags batch, not per model shape index: 18 model shapes become ~9 batches,

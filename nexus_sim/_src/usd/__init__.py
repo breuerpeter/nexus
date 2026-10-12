@@ -27,6 +27,7 @@ def register_plugins() -> None:
     OpenUSD builds its schema registry once, on first use, and a plugin registered after that never shows
     in it, so `import nexus_sim` calls this before any caller can open a stage.
     """
+    import newton_usd_schemas  # noqa: F401  # registers Newton's plugin: a sensor schema includes NewtonSiteAPI
     from pxr import Plug
 
     paths = [str(_PLUGIN)]

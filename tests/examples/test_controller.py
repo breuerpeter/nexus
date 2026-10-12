@@ -33,7 +33,7 @@ class _FakeState:
 
 def test_act_shape_and_clamp(tmp_path):
     c = TrainedPolicyController(policy_path=_make_stub_policy(tmp_path), goal_w=(0, 0, 1))
-    c.connect()
+    c.connect({})
     obs = np.zeros(12, np.float32)
     obs[0] = 10.0  # stub doubles -> 20 -> must clamp to 1.0
     ctrl = c.act(obs)
@@ -68,7 +68,7 @@ def test_prev_action_folded_into_obs_by_the_obs_function(tmp_path):
     path = tmp_path / "echo.pt"
     torch.jit.script(Echo()).save(str(path))
     c = TrainedPolicyController(policy_path=str(path), goal_w=(0, 0, 1))
-    c.connect()
+    c.connect({})
     c._prev_action[:] = [0.5, -0.5, 0.25, 0.1]  # in place, the shared buffer
     obs = c.obs_from_state(_FakeState())  # the obs function folds prev_action into [12:16]
     np.testing.assert_allclose(obs[12:16], [0.5, -0.5, 0.25, 0.1], atol=1e-6)
@@ -101,7 +101,7 @@ def test_exchange_builds_obs_from_the_estimate(tmp_path):
     path = tmp_path / "echo.pt"
     torch.jit.script(Echo()).save(str(path))
     c = TrainedPolicyController(policy_path=str(path), goal_w=(0.0, 0.0, 2.0))
-    c.connect()
+    c.connect({})
     c._prev_action[:] = [0.5, -0.5, 0.25, 0.1]
     # The buffer the builder hands the controller: pos (0,0,1), an xyzw identity, at rest.
     c.estimate.buffer = wp.zeros(1, dtype=PoseTwist, device="cpu")

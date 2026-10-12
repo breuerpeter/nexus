@@ -14,7 +14,7 @@ same pull request, and a rule in the `Project` Vale style flags each word a chan
 
 One flight of one vehicle in one scene, from build to teardown. A run names its vehicle and its
 scene, by catalog name or by local Universal Scene Description (USD) path, and can compose an
-override layer over the vehicle.
+override layer over the vehicle and the scene.
 It records what it flew in its receipt, a `TestedConfig`.
 
 ### Sim
@@ -52,21 +52,31 @@ run down.
 One control step of the loop: each stage in the ring runs once, and the physics steps its
 substeps. `Tick` is the loop's own context, which it hands every stage: the time and the physics
 state. A value one component passes to another, such as a sensor's sample, is a [signal](#signal),
-not a field of the tick.
+not a field of the tick. The sim time is a whole number of nanoseconds, the tick count times the tick,
+and the first tick is step one. Every row a tick records describes the state at the tick's time.
+
+### Start
+
+The ring without the clock's stage and the physics substeps. The loop runs it once over the settled
+state at sim time zero, ahead of any capture. It records the first row, and the first tick's step applies
+the controls it computes. A sensor's host stage stays out, and so does each host stage of a component
+that waits on a [peer](#peer). While that peer boots, the loop holds the clock until the peer dials in,
+then runs ordinary ticks until its first answer.
 
 ### Stage
 
 One unit of a component's per-tick work, a `Stage`. A device stage is a launch over persistent
 device buffers, which a CUDA graph replays. A host stage runs on the host between graph replays: a
-peer's exchange, a solve, or an inference. A warm stage also runs once over the settled state,
-before the first tick.
+peer's exchange, a solve, or an inference. The [start](#start) runs most stages once before the first
+tick.
 
 ### Ring
 
-The stages one tick runs, in the loop's fixed order. The sensors come first, then the estimator, the
-guidance, and the controller. Once per physics substep, `clear`, the command elements, the force elements, and
-`step` follow, then `state`, which writes the plant's outputs, one signal per body and per joint, and the
-record stage comes last. `build_ring` lays the ring out.
+The stages one tick runs, in the loop's fixed order. The clock's stage comes first. Once per physics
+substep, `clear`, the command elements, the force elements, and `step` follow. Then `state` writes the
+plant's outputs: one signal per body and one per joint. The sensors, the estimator, the guidance, and the
+controller follow, over the state the step left, and the record stage comes last. `build_ring` lays the
+ring out.
 
 ### Segment
 
@@ -134,7 +144,7 @@ to stand in for a real estimator, and PX4's controller, to send PX4 its ground t
 
 ### Physics
 
-The part that steps NVIDIA Newton's model, `NewtonPhysics`. Its `step` steps every Newton actuator
+The part that steps Newton's model, `NewtonPhysics`. Its `step` steps every Newton actuator
 the vehicle declares, then the solver. It's a fixed part, as the clock, the Recorder, and the
 Logger are: the framework's own, configured by settings, never declared.
 
@@ -164,6 +174,22 @@ such as `sim.ports["offboard"]`. The run owns every address,
 An applied USD API schema from the plugin in `nexus_sim/_src/usd/` that declares a component on a
 prim, such as `NexusImuAPI`. Its `nexus:` attributes are the class's keyword arguments, and the
 [schema reference](../reference/schemas.md) lists them.
+
+### Site
+
+Newton's placement point on a body. It's a massless shape of the model with the `SITE` flag, which
+collides with nothing, at an offset and a rotation in the body's axes. Its label is its prim's path.
+A sensor's prim is a site. Its schema includes `NewtonSiteAPI` as a built-in, so the importer loads
+the geometry prim the schema sits on as one. The sensor's class reads its body and its mount from
+the model's arrays, as `newton.sensors.SensorIMU` does.
+
+### Origin
+
+Where the scene's world origin sits on Earth: the latitude, longitude and altitude its `PhysicsScene`
+authors as `nexus:geodeticOrigin`. The importer reads it into the model as a world value. The same
+prim can author the magnetic field, the air pressure at sea level and the temperature beside it.
+The build derives the field from the origin where the scene authors none. A sensor reads them from
+the model, and an override layer composed over the scene moves the origin.
 
 ### Registry
 

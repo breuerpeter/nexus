@@ -1,10 +1,11 @@
 """Author cesium.usd: the Cesium for Omniverse streamed-globe scene, as a shippable Universal Scene Description (USD).
 
 This bakes the STATIC Cesium prim structure that ``RtxFrame._add_cesium_world`` used to build in
-code each run: a georeference with a placeholder origin, which the runtime sets from the resolved geodetic
-origin, the ``CesiumData``, the Google Photorealistic 3D Tiles ``Tileset``, and the ion server
-prim WITHOUT a token. The runtime then just loads this scene and injects the two runtime-only bits:
-the ``CESIUM_ION_TOKEN``, a secret never baked into a public asset, and the georef lat/lon.
+code each run: a georeference with a placeholder origin, which the runtime sets from the scene's geodetic
+origin, the ``CesiumData``, the Google Photorealistic 3D Tiles ``Tileset``, the ion server
+prim WITHOUT a token, and the ``PhysicsScene`` that authors the origin, ``ORIGIN``. The runtime then just
+loads this scene and injects the two runtime-only bits: the ``CESIUM_ION_TOKEN``, a secret never baked
+into a public asset, and the georef from the origin.
 
 Kit-only: the Cesium USD schema needs registering at Kit boot through PXR_PLUGINPATH_NAME, which
 the Cesium mount sets. Run from the host with plain Python, it fetches Cesium for Omniverse into the
@@ -20,6 +21,10 @@ import argparse
 import hashlib
 import os
 from pathlib import Path
+
+# Woodinville, where the street sits at the world origin: latitude and longitude in degrees, and the
+# surface's WGS84 ellipsoidal height in metres, measured by flying the Flux lidar over the streamed tiles.
+ORIGIN = (47.747944, -122.163917, -6.2)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -61,8 +66,8 @@ def main(argv=None) -> int:
     # "world doesn't move" bug, which rotation disguised, being unit-free and still working.
     UsdGeom.SetStageMetersPerUnit(stage, 1.0)
 
-    # Georeference: placeholder origin; the runtime overwrites lat/lon from the resolved geodetic
-    # origin, catalog default or a launch override. Height stays 0; the ground-align probe converges it.
+    # Georeference: placeholder origin; the runtime overwrites it from the geodetic origin the scene's
+    # PhysicsScene authors, which an override layer moves.
     geo = CesiumGeoreference.Define(stage, "/CesiumGeoreference")
     geo.GetGeoreferenceOriginLatitudeAttr().Set(0.0)
     geo.GetGeoreferenceOriginLongitudeAttr().Set(0.0)
@@ -137,6 +142,9 @@ def main(argv=None) -> int:
     }
     root_layer.customLayerData = cld
 
+    from scene_root import author_origin
+
+    author_origin(stage, ORIGIN)
     stage.SetDefaultPrim(data.GetPrim())
     stage.GetRootLayer().Save()
 

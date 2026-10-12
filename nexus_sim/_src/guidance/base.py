@@ -56,8 +56,8 @@ class Guidance(Component):
     # -- the stage the loop calls ----------------------------------------------------
     def stages(self) -> list[Stage]:
         """One host stage, ``guidance``, which the loop runs before the controller's stages, which reads the
-        estimate and writes the setpoint. A warm stage: the loop also runs it once over the settled state,
-        before any tick, so the controller holds the first setpoint before its own first stage.
+        estimate and writes the setpoint. The start runs it once over the settled state, before any tick, so
+        the controller holds the first setpoint before its own first stage.
         """
         return [Stage("guidance", "host", self._run, reads=(self.estimate,), writes=(self.setpoint,))]
 

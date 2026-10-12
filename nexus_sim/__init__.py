@@ -1,4 +1,8 @@
-"""Newton: Freefly's drone simulation framework on NVIDIA Newton physics."""
+"""Flight stack simulation with Newton.
+
+Built on Newton, Warp and OpenUSD, nexus lets you develop drone subsystems and test them as part of the full flight
+stack.
+"""
 
 from typing import TYPE_CHECKING
 

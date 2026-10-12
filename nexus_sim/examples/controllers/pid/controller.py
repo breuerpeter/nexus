@@ -95,7 +95,7 @@ class PidController(Component):
         self._action_wp = None
 
     # -- lifecycle; no I/O: a controller with no peer has nothing to connect to --
-    def connect(self) -> None:
+    def connect(self, links) -> None:
         """Reserve the device buffers before the run starts; ``connect`` runs before any
         CUDA-graph capture. Creating them lazily in the first ``exchange`` put the allocations
         inside the captured graph, graph-owned memory that nothing must ever reference across replays;

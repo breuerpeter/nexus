@@ -40,7 +40,7 @@ class _Actuator(Component):
 class _Controller(Component):
     """One device stage that commands nothing, so the body flies under gravity alone."""
 
-    def connect(self) -> None:
+    def connect(self, links) -> None:
         pass
 
     def stages(self):
@@ -79,7 +79,7 @@ def flight_paths(tmp_path_factory, rrd_entities):
             sensors=[],
             controller=_Controller(),
             logger=Logger(model, serve=False, record_to_rrd=rrd),
-            recorder=Recorder(dt=DT),
+            recorder=Recorder(),
             max_steps=STEPS,
         )
         orch.run()

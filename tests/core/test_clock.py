@@ -58,7 +58,7 @@ class _Keeper(Component):
         self._stamper = stamper
         self.kept = []
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):
@@ -73,20 +73,20 @@ class _Keeper(Component):
 
 
 @pytest.mark.parametrize("device", DEVICES)
-def test_a_device_stage_reads_the_ticks_sim_time_from_the_signal_time(device):
-    """A device stage reads the tick's sim time from the signal `time`.
+def test_the_sim_time_is_the_tick_count_times_the_tick_on_the_host_and_on_the_device(device):
+    """The sim time is the tick count times the tick in nanoseconds, on the host and on the device.
 
-    Given a stand-in sensor whose device stage copies the signal `time`, and a stand-in controller whose host
-    stage keeps that copy, when the run steps 3 ticks of 4 ms, eagerly on the CPU device and captured on a
-    CUDA device, then on each tick the copy holds that tick's sim time: 8, 12 and 16 ms, after the seed pass's
-    4 ms.
+    Given a run at a 4 ms tick whose sensor copies the device's `time` and whose controller keeps that copy
+    beside the tick's sim time, when it steps 10 ticks, eagerly on the CPU device and captured on a CUDA device,
+    then on tick k both equal `k * 4_000_000 / 1e9` exactly, the tenth `0.04`, not `0.04000000000000001`.
     """
     with wp.ScopedDevice(device):
         stamper = _Stamper()
         keeper = _Keeper(stamper)
         orch = Loop(clock=Clock(0.004), physics=_Physics(), sensors=[stamper], controller=keeper)
-        for _ in range(3):
+        for _ in range(10):
             orch.step()
         orch.close()
 
-    assert keeper.kept[-3:] == [pytest.approx((t, t), abs=1e-12) for t in (0.008, 0.012, 0.016)]
+    ticks = (0.004, 0.008, 0.012, 0.016, 0.02, 0.024, 0.028, 0.032, 0.036, 0.04)
+    assert keeper.kept[-10:] == [(t, t) for t in ticks]

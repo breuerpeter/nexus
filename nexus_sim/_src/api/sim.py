@@ -58,9 +58,10 @@ class Sim:
             controller keeps up. ``1.0`` paces the loop to wall-clock for human-in-the-loop
             flying: 1:1 stick feel, and sim-time protocol timeouts align with wall-clock peers.
         layer: Path to an override layer, a local Universal Scene Description (USD) file the run
-            composes over the vehicle: it changes a declared value, selects a variant, or drops a
-            declaration. A layer that drops the PX4 Software In The Loop (SITL) peer's,
-            ``NexusPx4SitlAPI``, flies an autopilot started elsewhere, which dials port 4560.
+            composes over the vehicle and the scene: it changes a declared value, such as the scene's
+            geodetic origin on its ``PhysicsScene`` prim, selects a variant, or drops a declaration.
+            A layer that drops the PX4 Software In The Loop (SITL) peer's, ``NexusPx4SitlAPI``, flies
+            an autopilot started elsewhere, which dials port 4560.
         registry: The :class:`~nexus_sim.Registry` the build resolves each schema with, its own rows first
             and the install's for the rest, so a test maps a schema to a stand-in or a peer to its fake;
             ``None`` takes the install alone.
@@ -80,7 +81,6 @@ class Sim:
         *,
         scene: str,
         catalog: str | None = None,
-        geo: str | None = None,
         device: str = "auto",
         log: bool = False,
         view: bool = False,
@@ -95,14 +95,11 @@ class Sim:
         self._registry = registry  # the registry the build resolves each schema with, or None for the default
         self._launch = LaunchConfig()
         self._launch.set_vehicle(vehicle)  # a catalog *name* or a local .usd path
-        self._launch.layer = layer  # an override layer the run composes over the vehicle, or None
+        self._launch.layer = layer  # an override layer the run composes over the vehicle and the scene, or None
         self._launch.catalog = catalog  # None: the run finds its own catalog, see load_catalog
         if solver is not None:  # physics integrator override: mujoco | semi_implicit | featherstone
             self._launch.runtime.solver = solver
         self._launch.set_scene(scene)  # catalog scene, for example the 'slalom' obstacle pillars for sampling-mpc
-        if geo is not None:  # override the scene's geodetic origin, for example to fly cesium over any lat/lon
-            parts = [float(x) for x in geo.split(",")]
-            self._launch.set_geodetic_origin(*parts)  # lat,lon[,alt]; alt is the WGS84 ellipsoidal surface height
         # 'gpu' is an alias of 'cuda'. The launch takes 'auto', 'cpu' or 'cuda', and the resolve picks the
         # device: CUDA when a CUDA device is present, else the CPU. The receipt records the pick.
         if device == "gpu":
@@ -180,7 +177,6 @@ class Sim:
             "catalog": getattr(args, "catalog", None),
             "device": getattr(args, "device", "auto"),
             "scene": args.scene,
-            "geo": getattr(args, "geo", None),
             "solver": getattr(args, "solver", None),
             "log": getattr(args, "log", False),
             "view": getattr(args, "view", False),
@@ -205,8 +201,8 @@ class Sim:
             self._orch = build_from_launch(self._launch, cache_dir=self._cache_dir, components=self._registry)
         if self._orch.recorder is None:
             # A self-assembled loop that brought no Recorder gets one: the loop hands it the plant and
-            # each sensor at its first step. dt → the per-row sim time, counter × dt.
-            self._orch.recorder = Recorder(dt=self._orch.clock.dt)
+            # each sensor at its first step.
+            self._orch.recorder = Recorder()
         # A run whose controller takes no setpoint, as PX4's does, wires nothing here: a script opens
         # its own client on the offboard link, from sim.ports, after start(), and the run is
         # step-driven the same way as any other.
@@ -238,11 +234,11 @@ class Sim:
         """Drive the run's setup, returning once the first control tick has completed.
 
         One step: the loop's first ``step()`` runs physics reset, the wait for the Kit
-        render peer to boot and warm its stage when the vehicle renders, the seed row and the graph
-        capture, ``controller.connect()``, which binds the HIL port PX4 dials, and the preroll wait
-        for the peer, then flies one tick.
-        So for a PX4 sim this is the "lockstep is up" verb, and it returns with one observation
-        row already recorded and the captured graph replayed once.
+        render peer to boot and warm its stage when the vehicle renders, the start, which records the
+        row at sim time zero, and the graph capture, ``controller.connect()``, which binds the HIL port
+        PX4 dials, the wait for the peer to dial in, and the preroll ticks while it boots, then flies one tick.
+        So for a PX4 sim this is the "lockstep is up" verb, and it returns with a row recorded for every
+        tick so far and the captured graph replayed.
 
         Idempotent: a second call is a no-op once the run has started. Optional for a run with
         a setpoint controller, where :meth:`run` and :meth:`step` drive the same setup.

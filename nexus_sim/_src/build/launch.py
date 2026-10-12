@@ -2,7 +2,7 @@
 
 Resolves the launch against the catalog, sha-verifying every asset, wraps the vehicle
 Universal Scene Description (USD) file in a :class:`VehicleUsd`, threads the resolved scene, its
-USD plus start plus geodetic origin, into the scenario cfg, and assembles the core loop,
+USD plus start, into the scenario cfg, and assembles the core loop,
 the controller-agnostic ``build.assembly``, around the one controller the vehicle USD declares on
 the controller's ``Scope``. PX4 is the one first-class controller, and *this* layer builds its
 ``Px4MavlinkController`` from the ``NexusPx4API`` schema; every other controller is an example that
@@ -102,24 +102,15 @@ def _thread_scene(cfg: dict, resolved: ResolvedLaunch) -> None:
     """Thread the resolved scene into the cfg, uniformly, for every run.
 
     The physics model build loads the scene USD plus its start point exactly the same way as the
-    vehicle USD: physics takes the UsdPhysics-authored prims, see ``scene.add_scene``. When the
-    vehicle renders, the Kit peer opens the same file as its render stage and finds by its
-    content whether it needs live machinery, for example the cesium globe. A geolocated scene anchors
-    *both* the render world, ``rtx.georef``, and the Hardware In The Loop (HIL) Global Positioning
-    System (GPS), ``sensors.gps.init``, at its geodetic origin: the scene is the single source of
-    the "where on Earth" answer, so the Ground Control Station (GCS) minimap and the camera feed agree.
+    vehicle USD: physics takes the UsdPhysics-authored prims, see ``scene.add_scene``, and the
+    importer reads the geodetic origin the scene's ``PhysicsScene`` prim authors into the model,
+    which anchors *both* the render world and the sensors: the scene is the single source of the
+    "where on Earth" answer, so the Ground Control Station (GCS) minimap and the camera feed agree.
+    When the vehicle renders, the Kit peer opens the same file as its render stage and finds by its
+    content whether it needs live machinery, for example the cesium globe.
     """
     cfg["scene_usd_path"] = resolved.scene_usd_path
     cfg["scene_start"] = resolved.tested_config.scene_start
-    go = resolved.tested_config.geodetic_origin
-    if go is not None:
-        cfg["rtx"] = {**cfg.get("rtx", {}), "georef": {"lat": go.lat, "lon": go.lon, "alt": go.alt}}
-        sensors = cfg.get("sensors", {})
-        gps = sensors.get("gps", {})
-        init = {**gps.get("init", {}), "lat": go.lat, "lon": go.lon}
-        if go.alt is not None:
-            init["alt"] = go.alt
-        cfg["sensors"] = {**sensors, "gps": {**gps, "init": init}}
 
 
 def resolve_scenario(

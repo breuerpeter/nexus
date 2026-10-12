@@ -7,4 +7,10 @@
 
 def Xform "World"
 {
+    def PhysicsScene "PhysicsScene" (
+        prepend apiSchemas = ["NexusSceneAPI"]
+    )
+    {
+        double3 nexus:geodeticOrigin = (47.747944, -122.163917, 5.02)
+    }
 }

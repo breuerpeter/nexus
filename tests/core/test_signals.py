@@ -81,8 +81,8 @@ class _Physics:
 
 
 class _Counter(Component):
-    """A sensor whose device stage counts the run's ticks and writes the count to the signal `count`. Its
-    stage stays out of the warm pass, so the count is the tick's.
+    """A sensor whose device stage counts its runs and writes the count to the signal `count`. The start runs
+    it once, so on the k-th tick the count is k + 1.
     """
 
     def __init__(self, name: str = "counter"):
@@ -91,7 +91,7 @@ class _Counter(Component):
         self._n = wp.zeros(1, dtype=wp.int32)
 
     def stages(self):
-        return [Stage("count", "device", self._run, warm=False, writes=(self.count,))]
+        return [Stage("count", "device", self._run, writes=(self.count,))]
 
     def _run(self, tick):
         wp.launch(_count, dim=1, inputs=[self._n], outputs=[self.count.buffer])
@@ -104,7 +104,7 @@ class _DeviceReader(Component):
         self.count = Signal("count", Count, shape=(1,))
         self.seen = wp.zeros(1, dtype=wp.int32)
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):
@@ -124,7 +124,7 @@ class _HostReader(Component):
         self.count = Signal("count", Count, shape=(1,))
         self.seen = []
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):
@@ -145,7 +145,7 @@ class _KeepingReader(Component):
         self.count = Signal("count", Count, shape=(1,))
         self.kept = []
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):
@@ -177,7 +177,7 @@ class _SteerOnDevice(Component):
     def __init__(self):
         self.setpoint = Signal("setpoint", ReferenceTrajectory)
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):
@@ -194,7 +194,7 @@ class _CountReader(Component):
         self.count = Signal("count", Count, shape=(1,))
         self.controls = Signal("controls", wp.float32, shape=(1, 4))
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):
@@ -217,13 +217,14 @@ def _stopped(tmp_path, controller, *, sensors=(), guidance=None) -> tuple[str, i
     pytest.importorskip("newton")
     pytest.importorskip("pxr")
     from nexus_sim._src.api.sim import Sim
-    from nexus_sim._src.build.assembly import assemble, build_scenario, resolve_device
+    from nexus_sim._src.build.assembly import assemble, resolve_device
     from nexus_sim._src.physics import NewtonPhysics
     from nexus_sim._src.physics.vehicle import VehicleUsd
     from nexus_sim._src.vehicle.estimators import GroundTruthEstimator
+    from tests.usd.sensor_vehicle import scenario
     from tests.vehicle import quad
 
-    cfg = build_scenario()
+    cfg = scenario()
     cfg["physics"]["force_cpu"] = True
     resolve_device(cfg)
     vehicle_usd = VehicleUsd({"usd_path": str(quad.author(tmp_path / "quad.usda"))})
@@ -253,7 +254,7 @@ def test_a_component_reads_a_value_another_writes_of_a_type_core_does_not_name(d
     Given a stand-in sensor whose device stage writes its tick count to a signal of a type the test defines,
     and a stand-in controller whose device stage reads it, when the run steps 3 ticks, eagerly on the CPU
     device and captured on a CUDA device, then on each tick the controller reads the count the sensor wrote
-    on that tick.
+    on that tick: 2, 3 and 4, after the start's 1.
     """
     with wp.ScopedDevice(device):
         controller = _DeviceReader()
@@ -263,7 +264,7 @@ def test_a_component_reads_a_value_another_writes_of_a_type_core_does_not_name(d
             orch.step()
             seen.append(int(controller.seen.numpy()[0]))
         orch.close()
-    assert seen == [1, 2, 3]
+    assert seen == [2, 3, 4]
 
 
 @pytest.mark.parametrize("device", DEVICES)
@@ -272,7 +273,8 @@ def test_a_host_stage_reads_the_value_a_device_stage_wrote_earlier_in_the_same_t
 
     Given a stand-in sensor whose device stage writes its tick count to a signal, and a stand-in controller
     whose host stage reads it, when the run steps 3 ticks, eagerly on the CPU device and captured on a CUDA
-    device, then on each tick the controller reads the count the sensor wrote on that tick.
+    device, then on each tick the controller reads the count the sensor wrote on that tick: 2, 3 and 4, after
+    the start's 1.
     """
     with wp.ScopedDevice(device):
         controller = _HostReader()
@@ -282,7 +284,7 @@ def test_a_host_stage_reads_the_value_a_device_stage_wrote_earlier_in_the_same_t
             orch.step()
             seen.append(controller.seen[-1])
         orch.close()
-    assert seen == [1, 2, 3]
+    assert seen == [2, 3, 4]
 
 
 @pytest.mark.parametrize("device", DEVICES)
@@ -291,7 +293,7 @@ def test_a_host_stage_keeps_the_copy_it_read_after_a_later_write(device):
 
     Given a stand-in sensor whose device stage writes its tick count to a signal, and a stand-in controller
     whose host stage keeps each value it reads, when the run steps 3 ticks, eagerly on the CPU device and
-    captured on a CUDA device, then the controller keeps 1, 2 and 3.
+    captured on a CUDA device, then the controller keeps 2, 3 and 4, after the start's 1.
     """
     with wp.ScopedDevice(device):
         controller = _KeepingReader()
@@ -299,7 +301,7 @@ def test_a_host_stage_keeps_the_copy_it_read_after_a_later_write(device):
         for _ in range(3):
             orch.step()
         orch.close()
-    assert [int(value.n) for value in controller.kept[-3:]] == [1, 2, 3]
+    assert [int(value.n) for value in controller.kept[-3:]] == [2, 3, 4]
 
 
 @pytest.mark.usefixtures("warp_cpu")

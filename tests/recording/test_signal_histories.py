@@ -10,6 +10,7 @@ it. Skipped without newton or pxr.
 
 import contextlib
 import functools
+import itertools
 
 import numpy as np
 import pytest
@@ -30,7 +31,7 @@ from tests.usd import sensor_vehicle as sv
 DEVICES = ["cpu", pytest.param("cuda:0", marks=pytest.mark.gpu)]
 DT = 0.004  # the fixture's 250 Hz tick
 TICKS = 5
-# The fixture scene's site, Woodinville: its latitude, which a GPS at the origin reads.
+# The fixture scene's origin, Woodinville: its latitude, which a GPS at the origin reads.
 WOODINVILLE_LAT = 47.747944
 IMU = sv.prim("Imu", "NexusImuAPI")
 GPS = sv.prim("Gps", "NexusGpsAPI")
@@ -44,6 +45,8 @@ TWO_IMUS = sv.prim("imu_a", "NexusImuAPI", "float nexus:accNoise = 0\nfloat nexu
 FPVCAM = sv.prim("FpvCam", "NexusCameraAPI", kind="Camera")
 LIDAR = sv.prim("Lidar", "NexusLidarAPI", "float nexus:rate = 25", kind="OmniLidar")
 POINT = [1.0, 2.0, 3.0]
+# Where a falling run starts: 10 m over the ground, level, so the vehicle stays in the air.
+FALL_FROM = (0.0, 0.0, 10.0)
 
 
 class _TickWriter(Component):
@@ -54,7 +57,7 @@ class _TickWriter(Component):
     def __init__(self, **kwargs):
         self.controls = Signal("controls", wp.float32, shape=(1, 16))
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):
@@ -66,6 +69,56 @@ class _TickWriter(Component):
     def _act(self, tick):
         self.controls.write(np.full((1, 16), tick.t.step_index, dtype=np.float32))
         return True
+
+
+class _DeviceOnly(Component):
+    """A controller whose one stage is a device stage that commands nothing."""
+
+    def __init__(self, **kwargs):
+        self.controls = Signal("controls", wp.float32, shape=(1, 4))
+
+    def connect(self, links):
+        pass
+
+    def close(self):
+        pass
+
+    def stages(self):
+        return [Stage("act", "device", lambda tick: None, writes=(self.controls,))]
+
+
+class _Stamping(sv.Controller):
+    """The stand-in controller, which keeps the sim time of each exchange in `stamps`."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.stamps = []
+
+    def exchange(self, t, timeout=None):
+        self.stamps.append(t.sim_time)
+        return super().exchange(t, timeout)
+
+
+class _LatePeer(sv.HostController):
+    """A controller whose peer dials in on the third poll of its exchange and sends its first controls, zero, on
+    its fifth exchange after that.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__()
+        self._polls = 0
+        self._exchanges = 0
+
+    @property
+    def attached(self):
+        return self._polls >= 3
+
+    def exchange(self, t, timeout=None):
+        if not self.attached:
+            self._polls += 1
+            return None
+        self._exchanges += 1
+        return None if self._exchanges < 5 else np.zeros(self.width, dtype=np.float32)
 
 
 class _Windy(GroundTruthEstimator):
@@ -83,12 +136,13 @@ class _Windy(GroundTruthEstimator):
         return [Stage("estimate", "device", self._run, reads=(self.pose,), writes=(self.estimate, self.wind))]
 
 
-def _build(tmp_path, body: str, *, device: str = "cpu", controller=None, estimator=None):
+def _build(tmp_path, body: str, *, device: str = "cpu", controller=None, estimator=None, fall_from=None):
     """A run of the fixture with `body` under its base body on `device`, flown by `controller`, by default the
-    stand-in that commands nothing, over `estimator`, by default the passthrough.
+    stand-in that commands nothing, over `estimator`, by default the passthrough. `fall_from`, a position,
+    places the vehicle there in free flight.
     """
     registry = sv.components() if controller is None else sv.components(NexusPx4API=controller)
-    loop = sv.build(sv.vehicle(tmp_path, body), device=device, components=registry)
+    loop = sv.build(sv.vehicle(tmp_path, body), device=device, components=registry, fall_from=fall_from)
     loop.estimator = GroundTruthEstimator() if estimator is None else estimator
     return loop
 
@@ -146,16 +200,14 @@ def _bits(values) -> np.ndarray:
 
 @pytest.mark.parametrize("device", DEVICES)
 def test_every_device_signal_a_component_writes_keeps_a_history_and_no_component_records_itself(device, tmp_path):
-    """Every device signal a component writes keeps a history in the Recorder, the seed row and one row per
+    """Every device signal a component writes keeps a history in the Recorder, the start's row and one row per
     tick, and no component records itself.
 
     Given the fixture vehicle with an IMU, the passthrough estimator and a stand-in controller whose host
     stage writes its tick count into its 16 controls, when the run steps 5 ticks, eagerly on the CPU device
     and captured on a CUDA device, then the Recorder holds a history for the IMU's sample, the estimate and
     the controls, each of 6 rows whose `t` runs from 0 to `5 * dt`, the controls' rows hold 0 then 1 to 5,
-    and each estimate row equals, to the bit, the base body's position and velocity of that tick: the state
-    the tick's flight stack read, which is the settled state for the seed row and the body's row before for
-    each tick, since the estimator runs before the physics steps and the record stage after.
+    and each estimate row equals, to the bit, the base body's position and velocity of that tick.
     """
     with wp.ScopedDevice(device):
         loop = _build(tmp_path, IMU, device="cpu" if device == "cpu" else "cuda", controller=_TickWriter)
@@ -164,7 +216,7 @@ def test_every_device_signal_a_component_writes_keeps_a_history_and_no_component
                 _history(loop.recorder.histories, signal) for signal in ("imu", "estimate", "controls")
             )
             rows = sim[f"vehicle/body/{sim.base_body}"].history()
-            truth = [[*r["position"], *r["linear_velocity"]] for r in (rows[0], *rows[:-1])]
+            truth = [[*r["position"], *r["linear_velocity"]] for r in rows]
     read = (
         [_column(rows, "t").tolist() for rows in (imu, estimate, controls)],
         [row[0] for row in _flat(controls, "controls")],
@@ -176,6 +228,61 @@ def test_every_device_signal_a_component_writes_keeps_a_history_and_no_component
         [0.0, 1.0, 2.0, 3.0, 4.0, 5.0],
         True,
     )
+
+
+@pytest.mark.usefixtures("warp_cpu")
+@pytest.mark.parametrize("controller", [_DeviceOnly, None], ids=["device stages only", "host stage"])
+def test_a_ticks_rows_describe_one_instant(controller, tmp_path):
+    """A tick's rows describe one instant.
+
+    Given the falling fixture vehicle with the passthrough estimator, once on a ring of device stages only and
+    once with a host stage, when the run steps 5 ticks, then each estimate row's position equals the base body
+    row's position under the same `t`, and the sample of a sensor with no rate carries that `t`.
+    """
+    loop = _build(tmp_path, IMU, controller=controller, fall_from=FALL_FROM)
+    with _flown(loop, TICKS) as sim:
+        imu, estimate = (_history(loop.recorder.histories, signal) for signal in ("imu", "estimate"))
+        body = _structured(sim[f"vehicle/body/{sim.base_body}"].history())
+    read = (
+        np.array_equal(_bits(_flat(estimate, "position")), _bits(_flat(body, "position"))),
+        _column(imu, "time").tolist() == _column(imu, "t").tolist(),
+    )
+
+    assert read == (True, True)
+
+
+@pytest.mark.usefixtures("warp_cpu")
+def test_a_recorded_rows_t_is_the_sim_time_of_the_tick_that_wrote_it_from_the_start_on(tmp_path):
+    """A recorded row's `t` is the sim time of the tick that wrote it, from the start on.
+
+    Given a run at a 4 ms tick with a controller that has a host stage, when it steps 25 ticks, then it holds 26
+    rows, each row's `t` equals the sim time of the tick that wrote it, the start's `0.0`, and the newest equals
+    the clock's time, `0.1`.
+    """
+    loop = _build(tmp_path, IMU, controller=_Stamping)
+    with _flown(loop, 25) as sim:
+        rows = _column(_structured(sim[f"vehicle/body/{sim.base_body}"].history()), "t").tolist()
+    stamps = loop.controller.stamps
+
+    assert rows == stamps == pytest.approx([k * DT for k in range(26)])
+
+
+@pytest.mark.usefixtures("warp_cpu")
+def test_once_a_peer_attaches_each_preroll_tick_steps_the_physics_and_records_a_row(tmp_path):
+    """Once a peer attaches, each preroll tick steps the physics with zero controls and records a row.
+
+    Given a controller whose peer attaches late and sends its first controls on its fifth exchange, when the run
+    takes its first step, then each exchange before those controls came with one physics step under zero
+    controls and one row, and the rows' `t` run from `0.0` in 4 ms steps with no gap. The vehicle starts in
+    free flight, so each step under zero controls leaves it lower.
+    """
+    loop = _build(tmp_path, IMU, controller=_LatePeer, fall_from=FALL_FROM)
+    with _flown(loop, 1) as sim:
+        rows = _structured(sim[f"vehicle/body/{sim.base_body}"].history())
+    heights = [float(row["position"][2]) for row in rows]
+    falling = all(lower < higher for higher, lower in itertools.pairwise(heights))
+
+    assert (_column(rows, "t").tolist(), falling) == (pytest.approx([0.0, 0.004, 0.008, 0.012, 0.016, 0.02]), True)
 
 
 @pytest.mark.usefixtures("warp_cpu")
@@ -210,13 +317,13 @@ def test_a_historys_row_is_one_record_t_then_the_signals_quantities_as_its_type_
     """A history's row is one record, `t` then the signal's quantities, each with the type and width its
     signal's type declares, and a value-typed signal is one quantity named after the signal.
 
-    Given the fixture vehicle with an IMU and a GPS at a site at latitude 47.3977, and the stand-in controller,
+    Given the fixture vehicle with an IMU and a GPS at an origin at latitude 47.3977, and the stand-in controller,
     when the run steps one tick, then the newest row of `sim["vehicle/sensors/imu/imu"]` is a record whose dtype names `t`,
     `time`, `accel` and `gyro`, with `accel` and `gyro` float32 of width 3, the `lat` of the newest row of
-    `sim["vehicle/sensors/gps/gps"]` is float64 within 1e-9 degrees of the site's, the controls' newest row holds
+    `sim["vehicle/sensors/gps/gps"]` is float64 within 1e-9 degrees of the origin's, the controls' newest row holds
     `controls`, 4 float32, one per rotor the stand-in commands, and `history()` gives the rows as one array and
     `arrays()` one array per quantity.
-    The fixture scene's site is Woodinville, so the latitude read is its.
+    The fixture scene's origin is Woodinville, so the latitude read is its.
     """
     loop = _build(tmp_path, IMU + GPS)
     with _flown(loop, 1) as sim:

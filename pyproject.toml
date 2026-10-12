@@ -5,15 +5,15 @@ build-backend = "uv_build"
 [project]
 name = "nexus-sim"
 version = "0.1.0"
-description = "GPU-accelerated drone simulation"
+description = "Flight stack simulation with Newton"
 readme = "README.md"
 requires-python = "==3.12.*"
 license = "Apache-2.0"
 license-files = ["LICENSE", "THIRD_PARTY_NOTICES.txt"]
 authors = [{ name = "Peter Breuer" }]
 keywords = [
-    "drone", "uav", "simulation", "robotics", "physics",
-    "px4", "sitl", "mavlink", "newton", "reinforcement-learning",
+    "newton", "warp", "openusd", "flight-stack", "drone", "uav",
+    "px4", "sitl", "mavlink", "simulation", "robotics", "reinforcement-learning",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -23,8 +23,8 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering",
-    "Topic :: Scientific/Engineering :: Physics",
     "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Software Development :: Testing",
 ]
 dependencies = [
     "newton[sim]==1.3.0",

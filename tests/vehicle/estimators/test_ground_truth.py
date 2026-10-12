@@ -13,7 +13,6 @@ pytest.importorskip("pxr")
 import warp as wp
 
 from nexus_sim._src.api.sim import Sim
-from nexus_sim._src.build.assembly import build_scenario
 from nexus_sim._src.core import Clock, Loop
 from nexus_sim._src.core.interfaces import Component, Stage, Tick
 from nexus_sim._src.core.schema import PoseTwist, SimTime
@@ -23,6 +22,7 @@ from nexus_sim._src.guidance import MissionGuidance
 from nexus_sim._src.physics import NewtonPhysics
 from nexus_sim._src.physics.vehicle import VehicleUsd
 from nexus_sim._src.vehicle.estimators import GroundTruthEstimator
+from tests.usd.sensor_vehicle import scenario
 from tests.vehicle import quad
 
 DEVICES = ["cpu", pytest.param("cuda:0", marks=pytest.mark.gpu)]
@@ -50,7 +50,7 @@ class _KeepingController(Component):
         self.setpoint = Signal("setpoint", wp.vec3, shape=(1,))
         self.kept = []
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):
@@ -78,15 +78,14 @@ def _bits(values) -> np.ndarray:
 @pytest.mark.parametrize("device", DEVICES)
 def test_each_reader_gets_the_base_bodys_true_pose_and_twist_with_no_noise_and_no_delay(device, tmp_path):
     """The passthrough estimator gives each reader the base body's true pose and twist in world axes, with no
-    noise and no delay, from the pass before the first tick on.
+    noise and no delay, from the start on.
 
     Given the fixture vehicle falling from 2 m on the passthrough estimator, a guidance that keeps each position
     it reads and a stand-in controller whose host stage keeps each estimate it reads, when the run starts and
     steps 5 ticks, eagerly on the CPU device and captured on a CUDA device, then each value they read equals, to
-    the bit, the base body's row the Recorder holds for that tick, and the seed row in the pass before the first
-    tick.
+    the bit, the base body's row the Recorder holds for that tick, and the start's row in the start.
     """
-    cfg = build_scenario()
+    cfg = scenario()
     cfg["physics"]["force_cpu"] = device == "cpu"
     cfg["physics"]["spawn"] = {"pos": (0.0, 0.0, 2.0)}
     guidance = _KeepingGuidance()

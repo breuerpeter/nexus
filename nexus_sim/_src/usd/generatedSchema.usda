@@ -5,8 +5,8 @@
 )
 
 class "NexusImuAPI" (
-    doc = "An inertial measurement unit on its mount prim: an accelerometer and a gyroscope, each with white noise."
-    prepend apiSchemas = ["NexusSensorRoleAPI"]
+    doc = "An inertial measurement unit on its mount prim, a geometry prim under the body it rides, which Newton loads as a site: an accelerometer and a gyroscope, each with white noise."
+    prepend apiSchemas = ["NexusSensorRoleAPI", "NewtonSiteAPI"]
 )
 {
     float nexus:accNoise = 0.02 (
@@ -30,8 +30,8 @@ class "NexusImuAPI" (
 }
 
 class "NexusMagAPI" (
-    doc = "A magnetometer on its mount prim, at the origin of the body it rides: the site's magnetic field in the body's axes, with an offset and white noise."
-    prepend apiSchemas = ["NexusSensorRoleAPI"]
+    doc = "A magnetometer on its mount prim, a geometry prim at the origin of the body it rides, which Newton loads as a site: the scene's magnetic field in the body's axes, with an offset and white noise."
+    prepend apiSchemas = ["NexusSensorRoleAPI", "NewtonSiteAPI"]
 )
 {
     float3 nexus:offset = (0, 0, 0) (
@@ -55,8 +55,8 @@ class "NexusMagAPI" (
 }
 
 class "NexusBaroAPI" (
-    doc = "A barometer on its mount prim, at the origin of the body it rides: the standard atmosphere's pressure at the body's altitude, with white noise."
-    prepend apiSchemas = ["NexusSensorRoleAPI"]
+    doc = "A barometer on its mount prim, a geometry prim at the origin of the body it rides, which Newton loads as a site: the scene's pressure at sea level brought to the body's altitude, with white noise."
+    prepend apiSchemas = ["NexusSensorRoleAPI", "NewtonSiteAPI"]
 )
 {
     float nexus:noise = 0.02 (
@@ -74,8 +74,8 @@ class "NexusBaroAPI" (
 }
 
 class "NexusGpsAPI" (
-    doc = "A Global Positioning System (GPS) receiver on its mount prim, at the origin of the body it rides: the body's position and velocity from the scene's geodetic origin."
-    prepend apiSchemas = ["NexusSensorRoleAPI"]
+    doc = "A Global Positioning System (GPS) receiver on its mount prim, a geometry prim at the origin of the body it rides, which Newton loads as a site: the body's position and velocity from the scene's geodetic origin."
+    prepend apiSchemas = ["NexusSensorRoleAPI", "NewtonSiteAPI"]
 )
 {
     int nexus:fixType = 3 (
@@ -215,6 +215,36 @@ class "NexusPx4SitlAPI" (
     doc = """The PX4 Software In The Loop (SITL) peer, on the controller's `Scope` beside `NexusPx4API`: the run starts PX4 SITL and stops it with the run. A layer that drops it flies an autopilot started elsewhere, which dials instance 0's Hardware In The Loop (HIL) port, 4560."""
 )
 {
+}
+
+class "NexusSceneAPI" (
+    doc = """Where a scene sits on Earth and the world's values that follow from it, on the scene's `PhysicsScene` prim. A run's build fails on a scene whose `PhysicsScene` authors no origin, and an override layer moves it. Each value is an attribute of Newton's model at world frequency, in its `nexus` namespace, which the sensors read."""
+)
+{
+    double3 nexus:geodeticOrigin (
+        doc = """The WGS84 point the scene's world origin sits at: latitude, longitude and the altitude over mean sea level. For a streamed globe the altitude is the surface's ellipsoidal height, so the street sits at the world origin.
+
+        Range: latitude [-90, 90], longitude [-180, 180], altitude any
+        Units: degrees, degrees, metres"""
+    )
+    float3 nexus:magneticField (
+        doc = """Earth's magnetic field in the world's axes, X north, Y west, Z up. Unauthored, the build derives it from the origin through the World Magnetic Model table PX4 checks against.
+
+        Range: (-inf, inf)
+        Units: gauss"""
+    )
+    float nexus:seaLevelPressure = 1013.25 (
+        doc = """Air pressure at mean sea level, which a barometer brings to its body's altitude through the standard atmosphere.
+
+        Range: (0, inf)
+        Units: hectopascals"""
+    )
+    float nexus:temperature = 25 (
+        doc = """Air temperature, which a barometer reports.
+
+        Range: (-273.15, inf)
+        Units: degrees Celsius"""
+    )
 }
 
 class "NexusSensorRoleAPI" (

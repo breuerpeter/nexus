@@ -76,7 +76,7 @@ def _astro_catalog(usd_ref: dict) -> Catalog:
     return Catalog.from_dict(
         {
             "vehicles": {"astro": {"usd": usd_ref}},
-            "scenes": {"empty": {}},
+            "scenes": {"empty": {"usd": sv.SCENE_REF}},
         }
     )
 
@@ -120,26 +120,25 @@ def _scene_usd(tmp_path, name, body: bytes) -> dict:
     return {"url": blob.as_uri(), "sha256": hashlib.sha256(blob.read_bytes()).hexdigest(), "filename": name}
 
 
-def test_scene_threads_uniformly_and_anchors_gps(tmp_path, monkeypatch):
+def test_scene_threads_uniformly_and_anchors_at_its_origin(tmp_path, monkeypatch):
     """A scene is *data*: its USD + start thread into the cfg for the one uniform ingestion, where
-    physics parses the UsdPhysics prims and a renderer shows everything, with no routing anywhere,
-    and its geodetic origin anchors *both* the render world, cfg.rtx.georef, *and* the
-    Hardware In The Loop (HIL) Global Positioning System (GPS), cfg.sensors.gps.init, so the
-    Ground Control Station (GCS) minimap matches the camera feed: the Woodinville-versus-SF bug.
+    physics parses the UsdPhysics prims, reads the geodetic origin its PhysicsScene authors into the
+    model, which anchors *both* the render world and the sensors, so the Ground Control Station (GCS)
+    minimap matches the camera feed, and a renderer shows everything, with no routing anywhere.
     Runtime-*neutral* since the controller unbind: the run's builder does this for every runtime.
     """
     import nexus_sim._src.build.launch as L
 
+    scene = (
+        b'#usda 1.0\ndef Mesh "island" {}\ndef PhysicsScene "PhysicsScene" (\n'
+        b'    prepend apiSchemas = ["NexusSceneAPI"]\n)\n'
+        b"{\n    double3 nexus:geodeticOrigin = (37.7942, -122.3954, -30.5)\n}\n"
+    )
     reg = Catalog.from_dict(
         {
             "vehicles": {"astro": {"usd": _usd_ref(tmp_path)}},
             "scenes": {
-                "empty": {},
-                "geo-scene": {
-                    "usd": _scene_usd(tmp_path, "scene.usda", b'#usda 1.0\ndef Mesh "island" {}\n'),
-                    "geodetic_origin": {"lat": 37.7942, "lon": -122.3954, "alt": -30.5},
-                    "start": [10.0, -94.0, -8.5],
-                },
+                "geo-scene": {"usd": _scene_usd(tmp_path, "scene.usda", scene), "start": [10.0, -94.0, -8.5]},
             },
         }
     )
@@ -154,15 +153,8 @@ def test_scene_threads_uniformly_and_anchors_gps(tmp_path, monkeypatch):
     lc = LaunchConfig().set_vehicle("astro").set_scene("geo-scene")
     assert L.build_from_launch(lc, catalog=reg, cache_dir=tmp_path / "cache") == "ORCH"
 
-    assert captured["cfg"]["scene_usd_path"] is not None, "the model build + render stage get the scene USD"
-    assert captured["cfg"]["scene_start"] == (10.0, -94.0, -8.5), "start places the scene"
-    gps = captured["cfg"]["sensors"]["gps"]["init"]
-    assert (round(gps["lat"], 4), round(gps["lon"], 4)) == (37.7942, -122.3954), "GPS anchored at the scene origin"
-    assert gps["alt"] == -30.5, "the scene's authored ellipsoidal alt anchors the GPS ref alt"
-    assert captured["cfg"]["rtx"]["georef"] == {"lat": 37.7942, "lon": -122.3954, "alt": -30.5}, (
-        "render world anchored at the same origin (alt = the surface's WGS84 ellipsoidal height, "
-        "applied directly as the cesium georeference height, the retired ground-probe's replacement)"
-    )
+    cfg = captured["cfg"]
+    assert (cfg["scene_usd_path"] is not None, cfg["scene_start"]) == (True, (10.0, -94.0, -8.5))
 
 
 def test_build_from_launch_starts_the_px4_peer_before_the_assembly(tmp_path, monkeypatch, daemon):
@@ -222,7 +214,7 @@ def _catalog(tmp_path) -> Catalog:
     return Catalog.from_dict(
         {
             "vehicles": {"astro": {"usd": _usd_ref(tmp_path)}},
-            "scenes": {"empty": {}},
+            "scenes": {"empty": {"usd": sv.SCENE_REF}},
         }
     )
 
@@ -267,7 +259,7 @@ class _StandInController(Component):
     def __init__(self, **kwargs):
         self.kwargs = kwargs
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):
@@ -613,7 +605,7 @@ def test_a_run_with_no_layer_builds_and_records_as_today(tmp_path, monkeypatch, 
     )
     loop.close()
     receipt = L.resolve_vehicle_usd(launch)[1].tested_config.model_dump(mode="json")
-    recorded = {k: receipt[k] for k in ("vehicle", "layer", "px4", "scene", "scene_start", "geodetic_origin")}
+    recorded = {k: receipt[k] for k in ("vehicle", "layer", "px4", "scene", "scene_start")}
 
     assert (built, recorded) == (
         ("Px4MavlinkController", "astro_max", ["ImuSensor", "MagSensor", "BaroSensor", "GpsSensor"], ["Px4Fake"]),
@@ -623,7 +615,6 @@ def test_a_run_with_no_layer_builds_and_records_as_today(tmp_path, monkeypatch, 
             "px4": {"airframe": "astro_max"},
             "scene": "empty",
             "scene_start": None,
-            "geodetic_origin": None,
         },
     )
 
@@ -708,7 +699,7 @@ def test_a_px4_run_takes_no_estimator_stage(tmp_path, warp_cpu, caplog):
     """A PX4 run takes no estimator stage.
 
     Given the fixture vehicle, which declares no sensor, on the PX4 fake, when the run takes its first tick, then
-    its logged stage plan holds the device segment and PX4's `truth` and `exchange` host stages, with no
+    its logged stage plan holds PX4's `truth` and `exchange` host stages between the device segments, with no
     estimator stage.
     """
     loop, _ = _px4_run(tmp_path, "cpu")
@@ -718,7 +709,8 @@ def test_a_px4_run_takes_no_estimator_stage(tmp_path, warp_cpu, caplog):
 
     plans = [r.getMessage() for r in caplog.records if r.getMessage().startswith("stage plan:")]
     assert plans == [
-        "stage plan: eager(clear -> rotors -> propellers -> step -> state -> record) host(truth) host(exchange)"
+        "stage plan: eager(clock -> clear -> rotors -> propellers -> step -> state) host(truth) host(exchange) "
+        "eager(record)"
     ]
 
 

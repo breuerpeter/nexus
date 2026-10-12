@@ -12,9 +12,9 @@ import warp as wp
 from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics
 
 from nexus_sim._src.api.sim import Sim
-from nexus_sim._src.build.assembly import build_loop, build_scenario
+from nexus_sim._src.build.assembly import build_loop
 from nexus_sim._src.physics.vehicle import VehicleUsd
-from tests.usd.sensor_vehicle import HostController
+from tests.usd.sensor_vehicle import HostController, scenario
 
 ROOT = "/Vehicle"
 ARM = 0.2  # rotor offset from the airframe's center on each axis [m]
@@ -151,7 +151,7 @@ class Commands(HostController):
 
 def build(path, steps=0, controller=None):
     """The run the vehicle at `path` builds, around `controller`, full throttle with no controller."""
-    cfg = build_scenario()
+    cfg = scenario()
     cfg["physics"]["force_cpu"] = True
     return build_loop(
         "quad", cfg, VehicleUsd({"usd_path": str(path)}), controller=controller or Commands(), max_steps=steps

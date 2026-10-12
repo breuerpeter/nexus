@@ -132,7 +132,7 @@ class _PeerController(Component):
         self.act = wp.zeros(1, dtype=wp.int32)
         self.closed = False
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def exchange(self, t, timeout):
@@ -155,7 +155,7 @@ class _PeerController(Component):
         return [
             Stage("truth", "host", lambda tick: None),
             Stage("exchange", "host", exchange),
-            Stage("act", "device", self._act, warm=False),
+            Stage("act", "device", self._act),
         ]
 
 
@@ -168,7 +168,7 @@ class _DeviceController(Component):
         self.exchange_calls = 0
         self.act = None
 
-    def connect(self):
+    def connect(self, links):
         self.act = wp.zeros(1, dtype=wp.int32)
 
     def exchange(self, t, timeout):
@@ -185,7 +185,7 @@ class _DeviceController(Component):
 class _Stageless(Component):
     """A controller that states no stages."""
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):
@@ -195,7 +195,7 @@ class _Stageless(Component):
 class _EmptyStages(Component):
     """A controller whose stage list is empty."""
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):
@@ -208,7 +208,7 @@ class _EmptyStages(Component):
 class _UnknownKind(Component):
     """A controller whose one stage misspells its kind."""
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):
@@ -300,14 +300,15 @@ def test_a_component_with_no_stages_fails_the_build_naming_it(controller):
 @pytest.mark.gpu
 def test_a_run_logs_its_stage_plan_with_its_host_stages(caplog):
     """A run logs its stage plan once at start: each captured segment and the host stages between them.
-    The PX4 shape: one line naming one segment and the ``truth`` and ``exchange`` host stages.
+    The PX4 shape: one line naming the ``truth`` and ``exchange`` host stages between two segments, the one
+    that steps the plant and the one that records the tick.
     """
     with _cuda(), caplog.at_level(logging.INFO, logger="nexus"):
         orch = _orch(_PeerController())
         orch.step()
         orch.close()
     plans = [m for m in _messages(caplog) if m.startswith("stage plan:")]
-    assert len(plans) == 1 and plans[0].count("graph(") == 1 and "truth" in plans[0] and "exchange" in plans[0]
+    assert len(plans) == 1 and plans[0].count("graph(") == 2 and "truth" in plans[0] and "exchange" in plans[0]
 
 
 @pytest.mark.gpu

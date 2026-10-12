@@ -134,6 +134,28 @@
     }
   },
   "NexusPx4SitlAPI": {},
+  "NexusSceneAPI": {
+    "nexus:geodeticOrigin": {
+      "fallback": null,
+      "type": "double3",
+      "units": "degrees, degrees, metres"
+    },
+    "nexus:magneticField": {
+      "fallback": null,
+      "type": "float3",
+      "units": "gauss"
+    },
+    "nexus:seaLevelPressure": {
+      "fallback": "1013.25",
+      "type": "float",
+      "units": "hectopascals"
+    },
+    "nexus:temperature": {
+      "fallback": "25",
+      "type": "float",
+      "units": "degrees Celsius"
+    }
+  },
   "NexusSensorRoleAPI": {},
   "NexusThermalCameraAPI": {
     "nexus:height": {

@@ -84,8 +84,8 @@ class _Physics:
 
 
 class _Counter(Component):
-    """A sensor whose device stage counts the run's ticks and writes the count to the signal `count`. Its
-    stage stays out of the warm pass, so the count is the tick's.
+    """A sensor whose device stage counts its runs and writes the count to the signal `count`. The start runs
+    it once, so on the k-th tick the count is k + 1.
     """
 
     def __init__(self):
@@ -93,7 +93,7 @@ class _Counter(Component):
         self._n = wp.zeros(1, dtype=wp.int32)
 
     def stages(self):
-        return [Stage("count", "device", self._run, warm=False, writes=(self.count,))]
+        return [Stage("count", "device", self._run, writes=(self.count,))]
 
     def _run(self, tick):
         wp.launch(_count, dim=1, inputs=[self._n], outputs=[self.count.buffer])
@@ -120,7 +120,7 @@ class _EstimateReader(Component):
         self.estimate = Signal("estimate", PoseTwist, shape=(1,))
         self.seen = wp.zeros(1, dtype=float)
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):
@@ -141,7 +141,7 @@ def test_the_controller_reads_an_estimate_made_from_that_ticks_sensor_values(dev
     Given a stand-in sensor whose device stage writes its tick count to a signal, a stand-in estimator that
     writes that count into its estimate, and a stand-in controller whose device stage reads the estimate, when
     the run steps 3 ticks, eagerly on the CPU device and captured on a CUDA device, then on each tick the
-    controller reads the count the sensor wrote on that tick.
+    controller reads the count the sensor wrote on that tick: 2, 3 and 4, after the start's 1.
     """
     with wp.ScopedDevice(device):
         controller = _EstimateReader()
@@ -157,7 +157,7 @@ def test_the_controller_reads_an_estimate_made_from_that_ticks_sensor_values(dev
             orch.step()
             seen.append(float(controller.seen.numpy()[0]))
         orch.close()
-    assert seen == [1.0, 2.0, 3.0]
+    assert seen == [2.0, 3.0, 4.0]
 
 
 class _EstimateSensor(Component):

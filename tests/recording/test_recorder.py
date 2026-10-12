@@ -33,9 +33,14 @@ def _wired(*signals: Signal) -> tuple[Signal, ...]:
     return signals
 
 
+def _record(rec: Recorder) -> None:
+    """Record one row of every history, stamped with the time a run's device clock holds on that row's tick."""
+    rec.record(wp.array([rec.rows * DT], dtype=wp.float64))
+
+
 def _body_history(staging: int = 4096) -> tuple[Recorder, Signal, History]:
     """A Recorder with the base body's `PoseTwist` signal tapped under the plant's path, as a run taps it."""
-    rec = Recorder(dt=DT, staging=staging)
+    rec = Recorder(staging=staging)
     (body,) = _wired(Signal("body/body_frd", PoseTwist, shape=(1,)))
     return rec, body, rec.tap("vehicle", body, source="NewtonPhysics")
 
@@ -43,7 +48,7 @@ def _body_history(staging: int = 4096) -> tuple[Recorder, Signal, History]:
 def _write(rec: Recorder, body: Signal, view: _FakeView) -> None:
     """Write `view` into the body's signal and record one row of every history, as a tick does."""
     wp.launch(write_body, dim=1, inputs=(view.body_q, view.body_qd, 0), outputs=(body.buffer,))
-    rec.record()
+    _record(rec)
 
 
 def _heights(rows) -> list[float]:
@@ -81,13 +86,13 @@ def test_a_joints_history_reads_as_records_of_q_and_qd_of_the_joints_own_widths(
     """A joint's history, its struct signal tapped, reads as records of `t`, `q` and `qd` of that joint's widths:
     a revolute joint's angle and rate from its slice of the flat arrays.
     """
-    rec = Recorder(dt=DT)
+    rec = Recorder()
     (joint,) = _wired(Signal("joints/rotor_1_joint", joint_struct(1, 1), shape=(1,)))
     h = rec.tap("vehicle", joint)
     jq = wp.array(np.array([9.9, 0.25], dtype=np.float32), dtype=float)  # the angle at index 1
     jqd = wp.array(np.array([9.9, 1.5], dtype=np.float32), dtype=float)
     wp.launch(write_joint, dim=1, inputs=(jq, jqd, 1, 1, 1, 1), outputs=(joint.buffer,))
-    rec.record()
+    _record(rec)
     rec.commit()
     row = h.history()[-1]
 
@@ -143,7 +148,7 @@ def test_the_recorder_commits_every_history_and_reports_the_drained_block():
     """One commit counts a row in every history; the commit that fills the staging buffers reports the
     block's row range, so the Logger writes those rows.
     """
-    rec = Recorder(dt=DT, staging=2)
+    rec = Recorder(staging=2)
     body, joint = _wired(
         Signal("body/body_frd", PoseTwist, shape=(1,)), Signal("joints/j", joint_struct(1, 1), shape=(1,))
     )
@@ -178,19 +183,19 @@ def test_history_arrays_spans_the_drained_blocks_and_handles_empty():
         rec.commit()
     arrays = h.history_arrays()
     np.testing.assert_allclose(arrays["position"][:, 2], [1.0, 2.0, 3.0, 4.0, 5.0, 6.0])  # oldest first, every row
-    assert np.all(np.diff(arrays["t"]) > 0)  # counter × dt stays monotonic across the drain
+    assert np.all(np.diff(arrays["t"]) > 0)  # the clock's time stays monotonic across the drain
 
 
 def test_fields_schema_must_cover_width():
     with pytest.raises(ValueError, match="width"):
-        History(width=13, dt=DT, fields=(("position", 3),))
+        History(width=13, fields=(("position", 3),))
 
 
 def test_the_recorder_taps_a_signal_under_its_writers_path_with_the_quantities_its_type_declares():
     """`tap` registers a signal's history as `<path>/<signal>`, its quantities those of the signal's type: a
     struct's fields, each with its width, or one quantity named after a value-typed signal, of its width.
     """
-    rec = Recorder(dt=DT)
+    rec = Recorder()
     imu, controls = _wired(Signal("imu", ImuSample, shape=(1,)), Signal("controls", wp.float32, shape=(1, 16)))
     a = rec.tap("vehicle/sensors/imu", imu, source="ImuSensor")
     b = rec.tap("vehicle/controllers/px4", controls, source="Px4Controller")
@@ -207,14 +212,14 @@ def test_the_record_stage_copies_each_tapped_signals_value_into_a_row_of_t_then_
     """Each record copies what every tapped signal holds into its history, and the history reads as records of
     `t` then the signal's quantities, with the struct's own types, across a drain.
     """
-    rec = Recorder(dt=DT, staging=2)
+    rec = Recorder(staging=2)
     imu, controls = _wired(Signal("imu", ImuSample, shape=(1,)), Signal("controls", wp.float32, shape=(1, 16)))
     rec.tap("vehicle/sensors/imu", imu)
     rec.tap("vehicle/controllers/px4", controls)
     for k in (1, 2, 3):
         imu.write([(0.5 * k, (k, 0.0, 0.0), (0.0, k, 0.0))])
         controls.write(np.full((1, 16), k, dtype=np.float32))
-        rec.record()
+        _record(rec)
         rec.commit()
     rows = rec.histories["vehicle/sensors/imu/imu"].history()
     newest = rec.histories["vehicle/controllers/px4/controls"].history()[-1]

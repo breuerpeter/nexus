@@ -35,7 +35,7 @@ class _EstimateGuidance(Component):
         self.seen = []
 
     def stages(self):
-        return [Stage("guide", "host", self._guide, warm=False, reads=(self.estimate,), writes=(self.setpoint,))]
+        return [Stage("guide", "host", self._guide, reads=(self.estimate,), writes=(self.setpoint,))]
 
     def _guide(self, tick):
         estimate = self.estimate.read()
@@ -58,11 +58,11 @@ class _ConnectingSensor(Component):
     its gain to the signal `gain`.
     """
 
-    def __init__(self, run, gain: float = 1.0):
+    def __init__(self, model, path, *, seed: int = 0, gain: float = 1.0):
         self.gain = float(gain)
         self.out = Signal("gain", Gain, shape=(1,))
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def close(self):
@@ -107,7 +107,8 @@ def test_an_estimator_the_vehicle_declares_runs_in_the_estimators_place_and_the_
 
     Given the fixture vehicle whose estimator scope applies a stand-in estimator schema from `tests/usd/stand_in`
     that writes a fixed pose, and a stand-in guidance that reads the estimate, when the run steps 3 ticks,
-    eagerly on the CPU device, then on each tick the guidance reads the pose the estimator wrote on that tick.
+    eagerly on the CPU device, then in the start and on each tick the guidance reads the pose the estimator
+    wrote just before.
     """
     path = sv.vehicle(tmp_path, root=ESTIMATOR)
     registry = sv.components(NexusPx4API=_SetpointController, StandInEstimatorAPI=StandInEstimator)
@@ -116,7 +117,7 @@ def test_an_estimator_the_vehicle_declares_runs_in_the_estimators_place_and_the_
     loop.guidance = guidance
     sv.steps(loop, 3)
     pose = [1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    assert guidance.seen == [pose, pose, pose]
+    assert guidance.seen == [pose, pose, pose, pose]
 
 
 def test_a_component_builds_in_the_role_its_schema_states_whatever_methods_its_class_has(tmp_path):
@@ -125,7 +126,8 @@ def test_a_component_builds_in_the_role_its_schema_states_whatever_methods_its_c
     Given the fixture vehicle with a stand-in schema that states the sensor role, on a mount prim under a body,
     whose class states `connect`, `close` and `stages`, and a stand-in estimator that reads its gain, when the
     run steps 2 ticks, then the component runs in the sensors' place in the tick, before the estimator, and
-    the vehicle's PX4 controller still builds as its one controller.
+    the vehicle's PX4 controller still builds as its one controller. The estimator reads 0 in the start, which
+    leaves a sensor's host stage out.
     """
     reader = sv.estimator(Signal("gain", Gain, shape=(1,)))
     path = sv.vehicle(tmp_path, sv.prim("Own", "StandInSensorAPI", "float nexus:gain = 2.5"), estimator="")
@@ -133,7 +135,7 @@ def test_a_component_builds_in_the_role_its_schema_states_whatever_methods_its_c
     controller = loop.controller
     sv.steps(loop, 2)
     gains = [float(gain.value) for _, gain in reader.kept]
-    assert (gains, type(controller)) == ([2.5, 2.5], sv.Controller)
+    assert (gains, type(controller)) == ([0.0, 2.5, 2.5], sv.Controller)
 
 
 def test_a_component_schema_that_states_no_role_fails_the_build_and_names_the_schema(tmp_path):

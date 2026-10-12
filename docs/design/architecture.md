@@ -1,11 +1,12 @@
 ---
-description: "How nexus works: a fixed-order deterministic sim loop of typed, replaceable components. The data model, interfaces, the estimator, guidance and controllers, actuators, observability, configuration, and packaging."
+description: "How nexus works: a fixed-order, deterministic loop of components in roles around Newton's physics. The data model, interfaces, the estimator, guidance and controllers, actuators, observability, configuration, and packaging."
 ---
 
 # Architecture
 
-The framework is an **imperative, fixed-order, deterministic simulation loop** in which every concern is
-a replaceable [component](concepts.md#component) behind a typed interface. The
+At the heart of nexus is an **imperative, fixed-order, deterministic loop** around Newton's physics.
+Each part of the flight stack is a [component](concepts.md#component) in a fixed
+[role](concepts.md#role), on one contract, and so is each part of the plant except the physics. The
 [loop](concepts.md#loop), the class [`Loop`](../reference/api/core.md), steps the
 components in a fixed order each [tick](concepts.md#tick), and [`Sim`](concepts.md#sim) builds
 and drives it.
@@ -31,9 +32,11 @@ Every component states its [stages](concepts.md#stage), and the loop cuts the
 [ring](concepts.md#ring) at the host stages, so each [segment](concepts.md#segment) replays as
 one CUDA graph. See [Execution](execution.md#stages-and-segments).
 
-The **site is resolved once at build**, not sampled per tick: the scene's geodetic origin gives the
-magnetic field, the air pressure and temperature, and gravity, and the sensors that read them take
-them as constructor arguments, the same way every other sensor parameter arrives. One gravity value
+The model holds **the world's values**, and nothing samples them per tick. The geodetic
+[origin](concepts.md#origin) the scene's `PhysicsScene` authors, the magnetic field, the air pressure
+and temperature are custom attributes of Newton's model at world frequency. The importer reads them
+from the scene, and the build derives the field from the origin where the scene authors none. A
+sensor reads them from the model, as it reads its [site](concepts.md#site). One gravity value
 reaches both the physics and the Inertial Measurement Unit (IMU). A **camera is a sensor**: each frame
 the Kit peer renders reaches its reader as a signal, an `Image`, so a vision estimator or controller
 reads frames as it reads any sensor.
@@ -111,7 +114,7 @@ same loop:
   connection on its prim, such as `nexus:inputs:imu`, picks the one PX4 receives. Its work is two
   **host stages**, `truth` and `exchange`, outside graph capture and not differentiable, and a lost
   connection ends the run.
-- **`PidController`**: the device-native, differentiable built-in, a
+- **`PidController`**: the device-native, differentiable example, a
   PID controller whose gains are Warp arrays with gradients, so
   it doubles as the [design-optimization](../examples/design-optimization.md) parameter set and the
   [determinism authority](execution.md#determinism).
@@ -126,8 +129,7 @@ state read the estimate, never the physics state, so a controller written agains
 estimator. The estimator belongs to the vehicle's flight stack, beside its controller, so the run
 doesn't name it: each example's assembly constructs it today. One estimator ships, `GroundTruthEstimator`,
 a passthrough that hands on the base body's true pose and twist with no noise and no delay. Its stage
-also runs once over the settled state before the first tick, so the guidance's first stage reads an
-estimate. A run whose guidance or controller reads the estimate, and that has no estimator, fails
+also runs in the [start](concepts.md#start), so the guidance's first stage reads an estimate. A run whose guidance or controller reads the estimate, and that has no estimator, fails
 before any stage runs, with an error that names the readers and the estimator.
 
 **What to fly is separate from how it flies.** A controller that takes setpoints flies the mission
@@ -151,7 +153,7 @@ client there: [`nexus_sim.px4.OffboardClient`](../reference/api/px4.md) on `sim.
 
 ## Actuators
 
-The rotor chain has three parts, split along NVIDIA Newton's model, so nothing in nexus overlaps
+The rotor chain has three parts, split along Newton's model, so nothing in nexus overlaps
 Newton's actuator.
 
 - The rotors' **[command element](concepts.md#role)** scales each command to a rotor-speed target,

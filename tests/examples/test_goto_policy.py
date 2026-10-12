@@ -14,12 +14,12 @@ pytest.importorskip("torch")
 pytest.importorskip("newton")
 
 import nexus_sim as nx
-from nexus_sim._src.build.assembly import build_scenario
 from nexus_sim._src.build.launch import resolve_vehicle_usd
 from nexus_sim._src.config import LaunchConfig
 from nexus_sim.examples.controllers.policy.assembly import build_policy_loop
 from nexus_sim.examples.controllers.policy.goto import flight
 from nexus_sim.examples.controllers.policy.goto.geofence import GeofenceGuidance
+from tests.usd.sensor_vehicle import scenario
 
 
 def _catalog_with_base(tmp_path, monkeypatch):
@@ -85,7 +85,7 @@ def _fly_tour(policy: str, steps: int) -> tuple[np.ndarray, np.ndarray]:
     """Fly the example's tour with *policy* for *steps* control steps on the CPU backend, as the
     example does, and return the recorded positions and ``xyzw`` quaternions of the base body.
     """
-    cfg = build_scenario()
+    cfg = scenario()
     cfg["physics"]["force_cpu"] = True
     vehicle_usd, _ = resolve_vehicle_usd(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
     orch = build_policy_loop(cfg, policy_path=policy, vehicle_usd=vehicle_usd, max_steps=steps)
@@ -111,14 +111,14 @@ def test_a_policy_flies_the_same_path_every_time(torchscript_policy):
 
 
 @pytest.mark.usefixtures("warp_cpu")  # the build's force_cpu sets the device; the scope puts it back
-def test_a_run_with_a_guidance_and_a_host_exchange_runs_one_device_segment_per_tick(torchscript_policy, caplog):
-    """A run with a guidance and a controller that exchanges on the host runs one device segment per tick,
-    not two.
+def test_a_run_with_a_guidance_and_a_host_exchange_runs_two_device_segments_per_tick(torchscript_policy, caplog):
+    """A run with a guidance and a controller that exchanges on the host runs two device segments per tick: one
+    that steps the plant before the host stages, and one that records the tick after them.
 
     Given the policy example's run on the CPU device with a TorchScript stand-in policy and its guidance,
-    when it takes its first tick, then its logged stage plan holds one device segment.
+    when it takes its first tick, then its logged stage plan holds two device segments.
     """
-    cfg = build_scenario()
+    cfg = scenario()
     cfg["physics"]["force_cpu"] = True
     vehicle_usd, _ = resolve_vehicle_usd(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
     orch = build_policy_loop(cfg, policy_path=torchscript_policy(), vehicle_usd=vehicle_usd, max_steps=1)
@@ -127,4 +127,4 @@ def test_a_run_with_a_guidance_and_a_host_exchange_runs_one_device_segment_per_t
     with caplog.at_level(logging.INFO, logger="nexus"), nx.Sim._from_loop(orch, guidance=guidance) as sim:
         sim.run()
     plan = next(m for m in (r.getMessage() for r in caplog.records) if m.startswith("stage plan:"))
-    assert plan.count("eager(") + plan.count("graph(") == 1
+    assert plan.count("eager(") + plan.count("graph(") == 2

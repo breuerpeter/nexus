@@ -1,10 +1,10 @@
 ---
-description: "Install nexus and run your first GPU-accelerated drone simulation in a couple of minutes."
+description: "Install nexus and fly your first drone with PX4 in a couple of minutes."
 ---
 
 # Quickstart
 
-Install nexus and run your first simulation in a couple of minutes.
+Install nexus and fly your first drone with PX4 in a couple of minutes.
 
 ## Requirements
 

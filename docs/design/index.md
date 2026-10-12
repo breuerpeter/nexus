@@ -1,15 +1,15 @@
 ---
-description: "What nexus is, the modular-component model behind it, and the foundational design decisions: single physics engine, one loop with rendering as a peer, Universal Scene Description (USD) as the single authority."
+description: "What nexus is and what it adds to Newton, the component model behind it, and the foundational design decisions: one physics engine, one loop with rendering as a peer, and Universal Scene Description (USD) as the single authority."
 ---
 
 # Design
 
-The framework is a **modular simulation core** for the Freefly PX4-based drones, Astro and Alta X,
-built on NVIDIA Newton physics. Every functional concern, whether physics, sensors, actuators,
-controller, scene, or renderer, is a component behind a typed interface. You can swap
-each one independently and select it through declarative configuration. It starts from a minimal
-working slice, Newton dynamics ↔ PX4 Software In The Loop (SITL) with Rerun observability, and
-grows by **adding components, never by rewriting**.
+Built on Newton, Warp and OpenUSD, nexus lets you develop drone subsystems and test them as part of
+the full flight stack. Each part of the flight stack is a [component](concepts.md#component) in a
+fixed [role](concepts.md#role), and so is each part of the plant it flies except the physics. The
+vehicle's Universal Scene Description (USD) file declares them all. A process outside the loop, such
+as PX4 Software In The Loop (SITL), joins the run as a [peer](concepts.md#peer). The framework grows
+by **adding components and peers, never by rewriting**.
 
 This section explains *how the framework works and why*. The [Guide](../guide/index.md) shows how
 to *use* it. The [Reference](../reference/index.md) documents the *surface*.
@@ -26,37 +26,38 @@ to *use* it. The [Reference](../reference/index.md) documents the *surface*.
 
 ## Why nexus exists
 
-Freefly builds its own ground stack for PX4 drones: a custom Ground Control Station (GCS), a
-companion computer, and cloud services. Developing and testing that stack with speed and
-confidence, and moving toward data-driven autonomy, needs a simulation capability Freefly **owns
-and controls**. A closed product, or a stack built around the wrong autopilot, doesn't give that.
-Simulation lowers the risk and cost of real flights, gives reproducible environments, and enables
-automated testing in CI. It's also the bet on data-driven autonomy: the sim is what spins up the
-data flywheel.
+A drone system is many subsystems: the estimator, control laws and guidance of its flight controller,
+its sensors and propellers, and the Ground Control Station (GCS) that commands it. You develop each
+one on its own, but it counts only once it works as part of the whole system. Real flights make that
+test slow, costly, and hard to repeat. In nexus, the subsystem under test flies inside a full flight
+stack against Newton's physics: PX4 and its own estimator, or an estimator, guidance, and controller
+of your own. The test is cheap, repeats, and runs in CI on every change.
 
-## Three regimes, one core
+## One loop, any controller
 
-The same component interfaces serve three execution regimes:
+The same loop flies each controller: PX4, the example Proportional Integral Derivative (PID)
+controller, or a trained policy.
 
-| Regime | What runs | Used for |
+| Controller | What runs | Used for |
 |---|---|---|
-| **Online PX4 SITL** | Real PX4 firmware flies the vehicle over a MAVLink lockstep link | Automated SITL testing, operator training, customer preview |
-| **Differentiable law** | A built-in Proportional Integral Derivative (PID) controller computes controls on the device. The whole rollout records a gradient | [Design optimization](../examples/design-optimization.md) |
-| **Trained policy** | The framework loads a network trained on Isaac Lab as a Controller | [Reinforcement learning](../examples/isaac-lab-rl.md) deployment |
+| **PX4** | Real PX4 firmware flies the vehicle over a MAVLink lockstep link | SITL testing in CI and flight-stack development |
+| **PID** | The example PID controller computes controls on the device, and a Warp tape records the whole rollout for its gradient | [Design optimization](../examples/design-optimization.md) |
+| **Trained policy** | The example policy controller runs a network trained in Isaac Lab | [Reinforcement learning](../examples/isaac-lab-rl.md) deployment |
 
-RL *training* itself runs in the separate `nexus-rl` app on Isaac Lab
-over the same Newton physics. The framework consumes only its exported policy.
+Policy *training* runs in the separate `nexus-rl` app, on Isaac Lab over Newton. The framework
+consumes only its exported policy.
 
 ## Foundational decisions
 
 These stances shape everything else and are load-bearing across the codebase:
 
-- **A single physics engine, NVIDIA Newton on Warp.** No solver zoo, no second backend. The
-  modularity that matters is sensors, controllers, scene, and renderer, not physics engines.
-  The same Newton dynamics run everywhere.
+- **One physics engine, Newton on Warp.** No second backend. The modularity that matters is the
+  flight stack, the sensors, the scene and the peers, not physics engines. One vehicle USD feeds
+  every use.
 - **One loop, rendering as a peer.** Every run's loop runs in one process on the host, rendered or
   not, and it's the authority for CI and determinism. A vehicle that authors RTX sensors renders
-  them in the **Kit render peer**, a container holding Isaac Sim, Cesium worlds, and no nexus code.
+  them in the **Kit render peer**, a container holding Isaac Sim, Cesium worlds, and the peer's own
+  program, which imports no nexus module.
   The host sends it poses and takes back frames. No nexus module imports Isaac Sim or Omniverse.
 - **Neutral USD is the single vehicle and scene authority.** A vehicle is one OpenUSD model,
   authored once, carrying geometry, mass, rotor joints, motor and propeller parameters, and the
@@ -64,8 +65,8 @@ These stances shape everything else and are load-bearing across the codebase:
   **only ever builds models from USD** and never synthesizes one in code. See
   [Conventions](conventions.md).
 - **RL is a separate consumer.** `nexus-rl` depends on the framework, not the reverse. The
-  framework consumes a trained policy through the ordinary [Controller](architecture.md#estimator-guidance-and-controllers)
-  interface and never depends on Isaac Lab.
+  framework flies a trained policy as it flies any other controller, a
+  [component](concepts.md#component) on the one contract, and never depends on Isaac Lab.
 - **Determinism is foundational.** Given a scenario, seed, and pinned code, a run is
   bit-reproducible, the property that underpins CI testing and bug reproduction. See
   [Execution &amp; determinism](execution.md).

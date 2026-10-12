@@ -83,13 +83,13 @@ class _Sensor(Component):
 
 
 class _Controller(Component):
-    """Answers the seed pass at once and keeps the last reading of the signal `q` its exchange read."""
+    """Answers at once and keeps the last reading of the signal `q` its exchange read."""
 
     def __init__(self):
         self.q = Signal("q", _Reading)
         self.last = None
 
-    def connect(self):
+    def connect(self, links):
         pass
 
     def exchange(self, t, timeout):

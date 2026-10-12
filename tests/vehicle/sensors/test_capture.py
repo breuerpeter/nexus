@@ -25,12 +25,9 @@ class _WarpView:
         self.body_qd = wp.array(bqd, dtype=wp.spatial_vector)
 
 
-def _run():
-    """The run's values each sensor here takes: a 4 ms tick and a site at 47.6, -122.3, 5 m."""
-    from nexus_sim._src.core.interfaces import SensorRun
-    from nexus_sim._src.scene import Site
-
-    return SensorRun(seed=42, dt=0.004, site=Site(lat=47.6, lon=-122.3, alt=5.0, mag_ned=(0.21, 0.05, 0.43)))
+def _on():
+    """A one-body model on the current device with one site, which each sensor here takes, and the site."""
+    return sv.mounted()
 
 
 def test_captured_sensor_noise_dithers_per_replay():
@@ -44,8 +41,8 @@ def test_captured_sensor_noise_dithers_per_replay():
 
     with wp.ScopedDevice("cuda:0"):
         view = _WarpView((0.0, 0.0, 1.0), (0.0, 0.0, 0.0, 1.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
-        s = sv.wired(ImuSensor(_run()))  # noise on, the default
-        s.sample_wp(view, SimTime(0.0, 0))  # warmup: first=1, seeds prev
+        s = sv.wired(ImuSensor(*_on(), seed=42))  # noise on, the default
+        s.sample_wp(view, SimTime(0.0, 0))  # warmup: the first sample seeds the earlier velocities
         with wp.ScopedCapture() as cap:
             s.sample_wp(view, SimTime(0.0, 0))
         wp.capture_launch(cap.graph)
@@ -71,10 +68,10 @@ def test_captured_px4_sensors_match_eager():
 
         def fresh():
             return [
-                sv.wired(ImuSensor(_run(), acc_noise=0.0, gyro_noise=0.0)),
-                sv.wired(MagSensor(_run(), noise=(0.0, 0.0, 0.0))),
-                sv.wired(BaroSensor(_run(), noise=0.0)),
-                sv.wired(GpsSensor(_run())),
+                sv.wired(ImuSensor(*_on(), seed=42, acc_noise=0.0, gyro_noise=0.0)),
+                sv.wired(MagSensor(*_on(), seed=42, noise=(0.0, 0.0, 0.0))),
+                sv.wired(BaroSensor(*_on(), seed=42, noise=0.0)),
+                sv.wired(GpsSensor(*_on(), seed=42)),
             ]
 
         eager = fresh()
@@ -83,7 +80,7 @@ def test_captured_px4_sensors_match_eager():
         eager_imu, eager_mag, eager_baro, eager_gps = (s.out.read() for s in eager)
 
         cap_sensors = fresh()
-        # warmup: seeds the Inertial Measurement Unit (IMU) finite-diff prev so capture runs with first=0
+        # warmup: the first sample of the Inertial Measurement Unit (IMU) seeds its earlier velocities before the capture
         for s in cap_sensors:
             s.sample_wp(view, SimTime(0.0, 0))
         with wp.ScopedCapture() as cap:

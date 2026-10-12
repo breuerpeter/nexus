@@ -10,6 +10,9 @@ import nexus_sim
 from nexus_sim import LaunchConfig
 from nexus_sim._src.config import Catalog, CatalogError, load_catalog, resolve
 
+# A scene's file, which a test that resolves with no fetch never reads.
+EMPTY = {"url": "file:///empty.usdz", "sha256": "0"}
+
 PROJECT = """\
 vehicles:
   project_vehicle:
@@ -44,7 +47,7 @@ def _veh(name):
 
 
 def _catalog_of(*names, **kw):
-    return Catalog.from_dict({"vehicles": {n: _veh(n) for n in names}, "scenes": {"empty": {}}, **kw})
+    return Catalog.from_dict({"vehicles": {n: _veh(n) for n in names}, "scenes": {"empty": {"usd": EMPTY}}, **kw})
 
 
 def test_a_vehicle_resolves_by_its_key():
@@ -87,7 +90,7 @@ def test_an_entry_addresses_its_own_blob():
                 "derived": {"usd": {"name": "astro", "sha256": "abc"}},
                 "direct": {"usd": {"url": "s3://example-bucket/elsewhere/x.usdz", "sha256": "def"}},
             },
-            "scenes": {"empty": {}},
+            "scenes": {"empty": {"usd": EMPTY}},
         }
     )
     assert (catalog.vehicles["derived"].usd.url, catalog.vehicles["direct"].usd.url) == (
@@ -132,13 +135,13 @@ def test_the_two_astro_max_vehicles_keep_the_usds_they_fly_today():
     """
     catalog = nexus_sim.Catalog.from_yaml()
     assert [catalog.vehicles[name].usd.url for name in ("astro_max_base", "astro_max_fpv")] == [
-        f"{HOSTED}/astro_max_base-04452a6811f9172d7ce461fb8ec82cd988813a9434f703d3841e6a238c97bde8.usdz",
-        f"{HOSTED}/astro_max_fpv-eb6a42f53c872e62985f1ede2c8d4bbb796de186d0e9f63990295fdaa327fc0b.usdz",
+        f"{HOSTED}/astro_max_base-b51d1612159f1f97582d4c37724f600adc3263082526d5fb56a7f23b3a86ee05.usdz",
+        f"{HOSTED}/astro_max_fpv-028773800f39e58aea09ef24fc488474b7e5f4a7ed1ce56e7b55825c6e52a524.usdz",
     ]
 
 
-BUNDLED_ASTRO = f"{HOSTED}/astro_max_base-04452a6811f9172d7ce461fb8ec82cd988813a9434f703d3841e6a238c97bde8.usdz"
-BUNDLED_EMPTY_SHA = "ab15e88be59c0ee93e63160c34b08485e3136d1f88313f24dcd67e482ecbed05"
+BUNDLED_ASTRO = f"{HOSTED}/astro_max_base-b51d1612159f1f97582d4c37724f600adc3263082526d5fb56a7f23b3a86ee05.usdz"
+BUNDLED_EMPTY_SHA = "6048870409ba031040676d24e56e152ae6c205807e4c1880e8b84b67e98b5947"
 REPIN_SHA = "1111111111111111111111111111111111111111111111111111111111111111"
 
 HOSTED_PROJECT = """\
@@ -232,7 +235,7 @@ def test_a_catalog_entry_that_still_carries_px4_fails_to_load(tmp_path):
         "  project_vehicle:\n"
         '    usd: { url: "file:///project_vehicle.usda", sha256: abc }\n'
         "    px4: { airframe: astro_max }\n"
-        "scenes:\n  empty: {}\n"
+        'scenes:\n  empty:\n    usd: { url: "file:///empty.usdz", sha256: "0" }\n'
     )
     with pytest.raises(ValueError, match=r"vehicles\.project_vehicle\.px4"):
         nexus_sim.Catalog.from_yaml(catalog)
@@ -273,8 +276,8 @@ def test_a_project_catalog_that_lists_only_what_it_adds_loads_on_its_own(tmp_pat
     assert list(nexus_sim.Catalog.from_yaml(catalog).vehicles) == ["my_quad"]
 
 
-BUNDLED_ASTRO_SHA = "04452a6811f9172d7ce461fb8ec82cd988813a9434f703d3841e6a238c97bde8"
-BUNDLED_FPV_SHA = "eb6a42f53c872e62985f1ede2c8d4bbb796de186d0e9f63990295fdaa327fc0b"
+BUNDLED_ASTRO_SHA = "b51d1612159f1f97582d4c37724f600adc3263082526d5fb56a7f23b3a86ee05"
+BUNDLED_FPV_SHA = "028773800f39e58aea09ef24fc488474b7e5f4a7ed1ce56e7b55825c6e52a524"
 
 KEYED_REPIN = f"""\
 vehicles:

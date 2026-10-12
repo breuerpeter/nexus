@@ -1,6 +1,6 @@
 """A short recorded flight of a one-body vehicle on the Warp CPU backend, for the recording tests.
 
-:func:`build` wires the run: the loop on real NVIDIA Newton physics, a Logger that writes an ``.rrd``,
+:func:`build` wires the run: the loop on real Newton physics, a Logger that writes an ``.rrd``,
 and a Recorder whose staging buffer holds ``staging`` rows, so a test crosses a drain in a few ticks. A
 stand-in controller commands nothing, so the body falls under gravity alone. :func:`rows` and
 :func:`times` read one entity of a written ``.rrd`` through Rerun's reader.
@@ -59,7 +59,7 @@ class Controller(Component):
     def __init__(self, act=None):
         self._act = act or (lambda tick: None)
 
-    def connect(self) -> None:
+    def connect(self, links) -> None:
         pass
 
     def stages(self):
@@ -105,7 +105,7 @@ def build(
     mb = newton.ModelBuilder()
     VehicleUsd({"usd_path": usd}).build(mb)
     model = mb.finalize()
-    recorder = {} if staging is None else {"recorder": Recorder(dt=DT, staging=staging)}
+    recorder = {} if staging is None else {"recorder": Recorder(staging=staging)}
     orch = Loop(
         clock=Clock(DT),
         physics=NewtonPhysics(model=model, cfg=cfg),

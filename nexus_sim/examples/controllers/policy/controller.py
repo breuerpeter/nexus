@@ -96,7 +96,7 @@ class TrainedPolicyController(Component):
         self._cmd = np.zeros((1, width), dtype=np.float32)
 
     # -- lifecycle ---------------------------------------------------------------
-    def connect(self) -> None:
+    def connect(self, links) -> None:
         import torch  # lazy: keep obs/actuator import-light and CPU-testable
 
         self._torch = torch
@@ -135,7 +135,7 @@ class TrainedPolicyController(Component):
         deploy twin of the training env's ``observation_from_state(..., prev_action=self._actions)``.
         """
         if self._policy is None:
-            raise RuntimeError("TrainedPolicyController.connect() must be called before act().")
+            raise RuntimeError("TrainedPolicyController.connect must be called before act().")
         net_obs = np.asarray(obs, dtype=np.float32).reshape(-1)  # the complete obs the obs function built
         omega_b = net_obs[3:6]  # body-frame angular velocity, = Rᵀ·ω_w: the rate loop's only state input
         with self._torch.no_grad():

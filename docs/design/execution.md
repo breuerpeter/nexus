@@ -11,6 +11,11 @@ user-facing control is `--device {auto,cpu,cuda}`, as in
 when one is present. The [loop](concepts.md#loop) builds the tick from the stages each component states
 and captures graphs on CUDA.
 
+NVIDIA Warp, the GPU compute framework that Newton builds on, uses Just In Time (JIT) compilation to
+turn the Python kernels of the loop and of Newton into C++ and CUDA. Every tick dispatches many such
+kernels: on an NVIDIA GPU they run in parallel across its cores. The same kernels also run on a CPU
+unchanged, but serially, so the CPU is a slower fallback.
+
 ## Stages and segments
 
 A [tick](concepts.md#tick) runs the [ring](concepts.md#ring) of [stages](concepts.md#stage) the
@@ -23,13 +28,13 @@ sensor's frame exchange with the Kit peer. A host stage runs on the host between
 differentiable rollout, for design optimization, records the whole loop on a Warp tape, the PID
 law included, and a loss back-propagates through it.
 
-The loop cuts the ring at its host stages. It rotates the ring to start after the last cut, so the
-ring's tail folds into the first run.
+The loop cuts the ring at its host stages, in ring order.
 **Each [segment](concepts.md#segment) becomes one CUDA graph.** The host stages run between the replays. With no
-host stage the whole ring is one graph. A component that states no stages fails the build with an
+host stage the whole ring is one graph. With one, the record stage runs in a graph of its own after the host
+stages, so the tick's row holds what they wrote. A component that states no stages fails the build with an
 error that names it, and so does a stage of a kind the loop doesn't know. Nothing falls back to a
 slower path in silence. A [run](concepts.md#run) logs its plan once at start, for example
-`stage plan: graph(clock -> clear -> rotors -> propellers -> step -> state -> record -> imu -> mag -> baro -> gps) host(truth) host(exchange)`.
+`stage plan: graph(clock -> clear -> rotors -> propellers -> step -> state -> imu -> mag -> baro -> gps) host(truth) host(exchange) graph(record)`.
 
 ## Signals
 
@@ -59,9 +64,11 @@ type, whose buffer holds one object. Core ships the types of the values between
   `PointCloud`, on the host, each with the sim time it shows: the signals `camera`, `thermal_camera`
   and `lidar`. An estimator reads them, and so does PX4's controller, which hands them to PX4's
   estimator.
-- The tick's sim time is the signal `time`, a `wp.float64` on the device. When a stage reads it, the
-  loop's clock stage opens each tick and adds one control tick, in step with the host clock. So a sensor
-  stamps its sample with the tick's time inside a captured graph too.
+- The tick's sim time is the signal `time`, a `wp.float64` on the device, in seconds, and `time_ns`, an
+  `wp.int64`, in nanoseconds. The loop's clock stage opens each tick and adds one control tick, in step
+  with the host clock. So a sensor stamps its sample with the tick's time inside a captured graph too, and
+  compares its due time with `time_ns`, which falls on a tick exactly. The record stage stamps each row
+  with `time`.
 
 A component can also declare its own type, a Warp struct of its own.
 
@@ -103,10 +110,10 @@ stops before any stage runs, with an error that names both ends, when:
 after the sensors', so it reads their values of that tick. It runs before the guidance's and the
 controller's, so they read its estimate of that tick. The guidance's stage is a host stage, and it
 holds no controller. It reads the vehicle's position from the estimate and writes a changed setpoint,
-which the controller reads on that tick. The loop also runs both stages once before the first tick,
-over the settled state, the estimator's first. So the guidance's first stage reads an estimate, and
-the controller holds its first setpoint before its own first stage. A tracking guidance stays out of that pass, because its plan starts the reference's
-clock. A stage that marks the tick done ends the run once the tick completes, which is how a guidance
+which the controller reads on that tick. The [start](concepts.md#start) also runs both stages once before
+the first tick, over the settled state, the estimator's first. So the guidance's first stage reads an
+estimate, and the controller holds its first setpoint before its own first stage. A tracking guidance
+plans there too, so its controller tracks the reference from its first exchange. A stage that marks the tick done ends the run once the tick completes, which is how a guidance
 ends its mission. A run whose guidance writes a setpoint no stage reads, such as a guidance on a PX4
 run, fails.
 
@@ -177,7 +184,7 @@ rate takes its next sample one period later. Initialization computes the magneti
 scenario's Global Positioning System (GPS) origin. An inconsistent field gives PX4 an invalid heading
 estimate, and it can't arm.
 
-**The PID law is the determinism authority.** The built-in PID, flown through the
+**The PID law is the determinism authority.** The example PID, flown through the
 unchanged loop on the CPU backend, reproduces bit-for-bit run-to-run. Real PX4 SITL is
 instead *tolerance-gated*. The PX4 multi-threaded work-queue interleaves same-tick estimator and
 controller threads in an OS-dependent order. So armed flight isn't bit-reproducible, even though
