@@ -82,7 +82,7 @@ uv run -m nexus_sim.examples sampling_mpc
 ```
 
 The decoupled SITL flight workflow, nexus plus PX4 SITL plus QGroundControl, with the
-port map, lives in [`docs/guide/running.md`](docs/guide/running.md).
+port map, lives in [Running a SITL flight](https://breuerpeter.github.io/nexus/guide/running/).
 
 ## Documentation
 
@@ -91,12 +91,12 @@ The full docs, with the design, the guide, the examples and the API reference, a
 
 ## Contributing
 
-Contributions are welcome. See [`docs/guide/contributing/`](docs/guide/contributing/index.md)
+Contributions are welcome. See [Contributing](https://breuerpeter.github.io/nexus/guide/contributing/)
 for setup and the conventional-commit / pre-commit workflow, and
-[`docs/design/conventions.md`](docs/design/conventions.md) for the framework-versus-example rule.
+[Conventions](https://breuerpeter.github.io/nexus/design/conventions/) for the framework-versus-example rule.
 
 ## License
 
-Licensed under the [Apache License 2.0](LICENSE). © 2026 Peter Breuer
+Licensed under the [Apache License 2.0](https://github.com/breuerpeter/nexus/blob/main/LICENSE). © 2026 Peter Breuer
 
-The hosted vehicle and scene assets and the Astro photograph in the banner aren't Apache-licensed. See [docs/license.md](docs/license.md).
+The hosted vehicle and scene assets and the Astro photograph in the banner aren't Apache-licensed. See [License](https://breuerpeter.github.io/nexus/license/).
