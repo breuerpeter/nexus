@@ -21,9 +21,9 @@ import math
 import os
 import sys
 
-import nexus_sim as nx
-from nexus_sim.examples._lib.origin import origin_layer
-from nexus_sim.px4 import FRAME_GLOBAL_RELATIVE_ALT, NAV_TAKEOFF, NAV_WAYPOINT, MissionItem, OffboardClient
+import nexus_uav as nx
+from nexus_uav.examples._lib.origin import origin_layer
+from nexus_uav.px4 import FRAME_GLOBAL_RELATIVE_ALT, NAV_TAKEOFF, NAV_WAYPOINT, MissionItem, OffboardClient
 
 READY_S = float(os.environ.get("NEWTON_CELL_READY_S", "300"))  # PX4-lockstep wait budget
 FLY_S = float(os.environ.get("NEWTON_CELL_FLY_S", "600"))  # arm + climb budget [sim s]
@@ -74,7 +74,7 @@ def _fly_mission(sim, op) -> bool:
     ``sim.wait_until``, so the budgets are in sim seconds and a slow cell isn't a failed one.
 
     Args:
-        sim: The running :class:`~nexus_sim.Sim`, already at lockstep.
+        sim: The running :class:`~nexus_uav.Sim`, already at lockstep.
         op: The offboard client on the address the run's port map names, not yet open.
 
     Returns:

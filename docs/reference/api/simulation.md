@@ -5,7 +5,7 @@ description: "API reference for Sim: the top-level entry point for building, run
 # Simulation
 
 ```python
-from nexus_sim import Sim
+from nexus_uav import Sim
 ```
 
 A script reads any recorded history by indexing the run with the path of the history below the
@@ -25,9 +25,9 @@ a value signal as an array without its leading axis of one. A host signal, such 
 reads as the object its writer wrote, though it keeps no history. `sim.time` is the sim time of the
 last tick.
 
-::: nexus_sim.Sim
+::: nexus_uav.Sim
 
 The scripts share one argument parser, and save a run's artifacts with one call:
 
-::: nexus_sim.sim_argparser
-::: nexus_sim.save_run_artifacts
+::: nexus_uav.sim_argparser
+::: nexus_uav.save_run_artifacts

@@ -12,10 +12,10 @@ pytest.importorskip("warp")
 import warp as wp
 
 # the canonical host reference / oracle
-from nexus_sim._src import transform
-from nexus_sim._src.core.schema import SimTime
-from nexus_sim._src.core.seedtree import SeedTree
-from nexus_sim._src.vehicle.sensors import BaroSensor, GpsSensor, ImuSensor, MagSensor
+from nexus_uav._src import transform
+from nexus_uav._src.core.schema import SimTime
+from nexus_uav._src.core.seedtree import SeedTree
+from nexus_uav._src.vehicle.sensors import BaroSensor, GpsSensor, ImuSensor, MagSensor
 from tests.usd import sensor_vehicle as sv
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")
@@ -53,7 +53,7 @@ def _sample(sensor, view, t: SimTime | None = None):
     """
     if t is not None:
         sensor.time.write([t.sim_time])
-    sensor.sample_wp(view, t or SimTime(0.0, 0))
+    sensor.sample_wp(view, t or SimTime(0, 0))
     return sensor.out.read()
 
 
@@ -69,7 +69,7 @@ def test_imu_accel_finite_diff_parity():
     s = sv.wired(ImuSensor(*_on(), seed=_SEED, acc_noise=0.0, gyro_noise=0.0))
     v1, v2 = (0.0, 0.0, 0.0), (0.04, -0.02, 0.06)  # velocity change over one tick
     _sample(s, _WarpView((0, 0, 1), _Q, v1, (0.3, -0.4, 0.5)))  # first: accel 0
-    sample = _sample(s, _WarpView((0, 0, 1), _Q, v2, (0.3, -0.4, 0.5)), SimTime(0.004, 1))
+    sample = _sample(s, _WarpView((0, 0, 1), _Q, v2, (0.3, -0.4, 0.5)), SimTime(4_000_000, 1))
     q = transform.quat_from_xyzw(_Q)
     acc_com = (np.array(v2) - np.array(v1)) / 0.004
     grav_b = transform.world_to_body(q, _GRAVITY_WORLD)
@@ -214,7 +214,7 @@ def test_imu_noise_is_run_to_run_bit_identical():
     def run():
         s = sv.wired(ImuSensor(*_on(), seed=_SEED))  # default noise on
         _sample(s, view)
-        sample = _sample(s, view, SimTime(0.004, 1))
+        sample = _sample(s, view, SimTime(4_000_000, 1))
         return (*np.asarray(sample.accel).tolist(), *np.asarray(sample.gyro).tolist())
 
     assert run() == run()  # same seed + step -> bit-for-bit the same Warp noise
@@ -230,7 +230,7 @@ def test_each_analytic_sensors_sample_carries_the_sim_time_the_signal_time_holds
     """
     view = _WarpView((0.0, 0.0, 1.0), (0.0, 0.0, 0.0, 1.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
     sensor = sv.wired(cls(*_on(), seed=_SEED), time=1.25)
-    sensor.sample_wp(view, SimTime(1.25, 0))
+    sensor.sample_wp(view, SimTime(1_250_000_000, 0))
 
     assert float(sensor.out.read().time) == 1.25
 
@@ -244,7 +244,7 @@ def _sample_times(sensor, view, ticks: int) -> list[float]:
         now = tick * 4_000_000 / 1e9
         sensor.time_ns.write([tick * 4_000_000])
         sensor.time.write([now])
-        sensor.sample_wp(view, SimTime(now, tick))
+        sensor.sample_wp(view, SimTime(tick * 4_000_000, tick))
         held.append(float(sensor.out.read().time))
     return held
 
@@ -291,7 +291,7 @@ def test_an_imu_slower_than_the_tick_differences_the_velocity_over_the_time_sinc
         sensor.time_ns.write([tick * 4_000_000])
         sensor.time.write([0.004 * tick])
         sample = _sample(
-            sensor, _WarpView((0, 0, 1), (0.0, 0.0, 0.0, 1.0), fall, (0, 0, 0)), SimTime(0.004 * tick, tick)
+            sensor, _WarpView((0, 0, 1), (0.0, 0.0, 0.0, 1.0), fall, (0, 0, 0)), SimTime(4_000_000 * tick, tick)
         )
 
     np.testing.assert_allclose(sample.accel, [0.0, 0.0, 0.0], atol=1e-4)

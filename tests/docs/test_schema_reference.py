@@ -39,10 +39,10 @@ def test_the_reference_page_is_generated_from_the_plugin():
     Given the plugin, when the hook renders the page, then it carries each schema, the prim types it applies
     to, and each attribute with its unit, limit and default.
     """
-    import nexus_sim  # noqa: F401  # registers the plugin
+    import nexus_uav  # noqa: F401  # registers the plugin
     from pxr import Usd
 
-    from nexus_sim._src.usd import schema_names
+    from nexus_uav._src.usd import schema_names
 
     page = _hook().schema_reference()
     registry = Usd.SchemaRegistry()

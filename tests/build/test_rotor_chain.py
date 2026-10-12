@@ -17,18 +17,18 @@ pytest.importorskip("pxr")
 
 import warp as wp
 
-from nexus_sim._src.api.sim import Sim
-from nexus_sim._src.build.assembly import assemble, build_loop, resolve_device
-from nexus_sim._src.build.launch import resolve_vehicle_usd
-from nexus_sim._src.config import LaunchConfig
-from nexus_sim._src.core import Clock
-from nexus_sim._src.core.interfaces import Component, Stage
-from nexus_sim._src.core.loop import Loop
-from nexus_sim._src.core.signals import Signal
-from nexus_sim._src.physics import NewtonPhysics
-from nexus_sim._src.physics.vehicle import VehicleUsd
-from nexus_sim._src.scene.world import GRAVITY
-from nexus_sim.examples._lib import Rotors, build_rotor_mixer_from_model
+from nexus_uav._src.api.sim import Sim
+from nexus_uav._src.build.assembly import assemble, build_loop, resolve_device
+from nexus_uav._src.build.launch import resolve_vehicle_usd
+from nexus_uav._src.config import LaunchConfig
+from nexus_uav._src.core import Clock
+from nexus_uav._src.core.interfaces import Component, Stage
+from nexus_uav._src.core.loop import Loop
+from nexus_uav._src.core.signals import Signal
+from nexus_uav._src.physics import NewtonPhysics
+from nexus_uav._src.physics.vehicle import VehicleUsd
+from nexus_uav._src.scene.world import GRAVITY
+from nexus_uav.examples._lib import Rotors, build_rotor_mixer_from_model
 from tests.usd.sensor_vehicle import HostController, scenario
 from tests.vehicle import quad
 

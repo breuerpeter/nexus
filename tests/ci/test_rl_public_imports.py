@@ -1,4 +1,4 @@
-"""The RL project imports only the public surface, and `lint` fails on an import of `nexus_sim._src` in it."""
+"""The RL project imports only the public surface, and `lint` fails on an import of `nexus_uav._src` in it."""
 
 import ast
 import shutil
@@ -14,23 +14,23 @@ _LINTED_FILES = (".pre-commit-config.yaml", "_typos.toml", "pyproject.toml", "ne
 
 
 def _private_imports(path: Path) -> list[int]:
-    """The lines of `path` that import `nexus_sim._src` or a module under it, at any depth."""
+    """The lines of `path` that import `nexus_uav._src` or a module under it, at any depth."""
 
     def private(module: str) -> bool:
-        return module == "nexus_sim._src" or module.startswith("nexus_sim._src.")
+        return module == "nexus_uav._src" or module.startswith("nexus_uav._src.")
 
     lines = []
     for node in ast.walk(ast.parse(path.read_text())):
         if isinstance(node, ast.Import) and any(private(alias.name) for alias in node.names):
             lines.append(node.lineno)
         elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-            if private(node.module) or (node.module == "nexus_sim" and any(a.name == "_src" for a in node.names)):
+            if private(node.module) or (node.module == "nexus_uav" and any(a.name == "_src" for a in node.names)):
                 lines.append(node.lineno)
     return lines
 
 
-def test_the_rl_project_imports_no_name_from_nexus_sim_src():
-    """The RL project imports no name from `nexus_sim._src`, in its package or its scripts.
+def test_the_rl_project_imports_no_name_from_nexus_uav_src():
+    """The RL project imports no name from `nexus_uav._src`, in its package or its scripts.
 
     Given the `nexus-rl` tree, when CI's import check runs, then it passes, with an import inside a
     function checked too.
@@ -66,23 +66,23 @@ def _lint(tree: Path, name: str, module: str, member: str) -> str:
     return out.stdout + out.stderr
 
 
-def test_a_new_import_of_nexus_sim_src_in_the_rl_package_fails_ci(tree):
-    """A new import of `nexus_sim._src` in the RL package fails CI.
+def test_a_new_import_of_nexus_uav_src_in_the_rl_package_fails_ci(tree):
+    """A new import of `nexus_uav._src` in the RL package fails CI.
 
-    Given a module under `nexus-rl/src/nexus_rl/` that imports `nexus_sim._src.config`, when CI's import
+    Given a module under `nexus-rl/src/nexus_rl/` that imports `nexus_uav._src.config`, when CI's import
     check runs, then it fails and names the module and the import.
     """
-    out = _lint(tree, "nexus-rl/src/nexus_rl/probe.py", "nexus_sim._src.config", "LaunchConfig")
+    out = _lint(tree, "nexus-rl/src/nexus_rl/probe.py", "nexus_uav._src.config", "LaunchConfig")
 
-    assert ("`nexus_sim._src` is banned" in out, "nexus-rl/src/nexus_rl/probe.py:1:1" in out) == (True, True)
+    assert ("`nexus_uav._src` is banned" in out, "nexus-rl/src/nexus_rl/probe.py:1:1" in out) == (True, True)
 
 
-def test_a_new_import_of_nexus_sim_src_in_an_rl_script_fails_ci_the_same_way(tree):
-    """A new import of `nexus_sim._src` in an RL script outside the package fails CI the same way.
+def test_a_new_import_of_nexus_uav_src_in_an_rl_script_fails_ci_the_same_way(tree):
+    """A new import of `nexus_uav._src` in an RL script outside the package fails CI the same way.
 
-    Given a script under `nexus-rl/scripts/` that imports `nexus_sim._src.logging`, when CI's import check
+    Given a script under `nexus-rl/scripts/` that imports `nexus_uav._src.logging`, when CI's import check
     runs, then it fails and names the script and the import.
     """
-    out = _lint(tree, "nexus-rl/scripts/probe.py", "nexus_sim._src.logging", "Logger")
+    out = _lint(tree, "nexus-rl/scripts/probe.py", "nexus_uav._src.logging", "Logger")
 
-    assert ("`nexus_sim._src` is banned" in out, "nexus-rl/scripts/probe.py:1:1" in out) == (True, True)
+    assert ("`nexus_uav._src` is banned" in out, "nexus-rl/scripts/probe.py:1:1" in out) == (True, True)

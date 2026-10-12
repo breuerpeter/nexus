@@ -9,12 +9,12 @@ import pytest
 
 pytest.importorskip("warp")
 
-from nexus_sim._src.core.interfaces import Component, Stage, Tick
-from nexus_sim._src.core.schema import PoseTwist, PositionGoal, ReferenceTrajectory, SimTime
-from nexus_sim._src.core.signals import Signal, wire
-from nexus_sim._src.core.stages import Bound
-from nexus_sim._src.guidance import MissionGuidance, TrackingGuidance
-from nexus_sim.examples.controllers.policy.goto.geofence import GeofenceGuidance
+from nexus_uav._src.core.interfaces import Component, Stage, Tick
+from nexus_uav._src.core.schema import PoseTwist, PositionGoal, ReferenceTrajectory, SimTime
+from nexus_uav._src.core.signals import Signal, wire
+from nexus_uav._src.core.stages import Bound
+from nexus_uav._src.guidance import MissionGuidance, TrackingGuidance
+from nexus_uav.examples.controllers.policy.goto.geofence import GeofenceGuidance
 
 
 class _Reference:
@@ -58,7 +58,7 @@ def _goal(guidance) -> tuple[float, float, float]:
 def _tick(guidance, pos, sim_time) -> Tick:
     """Run the guidance's stages once, as the loop does on one tick, and return that tick."""
     guidance.estimate.write([(pos, (0.0, 0.0, 0.0, 1.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))])  # the vehicle at `pos`
-    tick = Tick(state=None, t=SimTime(sim_time, 0), dt=0.004)
+    tick = Tick(state=None, t=SimTime(round(sim_time * 1e9), 0), dt=0.004)
     for stage in guidance.stages():
         stage.run(tick)
     return tick

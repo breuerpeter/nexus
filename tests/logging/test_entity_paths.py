@@ -35,11 +35,11 @@ def test_every_row_the_sim_writes_sits_under_sim(recorded_flight, rrd_rows):
 def test_a_log_record_lands_at_sim_logs_module_and_its_text_is_the_bare_message(tmp_path, rrd_rows):
     """A log record lands at `sim/logs/<module>`, and its text is the bare message.
 
-    Given a recording, when this module calls `nexus_sim.logger.info("hello")`, then the `.rrd` holds a
+    Given a recording, when this module calls `nexus_uav.logger.info("hello")`, then the `.rrd` holds a
     `TextLog` row at `/sim/logs/test_entity_paths` whose text is `hello`.
     """
-    import nexus_sim as nx
-    from nexus_sim._src.logging import Logger
+    import nexus_uav as nx
+    from nexus_uav._src.logging import Logger
 
     rrd = str(tmp_path / "log.rrd")
     sink = Logger(model=None, serve=False, record_to_rrd=rrd)
@@ -61,7 +61,7 @@ def test_the_runs_settings_profile_and_rtf_rows_sit_under_sim_run(tmp_path, rrd_
     Given a recording with settings, when the run logs its Real Time Factor (RTF) and its profile and
     ends, then the `.rrd` holds `/sim/run/settings`, `/sim/run/profile` and `/sim/run/rtf`.
     """
-    from nexus_sim._src.logging import Logger
+    from nexus_uav._src.logging import Logger
 
     rrd = str(tmp_path / "run.rrd")
     sink = Logger(model=None, serve=False, record_to_rrd=rrd, settings={"seed": 42})

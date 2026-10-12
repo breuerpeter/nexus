@@ -10,7 +10,7 @@ pytest.importorskip("rerun")
 pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
-from nexus_sim._src.core.interfaces import Component, Stage
+from nexus_uav._src.core.interfaces import Component, Stage
 
 DT = 0.004  # 250 Hz control ticks
 STEPS = 30  # ticks, well past the trail's two-point floor
@@ -56,12 +56,12 @@ def flight_paths(tmp_path_factory, rrd_entities):
     import newton
     import warp as wp
 
-    from nexus_sim._src.core.clock import Clock
-    from nexus_sim._src.core.loop import Loop
-    from nexus_sim._src.logging import Logger
-    from nexus_sim._src.physics.physics import NewtonPhysics
-    from nexus_sim._src.physics.vehicle import VehicleUsd
-    from nexus_sim._src.recording import Recorder
+    from nexus_uav._src.core.clock import Clock
+    from nexus_uav._src.core.loop import Loop
+    from nexus_uav._src.logging import Logger
+    from nexus_uav._src.physics.physics import NewtonPhysics
+    from nexus_uav._src.physics.vehicle import VehicleUsd
+    from nexus_uav._src.recording import Recorder
 
     tmp = tmp_path_factory.mktemp("flight")
     usd = str(tmp / "mini.usda")

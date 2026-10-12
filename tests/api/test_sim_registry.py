@@ -9,10 +9,10 @@ import pytest
 pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
-import nexus_sim as nx
-from nexus_sim._src.core.interfaces import Component, Stage
-from nexus_sim._src.vehicle.forces.propellers import Propeller
-from nexus_sim._src.vehicle.sensors import ImuSensor
+import nexus_uav as nx
+from nexus_uav._src.core.interfaces import Component, Stage
+from nexus_uav._src.vehicle.forces.propellers import Propeller
+from nexus_uav._src.vehicle.sensors import ImuSensor
 from tests.usd import sensor_vehicle as sv
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")

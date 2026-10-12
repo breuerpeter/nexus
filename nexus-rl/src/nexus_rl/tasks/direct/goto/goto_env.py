@@ -18,7 +18,7 @@ spinning-rotor visuals.
 
 Deploy parity: the core runtime flies the same unified ``Rotors`` actuator, the same ``rigid_body_wrench``
 kernel with ``dim = 1``, over the same mixer, so train and deploy are byte-shared, the gate being the
-policy-level transfer in ``nexus_sim/examples/controllers/policy/goto/flight.py``.
+policy-level transfer in ``nexus_uav/examples/controllers/policy/goto/flight.py``.
 """
 
 from __future__ import annotations
@@ -28,18 +28,18 @@ import torch
 import warp as wp
 from isaaclab.utils.configclass import configclass
 
-from nexus_sim.examples._lib import (  # the shared single-body model + mixer: train + deploy + diff
+from nexus_uav.examples._lib import (  # the shared single-body model + mixer: train + deploy + diff
     build_allocation,  # the one allocation builder; replaces the hand-rolled torch B
     ctbr_to_cmd_batched,  # the same CTBR mixer the deploy policy controller runs, with dim=N here
     motor_alpha,  # first-order motor lag α from (τ, dt)
     rigid_body_wrench_batched,  # the same unified motor model the deploy actuator runs, with dim=N here
 )
-from nexus_sim.examples._lib.observation import (  # shared single source for train+deploy obs
+from nexus_uav.examples._lib.observation import (  # shared single source for train+deploy obs
     OBS_DIM,  # kinematic obs dim, 12
     POLICY_OBS_DIM,  # kinematic + last-action obs dim, 16
     observation_from_state,  # shared obs-from-state, the single source
 )
-from nexus_sim.examples._lib.single_body import (  # the rotors the vehicle USD declares, and their geometry
+from nexus_uav.examples._lib.single_body import (  # the rotors the vehicle USD declares, and their geometry
     RPM_PER_RADS,
     parse_rotors,
     quat_to_R,

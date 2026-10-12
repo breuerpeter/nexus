@@ -9,13 +9,13 @@ import numpy as np
 import pytest
 import warp as wp
 
-from nexus_sim._src.core.clock import DeviceClock
-from nexus_sim._src.core.interfaces import Component, Stage
-from nexus_sim._src.core.schema import PoseTwist, SimTime
-from nexus_sim._src.core.signals import Signal, wire
-from nexus_sim._src.core.stages import Bound
-from nexus_sim._src.vehicle.controllers.px4 import controller as ctrl
-from nexus_sim._src.vehicle.sensors import BaroSensor, GpsSensor, ImuSensor
+from nexus_uav._src.core.clock import DeviceClock
+from nexus_uav._src.core.interfaces import Component, Stage
+from nexus_uav._src.core.schema import PoseTwist, SimTime
+from nexus_uav._src.core.signals import Signal, wire
+from nexus_uav._src.core.stages import Bound
+from nexus_uav._src.vehicle.controllers.px4 import controller as ctrl
+from nexus_uav._src.vehicle.sensors import BaroSensor, GpsSensor, ImuSensor
 from tests.usd import sensor_vehicle as sv
 
 
@@ -122,7 +122,7 @@ def _exchange(*sensors, ticks: int) -> None:
     controller.connect({})
     state = _AtRest()
     for tick in range(ticks):
-        t = SimTime(tick * 4_000_000 / 1e9, tick)
+        t = SimTime(tick * 4_000_000, tick)
         clock.set(t)
         for sensor in sensors:
             sensor.sample_wp(state, t)

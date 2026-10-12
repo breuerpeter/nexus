@@ -18,9 +18,9 @@ pytest.importorskip("pxr")
 
 import warp as wp
 
-from nexus_sim._src.core.schema import BaroSample, GpsSample, Image, ImuSample, MagSample, PointCloud
-from nexus_sim._src.core.signals import Signal
-from nexus_sim._src.peers.kit.fake import KitFake
+from nexus_uav._src.core.schema import BaroSample, GpsSample, Image, ImuSample, MagSample, PointCloud
+from nexus_uav._src.core.signals import Signal
+from nexus_uav._src.peers.kit.fake import KitFake
 from tests.peers.kit.conftest import daemon  # noqa: F401
 from tests.usd import sensor_vehicle as sv
 

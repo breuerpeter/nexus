@@ -12,12 +12,12 @@ pytest.importorskip("warp")
 
 import warp as wp
 
-from nexus_sim._src.core.interfaces import Component, Stage
-from nexus_sim._src.core.loop import Loop
-from nexus_sim._src.core.schema import ReferenceTrajectory, SimTime
-from nexus_sim._src.core.signals import Signal, wire
-from nexus_sim._src.core.stages import Bound
-from nexus_sim._src.guidance import TrackingGuidance
+from nexus_uav._src.core.interfaces import Component, Stage
+from nexus_uav._src.core.loop import Loop
+from nexus_uav._src.core.schema import ReferenceTrajectory, SimTime
+from nexus_uav._src.core.signals import Signal, wire
+from nexus_uav._src.core.stages import Bound
+from nexus_uav._src.guidance import TrackingGuidance
 
 DEVICES = ["cpu", pytest.param("cuda:0", marks=pytest.mark.gpu)]
 
@@ -52,7 +52,7 @@ class _Clock:
         return self._t
 
     def advance(self):
-        self._t = SimTime(self._t.sim_time + self.dt, self._t.step_index + 1)
+        self._t = SimTime(self._t.time_ns + round(self.dt * 1e9), self._t.step_index + 1)
         return self._t
 
     def throttle(self):
@@ -216,11 +216,11 @@ def _stopped(tmp_path, controller, *, sensors=(), guidance=None) -> tuple[str, i
     """
     pytest.importorskip("newton")
     pytest.importorskip("pxr")
-    from nexus_sim._src.api.sim import Sim
-    from nexus_sim._src.build.assembly import assemble, resolve_device
-    from nexus_sim._src.physics import NewtonPhysics
-    from nexus_sim._src.physics.vehicle import VehicleUsd
-    from nexus_sim._src.vehicle.estimators import GroundTruthEstimator
+    from nexus_uav._src.api.sim import Sim
+    from nexus_uav._src.build.assembly import assemble, resolve_device
+    from nexus_uav._src.physics import NewtonPhysics
+    from nexus_uav._src.physics.vehicle import VehicleUsd
+    from nexus_uav._src.vehicle.estimators import GroundTruthEstimator
     from tests.usd.sensor_vehicle import scenario
     from tests.vehicle import quad
 

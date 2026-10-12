@@ -10,9 +10,9 @@ import pytest
 
 pytest.importorskip("pxr")
 
-from nexus_sim._src.vehicle.sensors.rtx_camera import RtxCameraSensor
-from nexus_sim._src.vehicle.sensors.rtx_lidar import RtxLidarSensor
-from nexus_sim._src.vehicle.sensors.rtx_thermal import RtxThermalSensor
+from nexus_uav._src.vehicle.sensors.rtx_camera import RtxCameraSensor
+from nexus_uav._src.vehicle.sensors.rtx_lidar import RtxLidarSensor
+from nexus_uav._src.vehicle.sensors.rtx_thermal import RtxThermalSensor
 from tests.usd import sensor_vehicle as sv
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")
@@ -76,3 +76,14 @@ def test_an_rtx_sensor_writes_each_frame_to_its_signal_with_the_sim_time_it_show
     frame = rtx.out.read()
 
     assert (frame.time, content(frame)) == (0.5, True)
+
+
+def test_an_rtx_sensor_at_10_hz_is_due_on_every_25th_tick_of_4_ms(mounted):
+    """An RTX sensor at 10 Hz is due once every 25 ticks of 4 ms, from its first.
+
+    Given a camera at `nexus:rate = 10`, when the test asks it on each of 251 ticks of 4 ms, from 4 ms, then it's
+    due on ticks 1, 26, 51 and so on up to 251.
+    """
+    camera = mounted(RtxCameraSensor, width=WIDTH, height=HEIGHT, rate=10.0)
+
+    assert [k for k in range(1, 252) if camera.due(k * 4_000_000)] == list(range(1, 252, 25))

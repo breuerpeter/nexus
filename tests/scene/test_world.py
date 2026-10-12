@@ -11,7 +11,7 @@ pytest.importorskip("pxr")
 
 import newton
 
-from nexus_sim._src.scene import world
+from nexus_uav._src.scene import world
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")
 

@@ -4,7 +4,7 @@ import importlib
 
 import pytest
 
-cli = importlib.import_module("nexus_sim._src.cli.main")
+cli = importlib.import_module("nexus_uav._src.cli.main")
 
 # A vehicle that declares PX4 on its controller's scope and authors no camera.
 PLAIN_USD = (
@@ -139,7 +139,7 @@ def test_a_run_told_its_catalog_flies_the_vehicles_of_that_file(monkeypatch, cap
     `catalog=<file>`, then the vehicle resolves from that file in both: each run goes on to fetch the
     vehicle's file that the catalog lists, which stops it, since the entry's hash is a stand-in.
     """
-    from nexus_sim import Sim
+    from nexus_uav import Sim
 
     usd = tmp_path / "assets" / "project_vehicle.usda"
     usd.parent.mkdir()
@@ -203,8 +203,8 @@ def test_the_command_line_takes_the_layer(monkeypatch, tmp_path, warp_cpu):
     stand-in docker daemon, when `nexus run --vehicle … --scene empty --layer <layer>` runs, then PX4 Software
     In The Loop (SITL) starts on the layer's airframe, `PX4_SIM_MODEL=none_bar`, as the same run through `Sim` does.
     """
-    import nexus_sim._src.peers.containers as containers
-    from nexus_sim._src.api.sim import Sim
+    import nexus_uav._src.peers.containers as containers
+    from nexus_uav._src.api.sim import Sim
 
     daemon = _Daemon()
     monkeypatch.setattr(containers, "client", lambda: daemon)
@@ -253,7 +253,7 @@ def test_the_px4_flags_are_gone(monkeypatch, tmp_path, capsys):
     `TypeError`. The vehicle names a file that doesn't exist and `DOCKER_HOST` points nowhere, so no
     run can start if the tool still takes a flag.
     """
-    from nexus_sim._src.api.sim import Sim
+    from nexus_uav._src.api.sim import Sim
 
     monkeypatch.setenv("DOCKER_HOST", f"unix://{tmp_path / 'no-daemon.sock'}")
     missing = str(tmp_path / "missing.usda")

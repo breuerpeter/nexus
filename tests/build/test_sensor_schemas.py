@@ -16,10 +16,10 @@ import pytest
 pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
-from nexus_sim._src.core.registry import Registry
-from nexus_sim._src.core.schema import BaroSample, GpsSample, ImuSample, MagSample
-from nexus_sim._src.core.signals import Signal
-from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
+from nexus_uav._src.core.registry import Registry
+from nexus_uav._src.core.schema import BaroSample, GpsSample, ImuSample, MagSample
+from nexus_uav._src.core.signals import Signal
+from nexus_uav._src.peers.px4_sitl.fake import Px4Fake
 from tests.usd import sensor_vehicle as sv
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")
@@ -315,8 +315,8 @@ def test_a_projects_own_sensor_schema_builds_its_class_on_the_model_and_its_prim
     code = f"""
 import pathlib
 import warp as wp
-import nexus_sim
-from nexus_sim._src.core.signals import Signal
+import nexus_uav
+from nexus_uav._src.core.signals import Signal
 from nexus_stand_in.sensor import Gain
 from tests.usd import sensor_vehicle as sv
 
@@ -366,8 +366,8 @@ def test_a_projects_own_sensor_writes_its_output_as_a_signal_of_the_projects_own
     code = f"""
 import pathlib
 import warp as wp
-import nexus_sim
-from nexus_sim._src.core.signals import Signal
+import nexus_uav
+from nexus_uav._src.core.signals import Signal
 from nexus_stand_in.sensor import Gain
 from tests.usd import sensor_vehicle as sv
 

@@ -11,8 +11,8 @@ import subprocess
 import pytest
 from docker.errors import ImageNotFound, NotFound
 
-import nexus_sim._src.peers.containers as containers
-from nexus_sim._src.peers.px4_sitl.runner import IMAGE, Px4Sitl, build
+import nexus_uav._src.peers.containers as containers
+from nexus_uav._src.peers.px4_sitl.runner import IMAGE, Px4Sitl, build
 
 
 class _Calls(list):

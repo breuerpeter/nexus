@@ -29,8 +29,8 @@ def _author_vehicle_with_gravity(path: str, magnitude: float) -> None:
 
 def test_model_gravity_is_the_sites_whatever_the_vehicle_usd_authors(tmp_path):
     """A run's model gravity is the world's 9.81 whatever the vehicle USD's `PhysicsScene` authors."""
-    from nexus_sim._src.physics.physics import NewtonPhysics
-    from nexus_sim._src.physics.vehicle import VehicleUsd
+    from nexus_uav._src.physics.physics import NewtonPhysics
+    from nexus_uav._src.physics.vehicle import VehicleUsd
 
     usd = str(tmp_path / "grav5.usda")
     _author_vehicle_with_gravity(usd, 5.0)

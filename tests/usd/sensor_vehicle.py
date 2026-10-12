@@ -18,13 +18,13 @@ from typing import ClassVar
 import numpy as np
 import warp as wp
 
-from nexus_sim._src.config import LaunchConfig
-from nexus_sim._src.core.clock import DeviceClock
-from nexus_sim._src.core.interfaces import Component, Stage
-from nexus_sim._src.core.registry import Registry
-from nexus_sim._src.core.signals import Signal, wire
-from nexus_sim._src.core.stages import Bound
-from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
+from nexus_uav._src.config import LaunchConfig
+from nexus_uav._src.core.clock import DeviceClock
+from nexus_uav._src.core.interfaces import Component, Stage
+from nexus_uav._src.core.registry import Registry
+from nexus_uav._src.core.signals import Signal, wire
+from nexus_uav._src.core.stages import Bound
+from nexus_uav._src.peers.px4_sitl.fake import Px4Fake
 
 BASE = Path(__file__).with_name("fixture_vehicle.usda")
 # The scene a fixture run flies in: an empty world, local, so a test fetches nothing.
@@ -268,7 +268,7 @@ def scenario() -> dict:
     """The default scenario in the fixture scene, an empty world whose ``PhysicsScene`` authors its origin, for
     a test that builds its run's cfg by hand: the model takes the origin from the scene.
     """
-    from nexus_sim._src.build.assembly import build_scenario
+    from nexus_uav._src.build.assembly import build_scenario
 
     cfg = build_scenario()
     cfg["scene_usd_path"] = SCENE
@@ -303,7 +303,7 @@ def model(
     """
     import newton
 
-    from nexus_sim._src.scene import world
+    from nexus_uav._src.scene import world
 
     builder = newton.ModelBuilder()
     world.declare(builder)
@@ -339,7 +339,7 @@ def build(
     in free flight, where it falls, in place of resting on the ground. The rest goes to the build:
     `components` replaces the registry of :func:`components`, and `peers` is the peer mapping.
     """
-    import nexus_sim._src.build.launch as launch_mod
+    import nexus_uav._src.build.launch as launch_mod
 
     launch = LaunchConfig.from_dict(
         {"vehicle": vehicle_path, "scene": scene, "runtime": {"device": device, "seed": seed}}

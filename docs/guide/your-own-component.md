@@ -19,7 +19,7 @@ attributes of the schema, in the `nexus:` namespace, are the keyword arguments o
 schema includes its [role](../design/concepts.md#role) schema as a built-in, `NexusControllerRoleAPI`
 for a controller, so the builder places the component by its role and never by the methods of its
 class. The [schema reference](../reference/schemas.md) lists the shipped schemas and their
-attributes, and `nexus_sim/_src/usd/generatedSchema.usda` is the file to copy from.
+attributes, and `nexus_uav/_src/usd/generatedSchema.usda` is the file to copy from.
 
 `NexusPx4API` is PX4's. It applies to a `Scope` under the vehicle's root prim, states the controller
 role, and authors `nexus:airframe`, the one attribute its class takes from the vehicle.
@@ -37,7 +37,7 @@ run before it starts.
 import numpy as np
 import warp as wp
 
-from nexus_sim import Component, ImuSample, Signal, Stage
+from nexus_uav import Component, ImuSample, Signal, Stage
 
 
 class HoverController(Component):
@@ -86,7 +86,7 @@ class RangeSensor(Component):
 ## The registration
 
 Installing your package registers it. One entry per schema in the `nexus.registry` group of your
-`pyproject.toml` names the class by import path. `import nexus_sim` then registers your schema plugin
+`pyproject.toml` names the class by import path. `import nexus_uav` then registers your schema plugin
 with OpenUSD, and the [registry](../design/concepts.md#registry) resolves the schema to your class:
 
 ```toml
@@ -121,9 +121,9 @@ declared peer through the registry, the next step on the roadmap.
 ## What an integration exports
 
 A project that ships a component also ships the names a script needs to command it, in a namespace
-of its own. PX4's is `nexus_sim.px4`. It holds `OffboardClient`, the client a script opens on the
+of its own. PX4's is `nexus_uav.px4`. It holds `OffboardClient`, the client a script opens on the
 offboard link, and `Plan`, `MissionItem` and `read_plan`, the mission a script uploads, with the
 `NAV_*` and `FRAME_*` constants a mission item names. Each lives in PX4's own folder, and the
-namespace only re-exports them, so the generic surface, `nexus_sim`, names nothing of PX4. That list
+namespace only re-exports them, so the generic surface, `nexus_uav`, names nothing of PX4. That list
 is the whole of what an integration exposes. Its classes stay where they live, and a script imports
 the few names it spells.

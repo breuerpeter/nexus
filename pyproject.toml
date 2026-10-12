@@ -3,7 +3,7 @@ requires = ["uv_build>=0.11.0,<1"]
 build-backend = "uv_build"
 
 [project]
-name = "nexus-sim"
+name = "nexus-uav"
 version = "0.1.0"
 description = "Flight stack simulation with Newton"
 readme = "README.md"
@@ -41,7 +41,7 @@ dependencies = [
     "scipy>=1.11.0",
     "rerun-sdk>=0.34.1,<0.35",
     # The docker daemon client: the framework starts the PX4 SITL container it flies against and
-    # the Kit render peer (nexus_sim/_src/peers/containers.py). Pure Python over requests/urllib3, which
+    # the Kit render peer (nexus_uav/_src/peers/containers.py). Pure Python over requests/urllib3, which
     # are already in the tree.
     "docker>=7.1.0",
 ]
@@ -55,23 +55,23 @@ examples = ["ruckig>=0.14"]  # jerk-limited reference trajectory the MPC example
 acados   = ["casadi>=3.6,<=3.8.1", "ruckig>=0.14", "matplotlib", "Deprecated"]
 # Isaac Lab RL training is NOT an extra of the core — it lives in the separate `nexus-rl` uv
 # project (own venv), so the heavy, prerelease-pinned Isaac Lab stack stays out of this environment.
-all      = ["nexus-sim[policy,examples]"]
+all      = ["nexus-uav[policy,examples]"]
 
 [project.scripts]
-nexus = "nexus_sim._src.cli.main:main"
+nexus = "nexus_uav._src.cli.main:main"
 
 # The class each nexus schema resolves to, loaded only when a vehicle applies the schema. A project
 # beside nexus declares its own classes in the same group.
 [project.entry-points."nexus.registry"]
-NexusImuAPI = "nexus_sim._src.vehicle.sensors:ImuSensor"
-NexusMagAPI = "nexus_sim._src.vehicle.sensors:MagSensor"
-NexusBaroAPI = "nexus_sim._src.vehicle.sensors:BaroSensor"
-NexusGpsAPI = "nexus_sim._src.vehicle.sensors:GpsSensor"
-NexusCameraAPI = "nexus_sim._src.vehicle.sensors.rtx_camera:RtxCameraSensor"
-NexusThermalCameraAPI = "nexus_sim._src.vehicle.sensors.rtx_thermal:RtxThermalSensor"
-NexusLidarAPI = "nexus_sim._src.vehicle.sensors.rtx_lidar:RtxLidarSensor"
-NexusPropellerAPI = "nexus_sim._src.vehicle.forces.propellers:Propeller"
-NexusPx4API = "nexus_sim._src.vehicle.controllers.px4:Px4MavlinkController"
+NexusImuAPI = "nexus_uav._src.vehicle.sensors:ImuSensor"
+NexusMagAPI = "nexus_uav._src.vehicle.sensors:MagSensor"
+NexusBaroAPI = "nexus_uav._src.vehicle.sensors:BaroSensor"
+NexusGpsAPI = "nexus_uav._src.vehicle.sensors:GpsSensor"
+NexusCameraAPI = "nexus_uav._src.vehicle.sensors.rtx_camera:RtxCameraSensor"
+NexusThermalCameraAPI = "nexus_uav._src.vehicle.sensors.rtx_thermal:RtxThermalSensor"
+NexusLidarAPI = "nexus_uav._src.vehicle.sensors.rtx_lidar:RtxLidarSensor"
+NexusPropellerAPI = "nexus_uav._src.vehicle.forces.propellers:Propeller"
+NexusPx4API = "nexus_uav._src.vehicle.controllers.px4:Px4MavlinkController"
 
 [project.urls]
 Homepage = "https://github.com/breuerpeter/nexus"
@@ -91,7 +91,7 @@ environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
 build-constraint-dependencies = ["scikit-build-core<0.10"]
 
 [tool.uv.build-backend]
-module-name = "nexus_sim"
+module-name = "nexus_uav"
 module-root = ""
 # Agent instruction files stay in the repo; neither artifact ships them.
 wheel-exclude = ["**/CLAUDE.md"]
@@ -127,7 +127,7 @@ docs = [
 ]
 
 [tool.pytest.ini_options]
-# pytest's default list also skips `build`, the name of the folder that mirrors `nexus_sim/_src/build/`.
+# pytest's default list also skips `build`, the name of the folder that mirrors `nexus_uav/_src/build/`.
 norecursedirs = [".*", "dist", "node_modules", "venv"]
 testpaths = ["tests"]
 # A misspelled marker fails the run instead of moving a test to the wrong leg. The tests run on one
@@ -160,9 +160,9 @@ ignore = ["E501","PLC0415","RUF001","RUF002","RUF003","PLW0603",
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 # nexus-rl is the worked example of a project beside the framework, so it imports only the public surface,
-# `nexus_sim` and the examples' shared library, never `nexus_sim._src`. The ban holds there alone.
+# `nexus_uav` and the examples' shared library, never `nexus_uav._src`. The ban holds there alone.
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
-"nexus_sim._src".msg = "nexus-rl imports only the public surface: nexus_sim or nexus_sim.examples._lib"
+"nexus_uav._src".msg = "nexus-rl imports only the public surface: nexus_uav or nexus_uav.examples._lib"
 [tool.ruff.lint.per-file-ignores]
 "!nexus-rl/**" = ["TID251"]
 [tool.ruff.format]

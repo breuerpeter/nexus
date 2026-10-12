@@ -12,8 +12,9 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from nexus_sim._src.peers.kit.runner import KIT_DIR, KitPeer, KitPeerError
-from nexus_sim._src.rendering.link import KitRenderer
+from nexus_uav._src.core.schema import SimTime
+from nexus_uav._src.peers.kit.runner import KIT_DIR, KitPeer, KitPeerError
+from nexus_uav._src.rendering.link import KitRenderer
 
 wire = runpy.run_path(str(KIT_DIR / "link.py"))
 
@@ -73,7 +74,7 @@ class _Camera:
     def __init__(self):
         self.frames = []
 
-    def take_due(self, now):
+    def due(self, now_ns):
         return True
 
     def emit(self, arrays, t_shown):
@@ -85,7 +86,7 @@ def _state():
 
 
 def _tick(t):
-    return SimpleNamespace(sim_time=t)
+    return SimTime(round(t * 1e9), 0)
 
 
 def _renderer(daemon, tmp_path, serve):

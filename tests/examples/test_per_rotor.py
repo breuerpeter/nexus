@@ -1,4 +1,4 @@
-"""Parity + invariants for the shared single-body Rotors model in nexus_sim.examples._lib.
+"""Parity + invariants for the shared single-body Rotors model in nexus_uav.examples._lib.
 
 The Collective Thrust and Body Rates (CTBR) pipeline splits between the controller and the actuator: the controller's mixer,
 ``ctbr_to_cmd_batched``: inner rate loop → ``B⁻¹`` → per-rotor command, feeds the motor model,
@@ -23,7 +23,7 @@ import numpy as np
 import pytest
 import warp as wp
 
-from nexus_sim.examples._lib import (
+from nexus_uav.examples._lib import (
     CtbrParams,
     build_allocation,
     ctbr_to_cmd_batched,

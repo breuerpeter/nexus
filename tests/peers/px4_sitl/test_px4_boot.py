@@ -21,8 +21,8 @@ os.environ.setdefault("MAVLINK_DIALECT", "common")
 
 from pymavlink import mavutil
 
-import nexus_sim as nx
-from nexus_sim._src.peers.px4_sitl import checkout
+import nexus_uav as nx
+from nexus_uav._src.peers.px4_sitl import checkout
 
 # The tree the run would fly, with no fetch: $PX4_DIR, or the pinned tree once a run fetched it.
 _TREE = checkout.tree(fetch_missing=False)

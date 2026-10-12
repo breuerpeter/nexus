@@ -13,14 +13,14 @@ import hashlib
 
 import pytest
 
-import nexus_sim._src.build.launch as launch_mod
-from nexus_sim._src.api.sim import Sim
-from nexus_sim._src.config import Catalog, LaunchConfig
-from nexus_sim._src.core.interfaces import Component, Stage
-from nexus_sim._src.core.loop import Loop
-from nexus_sim._src.core.schema import PoseTwist, SimTime
-from nexus_sim._src.core.signals import Signal
-from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
+import nexus_uav._src.build.launch as launch_mod
+from nexus_uav._src.api.sim import Sim
+from nexus_uav._src.config import Catalog, LaunchConfig
+from nexus_uav._src.core.interfaces import Component, Stage
+from nexus_uav._src.core.loop import Loop
+from nexus_uav._src.core.schema import PoseTwist, SimTime
+from nexus_uav._src.core.signals import Signal
+from nexus_uav._src.peers.px4_sitl.fake import Px4Fake
 from tests.usd import sensor_vehicle as sv
 
 # --- the stand-in core components, as tests/core builds the loop -----------------------------------
@@ -36,7 +36,7 @@ class _Clock:
         return self._t
 
     def advance(self):
-        self._t = SimTime(self._t.sim_time + self.dt, self._t.step_index + 1)
+        self._t = SimTime(self._t.time_ns + round(self.dt * 1e9), self._t.step_index + 1)
         return self._t
 
     def throttle(self):

@@ -2,7 +2,7 @@
 
 import time
 
-import nexus_sim._src.peers.containers as containers
+import nexus_uav._src.peers.containers as containers
 
 
 class _FakeContainer:

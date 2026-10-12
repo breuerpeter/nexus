@@ -14,9 +14,9 @@ pytest.importorskip("pxr")
 
 import warp as wp
 
-from nexus_sim._src.core.interfaces import Component, Stage
-from nexus_sim._src.core.schema import PoseTwist
-from nexus_sim._src.core.signals import Signal
+from nexus_uav._src.core.interfaces import Component, Stage
+from nexus_uav._src.core.schema import PoseTwist
+from nexus_uav._src.core.signals import Signal
 from tests.usd import sensor_vehicle as sv
 from tests.usd.stand_in.nexus_stand_in.estimator import StandInEstimator
 from tests.usd.stand_in.nexus_stand_in.sensor import Gain

@@ -4,7 +4,7 @@ import math
 
 import numpy as np
 
-from nexus_sim.examples._lib.observation import (
+from nexus_uav.examples._lib.observation import (
     OBS_DIM,
     POLICY_OBS_DIM,
     build_observation,

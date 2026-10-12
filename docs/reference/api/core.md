@@ -5,8 +5,8 @@ description: "API reference for the signal value types a component reads or writ
 # Signal types
 
 ```python
-from nexus_sim import SimTime, PoseTwist, PositionGoal, Waypoints, ReferenceTrajectory
-from nexus_sim import ImuSample, MagSample, BaroSample, GpsSample, Image, PointCloud
+from nexus_uav import SimTime, PoseTwist, PositionGoal, Waypoints, ReferenceTrajectory
+from nexus_uav import ImuSample, MagSample, BaroSample, GpsSample, Image, PointCloud
 ```
 
 A [signal](../../design/concepts.md#signal) carries one of these types between components, and a
@@ -15,14 +15,14 @@ Warp struct lives on the device, and a host stage reads it as an instance of its
 `read().accel`. The controls a controller writes are a plain device row of `wp.float32`, one per
 actuator, so they have no type here.
 
-::: nexus_sim.SimTime
-::: nexus_sim.PoseTwist
-::: nexus_sim.PositionGoal
-::: nexus_sim.Waypoints
-::: nexus_sim.ReferenceTrajectory
-::: nexus_sim.ImuSample
-::: nexus_sim.MagSample
-::: nexus_sim.BaroSample
-::: nexus_sim.GpsSample
-::: nexus_sim.Image
-::: nexus_sim.PointCloud
+::: nexus_uav.SimTime
+::: nexus_uav.PoseTwist
+::: nexus_uav.PositionGoal
+::: nexus_uav.Waypoints
+::: nexus_uav.ReferenceTrajectory
+::: nexus_uav.ImuSample
+::: nexus_uav.MagSample
+::: nexus_uav.BaroSample
+::: nexus_uav.GpsSample
+::: nexus_uav.Image
+::: nexus_uav.PointCloud

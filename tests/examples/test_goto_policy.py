@@ -13,12 +13,12 @@ import pytest
 pytest.importorskip("torch")
 pytest.importorskip("newton")
 
-import nexus_sim as nx
-from nexus_sim._src.build.launch import resolve_vehicle_usd
-from nexus_sim._src.config import LaunchConfig
-from nexus_sim.examples.controllers.policy.assembly import build_policy_loop
-from nexus_sim.examples.controllers.policy.goto import flight
-from nexus_sim.examples.controllers.policy.goto.geofence import GeofenceGuidance
+import nexus_uav as nx
+from nexus_uav._src.build.launch import resolve_vehicle_usd
+from nexus_uav._src.config import LaunchConfig
+from nexus_uav.examples.controllers.policy.assembly import build_policy_loop
+from nexus_uav.examples.controllers.policy.goto import flight
+from nexus_uav.examples.controllers.policy.goto.geofence import GeofenceGuidance
 from tests.usd.sensor_vehicle import scenario
 
 

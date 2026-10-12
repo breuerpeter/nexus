@@ -20,7 +20,7 @@ import sys
 import time
 from pathlib import Path
 
-from nexus_sim._src.core.interfaces import Component
+from nexus_uav._src.core.interfaces import Component
 
 DT = 0.004  # 250 Hz control ticks
 READY_TICKS = 50  # the ticks the script flies before it prints ready
@@ -48,7 +48,7 @@ class Actuator(Component):
     """Writes no forces: the body flies under gravity alone."""
 
     def stages(self):
-        from nexus_sim._src.core.interfaces import Stage
+        from nexus_uav._src.core.interfaces import Stage
 
         return [Stage("forces", "device", lambda tick: None)]
 
@@ -63,7 +63,7 @@ class Controller(Component):
         pass
 
     def stages(self):
-        from nexus_sim._src.core.interfaces import Stage
+        from nexus_uav._src.core.interfaces import Stage
 
         return [Stage("act", "device", self._act)]
 
@@ -90,12 +90,12 @@ def build(
     """
     import newton
 
-    from nexus_sim._src.core.clock import Clock
-    from nexus_sim._src.core.loop import Loop
-    from nexus_sim._src.logging import Logger
-    from nexus_sim._src.physics.physics import NewtonPhysics
-    from nexus_sim._src.physics.vehicle import VehicleUsd
-    from nexus_sim._src.recording import Recorder
+    from nexus_uav._src.core.clock import Clock
+    from nexus_uav._src.core.loop import Loop
+    from nexus_uav._src.logging import Logger
+    from nexus_uav._src.physics.physics import NewtonPhysics
+    from nexus_uav._src.physics.vehicle import VehicleUsd
+    from nexus_uav._src.recording import Recorder
 
     if usd is None:
         usd = str(Path(tmp) / "mini.usda")
@@ -245,7 +245,7 @@ def _slow_first_write_after(stopping: dict) -> None:
 def _fly(tmp: str, mode: str) -> None:
     import warp as wp
 
-    import nexus_sim as nx
+    import nexus_uav as nx
 
     stopping: dict = {}
     if mode == "slow-write":

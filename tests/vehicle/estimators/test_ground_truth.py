@@ -12,16 +12,16 @@ pytest.importorskip("pxr")
 
 import warp as wp
 
-from nexus_sim._src.api.sim import Sim
-from nexus_sim._src.core import Clock, Loop
-from nexus_sim._src.core.interfaces import Component, Stage, Tick
-from nexus_sim._src.core.schema import PoseTwist, SimTime
-from nexus_sim._src.core.signals import Signal, wire
-from nexus_sim._src.core.stages import Bound
-from nexus_sim._src.guidance import MissionGuidance
-from nexus_sim._src.physics import NewtonPhysics
-from nexus_sim._src.physics.vehicle import VehicleUsd
-from nexus_sim._src.vehicle.estimators import GroundTruthEstimator
+from nexus_uav._src.api.sim import Sim
+from nexus_uav._src.core import Clock, Loop
+from nexus_uav._src.core.interfaces import Component, Stage, Tick
+from nexus_uav._src.core.schema import PoseTwist, SimTime
+from nexus_uav._src.core.signals import Signal, wire
+from nexus_uav._src.core.stages import Bound
+from nexus_uav._src.guidance import MissionGuidance
+from nexus_uav._src.physics import NewtonPhysics
+from nexus_uav._src.physics.vehicle import VehicleUsd
+from nexus_uav._src.vehicle.estimators import GroundTruthEstimator
 from tests.usd.sensor_vehicle import scenario
 from tests.vehicle import quad
 

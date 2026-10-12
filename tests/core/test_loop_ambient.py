@@ -6,10 +6,10 @@ from dataclasses import dataclass
 
 import pytest
 
-from nexus_sim._src.core.interfaces import Component, Stage
-from nexus_sim._src.core.loop import Loop
-from nexus_sim._src.core.schema import SimTime
-from nexus_sim._src.core.signals import Signal
+from nexus_uav._src.core.interfaces import Component, Stage
+from nexus_uav._src.core.loop import Loop
+from nexus_uav._src.core.schema import SimTime
+from nexus_uav._src.core.signals import Signal
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")  # Python stand-ins run stage by stage, never as a graph
 
@@ -24,7 +24,7 @@ class _Clock:
         return self._t
 
     def advance(self):
-        self._t = SimTime(self._t.sim_time + self.dt, self._t.step_index + 1)
+        self._t = SimTime(self._t.time_ns + round(self.dt * 1e9), self._t.step_index + 1)
         return self._t
 
     def throttle(self):

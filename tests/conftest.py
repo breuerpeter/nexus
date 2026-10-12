@@ -25,7 +25,7 @@ if platform.machine() == "x86_64":
 # Newton's plugin backs the test that applies a Newton schema, and the stand-in project's backs the tests
 # that apply `StandInAPI`.
 import tests.usd.stand_in.nexus_stand_in  # noqa: F401
-from nexus_sim._src.core.interfaces import Component
+from nexus_uav._src.core.interfaces import Component
 
 # A worker's resident memory settles near 2.8 GiB over the suite, 5.2 GiB when one worker runs it all:
 # the flights keep the memory they take. One worker per logical CPU would want 56 GiB on a 20-CPU laptop.
@@ -363,8 +363,8 @@ class StandInController(Component):
     name = "standin"
 
     def __init__(self):
-        from nexus_sim._src.core.schema import ReferenceTrajectory
-        from nexus_sim._src.core.signals import Signal
+        from nexus_uav._src.core.schema import ReferenceTrajectory
+        from nexus_uav._src.core.signals import Signal
 
         self._logger = None
         self.setpoint = Signal("setpoint", ReferenceTrajectory)
@@ -384,7 +384,7 @@ class StandInController(Component):
             self._logger.log_strip("horizon", [[0.0, 0.0, 1.0], [1.0, 0.0, 1.0]], color=(255, 140, 0))
 
     def stages(self):
-        from nexus_sim._src.core.interfaces import Stage
+        from nexus_uav._src.core.interfaces import Stage
 
         return [Stage("act", "host", self._act, reads=(self.setpoint,), writes=(self.controls,))]
 
@@ -405,14 +405,14 @@ def fly_recorded(
     the passthrough estimator's estimate, with a ``Recorder`` attached and the Kit peer sent to its fake, or to ``kit``, in ``scene``, a catalog
     name or a path. ``layer`` is an override layer's text. The home folder is ``tmp`` for the run, so the recording lands there.
     """
-    import nexus_sim as nx
-    from nexus_sim._src.build.assembly import build_loop
-    from nexus_sim._src.build.launch import resolve_scenario
-    from nexus_sim._src.config import LaunchConfig
-    from nexus_sim._src.guidance import TrackingGuidance
-    from nexus_sim._src.peers.kit.fake import KitFake
-    from nexus_sim._src.rendering import rtx_renderer
-    from nexus_sim._src.vehicle.estimators import GroundTruthEstimator
+    import nexus_uav as nx
+    from nexus_uav._src.build.assembly import build_loop
+    from nexus_uav._src.build.launch import resolve_scenario
+    from nexus_uav._src.config import LaunchConfig
+    from nexus_uav._src.guidance import TrackingGuidance
+    from nexus_uav._src.peers.kit.fake import KitFake
+    from nexus_uav._src.rendering import rtx_renderer
+    from nexus_uav._src.vehicle.estimators import GroundTruthEstimator
 
     spec = {"vehicle": vehicle, "scene": scene, "runtime": {"device": "cpu"}}
     if layer is not None:

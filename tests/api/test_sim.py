@@ -10,10 +10,10 @@ import numpy as np
 import pytest
 import warp as wp
 
-import nexus_sim._src.api.sim as sim_mod
-from nexus_sim._src.core.schema import PoseTwist
-from nexus_sim._src.core.signals import Signal
-from nexus_sim._src.physics.outputs import write_body
+import nexus_uav._src.api.sim as sim_mod
+from nexus_uav._src.core.schema import PoseTwist
+from nexus_uav._src.core.signals import Signal
+from nexus_uav._src.physics.outputs import write_body
 
 
 class _FakePhysics:
@@ -203,7 +203,7 @@ class _SetpointOrch:
 
 
 def test_sim_hands_the_flights_guidance_to_the_loop_and_runs():
-    from nexus_sim._src.guidance import MissionGuidance
+    from nexus_uav._src.guidance import MissionGuidance
 
     fake = _SetpointOrch()
     guidance = MissionGuidance()
