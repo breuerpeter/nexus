@@ -15,6 +15,7 @@ from __future__ import annotations
 from nexus_sim._src.build.assembly import resolve_device, rotor_chain
 from nexus_sim._src.core import Clock, Loop, logger
 from nexus_sim._src.physics import NewtonPhysics
+from nexus_sim._src.rendering import PEER
 from nexus_sim._src.vehicle.estimators import GroundTruthEstimator
 
 
@@ -96,6 +97,7 @@ def build_acados_loop(
         estimator=GroundTruthEstimator(),
         controller=controller,
         renderer=renderer,
+        links={} if renderer is None else {PEER: renderer},  # each RTX sensor takes the Kit link at connect
         logger=sink,
         max_steps=max_steps,
         physics_substeps=1,
