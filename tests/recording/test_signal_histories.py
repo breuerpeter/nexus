@@ -10,6 +10,7 @@ it. Skipped without newton or pxr.
 
 import contextlib
 import functools
+import itertools
 
 import numpy as np
 import pytest
@@ -44,6 +45,8 @@ TWO_IMUS = sv.prim("imu_a", "NexusImuAPI", "float nexus:accNoise = 0\nfloat nexu
 FPVCAM = sv.prim("FpvCam", "NexusCameraAPI", kind="Camera")
 LIDAR = sv.prim("Lidar", "NexusLidarAPI", "float nexus:rate = 25", kind="OmniLidar")
 POINT = [1.0, 2.0, 3.0]
+# Where a falling run starts: 10 m over the ground, level, so the vehicle stays in the air.
+FALL_FROM = (0.0, 0.0, 10.0)
 
 
 class _TickWriter(Component):
@@ -68,6 +71,56 @@ class _TickWriter(Component):
         return True
 
 
+class _DeviceOnly(Component):
+    """A controller whose one stage is a device stage that commands nothing."""
+
+    def __init__(self, **kwargs):
+        self.controls = Signal("controls", wp.float32, shape=(1, 4))
+
+    def connect(self):
+        pass
+
+    def close(self):
+        pass
+
+    def stages(self):
+        return [Stage("act", "device", lambda tick: None, writes=(self.controls,))]
+
+
+class _Stamping(sv.Controller):
+    """The stand-in controller, which keeps the sim time of each exchange in `stamps`."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.stamps = []
+
+    def exchange(self, t, timeout=None):
+        self.stamps.append(t.sim_time)
+        return super().exchange(t, timeout)
+
+
+class _LatePeer(sv.HostController):
+    """A controller whose peer dials in on the third poll of its exchange and sends its first controls, zero, on
+    its fifth exchange after that.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__()
+        self._polls = 0
+        self._exchanges = 0
+
+    @property
+    def attached(self):
+        return self._polls >= 3
+
+    def exchange(self, t, timeout=None):
+        if not self.attached:
+            self._polls += 1
+            return None
+        self._exchanges += 1
+        return None if self._exchanges < 5 else np.zeros(self.width, dtype=np.float32)
+
+
 class _Windy(GroundTruthEstimator):
     """The passthrough estimator, named `truth`, whose stage writes a second device signal, `wind`, beside its
     estimate.
@@ -83,12 +136,13 @@ class _Windy(GroundTruthEstimator):
         return [Stage("estimate", "device", self._run, reads=(self.pose,), writes=(self.estimate, self.wind))]
 
 
-def _build(tmp_path, body: str, *, device: str = "cpu", controller=None, estimator=None):
+def _build(tmp_path, body: str, *, device: str = "cpu", controller=None, estimator=None, fall_from=None):
     """A run of the fixture with `body` under its base body on `device`, flown by `controller`, by default the
-    stand-in that commands nothing, over `estimator`, by default the passthrough.
+    stand-in that commands nothing, over `estimator`, by default the passthrough. `fall_from`, a position,
+    places the vehicle there in free flight.
     """
     registry = sv.components() if controller is None else sv.components(NexusPx4API=controller)
-    loop = sv.build(sv.vehicle(tmp_path, body), device=device, components=registry)
+    loop = sv.build(sv.vehicle(tmp_path, body), device=device, components=registry, fall_from=fall_from)
     loop.estimator = GroundTruthEstimator() if estimator is None else estimator
     return loop
 
@@ -176,6 +230,61 @@ def test_every_device_signal_a_component_writes_keeps_a_history_and_no_component
         [0.0, 1.0, 2.0, 3.0, 4.0, 5.0],
         True,
     )
+
+
+@pytest.mark.usefixtures("warp_cpu")
+@pytest.mark.parametrize("controller", [_DeviceOnly, None], ids=["device stages only", "host stage"])
+def test_a_ticks_rows_describe_one_instant(controller, tmp_path):
+    """A tick's rows describe one instant.
+
+    Given the falling fixture vehicle with the passthrough estimator, once on a ring of device stages only and
+    once with a host stage, when the run steps 5 ticks, then each estimate row's position equals the base body
+    row's position under the same `t`, and the sample of a sensor with no rate carries that `t`.
+    """
+    loop = _build(tmp_path, IMU, controller=controller, fall_from=FALL_FROM)
+    with _flown(loop, TICKS) as sim:
+        imu, estimate = (_history(loop.recorder.histories, signal) for signal in ("imu", "estimate"))
+        body = _structured(sim[f"vehicle/body/{sim.base_body}"].history())
+    read = (
+        np.array_equal(_bits(_flat(estimate, "position")), _bits(_flat(body, "position"))),
+        _column(imu, "time").tolist() == _column(imu, "t").tolist(),
+    )
+
+    assert read == (True, True)
+
+
+@pytest.mark.usefixtures("warp_cpu")
+def test_a_recorded_rows_t_is_the_sim_time_of_the_tick_that_wrote_it_from_the_start_on(tmp_path):
+    """A recorded row's `t` is the sim time of the tick that wrote it, from the start on.
+
+    Given a run at a 4 ms tick with a controller that has a host stage, when it steps 25 ticks, then it holds 26
+    rows, each row's `t` equals the sim time of the tick that wrote it, the start's `0.0`, and the newest equals
+    the clock's time, `0.1`.
+    """
+    loop = _build(tmp_path, IMU, controller=_Stamping)
+    with _flown(loop, 25) as sim:
+        rows = _column(_structured(sim[f"vehicle/body/{sim.base_body}"].history()), "t").tolist()
+    stamps = loop.controller.stamps
+
+    assert rows == stamps == pytest.approx([k * DT for k in range(26)])
+
+
+@pytest.mark.usefixtures("warp_cpu")
+def test_once_a_peer_attaches_each_preroll_tick_steps_the_physics_and_records_a_row(tmp_path):
+    """Once a peer attaches, each preroll tick steps the physics with zero controls and records a row.
+
+    Given a controller whose peer attaches late and sends its first controls on its fifth exchange, when the run
+    takes its first step, then each exchange before those controls came with one physics step under zero
+    controls and one row, and the rows' `t` run from `0.0` in 4 ms steps with no gap. The vehicle starts in
+    free flight, so each step under zero controls leaves it lower.
+    """
+    loop = _build(tmp_path, IMU, controller=_LatePeer, fall_from=FALL_FROM)
+    with _flown(loop, 1) as sim:
+        rows = _structured(sim[f"vehicle/body/{sim.base_body}"].history())
+    heights = [float(row["position"][2]) for row in rows]
+    falling = all(lower < higher for higher, lower in itertools.pairwise(heights))
+
+    assert (_column(rows, "t").tolist(), falling) == (pytest.approx([0.0, 0.004, 0.008, 0.012, 0.016, 0.02]), True)
 
 
 @pytest.mark.usefixtures("warp_cpu")

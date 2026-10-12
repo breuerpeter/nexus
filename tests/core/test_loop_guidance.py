@@ -266,9 +266,12 @@ def test_a_controller_holds_the_first_goal_before_its_own_first_stage():
     assert held == [GOALS[0], GOALS[0]]
 
 
-def test_a_tracking_controller_holds_its_planned_reference_from_its_first_exchange():
-    """A tracking controller holds its planned reference from its first exchange, and the plan waits
-    for the run's first tick: the seed exchange, over the settled state, held no reference.
+def test_a_tracking_controller_holds_its_planned_reference_from_its_first_exchange_the_starts():
+    """A tracking controller holds its planned reference from its first exchange, which runs in the start.
+
+    Given a `TrackingGuidance` with a planner and a controller with an exchange host stage, when the run takes
+    its first tick, then the controller's first exchange ran at `0.0` and held the planned reference, and
+    `reference_started_at` is `0.0`.
     """
     reference = _Reference()
     with wp.ScopedDevice("cpu"):
@@ -277,11 +280,11 @@ def test_a_tracking_controller_holds_its_planned_reference_from_its_first_exchan
         guidance = TrackingGuidance(planner=lambda waypoints: reference)
         guidance.set_mission([(2.0, 0.5, 3.5), (3.0, 2.0, 4.0)])
         orch = _orch(controller, physics, guidance=guidance)
-        orch.step()  # the run's first tick; its exchange is the last one the controller kept
+        orch.step()
         orch.close()
-    _, _, seeded = controller.exchanges[0]  # the seed exchange, before any tick
-    sim_time, _, setpoint = controller.exchanges[-1]
-    assert (seeded, setpoint.reference, guidance.reference_started_at) == (None, reference, sim_time)
+    sim_time, _, setpoint = controller.exchanges[0]
+    held = getattr(setpoint, "reference", None)
+    assert (sim_time, held, guidance.reference_started_at) == (0.0, reference, 0.0)
 
 
 def test_a_run_whose_stages_are_all_device_stages_stays_one_captured_segment_with_a_guidance(caplog):

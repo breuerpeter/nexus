@@ -97,6 +97,18 @@ def test_a_rate_that_does_not_divide_the_tick_rate_neither_quantises_nor_drifts(
     assert (len(ticks), gaps) == (240, {10, 11})
 
 
+def test_a_sensor_whose_rate_divides_the_tick_rate_samples_on_every_nth_tick(tmp_path):
+    """A sensor whose rate divides the tick rate samples on every n-th tick.
+
+    Given the falling fixture with a GPS at `nexus:rate = 10` on a 250 Hz tick, when the run steps 10 s, then it
+    gives 100 samples, each 25 ticks after the one before.
+    """
+    ticks = _new_samples(_held(tmp_path, 2500, _rated({"gps": 10}), fall_from=FALL_FROM), "gps")
+
+    gaps = {b - a for a, b in itertools.pairwise(ticks)}
+    assert (len(ticks), gaps) == (100, {25})
+
+
 def test_a_sensor_that_declares_no_rate_gives_a_new_sample_every_tick(tmp_path):
     """A sensor that declares no rate gives a new sample every tick.
 
@@ -147,17 +159,17 @@ def test_a_captured_run_gives_the_same_samples_as_an_eager_run_at_declared_rates
     assert [_fields(tick) for tick in captured] == [pytest.approx(_fields(tick), rel=1e-4, abs=1e-3) for tick in eager]
 
 
-def test_an_imu_slower_than_the_tick_still_reads_the_true_specific_force(tmp_path):
-    """An IMU slower than the tick still reads the true specific force.
+def test_an_imu_slower_than_the_tick_reads_the_true_specific_force_from_the_first_sample_a_tick_takes(tmp_path):
+    """An IMU slower than the tick reads the true specific force from the first sample a tick takes.
 
-    Given a falling fixture vehicle whose IMU declares `nexus:rate = 125` on a 250 Hz tick with zero noise, when
-    the run steps 1 s, then every accelerometer sample reads zero within 1e-3 m/s^2. The test leaves out the first
-    four ticks: a sample whose interval starts before the first physics step reads the vehicle at rest.
+    Given the falling fixture whose IMU declares `nexus:rate = 125` on a 250 Hz tick with zero noise, when the run
+    steps 1 s, then every accelerometer sample stamped after `0.0` reads zero within 1e-3 m/s^2, the first ticks
+    included. The sample the start takes, at `0.0`, has no earlier velocity to difference.
     """
     imu = _prim("imu", 125, "float nexus:accNoise = 0\nfloat nexus:gyroNoise = 0")
     held = _held(tmp_path, 250, {"imu": imu}, fall_from=FALL_FROM)
 
-    accel = np.array([tick["imu"]["accel"] for tick in held[5:]])
+    accel = np.array([tick["imu"]["accel"] for tick in held if float(tick["imu"]["time"].ravel()[0]) > 0.0])
     assert np.abs(accel).max() < 1e-3
 
 
