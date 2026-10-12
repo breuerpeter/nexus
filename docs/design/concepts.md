@@ -56,11 +56,11 @@ and the first tick is step one. Every row a tick records describes the state at 
 
 ### Start
 
-The ring without the clock's stage and the physics substeps, which the loop runs once over the settled
-state at sim time zero, before the first tick and before any capture. It records the first row, and the
-first tick's step applies the controls it computes. A sensor's host stage stays out, and so does each
-host stage of a component that waits on a [peer](#peer). While that peer boots, the preroll, the loop
-holds the clock until the peer dials in, then runs ordinary ticks until its first answer.
+The ring without the clock's stage and the physics substeps. The loop runs it once over the settled
+state at sim time zero, ahead of any capture. It records the first row, and the first tick's step applies
+the controls it computes. A sensor's host stage stays out, and so does each host stage of a component
+that waits on a [peer](#peer). While that peer boots, the loop holds the clock until the peer dials in,
+then runs ordinary ticks until its first answer.
 
 ### Stage
 
@@ -71,9 +71,9 @@ tick.
 
 ### Ring
 
-The stages one tick runs, in the loop's fixed order. The clock's stage comes first, then, once per physics
-substep, `clear`, the command elements, the force elements, and `step`, then `state`, which writes the
-plant's outputs, one signal per body and per joint. The sensors, the estimator, the guidance, and the
+The stages one tick runs, in the loop's fixed order. The clock's stage comes first. Once per physics
+substep, `clear`, the command elements, the force elements, and `step` follow. Then `state` writes the
+plant's outputs: one signal per body and one per joint. The sensors, the estimator, the guidance, and the
 controller follow, over the state the step left, and the record stage comes last. `build_ring` lays the
 ring out.
 

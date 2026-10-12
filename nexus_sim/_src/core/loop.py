@@ -6,10 +6,11 @@ graph replays. The loop lays the stages out in the canonical order, clock -> [cl
 -> the force elements -> step] per physics substep -> state -> sensors -> estimator -> guidance ->
 controller -> record, and cuts the ring at its host stages, so each maximal run of device stages becomes
 one CUDA graph, the Real Time Factor (RTF) lever, and the host stages run between replays. The physics
-step opens a tick, so every row the tick records describes the state at the tick's time. One partition and one loop serve every arrangement: PX4, whose ``exchange`` host stage
-blocks on its peer, a Model Predictive Control (MPC) solver that runs on the host, and a
-device-native Proportional Integral Derivative (PID) law whose whole ring is one graph. On a CPU device the same segments run stage by stage, the bit-exact
-determinism gate. GPU physics is tolerance-gated, not bit-exact, so capture is an RTF optimization
+step opens a tick, so every row the tick records describes the state at the tick's time. One partition
+and one loop serve every arrangement: PX4, whose ``exchange`` host stage blocks on its peer, a Model
+Predictive Control (MPC) solver that runs on the host, and a device-native Proportional Integral
+Derivative (PID) law whose whole ring is one graph. On a CPU device the same segments run stage by stage,
+the bit-exact determinism gate. GPU physics is tolerance-gated, not bit-exact, so capture is an RTF optimization
 layered over the same component semantics.
 """
 
@@ -524,8 +525,8 @@ class Loop:
             for c in waiting:
                 c.connect(self._links_for(c))  # bind the peer's port and start listening
                 self._connected.append(c)
-            deadline = self._attach(ring, tick, waiting)
-            yield from self._loop(segments, graphs, tick, waiting, deadline)
+            self._attach(ring, tick, waiting)
+            yield from self._loop(segments, graphs, tick, waiting)
         except ConnectionError as e:
             logger.info(
                 str(e)
@@ -641,17 +642,16 @@ class Loop:
             except Exception as exc:
                 logger.warning(f"stopping a peer failed ({exc})")
 
-    def _attach(self, ring, tick, waiting: list) -> float:
+    def _attach(self, ring, tick, waiting: list) -> None:
         """Hold the sim clock until every component in ``waiting`` has attached, running each one's host stages
         meanwhile, its way to its peer: time spent waiting would start a peer's clock late, and PX4 times its
-        boot checks from its first stamp. Returns the deadline for the peer's first answer, which the preroll
-        ticks wait on.
+        boot checks from its first stamp.
 
         Raises:
             ConnectionError: A component never attached within ``preroll_timeout``.
         """
         if not waiting:
-            return 0.0
+            return
         names = " and ".join(_instance(c) for c in waiting)
         logger.info(f"Waiting for {names} to attach...")
         tick.timeout = 0.05
@@ -663,7 +663,6 @@ class Loop:
             for st in polls:
                 st.run(tick)
         logger.info(f"{names} attached")
-        return time.monotonic() + self.preroll_timeout
 
     def _open_tick(self, tick) -> bool:
         """Advance the clock and open the tick's log, before any host stage, so the Model Predictive
@@ -691,18 +690,18 @@ class Loop:
             graphs.append(cap.graph)
         return graphs
 
-    def _loop(self, segments, graphs, tick, waiting: list, deadline: float):
+    def _loop(self, segments, graphs, tick, waiting: list):
         """The steady loop as a generator: one control tick per ``yield``, which step() drives.
         Each tick advances the clock, opens its log, then runs the segments in ring order: a device
         segment replays its graph, or runs stage by stage without one, and a host stage runs on the
         host between replays. A host stage that reports its peer gone ends the run, and so does a tick
         a stage marked done, once it completes. While the peers of ``waiting`` boot, the preroll, a tick
         whose host stage gets no answer still steps, records its row and moves on, with no ``yield``, until
-        the first tick that every host stage answers, or the ``deadline``. The ``finally``
+        the first tick that every host stage answers, within ``preroll_timeout``. The ``finally``
         stamps the RTF, so it runs whether the generator runs out or closes early on stop.
 
         Raises:
-            ConnectionError: A peer stopped answering, or a peer gave no first answer before ``deadline``.
+            ConnectionError: A peer stopped answering, or gave no first answer within ``preroll_timeout``.
         """
         count = 0
         t0 = time.monotonic()  # for the end-to-end RTF, sim-time advanced / wall-time, of the live run
@@ -713,6 +712,7 @@ class Loop:
         steps_warm = 0
         prerolling = bool(waiting)
         tick.timeout = 0.05 if prerolling else self.exchange_timeout
+        deadline = time.monotonic() + self.preroll_timeout
         replay = wp.capture_launch if graphs is not None else None
         prof = self._make_profiler("graph" if graphs is not None else "eager")
         try:
