@@ -26,7 +26,7 @@ class _WarpView:
 
 
 def _on():
-    """A one-body model on the current device with one site, which each sensor here is built on, and the site."""
+    """A one-body model on the current device with one site, which each sensor here takes, and the site."""
     return sv.mounted()
 
 
@@ -80,7 +80,7 @@ def test_captured_px4_sensors_match_eager():
         eager_imu, eager_mag, eager_baro, eager_gps = (s.out.read()[0] for s in eager)
 
         cap_sensors = fresh()
-        # warmup: the Inertial Measurement Unit's (IMU) first sample seeds its earlier velocities before the capture
+        # warmup: the first sample of the Inertial Measurement Unit (IMU) seeds its earlier velocities before the capture
         for s in cap_sensors:
             s.sample_wp(view, SimTime(0.0, 0))
         with wp.ScopedCapture() as cap:

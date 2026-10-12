@@ -59,7 +59,8 @@ The keyword arguments are the attributes of the schema, `nexus:throttle` here. T
 of a controller is as wide as its actuators, and the command elements read the leading part of it.
 
 The contract has six more members. `connect` opens what the component needs for the run, a port or
-a model, and `close` releases it. `attached` reads false until the peer the component waits on has
+a model, and takes the link of each peer the class requires, keyed by the peer's name. `close`
+releases what `connect` opened. `attached` reads false until the peer the component waits on has
 dialed in, so the loop connects it after the capture and holds the sim clock until then. `requires`
 names the peers the class needs, which the builder starts. `artifacts` names the files the component
 leaves for a reader. `set_logger` takes the Logger the loop hands over, scoped to the component's
@@ -69,9 +70,18 @@ signal itself, and a script reads it by path, `sim["vehicle/controllers/<name>/c
 `Px4MavlinkController`, PX4's controller, is the shape to copy for a component with a peer. It binds
 the Hardware In The Loop (HIL) port in `connect` and reads `attached` from the link. One host stage
 per tick exchanges the samples of the sensors for the controls of PX4. It names its `ULog` in
-`artifacts` and closes the socket in `close`. A sensor's class takes the values of the run, where it
-rides and the site it flies at, as its first argument. That argument's shape is changing, so a sensor
-of your own waits for the next release.
+`artifacts` and closes the socket in `close`.
+
+A sensor's class takes the model and its [site](../design/concepts.md#site), the path of the prim
+that declares it. Then come the attributes of its schema as keywords, and `seed`, the noise seed the
+builder derives from the run's seed and the prim. It reads the body it rides, its mount and the world's
+values from the model, as Newton's own sensors do. A sensor whose class requires a peer, as the RTX
+cameras require the Kit render peer, takes the peer's link in `connect`.
+
+```python
+class RangeSensor(Component):
+    def __init__(self, model, site: str, *, seed: int = 0, noise: float = 0.01, rate: float = 0.0): ...
+```
 
 ## The registration
 

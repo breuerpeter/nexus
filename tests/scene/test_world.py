@@ -58,7 +58,7 @@ def test_the_values_a_scene_authors_reach_the_model_as_authored(tmp_path):
     """The origin, the field, the pressure and the temperature a scene authors reach the model as authored.
 
     Given a scene whose `PhysicsScene` authors all four, when the model builds, then each of the model's world
-    values is the authored one, and the field is not derived.
+    values is the authored one, and the field isn't derived.
     """
     model = _model(
         _scene(

@@ -294,10 +294,11 @@ def model(
     """A model of `bodies` free bodies, each with a site under it, for a sensor built by hand, and the labels of
     the sites, one per body.
 
-    Body 0 is labelled as the fixture's base body, and body i after it `<base body>i`. Each body's site sits at
-    `mount`, turned by `rotation`, a quaternion (x, y, z, w), in the body's axes, and each body's center of mass
-    at `com`. The world's values are set by hand: `origin`, the field `field_ned` turned into the world's axes,
-    `pressure` at sea level and `temperature`; gravity is the world's 9.81.
+    Body 0 carries the fixture's base body's label, and each body after it that label with its index appended.
+    Each body's site sits at `mount`, turned by `rotation`, a quaternion (x, y, z, w), in the body's axes, and
+    each body's center of mass at `com`. The world's values come from the arguments: `origin`, the field
+    `field_ned` turned into the world's axes, `pressure` at sea level and `temperature`; gravity is the world's
+    9.81.
     """
     import newton
 

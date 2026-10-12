@@ -33,14 +33,14 @@ class _WarpView:
 
 # a non-trivial, normalized attitude so the world<->body rotation is actually exercised
 _Q = list(np.array([0.1, -0.2, 0.3, 0.9], dtype=np.float64) / np.linalg.norm([0.1, -0.2, 0.3, 0.9]))
-# The world's values every sensor here is built with: gravity along world -Z, a field in NED gauss.
+# The world's values every sensor here takes: gravity along world -Z, a field in North East Down (NED) gauss.
 _GRAVITY_WORLD = (0.0, 0.0, -9.81)
 _MAG_NED = sv.FIELD_NED
 _SEED = SeedTree(42).seed_for("sensor")
 
 
 def _on(body: int = 0, **world) -> tuple:
-    """The model each sensor here is built on, with the world's values `world` set by hand, and the label of
+    """The model each sensor here takes, with the world's values `world` set by hand, and the label of
     the site on body `body`: ``cls(*_on(), ...)``.
     """
     model, sites = sv.model(bodies=body + 1, **world)
@@ -182,7 +182,7 @@ def test_an_analytic_sensor_whose_rate_is_negative_fails_and_names_the_site(cls)
 def test_an_analytic_sensor_on_a_label_that_is_no_site_of_the_model_fails_and_names_it(cls):
     """An analytic sensor built on a label no site of the model carries fails, and names the label.
 
-    Given a one-body model with one site, when a sensor is built on the label of a prim the model never loaded,
+    Given a one-body model with one site, when a sensor takes the label of a prim the model never loaded,
     then it fails and the message names that label.
     """
     model, _ = _on()

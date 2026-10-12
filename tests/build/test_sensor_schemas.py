@@ -40,7 +40,7 @@ IMU = sv.prim("Imu0", "NexusImuAPI", "float nexus:accNoise = 0.07")
 MAG = sv.prim("Mag0", "NexusMagAPI", "float3 nexus:noise = (0.004, 0.005, 0.006)")
 BARO = sv.prim("Baro0", "NexusBaroAPI", "float nexus:noise = 0.09")
 GPS = sv.prim("Gps0", "NexusGpsAPI", "int nexus:fixType = 5")
-# The same suite with no noise, so a reading is the value the site and the body give it.
+# The same suite with no noise, so a reading is the value the world and the body give it.
 QUIET = (
     sv.prim("Imu0", "NexusImuAPI", "float nexus:accNoise = 0\nfloat nexus:gyroNoise = 0")
     + sv.prim("Mag0", "NexusMagAPI", "float3 nexus:noise = (0, 0, 0)")
@@ -97,7 +97,7 @@ def test_each_analytic_sensor_schema_on_an_xform_under_a_body_builds_that_sensor
 
 
 def test_a_sensor_built_from_a_schema_gets_the_runs_site_values(tmp_path):
-    """A sensor built from a schema gets the run's site values.
+    """A sensor built from a schema gets the scene's world values.
 
     Given the fixture with every noise at zero and a scene whose PhysicsScene authors Zurich as its origin,
     when the run steps once, then the Global Positioning System (GPS) reports the origin, the magnetometer the field at Zurich, and the

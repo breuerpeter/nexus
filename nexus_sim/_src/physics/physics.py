@@ -121,7 +121,7 @@ class NewtonPhysics:
             builder.add_ground_plane()
             add_scene(builder, cfg)  # scene USD -> builder, exactly as for the vehicle USD
             vehicle_usd.build(builder)
-            # The world's gravity, the one value the IMU reports too. add_usd resets the builder's gravity
+            # The world's gravity, the one value the inertial measurement unit reports too. add_usd resets the builder's gravity
             # from any PhysicsScene the USD holds, authored or not, so it is set after the last add.
             builder.gravity = -GRAVITY
             world.derive(builder)

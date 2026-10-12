@@ -164,6 +164,22 @@ An applied USD API schema from the plugin in `nexus_sim/_src/usd/` that declares
 prim, such as `NexusImuAPI`. Its `nexus:` attributes are the class's keyword arguments, and the
 [schema reference](../reference/schemas.md) lists them.
 
+### Site
+
+Newton's placement point on a body. It's a massless shape of the model with the `SITE` flag, which
+collides with nothing, at an offset and a rotation in the body's axes. Its label is its prim's path.
+A sensor's prim is a site. Its schema includes `NewtonSiteAPI` as a built-in, so the importer loads
+the geometry prim the schema sits on as one. The sensor's class reads its body and its mount from
+the model's arrays, as `newton.sensors.SensorIMU` does.
+
+### Origin
+
+Where the scene's world origin sits on Earth: the latitude, longitude and altitude its `PhysicsScene`
+authors as `nexus:geodeticOrigin`. The importer reads it into the model as a world value. The same
+prim can author the magnetic field, the air pressure at sea level and the temperature beside it.
+The build derives the field from the origin where the scene authors none. A sensor reads them from
+the model, and an override layer composed over the scene moves the origin.
+
 ### Registry
 
 The map from each name a run resolves to its class, `Registry`, a component's schema and a peer's

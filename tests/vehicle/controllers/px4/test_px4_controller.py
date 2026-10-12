@@ -77,7 +77,7 @@ def link(monkeypatch):
 
 
 def _on():
-    """A one-body model with one site, which each sensor here is built on, and the site: the world's origin at
+    """A one-body model with one site, which each sensor here takes, and the site: the world's origin at
     47.6, -122.3, 5 m.
     """
     return sv.mounted()

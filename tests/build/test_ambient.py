@@ -1,4 +1,4 @@
-"""The ambient values a run's sensors read resolve at build from the geodetic origin the scene's `PhysicsScene` authors.
+"""The world's values a run's sensors read come from the scene's `PhysicsScene`: its geodetic origin and what follows from it.
 
 Beside the launch tests, since pytest skips a directory named ``build``. Real builds on the Warp CPU
 backend: the local fixture vehicle in ``tests/usd/sensor_vehicle.py`` with an analytic sensor of each kind, a stand-in controller
@@ -282,12 +282,12 @@ def test_the_imu_reports_the_gravity_the_physics_applies(gravity_five_vehicle):
     _, samples = gravity_five_vehicle
     reported = math.hypot(*(float(a) for a in samples["imu"]["accel"]))
 
-    # The site's one gravity, 9.81: the model-gravity row pins the physics at it, and the IMU reads it.
+    # The world's one gravity, 9.81: the model-gravity row pins the physics at it, and the inertial measurement unit reads it.
     assert reported == pytest.approx(9.81, abs=0.1), f"the IMU reports {reported}"
 
 
 def test_the_barometer_reports_the_sites_pressure_and_temperature(gravity_five_vehicle):
-    """The barometer reports the site's pressure and temperature as before."""
+    """The barometer reports the scene's pressure and temperature as before."""
     orch, samples = gravity_five_vehicle
     altitude = float(orch.physics.current_state.body_q.numpy()[0, 2])  # the settled base body, above the ground
     isa_pressure = 1013.25 * (1 - 2.25577e-5 * altitude) ** 5.25588

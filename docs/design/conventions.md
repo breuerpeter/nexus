@@ -39,7 +39,7 @@ under the vehicle's root prim. That prim is a `Scope`, OpenUSD's grouping prim w
 an asset keeps its materials under a `Looks` scope. By convention its name is its role, such as
 `/astro_max/Controller` and `/astro_max/Estimator`: the build finds a component by its schema, not
 by its path. PX4's schemas, `NexusPx4API` and `NexusPx4SitlAPI`, apply to a `Scope` alone. A sensor
-sits on its mount prim, under the body it rides.
+sits on its mount prim, a geometry prim under the body it rides, which Newton loads as a site.
 
 ## How a peer enters a run
 

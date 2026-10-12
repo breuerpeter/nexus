@@ -40,7 +40,7 @@ class RtxCameraSensor(RtxMountedSensor):
 
     def _read_prim(self, prim) -> None:
         """The authored intrinsics -> the Rerun Pinhole for the frustum / field-of-view visualization, logged
-        once, here at connect, where the mount is known too.
+        once, here at connect, with the mount read beside it.
         """
         self._focal_mm = float(prim.GetAttribute("focalLength").Get() or 12.0)
         self._h_aperture_mm = float(prim.GetAttribute("horizontalAperture").Get() or 36.0)
