@@ -12,10 +12,13 @@ shows, and the sensor writes it to its output signal and logs it here on the hos
 from __future__ import annotations
 
 import numpy as np
+import warp as wp
 
 from nexus_sim._src.core import logger
 from nexus_sim._src.core.interfaces import Component, Stage
 from nexus_sim._src.core.signals import Signal
+
+from . import rate as due_rule
 
 PEER = "kit"  # the name an RTX sensor's class requires the Kit peer by
 
@@ -38,7 +41,8 @@ class RtxMountedSensor(Component):
         out: The host signal each frame goes to, which its stage declares it writes.
 
     Raises:
-        ValueError: The prim's parent is no rigid body of the model; the message names the prim.
+        ValueError: The prim's parent is no rigid body of the model, or the rate is negative; the message names
+            the prim.
     """
 
     KIND = "rtx"
@@ -63,13 +67,14 @@ class RtxMountedSensor(Component):
         # by convention, sits at the render stage's vehicle root.
         self.path = render_path(path, str(Sdf.Path(path).GetPrefixes()[0]))
         self.name = self.path.rsplit("/", 1)[-1].lower()  # for example 'fpvcam' -> sim/vehicle/sensors/fpvcam
-        self.rate = float(rate)
+        self.rate = due_rule.checked_rate(rate, path)
         self.out = out
         self._link = None
         self._logger = None
         self._local = None  # the authored mount, a row-vector Gf.Matrix4d, read at connect
         self.mount: np.ndarray | None = None
-        self._next_due: float | None = None
+        self._start: int | None = None  # the sim time of the first frame, nanoseconds
+        self._taken = 0  # how many frames the sensor has taken
         self._now = 0.0  # the tick in progress: an emit logs at the time its frame shows, then restores it
         logger.info(f"{type(self).__name__}: {self.path} @{self.rate:.0f}Hz -> sensors/{self.name} (body[{self.body}])")
 
@@ -112,17 +117,16 @@ class RtxMountedSensor(Component):
         """Component-owned logging: the loop hands over the Logger scoped to this sensor, and None = off."""
         self._logger = logger_
 
-    def take_due(self, now: float) -> bool:
-        """Whether a frame is due at sim time ``now``; a due frame advances the due time.
-
-        Absolute due-time accumulation, not last+period quantized to the tick grid: a 24 Hz camera
-        on 4 ms ticks would land every 44 ms = 22.7 fps; accumulation alternates 40/44 ms = 24.0.
+    def due(self, now_ns: int) -> bool:
+        """Whether a frame is due at sim time ``now_ns``, in nanoseconds; a due frame counts toward the next
+        one's due time. Every sensor's rule, :func:`~nexus_sim._src.vehicle.sensors.rate.due`, decides.
         """
-        if self._next_due is not None and now < self._next_due:
+        elapsed = 0 if self._start is None else now_ns - self._start
+        if not due_rule.due(wp.int64(elapsed), wp.int32(self._taken), wp.float64(self.rate)):
             return False
-        period = 1.0 / self.rate
-        base = self._next_due if self._next_due is not None else now
-        self._next_due = max(base + period, now + 0.5 * period)  # never burst after a stall
+        if self._start is None:
+            self._start = now_ns
+        self._taken += 1
         return True
 
     def stages(self) -> list[Stage]:

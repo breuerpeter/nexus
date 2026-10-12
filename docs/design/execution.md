@@ -56,12 +56,15 @@ Any other type is a host type, whose buffer holds one object. Core ships the typ
   twist, and the guidance and the controller read it in place of the physics state.
 - Each sensor writes its sample to a signal of its own type. `ImuSample`, `MagSample`, `BaroSample` and
   `GpsSample` are structs on the device, the signals `imu`, `mag`, `baro` and `gps`. The first field of
-  each is the sim time of the tick that took the sample. Each of the four samples only on a tick that
-  its declared rate makes due, or on every tick with no rate. Between two samples its signal holds the
-  last one, so the time marks a new sample. A camera's frame is an `Image` and a lidar's scan a
+  each is the sim time of the tick that took the sample. Between two samples a signal holds the last
+  one, so the time marks a new sample. A camera's frame is an `Image` and a lidar's scan a
   `PointCloud`, on the host, each with the sim time it shows: the signals `camera`, `thermal_camera`
   and `lidar`. An estimator reads them, and so does PX4's controller, which hands them to PX4's
   estimator.
+- Every sensor samples by one rule, whether its stage runs on the device or the host. The k-th sample
+  after the first is due at the first's time plus k periods of its declared rate. The rule compares
+  whole nanoseconds, so a due time that falls on a tick compares exactly. A rate of 0 samples every
+  tick, as does a rate faster than the tick, and a negative rate fails the build.
 - The tick's sim time is the signal `time`, a `wp.float64` on the device, in seconds, and `time_ns`, an
   `wp.int64`, in nanoseconds. The loop's clock stage opens each tick and adds one control tick, in step
   with the host clock. So a sensor stamps its sample with the tick's time inside a captured graph too, and
