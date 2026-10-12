@@ -4,12 +4,12 @@
     ".": {
       "release-type": "simple",
       "bump-minor-pre-major": true,
-      "package-name": "nexus-sim",
+      "package-name": "nexus-uav",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
         { "type": "toml", "path": "pyproject.toml", "jsonpath": "$.project.version" },
-        { "type": "toml", "path": "uv.lock", "jsonpath": "$.package[?(@.name.value=='nexus-sim')].version" },
-        { "type": "toml", "path": "nexus-rl/uv.lock", "jsonpath": "$.package[?(@.name.value=='nexus-sim')].version" }
+        { "type": "toml", "path": "uv.lock", "jsonpath": "$.package[?(@.name.value=='nexus-uav')].version" },
+        { "type": "toml", "path": "nexus-rl/uv.lock", "jsonpath": "$.package[?(@.name.value=='nexus-uav')].version" }
       ]
     }
   }

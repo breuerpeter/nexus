@@ -6,7 +6,7 @@ default scenario, and the from_gps wiring.
 
 import math
 
-from nexus_sim._src.core import geomag
+from nexus_uav._src.core import geomag
 
 # Woodinville, near Seattle: the origin the shipped flat scenes' PhysicsScene authors.
 SEATTLE = (47.747944, -122.163917)

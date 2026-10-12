@@ -73,7 +73,7 @@ Where an address goes depends on which side of the run the link's end sits:
   Hardware In The Loop (HIL) server is one, and the builder hands the controller its port.
 - **An end outside the run**: it reads its address from the run's [port map](concepts.md#port-map),
   `sim.ports`. PX4's
-  offboard link is one. A script opens its own client, `nexus_sim.px4.OffboardClient`, on
+  offboard link is one. A script opens its own client, `nexus_uav.px4.OffboardClient`, on
   `sim.ports["offboard"]`, which holds the port and PX4's MAVLink system id.
 
 The split is a design choice, and it follows from a second rule: no generic part names PX4. The
@@ -92,8 +92,8 @@ The project's name takes three forms, each for one kind of thing:
 
 | Form | What takes it | Example |
 |---|---|---|
-| `nexus-sim` | The distribution on PyPI | `pip install nexus-sim` |
-| `nexus_sim` | The Python import package and its folder: every name Python resolves | `import nexus_sim as nx`, `nexus_sim/_src/` |
+| `nexus-uav` | The distribution on PyPI | `pip install nexus-uav` |
+| `nexus_uav` | The Python import package and its folder: every name Python resolves | `import nexus_uav as nx`, `nexus_uav/_src/` |
 | `nexus` | The project, and every name outside Python's import system | the `nexus` command, the `nexus:` USD attributes, the `nexus.registry` entry-point group, the `nexus` logger, the `nexus.peer` Docker label, `nexus.catalog.yaml`, `~/.cache/nexus` |
 
 The reinforcement learning project follows the same split: `nexus-rl` is its folder and project, and

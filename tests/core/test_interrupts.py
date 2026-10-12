@@ -11,7 +11,7 @@ import time
 
 import pytest
 
-from nexus_sim._src.core.interrupts import hold_interrupts, stop_signals
+from nexus_uav._src.core.interrupts import hold_interrupts, stop_signals
 
 
 @pytest.mark.parametrize("sig", [signal.SIGTERM, signal.SIGHUP], ids=["SIGTERM", "SIGHUP"])

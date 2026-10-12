@@ -9,13 +9,13 @@ import pytest
 pytest.importorskip("torch")
 pytest.importorskip("newton")
 
-from nexus_sim._src.api.sim import Sim
-from nexus_sim._src.build.launch import resolve_scenario, resolve_vehicle_usd
-from nexus_sim._src.config import LaunchConfig
-from nexus_sim._src.guidance import MissionGuidance
-from nexus_sim.examples.controllers.pid.assembly import build_pid_loop
-from nexus_sim.examples.controllers.policy.assembly import build_policy_loop
-from nexus_sim.examples.controllers.sampling_mpc.assembly import build_sampling_mpc_loop
+from nexus_uav._src.api.sim import Sim
+from nexus_uav._src.build.launch import resolve_scenario, resolve_vehicle_usd
+from nexus_uav._src.config import LaunchConfig
+from nexus_uav._src.guidance import MissionGuidance
+from nexus_uav.examples.controllers.pid.assembly import build_pid_loop
+from nexus_uav.examples.controllers.policy.assembly import build_policy_loop
+from nexus_uav.examples.controllers.sampling_mpc.assembly import build_sampling_mpc_loop
 from tests.usd import sensor_vehicle as sv
 
 

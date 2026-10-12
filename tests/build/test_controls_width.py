@@ -13,8 +13,8 @@ pytest.importorskip("pxr")
 
 import warp as wp
 
-from nexus_sim._src.core.interfaces import Component, Stage
-from nexus_sim._src.core.signals import Signal
+from nexus_uav._src.core.interfaces import Component, Stage
+from nexus_uav._src.core.signals import Signal
 from tests.usd import sensor_vehicle as sv
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")

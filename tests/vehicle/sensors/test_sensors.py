@@ -12,10 +12,10 @@ pytest.importorskip("warp")
 import warp as wp
 
 # the canonical host reference / oracle
-from nexus_sim._src import transform
-from nexus_sim._src.core.schema import SimTime
-from nexus_sim._src.core.seedtree import SeedTree
-from nexus_sim._src.vehicle.sensors import BaroSensor, GpsSensor, ImuSensor, MagSensor
+from nexus_uav._src import transform
+from nexus_uav._src.core.schema import SimTime
+from nexus_uav._src.core.seedtree import SeedTree
+from nexus_uav._src.vehicle.sensors import BaroSensor, GpsSensor, ImuSensor, MagSensor
 from tests.usd import sensor_vehicle as sv
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")

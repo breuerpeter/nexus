@@ -17,10 +17,10 @@ pytest.importorskip("pxr")
 
 import warp as wp
 
-from nexus_sim._src.config import LaunchConfig
-from nexus_sim._src.config.catalog import load_catalog
-from nexus_sim._src.core.schema import BaroSample, GpsSample, ImuSample, MagSample
-from nexus_sim._src.core.signals import Signal
+from nexus_uav._src.config import LaunchConfig
+from nexus_uav._src.config.catalog import load_catalog
+from nexus_uav._src.core.schema import BaroSample, GpsSample, ImuSample, MagSample
+from nexus_uav._src.core.signals import Signal
 from tests.usd import sensor_vehicle as sv
 from tests.usd.sensor_vehicle import HostController
 
@@ -73,8 +73,8 @@ def _settled(launch, catalog):
     The build's ``force_cpu`` sets the Warp device, and the scope puts it back; a module fixture runs
     before the function-scoped ``warp_cpu`` fixture would.
     """
-    from nexus_sim._src.build.assembly import build_loop
-    from nexus_sim._src.build.launch import resolve_scenario
+    from nexus_uav._src.build.assembly import build_loop
+    from nexus_uav._src.build.launch import resolve_scenario
 
     with wp.ScopedDevice("cpu"):
         builder, resolved, cfg = resolve_scenario(launch, catalog=catalog)

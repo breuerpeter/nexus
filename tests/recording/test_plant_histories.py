@@ -16,7 +16,7 @@ pytest.importorskip("pxr")
 
 import warp as wp
 
-import nexus_sim as nx
+import nexus_uav as nx
 from tests.vehicle import quad
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")

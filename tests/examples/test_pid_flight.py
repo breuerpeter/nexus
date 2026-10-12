@@ -9,12 +9,12 @@ import pytest
 pytest.importorskip("newton")
 pytest.importorskip("warp")
 
-import nexus_sim as nx
-from nexus_sim._src.build.launch import resolve_scenario
-from nexus_sim._src.config import LaunchConfig
-from nexus_sim._src.guidance import MissionGuidance
-from nexus_sim.examples.controllers.pid import flight
-from nexus_sim.examples.controllers.pid.assembly import build_pid_loop
+import nexus_uav as nx
+from nexus_uav._src.build.launch import resolve_scenario
+from nexus_uav._src.config import LaunchConfig
+from nexus_uav._src.guidance import MissionGuidance
+from nexus_uav.examples.controllers.pid import flight
+from nexus_uav.examples.controllers.pid.assembly import build_pid_loop
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")  # the build's force_cpu sets the device; the scope puts it back
 

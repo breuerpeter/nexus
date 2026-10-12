@@ -30,7 +30,7 @@ same path, `sim.read(path)`, the sim time through `sim.time`, and the port map t
 The list of named vehicles and scenes a run resolves by name, the class `Catalog`. Each entry pins
 a content-addressed USD file by its `url` and `sha256`. A project's `nexus.catalog.yaml`, or the
 file `--catalog` names, extends the catalog bundled in the wheel,
-`nexus_sim/_src/config/catalog.yaml`. [Your own assets](../guide/your-own-assets.md)
+`nexus_uav/_src/config/catalog.yaml`. [Your own assets](../guide/your-own-assets.md)
 says how a run finds one.
 
 ### Builder
@@ -152,7 +152,7 @@ Logger are: the framework's own, configured by settings, never declared.
 
 A process outside the loop's process that a run starts and stops. It can be a container, a virtual
 machine, or a bare process, such as PX4 Software In The Loop (SITL) or the Kit render peer. Each peer lives
-in one folder under `nexus_sim/_src/peers/` and ships a fake that speaks its links.
+in one folder under `nexus_uav/_src/peers/` and ships a fake that speaks its links.
 [Conventions](conventions.md#how-a-peer-enters-a-run) says how a peer enters a run.
 
 ### Link
@@ -171,7 +171,7 @@ such as `sim.ports["offboard"]`. The run owns every address,
 
 ### Schema
 
-An applied USD API schema from the plugin in `nexus_sim/_src/usd/` that declares a component on a
+An applied USD API schema from the plugin in `nexus_uav/_src/usd/` that declares a component on a
 prim, such as `NexusImuAPI`. Its `nexus:` attributes are the class's keyword arguments, and the
 [schema reference](../reference/schemas.md) lists them.
 

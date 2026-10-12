@@ -7,7 +7,7 @@ description: "How to log from examples and user code: the framework logger, whic
 Log from examples and user code through the framework logger, `nx.logger`, which is the standard-library logger named `nexus`:
 
 ```python
-import nexus_sim as nx
+import nexus_uav as nx
 
 nx.logger.info("reached the waypoint")
 nx.logger.warning("flight degraded")
@@ -53,7 +53,7 @@ code.
 
 A row's entity path names who wrote it. It has three parts, in this order:
 
-1. The process: `sim`, or the name of a peer's folder under `nexus_sim/_src/peers/`.
+1. The process: `sim`, or the name of a peer's folder under `nexus_uav/_src/peers/`.
 2. The component's role folder, as the source tree names it: `vehicle/sensors`,
    `vehicle/controllers` or `guidance`.
 3. The instance: the name of the prim that declares it.
@@ -89,4 +89,4 @@ path.
 | `sim/model/shapes/…` | The scene: each shape's mesh once, posed from the bodies' histories |
 | `<peer>/logs` | A peer's log rows, under the name of its folder |
 
-::: nexus_sim.logger
+::: nexus_uav.logger

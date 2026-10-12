@@ -10,7 +10,7 @@ import pytest
 pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
-from nexus_sim._src.core.registry import Registry
+from nexus_uav._src.core.registry import Registry
 from tests.usd import sensor_vehicle as sv
 
 # PX4's ports are the machine's, so the tests that bind or dial them run on one worker, one at a time.

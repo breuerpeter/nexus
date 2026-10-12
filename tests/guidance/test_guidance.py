@@ -9,12 +9,12 @@ import pytest
 
 pytest.importorskip("warp")
 
-from nexus_sim._src.core.interfaces import Component, Stage, Tick
-from nexus_sim._src.core.schema import PoseTwist, PositionGoal, ReferenceTrajectory, SimTime
-from nexus_sim._src.core.signals import Signal, wire
-from nexus_sim._src.core.stages import Bound
-from nexus_sim._src.guidance import MissionGuidance, TrackingGuidance
-from nexus_sim.examples.controllers.policy.goto.geofence import GeofenceGuidance
+from nexus_uav._src.core.interfaces import Component, Stage, Tick
+from nexus_uav._src.core.schema import PoseTwist, PositionGoal, ReferenceTrajectory, SimTime
+from nexus_uav._src.core.signals import Signal, wire
+from nexus_uav._src.core.stages import Bound
+from nexus_uav._src.guidance import MissionGuidance, TrackingGuidance
+from nexus_uav.examples.controllers.policy.goto.geofence import GeofenceGuidance
 
 
 class _Reference:

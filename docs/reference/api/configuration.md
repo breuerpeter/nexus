@@ -5,8 +5,8 @@ description: "API reference for LaunchConfig and Catalog: launch configuration a
 # Configuration
 
 ```python
-from nexus_sim import LaunchConfig, Catalog
+from nexus_uav import LaunchConfig, Catalog
 ```
 
-::: nexus_sim.LaunchConfig
-::: nexus_sim.Catalog
+::: nexus_uav.LaunchConfig
+::: nexus_uav.Catalog

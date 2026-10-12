@@ -21,7 +21,7 @@ values over the lockstep link.
 
 The estimator belongs to the vehicle's flight stack, beside its controller, and the vehicle's
 Universal Scene Description (USD) file declares it. The shipped class is **internal**: a vehicle names it by its schema, and a project's
-estimator subclasses [`Component`](components.md) and writes a `PoseTwist`, which `nexus_sim` exports.
+estimator subclasses [`Component`](components.md) and writes a `PoseTwist`, which `nexus_uav` exports.
 
-::: nexus_sim._src.vehicle.estimators.ground_truth.GroundTruthEstimator
-::: nexus_sim.PoseTwist
+::: nexus_uav._src.vehicle.estimators.ground_truth.GroundTruthEstimator
+::: nexus_uav.PoseTwist

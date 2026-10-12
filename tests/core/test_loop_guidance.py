@@ -14,11 +14,11 @@ pytest.importorskip("warp")
 
 import warp as wp
 
-from nexus_sim._src.core.interfaces import Component, Stage
-from nexus_sim._src.core.loop import Loop
-from nexus_sim._src.core.schema import PoseTwist, ReferenceTrajectory, SimTime
-from nexus_sim._src.core.signals import Signal
-from nexus_sim._src.guidance import MissionGuidance, TrackingGuidance
+from nexus_uav._src.core.interfaces import Component, Stage
+from nexus_uav._src.core.loop import Loop
+from nexus_uav._src.core.schema import PoseTwist, ReferenceTrajectory, SimTime
+from nexus_uav._src.core.signals import Signal
+from nexus_uav._src.guidance import MissionGuidance, TrackingGuidance
 
 GOALS = [(1.0, 0.0, 0.0), (2.0, 0.0, 0.0)]
 

@@ -13,11 +13,11 @@ import pytest
 from PIL import Image
 from rerun.experimental import RrdReader
 
-import nexus_sim._src.build.launch as launch_mod
-from nexus_sim._src.config import LaunchConfig
-from nexus_sim._src.peers.kit.fake import KitFake
-from nexus_sim._src.peers.kit.runner import KitPeerError
-from nexus_sim._src.peers.px4_sitl.fake import Px4Fake
+import nexus_uav._src.build.launch as launch_mod
+from nexus_uav._src.config import LaunchConfig
+from nexus_uav._src.peers.kit.fake import KitFake
+from nexus_uav._src.peers.kit.runner import KitPeerError
+from nexus_uav._src.peers.px4_sitl.fake import Px4Fake
 
 # PX4's ports are the machine's, so the tests that bind or dial them run on one worker, one at a time.
 pytestmark = pytest.mark.xdist_group("px4_ports")

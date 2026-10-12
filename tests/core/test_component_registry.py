@@ -45,7 +45,7 @@ def _python(code: str, *, cwd: Path, pythonpath: Path) -> list[str]:
 
 def test_a_registry_resolves_a_schema_to_the_class_it_maps():
     """A registry resolves a schema to the class it maps."""
-    from nexus_sim._src.core.registry import Registry
+    from nexus_uav._src.core.registry import Registry
 
     class StandIn:
         """A stand-in component class."""
@@ -57,14 +57,14 @@ def test_a_registry_resolves_an_import_path_to_the_class_it_names():
     """A registry resolves an entry given as an import path, `module:Class`, to the class it names."""
     import json
 
-    from nexus_sim._src.core.registry import Registry
+    from nexus_uav._src.core.registry import Registry
 
     assert Registry({"JsonAPI": "json:JSONDecoder"}).resolve("JsonAPI") is json.JSONDecoder
 
 
 def test_a_registry_resolves_an_entry_added_after_its_creation():
     """A registry resolves an entry that `add` gives it after its creation."""
-    from nexus_sim._src.core.registry import Registry
+    from nexus_uav._src.core.registry import Registry
 
     class StandIn:
         """A stand-in component class."""
@@ -88,8 +88,8 @@ def test_an_installed_package_with_an_entry_in_the_group_builds_its_class_with_n
     )
     vehicle = tmp_path / "vehicle.usda"
     code = f"""
-import nexus_sim
-from nexus_sim._src.build.components import resolve_components
+import nexus_uav
+from nexus_uav._src.build.components import resolve_components
 author_stand_in({str(vehicle)!r})
 (ai,) = resolve_components({str(vehicle)!r})
 print(">", ai.cls.__module__, ai.cls.__name__)
@@ -106,9 +106,9 @@ def test_a_project_adds_an_entry_to_the_default_registry_through_a_public_regist
     vehicle = tmp_path / "vehicle.usda"
     code = f"""
 import nexus_stand_in  # registers the stand-in schema plugin
-import nexus_sim
-from nexus_sim._src.core.registry import register
-from nexus_sim._src.build.components import resolve_components
+import nexus_uav
+from nexus_uav._src.core.registry import register
+from nexus_uav._src.build.components import resolve_components
 from nexus_stand_in.heavy import StandIn
 register("StandInAPI", StandIn)
 author_stand_in({str(vehicle)!r})
@@ -125,10 +125,10 @@ def test_a_registry_handed_to_the_builder_replaces_the_default_and_leaves_it_unt
     when resolved, then the prim resolves to the stand-in, and a later build with the default resolves it
     to the IMU class.
     """
-    from nexus_sim._src.build.components import resolve_components
-    from nexus_sim._src.core.registry import Registry
-    from nexus_sim._src.usd import schema_names
-    from nexus_sim._src.vehicle.sensors import ImuSensor
+    from nexus_uav._src.build.components import resolve_components
+    from nexus_uav._src.core.registry import Registry
+    from nexus_uav._src.usd import schema_names
+    from nexus_uav._src.vehicle.sensors import ImuSensor
 
     class StandIn:
         """A stand-in component class."""
@@ -153,8 +153,8 @@ def test_the_default_registry_builds_a_propeller_from_its_schemas_keywords():
 
     import pytest
 
-    from nexus_sim._src.build.components import resolve_components
-    from nexus_sim._src.vehicle.forces.propellers import Propeller
+    from nexus_uav._src.build.components import resolve_components
+    from nexus_uav._src.vehicle.forces.propellers import Propeller
 
     (rotor,) = [spec for spec in resolve_components(FIXTURE) if spec.schema == "NexusPropellerAPI"]
     built = rotor.cls(**rotor.kwargs)
@@ -172,9 +172,9 @@ def test_the_build_imports_an_entry_class_only_when_a_run_declares_its_schema(tm
     code = f"""
 import sys
 import nexus_stand_in  # registers the stand-in schema plugin
-import nexus_sim
-from nexus_sim._src.core.registry import register
-from nexus_sim._src.build.components import resolve_components
+import nexus_uav
+from nexus_uav._src.core.registry import register
+from nexus_uav._src.build.components import resolve_components
 register("StandInAPI", "nexus_stand_in.heavy:StandIn")
 author_bare({str(bare)!r})
 resolve_components({str(bare)!r})
@@ -187,12 +187,12 @@ print(">", "nexus_stand_in.heavy" in sys.modules)
 
 
 def test_a_package_with_an_entry_in_nexus_registry_and_a_plugin_at_its_root_is_registered_at_import(tmp_path):
-    """The name of the registry says what it does: `import nexus_sim` registers a package with an entry in the
+    """The name of the registry says what it does: `import nexus_uav` registers a package with an entry in the
     `nexus.registry` entry-point group and a `plugInfo.json` at its root, its schema with OpenUSD and its entry
     in the default registry.
 
     Given a stand-in distribution with one `nexus.registry` entry and a `plugInfo.json` at its root, when a fresh
-    interpreter imports `nexus_sim`, then OpenUSD knows its schema and the default registry resolves the entry to
+    interpreter imports `nexus_uav`, then OpenUSD knows its schema and the default registry resolves the entry to
     its class.
     """
     import shutil
@@ -212,10 +212,10 @@ def test_a_package_with_an_entry_in_nexus_registry_and_a_plugin_at_its_root_is_r
         capture_output=True,
     )
     code = """
-import nexus_sim
+import nexus_uav
 from pxr import Usd
 print(">", Usd.SchemaRegistry().FindAppliedAPIPrimDefinition("StandInAPI") is not None)
-cls = nexus_sim.Registry().resolve("StandInAPI")
+cls = nexus_uav.Registry().resolve("StandInAPI")
 print(">", getattr(cls, "__module__", None), getattr(cls, "__name__", None))
 """
     assert _python(code, cwd=tmp_path, pythonpath=site) == ["True", "nexus_stand_in.heavy", "StandIn"]

@@ -16,10 +16,10 @@ import pytest
 pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
-import nexus_sim as nx
-from nexus_sim._src.core.schema import ImuSample, MagSample
-from nexus_sim._src.core.signals import Signal
-from nexus_sim._src.vehicle.estimators import GroundTruthEstimator
+import nexus_uav as nx
+from nexus_uav._src.core.schema import ImuSample, MagSample
+from nexus_uav._src.core.signals import Signal
+from nexus_uav._src.vehicle.estimators import GroundTruthEstimator
 from tests.usd import sensor_vehicle as sv
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")

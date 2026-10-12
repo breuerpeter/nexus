@@ -13,7 +13,7 @@ pytest.importorskip("rerun")
 pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
-import nexus_sim as nx
+import nexus_uav as nx
 from tests.recording import _flight
 from tests.recording._flight import POSITION, rows
 

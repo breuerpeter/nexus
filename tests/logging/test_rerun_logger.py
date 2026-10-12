@@ -30,7 +30,7 @@ def _rrd_entities(path: str) -> list[str]:
 
 def test_recording_path_under_cache():
     """``recording_path`` keeps named recordings out of the working tree, in the newton cache."""
-    from nexus_sim._src.logging import recording_path
+    from nexus_uav._src.logging import recording_path
 
     p = recording_path("demo")
     assert "recordings" in p and p.endswith("demo.rrd") and "/.cache/nexus/" in p
@@ -40,7 +40,7 @@ def test_scene_only_blueprint_has_no_logs_view():
     """The examples' blueprint shows only the 3D scene: no ``logs`` TextLog view."""
     import rerun.blueprint as rrb
 
-    from nexus_sim._src.logging import scene_only_blueprint
+    from nexus_uav._src.logging import scene_only_blueprint
 
     bp = scene_only_blueprint()
     assert isinstance(bp, rrb.Blueprint)
@@ -57,7 +57,7 @@ def test_single_blueprint_owned_by_rerunlogger(tmp_path):
     import pathlib
     import re
 
-    from nexus_sim._src.logging import Logger, scene_only_blueprint
+    from nexus_uav._src.logging import Logger, scene_only_blueprint
 
     rrd = str(tmp_path / "one_bp.rrd")
     Logger(model=None, serve=False, record_to_rrd=rrd, blueprint=scene_only_blueprint()).close()
@@ -67,11 +67,11 @@ def test_single_blueprint_owned_by_rerunlogger(tmp_path):
 
 def test_custom_blueprint_accepted(tmp_path):
     """``Logger(blueprint=...)`` plumbs through and still produces a valid recording."""
-    from nexus_sim._src.logging import Logger, scene_only_blueprint
+    from nexus_uav._src.logging import Logger, scene_only_blueprint
 
     rrd = str(tmp_path / "bp.rrd")
     rl = Logger(model=None, serve=False, record_to_rrd=rrd, blueprint=scene_only_blueprint())
-    from nexus_sim._src.core import logger
+    from nexus_uav._src.core import logger
 
     logger.info("event with a custom blueprint")
     rl.close()
@@ -83,7 +83,7 @@ def test_a_scoped_view_logs_a_named_row_under_its_path_and_an_unnamed_row_at_the
     """A scoped view of the Logger logs a named row under its path, and a row with an empty name at
     the path itself.
     """
-    from nexus_sim._src.logging import Logger
+    from nexus_uav._src.logging import Logger
 
     rrd = str(tmp_path / "scoped.rrd")
     rl = Logger(model=None, serve=False, record_to_rrd=rrd)
@@ -102,7 +102,7 @@ def test_blueprint_layout_and_eye_tracking():
     the bottom row is the debug tab tree at *full* viewer width. Cameras are ordinary Sensors instance
     tabs, no special panel.
     """
-    from nexus_sim._src.logging.rerun_logging import VEHICLE_SHAPE_ENTITY, _blueprint
+    from nexus_uav._src.logging.rerun_logging import VEHICLE_SHAPE_ENTITY, _blueprint
 
     cameras = {"sim/vehicle/sensors/fpvcam": "RtxCameraSensor", "sim/vehicle/sensors/lr1cam": None}
     bp = _blueprint(cameras=cameras, has_settings=True)
@@ -140,7 +140,7 @@ def test_blueprint_recording_tabs_mirror_history_keys():
     mirrors the access surface, ``sim["vehicle/body/body_frd"]`` → Physics ▸ body_frd ▸ position …, with
     sensor instance tabs carrying the impl class, and a signal's quantities under its key.
     """
-    from nexus_sim._src.logging.rerun_logging import _blueprint
+    from nexus_uav._src.logging.rerun_logging import _blueprint
 
     recording = {
         "vehicle/body/body_frd": ("vehicle/body/body_frd", "NewtonPhysics", ["position", "velocity"]),
@@ -182,7 +182,7 @@ def test_settings_markdown_is_one_flat_dotted_table():
     "Property" header: every leaf keyed by its fully dotted
     config path; scalar lists inline comma-separated; empty sections stay visible.
     """
-    from nexus_sim._src.logging.rerun_logging import _settings_markdown
+    from nexus_uav._src.logging.rerun_logging import _settings_markdown
 
     md = _settings_markdown(
         {
@@ -207,7 +207,7 @@ def test_settings_and_rtf_land_in_recording(tmp_path):
     """``settings=`` logs the one static run-settings doc; ``log_rtf`` logs the live readout, both
     under the ``run/`` namespace the right column's views read.
     """
-    from nexus_sim._src.logging import Logger
+    from nexus_uav._src.logging import Logger
 
     rrd = str(tmp_path / "run_docs.rrd")
     rl = Logger(model=None, serve=False, record_to_rrd=rrd, settings={"runtime": {"dt": 0.004}, "seed": 42})
@@ -226,7 +226,7 @@ def test_default_blueprint_with_fpv_accepted(tmp_path):
     """A recording built with the default blueprint, with its FPV column, comes out without error."""
     import pathlib
 
-    from nexus_sim._src.logging import Logger
+    from nexus_uav._src.logging import Logger
 
     rrd = str(tmp_path / "fpv_bp.rrd")
     Logger(model=None, serve=False, record_to_rrd=rrd).close()  # default _blueprint now has FPV col
@@ -237,7 +237,7 @@ def test_log_image_lands_in_recording(tmp_path):
     """``log_image`` writes the frame to its entity in the recording."""
     import numpy as np
 
-    from nexus_sim._src.logging import Logger
+    from nexus_uav._src.logging import Logger
 
     rrd = str(tmp_path / "img.rrd")
     rl = Logger(model=None, serve=False, record_to_rrd=rrd)
@@ -253,7 +253,7 @@ def test_log_image_fault_isolated_and_warns_once(tmp_path, monkeypatch):
     import numpy as np
     import rerun as rr
 
-    from nexus_sim._src.logging import Logger
+    from nexus_uav._src.logging import Logger
 
     rl = Logger(model=None, serve=False, record_to_rrd=str(tmp_path / "broken.rrd"))
 
@@ -283,7 +283,7 @@ def test_log_image_no_logger_side_throttle(tmp_path, monkeypatch):
     import numpy as np
     import rerun as rr
 
-    from nexus_sim._src.logging import Logger
+    from nexus_uav._src.logging import Logger
 
     rl = Logger(model=None, serve=False, record_to_rrd=str(tmp_path / "dec.rrd"))
     n = {"c": 0}
@@ -331,7 +331,7 @@ def _timed_rows(rrd: str, entity: str) -> int:
 
 def test_write_lands_one_series_entity_per_declared_quantity(tmp_path, rrd_entities):
     """Every declared field of every history lands at ``sim/<key>/<field>``."""
-    from nexus_sim._src.logging import Logger
+    from nexus_uav._src.logging import Logger
 
     rrd = str(tmp_path / "series.rrd")
     rl = Logger(model=None, serve=False, record_to_rrd=rrd)
@@ -347,7 +347,7 @@ def test_write_appends_each_block_after_the_one_before(tmp_path):
     """Two writes of consecutive row ranges leave every row in the series, in order: a run's recording
     grows block by block.
     """
-    from nexus_sim._src.logging import Logger
+    from nexus_uav._src.logging import Logger
 
     rrd = str(tmp_path / "blocks.rrd")
     rl = Logger(model=None, serve=False, record_to_rrd=rrd)
@@ -361,8 +361,8 @@ def test_write_appends_each_block_after_the_one_before(tmp_path):
 
 def test_write_draws_the_flown_path_as_one_segment_per_row(tmp_path):
     """The flown path is the base body's own rows: one segment per row after the first, across blocks."""
-    from nexus_sim._src.logging import Logger
-    from nexus_sim._src.logging.rerun_logging import TRAJECTORY_ENTITY
+    from nexus_uav._src.logging import Logger
+    from nexus_uav._src.logging.rerun_logging import TRAJECTORY_ENTITY
 
     rrd = str(tmp_path / "trail.rrd")
     rl = Logger(model=None, serve=False, record_to_rrd=rrd)
@@ -380,8 +380,8 @@ def test_write_poses_a_body_whose_label_is_a_full_path(tmp_path):
     fixture with a mast does: the base body's rows still pose it at `sim/vehicle/body` and draw the
     trail.
     """
-    from nexus_sim._src.logging import Logger
-    from nexus_sim._src.logging.rerun_logging import TRAJECTORY_ENTITY
+    from nexus_uav._src.logging import Logger
+    from nexus_uav._src.logging.rerun_logging import TRAJECTORY_ENTITY
 
     rrd = str(tmp_path / "mast.rrd")
     rl = Logger(model=None, serve=False, record_to_rrd=rrd)
@@ -404,8 +404,8 @@ def test_the_scene_is_logged_once_and_the_body_rides_the_rows_written(tmp_path):
     from pxr import Usd, UsdGeom, UsdPhysics
     from rerun.experimental import RrdReader
 
-    from nexus_sim._src.logging import Logger
-    from nexus_sim._src.physics.vehicle import VehicleUsd
+    from nexus_uav._src.logging import Logger
+    from nexus_uav._src.physics.vehicle import VehicleUsd
 
     usd = str(tmp_path / "mini.usda")
     stage = Usd.Stage.CreateNew(usd)
