@@ -392,6 +392,47 @@ def test_the_peers_console_log_stays_in_the_runs_artifacts(daemon, assembly, cat
     assert log.startswith("px4-") and log.endswith(".log"), log
 
 
+def test_a_run_whose_px4_wrote_no_ulog_reports_none_though_the_tree_holds_an_earlier_one(
+    daemon, assembly, tmp_path, monkeypatch
+):
+    """A run whose PX4 wrote no ULog reports `ulog` as `None`, though the PX4 tree holds an earlier run's ULog.
+
+    Given a stand-in docker daemon and a PX4 tree whose log folder holds an earlier `.ulg` for every
+    instance the run could take, when a run enters and closes, then `sim.artifacts()["ulog"]` is `None`.
+    """
+    rootfs = Path(os.environ["PX4_DIR"]) / "build" / "px4_sitl_default" / "rootfs"
+    an_hour_ago = time.time() - 3600
+    for instance in range(256):
+        earlier = rootfs / str(instance) / "log" / "2026-01-01" / "00_00_00.ulg"
+        earlier.parent.mkdir(parents=True)
+        earlier.write_bytes(b"ULog\x01\x12\x35")
+        os.utime(earlier, (an_hour_ago, an_hour_ago))
+    project = tmp_path / "nexus.catalog.yaml"
+    project.write_text(yaml.safe_dump({"vehicles": _vehicle(tmp_path)}))
+
+    with Sim("astro", scene="empty", catalog=str(project), device="cpu") as sim:
+        pass
+
+    assert sim.artifacts()["ulog"] is None
+
+
+def test_a_run_whose_px4_the_sim_did_not_start_has_no_ulog_entry(daemon, assembly, tmp_path):
+    """A run whose PX4 the sim didn't start has no `ulog` entry, as it has no `px4_log`.
+
+    Given a vehicle layer that drops the PX4 peer, when the run enters and closes, then `sim.artifacts()`
+    holds neither `ulog` nor `px4_log`.
+    """
+    project = tmp_path / "nexus.catalog.yaml"
+    project.write_text(yaml.safe_dump({"vehicles": _vehicle(tmp_path)}))
+    layer = tmp_path / "override.usda"
+    layer.write_text(_DROP_PX4_SITL_FROM_SCOPE)
+
+    with Sim("astro", scene="empty", catalog=str(project), layer=str(layer), device="cpu") as sim:
+        pass
+
+    assert {"ulog", "px4_log"} & sim.artifacts().keys() == set(), sim.artifacts()
+
+
 def test_the_px4_sitl_image_builds_once_from_the_packages_dockerfile(daemon, run):
     """The px4-sitl image builds locally from the Dockerfile the wheel ships, tagged by its hash, once.
 
