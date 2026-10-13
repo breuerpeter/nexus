@@ -197,9 +197,19 @@ def test_container_user_is_the_trees_owner(daemon, tree, tmp_path, monkeypatch):
     real_stat = pathlib.Path.stat
 
     class _Stat:
+        """The tree's real stat, owned by another user."""
+
         st_uid, st_gid = 4242, 4343
 
-    monkeypatch.setattr(pathlib.Path, "stat", lambda self, **kw: _Stat() if self == tree else real_stat(self, **kw))
+        def __init__(self, real):
+            self._real = real
+
+        def __getattr__(self, name):
+            return getattr(self._real, name)
+
+    monkeypatch.setattr(
+        pathlib.Path, "stat", lambda self, **kw: _Stat(real_stat(self, **kw)) if self == tree else real_stat(self, **kw)
+    )
 
     _peer(tree, tmp_path).start()
 

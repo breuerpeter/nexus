@@ -39,8 +39,8 @@ def variable(name: str) -> str:
 
 def resolve(name: str, catalog: Path | None = None) -> PeerPin:
     """Peer ``name``'s pin and its source: the variable, else the project's pin file beside ``catalog``,
-    else the pin file the peer ships. A variable that is set wins even when empty, so the peer's form
-    check fails on it rather than fly a pin the variable meant to replace.
+    else the pin file the peer ships. The variable wins whenever the environment holds it, empty or
+    not, so the peer's form check fails on it rather than fly a pin the variable meant to replace.
 
     Args:
         name: The peer's folder name, such as ``px4_sitl``.

@@ -46,12 +46,19 @@ class Pin:
 def parse(pin: PeerPin) -> Pin | Path:
     """The PX4 tree ``pin`` names: a :class:`Pin` for ``owner/repo@<commit>``, or a checkout's path.
 
+    A checkout is a folder; one outside git flies too, and the receipt records no commit for it.
+
     Raises:
-        ValueError: The pin is neither; the message names its source and the forms it takes.
+        ValueError: The pin is neither, or names a path with no folder; the message names its source
+            and the forms it takes.
     """
     ref = pin.ref
     if ref.startswith(("/", "~")):
-        return Path(ref).expanduser()
+        if not (tree := Path(ref).expanduser()).is_dir():
+            raise ValueError(
+                f"{pin.source}: the PX4 pin {ref!r} names no folder; point it at a checkout, or at repo@sha"
+            )
+        return tree
     if not _PIN.fullmatch(ref):
         raise ValueError(
             f"{pin.source}: the PX4 pin {ref!r} is neither repo@sha, such as PX4/PX4-Autopilot@<commit>, "

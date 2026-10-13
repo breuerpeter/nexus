@@ -368,3 +368,19 @@ def test_a_run_that_starts_no_kit_peer_records_no_kit_pin(daemon, tmp_path):
     outcome = _run(tmp_path, peers={"px4_sitl": Px4Fake})
 
     assert (outcome["error"], _pin(outcome, "kit")) == (None, None)
+
+
+def test_a_px4_pin_naming_a_path_with_no_folder_fails_the_run_before_any_peer_starts(daemon, tmp_path, monkeypatch):
+    """A PX4 pin naming a path with no folder behind it fails the run before any peer starts.
+
+    Given `NEXUS_PX4_SITL_REF` set to a path where no folder exists, when a PX4 run builds, then it
+    raises a `ValueError` naming the variable and the path, and no container starts.
+    """
+    missing = tmp_path / "no-such-px4"
+    monkeypatch.setenv("NEXUS_PX4_SITL_REF", str(missing))
+
+    outcome = _run(tmp_path)
+
+    error = outcome["error"]
+    named = [s in str(error) for s in ("NEXUS_PX4_SITL_REF", str(missing))]
+    assert (isinstance(error, ValueError), named, daemon.runs) == (True, [True, True], []), error
