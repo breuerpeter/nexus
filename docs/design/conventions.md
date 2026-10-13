@@ -92,7 +92,7 @@ The project's name takes three forms, each for one kind of thing:
 
 | Form | What takes it | Example |
 |---|---|---|
-| `nexus-uav` | The distribution on PyPI | `pip install nexus-uav` |
+| `nexus-uav` | The distribution on PyPI | `uv pip install nexus-uav` |
 | `nexus_uav` | The Python import package and its folder: every name Python resolves | `import nexus_uav as nx`, `nexus_uav/_src/` |
 | `nexus` | The project, and every name outside Python's import system | the `nexus` command, the `nexus:` USD attributes, the `nexus.registry` entry-point group, the `nexus` logger, the `nexus.peer` Docker label, `nexus.catalog.yaml`, `~/.cache/nexus` |
 

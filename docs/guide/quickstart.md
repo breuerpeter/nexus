@@ -12,16 +12,19 @@ The framework requires **Python 3.12**, **Linux**, and a **CUDA-capable GPU**.
 
 ## Install
 
-From PyPI:
+From PyPI, with [`uv`](https://docs.astral.sh/uv/), which fetches Python 3.12 if the machine
+lacks it:
 
 ```bash
-pip install nexus-uav
+uv venv --python 3.12
+uv pip install nexus-uav
 ```
 
-Optional extras: `policy` for PyTorch, `examples` for jerk-limited trajectories, `upload` for S3
-asset upload, or `all`.
+Optional extras: `policy` adds PyTorch, `examples` adds jerk-limited trajectories, `acados` adds
+Nonlinear Model Predictive Control (NMPC) code generation, and `all` equals `policy` plus
+`examples`. Install one with `uv pip install 'nexus-uav[policy]'`.
 
-For development, use [`uv`](https://docs.astral.sh/uv/):
+For development, clone the repo and sync it:
 
 ```bash
 git clone https://github.com/breuerpeter/nexus.git
@@ -48,11 +51,10 @@ controllers are self-contained examples.
 
 ## Run an example
 
-Launch the [Rerun](https://rerun.io) viewer, then fly the sampling Model Predictive Control (MPC)
-obstacle slalom and watch it live:
+Fly the sampling Model Predictive Control (MPC) obstacle slalom, then open its recording in the
+[Rerun](https://rerun.io) viewer:
 
 ```bash
-uv pip install nexus-uav
 uv run -m nexus_uav.examples sampling_mpc
 uv run rerun ~/.cache/nexus/logs/*.rrd
 ```

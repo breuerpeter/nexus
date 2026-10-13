@@ -197,9 +197,10 @@ built.
 From an installed package, no checkout needed:
 
 ```bash
-pip install 'nexus-uav[acados]'
-python -m nexus_uav.examples acados_nmpc --provision
-python -m nexus_uav.examples acados_nmpc
+uv venv --python 3.12
+uv pip install 'nexus-uav[acados]'
+uv run -m nexus_uav.examples acados_nmpc --provision
+uv run -m nexus_uav.examples acados_nmpc
 ```
 
 Needs a CUDA device for the Newton sim, and `cmake` and a C compiler for acados and its code
