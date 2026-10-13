@@ -14,6 +14,7 @@ from pydantic import Field
 
 from nexus_uav._src.peers.pins import PeerPin
 
+from .catalog import CatalogLayer
 from .models import AssetRef, Px4Spec, Runtime, _Base
 
 
@@ -30,7 +31,9 @@ class TestedConfig(_Base):
     __test__ = False  # not a pytest test class despite the name
 
     vehicle: str  # the variant's key in the catalog, or the local ``.usd`` path a run flew
-    catalog: str | None = None  # the catalog the run resolved against, when it loaded one itself
+    # Each catalog the run loaded itself, in load order, with its kind, its owner and its file: the bundled
+    # one, each installed package's, the project's. Empty for a run handed its catalog.
+    catalogs: list[CatalogLayer] = Field(default_factory=list)
     vehicle_usd: AssetRef
     layer: AssetRef | None = None  # the override layer the run composed over the vehicle and the scene
     px4: Px4Spec | None = None

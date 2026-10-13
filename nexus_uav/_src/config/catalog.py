@@ -7,7 +7,10 @@ No per-key override/transform machinery: that "clever" path is on hold.
 
 from __future__ import annotations
 
+import importlib.resources
 import pathlib
+from importlib.metadata import entry_points
+from typing import Literal
 
 import yaml
 from pydantic import Field, model_validator
@@ -91,8 +94,8 @@ class Catalog(_Base):
     """The checked-in vehicle/scene catalog and where its blobs live.
 
     Resolution is by name: a launch names a :class:`VehicleVariant` and a scene. Built by
-    :func:`load_catalog` from the bundled ``catalog.yaml``, extended by the catalog a project
-    beside the framework keeps.
+    :func:`load_catalog` from the bundled ``catalog.yaml``, extended by the catalog of each
+    installed package and by the catalog a project beside the framework keeps.
     """
 
     assets: Assets = Field(default_factory=Assets)
@@ -189,6 +192,7 @@ class Catalog(_Base):
 
 _DEFAULT_CATALOG = pathlib.Path(__file__).parent / "catalog.yaml"
 CATALOG_FILENAME = "nexus.catalog.yaml"
+CATALOG_GROUP = "nexus.catalog"  # the entry-point group whose entries name the packages that add a catalog
 
 
 def discover_catalog(start: str | pathlib.Path | None = None) -> pathlib.Path | None:
@@ -210,51 +214,109 @@ def discover_catalog(start: str | pathlib.Path | None = None) -> pathlib.Path | 
     return None
 
 
-def catalog_path(path: str | pathlib.Path | None = None) -> pathlib.Path:
-    """The catalog a run flies on top of the bundled one: *path* when it names one, else the nearest
-    discovered one, else the catalog bundled in the wheel. Naming the file explicitly always wins over
-    the walk up.
+class CatalogLayer(_Base):
+    """One catalog a run loads, and its owner: the bundled one, an installed package's or the project's.
+
+    Each layer but the bundled one keeps its pin files beside its catalog file.
     """
-    if path is not None:
-        return pathlib.Path(path)
-    return discover_catalog() or _DEFAULT_CATALOG
+
+    kind: Literal["bundled", "package", "project"]
+    name: str
+    """The package's distribution name for a package layer, else the kind."""
+    path: pathlib.Path
+    """The layer's catalog file."""
+
+    @property
+    def label(self) -> str:
+        """How a message names the layer: ``the bundled catalog``, ``package acme_drones``, ``the project``."""
+        return {"bundled": "the bundled catalog", "project": "the project"}.get(self.kind, f"package {self.name}")
+
+
+def _installed_layers() -> list[CatalogLayer]:
+    """The catalog of each package a ``nexus.catalog`` entry point names, by entry point name.
+
+    Raises:
+        CatalogError: An entry point names a package whose folder holds no ``nexus.catalog.yaml``.
+    """
+    layers = []
+    for entry in sorted(entry_points(group=CATALOG_GROUP), key=lambda e: e.name):
+        package = entry.dist.name if entry.dist is not None else entry.module
+        path = pathlib.Path(str(importlib.resources.files(entry.module))) / CATALOG_FILENAME
+        if not path.is_file():
+            raise CatalogError(
+                f"the {CATALOG_GROUP} entry point {entry.name!r} of package {package} names {entry.module!r}, "
+                f"whose folder holds no {CATALOG_FILENAME}"
+            )
+        layers.append(CatalogLayer(kind="package", name=package, path=path))
+    return layers
+
+
+def catalog_layers(path: str | pathlib.Path | None = None) -> list[CatalogLayer]:
+    """The catalogs a run loads, in load order: the bundled one, then each installed package's, then the
+    project's, which is *path* when it names one, else the nearest discovered one. Naming the file
+    explicitly always wins over the walk up.
+
+    A project file already loaded as a layer, such as the catalog of a package installed from the checkout
+    the run starts in, loads once.
+
+    Raises:
+        CatalogError: An installed package holds no catalog file; see :func:`_installed_layers`.
+    """
+    layers = [CatalogLayer(kind="bundled", name="bundled", path=_DEFAULT_CATALOG), *_installed_layers()]
+    project = pathlib.Path(path) if path is not None else discover_catalog()
+    if project is not None and project.resolve() not in {layer.path.resolve() for layer in layers}:
+        layers.append(CatalogLayer(kind="project", name="project", path=project))
+    return layers
 
 
 def _sha(usd: AssetRef | None) -> str | None:
     return usd.sha256 if usd is not None else None
 
 
-def _extend(bundled: Catalog, project: Catalog) -> Catalog:
-    """*project* laid over *bundled*: a project entry replaces the bundled entry of the same name, and
-    each replacement warns with both hashes, so a stale copy of a bundled entry never flies silently.
+def load_layers(layers: list[CatalogLayer]) -> Catalog:
+    """Each of *layers* laid over the ones before it: an entry replaces the one of the same name below
+    it, and each replacement warns with both hashes, so a stale copy never flies silently.
 
-    Both catalogs have completed their compact refs against their own ``assets.base`` already, so
-    each entry keeps its own catalog's URL. The project's ``assets`` stays the catalog's, since that base is where the project's new blobs go.
+    Each layer completes its compact refs against its own ``assets.base``, so each entry keeps its own
+    catalog's URL. The project's ``assets`` stays the catalog's, since that base is where the project's
+    new blobs go; with no project, the bundled one's does.
+
+    Raises:
+        CatalogError: Two installed packages define one name, since no order between them means anything.
     """
-    for kind, shipped, own in (
-        ("vehicle", bundled.vehicles, project.vehicles),
-        ("scene", bundled.scenes, project.scenes),
-    ):
-        for name, entry in own.items():
-            if name in shipped:
-                logger.warning(
-                    f"{kind} {name!r}: the project's entry (sha256 {_sha(entry.usd)}) replaces the bundled one "
-                    f"(sha256 {_sha(shipped[name].usd)})"
-                )
-    return Catalog(
-        assets=project.assets,
-        vehicles={**bundled.vehicles, **project.vehicles},
-        scenes={**bundled.scenes, **project.scenes},
-    )
+    catalog = Catalog.from_yaml(layers[0].path)
+    owners = {("vehicle", name): layers[0] for name in catalog.vehicles}
+    owners |= {("scene", name): layers[0] for name in catalog.scenes}
+    for layer in layers[1:]:
+        own = Catalog.from_yaml(layer.path)
+        for kind, below, entries in (
+            ("vehicle", catalog.vehicles, own.vehicles),
+            ("scene", catalog.scenes, own.scenes),
+        ):
+            for name, entry in entries.items():
+                if (kind, name) in owners:
+                    before = owners[(kind, name)]
+                    if before.kind == layer.kind == "package":
+                        raise CatalogError(
+                            f"{kind} {name!r} is defined by two installed packages, {before.name} and {layer.name}"
+                        )
+                    logger.warning(
+                        f"{kind} {name!r}: {layer.label}'s entry (sha256 {_sha(entry.usd)}) replaces "
+                        f"{before.label}'s (sha256 {_sha(below[name].usd)})"
+                    )
+                owners[(kind, name)] = layer
+        catalog = Catalog(
+            assets=own.assets if layer.kind == "project" else catalog.assets,
+            vehicles={**catalog.vehicles, **own.vehicles},
+            scenes={**catalog.scenes, **own.scenes},
+        )
+    return catalog
 
 
 def load_catalog(path: str | pathlib.Path | None = None) -> Catalog:
-    """Load + validate the bundled catalog, extended by the one :func:`catalog_path` picks for *path*.
+    """Load + validate the catalogs :func:`catalog_layers` lists for *path*, each over the ones before it.
 
-    A project catalog lists only what it adds; see :func:`_extend` for how a name in both resolves.
+    A package or project catalog lists only what it adds; see :func:`load_layers` for how a name in two
+    resolves.
     """
-    bundled = Catalog.from_yaml(_DEFAULT_CATALOG)
-    source = catalog_path(path)
-    if source.resolve() == _DEFAULT_CATALOG.resolve():
-        return bundled
-    return _extend(bundled, Catalog.model_validate(yaml.safe_load(source.read_text()) or {}))
+    return load_layers(catalog_layers(path))

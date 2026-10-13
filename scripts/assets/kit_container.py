@@ -56,13 +56,13 @@ def run_in_kit(script: str | os.PathLike, args: list[str], *, cesium: bool = Fal
 
     import nexus_uav._src.peers.kit.runner as peer
     from nexus_uav._src.assets.resolver import default_cache
-    from nexus_uav._src.config.catalog import catalog_path
+    from nexus_uav._src.config.catalog import catalog_layers
 
     target = Path(script).resolve()
     cwd = Path.cwd()
     try:
         volumes, env = peer._cesium_mount(default_cache()) if cesium else ({}, {})
-        image = peer.ensure_image(peer.resolve(catalog_path()).ref)
+        image = peer.ensure_image(peer.resolve(catalog_layers()).ref)
         volumes[str(cwd)] = {"bind": str(cwd), "mode": "rw"}
         if not target.is_relative_to(cwd):
             volumes[str(target.parent)] = {"bind": str(target.parent), "mode": "ro"}

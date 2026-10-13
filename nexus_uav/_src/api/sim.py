@@ -43,9 +43,9 @@ class Sim:
 
     Args:
         vehicle: Catalog vehicle *name*, for example ``"astro_max_fpv"``, or a local .usd path.
-        catalog: Path to a catalog that extends the bundled one. ``None`` takes the nearest
-            ``nexus.catalog.yaml`` in the working directory or a directory over it, and only the
-            catalog bundled in the wheel when no directory holds one.
+        catalog: Path to a catalog that extends the bundled one and those of the installed
+            packages. ``None`` takes the nearest ``nexus.catalog.yaml`` in the working directory or
+            a directory over it, and only the bundled and installed catalogs when no directory holds one.
         scene: Catalog scene *name* to fly in, for example ``"empty"`` for flat ground or the
             ``"slalom"`` obstacle pillars, or a local scene .usd path.
         device: Compute device for the runtime: ``"auto"``, the default, which picks CUDA when

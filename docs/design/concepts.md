@@ -28,10 +28,10 @@ same path, `sim.read(path)`, the sim time through `sim.time`, and the port map t
 ### Catalog
 
 The list of named vehicles and scenes a run resolves by name, the class `Catalog`. Each entry pins
-a content-addressed USD file by its `url` and `sha256`. A project's `nexus.catalog.yaml`, or the
-file `--catalog` names, extends the catalog bundled in the wheel,
-`nexus_uav/_src/config/catalog.yaml`. [Your own assets](../guide/your-own-assets.md)
-says how a run finds one.
+a content-addressed USD file by its `url` and `sha256`. A run loads catalogs in layers: the one
+bundled in the wheel, `nexus_uav/_src/config/catalog.yaml`, then the catalog of each installed
+package that adds one, then a project's `nexus.catalog.yaml` or the file `--catalog` names. Each
+extends the layers below it. [Your own assets](../guide/your-own-assets.md) says how a run finds them.
 
 ### Builder
 

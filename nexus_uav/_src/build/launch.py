@@ -159,7 +159,7 @@ def build_from_launch(
         ValueError: The vehicle declares no controller, two, one other than PX4, a PX4 schema on a
             prim that isn't a ``Scope`` or with no airframe, two estimators or one off its ``Scope``,
             a component schema that states no role or two, or the PX4 SITL peer on a prim with no PX4
-            schema, or ``peers`` names a peer the build doesn't know, or a pin file beside the catalog
+            schema, or ``peers`` names a peer the build doesn't know, or a pin file beside a catalog
             names no peer, or a peer's pin isn't in its form; raised before any peer starts.
         FileNotFoundError: The launch names an override layer with no file behind it.
         KitPeerError: The vehicle declares RTX sensors and the Kit peer couldn't start.
@@ -192,11 +192,11 @@ def build_from_launch(
         raise ValueError(
             f"{spec.prim}: {PX4_SCHEMA} authors no nexus:airframe; name the PX4 SITL airframe, such as astro_max"
         )
-    # Every pin file beside the catalog names a peer, and every peer's pin is in its form, before any
+    # Every pin file beside a catalog names a peer, and every peer's pin is in its form, before any
     # peer starts, so a stale or broken pin file fails each run, not only the runs of its peer.
-    catalog_file = pathlib.Path(resolved.tested_config.catalog) if resolved.tested_config.catalog else None
-    pins.check(catalog_file, sorted(shipped))
-    peer_pins = {"px4_sitl": px4_checkout.resolve(catalog_file), "kit": kit.resolve(catalog_file)}
+    layers = resolved.tested_config.catalogs
+    pins.check(layers, sorted(shipped))
+    peer_pins = {"px4_sitl": px4_checkout.resolve(layers), "kit": kit.resolve(layers)}
     # Every file the run writes lands in one folder: the recording and each peer's logs.
     logs = run_folder()
     # By now the run has fetched every asset it renders, so the Kit peer starts first and boots while

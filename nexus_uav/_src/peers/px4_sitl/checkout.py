@@ -1,7 +1,7 @@
 """How the PX4 peer reaches its PX4 tree.
 
 The peer's pin comes from :mod:`nexus_uav._src.peers.pins`: ``pin.ref`` beside this module, a
-project's ``nexus.px4_sitl.ref`` beside its catalog, or ``$NEXUS_PX4_SITL_REF``. In the shipped file,
+package's or a project's ``nexus.px4_sitl.ref`` beside its catalog, or ``$NEXUS_PX4_SITL_REF``. In the shipped file,
 line one is ``repo@sha``, the PX4-Autopilot tree it flies, and line two the branch ``px4-bump.yml``
 tracks. A pin is ``owner/repo@<commit>``, or the absolute path of a checkout of your own, for work on
 PX4 itself. On first use the peer fetches a pinned commit into a folder it owns,
@@ -18,12 +18,17 @@ from __future__ import annotations
 
 import re
 import subprocess
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from nexus_uav._src.core import logger
 from nexus_uav._src.peers import pins
 from nexus_uav._src.peers.pins import PeerPin
+
+if TYPE_CHECKING:
+    from nexus_uav._src.config.catalog import CatalogLayer
 
 NAME = "px4_sitl"  # the peer's folder name, which names its pin file and its variable
 _AIRFRAME = Path("ROMFS/px4fmu_common/init.d-posix/airframes/80000_none_astro_max")
@@ -68,17 +73,17 @@ def parse(pin: PeerPin) -> Pin | Path:
     return Pin(repo, sha)
 
 
-def resolve(catalog: Path | None = None) -> PeerPin:
+def resolve(layers: Sequence[CatalogLayer] = ()) -> PeerPin:
     """The peer's pin, checked, through :func:`nexus_uav._src.peers.pins.resolve`; a checkout's pin
     carries its checked-out commit.
 
     Args:
-        catalog: The project catalog the run resolved against, or ``None`` for no project.
+        layers: The catalog layers the run loaded, in load order; none for a run handed its catalog.
 
     Raises:
-        ValueError: The pin isn't in the form :func:`parse` takes.
+        ValueError: The pin isn't in the form :func:`parse` takes, or two installed packages pin it.
     """
-    pin = pins.resolve(NAME, catalog)
+    pin = pins.resolve(NAME, layers)
     tree = parse(pin)
     if isinstance(tree, Path):
         head = subprocess.run(

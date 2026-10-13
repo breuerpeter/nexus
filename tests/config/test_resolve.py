@@ -176,7 +176,7 @@ def test_a_run_says_which_catalog_it_flew(tmp_path, monkeypatch, caplog):
     with caplog.at_level(logging.INFO):
         rl = resolve(LaunchConfig(vehicle="discovered", scene="empty"), fetch=False)
 
-    assert (rl.tested_config.catalog, str(catalog) in caplog.text) == (str(catalog), True)
+    assert (rl.tested_config.catalogs[-1].path, str(catalog) in caplog.text) == (catalog, True)
 
 
 def test_a_launch_that_names_a_dropped_variant_fails_before_it_flies(tmp_path, monkeypatch):
