@@ -1,0 +1,2 @@
+nvcr.io/nvidia/isaac-sim:6.0.1
+# Line 1: the image the Kit render peer runs, NVIDIA's Isaac Sim, which pulls with no NGC login.

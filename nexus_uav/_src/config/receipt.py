@@ -1,7 +1,7 @@
 """The tested-config receipt.
 
 The fully specified config a run *actually* simulated: the vehicle it flew + asset shas + PX4
-airframe/overrides + runtime. Re-running this reproduces the run's inputs byte-for-byte. It sits
+airframe/overrides + each peer's pin + runtime. Re-running this reproduces the run's inputs byte-for-byte. It sits
 next to the run's ``.rrd``/``.ulg``. The *where* is the runtime's call;
 this module owns the *what*.
 """
@@ -9,6 +9,10 @@ this module owns the *what*.
 from __future__ import annotations
 
 import pathlib
+
+from pydantic import Field
+
+from nexus_uav._src.peers.pins import PeerPin
 
 from .models import AssetRef, Px4Spec, Runtime, _Base
 
@@ -30,6 +34,7 @@ class TestedConfig(_Base):
     vehicle_usd: AssetRef
     layer: AssetRef | None = None  # the override layer the run composed over the vehicle and the scene
     px4: Px4Spec | None = None
+    peers: dict[str, PeerPin] = Field(default_factory=dict)  # each started peer's pin, by the peer's name
     scene: str
     scene_usd: AssetRef
     scene_start: tuple[float, float, float] | None = None  # scene-frame point placed at the world origin

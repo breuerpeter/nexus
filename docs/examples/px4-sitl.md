@@ -85,13 +85,13 @@ uv run --group ci python scripts/ci/evaluate_examples.py --only px4_sitl
 ```
 
 Prerequisites, per [Running a SITL flight](../guide/running.md): docker and a CUDA host. The first
-run fetches and builds the PX4 tree the controller pins, and `PX4_DIR` names a checkout of your own instead.
+run fetches and builds the PX4 tree the peer pins, and `NEXUS_PX4_SITL_REF` names a checkout of your own instead.
 
 ## Regression gate
 
 `scripts/ci/evaluate_examples.py` runs this example on a GPU box of its own, one box per example,
 in the `gpu-examples` workflow via the shared `gpu-runner.yml`. The box fetches and builds the PX4
-tree from the pin the controller ships, `nexus_uav/_src/peers/px4_sitl/px4.ref`, the way a
+tree from the pin the peer ships, `nexus_uav/_src/peers/px4_sitl/pin.ref`, the way a
 user's first run does, and caches the tree and the `px4-sitl` image under that pin. The script then
 gates the fresh run against `scripts/ci/examples_baselines.json`. It fails if the closed-loop
 takeoff stops working,

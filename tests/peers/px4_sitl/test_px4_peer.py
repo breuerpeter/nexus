@@ -115,7 +115,7 @@ class _Daemon:
 
 @pytest.fixture
 def daemon(monkeypatch, tmp_path):
-    """The stand-in daemon, a PX4 checkout stand-in at ``$PX4_DIR`` so nothing fetches, and a home
+    """The stand-in daemon, a PX4 checkout stand-in at ``$NEXUS_PX4_SITL_REF`` so nothing fetches, and a home
     folder in the test's folder.
     """
     d = _Daemon()
@@ -123,7 +123,7 @@ def daemon(monkeypatch, tmp_path):
     px4 = tmp_path / "px4"
     px4.mkdir()
     (px4 / "Makefile").write_text("px4_sitl:\n")  # what marks a folder as a PX4 tree
-    monkeypatch.setenv("PX4_DIR", str(px4))
+    monkeypatch.setenv("NEXUS_PX4_SITL_REF", str(px4))
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("NEXUS_ASSET_CACHE", str(tmp_path / "assets"))
     return d
@@ -497,11 +497,11 @@ def test_a_run_whose_peer_mapping_sends_the_px4_sitl_peer_to_its_fake_starts_no_
 ):
     """A run whose peer mapping sends the PX4 SITL peer to its fake starts no process and needs no PX4 tree.
 
-    Given a stand-in docker daemon, no PX4 checkout and no `PX4_DIR`, when a run of the default
+    Given a stand-in docker daemon, no PX4 checkout and no PX4 pin variable, when a run of the default
     vehicle, built with a peer mapping that sends the PX4 SITL peer to its fake, steps 500 ticks, then the
     daemon records no container, no fetch or build runs, and every tick completes.
     """
-    monkeypatch.delenv("PX4_DIR")
+    monkeypatch.delenv("NEXUS_PX4_SITL_REF")
     # The network is a boundary: a fetch this run must not make fails at once.
     cut_network()
     loop = _faked(catalog, tmp_path)
