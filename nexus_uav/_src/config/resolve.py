@@ -155,7 +155,7 @@ def resolve(
         scn_path = _stack(layer[0], layer[1].sha256, pathlib.Path(scn_path), scene.usd.sha256, cache_dir)
     tested = TestedConfig(
         vehicle=str(local) if local is not None else launch.vehicle,
-        catalogs=[str(layer.path) for layer in layers],
+        catalogs=layers,
         vehicle_usd=variant.usd,
         layer=layer[1] if layer is not None else None,
         scene=scene_id,
@@ -165,7 +165,6 @@ def resolve(
     )
     return ResolvedLaunch(
         tested_config=tested,
-        layers=layers,
         vehicle_usd_path=str(veh_path) if veh_path is not None else None,
         scene_usd_path=str(scn_path) if scn_path is not None else None,
     )

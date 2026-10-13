@@ -29,8 +29,8 @@ purpose, and how a stale copy of an entry shows up. Two installed packages that 
 the load, since no order between them means anything. A catalog
 holds no defaults: every run names its vehicle and its scene, `nexus run --vehicle my_quad --scene empty` or
 `Sim("my_quad", scene="empty")`, and a catalog that still carries a `defaults` block fails to load.
-Every run names the catalogs it loaded in its first log line. Its tested-config receipt records their paths, in load order, under
-`catalogs`, so a recording says whose entries produced it.
+Every run names the catalogs it loaded in its first log line. Its tested-config receipt lists them, in load order, under
+`catalogs`: each one's kind, `bundled`, `package` or `project`, its owner, such as the package's distribution name, and its file. A recording then says whose entries produced it.
 
 ## A package that adds a catalog
 

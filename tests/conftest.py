@@ -148,22 +148,23 @@ def install_package(tmp_path, monkeypatch):
     """Install a package beside the framework when called, the way an installer lays one out: its folder
     and a `.dist-info` with a `nexus.catalog` entry point, on a site folder the test puts on the path.
 
-    The call takes the package's name, the files its folder holds, name to text, and the entry point's
-    name, the package's by default. It returns the package's folder.
+    The call takes the package's name, the files its folder holds, name to text, the entry point's name
+    and the distribution's name, each the package's by default. It returns the package's folder.
     """
     site = tmp_path / "site-packages"
     site.mkdir()
     monkeypatch.syspath_prepend(str(site))
 
-    def install(name: str, files: dict[str, str], *, entry: str | None = None) -> Path:
+    def install(name: str, files: dict[str, str], *, entry: str | None = None, distribution: str | None = None) -> Path:
         folder = site / name
         folder.mkdir()
         (folder / "__init__.py").write_text("")
         for filename, text in files.items():
             (folder / filename).write_text(text)
-        info = site / f"{name}-0.1.dist-info"
+        distribution = distribution or name
+        info = site / f"{distribution.replace('-', '_')}-0.1.dist-info"
         info.mkdir()
-        (info / "METADATA").write_text(f"Metadata-Version: 2.1\nName: {name}\nVersion: 0.1\n")
+        (info / "METADATA").write_text(f"Metadata-Version: 2.1\nName: {distribution}\nVersion: 0.1\n")
         (info / "entry_points.txt").write_text(f"[nexus.catalog]\n{entry or name} = {name}\n")
         monkeypatch.delitem(sys.modules, name, raising=False)  # an earlier test's package of this name
         importlib.invalidate_caches()

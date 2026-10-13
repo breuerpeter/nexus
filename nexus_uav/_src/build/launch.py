@@ -194,8 +194,9 @@ def build_from_launch(
         )
     # Every pin file beside a catalog names a peer, and every peer's pin is in its form, before any
     # peer starts, so a stale or broken pin file fails each run, not only the runs of its peer.
-    pins.check(resolved.layers, sorted(shipped))
-    peer_pins = {"px4_sitl": px4_checkout.resolve(resolved.layers), "kit": kit.resolve(resolved.layers)}
+    layers = resolved.tested_config.catalogs
+    pins.check(layers, sorted(shipped))
+    peer_pins = {"px4_sitl": px4_checkout.resolve(layers), "kit": kit.resolve(layers)}
     # Every file the run writes lands in one folder: the recording and each peer's logs.
     logs = run_folder()
     # By now the run has fetched every asset it renders, so the Kit peer starts first and boots while

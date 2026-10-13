@@ -4,6 +4,7 @@ packages, then the project's.
 """
 
 import importlib.resources
+import json
 import logging
 from pathlib import Path
 
@@ -194,15 +195,24 @@ def test_the_receipt_names_each_catalog_layer_the_run_loaded_in_order(tmp_path, 
 
     Given a package installed and a project catalog, when a run builds, then the receipt names all three
     layers in load order, each with its package or path.
+
+    The package installs as `acme-drones` from a folder named `acme_core`, so only the receipt's name, not
+    the path, says which distribution to install to fly its entries again.
     """
-    package = install_package("acme_drones", {"nexus.catalog.yaml": _vehicle("pkg_quad", "file:///acme/pkg_quad.usda")})
+    package = install_package(
+        "acme_core",
+        {"nexus.catalog.yaml": _vehicle("pkg_quad", "file:///acme/pkg_quad.usda")},
+        distribution="acme-drones",
+    )
     project = _project(tmp_path, monkeypatch, _vehicle("project_vehicle", "file:///project/vehicle.usda"))
     bundled = Path(str(importlib.resources.files("nexus_uav._src.config").joinpath("catalog.yaml")))
 
-    receipt = resolve(LaunchConfig(vehicle="project_vehicle", scene="empty"), fetch=False).tested_config.model_dump()
+    receipt = json.loads(
+        resolve(LaunchConfig(vehicle="project_vehicle", scene="empty"), fetch=False).tested_config.to_json()
+    )
 
     assert receipt.get("catalogs") == [
-        str(bundled),
-        str(package / "nexus.catalog.yaml"),
-        str(project / "nexus.catalog.yaml"),
+        {"kind": "bundled", "name": "bundled", "path": str(bundled)},
+        {"kind": "package", "name": "acme-drones", "path": str(package / "nexus.catalog.yaml")},
+        {"kind": "project", "name": "project", "path": str(project / "nexus.catalog.yaml")},
     ]
