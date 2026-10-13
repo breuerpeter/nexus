@@ -55,7 +55,9 @@ def claim(peers: Iterable[type] = ()) -> InstanceClaim:
     Raises:
         RuntimeError: Every one of 256 instances is in use.
     """
-    checks: list[Callable[[int], bool]] = [c.instance_free for c in peers if callable(getattr(c, "instance_free", None))]
+    checks: list[Callable[[int], bool]] = [
+        c.instance_free for c in peers if callable(getattr(c, "instance_free", None))
+    ]
     locks = Path("~/.cache/nexus/px4-instances").expanduser()
     locks.mkdir(parents=True, exist_ok=True)
     for instance in range(COUNT):
