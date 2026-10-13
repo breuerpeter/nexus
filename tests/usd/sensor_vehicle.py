@@ -247,6 +247,52 @@ def estimator(*reads: Signal) -> type:
     return StandInEstimator
 
 
+def companion(greeting: str = "hello") -> str:
+    """The text of the scope `Companion` under the root prim, which declares a project's peer with the stand-in
+    schema `StandInPeerAPI`, started with `greeting`.
+    """
+    return prim("Companion", "StandInPeerAPI", f'string nexus:greeting = "{greeting}"', kind="Scope")
+
+
+def radio() -> type:
+    """A stand-in class of a project's own peer, `radio`, for a registry to map `StandInPeerAPI` to.
+
+    The class keeps the keyword arguments the build gave each instance in its `built`, and each `start` and
+    `stop` in its `events`, in order. Its pin takes the form `name@version`. It states one link that leaves the
+    run, `radio`, on the User Datagram Protocol (UDP) port `first_port` plus its instance. Each call makes a class of
+    its own, for one run.
+    """
+
+    class Radio:
+        name = "radio"
+        first_port = 50000
+        built: ClassVar[list] = []
+        events: ClassVar[list] = []
+
+        def __init__(self, **run):
+            self.run = run
+            type(self).built.append(run)
+
+        @staticmethod
+        def check_pin(pin) -> None:
+            if "@" not in pin.ref:
+                raise ValueError(f"{pin.source}: the radio pin {pin.ref!r} is not in the form name@version")
+
+        def start(self) -> None:
+            type(self).events.append("start")
+
+        def stop(self) -> None:
+            type(self).events.append("stop")
+
+        def alive(self) -> bool:
+            return True
+
+        def ports(self) -> dict:
+            return {"radio": {"protocol": "udp", "port": self.first_port + self.run["instance"]}}
+
+    return Radio
+
+
 def wired(sensor, time: float = 0.0):
     """`sensor`, its signals wired as a run wires them and the tick's sim time on the device at `time`, for a
     test that samples it outside a run.

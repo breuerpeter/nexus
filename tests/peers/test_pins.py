@@ -157,16 +157,19 @@ def _project(tmp_path, monkeypatch, **pins: str) -> Path:
     return project
 
 
-def _run(tmp_path, body: str = "", *, px4: bool = True, peers: dict | None = None) -> dict:
-    """Build the fixture vehicle, with ``body`` under its base body and with the PX4 Software In The Loop (SITL) peer declared
-    when ``px4``, in the fixture scene. Returns what the run left: its receipt as JSON, or the error the
-    build raised, which ends a run as well.
+def _run(
+    tmp_path, body: str = "", *, px4: bool = True, peers: dict | None = None, root: str = "", registry=None
+) -> dict:
+    """Build the fixture vehicle, with ``body`` under its base body, ``root`` under its root prim and with the PX4
+    Software In The Loop (SITL) peer declared when ``px4``, in the fixture scene, with ``registry`` when given.
+    Returns what the run left: its receipt as JSON, or the error the build raised, which ends a run as well.
     """
     launch = LaunchConfig.from_dict(
-        {"vehicle": sv.vehicle(tmp_path, body, px4=px4), "scene": sv.SCENE, "runtime": {"device": "cpu"}}
+        {"vehicle": sv.vehicle(tmp_path, body, root=root, px4=px4), "scene": sv.SCENE, "runtime": {"device": "cpu"}}
     )
+    by_registry = {} if registry is None else {"components": registry}
     try:
-        loop = L.build_from_launch(launch, preroll_timeout=10.0, peers=peers)
+        loop = L.build_from_launch(launch, preroll_timeout=10.0, peers=peers, **by_registry)
     except Exception as exc:
         return {"receipt": {}, "error": exc}
     loop.close()
@@ -475,3 +478,42 @@ def test_an_installed_packages_pin_file_that_names_no_peer_fails_the_run(daemon,
     message = str(outcome["error"] or "")
     named = [s in message for s in (str(package / "nexus.nosuch.ref"), "nexus.px4_sitl.ref", "nexus.kit.ref")]
     assert (named, daemon.runs) == ([True, True, True], [])
+
+
+def test_a_peer_a_project_declares_flies_the_pin_its_package_ships(daemon, tmp_path, install_package):
+    """A peer a project declares flies the pin its package ships.
+
+    Given an installed package whose catalog layer holds `nexus.radio.ref` for its own peer `radio`, and the
+    fixture vehicle that declares that peer, when a run builds, then the peer receives that pin and the receipt
+    records it with the package's file as its source.
+    """
+    package = install_package("acme_radio", {"nexus.catalog.yaml": EMPTY_CATALOG, "nexus.radio.ref": "radio@1.2\n"})
+    peer = sv.radio()
+    registry = sv.components(NexusPx4SitlAPI=Px4Fake, StandInPeerAPI=peer)
+
+    outcome = _run(tmp_path, root=sv.companion(), registry=registry)
+
+    pin = {"ref": "radio@1.2", "source": str(package / "nexus.radio.ref"), "commit": None}
+    given = peer.built[0].get("pin") if peer.built else None
+    given = given.model_dump() if hasattr(given, "model_dump") else given
+    assert (given, _pin(outcome, "radio")) == (pin, pin), outcome["error"]
+
+
+def test_a_projects_peer_pin_not_in_the_form_its_peer_states_fails_before_any_peer_starts(
+    daemon, tmp_path, install_package
+):
+    """A project's peer pin not in the form its peer states fails the run before any peer starts.
+
+    Given an installed package whose `nexus.radio.ref` reads `radio`, not the `name@version` its peer states,
+    and the fixture vehicle that declares that peer, when a run builds, then it raises naming the pin file and
+    the form, and no peer started.
+    """
+    package = install_package("acme_radio", {"nexus.catalog.yaml": EMPTY_CATALOG, "nexus.radio.ref": "radio\n"})
+    peer = sv.radio()
+    registry = sv.components(NexusPx4SitlAPI=Px4Fake, StandInPeerAPI=peer)
+
+    outcome = _run(tmp_path, root=sv.companion(), registry=registry)
+
+    message = str(outcome["error"] or "")
+    named = [s in message for s in (str(package / "nexus.radio.ref"), "name@version")]
+    assert (named, peer.events, daemon.runs) == ([True, True], [], []), outcome["error"]

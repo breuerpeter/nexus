@@ -12,14 +12,21 @@ import pytest
 pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
-import warp as wp
+from typing import ClassVar
 
+import warp as wp
+from pxr import Sdf, Usd, UsdGeom
+
+from nexus_uav._src.api.sim import Sim
 from nexus_uav._src.core.interfaces import Component, Stage
+from nexus_uav._src.core.registry import Registry
 from nexus_uav._src.core.schema import PoseTwist
 from nexus_uav._src.core.signals import Signal
+from nexus_uav._src.scene.world import GRAVITY
 from tests.usd import sensor_vehicle as sv
 from tests.usd.stand_in.nexus_stand_in.estimator import StandInEstimator
 from tests.usd.stand_in.nexus_stand_in.sensor import Gain
+from tests.vehicle import quad
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")
 
@@ -197,3 +204,204 @@ def test_a_vehicle_that_declares_two_estimators_fails_the_build_and_names_both(t
         sv.build(path, components=sv.components(StandInEstimatorAPI=StandInEstimator))
     named = [s in str(e.value) for s in ("/vehicle/Estimator", "/vehicle/Backup", "one estimator")]
     assert named == [True] * 3
+
+
+# The quad's four rotors at full command.
+FULL = (1.0, 1.0, 1.0, 1.0)
+
+
+def _commanding(values) -> type:
+    """A stand-in controller class that sends `values` every tick and counts its ticks in the class's `ticks`.
+
+    Each call makes a class of its own, for one run.
+    """
+
+    class Commanding(quad.Commands):
+        ticks = 0
+
+        def __init__(self, **kwargs):
+            super().__init__(values)  # the schema's keyword arguments, which it doesn't read
+
+        def exchange(self, t, timeout=None):
+            type(self).ticks += 1
+            return super().exchange(t, timeout)
+
+    return Commanding
+
+
+@wp.kernel
+def _target(controls: wp.array2d(dtype=float), channel: int, scale: float, index: int, out: wp.array(dtype=float)):
+    out[index] = controls[0, channel] * scale
+
+
+class _DeclaredServo(Component):
+    """A command element its joint's prim declares: it writes the joint's target from one controls value, `scale`
+    radians per unit.
+    """
+
+    def __init__(self, model, path, *, channel: int = 0, scale: float = 1.0):
+        j = list(model.joint_label).index(path)
+        self.q = int(model.joint_q_start.numpy()[j])
+        self.qd = int(model.joint_qd_start.numpy()[j])
+        self.coords = model.joint_coord_count
+        self.channel, self.scale = int(channel), float(scale)
+        self.controls = Signal("controls", wp.float32, shape=(1, self.channel + 1))
+
+    def stages(self):
+        return [Stage("servo", "device", self._write, reads=(self.controls,))]
+
+    def _write(self, tick):
+        target = tick.control.joint_target_q
+        index = self.q if target.shape[0] == self.coords else self.qd
+        wp.launch(_target, dim=1, inputs=(self.controls.buffer, self.channel, self.scale, index), outputs=(target,))
+
+
+@wp.kernel
+def _lift(body: int, fz: float, body_f: wp.array(dtype=wp.spatial_vector)):
+    wp.atomic_add(body_f, body, wp.spatial_vector(0.0, 0.0, fz, 0.0, 0.0, 0.0))
+
+
+class _DeclaredLift(Component):
+    """A force element its body's prim declares: an upward world force of `weights` times the vehicle's weight."""
+
+    def __init__(self, model, path, *, weights: float = 1.0):
+        self.body = [str(label) for label in model.body_label].index(path)
+        self.fz = float(weights) * float(model.body_mass.numpy().sum()) * GRAVITY
+
+    def stages(self):
+        return [Stage("lift", "device", self._add)]
+
+    def _add(self, tick):
+        wp.launch(_lift, dim=1, inputs=(self.body, self.fz), outputs=(tick.state.body_f,))
+
+
+class _FixedGuidance(Component):
+    """A guidance its scope declares: its host stage writes its setpoint on every tick."""
+
+    def __init__(self, *, setpoint=(0.0, 0.0, 0.0)):
+        self.value = [tuple(float(x) for x in setpoint)]
+        self.setpoint = Signal("setpoint", wp.vec3, shape=(1,))
+
+    def stages(self):
+        return [Stage("guide", "host", self._guide, writes=(self.setpoint,))]
+
+    def _guide(self, tick):
+        self.setpoint.write(self.value)
+        return True
+
+
+def _setpoint_reader() -> type:
+    """A stand-in controller class whose exchange keeps, in the class's `seen`, the setpoint it reads each tick.
+
+    Each call makes a class of its own, for one run.
+    """
+
+    class Reader(_SetpointController):
+        seen: ClassVar[list] = []
+
+        def exchange(self, t, timeout=None):
+            type(self).seen.append(tuple(float(x) for x in self.setpoint.read()[0]))
+            return super().exchange(t, timeout)
+
+    return Reader
+
+
+def _declare(path, *, controller: str = "NexusPx4API", applied: dict | None = None) -> str:
+    """Declare on the quad at `path` its controller, `controller` on the `Scope` `Controller`, and on each prim of
+    `applied`, a path to `(schema, attributes)`, that schema with those attributes. Returns the path.
+    """
+    stage = Usd.Stage.Open(str(path))
+    scope = UsdGeom.Scope.Define(stage, f"{quad.ROOT}/Controller").GetPrim()
+    scope.AddAppliedSchema(controller)
+    if controller == "NexusPx4API":
+        scope.CreateAttribute("nexus:airframe", Sdf.ValueTypeNames.String).Set("astro_max")
+    for prim_path, (schema, attrs) in (applied or {}).items():
+        prim = stage.GetPrimAtPath(prim_path)
+        prim.AddAppliedSchema(schema)
+        for name, (kind, value) in attrs.items():
+            prim.CreateAttribute(name, kind).Set(value)
+    stage.GetRootLayer().Save()
+    return str(path)
+
+
+def _fly(path, registry: Registry, ticks: int = quad.FLIGHT_STEPS) -> dict:
+    """Fly the vehicle at `path` through `Sim` with `registry` for `ticks` ticks on the CPU device. Returns the
+    airframe's climb [m], the gimbal joint's last angle [rad] when it has one, and the error the run raised.
+    """
+    try:
+        with Sim(str(path), scene=sv.SCENE, device="cpu", max_steps=ticks, registry=registry) as sim:
+            sim.run()
+            rows = sim["vehicle/body/body"].history_arrays()["position"]
+            gimbal = sim["vehicle/joints/gimbal_joint"] if "vehicle/joints/gimbal_joint" in sim else None
+            angle = float(gimbal.history()[-1]["q"][0]) if gimbal is not None else None
+    except Exception as exc:
+        return {"climb": None, "angle": None, "error": exc}
+    return {"climb": float(rows[-1][2] - rows[0][2]), "angle": angle, "error": None}
+
+
+def test_a_vehicle_that_declares_a_controller_other_than_px4_builds_and_flies_through_sim(tmp_path):
+    """A vehicle that declares a controller other than PX4 builds and flies through `Sim`.
+
+    Given the fixture quad whose controller `Scope` applies the stand-in controller schema `StandInControllerAPI`, and a
+    `Registry` that maps it to a stand-in controller at full command, when `Sim(registry=...)` flies 125 ticks,
+    then the stand-in's stage ran on each tick and the airframe climbed more than 0.5 m.
+    """
+    path = _declare(quad.author(tmp_path / "quad.usda"), controller="StandInControllerAPI")
+    controller = _commanding(FULL)
+
+    outcome = _fly(path, Registry({"StandInControllerAPI": controller}))
+
+    climbed = outcome["climb"] is not None and outcome["climb"] > 0.5
+    assert (controller.ticks >= quad.FLIGHT_STEPS, climbed) == (True, True), outcome["error"]
+
+
+def test_a_guidance_the_vehicle_declares_builds_in_its_role_and_runs_before_the_controller(tmp_path):
+    """A guidance the vehicle declares builds in its role and runs before the controller.
+
+    Given the fixture vehicle whose `Guidance` scope applies the stand-in guidance schema with the setpoint
+    (1, 2, 3), a stand-in controller that reads the setpoint, and `Registry` rows for both, when `Sim` steps 3
+    ticks, then on each tick the controller reads the setpoint the guidance wrote that tick.
+    """
+    guidance = sv.prim("Guidance", "StandInGuidanceAPI", "float3 nexus:setpoint = (1, 2, 3)", kind="Scope")
+    path = sv.vehicle(tmp_path, root=guidance)
+    reader = _setpoint_reader()
+    registry = sv.components(NexusPx4API=reader, StandInGuidanceAPI=_FixedGuidance)
+
+    outcome = _fly(path, registry, ticks=3)
+
+    assert reader.seen[-3:] == [(1.0, 2.0, 3.0)] * 3, outcome["error"]
+
+
+def test_a_command_element_the_vehicle_declares_builds_through_the_registry(tmp_path):
+    """A command element the vehicle declares builds through the registry.
+
+    Given the fixture quad whose gimbal joint's prim applies the stand-in command schema `StandInServoAPI` on the
+    fifth controls value at 1 rad per unit, mapped in the `Registry` to a servo command element, when the run
+    flies 125 ticks with 0.5 on that value, then the joint settles at 0.5 rad.
+    """
+    servo = {"nexus:channel": (Sdf.ValueTypeNames.Int, 4), "nexus:scale": (Sdf.ValueTypeNames.Float, 1.0)}
+    path = _declare(
+        quad.author(tmp_path / "quad.usda", servo=True), applied={quad.GIMBAL_JOINT: ("StandInServoAPI", servo)}
+    )
+    registry = Registry({"NexusPx4API": _commanding((*FULL, 0.5)), "StandInServoAPI": _DeclaredServo})
+
+    outcome = _fly(path, registry)
+
+    settled = outcome["angle"] is not None and abs(outcome["angle"] - 0.5) < 0.02
+    assert settled, outcome
+
+
+def test_a_force_element_the_vehicle_declares_builds_through_the_registry(tmp_path):
+    """A force element the vehicle declares builds through the registry.
+
+    Given the fixture quad at zero command whose airframe applies the stand-in force schema `StandInLiftAPI` at
+    two of the vehicle's weights, mapped in the `Registry` to an element that adds that force upward, when the
+    run flies 125 ticks, then the airframe climbs more than 0.5 m.
+    """
+    lift = {"nexus:weights": (Sdf.ValueTypeNames.Float, 2.0)}
+    path = _declare(quad.author(tmp_path / "quad.usda"), applied={f"{quad.ROOT}/body": ("StandInLiftAPI", lift)})
+    registry = Registry({"NexusPx4API": _commanding((0.0,) * 4), "StandInLiftAPI": _DeclaredLift})
+
+    outcome = _fly(path, registry)
+
+    assert outcome["climb"] is not None and outcome["climb"] > 0.5, outcome
