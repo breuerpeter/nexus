@@ -38,7 +38,6 @@ IMAGE = "nexus-px4-sitl"
 _INSTANCE = "nexus.px4.instance"  # the label that carries the container's PX4 instance
 _OWNER = "nexus.owner"  # the label that carries the process that started the container
 IMAGE_DIR = Path(__file__).with_name("image")
-PX4_LOG_DIR = os.path.expanduser("~/.cache/nexus/logs")  # beside the run's .rrd and the Kit console tee
 
 
 def _container_kwargs(tree: Path) -> dict:
@@ -101,20 +100,22 @@ class Px4Sitl:
         airframe: The airframe's make target without PX4's ``none_`` prefix, ``astro_max``.
         instance: PX4's SITL instance, which numbers its ports and its system id.
         name: The container's name, one per run.
-        log_path: Where the container's console streams to, the ``px4_log`` artifact.
+        log_dir: The run's folder: PX4's console streams to ``px4.log`` there, the ``px4_log``
+            artifact, and PX4 writes its ULog under ``ulog/`` there, the ``ulog`` artifact.
         claim: The open lock file that holds ``instance`` for this run, which the stop releases; ``None``
             for a peer whose instance no lock holds.
     """
 
     def __init__(
-        self, *, catalog: Path | None, airframe: str, instance: int, name: str, log_path: str, claim: IO | None = None
+        self, *, catalog: Path | None, airframe: str, instance: int, name: str, log_dir: Path, claim: IO | None = None
     ) -> None:
         self.catalog = catalog
         self.tree: Path | None = None  # resolved at start, which can fetch it
         self.airframe = airframe
         self.instance = instance
         self.name = name
-        self.log_path = log_path
+        self.log_path = str(Path(log_dir) / "px4.log")
+        self.ulog_dir = Path(log_dir) / "ulog"
         self._claim = claim
         self._container = None
 
@@ -136,6 +137,14 @@ class Px4Sitl:
         # itself the way PX4's multi-instance script does. `-d` runs with no pxh shell: at the end of
         # an unattended stdin that shell spin-loops printing its prompt and starves PX4.
         kwargs["environment"]["PX4_SIM_MODEL"] = f"none_{self.airframe}"
+        # PX4 writes its ULog to ./log in its instance's folder of the tree, which keeps it across
+        # runs. The run's own folder mounts there instead, so the tree keeps no ULog and the run's
+        # folder holds this run's alone. This process makes the mount point, so docker makes no
+        # folder in the tree as root.
+        self.ulog_dir.mkdir(parents=True, exist_ok=True)
+        log_root = self.tree / "build" / "px4_sitl_default" / "rootfs" / str(self.instance) / "log"
+        log_root.mkdir(parents=True, exist_ok=True)
+        kwargs["volumes"][str(self.ulog_dir)] = {"bind": str(log_root), "mode": "rw"}
         logger.info(
             f"launching PX4 SITL {self.name} (none_{self.airframe}, instance {self.instance}) -> {self.log_path}"
         )
@@ -209,8 +218,12 @@ class Px4Sitl:
         self._container = None
 
     def artifacts(self) -> dict:
-        """The PX4 console log of this run, the ``px4_log`` artifact the PX4 warnings gate reads."""
-        return {"px4_log": self.log_path}
+        """The PX4 console log of this run, the ``px4_log`` artifact the PX4 warnings gate reads, and
+        the ULog PX4 wrote for it, the ``ulog`` artifact: the newest ``.ulg`` in the run's folder, or
+        ``None`` when PX4 wrote none.
+        """
+        ulogs = sorted(self.ulog_dir.glob("**/*.ulg"), key=lambda p: p.stat().st_mtime)
+        return {"px4_log": self.log_path, "ulog": str(ulogs[-1]) if ulogs else None}
 
 
 def _alive(pid: int) -> bool:
@@ -224,4 +237,4 @@ def _alive(pid: int) -> bool:
     return True
 
 
-__all__ = ["IMAGE", "IMAGE_DIR", "PX4_LOG_DIR", "Px4Sitl", "build", "prepare"]
+__all__ = ["IMAGE", "IMAGE_DIR", "Px4Sitl", "build", "prepare"]

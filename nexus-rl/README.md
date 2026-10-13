@@ -133,5 +133,5 @@ the core. Two shared "single source of truth" pieces make it transfer with no co
 ```bash
 uv run --extra policy python nexus_uav/examples/controllers/policy/goto/flight.py \
   --policy .rl-artifacts/rl/exported/policy.pt   # the waypoint tour is WAYPOINTS in the script
-# -> ~/.cache/nexus/logs/nexus-<timestamp>.rrd  (open with `rerun <path>`)
+# -> ~/.cache/nexus/logs/<stamp>-<pid>/nexus.rrd  (open with `rerun <path>`)
 ```

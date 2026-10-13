@@ -43,14 +43,6 @@ from nexus_uav._src.core.schema import BaroSample, GpsSample, ImuSample, MagSamp
 from nexus_uav._src.core.signals import Signal
 from nexus_uav._src.peers.px4_sitl import HIL_PORT
 
-# Where this controller looks for PX4's ULog, mirroring the recorder's
-# ~/.cache/nexus/logs convention for the .rrd. PX4 writes the .ulg itself, since it
-# owns the bytes; a SITL deployment points PX4's log dir here, for example by symlinking
-# the build rootfs/log, so the controller can surface it as an artifact alongside
-# the .rrd. When the dir is missing, because PX4 logs elsewhere or logging is off,
-# ulog_path is None.
-PX4_ULOG_DIR = os.path.expanduser("~/.cache/nexus/px4-ulog")
-
 # What PX4 receives for a sensor the vehicle doesn't declare, as the sample its signal holds: a sample with no
 # time, which is never new, so HIL_SENSOR marks none of its fields updated and no HIL_GPS goes out. Its values
 # only fill HIL_SENSOR: an IMU and a magnetometer that read zero, and a barometer at 1013.25 hPa, 0 m and
@@ -99,7 +91,6 @@ class Px4MavlinkController(Component):
         port: int = HIL_PORT,
         sysid: int = 1,
         compid: int = 200,
-        ulog_dir: str | None = None,
         target_system: int = 1,
     ):
         """Configure the HIL link; nothing listens until ``connect``.
@@ -111,7 +102,6 @@ class Px4MavlinkController(Component):
             port: The TCP port the HIL server listens on, ``HIL_PORT`` plus the run's PX4 instance: PX4 dials it.
             sysid: This end's MAVLink system id.
             compid: This end's MAVLink component id.
-            ulog_dir: Where PX4's ULog lands, ``PX4_ULOG_DIR`` by default.
             target_system: PX4's MAVLink system id: the run's PX4 instance plus 1.
         """
         self.airframe = airframe
@@ -125,7 +115,6 @@ class Px4MavlinkController(Component):
         self._rates = (0.0, 0.0, 0.0)  # its true body rates, Forward Right Down (FRD), rad/s
         self.mav = None
         self.proto = None
-        self._ulog_dir = ulog_dir if ulog_dir is not None else PX4_ULOG_DIR
         # The sensors' samples the exchange serializes, each a signal that holds its default when the vehicle
         # declares no such sensor.
         self.imu = Signal("imu", ImuSample, shape=(1,), default=_NO_IMU)
@@ -143,20 +132,6 @@ class Px4MavlinkController(Component):
         self._sent = dict.fromkeys(("imu", "mag", "baro", "gps"), math.nan)
 
     @property
-    def ulog_path(self) -> str | None:
-        """The PX4 ULog for this run, if whoever ran PX4 pointed it at this controller's log
-        dir, PX4_ULOG_DIR. Newest ``*.ulg`` found there: with SDLOG_MODE=2, which logs from
-        boot to shutdown, that's exactly one file per run, so there is nothing
-        to disambiguate. None if the dir is missing or empty.
-        """
-        if not os.path.isdir(self._ulog_dir):
-            return None
-        ulogs = glob.glob(os.path.join(self._ulog_dir, "**", "*.ulg"), recursive=True)
-        if not ulogs:
-            return None
-        return max(ulogs, key=os.path.getmtime)
-
-    @property
     def attached(self) -> bool:
         """Whether PX4 has dialed in: the HIL link accepted its connection.
 
@@ -165,12 +140,6 @@ class Px4MavlinkController(Component):
         near zero even when PX4 took long to dial in.
         """
         return self.mav is not None and self.mav.port is not None
-
-    def artifacts(self) -> dict:
-        """This controller's contribution to Sim.artifacts(): the PX4 ULog. The console log is the
-        peer's own artifact. Keeps the PX4-specific keys out of the generic Sim API.
-        """
-        return {"ulog": self.ulog_path}
 
     def connect(self, links) -> None:
         conn_string = f"tcpin:{self.ip}:{self.port}"

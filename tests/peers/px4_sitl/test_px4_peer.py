@@ -389,7 +389,7 @@ def test_the_peers_console_log_stays_in_the_runs_artifacts(daemon, assembly, cat
         pass
 
     log = Path(sim.artifacts()["px4_log"]).name
-    assert log.startswith("px4-") and log.endswith(".log"), log
+    assert log == "px4.log", log
 
 
 def test_a_run_whose_px4_wrote_no_ulog_reports_none_though_the_tree_holds_an_earlier_one(

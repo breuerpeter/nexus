@@ -114,7 +114,7 @@ class Component:
 
     def artifacts(self) -> dict:
         """The files the component leaves for a reader after the run, by name, which ``Sim.artifacts`` collects
-        beside the recording: PX4's controller names its ULog. Empty by default.
+        beside the recording. Empty by default.
         """
         return {}
 

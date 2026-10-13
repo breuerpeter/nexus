@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import os
 import pathlib
-import time
 from collections.abc import Callable, Mapping
 from typing import IO
 
@@ -35,6 +34,7 @@ from nexus_uav._src.config import Catalog, LaunchConfig, Px4Spec, ResolvedLaunch
 from nexus_uav._src.core import Loop
 from nexus_uav._src.core.ports import PortMap
 from nexus_uav._src.core.registry import Registry
+from nexus_uav._src.core.run_folder import run_folder
 from nexus_uav._src.peers.px4_sitl import HIL_PORT, OFFBOARD_PORT
 from nexus_uav._src.physics import VehicleUsd
 from nexus_uav._src.rendering import rtx_renderer
@@ -185,10 +185,12 @@ def build_from_launch(
         raise ValueError(
             f"{spec.prim}: {PX4_SCHEMA} authors no nexus:airframe; name the PX4 SITL airframe, such as astro_max"
         )
+    # Every file the run writes lands in one folder: the recording and each peer's logs.
+    logs = run_folder()
     # By now the run has fetched every asset it renders, so the Kit peer starts first and boots while
     # PX4 builds and the physics compiles; None for a vehicle that declares no RTX sensor.
     renderer_factory = rtx_renderer(
-        vehicle_usd, cfg, cache_dir=cache_dir, peer=peer_classes["kit"], components=components
+        vehicle_usd, cfg, cache_dir=cache_dir, peer=peer_classes["kit"], components=components, log_dir=logs
     )
     started: list = []
     try:
@@ -204,7 +206,7 @@ def build_from_launch(
         if px4_sitl:
             # The peer starts here, before the assembly: its start builds PX4 incrementally, which must
             # stay outside the sim's preroll window, GH #39, and PX4 boots while the physics compiles.
-            started.append(_start_px4(peer_classes["px4_sitl"], resolved, instance, controller.airframe, claim))
+            started.append(_start_px4(peer_classes["px4_sitl"], resolved, instance, controller.airframe, claim, logs))
 
         # output.log/view → the Logger, which writes the .rrd or serves :9876; neither → no recording.
         return build_loop(
@@ -227,6 +229,7 @@ def build_from_launch(
             # simulation" per config.receipt, so a recording says what produced it.
             settings=resolved.tested_config.model_dump(mode="json"),
             components=components,
+            record_to_rrd=str(logs / "nexus.rrd"),
         )
     except BaseException:
         # The loop never took the peers over, so their containers stop here.
@@ -252,23 +255,21 @@ def _ports(instance: int, peers: list) -> PortMap:
     return PortMap({"offboard": {"protocol": "udp", "port": OFFBOARD_PORT + instance, "system_id": instance + 1}})
 
 
-def _start_px4(cls: Callable, resolved: ResolvedLaunch, instance: int, airframe: str, claim: IO):
+def _start_px4(cls: Callable, resolved: ResolvedLaunch, instance: int, airframe: str, claim: IO, log_dir: pathlib.Path):
     """Start the PX4 SITL peer for this run from ``cls``: the catalog whose pin names the PX4 tree,
     the vehicle's airframe, the run's instance and the lock that holds it, which the peer releases at
-    its stop, and a container name and console log of this run's own. The name carries the process
-    and the instance, so two runs in one process on two instances keep both containers.
+    its stop, a container name of this run's own, and the run's folder, ``log_dir``, which takes the
+    peer's logs. The name carries the process and the instance, so two runs in one process on two
+    instances keep both containers.
     """
-    from nexus_uav._src.peers.px4_sitl.runner import PX4_LOG_DIR
-
     catalog = resolved.tested_config.catalog
-    os.makedirs(PX4_LOG_DIR, exist_ok=True)
     peer = cls(
         catalog=pathlib.Path(catalog) if catalog else None,
         airframe=airframe,
         instance=instance,
         name=f"nexus-px4-{os.getpid()}-{instance}",
         claim=claim,
-        log_path=os.path.join(PX4_LOG_DIR, f"px4-{time.strftime('%Y%m%d-%H%M%S')}-{os.getpid()}.log"),
+        log_dir=log_dir,
     )
     peer.start()
     return peer

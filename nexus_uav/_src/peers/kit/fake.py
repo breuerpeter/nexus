@@ -51,6 +51,7 @@ class KitFake:
         files: list = (),
         *,
         cache_dir=None,
+        log_dir=None,
         error_after: int | None = None,
         error: str = "the fake Kit peer failed",
         points=(),

@@ -10,12 +10,12 @@ starts the peer for a run whose vehicle declares a sensor that requires it.
 
 from __future__ import annotations
 
-import time
 from collections.abc import Callable
 from pathlib import Path
 
 from nexus_uav._src.core import logger
 from nexus_uav._src.core.registry import Registry
+from nexus_uav._src.core.run_folder import run_folder
 from nexus_uav._src.peers.kit.runner import KitPeer
 from nexus_uav._src.vehicle.sensors.rtx_sensor import PEER
 
@@ -47,8 +47,9 @@ class RtxRendererFactory:
     an assembly that builds no other sensor from the vehicle's file.
     """
 
-    def __init__(self, peer: KitPeer, *, components: Registry | None = None):
+    def __init__(self, peer: KitPeer, *, log_dir: Path, components: Registry | None = None):
         self._peer = peer
+        self._log_dir = log_dir
         self._components = components
 
     def link(self, physics, vehicle_usd) -> KitRenderer:
@@ -82,7 +83,7 @@ class RtxRendererFactory:
         tick = cfg["physics"]["dt"]
         # A camera's frame period: its rate's, and the tick's when its rate makes every tick due.
         periods = [max(tick, 1.0 / s.rate) if s.rate > 0.0 else tick for s in sensors if s.output != "points"]
-        benchmark = Path.home() / ".cache" / "nexus" / "logs" / f"benchmark-{int(time.time())}.json"
+        benchmark = self._log_dir / "benchmark.json"
         renderer.setup = {
             "scene": cfg.get("scene_usd_path"),
             "scene_start": list(cfg.get("scene_start") or (0.0, 0.0, 0.0)),
@@ -125,6 +126,7 @@ def rtx_renderer(
     cache_dir=None,
     peer: Callable = KitPeer,
     components: Registry | None = None,
+    log_dir: Path | None = None,
 ) -> RtxRendererFactory | None:
     """Start the Kit render peer when the vehicle declares a sensor that requires it, and return its renderer factory.
 
@@ -139,6 +141,8 @@ def rtx_renderer(
             its fake in a test.
         components: The registry that resolves the vehicle's schemas to classes; ``None`` takes the
             default one.
+        log_dir: The run's folder, which takes Kit's console and its benchmark metrics; ``None``
+            takes a new run folder.
 
     Returns:
         The factory the assembly calls after the physics build, or ``None`` for a vehicle that
@@ -165,6 +169,7 @@ def rtx_renderer(
     files = [usd, cfg.get("scene_usd_path")]
     roots = [Sdf.Layer.FindOrOpen(str(f)) for f in files]
     stacked = [root.ComputeAbsolutePath(sub) for root in roots for sub in root.subLayerPaths]
-    started = peer([*files, *stacked], cache_dir=cache_dir or default_cache())
+    log_dir = log_dir if log_dir is not None else run_folder()
+    started = peer([*files, *stacked], cache_dir=cache_dir or default_cache(), log_dir=log_dir)
     started.start()
-    return RtxRendererFactory(started, components=components)
+    return RtxRendererFactory(started, log_dir=log_dir, components=components)

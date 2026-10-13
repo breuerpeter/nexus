@@ -38,8 +38,8 @@ uv run nexus run --vehicle astro_max_base --scene empty
 
 Builds PX4 SITL, starts the PX4 container, then the physics sim, and stops the container again
 on exit. Add `--view` to serve the Rerun recording on gRPC :9876, see [Observability in Rerun](#observability-in-rerun). The `astro_max_base` vehicle's
-Universal Scene Description (USD) file declares PX4 and its airframe. The PX4 console is a file, next to the run's recording:
-`~/.cache/nexus/logs/px4-*.log`.
+Universal Scene Description (USD) file declares PX4 and its airframe. Every file a run writes lands in one folder for the run,
+`~/.cache/nexus/logs/<stamp>-<pid>/`: the recording, `nexus.rrd`, and the PX4 console, `px4.log`.
 
 **3. Rerun viewer, optional:**
 
@@ -68,7 +68,7 @@ no container.
   into the asset cache on its first run. No other scene fetches it.
 - Kit boots in the background while PX4 builds and the physics compiles. Its shader cache lives in
   `~/.cache/nexus/kit/`, so the first boot is the slow one. The container's console goes to
-  `~/.cache/nexus/logs/console-*.log`, next to the run's recording.
+  `kit.log` in the run's folder, next to the run's recording.
 - The container runs as you and reads the asset cache and the folder of a local `--vehicle` or
   `--scene` file at their host paths, read-only, so everything it writes under `~/.cache/nexus`
   stays yours.
@@ -115,7 +115,7 @@ examples launcher, `uv run -m nexus_uav.examples <name> --profile`, spell them i
 
 ## Fly
 
-Once PX4 logs `Ready for takeoff!` in `~/.cache/nexus/logs/px4-*.log`,
+Once PX4 logs `Ready for takeoff!` in `px4.log` in the run's folder,
 QGroundControl auto-connects. Arm and fly with the on-screen virtual joysticks.
 Sim physics and PX4 state both appear in the Rerun viewer, because they share the
 `nexus` recording.
@@ -237,7 +237,7 @@ Everything lands in **one** recording, app ID `nexus` and recording ID
   `/sim/model/shapes/shape_0`, **by default** because it occludes the vehicle.
 - **framework events**: the `nexus` logger, at `sim/logs/<module>`.
 - **PX4's own view of the flight**: not in the recording. PX4 keeps it in its console log,
-  `~/.cache/nexus/logs/px4-*.log`, and in its `ULog`, both artifacts of the run.
+  `px4.log`, and in its `ULog`, under `ulog/`, both in the run's folder and both artifacts of the run.
 - **test and driver stages**: a driver in the sim's process logs each stage with `nx.logger.info("…")`,
   which writes to the console and, when recording, the Logs pane.
 

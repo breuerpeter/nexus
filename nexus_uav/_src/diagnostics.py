@@ -57,7 +57,7 @@ def add_diagnostics_args(p):
     )  # fmt: skip
     p.add_argument(
         "--benchmark", action="store_true",
-        help="RTX runs: the Kit render peer records its benchmark.services metrics to ~/.cache/nexus/logs",
+        help="RTX runs: the Kit render peer records its benchmark.services metrics to benchmark.json in the run's folder under ~/.cache/nexus/logs",
     )  # fmt: skip
     return p
 
