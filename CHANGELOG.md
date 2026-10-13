@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.0](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.2.0...nexus-uav-v0.3.0) (2026-10-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* **catalog:** an installed package adds a catalog layer and its pin files ([#313](https://github.com/breuerpeter/nexus/issues/313))
+
+### Features
+
+* **catalog:** an installed package adds a catalog layer and its pin files ([#313](https://github.com/breuerpeter/nexus/issues/313)) ([cf422f4](https://github.com/breuerpeter/nexus/commit/cf422f469b7f6e24466306f6af16176d6a64b280)), closes [#305](https://github.com/breuerpeter/nexus/issues/305)
+
 ## [0.2.0](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.1.0...nexus-uav-v0.2.0) (2026-10-13)
 
 
