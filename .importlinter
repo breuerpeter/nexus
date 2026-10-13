@@ -34,10 +34,8 @@ forbidden_modules =
     nexus_uav.examples
 
 ; No generic part names PX4: the loop, the components and Sim carry no PX4 class, port or verb, so the
-; script that commands PX4 is what names it, through the public namespace nexus_uav.px4. The imports that
-; remain are the builder's, which starts the PX4 peer from its runner, resolves its pin, numbers the links
-; from its instance and tells the fake apart for the port map, and the argument parser's, which prints the
-; HIL port in a help string. A new one fails here.
+; script that commands PX4 is what names it, through the public namespace nexus_uav.px4. The one import that
+; remains is the argument parser's, which prints the HIL port in a help string. A new one fails here.
 [importlinter:contract:no-px4-in-generic-code]
 name = no generic part names PX4
 type = forbidden
@@ -59,11 +57,6 @@ ignore_imports =
     nexus_uav._src.peers.px4_sitl.** -> nexus_uav._src.peers.px4_sitl.**
     nexus_uav._src.vehicle.controllers.px4 -> nexus_uav._src.vehicle.controllers.px4.**
     nexus_uav._src.vehicle.controllers.px4.** -> nexus_uav._src.peers.px4_sitl
-    ; the builder
-    nexus_uav._src.build.launch -> nexus_uav._src.peers.px4_sitl
-    nexus_uav._src.build.launch -> nexus_uav._src.peers.px4_sitl.runner
-    nexus_uav._src.build.launch -> nexus_uav._src.peers.px4_sitl.checkout
-    nexus_uav._src.build.launch -> nexus_uav._src.peers.px4_sitl.fake
     ; the argument parser
     nexus_uav._src.api.args -> nexus_uav._src.peers.px4_sitl
 

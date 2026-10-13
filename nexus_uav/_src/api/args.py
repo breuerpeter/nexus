@@ -56,7 +56,7 @@ def sim_argparser(description: str | None = None) -> argparse.ArgumentParser:
         "--layer", default=None, metavar="PATH",
         help="an override layer, a local USD file composed over the vehicle and the scene: it changes a\n"
         "declared value, such as the scene's nexus:geodeticOrigin, selects a variant, or drops a declaration;\n"
-        f"one that drops NexusPx4SitlAPI flies an autopilot started elsewhere, which dials the HIL port {HIL_PORT}",
+        f"one that deactivates the PX4 SITL peer's scope flies an autopilot started elsewhere, which dials the HIL port {HIL_PORT}",
     )  # fmt: skip
     p.add_argument("--log", action="store_true", help="write the Rerun .rrd to disk")
     p.add_argument("--view", action="store_true", help="serve the live Rerun viewer on :9876")

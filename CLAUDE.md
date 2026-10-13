@@ -23,9 +23,8 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
   before adding or changing an example.
 - **No generic part names PX4.** PX4's folders are `nexus_uav/_src/peers/px4_sitl/` and
   `nexus_uav/_src/vehicle/controllers/px4/`. Nothing else under `nexus_uav/_src/` imports them or
-  `nexus_uav.px4`, an import-linter contract in `.importlinter`. Its `ignore_imports` lists the
-  imports that remain: those of the builder and those of the argument parser. A script that
-  commands PX4 names it.
+  `nexus_uav.px4`, an import-linter contract in `.importlinter`. Its `ignore_imports` lists the one
+  import that remains, in the argument parser. A script that commands PX4 names it.
   It imports the offboard client from `nexus_uav.px4` and reads the link's address from `sim.ports`.
 - **RTX sensors render in the Kit render peer**, a container the run starts on the host when the
   vehicle's Universal Scene Description (USD) file declares a sensor whose class requires it: a camera
@@ -40,13 +39,15 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
   registers. Read `nexus_uav/_src/usd/CLAUDE.md` before adding or changing a schema.
 - **One contract serves every role.** A component subclasses `Component`, states its stages and
   overrides the lifecycle members it has: `connect`, `close`, `set_logger`, `attached`, `requires`,
-  `artifacts` and `name`. The loop, the builder and `Sim` read those from every component and find
-  none by name. A test stand-in subclasses `Component` too. A controller writes its own `controls`
-  signal, as wide as its actuators. The registry, `Registry`, maps each schema to its class: a
-  project registers through the `nexus.registry` entry-point group, and a test hands a run its
-  stand-ins through `Sim(registry=...)`. A script reads any recorded history by indexing the run
-  with the history's path, `sim["vehicle/sensors/imu/imu"]`, a signal's live value with
-  `sim.read(path)`, and `Sim` gives no role an accessor.
+  `needs_instance`, `ports`, `artifacts` and `name`. The loop, the builder and `Sim` read those from
+  every component and find none by name. A test stand-in subclasses `Component` too. A controller
+  writes its own `controls` signal, as wide as its actuators. The registry, `Registry`, maps each
+  schema to its class, a component's or a declared peer's, and each name a class requires a peer by.
+  A project registers through the `nexus.registry` entry-point group, and a test hands a run its
+  stand-ins and its peers' fakes through `Sim(registry=...)`. The builder names no component and no
+  peer. A script reads any recorded history by indexing the run with the history's path,
+  `sim["vehicle/sensors/imu/imu"]`, a signal's live value with `sim.read(path)`, and `Sim` gives no
+  role an accessor.
   `docs/guide/your-own-component.md` walks a project through it.
 - **`evo` is GPLv3** → it lives only in the `ci` dependency-group and never ships as a dependency.
   Examples dump plain `.npz` and JSON files, and only `scripts/ci/evaluate_examples.py` imports

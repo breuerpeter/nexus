@@ -17,7 +17,9 @@ from nexus_uav._src.config.catalog import catalog_layers
 from nexus_uav._src.core import logger
 from nexus_uav._src.core.registry import Registry
 from nexus_uav._src.core.run_folder import run_folder
+from nexus_uav._src.peers.files import run_files
 from nexus_uav._src.peers.kit.runner import KitPeer, resolve
+from nexus_uav._src.peers.pins import PeerPin
 from nexus_uav._src.vehicle.sensors.rtx_sensor import PEER
 
 from .link import KitRenderer
@@ -126,7 +128,7 @@ def rtx_renderer(
     *,
     cache_dir=None,
     peer: Callable = KitPeer,
-    image: str | None = None,
+    pin: PeerPin | None = None,
     components: Registry | None = None,
     log_dir: Path | None = None,
 ) -> RtxRendererFactory | None:
@@ -141,7 +143,7 @@ def rtx_renderer(
         cache_dir: The asset cache the run fetched into; ``None`` for the default.
         peer: The class that starts the Kit peer, or a callable that builds one: :class:`KitPeer`, or
             its fake in a test.
-        image: The image the Kit peer runs, its pin, from :func:`nexus_uav._src.peers.kit.runner.resolve`;
+        pin: The image the Kit peer runs, its pin, from :func:`nexus_uav._src.peers.kit.runner.resolve`;
             ``None`` resolves it against the catalog a run in the working folder finds.
         components: The registry that resolves the vehicle's schemas to classes; ``None`` takes the
             default one.
@@ -166,16 +168,10 @@ def rtx_renderer(
         return None
     prims = [spec.prim for spec in specs]
     logger.info(f"the vehicle declares RTX sensors {prims}: they render in the Kit container")
-    # A run with an override layer opens its vehicle and its scene through root files that stack the
-    # layer on each asset, so the peer reads the files each root file names too.
-    from pxr import Sdf
-
-    files = [usd, cfg.get("scene_usd_path")]
-    roots = [Sdf.Layer.FindOrOpen(str(f)) for f in files]
-    stacked = [root.ComputeAbsolutePath(sub) for root in roots for sub in root.subLayerPaths]
-    if image is None:
-        image = resolve(catalog_layers()).ref
+    if pin is None:
+        pin = resolve(catalog_layers())
     log_dir = log_dir if log_dir is not None else run_folder()
-    started = peer([*files, *stacked], cache_dir=cache_dir or default_cache(), image=image, log_dir=log_dir)
+    files = run_files(usd, cfg.get("scene_usd_path"))
+    started = peer(files, cache_dir=cache_dir or default_cache(), pin=pin, log_dir=log_dir)
     started.start()
     return RtxRendererFactory(started, log_dir=log_dir, components=components)

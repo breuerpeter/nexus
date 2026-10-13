@@ -71,7 +71,10 @@ NexusCameraAPI = "nexus_uav._src.vehicle.sensors.rtx_camera:RtxCameraSensor"
 NexusThermalCameraAPI = "nexus_uav._src.vehicle.sensors.rtx_thermal:RtxThermalSensor"
 NexusLidarAPI = "nexus_uav._src.vehicle.sensors.rtx_lidar:RtxLidarSensor"
 NexusPropellerAPI = "nexus_uav._src.vehicle.forces.propellers:Propeller"
-NexusPx4API = "nexus_uav._src.vehicle.controllers.px4:Px4MavlinkController"
+NexusPx4API_1 = "nexus_uav._src.vehicle.controllers.px4:Px4MavlinkController"
+# The peers: a declared one by its schema, a required one by the name a class requires it by.
+NexusPx4SitlAPI = "nexus_uav._src.peers.px4_sitl.runner:Px4Sitl"
+kit = "nexus_uav._src.peers.kit.runner:KitPeer"
 
 [project.urls]
 Homepage = "https://github.com/breuerpeter/nexus"

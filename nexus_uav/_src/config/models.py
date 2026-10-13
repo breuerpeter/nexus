@@ -33,18 +33,6 @@ class AssetRef(_Base):
     filename: str | None = None
 
 
-class Px4Spec(_Base):
-    """The receipt's record of the PX4 airframe: the Software In The Loop (SITL) airframe **make
-    target** the vehicle flies as.
-
-    The value is the target without PX4's ``none_`` prefix: ``astro_max`` becomes ``make px4_sitl
-    none_astro_max``, and the launcher prepends it. The vehicle Universal Scene Description (USD)
-    file declares it, as ``nexus:airframe`` on its ``NexusPx4API`` schema, and is the authority.
-    """
-
-    airframe: str
-
-
 class Runtime(_Base):
     # "auto" resolves to CUDA when present, the captured default. An EXPLICIT "cpu" is the bit-exact
     # determinism authority, and every run honors it, one that renders included. A CUDA run is

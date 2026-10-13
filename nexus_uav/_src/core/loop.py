@@ -31,7 +31,7 @@ from .ports import PortMap
 from .profiling import LoopProfiler
 from .schema import PoseTwist
 from .signals import Signal, _declared, wire
-from .stages import Bound, build_ring, partition, plan_line, start_stages
+from .stages import SUBSTEP_ROLES, TICK_ROLES, Bound, build_ring, partition, plan_line, start_stages
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
@@ -117,7 +117,6 @@ class Loop:
         renderer: object | None = None,
         links: Mapping[str, object] | None = None,
         peers: Iterable[Peer] = (),
-        ports: Mapping[str, dict] | None = None,
         connections: Iterable[tuple[Component, str, Component]] | None = None,
         logger: Logger | None = None,
         recorder: Recorder | None = None,
@@ -175,9 +174,6 @@ class Loop:
                 Loop (SITL) container. The loop stops each when the run ends, whether it ran out,
                 stopped early or never stepped; it starts none, since a peer boots while the build
                 goes on.
-            ports: The run's port map, a :class:`~nexus_uav._src.core.ports.PortMap`: each link that
-                leaves the run, by name, to the address a script opens its client on. The run
-                owns every address, and the build names them here; ``None`` names no link.
             connections: Quadruples of a reader, an input's name, the writer it reads that input from and
                 the name of the writer's output, which the build resolves from the vehicle's
                 ``nexus:inputs:`` relationships: where more than one component writes a signal, a reader
@@ -220,7 +216,6 @@ class Loop:
         self.renderer = renderer
         self.links = dict(links or {})
         self.peers = list(peers)
-        self.ports = PortMap() if ports is None else ports
         self.connections = list(connections or ())
         self.run_stats: dict = {}  # set when a run finishes; empty until then
         self._connected: list = []  # the components the run connected, which the teardown closes
@@ -485,14 +480,8 @@ class Loop:
                 self.add_loggable(self.guidance, "guidance")
             ring = build_ring(
                 clock=self._device_clock,
-                sensors=self.sensors,
-                estimator=self.estimator,
-                guidance=self.guidance,
-                controller=self.controller,
                 physics=self.physics,
-                commands=self.commands,
-                forces=self.forces,
-                actuator=self.actuator,
+                roles=self.roles(),
                 record=record,
                 substeps=self.physics_substeps,
             )
@@ -510,6 +499,7 @@ class Loop:
                 dt=self.clock.dt / self.physics_substeps,
                 timeout=self.exchange_timeout,  # the start's host stages wait on a peer no longer than a tick's
                 base=getattr(self.physics, "base_index", 0),  # a physics that finds none has body 0 as base
+                control=getattr(self.physics, "control", None),  # the control inputs a command element writes
             )
             self._device_clock.set(tick.t)
             # A component attached from the start has no peer: it connects first, which reserves its
@@ -590,13 +580,34 @@ class Loop:
             )
         return {name: self.links[name] for name in component.requires}
 
+    @property
+    def ports(self) -> PortMap:
+        """The run's port map: each link that leaves the run, by name, to the address a script opens its client
+        on, as each component and then each peer states it, so a fake peer keeps out a link its component names.
+        The run owns every address: the build hands each its share.
+        """
+        stated = [*self.components(), *self.peers]
+        return PortMap.merge(source.ports() for source in stated if callable(getattr(source, "ports", None)))
+
+    def roles(self) -> dict[str, list]:
+        """Each role's components, by role, each list in the order its components run."""
+        one = lambda c: [c] if c is not None else []  # noqa: E731
+        return {
+            "sensor": list(self.sensors),
+            "estimator": one(self.estimator),
+            "guidance": one(self.guidance),
+            "controller": one(self.controller),
+            "command": list(self.commands),
+            "force": list(self.forces),
+            "actuator": one(self.actuator),
+        }
+
     def components(self) -> list:
         """Every component of the run, in ring order: the sensors, the estimator, the guidance, the controller,
         the command elements, the force elements and the old actuator stage.
         """
-        optional = [c for c in (self.estimator, self.guidance) if c is not None]
-        tail = [self.actuator] if self.actuator is not None else []
-        return [*self.sensors, *optional, self.controller, *self.commands, *self.forces, *tail]
+        roles = self.roles()
+        return [c for role in (*TICK_ROLES, *SUBSTEP_ROLES) for c in roles[role]]
 
     def _close_components(self) -> None:
         """Close every component the run connected, in reverse order, each even when an earlier one raises:

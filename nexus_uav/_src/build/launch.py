@@ -1,66 +1,46 @@
 """The run's builder: a ``LaunchConfig`` → a running ``Loop``, the one path every run builds through.
 
-Resolves the launch against the catalog, sha-verifying every asset, wraps the vehicle
-Universal Scene Description (USD) file in a :class:`VehicleUsd`, threads the resolved scene, its
-USD plus start, into the scenario cfg, and assembles the core loop,
-the controller-agnostic ``build.assembly``, around the one controller the vehicle USD declares on
-the controller's ``Scope``. PX4 is the one first-class controller, and *this* layer builds its
-``Px4MavlinkController`` from the ``NexusPx4API`` schema; every other controller is an example that
-self-assembles its loop via :func:`resolve_scenario` plus ``Sim._from_loop``, and
-renders through :func:`~nexus_uav._src.rendering.rtx_renderer` the same way.
+Resolves the launch against the catalog, sha-verifying every asset, wraps the vehicle Universal Scene
+Description (USD) file in a :class:`VehicleUsd`, threads the resolved scene, its USD plus start, into the
+scenario cfg, and builds the run from the vehicle's declarations. The registry maps each applied schema to its
+class, so the builder names no component and no peer: it builds the controller, the estimator and the guidance
+by the role their schemas state, the sensors and the command and force elements in the assembly, and each
+peer the vehicle declares, a schema whose class is a peer. A peer a component's class requires, such as the
+Kit render peer an RTX sensor requires, it starts once by the name the class requires it by.
 
-A vehicle whose USD declares RTX sensors renders them in the Kit peer, a required peer: a container
-this build starts right after the fetch, so Kit boots while PX4 builds and the physics compiles. The PX4
-autopilot is a peer too: when the vehicle declares the PX4 Software In The Loop (SITL) peer,
-``NexusPx4SitlAPI``, the build starts its container on the peer contract before the assembly, on a
-PX4 instance free on this machine, and hands it to the loop, which stops it when the run
-ends. A run whose override layer drops that declaration starts nothing, and the controller waits on
-instance 0's Hardware In The Loop (HIL) port for an autopilot started elsewhere.
+A component's schema attributes are its class's keyword arguments, and so are a peer's. What only the run
+knows reaches a peer as keywords beside them: its pin, the run's instance, the run's folder, the files the
+run reads and the asset cache. A component whose class states ``needs_instance`` takes the instance too. The
+run claims one instance on this machine when it starts a declared peer, which every address its peers use
+counts from, and instance 0 when it starts none, for an autopilot started elsewhere.
 
-The build starts each peer from the class its peer mapping names: by default the real process, and
-in a test the peer's fake, which speaks the same link and starts no process. Before any peer starts,
-it resolves and checks every peer's pin, through :mod:`nexus_uav._src.peers.pins`, and the receipt
-records the pin of each peer the run starts.
+Before any peer starts, the build resolves and checks the pin of each peer it starts, through
+:mod:`nexus_uav._src.peers.pins` and the peer's own ``check_pin``, and the receipt records each started
+peer's pin and each declaration with the class it resolved to. The required peers start first, so Kit boots
+while the declared peers, PX4 among them, build and the physics compiles.
 """
 
 from __future__ import annotations
 
-import os
 import pathlib
-from collections.abc import Callable, Mapping
-from typing import IO
 
 import warp as wp
 
-from nexus_uav._src.config import Catalog, LaunchConfig, Px4Spec, ResolvedLaunch, Runtime, resolve
+from nexus_uav._src.assets.resolver import default_cache
+from nexus_uav._src.config import Catalog, LaunchConfig, ResolvedLaunch, Runtime, resolve
 from nexus_uav._src.core import Loop
-from nexus_uav._src.core.ports import PortMap
+from nexus_uav._src.core.components import ComponentSpec, PeerSpec, resolve_declarations
 from nexus_uav._src.core.registry import Registry
 from nexus_uav._src.core.run_folder import run_folder
-from nexus_uav._src.peers import pins
-from nexus_uav._src.peers.kit import runner as kit
-from nexus_uav._src.peers.pins import PeerPin
-from nexus_uav._src.peers.px4_sitl import HIL_PORT, OFFBOARD_PORT
-from nexus_uav._src.peers.px4_sitl import checkout as px4_checkout
+from nexus_uav._src.peers import instance, pins
+from nexus_uav._src.peers.files import run_files
 from nexus_uav._src.physics import VehicleUsd
-from nexus_uav._src.rendering import rtx_renderer
-from nexus_uav._src.usd.reader import read_connections, read_declarations
+from nexus_uav._src.rendering import PEER as KIT
+from nexus_uav._src.rendering import RtxRendererFactory
+from nexus_uav._src.usd.reader import read_connections
 
 from .assembly import build_loop, build_scenario
-from .components import declared_controller, declared_estimator, prims_applying
-
-# The schema a vehicle declares PX4 with; its `airframe` goes into the receipt.
-PX4_SCHEMA = "NexusPx4API"
-# The schema a vehicle declares the PX4 SITL peer with, beside PX4_SCHEMA on the controller's Scope.
-PX4_SITL_SCHEMA = "NexusPx4SitlAPI"
-
-
-def shipped_peers() -> dict[str, type]:
-    """The peer mapping a run takes by default: each peer's name to the class that starts its real process."""
-    from nexus_uav._src.peers.kit.runner import KitPeer
-    from nexus_uav._src.peers.px4_sitl.runner import Px4Sitl
-
-    return {"px4_sitl": Px4Sitl, "kit": KitPeer}
+from .components import declared_controller, declared_estimator, declared_guidance
 
 
 def resolve_vehicle_usd(
@@ -71,21 +51,14 @@ def resolve_vehicle_usd(
 ) -> tuple[VehicleUsd, ResolvedLaunch]:
     """Resolve *launch*, fetching and sha-verifying assets, and wrap the vehicle USD in a VehicleUsd.
 
-    The receipt records the airframe of the PX4 schema the vehicle declares, if it declares one, and
-    the device the run picks: ``cpu`` for an explicit ``cpu`` or a machine with no CUDA device, else
-    ``cuda``. The pick sits here, not in ``resolve``, so a caller that only resolves an asset path
+    The receipt records the device the run picks: ``cpu`` for an explicit ``cpu`` or a machine with no CUDA
+    device, else ``cuda``. The pick sits here, not in ``resolve``, so a caller that only resolves an asset path
     never starts Warp.
     """
     resolved = resolve(launch, catalog, cache_dir=cache_dir)
     rt = resolved.tested_config.runtime
     picked = "cpu" if rt.device == "cpu" or not wp.is_cuda_available() else "cuda"
     resolved.tested_config.runtime = rt.model_copy(update={"device": picked})
-    if resolved.vehicle_usd_path is not None:
-        airframes = [
-            kw["airframe"] for _, schema, kw in read_declarations(resolved.vehicle_usd_path) if schema == PX4_SCHEMA
-        ]
-        if airframes:
-            resolved.tested_config.px4 = Px4Spec(airframe=airframes[0])
     vehicle_usd = VehicleUsd({"usd_path": resolved.vehicle_usd_path})
     return vehicle_usd, resolved
 
@@ -126,7 +99,7 @@ def resolve_scenario(
     cache_dir: str | pathlib.Path | None = None,
 ) -> tuple[VehicleUsd, ResolvedLaunch, dict]:
     """Resolve *launch* to ``(vehicle_usd, resolved, scenario cfg)``: the shared front half of
-    any loop assembly. ``build_from_launch`` composes it with the PX4 assembly; a
+    any loop assembly. ``build_from_launch`` builds the vehicle's declarations on it; a
     self-assembled example, with its own controller plus actuator plus physics, starts from this and
     hands the built loop to ``Sim._from_loop``.
     """
@@ -144,23 +117,20 @@ def build_from_launch(
     cfg: dict | None = None,
     preroll_timeout: float = 30.0,
     components: Registry | None = None,
-    peers: Mapping[str, Callable] | None = None,
 ) -> Loop:
-    """Resolve *launch* and assemble the core Loop around the controller the vehicle declares.
+    """Resolve *launch* and build the run the vehicle declares around its one controller.
 
-    PX4 is the one first-class controller; every other controller is an example that
-    self-assembles from ``resolve_scenario`` plus its own components plus ``Sim._from_loop``.
-    ``components`` resolves the vehicle's schemas to classes; ``None`` takes the default registry.
-    ``peers`` maps a peer's name, ``px4_sitl`` or ``kit``, to the class the build starts for it, or for
-    ``kit`` a callable that builds one, over :func:`shipped_peers`: a test sends a peer to its fake
-    here. A ``px4_sitl`` class claims the run's PX4 instance through its ``claim_instance``.
+    ``components`` is the registry that resolves each name the run resolves to its class: each schema the
+    vehicle applies, a component's or a peer's, and the name a class requires a peer by. Its own rows answer
+    first and the install answers the rest; ``None`` takes the install alone. A test sends a peer to its fake
+    with a row of its own.
 
     Raises:
-        ValueError: The vehicle declares no controller, two, one other than PX4, a PX4 schema on a
-            prim that isn't a ``Scope`` or with no airframe, two estimators or one off its ``Scope``,
-            a component schema that states no role or two, or the PX4 SITL peer on a prim with no PX4
-            schema, or ``peers`` names a peer the build doesn't know, or a pin file beside a catalog
-            names no peer, or a peer's pin isn't in its form; raised before any peer starts.
+        ValueError: The vehicle declares no controller or two, two estimators or guidances, one off its
+            ``Scope``, a schema no class claims, a component schema that states no role or two, a peer that
+            fails its own check of the values its schema authors, or a class requires a peer no class
+            claims, or a pin file beside a catalog names no peer, or a peer's pin isn't in its form; raised
+            before any peer starts.
         FileNotFoundError: The launch names an override layer with no file behind it.
         KitPeerError: The vehicle declares RTX sensors and the Kit peer couldn't start.
     """
@@ -169,78 +139,64 @@ def build_from_launch(
         cfg = _scenario_from_receipt(resolved.tested_config.runtime)
     _thread_scene(cfg, resolved)
     label = resolved.tested_config.vehicle or "vehicle"
-    shipped = shipped_peers()
-    unknown = sorted(set(peers or {}) - set(shipped))
-    if unknown:
-        raise ValueError(f"the peer mapping names {unknown}, which no peer answers to; the peers are {sorted(shipped)}")
-    peer_classes = {**shipped, **(peers or {})}
-    declared_peers = prims_applying(resolved.vehicle_usd_path, PX4_SITL_SCHEMA)
-    for prim, schemas in declared_peers:
-        if PX4_SCHEMA not in schemas:
-            raise ValueError(
-                f"{prim}: {PX4_SITL_SCHEMA} declares the PX4 SITL peer, but the prim declares no {PX4_SCHEMA} to fly it"
-            )
-    px4_sitl = bool(declared_peers)
-    spec = declared_controller(resolved.vehicle_usd_path, components)
-    if spec.schema != PX4_SCHEMA:
-        raise ValueError(
-            f"{spec.prim}: {spec.schema} is not a core controller (PX4 is the one first-class controller); "
-            "other controllers live in nexus_uav/examples/ and self-assemble via Sim._from_loop"
-        )
-    estimator_spec = declared_estimator(resolved.vehicle_usd_path, components)
-    if not spec.kwargs["airframe"]:
-        raise ValueError(
-            f"{spec.prim}: {PX4_SCHEMA} authors no nexus:airframe; name the PX4 SITL airframe, such as astro_max"
-        )
-    # Every pin file beside a catalog names a peer, and every peer's pin is in its form, before any
-    # peer starts, so a stale or broken pin file fails each run, not only the runs of its peer.
+    registry = components if components is not None else Registry()
+    usd = resolved.vehicle_usd_path
+    specs, declared = resolve_declarations(usd, registry)
+    roles = {
+        "controller": declared_controller(usd, registry),
+        "estimator": declared_estimator(usd, registry),
+        "guidance": declared_guidance(usd, registry),
+    }
+    required = _required(specs, registry)
+    # Every pin file beside a catalog names a peer, and the pin of each peer the run starts is in its form,
+    # before any peer starts, so a stale or broken pin file fails each run, not only the runs of its peer.
     layers = resolved.tested_config.catalogs
-    pins.check(layers, sorted(shipped))
-    peer_pins = {"px4_sitl": px4_checkout.resolve(layers), "kit": kit.resolve(layers)}
+    classes = [spec.cls for spec in declared] + list(required.values())
+    pins.check(layers, sorted({*pins.shipped(), *(cls.name for cls in classes)}))
+    found = {cls.name: (cls, pins.resolve(cls.name, layers)) for cls in classes}
+    peer_pins = {name: cls.check_pin(pin) if pin is not None else None for name, (cls, pin) in found.items()}
     # Every file the run writes lands in one folder: the recording and each peer's logs.
     logs = run_folder()
-    # By now the run has fetched every asset it renders, so the Kit peer starts first and boots while
-    # PX4 builds and the physics compiles; None for a vehicle that declares no RTX sensor.
-    renderer_factory = rtx_renderer(
-        vehicle_usd,
-        cfg,
-        cache_dir=cache_dir,
-        peer=peer_classes["kit"],
-        image=peer_pins["kit"].ref,
-        components=components,
-        log_dir=logs,
-    )
-    started_names = [name for name, on in (("px4_sitl", px4_sitl), ("kit", renderer_factory is not None)) if on]
-    resolved.tested_config.peers = {name: peer_pins[name] for name in started_names}
+    # The run numbers every address its declared peers use from one instance; with none, an autopilot started
+    # elsewhere dials instance 0's.
+    claim = instance.claim(spec.cls for spec in declared) if declared else None
+    run = {
+        "instance": claim.instance if claim is not None else 0,
+        "log_dir": logs,
+        "files": run_files(usd, resolved.scene_usd_path),
+        "cache_dir": cache_dir or default_cache(),
+    }
+    resolved.tested_config.peers = {name: pin for name, pin in peer_pins.items() if pin is not None}
+    resolved.tested_config.declarations = [_declaration(spec) for spec in [*specs, *declared]]
     started: list = []
     try:
-        # *This* is where the declared controller becomes an instance; the assembly that follows is
-        # controller-agnostic. The schema gives its keywords, and the run gives the PX4 peer's addresses.
-        instance, claim = peer_classes["px4_sitl"].claim_instance() if px4_sitl else (0, None)
-        controller = spec.cls(**spec.kwargs, port=HIL_PORT + instance, target_system=instance + 1)
-        prims = {spec.prim: controller}
-        # The estimator the vehicle declares, if any, takes its schema's keywords alone.
-        estimator = estimator_spec.cls(**estimator_spec.kwargs) if estimator_spec else None
-        if estimator is not None:
-            prims[estimator_spec.prim] = estimator
-        if px4_sitl:
-            # The peer starts here, before the assembly: its start builds PX4 incrementally, which must
-            # stay outside the sim's preroll window, GH #39, and PX4 boots while the physics compiles.
-            started.append(
-                _start_px4(peer_classes["px4_sitl"], peer_pins["px4_sitl"], instance, controller.airframe, claim, logs)
-            )
-
+        # The build makes each peer before any starts, so a peer that fails its own check fails the run first.
+        made = [_peer(spec.cls, spec.kwargs, peer_pins[spec.cls.name], run, spec.prim) for spec in declared]
+        needed = {name: _peer(cls, {}, peer_pins[cls.name], run, None) for name, cls in required.items()}
+        # The required peers start first: Kit boots while the declared peers build and the physics compiles.
+        for peer in needed.values():
+            peer.start()
+            started.append(peer)
+        renderer_factory = RtxRendererFactory(needed[KIT], log_dir=logs, components=registry) if KIT in needed else None
+        built = {role: _component(spec, run["instance"]) for role, spec in roles.items() if spec is not None}
+        # A declared peer starts here, before the assembly: PX4's start builds PX4 incrementally, which must
+        # stay outside the sim's preroll window, GH #39, and PX4 boots while the physics compiles.
+        for peer in made:
+            peer.start()
+            started.append(peer)
         # output.log/view → the Logger, which writes the .rrd or serves :9876; neither → no recording.
         return build_loop(
             label,
             cfg,
             vehicle_usd=vehicle_usd,
-            controller=controller,
-            estimator=estimator,
-            peers=started,
-            ports=_ports(instance, started),
-            connections=read_connections(resolved.vehicle_usd_path),
-            prims=prims,
+            controller=built["controller"],
+            estimator=built.get("estimator"),
+            guidance=built.get("guidance"),
+            # The run's instance stays held until the loop has stopped every peer.
+            peers=[*started, *([claim] if claim is not None else [])],
+            peer_links={name: peer for name, peer in needed.items() if name != KIT},
+            connections=read_connections(usd),
+            prims={roles[role].prim: component for role, component in built.items()},
             rerun=launch.output.log or launch.output.view,
             viewer=launch.output.view,
             debug=launch.output.debug,
@@ -250,47 +206,76 @@ def build_from_launch(
             # The viewer's Settings tab shows the tested-config receipt, "every input that affects the
             # simulation" per config.receipt, so a recording says what produced it.
             settings=resolved.tested_config.model_dump(mode="json"),
-            components=components,
+            components=registry,
             record_to_rrd=str(logs / "nexus.rrd"),
         )
     except BaseException:
-        # The loop never took the peers over, so their containers stop here.
+        # The loop never took the peers over, so they stop here, and the instance is free again.
         for peer in started:
             peer.stop()
-        if renderer_factory is not None:
-            renderer_factory.close()
+        if claim is not None:
+            claim.stop()
         raise
 
 
-def _ports(instance: int, peers: list) -> PortMap:
-    """The run's port map on PX4 instance ``instance``: the links that leave the run, which a script
-    opens its own client on. The run owns every address: the build made the HIL link's end inside
-    the run from the same instance, and names here the offboard link for ``nexus_uav.px4.OffboardClient``:
-    the port ``OFFBOARD_PORT + instance``, over the User Datagram Protocol (UDP), and the MAVLink
-    system id ``instance + 1``. The fake PX4 answers the HIL link alone, so a run against it names
-    no offboard link, and a lookup of it says why.
+def _required(specs: list[ComponentSpec], registry: Registry) -> dict[str, type]:
+    """Each peer a declared component's class requires, by the name it requires it by, to the class that answers
+    that name.
+
+    Raises:
+        ValueError: No class answers a name a class requires; the message names the class and the name.
     """
-    from nexus_uav._src.peers.px4_sitl.fake import Px4Fake  # pymavlink: as late as the runner's docker
+    required = {}
+    for spec in specs:
+        for name in getattr(spec.cls, "requires", ()):
+            cls = registry.resolve(name)
+            if cls is None:
+                raise ValueError(
+                    f"{spec.prim}: {spec.cls.__name__} requires the peer {name!r}, and no class claims it; map it "
+                    "with register or a nexus.registry entry point"
+                )
+            required[name] = cls
+    return dict(sorted(required.items()))
 
-    if any(isinstance(peer, Px4Fake) for peer in peers):
-        return PortMap(missing={"offboard": "this run flies the fake PX4, which answers only the HIL link"})
-    return PortMap({"offboard": {"protocol": "udp", "port": OFFBOARD_PORT + instance, "system_id": instance + 1}})
 
+def _peer(cls: type, kwargs: dict, pin, run: dict, prim: str | None):
+    """The peer `cls` makes from its schema's attributes, `kwargs`, its checked `pin` and the run's values.
 
-def _start_px4(cls: Callable, pin: PeerPin, instance: int, airframe: str, claim: IO, log_dir: pathlib.Path):
-    """Start the PX4 SITL peer for this run from ``cls``: the pin that names the PX4 tree, the
-    vehicle's airframe, the run's instance and the lock that holds it, which the peer releases at
-    its stop, a container name of this run's own, and the run's folder, ``log_dir``, which takes the
-    peer's logs. The name carries the process and the instance, so two runs in one process on two
-    instances keep both containers.
+    Raises:
+        ValueError: The peer fails its own check of its values; the message names its prim.
     """
-    peer = cls(
-        pin=pin,
-        airframe=airframe,
-        instance=instance,
-        name=f"nexus-px4-{os.getpid()}-{instance}",
-        claim=claim,
-        log_dir=log_dir,
-    )
-    peer.start()
-    return peer
+    try:
+        return cls(**kwargs, pin=pin, **run)
+    except ValueError as exc:
+        raise ValueError(f"{prim}: {exc}" if prim else str(exc)) from exc
+
+
+def _component(spec: ComponentSpec, run_instance: int):
+    """The component `spec` declares: its class with its schema's attributes, and the run's instance when the
+    class needs it.
+    """
+    extra = {"instance": run_instance} if getattr(spec.cls, "needs_instance", False) else {}
+    return spec.cls(**spec.kwargs, **extra)
+
+
+def _declaration(spec: ComponentSpec | PeerSpec) -> dict:
+    """The receipt's record of one declaration: its prim, its schema, its class and its attributes' values."""
+    cls = spec.cls
+    return {
+        "prim": spec.prim,
+        "schema": spec.schema,
+        "class": f"{cls.__module__}:{cls.__qualname__}",
+        "values": {name: _plain(value) for name, value in spec.kwargs.items()},
+    }
+
+
+def _plain(value):
+    """`value` as plain data the receipt holds: a number, a string, a bool, or a list of them."""
+    if value is None or isinstance(value, bool | int | float | str):
+        return value
+    if isinstance(value, pathlib.Path):
+        return str(value)
+    try:
+        return [_plain(v) for v in value]
+    except TypeError:
+        return str(value)

@@ -42,7 +42,7 @@ from nexus_uav._src.core.interfaces import Component, Stage
 from nexus_uav._src.core.loop import SetupError
 from nexus_uav._src.core.schema import BaroSample, GpsSample, ImuSample, MagSample, PoseTwist
 from nexus_uav._src.core.signals import Signal
-from nexus_uav._src.peers.px4_sitl import HIL_PORT
+from nexus_uav._src.peers.px4_sitl import HIL_PORT, OFFBOARD_PORT
 
 # What PX4 receives for a sensor the vehicle doesn't declare, as the sample its signal holds: a sample with no
 # time, which is never new, so HIL_SENSOR marks none of its fields updated and no HIL_GPS goes out. Its values
@@ -84,33 +84,32 @@ def _listener(port: int) -> int | None:
 
 
 class Px4MavlinkController(Component):
+    needs_instance = True  # PX4 numbers its links from the run's instance
+
     def __init__(
         self,
         *,
-        airframe: str = "",
+        instance: int = 0,
         ip: str = "0.0.0.0",
-        port: int = HIL_PORT,
         sysid: int = 1,
         compid: int = 200,
-        target_system: int = 1,
     ):
         """Configure the HIL link; nothing listens until ``connect``.
 
         Args:
-            airframe: The SITL airframe the vehicle declares, `nexus:airframe` of its `NexusPx4API`
-                schema, without PX4's ``none_`` prefix: the peer the run starts flies it.
+            instance: The run's instance, which PX4 numbers its links from: the HIL server listens on the TCP
+                port ``HIL_PORT`` plus it, which PX4 dials, and PX4's MAVLink system id is it plus 1. Instance 0
+                for a run that starts no peer, whose autopilot runs elsewhere.
             ip: The address the HIL server binds.
-            port: The TCP port the HIL server listens on, ``HIL_PORT`` plus the run's PX4 instance: PX4 dials it.
             sysid: This end's MAVLink system id.
             compid: This end's MAVLink component id.
-            target_system: PX4's MAVLink system id: the run's PX4 instance plus 1.
         """
-        self.airframe = airframe
+        self.instance = instance
         self.ip = ip
-        self.port = port
+        self.port = HIL_PORT + instance
         self.sysid = sysid
         self.compid = compid
-        self.target_system = target_system
+        self.target_system = instance + 1
         self.gps_fix_type = 3
         self._attitude = (1.0, 0.0, 0.0, 0.0)  # the base body's true attitude on North East Down (NED), [w, x, y, z]
         self._rates = (0.0, 0.0, 0.0)  # its true body rates, Forward Right Down (FRD), rad/s
@@ -141,6 +140,13 @@ class Px4MavlinkController(Component):
         near zero even when PX4 took long to dial in.
         """
         return self.mav is not None and self.mav.port is not None
+
+    def ports(self) -> dict:
+        """PX4's offboard link, which leaves the run: the port PX4 streams it to, ``OFFBOARD_PORT`` plus the run's
+        instance, over the User Datagram Protocol (UDP), and PX4's MAVLink system id. A script opens
+        ``nexus_uav.px4.OffboardClient`` on it, whether the run started PX4 or it runs elsewhere.
+        """
+        return {"offboard": {"protocol": "udp", "port": OFFBOARD_PORT + self.instance, "system_id": self.target_system}}
 
     def connect(self, links) -> None:
         conn_string = f"tcpin:{self.ip}:{self.port}"

@@ -1,7 +1,7 @@
 """Resolve the components a vehicle Universal Scene Description (USD) file declares through nexus schemas.
 
 Each component's schema states its role, which places the component: a sensor under the body it rides, and
-the controller and the estimator each on a `Scope` of its own whose parent is the vehicle's root prim.
+the controller, the estimator and the guidance each on a `Scope` of its own whose parent is the vehicle's root prim.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ import pathlib
 from nexus_uav._src.core.components import ComponentSpec, resolve_components
 from nexus_uav._src.core.registry import Registry
 
-__all__ = ["ComponentSpec", "declared_controller", "declared_estimator", "prims_applying", "resolve_components"]
+__all__ = ["ComponentSpec", "declared_controller", "declared_estimator", "declared_guidance", "resolve_components"]
 
 
 def _on_scopes(usd_path: str | pathlib.Path, role: str, registry: Registry | None) -> tuple[str, list[ComponentSpec]]:
@@ -55,7 +55,7 @@ def declared_controller(usd_path: str | pathlib.Path, registry: Registry | None 
     root, controllers = _on_scopes(usd_path, "controller", registry)
     if not controllers:
         raise ValueError(
-            f"{root}: the vehicle declares no controller; apply one, such as NexusPx4API, to a Scope under this prim"
+            f"{root}: the vehicle declares no controller; apply one, such as NexusPx4API_1, to a Scope under this prim"
         )
     return controllers[0]
 
@@ -74,15 +74,14 @@ def declared_estimator(usd_path: str | pathlib.Path, registry: Registry | None =
     return estimators[0] if estimators else None
 
 
-def prims_applying(usd_path: str | pathlib.Path, schema: str) -> list[tuple[str, list[str]]]:
-    """Each active prim of the vehicle file that applies `schema`, as its path and every API schema it
-    applies, so a caller can check what sits beside `schema`, as a peer's declaration beside its controller.
-    """
-    from pxr import Usd
+def declared_guidance(usd_path: str | pathlib.Path, registry: Registry | None = None) -> ComponentSpec | None:
+    """The guidance the vehicle file at `usd_path` declares, on the `Scope` that applies its schema, or ``None``.
 
-    stage = Usd.Stage.Open(str(usd_path), Usd.Stage.LoadAll)
-    return [
-        (str(prim.GetPath()), list(applied))
-        for prim in stage.Traverse(Usd.TraverseInstanceProxies())
-        if schema in (applied := prim.GetAppliedSchemas())
-    ]
+    With no `registry`, the default one resolves each schema.
+
+    Raises:
+        ValueError: The vehicle declares more than one guidance, or one off a `Scope` whose parent is its root
+            prim, its default prim; the message names their schemas and prims, or the prim off its place.
+    """
+    _, guidances = _on_scopes(usd_path, "guidance", registry)
+    return guidances[0] if guidances else None

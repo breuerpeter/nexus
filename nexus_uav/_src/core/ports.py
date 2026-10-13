@@ -10,7 +10,7 @@ link nothing answers.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 
 
 class PortMap(dict):
@@ -26,6 +26,22 @@ class PortMap(dict):
     def __init__(self, links: Mapping[str, dict] | None = None, *, missing: Mapping[str, str] | None = None):
         super().__init__(links or {})
         self._missing = dict(missing or {})
+
+    @classmethod
+    def merge(cls, maps: Iterable[Mapping[str, dict]]) -> PortMap:
+        """One port map of the links `maps` name, in order: a later map's entry replaces an earlier one's, and a
+        link a later map keeps out of its map with a reason leaves the merged map with that reason, as a fake
+        peer keeps out a link its component names.
+        """
+        merged = cls()
+        for m in maps:
+            for key, reason in getattr(m, "_missing", {}).items():
+                merged.pop(key, None)
+                merged._missing[key] = reason
+            for key, entry in m.items():
+                merged[key] = entry
+                merged._missing.pop(key, None)
+        return merged
 
     def __missing__(self, key: str):
         if key in self._missing:

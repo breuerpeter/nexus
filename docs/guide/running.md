@@ -167,28 +167,29 @@ The Cesium ion and Google Maps Platform terms govern the streamed tiles: see
 ## PX4 as a peer
 
 The PX4 autopilot is a **peer** of the run: a process the run starts, speaks to over MAVLink, and
-stops. The vehicle's USD declares it: `NexusPx4SitlAPI` on the controller's scope,
-`/astro_max/Controller`, beside `NexusPx4API`. A
-run of a vehicle that declares it starts the PX4 SITL container and stops it on exit.
+stops. The vehicle's USD declares it: `NexusPx4SitlAPI` on a scope of its own, `/astro_max/Px4Sitl`,
+with the airframe PX4 boots in `nexus:airframe`. PX4's controller, `NexusPx4API_1`, sits on the
+controller's scope, `/astro_max/Controller`. A run of a vehicle that declares the peer starts the PX4
+SITL container and stops it on exit.
 
 **An autopilot started elsewhere.** To fly a PX4 SITL of your own, or a real autopilot on a bench,
 drop the declaration with an **override layer**, a small USD file the run composes over the vehicle
-and the scene:
+and the scene, which deactivates the peer's scope:
 
 ```usda
 #usda 1.0
 
 over "astro_max"
 {
-    over "Controller" (
-        delete apiSchemas = ["NexusPx4SitlAPI"]
+    over "Px4Sitl" (
+        active = false
     )
     {
     }
 }
 ```
 
-Name the vehicle's root prim and its controller's scope in the `over`s, and pass the file with
+Name the vehicle's root prim and the peer's scope in the `over`s, and pass the file with
 `--layer`, or `Sim(layer=)`:
 
 ```bash

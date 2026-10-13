@@ -12,6 +12,7 @@ signal, of the width its actuators take.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from .interfaces import Stage
@@ -55,29 +56,24 @@ def stages_of(component, role: str) -> list[Bound]:
     return bound
 
 
-def build_ring(
-    *,
-    clock,
-    sensors,
-    controller,
-    physics,
-    commands=(),
-    forces=(),
-    actuator=None,
-    record: Stage,
-    substeps: int,
-    estimator=None,
-    guidance=None,
-) -> list[Bound]:
-    """Every component's stages in the canonical order the domain fixes: the clock, then ``clear`` -> the
-    command elements -> the force elements -> ``step`` unrolled ``substeps`` times, then ``state``, which writes
-    the plant's outputs from the stepped state, then the sensors, the estimator and the guidance when the run
-    has them, the controller, then ``record``. The step applies the controls of the tick before, and every
-    later stage reads the state it left. The estimator sits after the sensors, so it reads their values of
-    that tick, and before the guidance and the controller, so they read its estimate of that tick. The
-    guidance sits before the controller, so the setpoint it writes is the one the controller reads on that
-    tick. The old actuator stage, the examples' single-body ``Rotors``, runs with the force stages, since it
-    writes the body forces too.
+# The roles whose stages run once per physics substep, between ``clear`` and ``step``, in this order: the old
+# actuator stage, the examples' single-body ``Rotors``, runs with the force stages, since it writes the body
+# forces too.
+SUBSTEP_ROLES = ("command", "force", "actuator")
+# The roles whose stages run once per tick over the state the step left, in this order.
+TICK_ROLES = ("sensor", "estimator", "guidance", "controller")
+
+
+def build_ring(*, clock, physics, roles: Mapping[str, Sequence], record: Stage, substeps: int) -> list[Bound]:
+    """Every component's stages in the canonical order the domain fixes: the clock, then ``clear`` -> each
+    substep role's components -> ``step`` unrolled ``substeps`` times, then ``state``, which writes the plant's
+    outputs from the stepped state, then each tick role's components, then ``record``. ``roles`` maps a role to
+    its components, in the order they run; a role it leaves out has none.
+
+    The step applies the controls of the tick before, and every later stage reads the state it left. The
+    estimator sits after the sensors, so it reads their values of that tick, and before the guidance and the
+    controller, so they read its estimate of that tick. The guidance sits before the controller, so the
+    setpoint it writes is the one the controller reads on that tick.
 
     Raises:
         ValueError: A component states no stages, a stage of an unknown kind, or physics states no
@@ -87,23 +83,11 @@ def build_ring(
     phys = {b.stage.name: b for b in stages_of(physics, "physics")}
     if any(name not in phys for name in ("clear", "step", "state")):
         raise ValueError(f"{type(physics).__name__} states {sorted(phys)}, not the clear, step and state stages")
-    inner = []
-    for c in commands:
-        inner += stages_of(c, "command")
-    for f in forces:
-        inner += stages_of(f, "force")
-    if actuator is not None:
-        inner += stages_of(actuator, "actuator")
+    inner = [b for role in SUBSTEP_ROLES for c in roles.get(role, ()) for b in stages_of(c, role)]
     for _ in range(substeps):
         ring += [phys["clear"], *inner, phys["step"]]
     ring.append(phys["state"])
-    for s in sensors:
-        ring += stages_of(s, "sensor")
-    if estimator is not None:
-        ring += stages_of(estimator, "estimator")
-    if guidance is not None:
-        ring += stages_of(guidance, "guidance")
-    ring += stages_of(controller, "controller")
+    ring += [b for role in TICK_ROLES for c in roles.get(role, ()) for b in stages_of(c, role)]
     ring.append(Bound(record, None, "record"))
     return ring
 
@@ -155,6 +139,8 @@ def plan_line(segments: list[Segment], captured: bool) -> str:
 
 
 __all__ = [
+    "SUBSTEP_ROLES",
+    "TICK_ROLES",
     "Bound",
     "Segment",
     "build_ring",

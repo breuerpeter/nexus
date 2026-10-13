@@ -6,7 +6,7 @@ as Kit renders, with a synthetic output at the size each sensor declares. So the
 sensors and the loop run as they do against Kit, and a test proves their side of the link with no
 image, no GPU and no container. It proves nothing about Kit's rendering.
 
-A test sends the Kit peer to this class through the builder's peer mapping.
+A test sends the Kit peer to this class with a row of its own registry, `kit`.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import threading
 
 import numpy as np
 
-from .runner import KIT_DIR
+from .runner import KIT_DIR, NAME, check
 
 _wire = runpy.run_path(str(KIT_DIR / "link.py"))
 
@@ -37,26 +37,29 @@ def _outputs(sensor: dict, points: np.ndarray) -> list[tuple[str, np.ndarray]]:
 class KitFake:
     """A stand-in for one run's Kit render peer, on the peer contract.
 
+    A test sends the Kit peer to this class with a row of its own registry, ``kit``, and to one that answers
+    otherwise with a row for :meth:`configured`.
+
     Args:
         files: The scene description files the run renders; the fake reads none of them.
-        cache_dir: The run's asset cache; the fake reads nothing from it.
-        image: The image the run pins for the peer; the fake runs none.
         error_after: Answer the frame request after this many frames with ``error``, as a peer whose
             render failed; ``None`` never does.
         error: The message the ``error`` carries.
         points: The world points every lidar scan returns, one ``(x, y, z)`` each; none by default.
+        **run: The run's values, its pin, its folder and its asset cache, which the fake needs none of.
     """
+
+    name = NAME
+    check_pin = staticmethod(check)
 
     def __init__(
         self,
         files: list = (),
         *,
-        cache_dir=None,
-        image: str | None = None,
-        log_dir=None,
         error_after: int | None = None,
         error: str = "the fake Kit peer failed",
         points=(),
+        **run,
     ) -> None:
         self.error_after = error_after
         self.error = error
@@ -66,6 +69,18 @@ class KitFake:
         self._listener: socket.socket | None = None
         self._thread: threading.Thread | None = None
         self._stopped = False
+
+    @classmethod
+    def configured(cls, **answers) -> type:
+        """A subclass of the fake that answers as ``answers`` say, the keywords ``error_after``, ``error`` and
+        ``points``, for a row of a registry.
+        """
+
+        class Configured(cls):
+            def __init__(self, files: list = (), **run) -> None:
+                super().__init__(files, **{**answers, **run})
+
+        return Configured
 
     def start(self) -> None:
         """Listen on a free local port and serve the link in the background."""
