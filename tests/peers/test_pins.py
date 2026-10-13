@@ -384,3 +384,94 @@ def test_a_px4_pin_naming_a_path_with_no_folder_fails_the_run_before_any_peer_st
     error = outcome["error"]
     named = [s in str(error) for s in ("NEXUS_PX4_SITL_REF", str(missing))]
     assert (isinstance(error, ValueError), named, daemon.runs) == (True, [True, True], []), error
+
+
+EMPTY_CATALOG = "vehicles: {}\nscenes: {}\n"  # a package's catalog that adds no entry, beside its pin files
+
+
+def test_an_installed_packages_kit_pin_file_is_the_pin_the_kit_peer_runs(daemon, tmp_path, install_package):
+    """A package's pin file is the pin a peer flies when no project pin file or variable sets it.
+
+    Given a package shipping `nexus.kit.ref` naming an image this machine lacks, when a run with no project
+    starts Kit, then the daemon pulls and runs that image, and the receipt records it with the package's file
+    as its source.
+    """
+    daemon.held = set()
+    package = install_package(
+        "acme_drones", {"nexus.catalog.yaml": EMPTY_CATALOG, "nexus.kit.ref": "registry.example/kit:8\n"}
+    )
+
+    outcome = _run(tmp_path, CAMERA, px4=False)
+
+    assert (daemon.pulls, [r["image"] for r in daemon.started()], _pin(outcome, "kit")) == (
+        ["registry.example/kit:8"],
+        ["registry.example/kit:8"],
+        {"ref": "registry.example/kit:8", "source": str(package / "nexus.kit.ref"), "commit": None},
+    ), outcome["error"]
+
+
+def test_a_projects_kit_pin_file_overrides_an_installed_packages(daemon, tmp_path, monkeypatch, install_package):
+    """A project's pin file overrides a package's pin file for the same peer.
+
+    Given a package and a project each shipping `nexus.kit.ref`, when a run in the project starts Kit, then
+    the daemon runs the project's image, and the receipt names the project's file.
+    """
+    install_package("acme_drones", {"nexus.catalog.yaml": EMPTY_CATALOG, "nexus.kit.ref": "registry.example/kit:8\n"})
+    project = _project(tmp_path, monkeypatch, **{"nexus.kit.ref": "registry.example/kit:7\n"})
+
+    outcome = _run(tmp_path, CAMERA, px4=False)
+
+    assert ([r["image"] for r in daemon.started()], _pin(outcome, "kit")) == (
+        ["registry.example/kit:7"],
+        {"ref": "registry.example/kit:7", "source": str(project / "nexus.kit.ref"), "commit": None},
+    ), outcome["error"]
+
+
+def test_the_kit_variable_overrides_an_installed_packages_pin_file(daemon, tmp_path, monkeypatch, install_package):
+    """The peer's variable overrides a package's pin file.
+
+    Given a package shipping `nexus.kit.ref` and `NEXUS_KIT_REF` set, when a run starts Kit, then the daemon
+    runs the variable's image, and the receipt names the variable.
+    """
+    install_package("acme_drones", {"nexus.catalog.yaml": EMPTY_CATALOG, "nexus.kit.ref": "registry.example/kit:8\n"})
+    monkeypatch.setenv("NEXUS_KIT_REF", "nexus-kit:dev")
+
+    outcome = _run(tmp_path, CAMERA, px4=False)
+
+    assert ([r["image"] for r in daemon.started()], _pin(outcome, "kit")) == (
+        ["nexus-kit:dev"],
+        {"ref": "nexus-kit:dev", "source": "NEXUS_KIT_REF", "commit": None},
+    ), outcome["error"]
+
+
+def test_two_installed_packages_that_pin_one_peer_fail_the_run_naming_it_and_both(daemon, tmp_path, install_package):
+    """Two installed packages that ship a pin file for one peer fail the run, and the message names the peer
+    and both packages.
+
+    Given two packages each shipping `nexus.px4_sitl.ref` and no project file or variable, when a PX4 run
+    builds, then it fails and the message names `px4_sitl` and both packages.
+    """
+    for name in ("acme_drones", "bravo_drones"):
+        install_package(
+            name, {"nexus.catalog.yaml": EMPTY_CATALOG, "nexus.px4_sitl.ref": "example/px4@" + "a" * 40 + "\n"}
+        )
+
+    outcome = _run(tmp_path, peers={"px4_sitl": Px4Fake})
+
+    message = str(outcome["error"] or "")
+    assert [s in message for s in ("px4_sitl", "acme_drones", "bravo_drones")] == [True, True, True], message
+
+
+def test_an_installed_packages_pin_file_that_names_no_peer_fails_the_run(daemon, tmp_path, install_package):
+    """A package's pin file that names no peer fails the run, and the message names the file.
+
+    Given a package shipping `nexus.nosuch.ref`, when a run builds, then it fails naming that file and the
+    accepted pin file names, and no container starts.
+    """
+    package = install_package("acme_drones", {"nexus.catalog.yaml": EMPTY_CATALOG, "nexus.nosuch.ref": "x\n"})
+
+    outcome = _run(tmp_path, CAMERA, peers={"px4_sitl": Px4Fake})
+
+    message = str(outcome["error"] or "")
+    named = [s in message for s in (str(package / "nexus.nosuch.ref"), "nexus.px4_sitl.ref", "nexus.kit.ref")]
+    assert (named, daemon.runs) == ([True, True, True], [])
