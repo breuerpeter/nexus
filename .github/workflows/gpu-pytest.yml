@@ -44,7 +44,7 @@ jobs:
         ~/.cache/nexus/ci/px4-sitl.tar
       cache-name: px4
       cache-files: |
-        nexus_uav/_src/peers/px4_sitl/px4.ref
+        nexus_uav/_src/peers/px4_sitl/pin.ref
         nexus_uav/_src/peers/px4_sitl/checkout.py
         nexus_uav/_src/peers/px4_sitl/image/Dockerfile
       cache-scope: pytest

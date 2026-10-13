@@ -96,7 +96,7 @@ _UNITS = {"_m": "m", "_deg": "deg", "_s": "s", "rtf": "x realtime", "_per_sec": 
 def _available(requires: str | None, args: argparse.Namespace) -> tuple[bool, str]:
     # External tool locations come from the one definition of the env-overridable defaults the
     # examples themselves resolve, acados' from the example's provision module. PX4 needs only docker:
-    # the run fetches its pinned tree itself, or flies $PX4_DIR.
+    # the run fetches its pinned tree itself, or flies the checkout $NEXUS_PX4_SITL_REF names.
     from nexus_uav.examples.controllers.acados_nmpc.provision import PROVISION_COMMAND, acados_dir
 
     if requires is None:

@@ -40,6 +40,7 @@ class KitFake:
     Args:
         files: The scene description files the run renders; the fake reads none of them.
         cache_dir: The run's asset cache; the fake reads nothing from it.
+        image: The image the run pins for the peer; the fake runs none.
         error_after: Answer the frame request after this many frames with ``error``, as a peer whose
             render failed; ``None`` never does.
         error: The message the ``error`` carries.
@@ -51,6 +52,7 @@ class KitFake:
         files: list = (),
         *,
         cache_dir=None,
+        image: str | None = None,
         error_after: int | None = None,
         error: str = "the fake Kit peer failed",
         points=(),

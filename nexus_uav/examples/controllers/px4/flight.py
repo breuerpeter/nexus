@@ -21,8 +21,8 @@ knob; whatever the vehicle authors is what flies.
 
 A ZERO-arg script (the flight configuration lives here), plus an optional ``--timeout`` flag
 (wall-clock arm+climb budget). Needs docker + a CUDA host: the sim fetches the PX4 tree its
-controller pins on first use and builds it before the run starts, and ``PX4_DIR`` names a checkout
-of your own instead.
+peer pins on first use and builds it before the run starts, and ``NEXUS_PX4_SITL_REF`` names a
+checkout of your own instead.
 """
 
 from __future__ import annotations

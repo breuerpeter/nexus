@@ -114,6 +114,11 @@ and starts no process. A test flies the component against it in seconds. PX4's i
 which answers the HIL link with a fixed command. A test hands the row of the fake to the run through
 the registry, as it hands a stand-in component.
 
+Every peer pins what it runs, a commit or an image, in `pin.ref` in its own folder, with the pin on
+line one. A project overrides it with `nexus.<peer>.ref` beside its catalog, in the same form, and
+the variable `NEXUS_<PEER>_REF` overrides both, where `<peer>` is the folder name of the peer. The run's
+receipt records each pin and where it came from. A peer of your own follows the same rule.
+
 Today the builder starts the two peers nexus ships by name: PX4 Software In The Loop (SITL) and the
 Kit render peer. A peer of your own that a vehicle declares waits for the builder to start every
 declared peer through the registry, the next step on the roadmap.

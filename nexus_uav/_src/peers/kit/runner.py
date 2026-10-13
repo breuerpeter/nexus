@@ -24,11 +24,15 @@ from pathlib import Path
 
 from nexus_uav._src.assets.resolver import fetch
 from nexus_uav._src.core import logger
-from nexus_uav._src.peers import LABEL  # a Kit peer carries nexus.peer=kit, so a runner can find a leftover one
+from nexus_uav._src.peers import (
+    LABEL,  # a Kit peer carries nexus.peer=kit, so a runner can find a leftover one
+    pins,
+)
 from nexus_uav._src.peers.containers import client, run_container, stop_container
+from nexus_uav._src.peers.pins import PeerPin
 
 KIT_DIR = Path(__file__).with_name("peer-src")
-IMAGE = "nvcr.io/nvidia/isaac-sim:6.0.1"  # pulls with no NGC login
+NAME = "kit"  # the peer's folder name, which names its pin file and its variable
 ISAAC_SIM_GID = "1234"  # the base image's isaac-sim group: /isaac-sim is readable by that group only
 _KIT_HOME = "/kit-home"
 _PEER_DIR = "/nexus-kit"
@@ -50,10 +54,30 @@ class KitPeerError(RuntimeError):
     """The Kit render peer couldn't start, or died mid-flight; the message names the cause."""
 
 
-def ensure_image() -> str:
-    """Pull NVIDIA's Isaac Sim image when this machine lacks it, and return its name.
+def resolve(catalog: Path | None = None) -> PeerPin:
+    """The image the peer runs, checked, through :func:`nexus_uav._src.peers.pins.resolve`: the shipped
+    ``pin.ref`` names NVIDIA's Isaac Sim, and a project's ``nexus.kit.ref`` or ``$NEXUS_KIT_REF``
+    names another, a local tag among them.
 
-    The pull is about 21 GB and needs no login. It prints a line per finished layer as it goes.
+    Args:
+        catalog: The project catalog the run resolved against, or ``None`` for no project.
+
+    Raises:
+        ValueError: The pin names no image; the message names its source.
+    """
+    pin = pins.resolve(NAME, catalog)
+    if not pin.ref or any(c.isspace() for c in pin.ref):
+        raise ValueError(
+            f"{pin.source}: the Kit pin {pin.ref!r} is no image reference, such as nvcr.io/nvidia/isaac-sim:6.0.1"
+        )
+    return pin
+
+
+def ensure_image(image: str) -> str:
+    """Pull ``image`` when this machine lacks it, and return its name.
+
+    NVIDIA's Isaac Sim image is about 21 GB and needs no login. The pull prints a line per finished
+    layer as it goes.
 
     Raises:
         KitPeerError: The pull failed; the message names the image and the registry's error.
@@ -63,16 +87,18 @@ def ensure_image() -> str:
 
     c = client()
     try:
-        c.images.get(IMAGE)
-        return IMAGE
+        c.images.get(image)
+        return image
     except ImageNotFound:
         pass
-    logger.info(f"pulling the Kit image {IMAGE}, about 21 GB: once per machine")
-    repository, tag = IMAGE.rsplit(":", 1)
+    logger.info(f"pulling the Kit image {image}: once per machine")
+    repository, tag = image, "latest"
+    if ":" in image.rsplit("/", 1)[-1]:  # a tag, not the colon of a registry's port
+        repository, tag = image.rsplit(":", 1)
     try:
         for chunk in c.api.pull(repository, tag=tag, stream=True, decode=True):
             if "error" in chunk:
-                raise KitPeerError(f"pulling the Kit image {IMAGE} failed: {chunk['error'].strip()}")
+                raise KitPeerError(f"pulling the Kit image {image} failed: {chunk['error'].strip()}")
             status = chunk.get("status", "")
             if "id" not in chunk:
                 sys.stderr.write(f"{status}\n")
@@ -80,9 +106,9 @@ def ensure_image() -> str:
                 sys.stderr.write(f"{chunk['id']}: {status}\n")
             sys.stderr.flush()
     except DockerException as exc:
-        raise KitPeerError(f"pulling the Kit image {IMAGE} failed: {getattr(exc, 'explanation', None) or exc}") from exc
-    logger.info(f"pulled the Kit image {IMAGE}")
-    return IMAGE
+        raise KitPeerError(f"pulling the Kit image {image} failed: {getattr(exc, 'explanation', None) or exc}") from exc
+    logger.info(f"pulled the Kit image {image}")
+    return image
 
 
 def _declares_cesium_tileset(path: Path) -> bool:
@@ -169,11 +195,13 @@ class KitPeer:
     Args:
         files: Every USD file the run renders, vehicle and scene: the peer reads each at its host path.
         cache_dir: The asset cache the run fetched into; mounted whole when a file lies inside it.
+        image: The image the container runs, from :func:`resolve`.
     """
 
-    def __init__(self, files: list, *, cache_dir):
+    def __init__(self, files: list, *, cache_dir, image: str):
         self._files = [Path(f).resolve() for f in files if f]
         self._cache_dir = Path(cache_dir).resolve()
+        self.image = image
         self.name = f"nexus-kit-{os.getpid()}"
         self.port: int | None = None
         self.log_path: Path | None = None
@@ -202,7 +230,7 @@ class KitPeer:
         if any(_declares_cesium_tileset(f) for f in self._files):
             volumes, env = _cesium_mount(self._cache_dir)
         try:
-            image = ensure_image()
+            image = ensure_image(self.image)
         except KitPeerError:
             raise
         except RuntimeError as exc:
