@@ -18,8 +18,10 @@ Each peer lives in one folder, ``peers/<name>/``, with everything that belongs t
 Its host-side modules sit at the top of the folder, and what crosses into the process sits in a
 subfolder with a fixed name: ``image/``, a docker build context the image tag hashes, and
 ``peer-src/``, what the container mounts read-only. The hyphen keeps ``peer-src/`` out of every
-dotted import, so no host module loads the peer's program. This folder itself holds the contract
-and :mod:`.containers`, the docker runner every container peer shares. The peers are the PX4
+dotted import, so no host module loads the peer's program. Each peer pins what it runs, a commit
+or an image, in ``pin.ref`` at the top of its folder. This folder itself holds the contract,
+:mod:`.containers`, the docker runner every container peer shares, and :mod:`.pins`, which finds
+every peer's pin the same way. The peers are the PX4
 Software In The Loop (SITL) container, :mod:`.px4_sitl`, and the Kit render peer, :mod:`.kit`.
 """
 

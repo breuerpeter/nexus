@@ -109,7 +109,7 @@ examples launcher, `uv run -m nexus_uav.examples <name> --profile`, spell them i
   Isaac, which capture the system envelope the loop profiler can't see. They record render **GPU** frame time
   from `HydraEngineStats`, GPU memory plus host Resident Set Size (RSS), process CPU%, app-update
   frame time, and windowed-RTF stability. It writes one summary `INFO` line plus a full
-  `benchmark-<ts>.json` next to the flight logs. It complements the profiler: the profiler
+  `benchmark.json` in the run's folder, beside its other logs. It complements the profiler: the profiler
   partitions the tick, and this measures Kit and the system. The PhysX-bound recorders stay out,
   because physics here is Newton.
 
@@ -199,16 +199,25 @@ The run starts nothing and waits on instance 0's HIL port, 4560, which a stock `
 run's receipt records the layer's sha256 beside the vehicle's. The same kind of layer changes a
 declared value or selects a variant without re-authoring the hosted vehicle.
 
-**The PX4 tree.** The PX4 controller pins the PX4-Autopilot commit it flies, in
-`nexus_uav/_src/peers/px4_sitl/px4.ref`, which ships in the package. The first managed run on
+**The PX4 tree.** The PX4 SITL peer pins the PX4-Autopilot commit it flies, in
+`nexus_uav/_src/peers/px4_sitl/pin.ref`, which ships in the package. The first managed run on
 a machine fetches that commit into `~/.cache/nexus/px4/<commit>/` and builds it there, minutes
-once. Later runs rebuild only what changed. Two overrides:
+once. Later runs rebuild only what changed. Every peer resolves its pin the same way, so PX4 has
+the two overrides every peer has:
 
-- `PX4_DIR` names a checkout of your own, for work on PX4 itself. The run builds and flies it and
-  fetches nothing.
 - A project that keeps its own catalog, `nexus.catalog.yaml`, keeps its own pin beside it in
-  `nexus.px4.ref`, of the same form, `owner/repo@<commit>`. Every vehicle of the project then
+  `nexus.px4_sitl.ref`, of the same form, `owner/repo@<commit>`. Every vehicle of the project then
   flies that tree, and a bump is one edit.
+- `NEXUS_PX4_SITL_REF` overrides both and touches no tracked file. It takes a pin of the same form,
+  or the absolute path of a checkout of your own, for work on PX4 itself. The run builds and flies
+  that checkout and fetches nothing.
+
+The Kit render peer pins its image the same way: `nexus_uav/_src/peers/kit/pin.ref` names
+`nvcr.io/nvidia/isaac-sim:6.0.1`, and `nexus.kit.ref` or `NEXUS_KIT_REF` names another, a local tag
+among them. The file and the variable take the peer's folder name. A pin file beside the catalog
+that names no peer fails the run, and so does a pin not in its peer's form. The run's receipt records
+each peer's pin under `peers`, with the file or the variable it came from, and for a checkout its
+checked-out commit.
 
 **The image.** The first run builds the `px4-sitl` image, the PX4 build toolchain, from the
 Dockerfile the package ships, and tags it with a hash of that folder. An update rebuilds it only

@@ -9,7 +9,7 @@ touches another's.
 
 The image is the px4-sitl build toolchain, built on this machine from ``image/`` beside this module,
 package data, and tagged with a hash of that folder. The PX4 tree comes from :mod:`.checkout`: the
-pinned commit fetched into a cache folder, or ``$PX4_DIR``. ``start`` builds the tree incrementally
+pinned commit fetched into a cache folder, or a checkout the pin names. ``start`` builds the tree incrementally
 before it launches, since a launch must reach the sim inside its 30 s preroll window and a cold
 build never does.
 
@@ -30,6 +30,7 @@ from typing import IO
 from nexus_uav._src.core import logger
 from nexus_uav._src.peers import LABEL, containers
 from nexus_uav._src.peers.containers import ensure_image, run_container, stop_container
+from nexus_uav._src.peers.pins import PeerPin
 
 from . import checkout
 from .instance import claim as _claim
@@ -70,7 +71,7 @@ def build(tree: Path) -> None:
     if not (tree / "Makefile").is_file():
         # Without this, docker creates the empty mount and `make` reports "No rule to make target
         # 'px4_sitl'" as the error, which reads as a broken image rather than a missing checkout.
-        raise RuntimeError(f"no PX4 tree at {tree}: unset $PX4_DIR to fetch the pinned one, or point it at a checkout")
+        raise RuntimeError(f"no PX4 tree at {tree}: point the PX4 pin at a checkout, or at a commit to fetch")
     logger.info(f"building PX4 SITL in {tree} (incremental; a cold build takes minutes) …")
     # `--rm` on a FOREGROUND run is the client removing the container after it exits, which is what
     # `remove` is. The daemon-side `auto_remove` races the client here: the container disappears
@@ -80,13 +81,13 @@ def build(tree: Path) -> None:
         print(out.decode(errors="replace"), flush=True)
 
 
-def prepare(catalog: Path | None = None) -> Path:
+def prepare(pin: PeerPin | None = None) -> Path:
     """Resolve the PX4 tree and build it, the way a run's first use does, and return the tree.
 
     For a caller that wants the cold work done outside a run's own budget: the CI harness before a
-    timed example, or a machine's first setup.
+    timed example, or a machine's first setup. ``None`` takes the pin with no project catalog.
     """
-    tree = checkout.tree(catalog)
+    tree = checkout.tree(pin)
     build(tree)
     return tree
 
@@ -95,8 +96,8 @@ class Px4Sitl:
     """One PX4 SITL container for one run, on the peer contract.
 
     Args:
-        catalog: The project catalog the run resolved against, whose pin file wins over the shipped
-            one; the start resolves the PX4 tree from it through :func:`checkout.tree`.
+        pin: The peer's pin, from :func:`checkout.resolve`; the start resolves the PX4 tree from it
+            through :func:`checkout.tree`.
         airframe: The airframe's make target without PX4's ``none_`` prefix, ``astro_max``.
         instance: PX4's SITL instance, which numbers its ports and its system id.
         name: The container's name, one per run.
@@ -107,9 +108,9 @@ class Px4Sitl:
     """
 
     def __init__(
-        self, *, catalog: Path | None, airframe: str, instance: int, name: str, log_dir: Path, claim: IO | None = None
+        self, *, pin: PeerPin, airframe: str, instance: int, name: str, log_dir: Path, claim: IO | None = None
     ) -> None:
-        self.catalog = catalog
+        self.pin = pin
         self.tree: Path | None = None  # resolved at start, which can fetch it
         self.airframe = airframe
         self.instance = instance
@@ -129,7 +130,7 @@ class Px4Sitl:
             docker.errors.ContainerError: The PX4 build failed.
         """
         self._clear_leftovers()
-        self.tree = checkout.tree(self.catalog)
+        self.tree = checkout.tree(self.pin)
         build(self.tree)
         kwargs = _container_kwargs(self.tree)
         # PX4's own `make px4_sitl none_<airframe>` runs the binary with the airframe in its

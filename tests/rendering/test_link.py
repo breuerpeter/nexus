@@ -93,7 +93,7 @@ def _renderer(daemon, tmp_path, serve):
     daemon.serve = serve
     usd = tmp_path / "v.usda"
     usd.write_text("#usda 1.0\n")
-    peer = KitPeer([usd], cache_dir=tmp_path / "cache")
+    peer = KitPeer([usd], cache_dir=tmp_path / "cache", image="nvcr.io/nvidia/isaac-sim:6.0.1")
     peer.start()
     camera = _Camera()
     renderer = KitRenderer(peer, setup={}, bodies=[(0, "/Vehicle/body")], sensors=[camera])

@@ -212,7 +212,7 @@ def test_the_command_line_takes_the_layer(monkeypatch, tmp_path, warp_cpu):
     px4 = tmp_path / "px4"
     px4.mkdir()
     (px4 / "Makefile").write_text("px4_sitl:\n")  # what marks a folder as a PX4 tree
-    monkeypatch.setenv("PX4_DIR", str(px4))
+    monkeypatch.setenv("NEXUS_PX4_SITL_REF", str(px4))
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("NEXUS_ASSET_CACHE", str(tmp_path / "cache"))
     vehicle = tmp_path / "vehicle.usda"

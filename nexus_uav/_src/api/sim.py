@@ -250,8 +250,10 @@ class Sim:
 
         Raises:
             RuntimeError: Called outside the ``Sim`` context manager, or the run ended during
-                setup, for example when PX4 never connected on the HIL port.
+                setup with no error, for example on ``stop()``.
             KitPeerError: The vehicle renders and its Kit render peer failed to start.
+            SetupError: The run's setup failed, for example PX4 never dialed in or never answered within
+                the preroll timeout; the message names the peers' logs, and the run's teardown has run.
         """
         if self._orch is None:
             raise RuntimeError("Sim.start() called outside the context manager (use `with nx.Sim(...) as sim:`)")
@@ -260,7 +262,7 @@ class Sim:
         if timeout is not None:
             self._orch.preroll_timeout = float(timeout)
         if not self.step():
-            raise RuntimeError("the sim ended during setup (did PX4 connect on the HIL port?)")
+            raise RuntimeError("the sim ended during setup, before its first tick")
 
     def run(self) -> None:
         """Run the sim **synchronously** to completion on the calling thread: exhaust the tick
@@ -274,6 +276,8 @@ class Sim:
             RuntimeError: Called outside the ``Sim`` context manager.
             KitPeerError: The vehicle renders and its Kit render peer died mid-flight; the run's
                 teardown has run and closed the recording.
+            SetupError: The run's setup failed, for example PX4 never dialed in or never answered within
+                the preroll timeout; the message names the peers' logs, and the run's teardown has run.
         """
         if self._orch is None:
             raise RuntimeError("Sim.run() called outside the context manager (use `with nx.Sim(...) as sim:`)")
@@ -293,6 +297,8 @@ class Sim:
             RuntimeError: Called outside the ``Sim`` context manager.
             KitPeerError: The vehicle renders and its Kit render peer died mid-flight; the run's
                 teardown has run and closed the recording.
+            SetupError: The run's setup failed, for example PX4 never dialed in or never answered within
+                the preroll timeout; the message names the peers' logs, and the run's teardown has run.
         """
         if self._orch is None:
             raise RuntimeError("sim.step() called outside the context manager (use `with nx.Sim(...) as sim:`)")

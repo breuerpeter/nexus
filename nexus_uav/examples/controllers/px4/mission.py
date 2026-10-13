@@ -18,7 +18,7 @@ The mission is a 100 m box at 40 m: takeoff, four waypoints, return to launch. B
 exercised on purpose, because a world-to-geodetic reflection shows up as a runaway east leg (#61).
 
 A ZERO-arg script (the configuration lives here), plus an optional ``--timeout`` flag. The sim
-fetches the PX4 tree its controller pins on first use; ``PX4_DIR`` names a checkout of your own instead.
+fetches the PX4 tree its peer pins on first use; ``NEXUS_PX4_SITL_REF`` names a checkout of your own instead.
 Needs docker + a PX4 checkout + a CUDA host; the checkout does not have to be built already, because
 the sim builds it before the run starts.
 """

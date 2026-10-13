@@ -39,6 +39,7 @@ from pymavlink import mavutil
 from nexus_uav._src import transform
 from nexus_uav._src.core import logger
 from nexus_uav._src.core.interfaces import Component, Stage
+from nexus_uav._src.core.loop import SetupError
 from nexus_uav._src.core.schema import BaroSample, GpsSample, ImuSample, MagSample, PoseTwist
 from nexus_uav._src.core.signals import Signal
 from nexus_uav._src.peers.px4_sitl import HIL_PORT
@@ -150,7 +151,7 @@ class Px4MavlinkController(Component):
             if exc.errno != errno.EADDRINUSE:
                 raise
             holder = _listener(self.port)
-            raise ConnectionError(
+            raise SetupError(
                 f"the HIL port {self.port} is in use by {f'process {holder}' if holder else 'another process'}: "
                 "a second run on this machine that flies an autopilot started elsewhere needs the first to end"
             ) from exc

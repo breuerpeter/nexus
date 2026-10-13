@@ -1,11 +1,9 @@
-"""How the PX4 controller reaches its PX4 tree: the fetch of the pinned commit into a folder it owns,
-with the interim airframe patch; ``$PX4_DIR`` as the checkout that overrides the fetch; and the pin a
-project keeps beside its catalog over the one the controller ships.
+"""How the PX4 peer reaches its PX4 tree: the fetch of the pinned commit into a folder it owns, with
+the interim airframe patch. ``tests/peers/test_pins.py`` covers where the pin comes from.
 
 A git repository in the test's folder stands in for PX4-Autopilot, so a fetch touches no network.
 """
 
-import importlib.resources
 import subprocess
 from pathlib import Path
 
@@ -56,35 +54,3 @@ def test_the_fetched_tree_is_the_pinned_commit_and_carries_the_interim_airframe_
     second = (dest / AIRFRAME).read_text().count(MAG_PATCH)
 
     assert (_git(dest, "rev-parse", "HEAD"), first, second) == (sha, 1, 1)
-
-
-def test_px4_dir_names_a_checkout_that_overrides_the_fetch(tmp_path, monkeypatch):
-    """``PX4_DIR`` names a checkout that overrides the fetch.
-
-    Given ``PX4_DIR`` set to a folder, when the controller resolves its PX4 tree, then it's that
-    folder and no fetch runs.
-    """
-    folder = tmp_path / "px4"
-    folder.mkdir()
-    home = tmp_path / "home"
-    monkeypatch.setenv("PX4_DIR", str(folder))
-    monkeypatch.setenv("HOME", str(home))
-
-    tree = checkout.tree()
-
-    assert (Path(tree), home.exists()) == (folder, False)
-
-
-def test_a_projects_pin_file_beside_its_catalog_overrides_the_controllers_pin(tmp_path):
-    """A project's pin file beside its catalog overrides the controller's pin.
-
-    Given a project catalog with a pin file beside it, when the controller resolves its PX4 tree, then
-    it's the project's commit, and with no file it's the controller's.
-    """
-    catalog = tmp_path / "nexus.catalog.yaml"
-    catalog.write_text("vehicles: {}\n")
-    (tmp_path / "nexus.px4.ref").write_text("example/px4@" + "a" * 40 + "\n")
-    shipped = importlib.resources.files("nexus_uav._src.peers.px4_sitl").joinpath("px4.ref").read_text()
-    shipped_sha = shipped.splitlines()[0].split("@", 1)[1]
-
-    assert (checkout.pin(catalog).sha, checkout.pin(None).sha) == ("a" * 40, shipped_sha)

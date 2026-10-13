@@ -8,15 +8,15 @@ link from a thread in this process, for tests. The render link's host end is
 - A module in `peer-src/` runs as a top-level module in the image, so its name must not shadow a
   Kit package: the Cesium handler is `cesium_globe.py` because Cesium's extension is the `cesium`
   package.
-- The container runs `nvcr.io/nvidia/isaac-sim` as pulled, `IMAGE` in `runner.py`. `peer-src/`
+- The container runs `nvcr.io/nvidia/isaac-sim` as pulled, the image `pin.ref` names. `peer-src/`
   mounts read-only at `/nexus-kit`, so an edit there takes effect on the next RTX run. Anything the
   peer needs goes in as a run option or a mount, never as a derived image, so an Isaac upgrade
-  stays a change to `IMAGE`.
+  stays a change to `pin.ref`.
 - Cesium for Omniverse is a content-addressed download, `CESIUM` in `runner.py`. The host fetches it
   into the asset cache only when a file the run renders declares a `CesiumTilesetPrim`, and mounts
   it at `/cesium-exts`, as `scripts/assets/kit_container.py` does for the Cesium author script.
 - `scripts/assets/kit_container.py` starts the same image for the Kit-only asset scripts and
-  imports `ensure_image`, `_run_options`, `_cesium_mount`, `LABEL` and `client` from `runner.py`:
+  imports `resolve`, `ensure_image`, `_run_options`, `_cesium_mount`, `LABEL` and `client` from `runner.py`:
   renaming or moving one of them changes that file too.
 - The render link's framing and its message set live once, in `peer-src/link.py`. The peer imports
   it as a sibling module. The host end and `fake.py` run the same file by path and take `send`,

@@ -1,11 +1,12 @@
 """How the PX4 peer reaches its PX4 tree.
 
-The peer ships the pin, ``px4.ref`` beside this module: line one is ``repo@sha``, the
-PX4-Autopilot tree it flies, and line two the branch ``px4-bump.yml`` tracks. A project overrides it
-with a ``nexus.px4.ref`` of the same form beside its catalog, so every vehicle of the project flies
-one tree and a bump is one edit. On first use the controller fetches the pinned commit into a folder
-it owns, ``~/.cache/nexus/px4/<sha>``, and the PX4 Software In The Loop (SITL) peer builds it there.
-``$PX4_DIR`` names a checkout of your own that overrides the fetch, for work on PX4 itself.
+The peer's pin comes from :mod:`nexus_uav._src.peers.pins`: ``pin.ref`` beside this module, a
+project's ``nexus.px4_sitl.ref`` beside its catalog, or ``$NEXUS_PX4_SITL_REF``. In the shipped file,
+line one is ``repo@sha``, the PX4-Autopilot tree it flies, and line two the branch ``px4-bump.yml``
+tracks. A pin is ``owner/repo@<commit>``, or the absolute path of a checkout of your own, for work on
+PX4 itself. On first use the peer fetches a pinned commit into a folder it owns,
+``~/.cache/nexus/px4/<sha>``, and the PX4 Software In The Loop (SITL) peer builds it there. A
+peer builds a checkout where it lies, and the receipt records its checked-out commit.
 
 The fetch is by commit, depth one, with submodules, and it applies the interim airframe patch the
 pinned branch doesn't carry yet: ``EKF2_MAG_TYPE 6`` on ``80000_none_astro_max``, heading from the
@@ -15,17 +16,19 @@ see #87 and PX4 PR #27706. A tree that carries the line already keeps it as it s
 
 from __future__ import annotations
 
-import os
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 from nexus_uav._src.core import logger
+from nexus_uav._src.peers import pins
+from nexus_uav._src.peers.pins import PeerPin
 
-PROJECT_PIN = "nexus.px4.ref"  # a project's pin, beside its nexus.catalog.yaml
-_SHIPPED_PIN = Path(__file__).with_name("px4.ref")
+NAME = "px4_sitl"  # the peer's folder name, which names its pin file and its variable
 _AIRFRAME = Path("ROMFS/px4fmu_common/init.d-posix/airframes/80000_none_astro_max")
 _MAG_PATCH = "param set-default EKF2_MAG_TYPE 6"
+_PIN = re.compile(r"[\w.-]+/[\w.-]+@[0-9a-f]{7,40}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,18 +43,49 @@ class Pin:
         return f"https://github.com/{self.repo}.git"
 
 
-def pin(catalog: Path | None = None) -> Pin:
-    """The pin the controller flies: the project's ``nexus.px4.ref`` beside ``catalog`` when there is
-    one, else the pin this package ships.
+def parse(pin: PeerPin) -> Pin | Path:
+    """The PX4 tree ``pin`` names: a :class:`Pin` for ``owner/repo@<commit>``, or a checkout's path.
+
+    A checkout is a folder; one outside git flies too, and the receipt records no commit for it.
+
+    Raises:
+        ValueError: The pin is neither, or names a path with no folder; the message names its source
+            and the forms it takes.
+    """
+    ref = pin.ref
+    if ref.startswith(("/", "~")):
+        if not (tree := Path(ref).expanduser()).is_dir():
+            raise ValueError(
+                f"{pin.source}: the PX4 pin {ref!r} names no folder; point it at a checkout, or at repo@sha"
+            )
+        return tree
+    if not _PIN.fullmatch(ref):
+        raise ValueError(
+            f"{pin.source}: the PX4 pin {ref!r} is neither repo@sha, such as PX4/PX4-Autopilot@<commit>, "
+            "nor the absolute path of a checkout"
+        )
+    repo, sha = ref.split("@", 1)
+    return Pin(repo, sha)
+
+
+def resolve(catalog: Path | None = None) -> PeerPin:
+    """The peer's pin, checked, through :func:`nexus_uav._src.peers.pins.resolve`; a checkout's pin
+    carries its checked-out commit.
 
     Args:
-        catalog: The project catalog the run resolved against, or ``None`` for the bundled one.
+        catalog: The project catalog the run resolved against, or ``None`` for no project.
+
+    Raises:
+        ValueError: The pin isn't in the form :func:`parse` takes.
     """
-    source = _SHIPPED_PIN
-    if catalog is not None and (candidate := Path(catalog).parent / PROJECT_PIN).is_file():
-        source = candidate
-    repo, sha = source.read_text().splitlines()[0].strip().split("@", 1)
-    return Pin(repo, sha)
+    pin = pins.resolve(NAME, catalog)
+    tree = parse(pin)
+    if isinstance(tree, Path):
+        head = subprocess.run(
+            ["git", "-C", str(tree), "rev-parse", "HEAD"], check=False, capture_output=True, text=True
+        )
+        pin = pin.model_copy(update={"commit": head.stdout.strip() or None})  # no commit outside git
+    return pin
 
 
 def _git(dest: Path, *args: str) -> None:
@@ -81,21 +115,21 @@ def fetch(dest: Path, *, url: str, sha: str) -> None:
         logger.info(f"patched {airframe.name} with {_MAG_PATCH} (interim, PX4 PR #27706)")
 
 
-def tree(catalog: Path | None = None, *, fetch_missing: bool = True) -> Path | None:
-    """The PX4 tree the controller flies: ``$PX4_DIR`` when set, else the pinned commit in the folder
-    the controller owns, fetched on first use.
+def tree(pin: PeerPin | None = None, *, fetch_missing: bool = True) -> Path | None:
+    """The PX4 tree the peer flies: the checkout ``pin`` names, or its pinned commit in the folder the
+    peer owns, fetched on first use.
 
     Args:
-        catalog: The project catalog the run resolved against, whose pin file wins over the shipped one.
+        pin: The peer's pin, from :func:`resolve`; ``None`` resolves it with no project catalog.
         fetch_missing: With ``False``, a pinned tree not yet on this machine is ``None`` rather than
             fetched: for a check that must use no network.
 
     Returns:
         The tree, or ``None`` when ``fetch_missing`` is off and no tree is on this machine.
     """
-    if env := os.environ.get("PX4_DIR"):
-        return Path(env)
-    p = pin(catalog)
+    p = parse(pin or resolve())
+    if isinstance(p, Path):
+        return p
     dest = Path.home() / ".cache" / "nexus" / "px4" / p.sha
     if not (dest / "Makefile").exists():
         if not fetch_missing:

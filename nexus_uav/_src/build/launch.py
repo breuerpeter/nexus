@@ -18,7 +18,9 @@ ends. A run whose override layer drops that declaration starts nothing, and the 
 instance 0's Hardware In The Loop (HIL) port for an autopilot started elsewhere.
 
 The build starts each peer from the class its peer mapping names: by default the real process, and
-in a test the peer's fake, which speaks the same link and starts no process.
+in a test the peer's fake, which speaks the same link and starts no process. Before any peer starts,
+it resolves and checks every peer's pin, through :mod:`nexus_uav._src.peers.pins`, and the receipt
+records the pin of each peer the run starts.
 """
 
 from __future__ import annotations
@@ -35,7 +37,11 @@ from nexus_uav._src.core import Loop
 from nexus_uav._src.core.ports import PortMap
 from nexus_uav._src.core.registry import Registry
 from nexus_uav._src.core.run_folder import run_folder
+from nexus_uav._src.peers import pins
+from nexus_uav._src.peers.kit import runner as kit
+from nexus_uav._src.peers.pins import PeerPin
 from nexus_uav._src.peers.px4_sitl import HIL_PORT, OFFBOARD_PORT
+from nexus_uav._src.peers.px4_sitl import checkout as px4_checkout
 from nexus_uav._src.physics import VehicleUsd
 from nexus_uav._src.rendering import rtx_renderer
 from nexus_uav._src.usd.reader import read_connections, read_declarations
@@ -153,7 +159,8 @@ def build_from_launch(
         ValueError: The vehicle declares no controller, two, one other than PX4, a PX4 schema on a
             prim that isn't a ``Scope`` or with no airframe, two estimators or one off its ``Scope``,
             a component schema that states no role or two, or the PX4 SITL peer on a prim with no PX4
-            schema, or ``peers`` names a peer the build doesn't know; raised before any peer starts.
+            schema, or ``peers`` names a peer the build doesn't know, or a pin file beside the catalog
+            names no peer, or a peer's pin isn't in its form; raised before any peer starts.
         FileNotFoundError: The launch names an override layer with no file behind it.
         KitPeerError: The vehicle declares RTX sensors and the Kit peer couldn't start.
     """
@@ -185,13 +192,26 @@ def build_from_launch(
         raise ValueError(
             f"{spec.prim}: {PX4_SCHEMA} authors no nexus:airframe; name the PX4 SITL airframe, such as astro_max"
         )
+    # Every pin file beside the catalog names a peer, and every peer's pin is in its form, before any
+    # peer starts, so a stale or broken pin file fails each run, not only the runs of its peer.
+    catalog_file = pathlib.Path(resolved.tested_config.catalog) if resolved.tested_config.catalog else None
+    pins.check(catalog_file, sorted(shipped))
+    peer_pins = {"px4_sitl": px4_checkout.resolve(catalog_file), "kit": kit.resolve(catalog_file)}
     # Every file the run writes lands in one folder: the recording and each peer's logs.
     logs = run_folder()
     # By now the run has fetched every asset it renders, so the Kit peer starts first and boots while
     # PX4 builds and the physics compiles; None for a vehicle that declares no RTX sensor.
     renderer_factory = rtx_renderer(
-        vehicle_usd, cfg, cache_dir=cache_dir, peer=peer_classes["kit"], components=components, log_dir=logs
+        vehicle_usd,
+        cfg,
+        cache_dir=cache_dir,
+        peer=peer_classes["kit"],
+        image=peer_pins["kit"].ref,
+        components=components,
+        log_dir=logs,
     )
+    started_names = [name for name, on in (("px4_sitl", px4_sitl), ("kit", renderer_factory is not None)) if on]
+    resolved.tested_config.peers = {name: peer_pins[name] for name in started_names}
     started: list = []
     try:
         # *This* is where the declared controller becomes an instance; the assembly that follows is
@@ -206,7 +226,9 @@ def build_from_launch(
         if px4_sitl:
             # The peer starts here, before the assembly: its start builds PX4 incrementally, which must
             # stay outside the sim's preroll window, GH #39, and PX4 boots while the physics compiles.
-            started.append(_start_px4(peer_classes["px4_sitl"], resolved, instance, controller.airframe, claim, logs))
+            started.append(
+                _start_px4(peer_classes["px4_sitl"], peer_pins["px4_sitl"], instance, controller.airframe, claim, logs)
+            )
 
         # output.log/view → the Logger, which writes the .rrd or serves :9876; neither → no recording.
         return build_loop(
@@ -255,16 +277,15 @@ def _ports(instance: int, peers: list) -> PortMap:
     return PortMap({"offboard": {"protocol": "udp", "port": OFFBOARD_PORT + instance, "system_id": instance + 1}})
 
 
-def _start_px4(cls: Callable, resolved: ResolvedLaunch, instance: int, airframe: str, claim: IO, log_dir: pathlib.Path):
-    """Start the PX4 SITL peer for this run from ``cls``: the catalog whose pin names the PX4 tree,
-    the vehicle's airframe, the run's instance and the lock that holds it, which the peer releases at
+def _start_px4(cls: Callable, pin: PeerPin, instance: int, airframe: str, claim: IO, log_dir: pathlib.Path):
+    """Start the PX4 SITL peer for this run from ``cls``: the pin that names the PX4 tree, the
+    vehicle's airframe, the run's instance and the lock that holds it, which the peer releases at
     its stop, a container name of this run's own, and the run's folder, ``log_dir``, which takes the
     peer's logs. The name carries the process and the instance, so two runs in one process on two
     instances keep both containers.
     """
-    catalog = resolved.tested_config.catalog
     peer = cls(
-        catalog=pathlib.Path(catalog) if catalog else None,
+        pin=pin,
         airframe=airframe,
         instance=instance,
         name=f"nexus-px4-{os.getpid()}-{instance}",

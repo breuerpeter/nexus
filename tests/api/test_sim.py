@@ -117,15 +117,14 @@ def test_sim_start_drives_setup_observes_and_stops(monkeypatch):
     assert fake.closed
 
 
-def test_sim_start_raises_if_lockstep_never_established(monkeypatch):
-    class _NeverLockstep(_FakeOrch):
+def test_sim_start_raises_if_the_run_ends_before_its_first_tick(monkeypatch):
+    class _EndsAtSetup(_FakeOrch):
         def step(self):
-            # The real _ticks() catches the preroll ConnectionError, runs its teardown and stops:
-            # the first step() reports the run has already ended: PX4 never connected on :4560.
+            # The first step() reports the run has already ended, with no error: a stop during setup.
             self.threads.append(threading.current_thread())
             return False
 
-    fake = _NeverLockstep()
+    fake = _EndsAtSetup()
     monkeypatch.setattr(sim_mod, "build_from_launch", lambda launch, **kw: fake)
     with pytest.raises(RuntimeError):
         with sim_mod.Sim("astro_max_base", scene="empty") as sim:

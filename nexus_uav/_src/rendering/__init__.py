@@ -13,10 +13,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
+from nexus_uav._src.config.catalog import catalog_path
 from nexus_uav._src.core import logger
 from nexus_uav._src.core.registry import Registry
 from nexus_uav._src.core.run_folder import run_folder
-from nexus_uav._src.peers.kit.runner import KitPeer
+from nexus_uav._src.peers.kit.runner import KitPeer, resolve
 from nexus_uav._src.vehicle.sensors.rtx_sensor import PEER
 
 from .link import KitRenderer
@@ -125,6 +126,7 @@ def rtx_renderer(
     *,
     cache_dir=None,
     peer: Callable = KitPeer,
+    image: str | None = None,
     components: Registry | None = None,
     log_dir: Path | None = None,
 ) -> RtxRendererFactory | None:
@@ -139,6 +141,8 @@ def rtx_renderer(
         cache_dir: The asset cache the run fetched into; ``None`` for the default.
         peer: The class that starts the Kit peer, or a callable that builds one: :class:`KitPeer`, or
             its fake in a test.
+        image: The image the Kit peer runs, its pin, from :func:`nexus_uav._src.peers.kit.runner.resolve`;
+            ``None`` resolves it against the catalog a run in the working folder finds.
         components: The registry that resolves the vehicle's schemas to classes; ``None`` takes the
             default one.
         log_dir: The run's folder, which takes Kit's console and its benchmark metrics; ``None``
@@ -169,7 +173,9 @@ def rtx_renderer(
     files = [usd, cfg.get("scene_usd_path")]
     roots = [Sdf.Layer.FindOrOpen(str(f)) for f in files]
     stacked = [root.ComputeAbsolutePath(sub) for root in roots for sub in root.subLayerPaths]
+    if image is None:
+        image = resolve(catalog_path()).ref
     log_dir = log_dir if log_dir is not None else run_folder()
-    started = peer([*files, *stacked], cache_dir=cache_dir or default_cache(), log_dir=log_dir)
+    started = peer([*files, *stacked], cache_dir=cache_dir or default_cache(), image=image, log_dir=log_dir)
     started.start()
     return RtxRendererFactory(started, log_dir=log_dir, components=components)

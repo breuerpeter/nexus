@@ -26,7 +26,7 @@ pytestmark = pytest.mark.xdist_group("px4_ports")
 def daemon(monkeypatch, tmp_path):
     """``build_from_launch`` starts the PX4 Software In The Loop (SITL) peer, which builds and runs PX4
     in docker. These tests exercise resolution and routing, so the docker daemon is a stand-in
-    that records what the build asks of it, and ``$PX4_DIR`` a stand-in tree, so nothing fetches.
+    that records what the build asks of it, and ``$NEXUS_PX4_SITL_REF`` a stand-in tree, so nothing fetches.
     """
     from docker.errors import NotFound
 
@@ -59,7 +59,7 @@ def daemon(monkeypatch, tmp_path):
     px4 = tmp_path / "px4"
     px4.mkdir()
     (px4 / "Makefile").write_text("px4_sitl:\n")
-    monkeypatch.setenv("PX4_DIR", str(px4))
+    monkeypatch.setenv("NEXUS_PX4_SITL_REF", str(px4))
     return runs
 
 

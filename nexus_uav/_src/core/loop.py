@@ -50,6 +50,13 @@ def _on_cuda() -> bool:
     return bool(wp.get_device().is_cuda)
 
 
+class SetupError(RuntimeError):
+    """The run's setup failed: a component never connected, never attached or never had its peer's first
+    answer. The message names the cause and the logs of the peers the run started, where the peer's own
+    error shows. A peer that stops answering after lockstep ends the run normally, with no error.
+    """
+
+
 def _instance(component) -> str:
     """A component's instance name, the leaf of its path: its ``name``, else its class's name."""
     return str(component.name or type(component).__name__)
@@ -188,7 +195,7 @@ class Loop:
                 after recording: an output-only hook for demos and tests to read the live state,
                 for example to capture a trajectory.
             preroll_timeout: Seconds to wait for a peer to dial in, and again for its first answer,
-                before raising ``ConnectionError``.
+                before raising ``SetupError``.
             exchange_timeout: Per-tick timeout in seconds for the blocking
                 ``controller.exchange`` in the steady loop.
             max_steps: Bound on control steps for the steady loop. ``None`` runs until
@@ -531,9 +538,9 @@ class Loop:
             self._attach(ring, tick, waiting)
             yield from self._loop(segments, graphs, tick, waiting)
         except ConnectionError as e:
-            logger.info(
-                str(e)
-            )  # the autopilot's disconnect: a run's normal end. A dying Kit peer raises KitPeerError, which ends the run with it
+            # The autopilot's disconnect after lockstep: a run's normal end. A failed setup raises SetupError, and a
+            # dying Kit peer KitPeerError, which each end the run with the error.
+            logger.info(str(e))
         finally:
             try:
                 if self.renderer is not None and hasattr(self.renderer, "close"):
@@ -555,6 +562,20 @@ class Loop:
                 self._close_components()
             finally:
                 self._stop_peers()
+
+    def _peer_logs(self) -> str:
+        """The files each peer the run started leaves, such as its console log, each after the peer's name,
+        as a clause to end an error with; empty for a run whose peers leave none. A peer's ``name`` and its
+        ``artifacts`` are optional, so a peer with no name goes by its class's, and an artifact the peer
+        didn't write, ``None``, names no file.
+        """
+        files = [
+            f"{getattr(peer, 'name', None) or type(peer).__name__}'s {key} {path}"
+            for peer in self.peers
+            for key, path in getattr(peer, "artifacts", dict)().items()
+            if path is not None
+        ]
+        return "; see " + ", ".join(files) if files else ""
 
     def _links_for(self, component) -> dict:
         """The link of each peer `component` requires, by the peer's name, which its ``connect`` takes.
@@ -651,7 +672,7 @@ class Loop:
         boot checks from its first stamp.
 
         Raises:
-            ConnectionError: A component never attached within ``preroll_timeout``.
+            SetupError: A component never attached within ``preroll_timeout``.
         """
         if not waiting:
             return
@@ -662,7 +683,7 @@ class Loop:
         deadline = time.monotonic() + self.preroll_timeout
         while not all(c.attached for c in waiting):
             if time.monotonic() > deadline:
-                raise ConnectionError(f"{names} did not attach within {self.preroll_timeout}s")
+                raise SetupError(f"{names} did not attach within {self.preroll_timeout}s{self._peer_logs()}")
             for st in polls:
                 st.run(tick)
         logger.info(f"{names} attached")
@@ -704,7 +725,8 @@ class Loop:
         stamps the RTF, so it runs whether the generator runs out or closes early on stop.
 
         Raises:
-            ConnectionError: A peer stopped answering, or gave no first answer within ``preroll_timeout``.
+            ConnectionError: A peer stopped answering after its first answer.
+            SetupError: A peer gave no first answer within ``preroll_timeout``.
         """
         count = 0
         t0 = time.monotonic()  # for the end-to-end RTF, sim-time advanced / wall-time, of the live run
@@ -764,7 +786,9 @@ class Loop:
                     names = " and ".join(_instance(c) for c in waiting)
                     if not answered:
                         if time.monotonic() > deadline:
-                            raise ConnectionError(f"{names} did not answer within {self.preroll_timeout}s")
+                            raise SetupError(
+                                f"{names} did not answer within {self.preroll_timeout}s{self._peer_logs()}"
+                            )
                         continue  # a preroll tick: the peer is still booting
                     prerolling = False
                     tick.timeout = self.exchange_timeout
@@ -781,6 +805,9 @@ class Loop:
         graph capture, runs on the first call; teardown runs automatically when the run ends.
         ``Sim.step`` drives this for every controller, PX4 included. Deterministic:
         no wall-clock.
+
+        Raises:
+            SetupError: The setup failed, for example a peer that never answered; teardown has run.
         """
         if self._ticks_iter is None:
             self._stepped = True
@@ -798,6 +825,9 @@ class Loop:
         Side effects only: advances the simulation and populates ``run_stats``. The same as stepping
         until :meth:`step` returns ``False``; every non-stepped run uses it: ``nexus run``, the
         examples' ``sim.run()``.
+
+        Raises:
+            SetupError: The setup failed, for example a peer that never answered; teardown has run.
         """
         while self.step():
             pass

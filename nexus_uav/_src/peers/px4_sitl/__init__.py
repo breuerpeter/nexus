@@ -1,7 +1,7 @@
 """The PX4 Software In The Loop (SITL) peer: one PX4 autopilot in a container.
 
 :mod:`.runner` starts and stops the container, :mod:`.checkout` fetches the PX4 tree from the pin,
-``px4.ref``, :mod:`.instance` claims the instance a run holds, :mod:`.fake` stands in for PX4 in a
+``pin.ref``, :mod:`.instance` claims the instance a run holds, :mod:`.fake` stands in for PX4 in a
 test, :mod:`.offboard` is the host end of the offboard link, which a script opens through
 ``nexus_uav.px4``, :mod:`.qgc_plan` reads the mission plans it uploads, and ``image/`` is the build
 context of the toolchain image.
