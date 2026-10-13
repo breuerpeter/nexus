@@ -48,17 +48,19 @@ the full flight stack.
 ## Installation
 
 The framework requires **Python 3.12**, **Linux**, and a **CUDA-capable GPU**. It ships
-on PyPI:
+on PyPI. Install it with `uv`, which fetches Python 3.12 if the machine lacks it.
+If you don't have `uv`, [install it](https://docs.astral.sh/uv/getting-started/installation/) first:
 
 ```bash
-pip install nexus-uav
+uv venv --python 3.12
+uv pip install nexus-uav
 ```
 
 Optional extras: `policy` adds PyTorch, `examples` adds jerk-limited trajectories,
 `acados` adds Nonlinear Model Predictive Control (NMPC) code generation, and `all` equals
 `policy` plus `examples`.
 
-Development uses [`uv`](https://docs.astral.sh/uv/):
+For development, clone the repo and sync it:
 
 ```bash
 git clone https://github.com/breuerpeter/nexus.git
