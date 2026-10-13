@@ -12,8 +12,8 @@ The framework requires **Python 3.12**, **Linux**, and a **CUDA-capable GPU**.
 
 ## Install
 
-From PyPI, with [`uv`](https://docs.astral.sh/uv/), which fetches Python 3.12 if the machine
-lacks it:
+From PyPI, with `uv`, which fetches Python 3.12 if the machine lacks it.
+If you don't have `uv`, [install it](https://docs.astral.sh/uv/getting-started/installation/) first:
 
 ```bash
 uv venv --python 3.12
