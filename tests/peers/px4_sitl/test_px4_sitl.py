@@ -94,7 +94,7 @@ def _peer(tree, tmp_path, **kw):
         "airframe": "astro_max",
         "instance": 0,
         "name": "px4-under-test",
-        "log_path": str(tmp_path / "px4.log"),
+        "log_dir": tmp_path / "run",
     }
     return Px4Sitl(**{**args, **kw})
 
@@ -103,7 +103,8 @@ def test_start_runs_px4_with_the_runs_instance_and_airframe(daemon, tree, tmp_pa
     """The container definition is a contract, field by field. The peer runs PX4's binary itself,
     the way PX4's multi-instance script does, since ``make px4_sitl none_<airframe>`` can't take an
     instance; ``-d`` runs with no pxh shell, which at the end of an unattended stdin spin-loops
-    printing its prompt and starves PX4.
+    printing its prompt and starves PX4. The run's folder mounts over PX4's log root in its
+    instance's folder, so PX4 writes the run's ULog there and leaves none in the tree.
     """
     _peer(tree, tmp_path, instance=2).start()
 
@@ -116,7 +117,10 @@ def test_start_runs_px4_with_the_runs_instance_and_airframe(daemon, tree, tmp_pa
         "user": f"{os.getuid()}:{os.getgid()}",
         "environment": {"HOME": "/tmp", "PX4_SIM_MODEL": "none_astro_max"},
         "working_dir": str(tree),
-        "volumes": {str(tree): {"bind": str(tree), "mode": "rw"}},
+        "volumes": {
+            str(tree): {"bind": str(tree), "mode": "rw"},
+            str(tmp_path / "run" / "ulog"): {"bind": str(tree / "build/px4_sitl_default/rootfs/2/log"), "mode": "rw"},
+        },
         "auto_remove": True,
         "network_mode": "host",
         "labels": {"nexus.peer": "px4", "nexus.px4.instance": "2", "nexus.owner": str(os.getpid())},

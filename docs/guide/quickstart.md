@@ -57,7 +57,7 @@ Fly the sampling Model Predictive Control (MPC) obstacle slalom, then open its r
 
 ```bash
 uv run -m nexus_uav.examples sampling_mpc
-uv run rerun ~/.cache/nexus/logs/*.rrd
+uv run rerun ~/.cache/nexus/logs/*/nexus.rrd
 ```
 
 List every example with `uv run -m nexus_uav.examples --list`. Each example is zero-arg, its

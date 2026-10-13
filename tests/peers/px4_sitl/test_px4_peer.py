@@ -395,7 +395,48 @@ def test_the_peers_console_log_stays_in_the_runs_artifacts(daemon, assembly, cat
         pass
 
     log = Path(sim.artifacts()["px4_log"]).name
-    assert log.startswith("px4-") and log.endswith(".log"), log
+    assert log == "px4.log", log
+
+
+def test_a_run_whose_px4_wrote_no_ulog_reports_none_though_the_tree_holds_an_earlier_one(
+    daemon, assembly, tmp_path, monkeypatch
+):
+    """A run whose PX4 wrote no ULog reports `ulog` as `None`, though the PX4 tree holds an earlier run's ULog.
+
+    Given a stand-in docker daemon and a PX4 tree whose log folder holds an earlier `.ulg` for every
+    instance the run could take, when a run enters and closes, then `sim.artifacts()["ulog"]` is `None`.
+    """
+    rootfs = Path(os.environ["NEXUS_PX4_SITL_REF"]) / "build" / "px4_sitl_default" / "rootfs"
+    an_hour_ago = time.time() - 3600
+    for instance in range(256):
+        earlier = rootfs / str(instance) / "log" / "2026-01-01" / "00_00_00.ulg"
+        earlier.parent.mkdir(parents=True)
+        earlier.write_bytes(b"ULog\x01\x12\x35")
+        os.utime(earlier, (an_hour_ago, an_hour_ago))
+    project = tmp_path / "nexus.catalog.yaml"
+    project.write_text(yaml.safe_dump({"vehicles": _vehicle(tmp_path)}))
+
+    with Sim("astro", scene="empty", catalog=str(project), device="cpu") as sim:
+        pass
+
+    assert sim.artifacts()["ulog"] is None
+
+
+def test_a_run_whose_px4_the_sim_did_not_start_has_no_ulog_entry(daemon, assembly, tmp_path):
+    """A run whose PX4 the sim didn't start has no `ulog` entry, as it has no `px4_log`.
+
+    Given a vehicle layer that drops the PX4 peer, when the run enters and closes, then `sim.artifacts()`
+    holds neither `ulog` nor `px4_log`.
+    """
+    project = tmp_path / "nexus.catalog.yaml"
+    project.write_text(yaml.safe_dump({"vehicles": _vehicle(tmp_path)}))
+    layer = tmp_path / "override.usda"
+    layer.write_text(_DROP_PX4_SITL_FROM_SCOPE)
+
+    with Sim("astro", scene="empty", catalog=str(project), layer=str(layer), device="cpu") as sim:
+        pass
+
+    assert {"ulog", "px4_log"} & sim.artifacts().keys() == set(), sim.artifacts()
 
 
 def test_the_px4_sitl_image_builds_once_from_the_packages_dockerfile(daemon, run):
@@ -861,10 +902,10 @@ def test_a_run_skips_an_instance_another_runs_claim_holds(daemon, assembly, tmp_
 
 # --- a run whose PX4 never starts lockstep, #129 ---------------------------------------------------
 
-# The PX4 console log a run names, `~/.cache/nexus/logs/px4-*.log`, whichever home folder it expands.
-_PX4_LOG = re.compile(r"\.cache/nexus/logs/px4-\S+\.log")
+# The PX4 console log a run names, `~/.cache/nexus/logs/<run>/px4.log`, whichever home folder it expands.
+_PX4_LOG = re.compile(r"\.cache/nexus/logs/[^/\s]+/px4\.log")
 # The PX4 peer a run names, its container `nexus-px4-<process id>-<instance>`, then its console log.
-_PX4_PEER_LOG = re.compile(r"nexus-px4-\d+-\d+'s px4_log \S*\.cache/nexus/logs/px4-\S+\.log")
+_PX4_PEER_LOG = re.compile(r"nexus-px4-\d+-\d+'s px4_log \S*\.cache/nexus/logs/[^/\s]+/px4\.log")
 
 
 @pytest.fixture
@@ -980,7 +1021,7 @@ def test_a_run_whose_px4_never_answers_names_the_px4_log(daemon, brief_preroll, 
     """The failure's message names the peer that never answered and the peer's console log.
 
     Given a PX4 run whose PX4 stand-in never dials in, when it fails, then its last line names the
-    PX4 peer and its `px4_log` path, `~/.cache/nexus/logs/px4-*.log`.
+    PX4 peer and its `px4_log` path, `~/.cache/nexus/logs/<run>/px4.log`.
     """
     vehicle = sv.vehicle(tmp_path, px4=True)
 
@@ -1045,6 +1086,6 @@ def test_a_failed_start_closes_the_recording_and_stops_px4(daemon, brief_preroll
 
     _nexus_run(monkeypatch, "--log", "--vehicle", vehicle, "--scene", sv.SCENE)
 
-    rrds = list((tmp_path / "home" / ".cache" / "nexus" / "logs").glob("nexus-*.rrd"))
+    rrds = list((tmp_path / "home" / ".cache" / "nexus" / "logs").glob("*/nexus.rrd"))
     started = [r["name"] for r in daemon.runs if r.get("detach", True)]
     assert ([rows(str(rrd), POSITION) for rrd in rrds], daemon.removed) == ([1], started)

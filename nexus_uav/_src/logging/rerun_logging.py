@@ -35,7 +35,6 @@ import logging
 import os
 import queue
 import threading
-import time
 
 import numpy as np
 import rerun as rr
@@ -92,7 +91,9 @@ def _series_names(field: str, width: int) -> list[str]:
 
 
 def _default_rrd_path() -> str:
-    return os.path.expanduser(f"~/.cache/nexus/logs/nexus-{time.strftime('%Y%m%d-%H%M%S')}.rrd")
+    from nexus_uav._src.core.run_folder import run_folder
+
+    return str(run_folder() / "nexus.rrd")
 
 
 def recording_path(name: str) -> str:
@@ -398,8 +399,8 @@ class Logger:
     base: the index of the vehicle's base body in ``model``: its pose sits at ``sim/vehicle/body``
         and its history draws the flown path.
     serve: ``True`` serves live on :9876; ``False`` writes the ``.rrd``.
-    record_to_rrd: the ``.rrd`` path when ``serve=False``; defaults to a timestamped path
-        under ``~/.cache/nexus/logs/``.
+    record_to_rrd: the ``.rrd`` path when ``serve=False``; defaults to ``nexus.rrd`` in a new run
+        folder under ``~/.cache/nexus/logs/``.
     blueprint: a Rerun ``rrb.Blueprint`` for the viewer layout; the default is the standard
         scene+events layout. Pass a custom one to, for example, show only the 3D scene without the
         event-log panel: ``scene_only_blueprint``, which the blueprint-shape tests use; examples run

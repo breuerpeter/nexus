@@ -18,12 +18,12 @@ import os
 import socket
 import sys
 import tempfile
-import time
 import zipfile
 from pathlib import Path
 
 from nexus_uav._src.assets.resolver import fetch
 from nexus_uav._src.core import logger
+from nexus_uav._src.core.run_folder import run_folder
 from nexus_uav._src.peers import (
     LABEL,  # a Kit peer carries nexus.peer=kit, so a runner can find a leftover one
     pins,
@@ -196,12 +196,15 @@ class KitPeer:
         files: Every USD file the run renders, vehicle and scene: the peer reads each at its host path.
         cache_dir: The asset cache the run fetched into; mounted whole when a file lies inside it.
         image: The image the container runs, from :func:`resolve`.
+        log_dir: The run's folder: Kit's console streams to ``kit.log`` there, and Kit writes its
+            ``--benchmark`` metrics there. ``None`` takes a new run folder.
     """
 
-    def __init__(self, files: list, *, cache_dir, image: str):
+    def __init__(self, files: list, *, cache_dir, image: str, log_dir: Path | None = None):
         self._files = [Path(f).resolve() for f in files if f]
         self._cache_dir = Path(cache_dir).resolve()
         self.image = image
+        self.log_dir = Path(log_dir) if log_dir is not None else run_folder()
         self.name = f"nexus-kit-{os.getpid()}"
         self.port: int | None = None
         self.log_path: Path | None = None
@@ -235,13 +238,12 @@ class KitPeer:
             raise
         except RuntimeError as exc:
             raise KitPeerError(f"the RTX sensors render in a Kit container, but {exc}") from exc
-        logs = Path.home() / ".cache" / "nexus" / "logs"
-        logs.mkdir(parents=True, exist_ok=True)
+        self.log_dir.mkdir(parents=True, exist_ok=True)
         volumes.update(self._read_mounts())
-        volumes[str(logs)] = {"bind": str(logs), "mode": "rw"}  # the --benchmark JSON beside the run's .rrd
+        volumes[str(self.log_dir)] = {"bind": str(self.log_dir), "mode": "rw"}  # the --benchmark JSON
         # The ion token rides the setup message, never the environment.
         self.port = _free_port()
-        self.log_path = logs / f"console-{time.strftime('%Y%m%d-%H%M%S')}.log"
+        self.log_path = self.log_dir / "kit.log"
         try:
             self._container = run_container(
                 image=image,

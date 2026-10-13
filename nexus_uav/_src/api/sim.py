@@ -439,8 +439,8 @@ class Sim:
         """Return the artifacts produced by this run.
 
         The Rerun ``.rrd`` this run wrote, merged with what every component and every peer of the run
-        contributes through its ``artifacts()``: PX4's controller names its ``.ulg``, the PX4 peer its console
-        log. Stays generic: it names no artifact itself.
+        contributes through its ``artifacts()``: the PX4 peer names its console log and its ``.ulg``. Stays
+        generic: it names no artifact itself.
 
         Returns:
             dict: At least ``{"rrd": <path or None>}``, the ``.rrd`` path, or ``None``

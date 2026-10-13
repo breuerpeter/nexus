@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import os
 import pathlib
-import time
 from collections.abc import Callable, Mapping
 from typing import IO
 
@@ -37,6 +36,7 @@ from nexus_uav._src.config import Catalog, LaunchConfig, Px4Spec, ResolvedLaunch
 from nexus_uav._src.core import Loop
 from nexus_uav._src.core.ports import PortMap
 from nexus_uav._src.core.registry import Registry
+from nexus_uav._src.core.run_folder import run_folder
 from nexus_uav._src.peers import pins
 from nexus_uav._src.peers.kit import runner as kit
 from nexus_uav._src.peers.pins import PeerPin
@@ -197,6 +197,8 @@ def build_from_launch(
     catalog_file = pathlib.Path(resolved.tested_config.catalog) if resolved.tested_config.catalog else None
     pins.check(catalog_file, sorted(shipped))
     peer_pins = {"px4_sitl": px4_checkout.resolve(catalog_file), "kit": kit.resolve(catalog_file)}
+    # Every file the run writes lands in one folder: the recording and each peer's logs.
+    logs = run_folder()
     # By now the run has fetched every asset it renders, so the Kit peer starts first and boots while
     # PX4 builds and the physics compiles; None for a vehicle that declares no RTX sensor.
     renderer_factory = rtx_renderer(
@@ -206,6 +208,7 @@ def build_from_launch(
         peer=peer_classes["kit"],
         image=peer_pins["kit"].ref,
         components=components,
+        log_dir=logs,
     )
     started_names = [name for name, on in (("px4_sitl", px4_sitl), ("kit", renderer_factory is not None)) if on]
     resolved.tested_config.peers = {name: peer_pins[name] for name in started_names}
@@ -224,7 +227,7 @@ def build_from_launch(
             # The peer starts here, before the assembly: its start builds PX4 incrementally, which must
             # stay outside the sim's preroll window, GH #39, and PX4 boots while the physics compiles.
             started.append(
-                _start_px4(peer_classes["px4_sitl"], peer_pins["px4_sitl"], instance, controller.airframe, claim)
+                _start_px4(peer_classes["px4_sitl"], peer_pins["px4_sitl"], instance, controller.airframe, claim, logs)
             )
 
         # output.log/view → the Logger, which writes the .rrd or serves :9876; neither → no recording.
@@ -248,6 +251,7 @@ def build_from_launch(
             # simulation" per config.receipt, so a recording says what produced it.
             settings=resolved.tested_config.model_dump(mode="json"),
             components=components,
+            record_to_rrd=str(logs / "nexus.rrd"),
         )
     except BaseException:
         # The loop never took the peers over, so their containers stop here.
@@ -273,22 +277,20 @@ def _ports(instance: int, peers: list) -> PortMap:
     return PortMap({"offboard": {"protocol": "udp", "port": OFFBOARD_PORT + instance, "system_id": instance + 1}})
 
 
-def _start_px4(cls: Callable, pin: PeerPin, instance: int, airframe: str, claim: IO):
+def _start_px4(cls: Callable, pin: PeerPin, instance: int, airframe: str, claim: IO, log_dir: pathlib.Path):
     """Start the PX4 SITL peer for this run from ``cls``: the pin that names the PX4 tree, the
     vehicle's airframe, the run's instance and the lock that holds it, which the peer releases at
-    its stop, and a container name and console log of this run's own. The name carries the process
-    and the instance, so two runs in one process on two instances keep both containers.
+    its stop, a container name of this run's own, and the run's folder, ``log_dir``, which takes the
+    peer's logs. The name carries the process and the instance, so two runs in one process on two
+    instances keep both containers.
     """
-    from nexus_uav._src.peers.px4_sitl.runner import PX4_LOG_DIR
-
-    os.makedirs(PX4_LOG_DIR, exist_ok=True)
     peer = cls(
         pin=pin,
         airframe=airframe,
         instance=instance,
         name=f"nexus-px4-{os.getpid()}-{instance}",
         claim=claim,
-        log_path=os.path.join(PX4_LOG_DIR, f"px4-{time.strftime('%Y%m%d-%H%M%S')}-{os.getpid()}.log"),
+        log_dir=log_dir,
     )
     peer.start()
     return peer

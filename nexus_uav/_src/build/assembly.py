@@ -80,12 +80,14 @@ def assemble(
     debug: bool = False,
     components=None,
     settings: dict | None = None,
+    record_to_rrd: str | None = None,
 ) -> Assembly:
     """Assemble the shared core components around the constructed ``physics`` and the
     caller-supplied ``controller``; which controller flies is the launch layer's decision.
     ``components`` is the registry that resolves each sensor's schema, ``None`` for the default one.
     ``settings`` is the run's effective configuration for the viewer's Settings tab; the launch
-    glue passes the tested-config receipt.
+    glue passes the tested-config receipt. ``record_to_rrd`` is where the recording goes when the run
+    writes one, ``None`` for a new run folder of its own.
     """
     from nexus_uav._src.vehicle.sensors.declared import build_sensors, sensor_specs
 
@@ -109,7 +111,10 @@ def assemble(
         try:
             from nexus_uav._src.logging import build_logger
 
-            sink = build_logger(physics.model, viewer=viewer, base=physics.base_index, debug=debug, settings=settings)
+            sink = build_logger(
+                physics.model, viewer=viewer, base=physics.base_index, record_to_rrd=record_to_rrd, debug=debug,
+                settings=settings,
+            )  # fmt: skip
         except Exception as exc:
             from nexus_uav._src.core import logger
 
@@ -178,6 +183,7 @@ def build_loop(
     max_steps: int | None = None,
     settings: dict | None = None,
     components=None,
+    record_to_rrd: str | None = None,
 ) -> Loop:
     """The core loop: the one ``NewtonPhysics`` + the one shared assembly around the
     caller-supplied ``controller`` and ``estimator``, ``None`` for none; a run differs only in its renderer.
@@ -193,6 +199,8 @@ def build_loop(
     connection between the two components, or between the reader and the plant's output.
     ``settings`` is the run's effective configuration, which the loop keeps for a caller to read back
     and the logger shows in the viewer's Settings tab; the run's builder passes the tested-config receipt.
+    ``record_to_rrd`` is where the recording goes when the run writes one: the run's builder passes
+    ``nexus.rrd`` in the run's folder, and ``None`` takes a new run folder.
     ``preroll_timeout`` covers the boot of a controller with a peer, since an autopilot in a container
     needs a generous window.
 
@@ -208,6 +216,7 @@ def build_loop(
     a = assemble(
         physics, vehicle_usd, cfg,
         controller=controller, rerun=rerun, viewer=viewer, debug=debug, components=components, settings=settings,
+        record_to_rrd=record_to_rrd,
     )  # fmt: skip
     if renderer_factory:
         rtx = [s for s in a.sensors if s.requires]

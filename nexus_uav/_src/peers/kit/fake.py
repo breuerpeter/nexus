@@ -53,6 +53,7 @@ class KitFake:
         *,
         cache_dir=None,
         image: str | None = None,
+        log_dir=None,
         error_after: int | None = None,
         error: str = "the fake Kit peer failed",
         points=(),

@@ -566,12 +566,14 @@ class Loop:
     def _peer_logs(self) -> str:
         """The files each peer the run started leaves, such as its console log, each after the peer's name,
         as a clause to end an error with; empty for a run whose peers leave none. A peer's ``name`` and its
-        ``artifacts`` are optional, so a peer with no name goes by its class's.
+        ``artifacts`` are optional, so a peer with no name goes by its class's, and an artifact the peer
+        didn't write, ``None``, names no file.
         """
         files = [
             f"{getattr(peer, 'name', None) or type(peer).__name__}'s {key} {path}"
             for peer in self.peers
             for key, path in getattr(peer, "artifacts", dict)().items()
+            if path is not None
         ]
         return "; see " + ", ".join(files) if files else ""
 

@@ -204,8 +204,8 @@ Observability is cross-cutting, split into a **write** side and a **read** side:
   block as time-series entities at `sim/<key>/<field>`, and the scene's poses with it. So you can
   inspect the whole history in the viewer's debug tabs.
 
-Each PX4 run also produces PX4's native `.ulg` flight log alongside the `.rrd`, both surfaced as run
-artifacts.
+Each PX4 run also produces PX4's native `.ulg` flight log in the run's folder beside the `.rrd`, both
+surfaced as run artifacts.
 
 ## Configuration and vehicles
 

@@ -1,5 +1,5 @@
 """The PX4 controller's end of the Hardware In The Loop (HIL) link: it listens on the port the run
-gives it, addresses the system id the run gives it, carries the ULog artifact, owns no peer, and marks each
+gives it, addresses the system id the run gives it, owns no peer, and marks each
 sensor's fields as updated only on a new sample of it.
 """
 
@@ -166,14 +166,6 @@ def test_connect_addresses_the_runs_px4_system_id(bind):
     c = ctrl.Px4MavlinkController(target_system=4)
     c.connect({})
     assert c.mav.target_system == 4
-
-
-def test_artifacts_carry_the_ulog_and_nothing_of_the_peer(tmp_path):
-    """The console log is the peer's artifact: the run merges it, so a controller with no peer, an
-    external autopilot, contributes what's its own.
-    """
-    c = ctrl.Px4MavlinkController(ulog_dir=str(tmp_path))
-    assert c.artifacts() == {"ulog": None}
 
 
 def test_close_closes_the_link_and_tolerates_a_closed_one():
