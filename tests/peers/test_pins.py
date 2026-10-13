@@ -332,28 +332,31 @@ def test_a_pin_file_that_names_no_peer_fails_the_run_before_any_peer_starts(daem
     assert ([s in message for s in ("nexus.px4.ref", "px4_sitl", "kit")], daemon.runs) == ([True, True, True], [])
 
 
-@pytest.mark.parametrize("text", ["example/px4\n", ""], ids=["no-at", "empty"])
-def test_a_pin_not_in_its_peers_form_fails_the_run_naming_the_source_and_the_form(daemon, tmp_path, monkeypatch, text):
+@pytest.mark.parametrize(
+    ("source", "text"),
+    [("file", "example/px4\n"), ("file", ""), ("variable", "")],
+    ids=["no-at", "empty", "empty-variable"],
+)
+def test_a_pin_not_in_its_peers_form_fails_the_run_naming_the_source_and_the_form(
+    daemon, tmp_path, monkeypatch, source, text
+):
     """A pin file or variable not in its peer's form fails the run, naming the source and the form it
     expects.
 
-    Given a `nexus.px4_sitl.ref` with no `@`, and separately an empty one, when a PX4 run builds, then it
-    raises a `ValueError` naming the file and `repo@sha`.
+    Given a `nexus.px4_sitl.ref` with no `@`, separately an empty one, and separately an empty
+    `NEXUS_PX4_SITL_REF`, when a PX4 run builds, then it raises a `ValueError` naming the file or the
+    variable, and `repo@sha`.
     """
-    project = _project(tmp_path, monkeypatch, **{"nexus.px4_sitl.ref": text})
+    if source == "file":
+        named = str(_project(tmp_path, monkeypatch, **{"nexus.px4_sitl.ref": text}) / "nexus.px4_sitl.ref")
+    else:
+        monkeypatch.setenv("NEXUS_PX4_SITL_REF", text)
+        named = "NEXUS_PX4_SITL_REF"
 
     outcome = _run(tmp_path, peers={"px4_sitl": Px4Fake})
 
     error = outcome["error"]
-    assert (
-        isinstance(error, ValueError),
-        str(project / "nexus.px4_sitl.ref") in str(error),
-        "repo@sha" in str(error),
-    ) == (
-        True,
-        True,
-        True,
-    ), error
+    assert (isinstance(error, ValueError), named in str(error), "repo@sha" in str(error)) == (True, True, True), error
 
 
 def test_a_run_that_starts_no_kit_peer_records_no_kit_pin(daemon, tmp_path):
