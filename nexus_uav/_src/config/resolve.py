@@ -12,7 +12,7 @@ import pathlib
 
 from nexus_uav._src.core import logger
 
-from .catalog import Catalog, CatalogError, NoMatchError, VehicleVariant, catalog_path, load_catalog
+from .catalog import Catalog, CatalogError, CatalogLayer, NoMatchError, VehicleVariant, catalog_layers, load_layers
 from .models import AssetRef, LaunchConfig
 from .receipt import ResolvedLaunch, TestedConfig
 
@@ -92,7 +92,7 @@ def resolve(
     fetch: bool = True,
     cache_dir: str | pathlib.Path | None = None,
 ) -> ResolvedLaunch:
-    """Resolve *launch* against *catalog*, which defaults to the bundled one.
+    """Resolve *launch* against *catalog*, which defaults to the catalogs :func:`.catalog_layers` lists for ``launch.catalog``.
 
     With ``fetch=True``, the default, the resolver downloads and sha-verifies every ``{url, sha256}``
     asset into the local cache and returns its path: the vehicle USD and the scene USD.
@@ -101,13 +101,13 @@ def resolve(
     the device the run picks, since that needs Warp, which a caller that only wants an asset path
     never starts.
     """
-    # A caller that hands over a Catalog owns it; otherwise the run finds its own catalog and says
-    # which one it flew, so a recording beside it answers what produced it.
-    source = None
+    # A caller that hands over a Catalog owns it; otherwise the run finds its own catalogs and says
+    # which ones it flew, so a recording beside it answers whose entries produced it.
+    layers: list[CatalogLayer] = []
     if catalog is None:
-        source = catalog_path(launch.catalog)
-        catalog = load_catalog(source)
-        logger.info(f"catalog: {source}")
+        layers = catalog_layers(launch.catalog)
+        catalog = load_layers(layers)
+        logger.info(f"catalogs: {', '.join(str(layer.path) for layer in layers)}")
 
     if launch.vehicle is None:
         raise NoMatchError(f"the launch names no vehicle; name one of {list(catalog.vehicles)}")
@@ -155,7 +155,7 @@ def resolve(
         scn_path = _stack(layer[0], layer[1].sha256, pathlib.Path(scn_path), scene.usd.sha256, cache_dir)
     tested = TestedConfig(
         vehicle=str(local) if local is not None else launch.vehicle,
-        catalog=str(source) if source is not None else None,
+        catalogs=[str(layer.path) for layer in layers],
         vehicle_usd=variant.usd,
         layer=layer[1] if layer is not None else None,
         scene=scene_id,
@@ -165,6 +165,7 @@ def resolve(
     )
     return ResolvedLaunch(
         tested_config=tested,
+        layers=layers,
         vehicle_usd_path=str(veh_path) if veh_path is not None else None,
         scene_usd_path=str(scn_path) if scn_path is not None else None,
     )

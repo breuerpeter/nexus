@@ -94,10 +94,10 @@ class LaunchConfig(_Base):
     ``None`` until set; a launch that still names none fails to resolve.
     """
     catalog: str | None = None
-    """Path to the catalog that extends the bundled one for this run, the ``--catalog`` value.
+    """Path to the catalog that extends the bundled and installed ones for this run, the ``--catalog`` value.
 
     ``None`` takes the nearest ``nexus.catalog.yaml`` in the working directory or a directory over
-    it, and only the catalog bundled in the wheel when no directory holds one.
+    it, and only the bundled and installed catalogs when no directory holds one.
     """
     scene: str | None = None
     """Name of the static scene to stand up, keyed into the catalog's ``scenes``, or a local

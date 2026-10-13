@@ -94,7 +94,7 @@ The project's name takes three forms, each for one kind of thing:
 |---|---|---|
 | `nexus-uav` | The distribution on PyPI | `uv pip install nexus-uav` |
 | `nexus_uav` | The Python import package and its folder: every name Python resolves | `import nexus_uav as nx`, `nexus_uav/_src/` |
-| `nexus` | The project, and every name outside Python's import system | the `nexus` command, the `nexus:` USD attributes, the `nexus.registry` entry-point group, the `nexus` logger, the `nexus.peer` Docker label, `nexus.catalog.yaml`, `~/.cache/nexus` |
+| `nexus` | The project, and every name outside Python's import system | the `nexus` command, the `nexus:` USD attributes, the `nexus.registry` and `nexus.catalog` entry-point groups, the `nexus` logger, the `nexus.peer` Docker label, `nexus.catalog.yaml`, `~/.cache/nexus` |
 
 The reinforcement learning project follows the same split: `nexus-rl` is its folder and project, and
 `nexus_rl` is its import package.

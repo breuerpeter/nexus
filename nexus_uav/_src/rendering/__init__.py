@@ -13,7 +13,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from nexus_uav._src.config.catalog import catalog_path
+from nexus_uav._src.config.catalog import catalog_layers
 from nexus_uav._src.core import logger
 from nexus_uav._src.core.registry import Registry
 from nexus_uav._src.core.run_folder import run_folder
@@ -174,7 +174,7 @@ def rtx_renderer(
     roots = [Sdf.Layer.FindOrOpen(str(f)) for f in files]
     stacked = [root.ComputeAbsolutePath(sub) for root in roots for sub in root.subLayerPaths]
     if image is None:
-        image = resolve(catalog_path()).ref
+        image = resolve(catalog_layers()).ref
     log_dir = log_dir if log_dir is not None else run_folder()
     started = peer([*files, *stacked], cache_dir=cache_dir or default_cache(), image=image, log_dir=log_dir)
     started.start()

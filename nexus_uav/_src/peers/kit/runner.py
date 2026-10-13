@@ -19,7 +19,9 @@ import socket
 import sys
 import tempfile
 import zipfile
+from collections.abc import Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from nexus_uav._src.assets.resolver import fetch
 from nexus_uav._src.core import logger
@@ -30,6 +32,9 @@ from nexus_uav._src.peers import (
 )
 from nexus_uav._src.peers.containers import client, run_container, stop_container
 from nexus_uav._src.peers.pins import PeerPin
+
+if TYPE_CHECKING:
+    from nexus_uav._src.config.catalog import CatalogLayer
 
 KIT_DIR = Path(__file__).with_name("peer-src")
 NAME = "kit"  # the peer's folder name, which names its pin file and its variable
@@ -54,18 +59,18 @@ class KitPeerError(RuntimeError):
     """The Kit render peer couldn't start, or died mid-flight; the message names the cause."""
 
 
-def resolve(catalog: Path | None = None) -> PeerPin:
+def resolve(layers: Sequence[CatalogLayer] = ()) -> PeerPin:
     """The image the peer runs, checked, through :func:`nexus_uav._src.peers.pins.resolve`: the shipped
-    ``pin.ref`` names NVIDIA's Isaac Sim, and a project's ``nexus.kit.ref`` or ``$NEXUS_KIT_REF``
-    names another, a local tag among them.
+    ``pin.ref`` names NVIDIA's Isaac Sim, and a package's or a project's ``nexus.kit.ref`` or
+    ``$NEXUS_KIT_REF`` names another, a local tag among them.
 
     Args:
-        catalog: The project catalog the run resolved against, or ``None`` for no project.
+        layers: The catalog layers the run loaded, in load order; none for a run handed its catalog.
 
     Raises:
-        ValueError: The pin names no image; the message names its source.
+        ValueError: The pin names no image, or two installed packages pin it; the message names its source.
     """
-    pin = pins.resolve(NAME, catalog)
+    pin = pins.resolve(NAME, layers)
     if not pin.ref or any(c.isspace() for c in pin.ref):
         raise ValueError(
             f"{pin.source}: the Kit pin {pin.ref!r} is no image reference, such as nvcr.io/nvidia/isaac-sim:6.0.1"

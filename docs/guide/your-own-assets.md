@@ -11,22 +11,52 @@ catalog beside it, with no fork of this one and no patch on top of it.
 
 ## How a run finds its catalog
 
-A run always loads the catalog bundled in the package. It then looks for a catalog of your own, in
-order, first hit wins:
+A run loads its catalogs in layers, each over the ones before it:
 
-1. the path a run names: `nexus run --vehicle <name> --scene <name> --catalog <path>`, or
-   `Sim("<name>", scene="<name>", catalog=<path>)` in a script
-2. the nearest **`nexus.catalog.yaml`** in the working directory or a directory over it, the same
-   walk up that `uv`, `ruff` and `pytest` do for their own files
+1. the catalog bundled in the package
+2. the catalog of each installed package that adds one, see
+   [A package that adds a catalog](#a-package-that-adds-a-catalog)
+3. a project catalog of your own, the first hit of:
+    1. the path a run names: `nexus run --vehicle <name> --scene <name> --catalog <path>`, or
+       `Sim("<name>", scene="<name>", catalog=<path>)` in a script
+    2. the nearest **`nexus.catalog.yaml`** in the working directory or a directory over it, the same
+       walk up that `uv`, `ruff` and `pytest` do for their own files
 
-Your catalog extends the bundled one, so it lists only what you add, and a run can still fly every
-bundled vehicle and scene. A name that both catalogs define takes your entry, and the load logs a
+Each catalog extends the layers below it, so it lists only what it adds, and a run can still fly every
+bundled vehicle and scene. A name that two layers define takes the upper layer's entry, and the load logs a
 warning with the name and both hashes. That's how you pin a bundled asset to another version on
-purpose, and how a stale copy of a bundled entry shows up. A catalog holds no defaults: every run
-names its vehicle and its scene, `nexus run --vehicle my_quad --scene empty` or
+purpose, and how a stale copy of an entry shows up. Two installed packages that define one name fail
+the load, since no order between them means anything. A catalog
+holds no defaults: every run names its vehicle and its scene, `nexus run --vehicle my_quad --scene empty` or
 `Sim("my_quad", scene="empty")`, and a catalog that still carries a `defaults` block fails to load.
-Every run names the catalog it loaded in its first log line and records the path in its tested-config receipt, so a
-recording says which catalog produced it.
+Every run names the catalogs it loaded in its first log line. Its tested-config receipt records their paths, in load order, under
+`catalogs`, so a recording says whose entries produced it.
+
+## A package that adds a catalog
+
+A package installed beside the framework adds its catalog on install, the way it adds its
+[components](your-own-component.md#the-registration). One entry in the `nexus.catalog` group of its
+`pyproject.toml` names the package, and the framework reads `nexus.catalog.yaml` from that package's
+folder:
+
+```toml
+[project.entry-points."nexus.catalog"]
+my_drones = "my_drones"
+```
+
+```text
+my_drones/
+├── __init__.py
+├── nexus.catalog.yaml     # the vehicles and scenes the package adds
+└── nexus.px4_sitl.ref     # optional: the PX4 tree its vehicles fly
+```
+
+Once installed, a script names a vehicle of the package from any directory, with no catalog path. An
+entry point whose package holds no `nexus.catalog.yaml` fails the load. The package ships the catalog
+file in its wheel as package data. A pin file beside it, such as `nexus.px4_sitl.ref`, pins a peer as a
+project's does, and a project's own pin file overrides it, see [PX4 as a peer](running.md#px4-as-a-peer).
+Two installed packages that pin one peer fail the run unless a project's file or the peer's variable
+picks the pin.
 
 ## What a catalog looks like
 

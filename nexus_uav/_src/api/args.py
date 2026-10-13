@@ -32,8 +32,8 @@ def sim_argparser(description: str | None = None) -> argparse.ArgumentParser:
     )  # fmt: skip
     p.add_argument(
         "--catalog", default=None,
-        help="path to a catalog that extends the bundled one; omit to take the nearest\n"
-        "nexus.catalog.yaml at or above the working directory, else only the bundled one",
+        help="path to a catalog that extends the bundled and installed ones; omit to take the nearest\n"
+        "nexus.catalog.yaml at or above the working directory, else only the bundled and installed ones",
     )  # fmt: skip
     p.add_argument(
         "--device", default="auto", choices=["cpu", "cuda", "auto"], help="compute device (cpu=deterministic)"

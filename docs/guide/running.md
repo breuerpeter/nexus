@@ -207,14 +207,16 @@ the two overrides every peer has:
 
 - A project that keeps its own catalog, `nexus.catalog.yaml`, keeps its own pin beside it in
   `nexus.px4_sitl.ref`, of the same form, `owner/repo@<commit>`. Every vehicle of the project then
-  flies that tree, and a bump is one edit.
-- `NEXUS_PX4_SITL_REF` overrides both and touches no tracked file. It takes a pin of the same form,
+  flies that tree, and a bump is one edit. An installed package that
+  [adds a catalog](your-own-assets.md#a-package-that-adds-a-catalog) ships its pin the same way, and
+  a project's file overrides a package's.
+- `NEXUS_PX4_SITL_REF` overrides every pin file and touches no tracked file. It takes a pin of the same form,
   or the absolute path of a checkout of your own, for work on PX4 itself. The run builds and flies
   that checkout and fetches nothing.
 
 The Kit render peer pins its image the same way: `nexus_uav/_src/peers/kit/pin.ref` names
 `nvcr.io/nvidia/isaac-sim:6.0.1`, and `nexus.kit.ref` or `NEXUS_KIT_REF` names another, a local tag
-among them. The file and the variable take the peer's folder name. A pin file beside the catalog
+among them. The file and the variable take the peer's folder name. A pin file beside a catalog
 that names no peer fails the run, and so does a pin not in its peer's form. The run's receipt records
 each peer's pin under `peers`, with the file or the variable it came from, and for a checkout its
 checked-out commit.
