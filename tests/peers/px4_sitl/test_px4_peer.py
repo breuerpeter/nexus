@@ -11,9 +11,11 @@ components, as ``tests/build/test_launch.py`` does.
 """
 
 import hashlib
+import importlib
 import json
 import logging
 import os
+import re
 import socket
 import threading
 import time
@@ -32,17 +34,21 @@ os.environ.setdefault("MAVLINK_DIALECT", "common")
 from pymavlink import mavutil
 
 import nexus_uav
+import nexus_uav._src.api.sim as sim_mod
 import nexus_uav._src.build.launch as launch_mod
 import nexus_uav._src.peers.containers as containers
 from nexus_uav._src.api.sim import Sim
 from nexus_uav._src.config import Catalog, LaunchConfig
 from nexus_uav._src.core.interfaces import Component, Stage
-from nexus_uav._src.core.loop import Loop
+from nexus_uav._src.core.loop import Loop, SetupError
 from nexus_uav._src.core.schema import PoseTwist, SimTime
 from nexus_uav._src.core.signals import Signal
+from nexus_uav._src.peers.px4_sitl import HIL_PORT
 from nexus_uav._src.peers.px4_sitl.fake import Px4Fake
 from nexus_uav._src.vehicle.controllers.px4 import controller as ctrl
 from tests.usd import sensor_vehicle as sv
+
+cli = importlib.import_module("nexus_uav._src.cli.main")
 
 # PX4's ports are the machine's, so the tests that bind or dial them run on one worker, one at a time.
 pytestmark = pytest.mark.xdist_group("px4_ports")
@@ -623,7 +629,10 @@ def test_the_px4_controller_is_built_the_same_way_whichever_process_answers(
     caplog.set_level(logging.INFO, logger="nexus")
 
     def plan(loop) -> tuple[bool, list[str]]:
-        flew = loop.step()  # the plan logs before the preroll: the external run then times out waiting for PX4
+        try:
+            flew = loop.step()  # the plan logs before the preroll: the external run then times out waiting for PX4
+        except SetupError:
+            flew = False
         loop.close()
         lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("stage plan:")]
         caplog.clear()
@@ -848,3 +857,194 @@ def test_a_run_skips_an_instance_another_runs_claim_holds(daemon, assembly, tmp_
 
     instances = [c[c.index("-i") + 1] for c in commands if c and "-i" in c]
     assert instances == ["1"]
+
+
+# --- a run whose PX4 never starts lockstep, #129 ---------------------------------------------------
+
+# The PX4 console log a run names, `~/.cache/nexus/logs/px4-*.log`, whichever home folder it expands.
+_PX4_LOG = re.compile(r"\.cache/nexus/logs/px4-\S+\.log")
+# The PX4 peer a run names, its container `nexus-px4-<process id>-<instance>`, then its console log.
+_PX4_PEER_LOG = re.compile(r"nexus-px4-\d+-\d+'s px4_log \S*\.cache/nexus/logs/px4-\S+\.log")
+
+
+@pytest.fixture
+def brief_preroll(monkeypatch):
+    """A run that a `Sim` builds, the command line's among them, waits 1 s for its peer, not 30 s."""
+    build = sim_mod.build_from_launch
+    monkeypatch.setattr(sim_mod, "build_from_launch", lambda launch, **kw: build(launch, **kw, preroll_timeout=1.0))
+
+
+def _nexus_run(monkeypatch, *argv) -> tuple[int, str]:
+    """Run `nexus run *argv` and return its exit code and the message it exits with, empty for none."""
+    monkeypatch.setattr("sys.argv", ["nexus", "run", "--device", "cpu", *argv])
+    try:
+        cli.main()
+    except SystemExit as exc:
+        if exc.code is None or isinstance(exc.code, int):
+            return exc.code or 0, ""
+        return 1, str(exc.code)
+    except Exception as exc:  # an uncaught exception exits 1 with its message
+        return 1, str(exc)
+    return 0, ""
+
+
+def _instance(daemon, within: float = 30.0) -> int | None:
+    """The PX4 instance of the first PX4 container the run starts, from its `-i` argument, or `None`."""
+    deadline = time.monotonic() + within
+    while time.monotonic() < deadline:
+        for r in list(daemon.runs):
+            command = r.get("command") or []
+            if r.get("detach", True) and "-i" in command:
+                return int(command[command.index("-i") + 1])
+        time.sleep(0.02)
+    return None
+
+
+class _StartedAutopilot(_Autopilot):
+    """The autopilot of the PX4 container the run starts: it dials that instance's HIL port and answers
+    ``ticks`` ticks, then hangs up; with ``silent``, it dials and never answers, and holds the link
+    open until the test ends.
+    """
+
+    def __init__(self, daemon, ticks: int = 0, silent: bool = False):
+        super().__init__(port=0, ticks=ticks)
+        self.daemon = daemon
+        self.silent = silent
+        self.done = threading.Event()
+
+    def run(self):
+        instance = _instance(self.daemon)
+        if instance is None:
+            return
+        self.port = HIL_PORT + instance
+        if not self.silent:
+            super().run()
+            return
+        sock = _dial(self.port, within=10.0)
+        if sock is not None:
+            self.done.wait(30.0)
+            sock.close()
+
+
+def test_a_run_whose_px4_never_dials_in_exits_non_zero(daemon, brief_preroll, monkeypatch, tmp_path, warp_cpu):
+    """A run whose peer never dials in exits non-zero.
+
+    Given `nexus run` on a PX4 vehicle whose PX4 peer is a stand-in that never dials the HIL port,
+    preroll timeout 1 s, when it runs, then it exits non-zero.
+    """
+    vehicle = sv.vehicle(tmp_path, px4=True)
+
+    code, _ = _nexus_run(monkeypatch, "--vehicle", vehicle, "--scene", sv.SCENE)
+
+    assert code != 0
+
+
+def test_a_run_whose_px4_dials_in_but_never_answers_exits_non_zero(
+    daemon, brief_preroll, monkeypatch, tmp_path, warp_cpu
+):
+    """A run whose peer dials in but never answers exits non-zero.
+
+    Given `nexus run` on a PX4 vehicle whose PX4 stand-in dials in and never answers, preroll timeout
+    1 s, when it runs, then it exits non-zero.
+    """
+    vehicle = sv.vehicle(tmp_path, px4=True)
+    autopilot = _StartedAutopilot(daemon, silent=True)
+    autopilot.start()
+
+    code, _ = _nexus_run(monkeypatch, "--vehicle", vehicle, "--scene", sv.SCENE)
+    autopilot.done.set()
+    autopilot.join(timeout=5.0)
+
+    assert code != 0
+
+
+def test_a_run_whose_hil_port_another_process_holds_exits_non_zero_and_names_the_holder(
+    daemon, monkeypatch, tmp_path, warp_cpu
+):
+    """A run whose HIL port another process holds exits non-zero.
+
+    Given a socket bound on the run's HIL port, when `nexus run` flies an autopilot started elsewhere,
+    then it exits non-zero and its message names the holder.
+    """
+    vehicle = sv.vehicle(tmp_path)  # declares PX4 and no PX4 SITL peer: an autopilot started elsewhere
+    with socket.socket() as holder:
+        holder.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        holder.bind(("0.0.0.0", HIL_PORT))
+        holder.listen()
+        code, said = _nexus_run(monkeypatch, "--vehicle", vehicle, "--scene", sv.SCENE)
+
+    assert (code != 0, f"process {os.getpid()}" in said) == (True, True), said
+
+
+def test_a_run_whose_px4_never_answers_names_the_px4_log(daemon, brief_preroll, monkeypatch, tmp_path, warp_cpu):
+    """The failure's message names the peer that never answered and the peer's console log.
+
+    Given a PX4 run whose PX4 stand-in never dials in, when it fails, then its last line names the
+    PX4 peer and its `px4_log` path, `~/.cache/nexus/logs/px4-*.log`.
+    """
+    vehicle = sv.vehicle(tmp_path, px4=True)
+
+    code, said = _nexus_run(monkeypatch, "--vehicle", vehicle, "--scene", sv.SCENE)
+
+    assert (code != 0, bool(_PX4_PEER_LOG.search(said))) == (True, True), said
+
+
+def test_a_scripts_run_raises_when_its_px4_never_dials_in(daemon, brief_preroll, tmp_path, warp_cpu):
+    """A script's `Sim.run()` and `Sim.step()` raise on a failed start, not end as a normal run.
+
+    Given a `Sim` on the never-dialling PX4 stand-in, when the script calls `run()`, then it raises
+    the error that names the peer's log.
+    """
+    vehicle = sv.vehicle(tmp_path, px4=True)
+
+    with pytest.raises(Exception, match=_PX4_LOG), Sim(vehicle, scene=sv.SCENE, device="cpu") as sim:
+        sim.run()
+
+
+def test_a_scripts_step_raises_when_its_px4_never_dials_in(daemon, brief_preroll, tmp_path, warp_cpu):
+    """A script's `Sim.run()` and `Sim.step()` raise on a failed start, not end as a normal run.
+
+    Given a `Sim` on the never-dialling PX4 stand-in, when the script calls `step()`, then it raises
+    the error that names the peer's log.
+    """
+    vehicle = sv.vehicle(tmp_path, px4=True)
+
+    with pytest.raises(Exception, match=_PX4_LOG), Sim(vehicle, scene=sv.SCENE, device="cpu") as sim:
+        sim.step()
+
+
+def test_a_run_whose_px4_disconnects_after_lockstep_exits_zero(
+    daemon, brief_preroll, monkeypatch, caplog, tmp_path, warp_cpu
+):
+    """A run whose peer disconnects after lockstep still exits 0 and logs the end at info level.
+
+    Given `nexus run` on a PX4 stand-in that answers ten ticks and then stops, when it runs, then it
+    exits 0 and logs the disconnect at info level.
+    """
+    caplog.set_level(logging.INFO, logger="nexus")
+    vehicle = sv.vehicle(tmp_path, px4=True)
+    autopilot = _StartedAutopilot(daemon, ticks=10)
+    autopilot.start()
+
+    code, _ = _nexus_run(monkeypatch, "--vehicle", vehicle, "--scene", sv.SCENE)
+    autopilot.join(timeout=5.0)
+
+    disconnects = [r.levelno for r in caplog.records if "disconnected" in r.getMessage()]
+    assert (code, disconnects) == (0, [logging.INFO]), caplog.text
+
+
+def test_a_failed_start_closes_the_recording_and_stops_px4(daemon, brief_preroll, monkeypatch, tmp_path, warp_cpu):
+    """A failed start still closes the recording and stops the peer.
+
+    Given `nexus run --log` on the never-dialling PX4 stand-in, when it fails, then the `.rrd` is
+    complete, holding the base body's row at the start, and the stand-in's container stopped.
+    """
+    from tests.recording._flight import POSITION, rows
+
+    vehicle = sv.vehicle(tmp_path, px4=True)
+
+    _nexus_run(monkeypatch, "--log", "--vehicle", vehicle, "--scene", sv.SCENE)
+
+    rrds = list((tmp_path / "home" / ".cache" / "nexus" / "logs").glob("nexus-*.rrd"))
+    started = [r["name"] for r in daemon.runs if r.get("detach", True)]
+    assert ([rows(str(rrd), POSITION) for rrd in rrds], daemon.removed) == ([1], started)

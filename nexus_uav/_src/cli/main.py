@@ -28,11 +28,12 @@ def main() -> None:
     if args.log and args.view:  # serve or file, never both: a live server and a complete .rrd can't coexist in-process
         parser.error("--log (write .rrd) and --view (serve viewer) are mutually exclusive, pick one")
 
+    from nexus_uav._src.core.loop import SetupError
     from nexus_uav._src.peers.kit.runner import KitPeerError
 
     try:
         _run(args)
-    except KitPeerError as exc:  # the Kit container couldn't start: say why, no traceback
+    except (KitPeerError, SetupError) as exc:  # a peer couldn't start or never answered: say why, no traceback
         raise SystemExit(f"nexus: {exc}") from None
 
 

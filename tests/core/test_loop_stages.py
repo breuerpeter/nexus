@@ -13,7 +13,7 @@ pytest.importorskip("warp")
 import warp as wp
 
 from nexus_uav._src.core.interfaces import Component, Stage
-from nexus_uav._src.core.loop import Loop
+from nexus_uav._src.core.loop import Loop, SetupError
 from nexus_uav._src.core.schema import SimTime
 
 
@@ -339,16 +339,17 @@ def test_a_controller_with_only_device_stages_gets_no_preroll_and_no_exchange_ca
     assert seen == (0, 3)
 
 
-def test_a_peer_that_never_attaches_ends_the_setup_with_a_timeout_error(caplog):
+def test_a_peer_that_never_attaches_ends_the_setup_with_a_timeout_error():
     """A peer that never attaches ends the setup with a timeout error that names the wait: with a preroll
-    timeout of 0.2 s the run ends on its first step, the log names the 0.2 s, and the run finalizes
-    the recording.
+    timeout of 0.2 s the first step raises `SetupError` naming the 0.2 s, and the run finalizes the
+    recording.
     """
-    with wp.ScopedDevice("cpu"), caplog.at_level(logging.INFO, logger="nexus"):
+    with wp.ScopedDevice("cpu"):
         sink = _Logger()
         orch = _orch(_PeerController(attached=False, answers=lambda n: False), logger=sink, preroll_timeout=0.2)
-        ran = orch.step()
-    assert (ran, any("0.2" in m for m in _messages(caplog)), sink.closed) == (False, True, True)
+        with pytest.raises(SetupError) as raised:
+            orch.step()
+    assert ("0.2" in str(raised.value), sink.closed) == (True, True)
 
 
 def test_a_peer_that_stops_answering_mid_flight_ends_the_run_normally(caplog):
