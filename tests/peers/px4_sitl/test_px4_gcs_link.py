@@ -29,7 +29,7 @@ from pymavlink import mavutil
 import nexus_uav as nx
 from nexus_uav._src.peers.px4_sitl import checkout
 
-# The tree the run would fly, with no fetch: $PX4_DIR, or the pinned tree once a run fetched it.
+# The tree the run would fly, with no fetch: the checkout the pin names, or the pinned tree once a run fetched it.
 _TREE = checkout.tree(fetch_missing=False)
 # A mark, not a skip at import, so a run that deselects `px4_sitl` lists none of these tests.
 # PX4's ports are the machine's, so the tests that bind or dial them run on one worker, one at a time.
@@ -39,7 +39,7 @@ pytestmark = [
     pytest.mark.skipif(
         _TREE is None
         or not list((_TREE / "ROMFS" / "px4fmu_common" / "init.d-posix" / "airframes").glob("*_none_astro_max")),
-        reason="needs docker and a PX4 tree on this machine, $PX4_DIR or the fetched pin, carrying the none_astro_max airframe",
+        reason="needs docker and a PX4 tree on this machine, the pinned checkout or commit, carrying the none_astro_max airframe",
     ),
 ]
 
