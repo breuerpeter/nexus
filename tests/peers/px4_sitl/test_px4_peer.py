@@ -863,6 +863,8 @@ def test_a_run_skips_an_instance_another_runs_claim_holds(daemon, assembly, tmp_
 
 # The PX4 console log a run names, `~/.cache/nexus/logs/px4-*.log`, whichever home folder it expands.
 _PX4_LOG = re.compile(r"\.cache/nexus/logs/px4-\S+\.log")
+# The PX4 peer a run names, its container `nexus-px4-<process id>-<instance>`, then its console log.
+_PX4_PEER_LOG = re.compile(r"nexus-px4-\d+-\d+'s px4_log \S*\.cache/nexus/logs/px4-\S+\.log")
 
 
 @pytest.fixture
@@ -984,7 +986,7 @@ def test_a_run_whose_px4_never_answers_names_the_px4_log(daemon, brief_preroll, 
 
     code, said = _nexus_run(monkeypatch, "--vehicle", vehicle, "--scene", sv.SCENE)
 
-    assert (code != 0, bool(_PX4_LOG.search(said))) == (True, True), said
+    assert (code != 0, bool(_PX4_PEER_LOG.search(said))) == (True, True), said
 
 
 def test_a_scripts_run_raises_when_its_px4_never_dials_in(daemon, brief_preroll, tmp_path, warp_cpu):

@@ -564,11 +564,16 @@ class Loop:
                 self._stop_peers()
 
     def _peer_logs(self) -> str:
-        """The files each peer the run started leaves, such as its console log, as a clause to end an error
-        with; empty for a run that started no peer.
+        """The files each peer the run started leaves, such as its console log, each after the peer's name,
+        as a clause to end an error with; empty for a run whose peers leave none. A peer's ``name`` and its
+        ``artifacts`` are optional, so a peer with no name goes by its class's.
         """
-        files = {k: v for peer in self.peers for k, v in peer.artifacts().items()}
-        return "; see " + ", ".join(f"{k} {v}" for k, v in files.items()) if files else ""
+        files = [
+            f"{getattr(peer, 'name', None) or type(peer).__name__}'s {key} {path}"
+            for peer in self.peers
+            for key, path in getattr(peer, "artifacts", dict)().items()
+        ]
+        return "; see " + ", ".join(files) if files else ""
 
     def _links_for(self, component) -> dict:
         """The link of each peer `component` requires, by the peer's name, which its ``connect`` takes.
