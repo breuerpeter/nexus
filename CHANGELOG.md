@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.2.0](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.1.0...nexus-uav-v0.2.0) (2026-10-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* **peers:** PX4_DIR goes; set NEXUS_PX4_SITL_REF to a checkout's absolute path instead. A project's nexus.px4.ref becomes nexus.px4_sitl.ref, and the old name now fails the run.
+
+### Features
+
+* **peers:** every peer resolves its pin the same way ([#309](https://github.com/breuerpeter/nexus/issues/309)) ([3b2b879](https://github.com/breuerpeter/nexus/commit/3b2b8794751b834f6272807f6b68da5a011bc586)), closes [#304](https://github.com/breuerpeter/nexus/issues/304)
+
+
+### Bug Fixes
+
+* **loop:** a run whose PX4 never starts lockstep fails ([#308](https://github.com/breuerpeter/nexus/issues/308)) ([b6e5b57](https://github.com/breuerpeter/nexus/commit/b6e5b57ed536adb588ac6846c58b70acfef389ff)), closes [#129](https://github.com/breuerpeter/nexus/issues/129)
+* **px4:** a run's artifacts name the ULog PX4 wrote for that run ([#310](https://github.com/breuerpeter/nexus/issues/310)) ([dc13009](https://github.com/breuerpeter/nexus/commit/dc13009b5e30c5ec686ffcf4d68bf063ddefb7dd)), closes [#145](https://github.com/breuerpeter/nexus/issues/145)
+
 ## [0.1.0](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.1.0...nexus-uav-v0.1.0) (2026-10-12)
 
 
