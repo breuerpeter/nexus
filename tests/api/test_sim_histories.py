@@ -27,7 +27,7 @@ class _Named(sv.Controller):
 
 def _build(tmp_path):
     """A run of the fixture with an IMU on its base body, flown by the named stand-in controller."""
-    registry = sv.components(NexusPx4API=_Named)
+    registry = sv.components(NexusPx4API_1=_Named)
     return sv.build(sv.vehicle(tmp_path, sv.prim("Imu", "NexusImuAPI")), components=registry)
 
 

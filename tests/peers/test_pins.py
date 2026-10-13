@@ -19,6 +19,7 @@ import nexus_uav._src.build.launch as L
 import nexus_uav._src.peers.containers as containers
 import nexus_uav._src.peers.kit.runner as kit_runner
 from nexus_uav._src.config import LaunchConfig
+from nexus_uav._src.core.registry import Registry
 from nexus_uav._src.peers.px4_sitl.fake import Px4Fake
 from tests.usd import sensor_vehicle as sv
 
@@ -167,9 +168,11 @@ def _run(
     launch = LaunchConfig.from_dict(
         {"vehicle": sv.vehicle(tmp_path, body, root=root, px4=px4), "scene": sv.SCENE, "runtime": {"device": "cpu"}}
     )
-    by_registry = {} if registry is None else {"components": registry}
+    registry = registry if registry is not None else Registry()
+    for name, cls in (peers or {}).items():
+        registry.add(sv.PEER_ROWS[name], cls)
     try:
-        loop = L.build_from_launch(launch, preroll_timeout=10.0, peers=peers, **by_registry)
+        loop = L.build_from_launch(launch, preroll_timeout=10.0, components=registry)
     except Exception as exc:
         return {"receipt": {}, "error": exc}
     loop.close()

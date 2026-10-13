@@ -52,7 +52,7 @@ def test_a_controller_declares_its_controls_signal_with_its_own_width(tmp_path):
     Given a stand-in controller whose host stage writes a 20-wide controls signal on the fixture vehicle, when
     the run flies 5 ticks on the CPU device, then it completes them and the recorded controls history is 20 wide.
     """
-    loop = sv.build(sv.vehicle(tmp_path), components=sv.components(NexusPx4API=_Wide))
+    loop = sv.build(sv.vehicle(tmp_path), components=sv.components(NexusPx4API_1=_Wide))
     ran = sv.steps(loop, TICKS)
     rows = loop.recorder.histories["vehicle/controllers/wide/controls"].history()
 

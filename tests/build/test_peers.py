@@ -153,13 +153,13 @@ def test_the_receipt_records_the_class_each_declaration_resolved_to(daemon, tmp_
 
     seen = (
         _resolved(faked["receipt"], "NexusPx4SitlAPI"),
-        _resolved(faked["receipt"], "NexusPx4API"),
+        _resolved(faked["receipt"], "NexusPx4API_1"),
         _resolved(real["receipt"], "NexusPx4SitlAPI"),
     )
     expected = (
-        ("/vehicle/Controller", "Px4Fake"),
+        ("/vehicle/Px4Sitl", "Px4Fake"),
         ("/vehicle/Controller", "Controller"),
-        ("/vehicle/Controller", "Px4Sitl"),
+        ("/vehicle/Px4Sitl", "Px4Sitl"),
     )
     assert seen == expected, (faked["error"], real["error"])
 

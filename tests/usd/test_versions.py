@@ -83,7 +83,7 @@ def test_an_undefined_version_of_a_defined_family_fails_the_build(tmp_path):
     """
     vehicle = _fixture_with(tmp_path, '"NexusPx4SitlAPI"', '"NexusPx4SitlAPI_9"')
     with pytest.raises(ValueError) as e:
-        resolve_components(vehicle, Registry({"NexusImuAPI": First, "NexusPx4API": First}))
+        resolve_components(vehicle, Registry({"NexusImuAPI": First, "NexusPx4API_1": First}))
     assert all(text in str(e.value) for text in ("/Vehicle", "NexusPx4SitlAPI_9", version("nexus-uav")))
 
 
@@ -95,7 +95,7 @@ def test_an_undefined_version_with_its_attributes_authored_fails_naming_the_vers
     """
     vehicle = _fixture_with(tmp_path, '"NexusImuAPI"', '"NexusImuAPI_9"')
     with pytest.raises(ValueError) as e:
-        resolve_components(vehicle, Registry({"NexusPx4API": First}))
+        resolve_components(vehicle, Registry({"NexusPx4API_1": First}))
     assert all(text in str(e.value) for text in (IMU, "NexusImuAPI_9", version("nexus-uav")))
 
 
@@ -172,12 +172,12 @@ def test_a_released_connection_that_goes_fails_the_check(tmp_path):
     """A released connection that goes fails the check, which names the schema version and the relationship.
 
     Given the committed record and a copy of the plugin whose PX4 schema no longer declares its connection
-    `nexus:inputs:imu`, when the check runs, then it fails naming `NexusPx4API` and the relationship.
+    `nexus:inputs:imu`, when the check runs, then it fails naming `NexusPx4API_1` and the relationship.
     """
     from nexus_uav._src.usd.released import in_place_changes
 
     changes = in_place_changes(_plugin_with(tmp_path, "rel nexus:inputs:imu (", "rel nexus:inputs:accel ("))
-    assert [change for change in changes if "NexusPx4API" in change and "nexus:inputs:imu" in change]
+    assert [change for change in changes if "NexusPx4API_1" in change and "nexus:inputs:imu" in change]
 
 
 def test_a_released_attribute_given_another_fallback_fails_the_check(tmp_path):
@@ -211,7 +211,7 @@ def test_a_released_version_the_plugin_lists_as_retired_passes_the_check(tmp_pat
 
     plugin = _plugin_with(tmp_path, 'class "NexusPx4SitlAPI"', 'class "NexusOtherAPI"')
     info = plugin / "plugInfo.json"
-    info.write_text(info.read_text().replace('"Types": {', '"NexusRetiredSchemas": ["NexusPx4SitlAPI"], "Types": {'))
+    info.write_text(info.read_text().replace('"NexusRetiredSchemas": [', '"NexusRetiredSchemas": ["NexusPx4SitlAPI", '))
     assert in_place_changes(plugin) == []
 
 

@@ -14,6 +14,7 @@ import pytest
 
 from nexus_uav._src.core.schema import SimTime
 from nexus_uav._src.peers.kit.runner import KIT_DIR, KitPeer, KitPeerError
+from nexus_uav._src.peers.pins import PeerPin
 from nexus_uav._src.rendering.link import KitRenderer
 
 wire = runpy.run_path(str(KIT_DIR / "link.py"))
@@ -93,7 +94,9 @@ def _renderer(daemon, tmp_path, serve):
     daemon.serve = serve
     usd = tmp_path / "v.usda"
     usd.write_text("#usda 1.0\n")
-    peer = KitPeer([usd], cache_dir=tmp_path / "cache", image="nvcr.io/nvidia/isaac-sim:6.0.1")
+    peer = KitPeer(
+        [usd], cache_dir=tmp_path / "cache", pin=PeerPin(ref="nvcr.io/nvidia/isaac-sim:6.0.1", source="pin.ref")
+    )
     peer.start()
     camera = _Camera()
     renderer = KitRenderer(peer, setup={}, bodies=[(0, "/Vehicle/body")], sensors=[camera])

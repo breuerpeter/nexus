@@ -6,7 +6,6 @@ run wrote through Rerun's reader. Most read the session's one recorded flight, w
 on the base body. Skipped if rerun or newton are missing.
 """
 
-import functools
 import logging
 
 import pytest
@@ -129,7 +128,7 @@ def test_a_lidars_points_sit_at_its_signals_row_in_the_world_frame_as_today_with
     """
     from nexus_uav._src.peers.kit.fake import KitFake
 
-    kit = functools.partial(KitFake, points=[[1.0, 2.0, 3.0]])
+    kit = KitFake.configured(points=[[1.0, 2.0, 3.0]])
     rows = rrd_rows(fly_recorded(tmp_path, sv.vehicle(tmp_path, LIDAR), scene=sv.SCENE, ticks=30, kit=kit))
     at_row = [columns for entity, _, columns in rows if entity == "/sim/vehicle/sensors/scan/lidar"]
     at_sensor = [columns for entity, _, columns in rows if entity == "/sim/vehicle/sensors/scan"]

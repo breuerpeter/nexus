@@ -72,6 +72,13 @@ _MAST_JOINT = f"""
 """
 
 
+# The PX4 peer on its own scope under the root prim, on airframe `astro_max`.
+PX4_SITL = (
+    '    def Scope "Px4Sitl" (\n        prepend apiSchemas = ["NexusPx4SitlAPI"]\n    )\n'
+    '    {\n        string nexus:airframe = "astro_max"\n    }\n'
+)
+
+
 def prim(name: str, schema: str | None, attrs: str = "", *, kind: str = "Sphere", translate=None) -> str:
     """The text of one prim named `name` of type `kind` that applies `schema`, or none, and authors `attrs`.
 
@@ -105,14 +112,15 @@ def vehicle(
     """Write the fixture vehicle under `tmp_path` and return its path.
 
     `body` is the text of the prims under the base body, and `root` the text of more prims under the root prim. `mast`, when given, adds the second body and
-    is the text of the prims under it. `px4` declares the PX4 Software In The Loop (SITL) peer, for a
-    run that maps it to its fake. `controller` is more text the controller's scope authors, such as a
+    is the text of the prims under it. `px4` declares the PX4 Software In The Loop (SITL) peer on its scope
+    `Px4Sitl`, on airframe `astro_max`, for a run that maps it to its fake. `controller` is more text the controller's scope authors, such as a
     connection. `estimator`, when given, declares the stand-in estimator with `StandInEstimatorAPI` on the
     scope `Estimator`, and is the text that scope authors, such as a connection.
     """
     geometry = "" if mast is None else _MAST.replace("__MAST_PRIMS__", mast)
-    applied = ' (\n        prepend apiSchemas = ["NexusPx4SitlAPI"]\n    )' if px4 else ""
-    peer = f'    over "Controller"{applied}\n    {{\n        {controller}\n    }}\n' if px4 or controller else ""
+    peer = f'    over "Controller"\n    {{\n        {controller}\n    }}\n' if controller else ""
+    if px4:
+        peer += PX4_SITL
     if estimator is not None:
         root += prim("Estimator", "StandInEstimatorAPI", estimator, kind="Scope")
     joint = "" if mast is None else _MAST_JOINT
@@ -178,8 +186,7 @@ class Controller(HostController):
     """A stand-in controller: it answers at once with zero commands."""
 
     def __init__(self, **kwargs):
-        super().__init__()
-        self.airframe = kwargs.get("airframe")
+        super().__init__()  # the schema's keyword arguments and the run's instance, which it doesn't read
 
 
 class StandInSensor(Component):
@@ -274,9 +281,10 @@ def radio() -> type:
             type(self).built.append(run)
 
         @staticmethod
-        def check_pin(pin) -> None:
+        def check_pin(pin):
             if "@" not in pin.ref:
                 raise ValueError(f"{pin.source}: the radio pin {pin.ref!r} is not in the form name@version")
+            return pin
 
         def start(self) -> None:
             type(self).events.append("start")
@@ -307,7 +315,7 @@ def wired(sensor, time: float = 0.0):
 
 def components(**entries) -> Registry:
     """A registry of the test's own: the stand-in controller for PX4, then `entries`; the install answers the rest."""
-    return Registry({"NexusPx4API": Controller, **entries})
+    return Registry({"NexusPx4API_1": Controller, **entries})
 
 
 def scenario() -> dict:
@@ -377,13 +385,23 @@ def mounted(**kw):
 
 
 def build(
-    vehicle_path: str, *, seed: int = 42, scene: str = SCENE, catalog=None, device: str = "cpu", fall_from=None, **kw
+    vehicle_path: str,
+    *,
+    seed: int = 42,
+    scene: str = SCENE,
+    catalog=None,
+    device: str = "cpu",
+    fall_from=None,
+    peers: dict | None = None,
+    **kw,
 ):
     """Build a run of the vehicle at `vehicle_path` on `device`, `cpu` or `cuda`, flown by the stand-in controller.
 
     `catalog` is the catalog, for a scene of the test's own. `fall_from`, a position, places the vehicle there
-    in free flight, where it falls, in place of resting on the ground. The rest goes to the build:
-    `components` replaces the registry of :func:`components`, and `peers` is the peer mapping.
+    in free flight, where it falls, in place of resting on the ground. `peers` maps a shipped peer's name to the
+    class a test sends it to, its fake, which joins the registry as a row: the PX4 SITL peer's under its schema,
+    the Kit peer's under its name. The rest goes to the build: `components` replaces the registry of
+    :func:`components`.
     """
     import nexus_uav._src.build.launch as launch_mod
 
@@ -394,8 +412,16 @@ def build(
         _, _, cfg = launch_mod.resolve_scenario(launch, catalog=catalog)
         cfg["physics"]["spawn"] = {"pos": tuple(float(v) for v in fall_from)}
         kw["cfg"] = cfg
-    kw.setdefault("components", components())
+    registry = kw.get("components") or components()
+    for name, cls in (peers or {}).items():
+        registry.add(PEER_ROWS.get(name, name), cls)
+    kw["components"] = registry
     return launch_mod.build_from_launch(launch, catalog=catalog, preroll_timeout=10.0, **kw)
+
+
+# The row of the registry each shipped peer answers: the PX4 SITL peer's schema, which a vehicle declares it with, and
+# the Kit peer's name, which an RTX sensor's class requires it by.
+PEER_ROWS = {"px4_sitl": "NexusPx4SitlAPI", "kit": "kit"}
 
 
 def steps(loop, ticks: int) -> int:

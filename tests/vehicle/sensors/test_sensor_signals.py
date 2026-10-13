@@ -8,8 +8,6 @@ would start from reaching a real one. Each test scopes the device it uses, so th
 same after it. Skipped without newton or pxr.
 """
 
-import functools
-
 import numpy as np
 import pytest
 
@@ -145,7 +143,7 @@ def test_each_frame_of_a_camera_and_a_thermal_camera_and_each_lidar_scan_reaches
     reader = sv.estimator(Signal("camera", Image), Signal("thermal_camera", Image), Signal("lidar", PointCloud))
     loop = sv.build(
         sv.vehicle(tmp_path, RTX, estimator=""),
-        peers={"kit": functools.partial(KitFake, points=[POINT])},
+        peers={"kit": KitFake.configured(points=[POINT])},
         components=sv.components(StandInEstimatorAPI=reader),
     )
     sv.steps(loop, 250)  # 1 s of 0.004 s ticks

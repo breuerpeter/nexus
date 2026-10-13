@@ -8,7 +8,13 @@
 def Xform "Vehicle"
 {
     def Scope "Controller" (
-        prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]
+        prepend apiSchemas = ["NexusPx4API_1"]
+    )
+    {
+    }
+
+    def Scope "Px4Sitl" (
+        prepend apiSchemas = ["NexusPx4SitlAPI"]
     )
     {
         string nexus:airframe = "astro_max"

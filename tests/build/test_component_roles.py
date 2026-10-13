@@ -14,6 +14,7 @@ pytest.importorskip("pxr")
 
 from typing import ClassVar
 
+import numpy as np
 import warp as wp
 from pxr import Sdf, Usd, UsdGeom
 
@@ -118,7 +119,7 @@ def test_an_estimator_the_vehicle_declares_runs_in_the_estimators_place_and_the_
     wrote just before.
     """
     path = sv.vehicle(tmp_path, root=ESTIMATOR)
-    registry = sv.components(NexusPx4API=_SetpointController, StandInEstimatorAPI=StandInEstimator)
+    registry = sv.components(NexusPx4API_1=_SetpointController, StandInEstimatorAPI=StandInEstimator)
     loop = sv.build(path, components=registry)
     guidance = _EstimateGuidance()
     loop.guidance = guidance
@@ -300,21 +301,19 @@ def _setpoint_reader() -> type:
         seen: ClassVar[list] = []
 
         def exchange(self, t, timeout=None):
-            type(self).seen.append(tuple(float(x) for x in self.setpoint.read()[0]))
+            type(self).seen.append(tuple(float(x) for x in np.asarray(self.setpoint.read()).reshape(-1)))
             return super().exchange(t, timeout)
 
     return Reader
 
 
-def _declare(path, *, controller: str = "NexusPx4API", applied: dict | None = None) -> str:
+def _declare(path, *, controller: str = "NexusPx4API_1", applied: dict | None = None) -> str:
     """Declare on the quad at `path` its controller, `controller` on the `Scope` `Controller`, and on each prim of
     `applied`, a path to `(schema, attributes)`, that schema with those attributes. Returns the path.
     """
     stage = Usd.Stage.Open(str(path))
     scope = UsdGeom.Scope.Define(stage, f"{quad.ROOT}/Controller").GetPrim()
     scope.AddAppliedSchema(controller)
-    if controller == "NexusPx4API":
-        scope.CreateAttribute("nexus:airframe", Sdf.ValueTypeNames.String).Set("astro_max")
     for prim_path, (schema, attrs) in (applied or {}).items():
         prim = stage.GetPrimAtPath(prim_path)
         prim.AddAppliedSchema(schema)
@@ -365,7 +364,7 @@ def test_a_guidance_the_vehicle_declares_builds_in_its_role_and_runs_before_the_
     guidance = sv.prim("Guidance", "StandInGuidanceAPI", "float3 nexus:setpoint = (1, 2, 3)", kind="Scope")
     path = sv.vehicle(tmp_path, root=guidance)
     reader = _setpoint_reader()
-    registry = sv.components(NexusPx4API=reader, StandInGuidanceAPI=_FixedGuidance)
+    registry = sv.components(NexusPx4API_1=reader, StandInGuidanceAPI=_FixedGuidance)
 
     outcome = _fly(path, registry, ticks=3)
 
@@ -383,7 +382,7 @@ def test_a_command_element_the_vehicle_declares_builds_through_the_registry(tmp_
     path = _declare(
         quad.author(tmp_path / "quad.usda", servo=True), applied={quad.GIMBAL_JOINT: ("StandInServoAPI", servo)}
     )
-    registry = Registry({"NexusPx4API": _commanding((*FULL, 0.5)), "StandInServoAPI": _DeclaredServo})
+    registry = Registry({"NexusPx4API_1": _commanding((*FULL, 0.5)), "StandInServoAPI": _DeclaredServo})
 
     outcome = _fly(path, registry)
 
@@ -400,7 +399,7 @@ def test_a_force_element_the_vehicle_declares_builds_through_the_registry(tmp_pa
     """
     lift = {"nexus:weights": (Sdf.ValueTypeNames.Float, 2.0)}
     path = _declare(quad.author(tmp_path / "quad.usda"), applied={f"{quad.ROOT}/body": ("StandInLiftAPI", lift)})
-    registry = Registry({"NexusPx4API": _commanding((0.0,) * 4), "StandInLiftAPI": _DeclaredLift})
+    registry = Registry({"NexusPx4API_1": _commanding((0.0,) * 4), "StandInLiftAPI": _DeclaredLift})
 
     outcome = _fly(path, registry)
 
