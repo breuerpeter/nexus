@@ -87,7 +87,7 @@ def test_the_loop_and_sim_read_the_contracts_members_from_every_component_that_s
     """
     _WaitingSensor.instances.clear()
     _AttachedController.instances.clear()
-    registry = sv.components(NexusImuAPI=_WaitingSensor, NexusPx4API=_AttachedController)
+    registry = sv.components(NexusImuAPI=_WaitingSensor, NexusPx4API_1=_AttachedController)
     loop = sv.build(sv.vehicle(tmp_path, sv.prim("Imu", "NexusImuAPI")), components=registry)
     with nx.Sim._from_loop(loop) as sim:
         sim.start(timeout=5.0)

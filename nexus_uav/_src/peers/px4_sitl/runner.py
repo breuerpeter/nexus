@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import IO
 
 from nexus_uav._src.core import logger
 from nexus_uav._src.peers import LABEL, containers
@@ -33,7 +32,7 @@ from nexus_uav._src.peers.containers import ensure_image, run_container, stop_co
 from nexus_uav._src.peers.pins import PeerPin
 
 from . import checkout
-from .instance import claim as _claim
+from .instance import hil_free
 
 IMAGE = "nexus-px4-sitl"
 _INSTANCE = "nexus.px4.instance"  # the label that carries the container's PX4 instance
@@ -96,28 +95,35 @@ class Px4Sitl:
     """One PX4 SITL container for one run, on the peer contract.
 
     Args:
-        pin: The peer's pin, from :func:`checkout.resolve`; the start resolves the PX4 tree from it
+        airframe: The airframe's make target without PX4's ``none_`` prefix, ``astro_max``: the
+            ``nexus:airframe`` of the vehicle's ``NexusPx4SitlAPI``.
+        pin: The peer's pin, checked by :meth:`check_pin`; the start resolves the PX4 tree from it
             through :func:`checkout.tree`.
-        airframe: The airframe's make target without PX4's ``none_`` prefix, ``astro_max``.
-        instance: PX4's SITL instance, which numbers its ports and its system id.
-        name: The container's name, one per run.
+        instance: The run's instance, which numbers PX4's ports and its system id.
         log_dir: The run's folder: PX4's console streams to ``px4.log`` there, the ``px4_log``
             artifact, and PX4 writes its ULog under ``ulog/`` there, the ``ulog`` artifact.
-        claim: The open lock file that holds ``instance`` for this run, which the stop releases; ``None``
-            for a peer whose instance no lock holds.
+        **run: The run's other values, which the peer needs none of.
+
+    Raises:
+        ValueError: The vehicle authors no airframe; raised as the build makes the peer, before any peer starts.
     """
 
-    def __init__(
-        self, *, pin: PeerPin, airframe: str, instance: int, name: str, log_dir: Path, claim: IO | None = None
-    ) -> None:
+    name = checkout.NAME
+    check_pin = staticmethod(checkout.check)
+
+    def __init__(self, *, airframe: str = "", pin: PeerPin, instance: int, log_dir: Path, **run) -> None:
+        if not airframe:
+            raise ValueError(
+                "NexusPx4SitlAPI authors no nexus:airframe; name the PX4 SITL airframe the peer boots, such as astro_max"
+            )
         self.pin = pin
         self.tree: Path | None = None  # resolved at start, which can fetch it
         self.airframe = airframe
         self.instance = instance
-        self.name = name
+        # The container's name carries the process and the instance, so two runs in one process keep both.
+        self.container = f"nexus-px4-{os.getpid()}-{instance}"
         self.log_path = str(Path(log_dir) / "px4.log")
         self.ulog_dir = Path(log_dir) / "ulog"
-        self._claim = claim
         self._container = None
 
     def start(self) -> None:
@@ -147,11 +153,11 @@ class Px4Sitl:
         log_root.mkdir(parents=True, exist_ok=True)
         kwargs["volumes"][str(self.ulog_dir)] = {"bind": str(log_root), "mode": "rw"}
         logger.info(
-            f"launching PX4 SITL {self.name} (none_{self.airframe}, instance {self.instance}) -> {self.log_path}"
+            f"launching PX4 SITL {self.container} (none_{self.airframe}, instance {self.instance}) -> {self.log_path}"
         )
         self._container = run_container(
             command=["build/px4_sitl_default/bin/px4", "-i", str(self.instance), "-d"],
-            name=self.name,
+            name=self.container,
             log_path=self.log_path,
             network_mode="host",
             auto_remove=True,
@@ -160,13 +166,16 @@ class Px4Sitl:
         )
 
     @staticmethod
-    def claim_instance() -> tuple[int, IO]:
-        """The lowest PX4 instance free on this machine and the lock file that holds it, through
-        :func:`~nexus_uav._src.peers.px4_sitl.instance.claim`, passing over each instance a live process's container holds.
+    def instance_free(instance: int) -> bool:
+        """Whether ``instance`` is free for PX4: no process listens on its Hardware In The Loop (HIL) port, and no
+        live process's container holds it.
         """
-        held = containers.client().containers.list(all=True, filters={"label": [f"{LABEL}=px4"]})
-        live = {int(c.labels[_INSTANCE]) for c in held if (owner := int(c.labels.get(_OWNER) or 0)) and _alive(owner)}
-        return _claim(skip=live)
+        if not hil_free(instance):
+            return False
+        held = containers.client().containers.list(
+            all=True, filters={"label": [f"{LABEL}=px4", f"{_INSTANCE}={instance}"]}
+        )
+        return not any((owner := int(c.labels.get(_OWNER) or 0)) and _alive(owner) for c in held)
 
     def _clear_leftovers(self) -> None:
         """Remove a PX4 container of this instance whose process has exited, and fail while a live one
@@ -209,13 +218,10 @@ class Px4Sitl:
         return self._container.status in ("created", "running")
 
     def stop(self) -> None:
-        """Remove the container this peer started and release its instance. Idempotent."""
-        if self._claim is not None:
-            self._claim.close()  # closing the file releases its lock, and the instance is free again
-            self._claim = None
+        """Remove the container this peer started. Idempotent."""
         if self._container is None:
             return
-        stop_container(self.name)
+        stop_container(self.container)
         self._container = None
 
     def artifacts(self) -> dict:

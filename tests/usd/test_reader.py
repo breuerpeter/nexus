@@ -69,6 +69,13 @@ def test_the_reader_fails_on_a_nexus_attribute_on_a_prim_with_no_nexus_schema_an
         read_declarations(vehicle)
 
 
+def _component_schemas() -> list[str]:
+    """Every component schema the nexus plugin defines: each that states a role, not a peer's."""
+    from nexus_uav._src.usd.reader import roles
+
+    return [name for name in schema_names() if roles(name)]
+
+
 def test_each_attribute_the_schema_defines_reaches_the_class_as_the_snake_case_keyword():
     """Each `nexus:` attribute the schema defines reaches the class as the snake-case keyword argument of the same name.
 
@@ -76,7 +83,7 @@ def test_each_attribute_the_schema_defines_reaches_the_class_as_the_snake_case_k
     authored, when the build resolves it with a registry that maps the schema to a stand-in, then the
     stand-in's keyword arguments hold the snake-case name with the authored value.
     """
-    (imu,) = _imu(resolve_components(FIXTURE, Registry(dict.fromkeys(schema_names(), StandIn))))
+    (imu,) = _imu(resolve_components(FIXTURE, Registry(dict.fromkeys(_component_schemas(), StandIn))))
     assert imu.kwargs["acc_noise"] == pytest.approx(0.05)
 
 
@@ -86,7 +93,7 @@ def test_an_attribute_the_prim_does_not_author_takes_the_fallback_the_plugin_def
     Given the fixture prim with one attribute unauthored, when resolved, then the stand-in's keyword
     arguments hold that name at the plugin's fallback.
     """
-    (imu,) = _imu(resolve_components(FIXTURE, Registry(dict.fromkeys(schema_names(), StandIn))))
+    (imu,) = _imu(resolve_components(FIXTURE, Registry(dict.fromkeys(_component_schemas(), StandIn))))
     assert imu.kwargs["gyro_noise"] == pytest.approx(0.02)
 
 

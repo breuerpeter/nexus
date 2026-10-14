@@ -60,7 +60,7 @@ class Sim:
         layer: Path to an override layer, a local Universal Scene Description (USD) file the run
             composes over the vehicle and the scene: it changes a declared value, such as the scene's
             geodetic origin on its ``PhysicsScene`` prim, selects a variant, or drops a declaration.
-            A layer that drops the PX4 Software In The Loop (SITL) peer's, ``NexusPx4SitlAPI``, flies
+            A layer that deactivates the scope of the PX4 Software In The Loop (SITL) peer, ``Px4Sitl``, flies
             an autopilot started elsewhere, which dials port 4560.
         registry: The :class:`~nexus_uav.Registry` the build resolves each schema with, its own rows first
             and the install's for the rest, so a test maps a schema to a stand-in or a peer to its fake;

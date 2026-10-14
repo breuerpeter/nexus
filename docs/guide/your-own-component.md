@@ -21,8 +21,9 @@ for a controller, so the builder places the component by its role and never by t
 class. The [schema reference](../reference/schemas.md) lists the shipped schemas and their
 attributes, and `nexus_uav/_src/usd/generatedSchema.usda` is the file to copy from.
 
-`NexusPx4API` is PX4's. It applies to a `Scope` under the vehicle's root prim, states the controller
-role, and authors `nexus:airframe`, the one attribute its class takes from the vehicle.
+`NexusPx4API_1` is PX4's. It applies to a `Scope` under the vehicle's root prim, states the controller
+role, and authors no attribute. The airframe PX4 boots belongs to its peer's schema,
+`NexusPx4SitlAPI`, on a `Scope` of its own.
 
 ## The class
 
@@ -58,12 +59,14 @@ class HoverController(Component):
 The keyword arguments are the attributes of the schema, `nexus:throttle` here. The `controls` signal
 of a controller is as wide as its actuators, and the command elements read the leading part of it.
 
-The contract has six more members. `connect` opens what the component needs for the run, a port or
+The contract has eight more members. `connect` opens what the component needs for the run, a port or
 a model, and takes the link of each peer the class requires, keyed by the peer's name. `close`
 releases what `connect` opened. `attached` reads false until the peer the component waits on has
 dialed in, so the loop connects it after the capture and holds the sim clock until then. `requires`
-names the peers the class needs, which the builder starts. `artifacts` names the files the component
-leaves for a reader. `set_logger` takes the Logger the loop hands over, scoped to the component's
+names the peers the class needs, which the builder starts. `needs_instance` asks for the run's
+instance, the number the run's peers number their ports from, as the keyword `instance`. `ports` names
+the links the component knows of that leave the run, which `sim.ports` lists. `artifacts` names the
+files the component leaves for a reader. `set_logger` takes the Logger the loop hands over, scoped to the component's
 path, for a value with no fixed width such as a camera's frame. The Recorder keeps every fixed-width
 signal itself, and a script reads it by path, `sim["vehicle/controllers/<name>/controls"]`.
 
@@ -109,6 +112,17 @@ the files it leaves. The run owns every address a peer uses and hands the peer i
 on one machine never collide. A link that leaves the run shows in `sim.ports`, and the death of a
 peer reaches the loop through its link.
 
+A vehicle declares a peer with a schema of its own, on a `Scope` of its own under the root prim.
+The registry maps the schema to the peer's class, as it maps a component's. The schema states no
+role: its class is a peer, and so the build sorts it from a component. Its attributes are
+the keyword arguments of the class, as `nexus:airframe` is the PX4 peer's. The run's values join
+them as keywords: `pin`, `instance`, `log_dir`, `files`, the USD files the run reads, and
+`cache_dir`. A peer a class requires, as an RTX camera requires `kit`, the registry maps by that
+name. The class states its `name`, the folder name its pin file takes, and `check_pin`, which fails
+a pin not in its form and returns the pin it checked. It can state `instance_free`, which says
+whether an instance is free for it, and `ports`, the links it knows of that leave the run. A run's
+override layer drops a declared peer by deactivating its scope, `active = false`.
+
 Every peer ships a fake: a class on the same contract that speaks the links of the peer in-process
 and starts no process. A test flies the component against it in seconds. PX4's is `Px4Fake`,
 which answers the HIL link with a fixed command. A test hands the row of the fake to the run through
@@ -117,11 +131,8 @@ the registry, as it hands a stand-in component.
 Every peer pins what it runs, a commit or an image, in `pin.ref` in its own folder, with the pin on
 line one. A project overrides it with `nexus.<peer>.ref` beside its catalog, in the same form, and
 the variable `NEXUS_<PEER>_REF` overrides both, where `<peer>` is the folder name of the peer. The run's
-receipt records each pin and where it came from. A peer of your own follows the same rule.
-
-Today the builder starts the two peers nexus ships by name: PX4 Software In The Loop (SITL) and the
-Kit render peer. A peer of your own that a vehicle declares waits for the builder to start every
-declared peer through the registry, the next step on the roadmap.
+receipt records each pin and where it came from. A peer of your own follows the same rule: its
+package ships `nexus.<peer>.ref` beside its catalog. A peer that no source pins runs with none.
 
 ## What an integration exports
 

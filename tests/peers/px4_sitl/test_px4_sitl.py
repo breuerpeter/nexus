@@ -93,7 +93,6 @@ def _peer(tree, tmp_path, **kw):
         "pin": PeerPin(ref=str(tree), source="a test"),
         "airframe": "astro_max",
         "instance": 0,
-        "name": "px4-under-test",
         "log_dir": tmp_path / "run",
     }
     return Px4Sitl(**{**args, **kw})
@@ -112,7 +111,7 @@ def test_start_runs_px4_with_the_runs_instance_and_airframe(daemon, tree, tmp_pa
     assert launch == {
         "image": launch["image"],
         "command": ["build/px4_sitl_default/bin/px4", "-i", "2", "-d"],
-        "name": "px4-under-test",
+        "name": f"nexus-px4-{os.getpid()}-2",
         "detach": True,
         "user": f"{os.getuid()}:{os.getgid()}",
         "environment": {"HOME": "/tmp", "PX4_SIM_MODEL": "none_astro_max"},
@@ -234,4 +233,4 @@ def test_stop_removes_the_container_this_peer_did_start(daemon, tree, tmp_path):
 
     peer.stop()
 
-    assert ("get", "px4-under-test") in daemon  # the force-remove by name
+    assert ("get", f"nexus-px4-{os.getpid()}-0") in daemon  # the force-remove by name, its process and instance

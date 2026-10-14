@@ -17,7 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
-from nexus_uav._src.core.components import ComponentSpec, resolve_components
+from nexus_uav._src.core.components import ComponentSpec, resolve_components, run_keywords
 from nexus_uav._src.core.registry import Registry
 
 
@@ -54,7 +54,7 @@ def _rigid_mount(prim, schema: str) -> None:
         )
 
 
-def build_sensors(specs: list[ComponentSpec], *, usd_path: str | Path, model, seedtree):
+def build_sensors(specs: list[ComponentSpec], *, usd_path: str | Path, model, seedtree, instance: int = 0):
     """Build each sensor of `specs` from its class: the model and its prim's path, then its seed and its
     schema's keyword arguments.
 
@@ -64,6 +64,7 @@ def build_sensors(specs: list[ComponentSpec], *, usd_path: str | Path, model, se
         model: The physics model, whose body labels are the prim paths of the vehicle's rigid bodies and
             whose site labels are the paths of the sensors' prims.
         seedtree: The run's seed tree; each sensor's seed comes from it and the sensor's prim path.
+        instance: The run's instance, which a sensor whose class states ``needs_instance`` takes.
 
     Returns:
         The sensors, in the order of `specs`, each named after its prim, in lower case.
@@ -95,7 +96,9 @@ def build_sensors(specs: list[ComponentSpec], *, usd_path: str | Path, model, se
                 "of the vehicle; put the sensor's prim under the body it rides"
             )
         _rigid_mount(prim, spec.schema)
-        sensor = spec.cls(model, spec.prim, seed=seedtree.seed_for(spec.prim), **spec.kwargs)
+        sensor = spec.cls(
+            model, spec.prim, seed=seedtree.seed_for(spec.prim), **spec.kwargs, **run_keywords(spec.cls, instance)
+        )
         # The instance is the prim that declares it: its name, in lower case, ends a recorded row's path
         # and keys the Recorder's history.
         sensor.name = spec.prim.rsplit("/", 1)[-1].lower()

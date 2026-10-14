@@ -18,6 +18,7 @@ from nexus_uav._src.api.sim import Sim
 from nexus_uav._src.config import Catalog, LaunchConfig
 from nexus_uav._src.core.interfaces import Component, Stage
 from nexus_uav._src.core.loop import Loop
+from nexus_uav._src.core.registry import Registry
 from nexus_uav._src.core.schema import PoseTwist, SimTime
 from nexus_uav._src.core.signals import Signal
 from nexus_uav._src.peers.px4_sitl.fake import Px4Fake
@@ -82,9 +83,7 @@ def assembly(monkeypatch, tmp_path):
     """
 
     def assemble(label, cfg, **kw):
-        run = {
-            k: kw[k] for k in ("peers", "ports") if k in kw
-        }  # what the build made, handed through as the real assembly does
+        run = {k: kw[k] for k in ("peers",) if k in kw}  # what the build made, handed through as the real assembly does
         return Loop(
             clock=_Clock(),
             physics=_Physics(),
@@ -105,26 +104,32 @@ def assembly(monkeypatch, tmp_path):
 _DECLARED = (
     '#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n\n'
     'def Xform "vehicle"\n{\n'
-    '    def Scope "Controller" (\n        prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n    )\n'
+    '    def Scope "Controller" (\n        prepend apiSchemas = ["NexusPx4API_1"]\n    )\n    {\n    }\n'
+    '    def Scope "Px4Sitl" (\n        prepend apiSchemas = ["NexusPx4SitlAPI"]\n    )\n'
     '    {\n        string nexus:airframe = "astro_max"\n    }\n}\n'
 )
 
 # A layer that drops the PX4 SITL peer's declaration from the controller's scope, so the run attaches to an
 # autopilot started elsewhere.
 _DROP_PX4_SITL = (
-    '#usda 1.0\n\nover "vehicle"\n{\n'
-    '    over "Controller" (\n        delete apiSchemas = ["NexusPx4SitlAPI"]\n    )\n    {\n    }\n}\n'
+    '#usda 1.0\n\nover "vehicle"\n{\n    over "Px4Sitl" (\n        active = false\n    )\n    {\n    }\n}\n'
 )
 
 
 class _Px4OnInstance2:
-    """A PX4 SITL peer that claims instance 2 and starts no process: the real peer's shape on the peer
-    contract, which the port map follows, with no container behind it.
+    """A PX4 SITL peer that finds instances 0 and 1 busy, so the run claims instance 2, and starts no process: the
+    real peer's shape on the peer contract, which the port map follows, with no container behind it.
     """
 
+    name = "px4_sitl"
+
     @staticmethod
-    def claim_instance():
-        return 2, None
+    def check_pin(pin):
+        return pin
+
+    @staticmethod
+    def instance_free(instance):
+        return instance >= 2
 
     def __init__(self, **run):
         pass
@@ -158,8 +163,9 @@ def _run(tmp_path, *, layer: str | None = None, peers: dict | None = None) -> Lo
         path.write_text(layer)
         spec["layer"] = str(path)
     launch = LaunchConfig.from_dict(spec)
+    registry = Registry({sv.PEER_ROWS[name]: cls for name, cls in peers.items()}) if peers else None
     return launch_mod.build_from_launch(
-        launch, catalog=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0, peers=peers
+        launch, catalog=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0, components=registry
     )
 
 

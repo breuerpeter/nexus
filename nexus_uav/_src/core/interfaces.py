@@ -29,7 +29,7 @@ class Tick:
     sensor's sample among them. ``dt`` is one physics step, the control timestep over
     ``physics_substeps``. ``timeout`` bounds a host stage's wait on its peer. ``base`` is the index of the
     vehicle's base body, its airframe, in ``state``: a stage that reads the vehicle's true state reads that
-    row.
+    row. ``control`` is Newton's control the physics steps with, whose inputs a command element writes.
 
     A stage sets ``done`` to end the run, a guidance's when its mission is over: the loop completes the
     tick and takes no further one.
@@ -41,6 +41,7 @@ class Tick:
     timeout: float | None = None
     base: int = 0
     done: bool = False
+    control: Any = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +78,9 @@ class Component:
         requires: The names of the peers the class needs, such as ``("kit",)`` for an RTX sensor: the builder
             starts each once, whatever the number of components that require it, and the loop hands the
             component each one's link at :meth:`connect`.
+        needs_instance: Whether the class takes the run's instance, the number the run's peers number their
+            ports from, as the keyword ``instance``: ``True`` for a controller whose peer it talks to numbers its
+            links so. The builder passes it beside the schema's attributes.
         attached: Whether the component's peer has dialed in. ``True`` for a component with no peer, the
             default. A component that reads ``False`` before it connects waits on a peer: the loop connects
             it after the graph capture, so a peer that dials in early waits on no kernel load, holds the sim
@@ -85,6 +89,7 @@ class Component:
 
     name: str | None = None
     requires: tuple[str, ...] = ()
+    needs_instance: bool = False
     attached: bool = True
 
     def stages(self) -> list[Stage]:
@@ -115,6 +120,12 @@ class Component:
     def artifacts(self) -> dict:
         """The files the component leaves for a reader after the run, by name, which ``Sim.artifacts`` collects
         beside the recording. Empty by default.
+        """
+        return {}
+
+    def ports(self) -> Mapping[str, dict]:
+        """The links the component knows of that leave the run, by name, each to the address a script opens its
+        client on, which the run's port map, ``Sim.ports``, lists. Empty by default.
         """
         return {}
 

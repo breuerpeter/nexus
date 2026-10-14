@@ -70,7 +70,15 @@ def resolve(layers: Sequence[CatalogLayer] = ()) -> PeerPin:
     Raises:
         ValueError: The pin names no image, or two installed packages pin it; the message names its source.
     """
-    pin = pins.resolve(NAME, layers)
+    return check(pins.resolve(NAME, layers))
+
+
+def check(pin: PeerPin) -> PeerPin:
+    """``pin``, checked: it names one image.
+
+    Raises:
+        ValueError: The pin names no image; the message names its source.
+    """
     if not pin.ref or any(c.isspace() for c in pin.ref):
         raise ValueError(
             f"{pin.source}: the Kit pin {pin.ref!r} is no image reference, such as nvcr.io/nvidia/isaac-sim:6.0.1"
@@ -200,17 +208,21 @@ class KitPeer:
     Args:
         files: Every USD file the run renders, vehicle and scene: the peer reads each at its host path.
         cache_dir: The asset cache the run fetched into; mounted whole when a file lies inside it.
-        image: The image the container runs, from :func:`resolve`.
+        pin: The image the container runs, checked by :meth:`check_pin`.
         log_dir: The run's folder: Kit's console streams to ``kit.log`` there, and Kit writes its
             ``--benchmark`` metrics there. ``None`` takes a new run folder.
+        **run: The run's other values, its instance among them, which the peer needs none of.
     """
 
-    def __init__(self, files: list, *, cache_dir, image: str, log_dir: Path | None = None):
+    name = NAME
+    check_pin = staticmethod(check)
+
+    def __init__(self, files: list = (), *, cache_dir, pin: PeerPin, log_dir: Path | None = None, **run):
         self._files = [Path(f).resolve() for f in files if f]
         self._cache_dir = Path(cache_dir).resolve()
-        self.image = image
+        self.image = pin.ref
         self.log_dir = Path(log_dir) if log_dir is not None else run_folder()
-        self.name = f"nexus-kit-{os.getpid()}"
+        self.container = f"nexus-kit-{os.getpid()}"
         self.port: int | None = None
         self.log_path: Path | None = None
         self._container = None
@@ -253,7 +265,7 @@ class KitPeer:
             self._container = run_container(
                 image=image,
                 command=[f"{_PEER_DIR}/serve.py", "--port", str(self.port)],
-                name=self.name,
+                name=self.container,
                 log_path=str(self.log_path),
                 ports={f"{self.port}/tcp": ("127.0.0.1", self.port)},
                 labels={LABEL: "kit"},
@@ -264,7 +276,7 @@ class KitPeer:
             raise KitPeerError(
                 f"starting the Kit container failed: {getattr(exc, 'explanation', None) or exc}"
             ) from exc
-        logger.info(f"Kit render peer {self.name} booting on :{self.port}; its console -> {self.log_path}")
+        logger.info(f"Kit render peer {self.container} booting on :{self.port}; its console -> {self.log_path}")
 
     def alive(self) -> bool:
         """Whether the container still runs; it removes itself when it exits."""
@@ -281,7 +293,7 @@ class KitPeer:
     def stop(self) -> None:
         """Remove the container. Idempotent."""
         if self._container is not None:
-            stop_container(self.name)
+            stop_container(self.container)
             self._container = None
 
     def console_tail(self, lines: int = 20) -> str:

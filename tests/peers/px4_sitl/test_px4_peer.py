@@ -41,6 +41,7 @@ from nexus_uav._src.api.sim import Sim
 from nexus_uav._src.config import Catalog, LaunchConfig
 from nexus_uav._src.core.interfaces import Component, Stage
 from nexus_uav._src.core.loop import Loop, SetupError
+from nexus_uav._src.core.registry import Registry
 from nexus_uav._src.core.schema import PoseTwist, SimTime
 from nexus_uav._src.core.signals import Signal
 from nexus_uav._src.peers.px4_sitl import HIL_PORT
@@ -229,7 +230,8 @@ def _vehicle(tmp_path) -> dict:
     blob.write_text(
         '#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n\n'
         'def Xform "vehicle"\n{\n'
-        '    def Scope "Controller" (\n        prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n    )\n'
+        '    def Scope "Controller" (\n        prepend apiSchemas = ["NexusPx4API_1"]\n    )\n    {\n    }\n'
+        '    def Scope "Px4Sitl" (\n        prepend apiSchemas = ["NexusPx4SitlAPI"]\n    )\n'
         '    {\n        string nexus:airframe = "astro_max"\n    }\n}\n'
     )
     sha = hashlib.sha256(blob.read_bytes()).hexdigest()
@@ -346,7 +348,7 @@ def test_a_peer_that_dies_ends_the_run_as_the_controllers_disconnect(daemon, cap
     """
     caplog.set_level(logging.INFO, logger="nexus")
     port = _free_port()
-    loop = _loop(ctrl.Px4MavlinkController(port=port), preroll_timeout=10.0)
+    loop = _loop(ctrl.Px4MavlinkController(instance=port - HIL_PORT), preroll_timeout=10.0)
     autopilot = _Autopilot(port, ticks=5)
     autopilot.start()
 
@@ -431,7 +433,7 @@ def test_a_run_whose_px4_the_sim_did_not_start_has_no_ulog_entry(daemon, assembl
     project = tmp_path / "nexus.catalog.yaml"
     project.write_text(yaml.safe_dump({"vehicles": _vehicle(tmp_path)}))
     layer = tmp_path / "override.usda"
-    layer.write_text(_DROP_PX4_SITL_FROM_SCOPE)
+    layer.write_text(_DROP_PX4_SITL)
 
     with Sim("astro", scene="empty", catalog=str(project), layer=str(layer), device="cpu") as sim:
         pass
@@ -491,7 +493,8 @@ def test_a_local_vehicle_usd_flies_the_airframe_its_px4_schema_declares(daemon, 
     usd.write_text(
         '#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n\n'
         'def Xform "vehicle"\n{\n'
-        '    def Scope "Controller" (\n        prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n    )\n'
+        '    def Scope "Controller" (\n        prepend apiSchemas = ["NexusPx4API_1"]\n    )\n    {\n    }\n'
+        '    def Scope "Px4Sitl" (\n        prepend apiSchemas = ["NexusPx4SitlAPI"]\n    )\n'
         '    {\n        string nexus:airframe = "foo"\n    }\n}\n'
     )
     launch = LaunchConfig.from_dict({"vehicle": str(usd), "scene": "empty"})
@@ -501,9 +504,9 @@ def test_a_local_vehicle_usd_flies_the_airframe_its_px4_schema_declares(daemon, 
     assert _started_models(daemon) == ["none_foo"]
 
 
-# --- the fake PX4: the class a peer mapping sends the PX4 SITL peer to -----------------------------
+# --- the fake PX4: the class a row of the registry sends the PX4 SITL peer to -----------------------
 
-_FAKE_PX4 = {"px4_sitl": Px4Fake}
+_FAKE_PX4 = Registry({"NexusPx4SitlAPI": Px4Fake})
 
 
 class _Commands(Component):
@@ -535,7 +538,7 @@ def _faked(catalog, tmp_path) -> Loop:
     """Build the catalog's vehicle with the PX4 SITL peer sent to its fake."""
     launch = LaunchConfig.from_dict({"vehicle": "astro", "scene": "empty"})
     return launch_mod.build_from_launch(
-        launch, catalog=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0, peers=_FAKE_PX4
+        launch, catalog=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0, components=_FAKE_PX4
     )
 
 
@@ -578,7 +581,9 @@ def test_the_fake_px4_receives_a_hil_sensor_each_tick_and_the_state_with_each_gp
     )
     vehicle = sv.vehicle(tmp_path, sensors, px4=True)
     launch = LaunchConfig.from_dict({"vehicle": vehicle, "scene": sv.SCENE, "runtime": {"device": "cpu"}})
-    loop = launch_mod.build_from_launch(launch, preroll_timeout=10.0, peers={"px4_sitl": sv.KeepingFake})
+    loop = launch_mod.build_from_launch(
+        launch, preroll_timeout=10.0, components=Registry({"NexusPx4SitlAPI": sv.KeepingFake})
+    )
 
     _step(loop, 500)
     kinds = [msg.get_type() for msg in list(loop.peers[0].last.every)]
@@ -594,7 +599,9 @@ def _shipped(monkeypatch) -> Loop:
     """Build a run of `astro_max_base` on the CPU with the PX4 SITL peer sent to the fake that keeps every message."""
     monkeypatch.delenv("NEXUS_ASSET_CACHE")  # the shipped vehicle comes from the checkout's own cache
     launch = LaunchConfig.from_dict({"vehicle": "astro_max_base", "scene": "empty", "runtime": {"device": "cpu"}})
-    return launch_mod.build_from_launch(launch, preroll_timeout=10.0, peers={"px4_sitl": sv.KeepingFake})
+    return launch_mod.build_from_launch(
+        launch, preroll_timeout=10.0, components=Registry({"NexusPx4SitlAPI": sv.KeepingFake})
+    )
 
 
 def test_px4_receives_each_sensor_of_a_shipped_vehicle_at_its_declared_rate(daemon, monkeypatch, warp_cpu):
@@ -680,7 +687,7 @@ def test_the_px4_controller_is_built_the_same_way_whichever_process_answers(
         return flew, lines
 
     flew, fake = plan(_faked(catalog, tmp_path))
-    _, external = plan(run(_DROP_PX4_SITL_FROM_SCOPE))
+    _, external = plan(run(_DROP_PX4_SITL))
 
     assert (flew, len(fake), fake) == (True, 1, external)
 
@@ -711,27 +718,6 @@ def test_a_fake_px4_whose_link_dies_ends_the_run_as_a_real_peers_death_does(
     )
 
 
-def test_a_peer_mapping_with_an_unknown_key_fails_the_build_before_any_peer_starts(daemon, assembly, catalog, tmp_path):
-    """A peer mapping that names a peer the build doesn't know fails the build, before any peer starts.
-
-    Given a stand-in docker daemon and a peer mapping keyed `px4-sitl`, a typo of `px4_sitl`, when the
-    run builds, then it raises `ValueError` naming the unknown key and the known ones, and the daemon
-    records no container.
-    """
-    launch = LaunchConfig.from_dict({"vehicle": "astro", "scene": "empty"})
-
-    try:
-        launch_mod.build_from_launch(
-            launch, catalog=catalog, cache_dir=tmp_path / "cache", preroll_timeout=1.0, peers={"px4-sitl": Px4Fake}
-        ).close()
-        message = "no error"
-    except ValueError as exc:
-        message = str(exc)
-
-    named = all(name in message for name in ("px4-sitl", "px4_sitl", "kit"))
-    assert (named, daemon.runs) == (True, []), message
-
-
 # --- the PX4 SITL peer the vehicle declares, and a layer that drops it -----------------------------
 
 
@@ -739,15 +725,14 @@ def test_a_peer_mapping_with_an_unknown_key_fails_the_build_before_any_peer_star
 _SCOPED = (
     '#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n\n'
     'def Xform "vehicle"\n{\n'
-    '    def Scope "Controller" (\n        prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n    )\n'
+    '    def Scope "Controller" (\n        prepend apiSchemas = ["NexusPx4API_1"]\n    )\n    {\n    }\n'
+    '    def Scope "Px4Sitl" (\n        prepend apiSchemas = ["NexusPx4SitlAPI"]\n    )\n'
     '    {\n        string nexus:airframe = "astro_max"\n    }\n}\n'
 )
 
-# A layer that drops the PX4 SITL peer's declaration from the controller's scope, so the run attaches to an
-# autopilot started elsewhere.
-_DROP_PX4_SITL_FROM_SCOPE = (
-    '#usda 1.0\n\nover "vehicle"\n{\n'
-    '    over "Controller" (\n        delete apiSchemas = ["NexusPx4SitlAPI"]\n    )\n    {\n    }\n}\n'
+# A layer that deactivates the PX4 SITL peer's scope, so the run attaches to an autopilot started elsewhere.
+_DROP_PX4_SITL = (
+    '#usda 1.0\n\nover "vehicle"\n{\n    over "Px4Sitl" (\n        active = false\n    )\n    {\n    }\n}\n'
 )
 
 
@@ -796,7 +781,9 @@ def test_a_vehicle_that_declares_the_px4_sitl_peer_starts_it(daemon, monkeypatch
 
     flown = {}
     for name, launch in launches.items():
-        loop = launch_mod.build_from_launch(launch, preroll_timeout=10.0, peers={"px4_sitl": Px4Fake, "kit": KitFake})
+        loop = launch_mod.build_from_launch(
+            launch, preroll_timeout=10.0, components=Registry({"NexusPx4SitlAPI": Px4Fake, "kit": KitFake})
+        )
         _step(loop, 10)
         fakes = [p for p in loop.peers if isinstance(p, Px4Fake)]
         flown[name] = (len(fakes), bool(fakes) and fakes[0].received["HIL_SENSOR"] > 0)
@@ -805,17 +792,17 @@ def test_a_vehicle_that_declares_the_px4_sitl_peer_starts_it(daemon, monkeypatch
     assert flown == dict.fromkeys(names, (1, True))
 
 
-def test_a_layer_that_drops_the_px4_sitl_peer_from_the_controllers_scope_flies_an_autopilot_started_elsewhere(
+def test_a_layer_that_deactivates_the_px4_sitl_peers_scope_flies_an_autopilot_started_elsewhere(
     daemon, assembly, tmp_path
 ):
-    """A layer that drops the PX4 SITL peer from the controller's scope flies an autopilot started elsewhere.
+    """A layer that deactivates the PX4 SITL peer's scope flies an autopilot started elsewhere.
 
-    Given a vehicle whose `Scope` `/vehicle/Controller` declares PX4 and the PX4 SITL peer, and a layer
-    whose `over "Controller"` under `/vehicle` deletes `NexusPx4SitlAPI`, when the run builds, then no
+    Given a vehicle whose `Scope` `/vehicle/Controller` declares PX4 and whose `Scope` `/vehicle/Px4Sitl`
+    declares the PX4 SITL peer, and a layer that deactivates `/vehicle/Px4Sitl`, when the run builds, then no
     peer starts and PX4 dials instance 0's HIL port, 4560: the daemon records no container, and the run
     steps against a fake PX4 the test starts there.
     """
-    loop = _declared_run(tmp_path, _DROP_PX4_SITL_FROM_SCOPE, vehicle=_SCOPED)
+    loop = _declared_run(tmp_path, _DROP_PX4_SITL, vehicle=_SCOPED)
     autopilot = Px4Fake(instance=0)
     autopilot.start()
 
@@ -840,7 +827,7 @@ def test_a_second_external_run_on_one_machine_fails_and_names_the_holder(daemon,
 
     failed, said = False, ""
     try:
-        loop = _declared_run(tmp_path, _DROP_PX4_SITL_FROM_SCOPE)
+        loop = _declared_run(tmp_path, _DROP_PX4_SITL)
         failed = not loop.step()
         loop.close()
     except Exception as exc:
@@ -905,7 +892,7 @@ def test_a_run_skips_an_instance_another_runs_claim_holds(daemon, assembly, tmp_
 # The PX4 console log a run names, `~/.cache/nexus/logs/<run>/px4.log`, whichever home folder it expands.
 _PX4_LOG = re.compile(r"\.cache/nexus/logs/[^/\s]+/px4\.log")
 # The PX4 peer a run names, its container `nexus-px4-<process id>-<instance>`, then its console log.
-_PX4_PEER_LOG = re.compile(r"nexus-px4-\d+-\d+'s px4_log \S*\.cache/nexus/logs/[^/\s]+/px4\.log")
+_PX4_PEER_LOG = re.compile(r"px4_sitl's px4_log \S*\.cache/nexus/logs/[^/\s]+/px4\.log")
 
 
 @pytest.fixture

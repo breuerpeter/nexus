@@ -5,7 +5,6 @@ The docker daemon is the system boundary, and the stand-in daemon records any co
 start. A test reads a run's frames back from the ``.rrd`` it writes, through Rerun's reader.
 """
 
-import functools
 import io
 import time
 
@@ -15,6 +14,7 @@ from rerun.experimental import RrdReader
 
 import nexus_uav._src.build.launch as launch_mod
 from nexus_uav._src.config import LaunchConfig
+from nexus_uav._src.core.registry import Registry
 from nexus_uav._src.peers.kit.fake import KitFake
 from nexus_uav._src.peers.kit.runner import KitPeerError
 from nexus_uav._src.peers.px4_sitl.fake import Px4Fake
@@ -55,7 +55,9 @@ def test_a_run_whose_peer_mapping_sends_the_kit_peer_to_its_fake_starts_no_conta
     launch_mod.resolve_vehicle_usd(launch)  # the hosted vehicle and scene, fetched before the cut
     # The network is a boundary: a PX4 fetch this run must not make fails at once.
     cut_network()
-    loop = launch_mod.build_from_launch(launch, preroll_timeout=10.0, peers={"px4_sitl": Px4Fake, "kit": KitFake})
+    loop = launch_mod.build_from_launch(
+        launch, preroll_timeout=10.0, components=Registry({"NexusPx4SitlAPI": Px4Fake, "kit": KitFake})
+    )
 
     ticks = 0
     while ticks < 250 and loop.step():  # stepping an ended run starts a new one
@@ -73,12 +75,14 @@ def test_a_fake_kit_peer_that_sends_error_ends_the_run_with_that_error(daemon, w
     frames, when the run steps on, then it stops with an error naming the Kit peer and carrying the
     peer's message.
     """
-    kit = functools.partial(KitFake, error_after=10, error="the render product died")
+    kit = KitFake.configured(error_after=10, error="the render product died")
     launch = LaunchConfig.from_dict({"vehicle": "astro_max_fpv", "scene": "empty", "runtime": {"device": "cpu"}})
     launch_mod.resolve_vehicle_usd(launch)  # the hosted vehicle and scene, fetched before the cut
     # The network is a boundary: a PX4 fetch this run must not make fails at once.
     cut_network()
-    loop = launch_mod.build_from_launch(launch, preroll_timeout=10.0, peers={"px4_sitl": Px4Fake, "kit": kit})
+    loop = launch_mod.build_from_launch(
+        launch, preroll_timeout=10.0, components=Registry({"NexusPx4SitlAPI": Px4Fake, "kit": kit})
+    )
 
     ticks = 0
     try:

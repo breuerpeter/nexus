@@ -186,17 +186,11 @@ class "NexusPropellerAPI" (
     )
 }
 
-class "NexusPx4API" (
-    doc = "PX4 flies the vehicle over its Software In The Loop (SITL) link, on the controller's `Scope`, a child of the vehicle's root prim named `Controller` by convention."
+class "NexusPx4API_1" (
+    doc = "PX4 flies the vehicle over its Software In The Loop (SITL) link, on the controller's `Scope`, a child of the vehicle's root prim named `Controller` by convention. Version 1 leaves the airframe to the PX4 SITL peer, `NexusPx4SitlAPI`."
     prepend apiSchemas = ["NexusControllerRoleAPI"]
 )
 {
-    string nexus:airframe = "" (
-        doc = """The SITL airframe make target without PX4's `none_` prefix: `astro_max` runs `make px4_sitl none_astro_max`. The build fails when it is empty.
-
-        Range: a PX4 SITL airframe name
-        Units: none"""
-    )
     rel nexus:inputs:imu (
         doc = "The Inertial Measurement Unit (IMU) whose sample PX4 receives, where the vehicle declares more than one."
     )
@@ -212,9 +206,15 @@ class "NexusPx4API" (
 }
 
 class "NexusPx4SitlAPI" (
-    doc = """The PX4 Software In The Loop (SITL) peer, on the controller's `Scope` beside `NexusPx4API`: the run starts PX4 SITL and stops it with the run. A layer that drops it flies an autopilot started elsewhere, which dials instance 0's Hardware In The Loop (HIL) port, 4560."""
+    doc = """The PX4 Software In The Loop (SITL) peer, on a `Scope` of its own under the vehicle's root prim, named `Px4Sitl` by convention: the run starts PX4 SITL on its airframe and stops it with the run. A layer that deactivates its prim flies an autopilot started elsewhere, which dials instance 0's Hardware In The Loop (HIL) port, 4560."""
 )
 {
+    string nexus:airframe = "" (
+        doc = """The SITL airframe make target without PX4's `none_` prefix: `astro_max` runs `make px4_sitl none_astro_max`. The build fails when it is empty, before any peer starts.
+
+        Range: a PX4 SITL airframe name
+        Units: none"""
+    )
 }
 
 class "NexusSceneAPI" (
@@ -265,8 +265,20 @@ class "NexusControllerRoleAPI" (
 {
 }
 
+class "NexusGuidanceRoleAPI" (
+    doc = "The guidance role, which a guidance's schema includes as a built-in. A guidance sits on a `Scope` of its own whose parent is the vehicle's root prim, named `Guidance` by convention, and writes the setpoint before the controller in the tick. A vehicle declares one guidance at most."
+)
+{
+}
+
 class "NexusForceRoleAPI" (
     doc = "The force element's role, which the schema of a part that applies a force includes as a built-in, as a propeller's does."
+)
+{
+}
+
+class "NexusCommandRoleAPI" (
+    doc = "The command element's role, which the schema of a part that turns the controls into Newton's control inputs includes as a built-in. A command element runs before the force elements on each physics substep."
 )
 {
 }

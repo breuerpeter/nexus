@@ -13,12 +13,12 @@
 # its rotors, a `NexusPropellerAPI` propeller on each rotor body beside the `NewtonActuator` motor on its
 # joint, AND — for the FPV mods — an authored FpvCam the Kit render peer renders.
 #
-# Each vehicle USD declares PX4 with `NexusPx4API` on its controller's scope, the Scope
-# /astro_max/Controller, and its `nexus:airframe` is the
-# SITL airframe make target minus PX4's `none_` prefix: `astro_max` runs `make px4_sitl
-# none_astro_max`. Both vehicles fly `astro_max` until payload mass is modeled. Beside it, `NexusPx4SitlAPI`
-# declares the PX4 SITL peer, which the run starts; a run's override layer drops it to fly an
-# autopilot started elsewhere.
+# Each vehicle USD declares PX4 with `NexusPx4API_1` on its controller's scope, the Scope
+# /astro_max/Controller, and the PX4 SITL peer, which the run starts, with `NexusPx4SitlAPI` on a Scope of
+# its own, /astro_max/Px4Sitl. The peer's `nexus:airframe` is the SITL airframe make target minus PX4's
+# `none_` prefix: `astro_max` runs `make px4_sitl none_astro_max`. Both vehicles fly `astro_max` until
+# payload mass is modeled. A run's override layer deactivates /astro_max/Px4Sitl to fly an autopilot
+# started elsewhere.
 
 # Where this catalog's blobs live. A project with its own catalog names its own base here.
 assets:
@@ -26,10 +26,10 @@ assets:
 
 vehicles:
   astro_max_base:
-    usd: { name: astro_max_base, sha256: b51d1612159f1f97582d4c37724f600adc3263082526d5fb56a7f23b3a86ee05 }
+    usd: { name: astro_max_base, sha256: 51665e5e6542b7f2ea80b897f7296ca5f1d2b18b1530f4ac532bf237fac4d0cd }
 
   astro_max_fpv:
-    usd: { name: astro_max_fpv, sha256: 028773800f39e58aea09ef24fc488474b7e5f4a7ed1ce56e7b55825c6e52a524 }
+    usd: { name: astro_max_fpv, sha256: 0025d7a78d38522f8a97e2fc9b36193e3be2411dc7fa8caa6745951e0414b629 }
 
 # The scene USD is the single authority on what it is: authored UsdPhysics collision schemas ->
 # simulation geometry (ModelBuilder); no physics schemas -> visual-only; and since the stage-5

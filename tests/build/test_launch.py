@@ -15,6 +15,7 @@ import pytest
 
 from nexus_uav._src.config import Catalog, LaunchConfig
 from nexus_uav._src.core.interfaces import Component
+from nexus_uav._src.core.registry import Registry
 from nexus_uav._src.peers.px4_sitl.fake import Px4Fake
 from tests.usd import sensor_vehicle as sv
 
@@ -67,7 +68,8 @@ def daemon(monkeypatch, tmp_path):
 PX4_VEHICLE = (
     b'#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n\n'
     b'def Xform "vehicle"\n{\n'
-    b'    def Scope "Controller" (\n        prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n    )\n'
+    b'    def Scope "Controller" (\n        prepend apiSchemas = ["NexusPx4API_1"]\n    )\n    {\n    }\n'
+    b'    def Scope "Px4Sitl" (\n        prepend apiSchemas = ["NexusPx4SitlAPI"]\n    )\n'
     b'    {\n        string nexus:airframe = "80001"\n    }\n}\n'
 )
 
@@ -92,13 +94,12 @@ def test_resolve_vehicle_usd_uses_resolved_usd(tmp_path):
 
     ref = _usd_ref(tmp_path)
     reg = _astro_catalog(ref)
-    vehicle_usd, resolved = resolve_vehicle_usd(
+    vehicle_usd, _ = resolve_vehicle_usd(
         LaunchConfig().set_vehicle("astro").set_scene("empty"), reg, cache_dir=tmp_path / "cache"
     )
     # the vehicle's USD points at the verified, content-addressed local copy of the asset
     assert Path(vehicle_usd.cfg["usd_path"]).read_bytes() == PX4_VEHICLE
     assert ref["sha256"] in str(vehicle_usd.cfg["usd_path"])  # content-addressed cache path
-    assert resolved.tested_config.px4.airframe == "80001"
 
 
 def test_scenario_from_receipt_honors_dt_seed_device(tmp_path):
@@ -173,7 +174,7 @@ def test_build_from_launch_starts_the_px4_peer_before_the_assembly(tmp_path, mon
 
     started = [r["environment"].get("PX4_SIM_MODEL") for r in daemon if r.get("detach", True)]
     assert order == ["loop"] and started == ["none_80001"], "the peer starts before the assembly"
-    assert [p.airframe for p in kw["peers"]] == ["80001"], "the catalog's airframe reaches the peer"
+    assert [p.airframe for p in kw["peers"] if hasattr(p, "airframe")] == ["80001"], "the airframe reaches the peer"
 
 
 # --- the controller a vehicle Universal Scene Description (USD) file declares ------------------------
@@ -183,10 +184,9 @@ PX4_SCOPED = """\
 def Xform "vehicle"
 {
     def Scope "Controller" (
-        prepend apiSchemas = ["NexusPx4API"]
+        prepend apiSchemas = ["NexusPx4API_1"]
     )
     {
-        string nexus:airframe = "foo"
     }
 }
 """
@@ -194,10 +194,28 @@ def Xform "vehicle"
 # PX4 on the vehicle's root prim, an Xform, which the PX4 schema doesn't apply to.
 PX4_ROOT = """\
 def Xform "vehicle" (
-    prepend apiSchemas = ["NexusPx4API"]
+    prepend apiSchemas = ["NexusPx4API_1"]
 )
 {
-    string nexus:airframe = "foo"
+}
+"""
+
+# A vehicle that declares PX4 on its controller's scope and the PX4 SITL peer, on airframe `foo`, on its own.
+PX4_SITL_SCOPED = """\
+def Xform "vehicle"
+{
+    def Scope "Controller" (
+        prepend apiSchemas = ["NexusPx4API_1"]
+    )
+    {
+    }
+
+    def Scope "Px4Sitl" (
+        prepend apiSchemas = ["NexusPx4SitlAPI"]
+    )
+    {
+        string nexus:airframe = "foo"
+    }
 }
 """
 
@@ -227,18 +245,19 @@ def _build(tmp_path, prims: str, **kw):
     return L.build_from_launch(lc, catalog=_catalog(tmp_path), cache_dir=tmp_path / "cache", **kw)
 
 
-def test_the_receipt_records_the_airframe_the_vehicle_usd_declares(tmp_path):
+def test_the_receipt_records_the_airframe_the_vehicle_usd_declares(tmp_path, monkeypatch):
     """The run's receipt records the airframe the vehicle USD declares.
 
-    Given the local vehicle USD with airframe `foo`, when the run builds, then the receipt's PX4
-    airframe is `foo`.
+    Given the local vehicle USD whose PX4 SITL peer authors airframe `foo`, when the run builds, then the
+    receipt's declaration of that peer records airframe `foo`.
     """
-    from nexus_uav._src.build.launch import resolve_vehicle_usd
+    import nexus_uav._src.build.launch as L
 
-    lc = LaunchConfig().set_vehicle(_local_vehicle(tmp_path, PX4_SCOPED)).set_scene("empty")
-    _, resolved = resolve_vehicle_usd(lc, _catalog(tmp_path), cache_dir=tmp_path / "cache")
+    monkeypatch.setattr(L, "build_loop", lambda label, cfg, **kw: kw)
+    receipt = _build(tmp_path, PX4_SITL_SCOPED)["settings"]
 
-    assert resolved.tested_config.model_dump(mode="json")["px4"] == {"airframe": "foo"}
+    (peer,) = [d for d in receipt["declarations"] if d["schema"] == "NexusPx4SitlAPI"]
+    assert peer["values"] == {"airframe": "foo"}
 
 
 def test_a_vehicle_that_declares_no_controller_fails_the_build(tmp_path, daemon):
@@ -278,7 +297,7 @@ def test_a_vehicle_that_declares_two_controllers_fails_the_build(tmp_path, daemo
     """
     from nexus_uav._src.core.registry import Registry
 
-    components = Registry({"NexusPx4API": Registry().resolve("NexusPx4API"), "StandInAPI": _StandInController})
+    components = Registry({"NexusPx4API_1": Registry().resolve("NexusPx4API_1"), "StandInAPI": _StandInController})
     # The stand-in schema applies to an Xformable prim, so it sits on an Xform of its own.
     stand_in = '    def Xform "StandIn" (\n        prepend apiSchemas = ["StandInAPI"]\n    )\n    {\n    }\n}\n'
     two = PX4_SCOPED.removesuffix("}\n") + stand_in
@@ -286,17 +305,17 @@ def test_a_vehicle_that_declares_two_controllers_fails_the_build(tmp_path, daemo
     with pytest.raises(ValueError) as err:
         _build(tmp_path, two, components=components)
 
-    named = [s in str(err.value) for s in ("/vehicle", "NexusPx4API", "StandInAPI")]
+    named = [s in str(err.value) for s in ("/vehicle", "NexusPx4API_1", "StandInAPI")]
     assert (named, daemon) == ([True, True, True], [])
 
 
-def test_a_px4_schema_with_no_airframe_authored_fails_the_build(tmp_path, daemon):
-    """A PX4 schema with no airframe authored fails the build.
+def test_a_px4_sitl_peer_with_no_airframe_authored_fails_the_build(tmp_path, daemon):
+    """A PX4 SITL peer with no airframe authored fails the build.
 
-    Given a vehicle USD whose PX4 schema authors no airframe, when a run builds, then it raises before
-    PX4 starts and names the prim, with no fallback to `astro_max`.
+    Given a vehicle USD whose PX4 SITL peer's schema authors no airframe, when a run builds, then it raises
+    before any peer starts and names the prim, with no fallback to `astro_max`.
     """
-    bare = PX4_SCOPED.replace('        string nexus:airframe = "foo"\n', "")
+    bare = PX4_SITL_SCOPED.replace('        string nexus:airframe = "foo"\n', "")
 
     with pytest.raises(ValueError) as err:
         _build(tmp_path, bare)
@@ -309,21 +328,25 @@ def test_a_px4_schema_with_no_airframe_authored_fails_the_build(tmp_path, daemon
 
 def _scoped(scopes: dict[str, str]) -> str:
     """A vehicle root `/vehicle`, an `Xform`, holding one `Scope` per entry of `scopes`, each applying the
-    schemas its value lists, and the PX4 schema's airframe, `foo`, on the scope that applies it.
+    schemas its value lists, and the PX4 SITL peer's airframe, `foo`, on the scope that applies its schema.
     """
     body = ""
     for name, schemas in scopes.items():
-        airframe = '        string nexus:airframe = "foo"\n' if "NexusPx4API" in schemas else ""
+        airframe = '        string nexus:airframe = "foo"\n' if "NexusPx4SitlAPI" in schemas else ""
         body += f'    def Scope "{name}" (\n        prepend apiSchemas = [{schemas}]\n    )\n    {{\n{airframe}    }}\n'
     return f'def Xform "vehicle"\n{{\n{body}}}\n'
 
 
 class _Px4Peer:
-    """The PX4 SITL peer in the peer mapping: it keeps the airframe the build hands it and starts no process."""
+    """The PX4 SITL peer a row of the registry sends the run to: it keeps the airframe the build hands it and starts no
+    process.
+    """
+
+    name = "px4_sitl"
 
     @staticmethod
-    def claim_instance():
-        return 0, None
+    def check_pin(pin):
+        return pin
 
     def __init__(self, *, airframe: str, **run):
         self.airframe = airframe
@@ -354,21 +377,22 @@ def _build_message(tmp_path, monkeypatch, prims: str) -> str:
 
 @pytest.mark.parametrize("scope", ["Controller", "Autopilot"])
 def test_a_vehicle_that_declares_px4_on_a_scope_flies_px4_and_starts_the_peer(tmp_path, monkeypatch, daemon, scope):
-    """A vehicle that declares PX4 and the PX4 SITL peer on a `Scope` flies PX4 and starts the peer.
+    """A vehicle that declares PX4 on a `Scope` and the PX4 SITL peer on its own flies PX4 and starts the peer.
 
-    Given a local vehicle whose `Scope` `/vehicle/Controller` applies `NexusPx4API` with airframe `foo`
-    and `NexusPx4SitlAPI`, its root `Xform` applying neither, and a stand-in PX4 SITL peer mapped, when
-    the run builds, then it flies PX4 with airframe `foo` and starts the peer once; and once with the
-    scope named `/vehicle/Autopilot`.
+    Given a local vehicle whose `Scope` `/vehicle/Controller` applies `NexusPx4API_1`, whose `Scope`
+    `/vehicle/Px4Sitl` applies `NexusPx4SitlAPI` with airframe `foo`, its root `Xform` applying neither, and a
+    stand-in PX4 SITL peer mapped, when the run builds, then it flies PX4 and starts the peer once, on airframe
+    `foo`; and once with the controller's scope named `/vehicle/Autopilot`.
     """
     import nexus_uav._src.build.launch as L
 
     monkeypatch.setattr(L, "build_loop", lambda label, cfg, **kw: kw)
-    vehicle = _scoped({scope: '"NexusPx4API", "NexusPx4SitlAPI"'})
+    vehicle = _scoped({scope: '"NexusPx4API_1"', "Px4Sitl": '"NexusPx4SitlAPI"'})
 
-    kw = _build(tmp_path, vehicle, peers={"px4_sitl": _Px4Peer})
+    kw = _build(tmp_path, vehicle, components=Registry({"NexusPx4SitlAPI": _Px4Peer}))
 
-    assert (kw["controller"].airframe, [p.airframe for p in kw["peers"]]) == ("foo", ["foo"])
+    peers = [p.airframe for p in kw["peers"] if isinstance(p, _Px4Peer)]
+    assert (type(kw["controller"]).__name__, peers) == ("Px4MavlinkController", ["foo"])
 
 
 @pytest.mark.parametrize(
@@ -380,52 +404,28 @@ def test_a_vehicle_that_declares_px4_on_a_scope_flies_px4_and_starts_the_peer(tm
     ids=["xform-child", "root"],
 )
 def test_the_px4_schema_on_a_prim_that_is_not_a_scope_fails_the_build(tmp_path, monkeypatch, daemon, prims, prim):
-    """`NexusPx4API` on a prim that isn't a `Scope` fails the build and says it applies to a `Scope`.
+    """`NexusPx4API_1` on a prim that isn't a `Scope` fails the build and says it applies to a `Scope`.
 
-    Given a local vehicle whose `Xform` `/vehicle/Controller` applies `NexusPx4API` with airframe `foo`,
+    Given a local vehicle whose `Xform` `/vehicle/Controller` applies `NexusPx4API_1` with airframe `foo`,
     when the run builds, then it fails before any peer starts, and the error names the prim and
-    `NexusPx4API` and says the schema applies to a `Scope`; and once with the schema on the root `Xform`
+    `NexusPx4API_1` and says the schema applies to a `Scope`; and once with the schema on the root `Xform`
     `/vehicle`.
     """
     message = _build_message(tmp_path, monkeypatch, prims)
 
-    named = [f"{prim}:" in message, "NexusPx4API" in message, "Scope" in message]
+    named = [f"{prim}:" in message, "NexusPx4API_1" in message, "Scope" in message]
     assert (named, daemon) == ([True, True, True], []), message
-
-
-@pytest.mark.parametrize(
-    "scopes, prim",
-    [
-        ({"Controller": '"NexusPx4SitlAPI"'}, "/vehicle/Controller"),
-        ({"Controller": '"NexusPx4API"', "Peer": '"NexusPx4SitlAPI"'}, "/vehicle/Peer"),
-    ],
-    ids=["peer-alone", "peer-on-another-scope"],
-)
-def test_the_px4_sitl_peer_on_a_prim_with_no_px4_schema_fails_the_build(tmp_path, monkeypatch, daemon, scopes, prim):
-    """The PX4 SITL peer on a prim with no `NexusPx4API` fails the build and names the prim and the peer's schema.
-
-    Given a local vehicle whose `Scope` `/vehicle/Controller` applies `NexusPx4SitlAPI` alone, when the
-    run builds, then it fails before any peer starts, and the error names `/vehicle/Controller` and
-    `NexusPx4SitlAPI`; and once with `NexusPx4API` on `/vehicle/Controller` and `NexusPx4SitlAPI` on a
-    second `Scope` `/vehicle/Peer`, naming `/vehicle/Peer`.
-    """
-    message = _build_message(tmp_path, monkeypatch, _scoped(scopes))
-
-    named = [f"{prim}:" in message, "NexusPx4SitlAPI" in message]
-    assert (named, daemon) == ([True, True], []), message
 
 
 def test_a_controller_scope_outside_the_vehicles_root_prim_fails_the_build(tmp_path, monkeypatch, daemon):
     """A controller's scope outside the vehicle's root prim fails the build and names the prim and the root.
 
     Given a local vehicle whose root `Xform` `/vehicle` applies nothing and a `Scope` `/Controller`, a
-    sibling of the root, that applies `NexusPx4API` and `NexusPx4SitlAPI`, when the run builds, then it
-    fails before any peer starts, and the error names `/Controller` and `/vehicle`.
+    sibling of the root, that applies `NexusPx4API_1`, when the run builds, then it fails before any peer
+    starts, and the error names `/Controller` and `/vehicle`.
     """
     sibling = (
-        'def Xform "vehicle"\n{\n}\n\n'
-        'def Scope "Controller" (\n    prepend apiSchemas = ["NexusPx4API", "NexusPx4SitlAPI"]\n)\n'
-        '{\n    string nexus:airframe = "foo"\n}\n'
+        'def Xform "vehicle"\n{\n}\n\ndef Scope "Controller" (\n    prepend apiSchemas = ["NexusPx4API_1"]\n)\n{\n}\n'
     )
 
     message = _build_message(tmp_path, monkeypatch, sibling)
@@ -436,12 +436,8 @@ def test_a_controller_scope_outside_the_vehicles_root_prim_fails_the_build(tmp_p
 
 # --- the override layer a run composes over its vehicle --------------------------------------------
 
-# A vehicle that declares PX4 and the PX4 SITL peer on its controller's scope, and nothing else.
-PX4_SITL_SCOPED = PX4_SCOPED.replace('["NexusPx4API"]', '["NexusPx4API", "NexusPx4SitlAPI"]')
-
-
-# A layer that sets the PX4 schema's airframe to `bar` on the controller's scope.
-_AIRFRAME_BAR = 'over "vehicle"\n{\n    over "Controller"\n    {\n        string nexus:airframe = "bar"\n    }\n}\n'
+# A layer that sets the PX4 SITL peer's airframe to `bar` on its scope.
+_AIRFRAME_BAR = 'over "vehicle"\n{\n    over "Px4Sitl"\n    {\n        string nexus:airframe = "bar"\n    }\n}\n'
 
 
 def _layer(tmp_path, body: str, name: str = "override.usda") -> Path:
@@ -457,19 +453,20 @@ def _layered(tmp_path, vehicle: str, layer: Path | str) -> LaunchConfig:
 
 
 class _Handed(Px4Fake):
-    """The fake PX4 in the peer mapping, which keeps the airframe the build hands it."""
+    """The fake PX4 a row of the registry sends the run to, which keeps the airframe the build hands it."""
 
     def __init__(self, *, airframe: str, **run):
         super().__init__(**run)
         self.airframe = airframe
 
 
-def _referenced(tmp_path, metadata: str = "", contents: str = "") -> str:
+def _referenced(tmp_path, metadata: str = "", contents: str = "", airframe: str | None = "astro_max") -> str:
     """A local vehicle whose root prim `/vehicle` references the local fixture vehicle of
-    ``tests/usd/sensor_vehicle.py``, which flies airframe `astro_max`, and declares the PX4 SITL peer on
-    its controller's scope, with `metadata` and `contents` of the root prim's own.
+    ``tests/usd/sensor_vehicle.py`` and declares the PX4 SITL peer on its scope `Px4Sitl`, on `airframe`, or
+    authoring none there for `None`, with `metadata` and `contents` of the root prim's own.
     """
-    peer = '    over "Controller" (\n        prepend apiSchemas = ["NexusPx4SitlAPI"]\n    )\n    {\n    }\n'
+    authored = f'        string nexus:airframe = "{airframe}"\n' if airframe is not None else ""
+    peer = f'    def Scope "Px4Sitl" (\n        prepend apiSchemas = ["NexusPx4SitlAPI"]\n    )\n    {{\n{authored}    }}\n'
     path = tmp_path / "referencing_vehicle.usda"
     path.write_text(
         f'#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n\n'
@@ -487,8 +484,8 @@ def _handed_airframe(tmp_path, vehicle: str, layer: Path) -> list[str]:
     launch = LaunchConfig.from_dict(
         {"vehicle": vehicle, "scene": sv.SCENE, "layer": str(layer), "runtime": {"device": "cpu"}}
     )
-    loop = L.build_from_launch(launch, preroll_timeout=10.0, peers={"px4_sitl": _Handed})
-    handed = [peer.airframe for peer in loop.peers]
+    loop = L.build_from_launch(launch, preroll_timeout=10.0, components=Registry({"NexusPx4SitlAPI": _Handed}))
+    handed = [peer.airframe for peer in loop.peers if isinstance(peer, _Handed)]
     loop.close()
     return handed
 
@@ -496,8 +493,8 @@ def _handed_airframe(tmp_path, vehicle: str, layer: Path) -> list[str]:
 def test_a_layer_that_changes_a_declared_value_changes_what_the_run_builds(tmp_path, warp_cpu):
     """A layer that changes a declared value changes what the run builds.
 
-    Given a vehicle that references the local fixture vehicle, whose PX4 schema declares airframe
-    `astro_max`, and a layer that sets `nexus:airframe` to `bar` on its controller's scope, when the run
+    Given a vehicle that references the local fixture vehicle and declares the PX4 SITL peer on airframe
+    `astro_max`, and a layer that sets `nexus:airframe` to `bar` on the peer's scope, when the run
     builds    with the PX4 SITL peer sent to a fake, then the build hands the fake airframe `bar`.
     """
     layer = _layer(tmp_path, _AIRFRAME_BAR)
@@ -515,14 +512,16 @@ def test_a_layer_that_selects_a_variant_builds_that_variant(tmp_path, warp_cpu):
     metadata = '    variants = {\n        string airframe = "a"\n    }\n    prepend variantSets = "airframe"\n'
     contents = (
         '    variantSet "airframe" = {\n'
-        '        "a" {\n            over "Controller"\n            {\n                string nexus:airframe = "a"\n'
+        '        "a" {\n            over "Px4Sitl"\n            {\n                string nexus:airframe = "a"\n'
         "            }\n        }\n"
-        '        "b" {\n            over "Controller"\n            {\n                string nexus:airframe = "b"\n'
+        '        "b" {\n            over "Px4Sitl"\n            {\n                string nexus:airframe = "b"\n'
         "            }\n        }\n    }\n"
     )
     layer = _layer(tmp_path, 'over "vehicle" (\n    variants = {\n        string airframe = "b"\n    }\n)\n{\n}\n')
 
-    assert _handed_airframe(tmp_path, _referenced(tmp_path, metadata, contents), layer) == ["b"]
+    vehicle = _referenced(tmp_path, metadata, contents, airframe=None)
+
+    assert _handed_airframe(tmp_path, vehicle, layer) == ["b"]
 
 
 def test_a_layer_that_deactivates_a_declaration_builds_nothing_for_it(tmp_path, warp_cpu):
@@ -555,7 +554,7 @@ def test_a_layer_that_deactivates_a_declaration_builds_nothing_for_it(tmp_path, 
         {"vehicle": vehicle, "scene": sv.SCENE, "layer": str(layer), "runtime": {"device": "cpu"}}
     )
 
-    loop = L.build_from_launch(launch, preroll_timeout=10.0, peers={"px4_sitl": Px4Fake})
+    loop = L.build_from_launch(launch, preroll_timeout=10.0, components=Registry({"NexusPx4SitlAPI": Px4Fake}))
     built = [type(s).__name__ for s in loop.sensors]
     loop.close()
 
@@ -586,9 +585,9 @@ def test_a_run_with_no_layer_builds_and_records_as_today(tmp_path, monkeypatch, 
     """A run with no layer builds and records as today.
 
     Given the catalog vehicle `astro_max_base` and no layer, when the run builds with the PX4 SITL peer
-    sent to its fake, then it builds the PX4 controller on airframe `astro_max`, its IMU, magnetometer,
-    barometer and Global Positioning System (GPS) sensors, and one PX4 peer; and its receipt names the
-    vehicle, the airframe and the scene, and no layer or geodetic origin.
+    sent to its fake, then it builds the PX4 controller, its IMU, magnetometer, barometer and Global
+    Positioning System (GPS) sensors, and one PX4 peer; and its receipt names the vehicle and the scene, no
+    layer or geodetic origin, and the airframe `astro_max` the PX4 SITL peer's declaration authors.
     """
     import nexus_uav._src.build.launch as L
 
@@ -596,26 +595,21 @@ def test_a_run_with_no_layer_builds_and_records_as_today(tmp_path, monkeypatch, 
     monkeypatch.chdir(tmp_path)  # no project catalog: only the bundled one
     launch = LaunchConfig.from_dict({"vehicle": "astro_max_base", "scene": "empty", "runtime": {"device": "cpu"}})
 
-    loop = L.build_from_launch(launch, preroll_timeout=10.0, peers={"px4_sitl": Px4Fake})
+    loop = L.build_from_launch(launch, preroll_timeout=10.0, components=Registry({"NexusPx4SitlAPI": Px4Fake}))
     built = (
         type(loop.controller).__name__,
-        loop.controller.airframe,
         [type(s).__name__ for s in loop.sensors],
-        [type(p).__name__ for p in loop.peers],
+        [type(p).__name__ for p in loop.peers if isinstance(p, Px4Fake)],
     )
     loop.close()
-    receipt = L.resolve_vehicle_usd(launch)[1].tested_config.model_dump(mode="json")
-    recorded = {k: receipt[k] for k in ("vehicle", "layer", "px4", "scene", "scene_start")}
+    receipt = loop.settings
+    recorded = {k: receipt[k] for k in ("vehicle", "layer", "scene", "scene_start")}
+    (peer,) = [d for d in receipt["declarations"] if d["schema"] == "NexusPx4SitlAPI"]
 
-    assert (built, recorded) == (
-        ("Px4MavlinkController", "astro_max", ["ImuSensor", "MagSensor", "BaroSensor", "GpsSensor"], ["Px4Fake"]),
-        {
-            "vehicle": "astro_max_base",
-            "layer": None,
-            "px4": {"airframe": "astro_max"},
-            "scene": "empty",
-            "scene_start": None,
-        },
+    assert (built, recorded, peer["values"]) == (
+        ("Px4MavlinkController", ["ImuSensor", "MagSensor", "BaroSensor", "GpsSensor"], ["Px4Fake"]),
+        {"vehicle": "astro_max_base", "layer": None, "scene": "empty", "scene_start": None},
+        {"airframe": "astro_max"},
     )
 
 
@@ -628,7 +622,7 @@ def _px4_run(tmp_path, device: str):
     launch = LaunchConfig.from_dict(
         {"vehicle": sv.vehicle(tmp_path, px4=True), "scene": sv.SCENE, "runtime": {"device": device}}
     )
-    loop = L.build_from_launch(launch, preroll_timeout=10.0, peers={"px4_sitl": Px4Fake})
+    loop = L.build_from_launch(launch, preroll_timeout=10.0, components=Registry({"NexusPx4SitlAPI": Px4Fake}))
     return loop, loop.settings
 
 
@@ -729,18 +723,3 @@ def test_a_layer_path_that_does_not_exist_fails_before_any_peer_starts(tmp_path,
         L.build_from_launch(launch, catalog=_catalog(tmp_path), cache_dir=tmp_path / "cache")
 
     assert (str(missing) in str(err.value), daemon) == (True, [])
-
-
-def test_a_px4_sitl_peer_declared_without_the_px4_controller_fails_the_build(tmp_path, daemon):
-    """A PX4 SITL peer declared without the PX4 controller fails the build.
-
-    Given a fixture vehicle whose root prim declares the PX4 SITL peer and no `NexusPx4API`, when the
-    run builds, then it raises naming the prim and the peer's schema, and no peer has started.
-    """
-    peer_only = 'def Xform "vehicle" (\n    prepend apiSchemas = ["NexusPx4SitlAPI"]\n)\n{\n}\n'
-
-    with pytest.raises(ValueError) as err:
-        _build(tmp_path, peer_only)
-
-    named = [s in str(err.value) for s in ("/vehicle", "NexusPx4SitlAPI")]
-    assert (named, daemon) == ([True, True], [])

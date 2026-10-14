@@ -9,8 +9,8 @@ cli = importlib.import_module("nexus_uav._src.cli.main")
 # A vehicle that declares PX4 on its controller's scope and authors no camera.
 PLAIN_USD = (
     '#usda 1.0\n(\n    defaultPrim = "vehicle"\n)\n'
-    'def Xform "vehicle"\n{\n    def Scope "Controller" (\n        prepend apiSchemas = ["NexusPx4API"]\n    )\n'
-    '    {\n        string nexus:airframe = "astro_max"\n    }\n}\n'
+    'def Xform "vehicle"\n{\n    def Scope "Controller" (\n        prepend apiSchemas = ["NexusPx4API_1"]\n    )\n'
+    "    {\n    }\n}\n"
 )
 
 
@@ -199,7 +199,7 @@ class _Daemon:
 def test_the_command_line_takes_the_layer(monkeypatch, tmp_path, warp_cpu):
     """The command line takes the layer.
 
-    Given a local vehicle whose PX4 schema declares airframe `foo`, a layer that sets it to `bar`, and a
+    Given a local vehicle whose PX4 SITL peer declares airframe `foo`, a layer that sets it to `bar`, and a
     stand-in docker daemon, when `nexus run --vehicle … --scene empty --layer <layer>` runs, then PX4 Software
     In The Loop (SITL) starts on the layer's airframe, `PX4_SIM_MODEL=none_bar`, as the same run through `Sim` does.
     """
@@ -217,11 +217,13 @@ def test_the_command_line_takes_the_layer(monkeypatch, tmp_path, warp_cpu):
     monkeypatch.setenv("NEXUS_ASSET_CACHE", str(tmp_path / "cache"))
     vehicle = tmp_path / "vehicle.usda"
     vehicle.write_text(
-        PLAIN_USD.replace('["NexusPx4API"]', '["NexusPx4API", "NexusPx4SitlAPI"]').replace('"astro_max"', '"foo"')
+        PLAIN_USD.removesuffix("}\n")
+        + '    def Scope "Px4Sitl" (\n        prepend apiSchemas = ["NexusPx4SitlAPI"]\n    )\n'
+        + '    {\n        string nexus:airframe = "foo"\n    }\n}\n'
     )
     layer = tmp_path / "override.usda"
     layer.write_text(
-        '#usda 1.0\n\nover "vehicle"\n{\n    over "Controller"\n    {\n        string nexus:airframe = "bar"\n    }\n}\n'
+        '#usda 1.0\n\nover "vehicle"\n{\n    over "Px4Sitl"\n    {\n        string nexus:airframe = "bar"\n    }\n}\n'
     )
 
     def started(run) -> list[str]:

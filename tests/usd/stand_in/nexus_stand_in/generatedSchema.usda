@@ -104,3 +104,70 @@ class "StandInGearAPI_1" (
         Units: dimensionless"""
     )
 }
+
+class "StandInControllerAPI" (
+    doc = "A stand-in controller on the controller's scope: one gain."
+    prepend apiSchemas = ["NexusControllerRoleAPI"]
+)
+{
+    float nexus:gain = 1 (
+        doc = """The gain the stand-in controller applies.
+
+        Range: [0, inf)
+        Units: dimensionless"""
+    )
+}
+
+class "StandInGuidanceAPI" (
+    doc = "A stand-in guidance on a scope of its own: the fixed setpoint it writes."
+    prepend apiSchemas = ["NexusGuidanceRoleAPI"]
+)
+{
+    float3 nexus:setpoint = (0, 0, 0) (
+        doc = """The setpoint the stand-in guidance writes, in world axes.
+
+        Range: (-inf, inf)
+        Units: m"""
+    )
+}
+
+class "StandInServoAPI" (
+    doc = "A stand-in command element on the joint it drives: the controls value it reads and the angle per unit."
+    prepend apiSchemas = ["NexusCommandRoleAPI"]
+)
+{
+    int nexus:channel = 0 (
+        doc = """The index of the controls value the stand-in reads.
+
+        Range: [0, inf)
+        Units: dimensionless"""
+    )
+    float nexus:scale = 1 (
+        doc = """The joint's target angle per unit of that value.
+
+        Range: (-inf, inf)
+        Units: rad"""
+    )
+}
+
+class "StandInLiftAPI" (
+    doc = "A stand-in force element on the body it lifts: an upward world force, in the vehicle's weights."
+    prepend apiSchemas = ["NexusForceRoleAPI"]
+)
+{
+    float nexus:weights = 1 (
+        doc = """The upward force the stand-in adds, as a multiple of the vehicle's weight.
+
+        Range: [0, inf)
+        Units: dimensionless"""
+    )
+}
+
+class "StandInPeerAPI" (
+    doc = "A stand-in peer a vehicle declares on a scope of its own: one word it starts with."
+)
+{
+    string nexus:greeting = "" (
+        doc = "A word the stand-in peer starts with."
+    )
+}

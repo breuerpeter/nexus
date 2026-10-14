@@ -128,6 +128,7 @@ def test_a_registry_handed_to_the_builder_replaces_the_default_and_leaves_it_unt
     from nexus_uav._src.build.components import resolve_components
     from nexus_uav._src.core.registry import Registry
     from nexus_uav._src.usd import schema_names
+    from nexus_uav._src.usd.reader import roles
     from nexus_uav._src.vehicle.sensors import ImuSensor
 
     class StandIn:
@@ -136,7 +137,7 @@ def test_a_registry_handed_to_the_builder_replaces_the_default_and_leaves_it_unt
     imu_prim = "/Vehicle/body/Imu"
     (stand_in,) = [
         spec
-        for spec in resolve_components(FIXTURE, Registry(dict.fromkeys(schema_names(), StandIn)))
+        for spec in resolve_components(FIXTURE, Registry(dict.fromkeys(filter(roles, schema_names()), StandIn)))
         if spec.prim == imu_prim
     ]
     (imu,) = [spec for spec in resolve_components(FIXTURE) if spec.prim == imu_prim]

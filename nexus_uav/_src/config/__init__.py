@@ -17,7 +17,6 @@ from .models import (
     AssetRef,
     LaunchConfig,
     Output,
-    Px4Spec,
     Runtime,
 )
 from .receipt import ResolvedLaunch, TestedConfig
@@ -30,7 +29,6 @@ __all__ = [
     "LaunchConfig",
     "NoMatchError",
     "Output",
-    "Px4Spec",
     "ResolvedLaunch",
     "Runtime",
     "Scene",

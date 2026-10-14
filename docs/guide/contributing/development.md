@@ -63,14 +63,16 @@ The tests run in parallel. The worker count is one per logical CPU, or as many a
 
 Each peer the framework ships comes with a fake, a stand-in in this process that speaks the peer's link and starts no process. `Px4Fake`, in `nexus_uav/_src/peers/px4_sitl/fake.py`, answers each `HIL_SENSOR` with one fixed `HIL_ACTUATOR_CONTROLS` over the Hardware In The Loop (HIL) lockstep. `KitFake`, in `nexus_uav/_src/peers/kit/fake.py`, answers each `frame` request one frame behind, with a blank frame at the size each sensor declares.
 
-A test sends a peer to its fake through the builder's peer mapping, by the peer's name:
+A test sends a peer to its fake with a row of its own registry: a declared peer by its schema, a required peer by the name a class requires it by:
 
 ```python
-from nexus_uav._src.build.launch import build_from_launch
+from nexus_uav import Registry, Sim
 from nexus_uav._src.peers.kit.fake import KitFake
 from nexus_uav._src.peers.px4_sitl.fake import Px4Fake
 
-loop = build_from_launch(launch, peers={"px4_sitl": Px4Fake, "kit": KitFake})
+registry = Registry({"NexusPx4SitlAPI": Px4Fake, "kit": KitFake})
+with Sim("astro_max_fpv", scene="empty", registry=registry) as sim:
+    sim.run()
 ```
 
 The controller, the renderer and the loop then run as they do against the real process. So a fake proves the loop's side of the link, its encoding, its stage order and its error paths, and nothing about the process behind it. A run against `Px4Fake` has no offboard link, so `sim.ports["offboard"]` raises and names the fake.

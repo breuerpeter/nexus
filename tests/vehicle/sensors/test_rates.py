@@ -9,7 +9,6 @@ peer's fake, one due tick after the tick they show. Each test scopes the device 
 is the same after it. Skipped without newton or pxr.
 """
 
-import functools
 import itertools
 import math
 from fractions import Fraction
@@ -35,7 +34,7 @@ SAMPLE = {"imu": ImuSample, "mag": MagSample, "baro": BaroSample, "gps": GpsSamp
 RTX = {"camera": ("NexusCameraAPI", Image, "Camera"), "lidar": ("NexusLidarAPI", PointCloud, "OmniLidar")}
 # The peer mapping of a run with an RTX sensor: the Kit peer goes to its fake, which starts no container, and
 # whose every lidar scan holds one point.
-KIT = {"kit": functools.partial(KitFake, points=[(1.0, 2.0, 3.0)])}
+KIT = {"kit": KitFake.configured(points=[(1.0, 2.0, 3.0)])}
 TICK_HZ = 250
 # Where a falling run starts: 10 m over the ground, level, so the vehicle falls 4.9 m in 1 s and stays in the air.
 FALL_FROM = (0.0, 0.0, 10.0)

@@ -83,7 +83,15 @@ def resolve(layers: Sequence[CatalogLayer] = ()) -> PeerPin:
     Raises:
         ValueError: The pin isn't in the form :func:`parse` takes, or two installed packages pin it.
     """
-    pin = pins.resolve(NAME, layers)
+    return check(pins.resolve(NAME, layers))
+
+
+def check(pin: PeerPin) -> PeerPin:
+    """``pin``, checked against the form :func:`parse` takes; a checkout's pin carries its checked-out commit.
+
+    Raises:
+        ValueError: The pin isn't in the form :func:`parse` takes; the message names its source and the forms.
+    """
     tree = parse(pin)
     if isinstance(tree, Path):
         head = subprocess.run(

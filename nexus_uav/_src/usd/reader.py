@@ -21,7 +21,9 @@ _INPUTS = "nexus:inputs:"
 ROLES = {
     "NexusSensorRoleAPI": "sensor",
     "NexusEstimatorRoleAPI": "estimator",
+    "NexusGuidanceRoleAPI": "guidance",
     "NexusControllerRoleAPI": "controller",
+    "NexusCommandRoleAPI": "command",
     "NexusForceRoleAPI": "force",
 }
 

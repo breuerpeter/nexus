@@ -42,7 +42,7 @@ def test_a_schema_mapped_in_the_registry_sim_takes_builds_its_class_and_the_defa
     `Sim(..., registry=...)` runs on the CPU device, then the stand-in's stage ran, and the default registry,
     `Registry()`, still resolves the IMU schema to the shipped class.
     """
-    registry = nx.Registry({"NexusImuAPI": _StandInImu, "NexusPx4API": sv.Controller, "NexusPropellerAPI": Propeller})
+    registry = nx.Registry({"NexusImuAPI": _StandInImu, "NexusPx4API_1": sv.Controller, "NexusPropellerAPI": Propeller})
     vehicle = sv.vehicle(tmp_path, sv.prim("Imu", "NexusImuAPI"))
     with nx.Sim(vehicle, scene=sv.SCENE, device="cpu", registry=registry) as sim:
         sim.start(timeout=5.0)

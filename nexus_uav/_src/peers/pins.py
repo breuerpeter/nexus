@@ -43,15 +43,21 @@ def variable(name: str) -> str:
     return f"NEXUS_{name.upper()}_REF"
 
 
+def shipped() -> list[str]:
+    """The name of each peer the framework ships: each folder here that holds a ``pin.ref``."""
+    return sorted(folder.name for folder in _PEERS.iterdir() if (folder / "pin.ref").is_file())
+
+
 def _pin_folders(layers: Sequence[CatalogLayer]) -> list[CatalogLayer]:
     """The layers that can hold pin files: every one but the bundled catalog, whose pins live in the peers' folders."""
     return [layer for layer in layers if layer.kind != "bundled"]
 
 
-def resolve(name: str, layers: Sequence[CatalogLayer] = ()) -> PeerPin:
+def resolve(name: str, layers: Sequence[CatalogLayer] = ()) -> PeerPin | None:
     """Peer ``name``'s pin and its source: the variable, else the pin file of the top layer that holds one,
-    else the pin file the peer ships. The variable wins whenever the environment holds it, empty or not, so
-    the peer's form check fails on it rather than fly a pin the variable meant to replace.
+    else the pin file the peer ships, or ``None`` for a peer, a project's own, that no source pins. The variable
+    wins whenever the environment holds it, empty or not, so the peer's form check fails on it rather than fly a
+    pin the variable meant to replace.
 
     Args:
         name: The peer's folder name, such as ``px4_sitl``.
@@ -72,6 +78,8 @@ def resolve(name: str, layers: Sequence[CatalogLayer] = ()) -> PeerPin:
             f"anything; a project's {filename} or {variable(name)} picks the pin"
         )
     source = holding[-1].path.parent / filename if holding else _PEERS / name / "pin.ref"
+    if not source.is_file():
+        return None
     lines = source.read_text().splitlines()
     return PeerPin(ref=lines[0].strip() if lines else "", source=str(source))
 

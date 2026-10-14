@@ -9,7 +9,6 @@ it. Skipped without newton or pxr.
 """
 
 import contextlib
-import functools
 import itertools
 
 import numpy as np
@@ -141,7 +140,7 @@ def _build(tmp_path, body: str, *, device: str = "cpu", controller=None, estimat
     stand-in that commands nothing, over `estimator`, by default the passthrough. `fall_from`, a position,
     places the vehicle there in free flight.
     """
-    registry = sv.components() if controller is None else sv.components(NexusPx4API=controller)
+    registry = sv.components() if controller is None else sv.components(NexusPx4API_1=controller)
     loop = sv.build(sv.vehicle(tmp_path, body), device=device, components=registry, fall_from=fall_from)
     loop.estimator = GroundTruthEstimator() if estimator is None else estimator
     return loop
@@ -389,7 +388,7 @@ def test_a_signal_with_no_fixed_width_keeps_no_history_and_its_component_logs_it
     """
     from nexus_uav._src.peers.kit.fake import KitFake
 
-    kit = functools.partial(KitFake, points=[POINT])
+    kit = KitFake.configured(points=[POINT])
     rrd = fly_recorded(tmp_path, sv.vehicle(tmp_path, FPVCAM + LIDAR), scene=sv.SCENE, ticks=30, kit=kit)
     rows = rrd_rows(rrd)
     no_history = ("/sim/vehicle/sensors/fpvcam", "/sim/vehicle/sensors/lidar", "/sim/guidance/setpoint")

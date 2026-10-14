@@ -156,14 +156,15 @@ def test_hil_gps_and_the_true_state_go_out_with_each_new_gps_sample_and_on_no_ot
 
 
 def test_connect_listens_on_the_runs_hil_port(bind):
-    c = ctrl.Px4MavlinkController(port=4563)
+    """The HIL server listens on the HIL port of the run's instance: 4560 plus 3 on instance 3."""
+    c = ctrl.Px4MavlinkController(instance=3)
     c.connect({})
     assert bind == ["tcpin:0.0.0.0:4563"]
 
 
 def test_connect_addresses_the_runs_px4_system_id(bind):
-    """PX4's system id is its instance + 1; the run hands it over, since the controller knows no instance."""
-    c = ctrl.Px4MavlinkController(target_system=4)
+    """PX4's system id is the run's instance plus 1: 4 on instance 3."""
+    c = ctrl.Px4MavlinkController(instance=3)
     c.connect({})
     assert c.mav.target_system == 4
 

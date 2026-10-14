@@ -42,7 +42,7 @@ class _Named(sv.Controller):
 
 def _sim(tmp_path, *, fall_from=(0.0, 0.0, 5.0)):
     """A `Sim` of the fixture vehicle in free fall from `fall_from`, flown by the named stand-in."""
-    loop = sv.build(sv.vehicle(tmp_path), components=sv.components(NexusPx4API=_Named), fall_from=fall_from)
+    loop = sv.build(sv.vehicle(tmp_path), components=sv.components(NexusPx4API_1=_Named), fall_from=fall_from)
     return nx.Sim._from_loop(loop)
 
 

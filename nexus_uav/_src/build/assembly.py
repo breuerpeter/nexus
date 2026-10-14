@@ -25,6 +25,7 @@ from typing import Any
 import warp as wp
 
 from nexus_uav._src.core import Clock, Loop, SeedTree, logger
+from nexus_uav._src.core.components import resolve_components, run_keywords
 from nexus_uav._src.physics import NewtonPhysics
 from nexus_uav._src.recording import Recorder
 from nexus_uav._src.vehicle.sensors.rtx_sensor import PEER
@@ -36,12 +37,12 @@ class Assembly:
 
     clock: Any
     physics: Any
-    commands: list  # the command elements: the rotors'
-    forces: list  # the force elements: the propellers'
+    commands: list  # the command elements: the rotors', then each the vehicle declares
+    forces: list  # the force elements: the propellers', then each the vehicle declares
     sensors: list
     controller: Any
     logger: Any  # the Rerun sink, or None for no recording
-    prims: dict  # each sensor by the path of the prim that declares it, for the vehicle's connections
+    prims: dict  # each declared component by the path of its prim, for the vehicle's connections
 
 
 def rotor_chain(physics, vehicle_usd) -> tuple[list, list]:
@@ -81,28 +82,43 @@ def assemble(
     components=None,
     settings: dict | None = None,
     record_to_rrd: str | None = None,
+    instance: int = 0,
 ) -> Assembly:
     """Assemble the shared core components around the constructed ``physics`` and the
     caller-supplied ``controller``; which controller flies is the launch layer's decision.
     ``components`` is the registry that resolves each sensor's schema, ``None`` for the default one.
     ``settings`` is the run's effective configuration for the viewer's Settings tab; the launch
     glue passes the tested-config receipt. ``record_to_rrd`` is where the recording goes when the run
-    writes one, ``None`` for a new run folder of its own.
+    writes one, ``None`` for a new run folder of its own. ``instance`` is the run's instance, which each declared
+    sensor and element whose class states ``needs_instance`` takes.
     """
     from nexus_uav._src.vehicle.sensors.declared import build_sensors, sensor_specs
 
     dt = cfg["physics"]["dt"]
     rtf = cfg["physics"].get("rtf", 0)
     commands, forces = rotor_chain(physics, vehicle_usd)  # from the vehicle USD's rotors, not cfg
+    # Every other command and force element the vehicle declares, built through the registry as a sensor is:
+    # the model and its prim's path, then the schema's attributes.
+    usd_path = vehicle_usd.cfg["usd_path"]
+    elements = [
+        spec
+        for spec in resolve_components(usd_path, components)
+        if spec.role in ("command", "force") and spec.schema not in ROTOR_CHAIN_SCHEMAS
+    ]
+    built = {
+        spec.prim: spec.cls(physics.model, spec.prim, **spec.kwargs, **run_keywords(spec.cls, instance))
+        for spec in elements
+    }
+    commands += [built[spec.prim] for spec in elements if spec.role == "command"]
+    forces += [built[spec.prim] for spec in elements if spec.role == "force"]
 
     seedtree = SeedTree(cfg.get("seed", 42))  # the run's builder threads runtime.seed; string-name path keeps 42
     # The sensors come from the schemas the vehicle USD applies, the single, hash-pinned source, the
     # same as the preceding rotor chain. Each reads its site and the world's values, which the scene's
     # PhysicsScene authors, from the model. A vehicle that declares no sensor builds: which sensors a
     # flight needs is its controller's matter.
-    usd_path = vehicle_usd.cfg["usd_path"]
     specs = sensor_specs(usd_path, components)
-    sensors = build_sensors(specs, usd_path=usd_path, model=physics.model, seedtree=seedtree)
+    sensors = build_sensors(specs, usd_path=usd_path, model=physics.model, seedtree=seedtree, instance=instance)
     # The central Rerun recording, §10: built here because it needs the physics Model; the import is
     # lazy so rerun is only pulled in when logging is on. Resilient: a logging stack that fails to
     # build must never block the flight; warn and fly without the sink.
@@ -128,8 +144,14 @@ def assemble(
         sensors=sensors,
         controller=controller,
         logger=sink,
-        prims=dict(zip([spec.prim for spec in specs], sensors, strict=True)),
+        prims={**dict(zip([spec.prim for spec in specs], sensors, strict=True)), **built},
     )
+
+
+# The schemas the shipped rotor chain builds from, which no other build reads: each rotor's propeller. The
+# registry builds every other declared command and force element. The rotor chain stays one command element and
+# one force element for all rotors until #185 Each rotor flies its own propeller values, not one shared set.
+ROTOR_CHAIN_SCHEMAS = ("NexusPropellerAPI",)
 
 
 # Default scenario. No sensor entry, by design: the scene's PhysicsScene authors its geodetic origin
@@ -171,12 +193,13 @@ def build_loop(
     *,
     controller,
     estimator=None,
+    guidance=None,
     rerun: bool = False,
     viewer: bool = True,
     debug: bool = False,
     renderer_factory=None,
     peers=(),
-    ports=None,
+    peer_links=None,
     connections=None,
     prims=None,
     preroll_timeout: float = 30.0,
@@ -184,25 +207,29 @@ def build_loop(
     settings: dict | None = None,
     components=None,
     record_to_rrd: str | None = None,
+    instance: int = 0,
 ) -> Loop:
     """The core loop: the one ``NewtonPhysics`` + the one shared assembly around the
-    caller-supplied ``controller`` and ``estimator``, ``None`` for none; a run differs only in its renderer.
+    caller-supplied ``controller``, ``estimator`` and ``guidance``, ``None`` for none.
 
     ``renderer_factory`` is the one way rendering enters, from :func:`~nexus_uav._src.rendering.rtx_renderer`:
     used after the physics build, since the render poses stage prims from the model's bodies;
     ``None`` renders nothing. ``components`` resolves each sensor's schema to its class.
     ``peers`` are the processes the build started for this run, which the loop stops when the run ends.
-    ``ports`` is the run's port map, the links that leave the run, which ``Sim.ports`` exposes.
+    ``peer_links`` holds the link of each peer a class requires, by the peer's name, beside the Kit peer's, which
+    the renderer gives.
     ``connections`` are the vehicle's, by prim: for a reader's prim, each signal it reads and the prim
     whose component writes it, or the body's or joint's prim whose output the plant writes; ``prims`` names
-    the controller and the estimator by their prims, as the assembly names each sensor, so the loop takes each
+    the controller, the estimator and the guidance by their prims, as the assembly names each sensor and
+    element, so the loop takes each
     connection between the two components, or between the reader and the plant's output.
     ``settings`` is the run's effective configuration, which the loop keeps for a caller to read back
     and the logger shows in the viewer's Settings tab; the run's builder passes the tested-config receipt.
     ``record_to_rrd`` is where the recording goes when the run writes one: the run's builder passes
     ``nexus.rrd`` in the run's folder, and ``None`` takes a new run folder.
     ``preroll_timeout`` covers the boot of a controller with a peer, since an autopilot in a container
-    needs a generous window.
+    needs a generous window. ``instance`` is the run's instance, which each declared component built here takes
+    when its class states ``needs_instance``.
 
     Raises:
         ValueError: A connection names a prim that declares no component and is no body or joint of the
@@ -216,7 +243,7 @@ def build_loop(
     a = assemble(
         physics, vehicle_usd, cfg,
         controller=controller, rerun=rerun, viewer=viewer, debug=debug, components=components, settings=settings,
-        record_to_rrd=record_to_rrd,
+        record_to_rrd=record_to_rrd, instance=instance,
     )  # fmt: skip
     if renderer_factory:
         rtx = [s for s in a.sensors if s.requires]
@@ -245,12 +272,12 @@ def build_loop(
         sensors=a.sensors,
         controller=a.controller,
         estimator=estimator,
+        guidance=guidance,
         logger=a.logger,
         recorder=Recorder(),
         renderer=renderer,
-        links={} if renderer is None else {PEER: renderer},
+        links={**(peer_links or {}), **({} if renderer is None else {PEER: renderer})},
         peers=peers,
-        ports=ports,
         connections=links,
         preroll_timeout=preroll_timeout,
         max_steps=max_steps,

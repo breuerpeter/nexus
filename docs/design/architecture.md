@@ -212,7 +212,8 @@ surfaced as run artifacts.
 A typed [`LaunchConfig`](../reference/api/configuration.md), resolved against the
 [catalog](concepts.md#catalog), describes a run. A launch names the vehicle variant it flies and
 its scene. Resolution maps the variant to its Universal Scene Description (USD), which
-declares its controller: PX4, through the `NexusPx4API` schema and its airframe. It emits a fully specified, sha-pinned **tested-configuration receipt**, so a test records
+declares its controller, PX4 through the `NexusPx4API_1` schema, and its peers, the PX4 SITL peer
+through `NexusPx4SitlAPI` and its airframe. It emits a fully specified, sha-pinned **tested-configuration receipt**, so a test records
 exactly what it simulated. Vehicle assets are content-addressed. The
 [publish pipeline](conventions.md) converts a USD to a preview `.glb` and uploads both.
 
