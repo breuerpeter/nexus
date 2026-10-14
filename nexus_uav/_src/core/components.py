@@ -39,6 +39,13 @@ class PeerSpec:
     kwargs: dict
 
 
+def run_keywords(cls: type, instance: int) -> dict:
+    """The run's values `cls` takes beside its schema's attributes: the run's instance, as ``instance``, when the
+    class states ``needs_instance``.
+    """
+    return {"instance": instance} if getattr(cls, "needs_instance", False) else {}
+
+
 def is_peer(cls: type) -> bool:
     """Whether `cls` is a peer's class: it states ``start``, ``stop`` and ``alive``."""
     return all(callable(getattr(cls, name, None)) for name in ("start", "stop", "alive"))

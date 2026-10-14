@@ -25,7 +25,7 @@ from typing import Any
 import warp as wp
 
 from nexus_uav._src.core import Clock, Loop, SeedTree, logger
-from nexus_uav._src.core.components import resolve_components
+from nexus_uav._src.core.components import resolve_components, run_keywords
 from nexus_uav._src.physics import NewtonPhysics
 from nexus_uav._src.recording import Recorder
 from nexus_uav._src.vehicle.sensors.rtx_sensor import PEER
@@ -82,13 +82,15 @@ def assemble(
     components=None,
     settings: dict | None = None,
     record_to_rrd: str | None = None,
+    instance: int = 0,
 ) -> Assembly:
     """Assemble the shared core components around the constructed ``physics`` and the
     caller-supplied ``controller``; which controller flies is the launch layer's decision.
     ``components`` is the registry that resolves each sensor's schema, ``None`` for the default one.
     ``settings`` is the run's effective configuration for the viewer's Settings tab; the launch
     glue passes the tested-config receipt. ``record_to_rrd`` is where the recording goes when the run
-    writes one, ``None`` for a new run folder of its own.
+    writes one, ``None`` for a new run folder of its own. ``instance`` is the run's instance, which each declared
+    sensor and element whose class states ``needs_instance`` takes.
     """
     from nexus_uav._src.vehicle.sensors.declared import build_sensors, sensor_specs
 
@@ -103,7 +105,10 @@ def assemble(
         for spec in resolve_components(usd_path, components)
         if spec.role in ("command", "force") and spec.schema not in ROTOR_CHAIN_SCHEMAS
     ]
-    built = {spec.prim: spec.cls(physics.model, spec.prim, **spec.kwargs) for spec in elements}
+    built = {
+        spec.prim: spec.cls(physics.model, spec.prim, **spec.kwargs, **run_keywords(spec.cls, instance))
+        for spec in elements
+    }
     commands += [built[spec.prim] for spec in elements if spec.role == "command"]
     forces += [built[spec.prim] for spec in elements if spec.role == "force"]
 
@@ -113,7 +118,7 @@ def assemble(
     # PhysicsScene authors, from the model. A vehicle that declares no sensor builds: which sensors a
     # flight needs is its controller's matter.
     specs = sensor_specs(usd_path, components)
-    sensors = build_sensors(specs, usd_path=usd_path, model=physics.model, seedtree=seedtree)
+    sensors = build_sensors(specs, usd_path=usd_path, model=physics.model, seedtree=seedtree, instance=instance)
     # The central Rerun recording, §10: built here because it needs the physics Model; the import is
     # lazy so rerun is only pulled in when logging is on. Resilient: a logging stack that fails to
     # build must never block the flight; warn and fly without the sink.
@@ -202,6 +207,7 @@ def build_loop(
     settings: dict | None = None,
     components=None,
     record_to_rrd: str | None = None,
+    instance: int = 0,
 ) -> Loop:
     """The core loop: the one ``NewtonPhysics`` + the one shared assembly around the
     caller-supplied ``controller``, ``estimator`` and ``guidance``, ``None`` for none.
@@ -222,7 +228,8 @@ def build_loop(
     ``record_to_rrd`` is where the recording goes when the run writes one: the run's builder passes
     ``nexus.rrd`` in the run's folder, and ``None`` takes a new run folder.
     ``preroll_timeout`` covers the boot of a controller with a peer, since an autopilot in a container
-    needs a generous window.
+    needs a generous window. ``instance`` is the run's instance, which each declared component built here takes
+    when its class states ``needs_instance``.
 
     Raises:
         ValueError: A connection names a prim that declares no component and is no body or joint of the
@@ -236,7 +243,7 @@ def build_loop(
     a = assemble(
         physics, vehicle_usd, cfg,
         controller=controller, rerun=rerun, viewer=viewer, debug=debug, components=components, settings=settings,
-        record_to_rrd=record_to_rrd,
+        record_to_rrd=record_to_rrd, instance=instance,
     )  # fmt: skip
     if renderer_factory:
         rtx = [s for s in a.sensors if s.requires]

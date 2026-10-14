@@ -29,7 +29,7 @@ import warp as wp
 from nexus_uav._src.assets.resolver import default_cache
 from nexus_uav._src.config import Catalog, LaunchConfig, ResolvedLaunch, Runtime, resolve
 from nexus_uav._src.core import Loop
-from nexus_uav._src.core.components import ComponentSpec, PeerSpec, resolve_declarations
+from nexus_uav._src.core.components import ComponentSpec, PeerSpec, resolve_declarations, run_keywords
 from nexus_uav._src.core.registry import Registry
 from nexus_uav._src.core.run_folder import run_folder
 from nexus_uav._src.peers import instance, pins
@@ -190,6 +190,7 @@ def build_from_launch(
             cfg,
             vehicle_usd=vehicle_usd,
             controller=built["controller"],
+            instance=run["instance"],
             estimator=built.get("estimator"),
             guidance=built.get("guidance"),
             # The run's instance stays held until the loop has stopped every peer.
@@ -254,8 +255,7 @@ def _component(spec: ComponentSpec, run_instance: int):
     """The component `spec` declares: its class with its schema's attributes, and the run's instance when the
     class needs it.
     """
-    extra = {"instance": run_instance} if getattr(spec.cls, "needs_instance", False) else {}
-    return spec.cls(**spec.kwargs, **extra)
+    return spec.cls(**spec.kwargs, **run_keywords(spec.cls, run_instance))
 
 
 def _declaration(spec: ComponentSpec | PeerSpec) -> dict:

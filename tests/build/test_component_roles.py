@@ -404,3 +404,43 @@ def test_a_force_element_the_vehicle_declares_builds_through_the_registry(tmp_pa
     outcome = _fly(path, registry)
 
     assert outcome["climb"] is not None and outcome["climb"] > 0.5, outcome
+
+
+class _Numbered(Component):
+    """A force element that numbers an address of its own from the run's instance; the class keeps the instance
+    the build hands each one in `given`.
+    """
+
+    needs_instance = True
+    given: ClassVar[list] = []
+
+    def __init__(self, model, path, *, instance: int, weights: float = 1.0):
+        type(self).given.append(instance)
+
+    def stages(self):
+        return [Stage("numbered", "device", lambda tick: None)]
+
+
+@pytest.mark.xdist_group("px4_ports")  # the fake PX4 dials its instance's port
+def test_a_declared_force_element_that_needs_the_instance_takes_the_runs(tmp_path, warp_cpu):
+    """A declared force element whose class needs the instance takes the run's, the one the run's peer takes.
+
+    Given the fixture vehicle that declares the PX4 Software In The Loop (SITL) peer, sent to a fake that keeps
+    its instance, and a stand-in force element on a prim under its body whose class states `needs_instance`, when
+    the run builds, then the build hands the element the instance it hands the fake.
+    """
+    from nexus_uav._src.peers.px4_sitl.fake import Px4Fake
+
+    kept: list = []
+
+    class Kept(Px4Fake):
+        def __init__(self, **run):
+            kept.append(run["instance"])
+            super().__init__(**run)
+
+    numbered = type("Numbered", (_Numbered,), {"given": []})
+    path = sv.vehicle(tmp_path, sv.prim("Lift", "StandInLiftAPI", kind="Xform"), px4=True)
+
+    sv.build(path, components=sv.components(NexusPx4SitlAPI=Kept, StandInLiftAPI=numbered)).close()
+
+    assert (numbered.given, len(kept)) == (kept, 1)
