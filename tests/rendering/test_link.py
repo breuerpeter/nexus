@@ -132,7 +132,9 @@ def test_the_next_due_tick_takes_the_frame_the_peer_was_rendering(daemon, tmp_pa
 
 
 def test_a_peer_that_dies_mid_flight_ends_the_run_with_an_error_naming_it(daemon, tmp_path):
-    """Not a ConnectionError: the loop takes that as a run's normal end, the autopilot's disconnect."""
+    """A Kit peer that dies mid-flight fails the run with an error that names the Kit render peer, not a bare
+    ConnectionError.
+    """
     renderer, _ = _renderer(daemon, tmp_path, _peer_serving(die_after_setup=True))
     with pytest.raises(KitPeerError, match="Kit render peer"):
         for t in (0.1, 0.2):
