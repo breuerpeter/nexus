@@ -27,7 +27,7 @@ fi
 echo "===== PLANT PARITY (host, nexus-rl project) ====="
 # The RL task and the core fly one plant: tests/examples/test_rl_plant_parity.py needs Isaac Lab, which only
 # the nexus-rl environment holds, so the core's suites skip it and this leg runs it.
-( cd "$REPO" && uv run --locked --project nexus-rl --with pytest --with pytest-xdist \
+( cd "$REPO" && uv run --locked --project nexus-rl \
     pytest -q -n 0 -p no:cacheprovider --require-cuda tests/examples/test_rl_plant_parity.py )
 
 echo "===== TRAIN (host, kitless, nexus-rl project) ====="

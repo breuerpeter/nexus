@@ -17,6 +17,14 @@ dependencies = [
     "isaaclab[all,newton]==3.0.0b2",
 ]
 
+[dependency-groups]
+# The test tools, so the RL leg runs the tests that need Isaac Lab from this lock. uv installs this group on
+# every plain `uv run`, as the core's `dev` group.
+dev = [
+    "pytest>=9.1.1",
+    "pytest-xdist>=3.8",
+]
+
 [tool.uv.sources]
 nexus-uav = { path = "..", editable = true }
 warp-lang = { index = "nvidia" }
