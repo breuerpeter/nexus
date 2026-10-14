@@ -89,9 +89,11 @@ The sha256 is the version pin: the resolver verifies it on fetch, and because it
 never changes and caches forever.
 
 The scheme of the URL decides how a run reads it. `https://` is an anonymous GET with no
-credentials. `file://` reads from disk. `s3://` shells out to the `aws` command-line tool, so the
-ordinary credential chain applies: an instance profile, access keys or `aws sso login`. That's how
-a catalog keeps blobs nobody else can read.
+credentials. `file://` reads from disk. `s3://` goes through boto3, so the ordinary credential
+chain applies: the environment, a profile named by `AWS_PROFILE`, an instance profile or
+`aws sso login`. That's how a catalog keeps blobs nobody else can read. boto3 comes with the `s3`
+extra, so a package whose catalog lists `s3://` assets depends on `nexus-uav[s3]`, and a plain
+`nexus-uav` install carries no Amazon Web Services (AWS) package.
 
 ## Hosting your own
 

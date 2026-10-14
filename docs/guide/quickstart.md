@@ -21,7 +21,8 @@ uv pip install nexus-uav
 ```
 
 Optional extras: `policy` adds PyTorch, `examples` adds jerk-limited trajectories, `acados` adds
-Nonlinear Model Predictive Control (NMPC) code generation, and `all` equals `policy` plus
+Nonlinear Model Predictive Control (NMPC) code generation, `s3` adds boto3 to fetch
+[`s3://` assets](your-own-assets.md#what-a-catalog-looks-like), and `all` equals `policy` plus
 `examples`. Install one with `uv pip install 'nexus-uav[policy]'`.
 
 For development, clone the repo and sync it:

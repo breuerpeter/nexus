@@ -1,6 +1,5 @@
 """Resolver cache + hash-verify: no network/Amazon Web Services (AWS). It uses file:// URLs, and
-exercises the ``s3://`` path against a stub ``aws`` command-line tool on PATH and a stand-in bucket
-served on a local endpoint.
+exercises the ``s3://`` path against a stand-in bucket served on a local endpoint.
 """
 
 import hashlib
@@ -64,35 +63,6 @@ def test_hosted_url_policies_kind():
         hosted_url("https://cdn.example/public", "policies", "goto_policy", "abc", "pt")
         == "https://cdn.example/public/assets/policies/goto_policy-abc.pt"
     )
-
-
-def _stub_aws(tmp_path, monkeypatch, script: str):
-    """Put a stub ``aws`` executable on PATH; its argv is ``aws s3 cp <source> <dst> --no-progress``."""
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    stub = bin_dir / "aws"
-    stub.write_text(f"#!/bin/sh\n{script}\n")
-    stub.chmod(0o755)
-    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
-
-
-def test_s3_fetch_via_aws_cli(tmp_path, monkeypatch):
-    src, digest = _make(tmp_path)
-    _stub_aws(tmp_path, monkeypatch, f'cp "{src}" "$4"')
-    out = fetch("s3://bkt/catalog/assets/usd/vehicles/x.usdz", digest, cache_dir=tmp_path / "cache")
-    assert sha256_file(out) == digest
-
-
-def test_s3_fetch_no_credentials_friendly_error(tmp_path, monkeypatch):
-    _stub_aws(tmp_path, monkeypatch, 'echo "Unable to locate credentials" >&2; exit 1')
-    with pytest.raises(RuntimeError, match="credentials for that bucket"):
-        fetch("s3://bkt/catalog/assets/usd/vehicles/x.usdz", "0" * 64, cache_dir=tmp_path / "cache")
-
-
-def test_s3_fetch_no_cli_friendly_error(tmp_path, monkeypatch):
-    monkeypatch.setenv("PATH", str(tmp_path / "empty"))  # no aws executable anywhere
-    with pytest.raises(RuntimeError, match="credentials for that bucket"):
-        fetch("s3://bkt/catalog/assets/usd/vehicles/x.usdz", "0" * 64, cache_dir=tmp_path / "cache")
 
 
 def _no_aws(tmp_path, monkeypatch):
