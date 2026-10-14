@@ -10,6 +10,7 @@ import subprocess
 
 import pytest
 from docker.errors import ImageNotFound, NotFound
+from docker.types import Mount
 
 import nexus_uav._src.peers.containers as containers
 from nexus_uav._src.peers.pins import PeerPin
@@ -116,10 +117,15 @@ def test_start_runs_px4_with_the_runs_instance_and_airframe(daemon, tree, tmp_pa
         "user": f"{os.getuid()}:{os.getgid()}",
         "environment": {"HOME": "/tmp", "PX4_SIM_MODEL": "none_astro_max"},
         "working_dir": str(tree),
-        "volumes": {
-            str(tree): {"bind": str(tree), "mode": "rw"},
-            str(tmp_path / "run" / "ulog"): {"bind": str(tree / "build/px4_sitl_default/rootfs/2/log"), "mode": "rw"},
-        },
+        "mounts": [
+            Mount(str(tree), str(tree), type="bind", read_only=False),
+            Mount(
+                str(tree / "build/px4_sitl_default/rootfs/2/log"),
+                str(tmp_path / "run" / "ulog"),
+                type="bind",
+                read_only=False,
+            ),
+        ],
         "auto_remove": True,
         "network_mode": "host",
         "labels": {"nexus.peer": "px4", "nexus.px4.instance": "2", "nexus.owner": str(os.getpid())},

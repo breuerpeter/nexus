@@ -117,13 +117,15 @@ def build_from_launch(
     cfg: dict | None = None,
     preroll_timeout: float = 30.0,
     components: Registry | None = None,
+    run_dir: str | pathlib.Path | None = None,
 ) -> Loop:
     """Resolve *launch* and build the run the vehicle declares around its one controller.
 
     ``components`` is the registry that resolves each name the run resolves to its class: each schema the
     vehicle applies, a component's or a peer's, and the name a class requires a peer by. Its own rows answer
     first and the install answers the rest; ``None`` takes the install alone. A test sends a peer to its fake
-    with a row of its own.
+    with a row of its own. ``run_dir`` is the folder the run writes its files to, see
+    :func:`~nexus_uav._src.core.run_folder.run_folder`; ``None`` takes a new one.
 
     Raises:
         ValueError: The vehicle declares no controller or two, two estimators or guidances, one off its
@@ -132,6 +134,7 @@ def build_from_launch(
             claims, or a pin file beside a catalog names no peer, or a peer's pin isn't in its form; raised
             before any peer starts.
         FileNotFoundError: The launch names an override layer with no file behind it.
+        FileExistsError: ``run_dir`` holds files already; raised before any peer starts.
         KitPeerError: The vehicle declares RTX sensors and the Kit peer couldn't start.
     """
     vehicle_usd, resolved = resolve_vehicle_usd(launch, catalog, cache_dir=cache_dir)
@@ -156,7 +159,7 @@ def build_from_launch(
     found = {cls.name: (cls, pins.resolve(cls.name, layers)) for cls in classes}
     peer_pins = {name: cls.check_pin(pin) if pin is not None else None for name, (cls, pin) in found.items()}
     # Every file the run writes lands in one folder: the recording and each peer's logs.
-    logs = run_folder()
+    logs = run_folder(run_dir)
     # The run numbers every address its declared peers use from one instance; with none, an autopilot started
     # elsewhere dials instance 0's.
     claim = instance.claim(spec.cls for spec in declared) if declared else None

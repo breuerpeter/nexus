@@ -94,7 +94,9 @@ class Daemon:
 
         class Containers:
             def run(self, image, **kwargs):
-                seen = {src: (Path(src).is_dir(), Path(src).stat().st_uid) for src in kwargs.get("volumes", {})}
+                # A peer's run hands its binds as mounts, a script's run as volumes.
+                sources = [*kwargs.get("volumes", {}), *(m["Source"] for m in kwargs.get("mounts", []))]
+                seen = {src: (Path(src).is_dir(), Path(src).stat().st_uid) for src in sources}
                 daemon.runs.append({"image": image, **kwargs, "seen": seen})
                 container = _Container(daemon, kwargs.get("name"))
                 if daemon.serve is not None:
