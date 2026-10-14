@@ -90,6 +90,10 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
   tree: the tests of `nexus_uav/_src/<path>/` sit in `tests/<path>/`, and none sits at the root of
   `tests/`. A test that mirrors no source folder sits in a folder named for its kind, `ci`, `docs`,
   `examples`, `packaging` or `suite`. `tests/suite/test_layout.py` fails on any other folder.
+- **Sessions on one machine share PX4's ports.** While another session here runs the suite or flies PX4, a
+  `px4_ports` test fails with `the HIL port 4560 is in use by process N` or `OSError: [Errno 98] Address
+  already in use`. When `ps -p N` shows the other session's run, re-run the failed tests with `-n 0` after it
+  ends: they pass, and only a test that still fails alone is a fault of the change.
 - **Prose:** `vale sync` once, then `vale $(git ls-files '*.md' '*.py' ':!CHANGELOG.md')` checks the tracked Markdown, and the comments and docstrings in Python, against `.vale.ini`. The check leaves out `CHANGELOG.md`, which release-please writes, and so do both CI jobs. The ini pins each style by release URL, and the sync fetches them into `.vale/styles/`, a directory git ignores. CI runs the same check on the lines a pull request adds and fails on any alert among them. A nightly `vale-all` run, which you can also start from the Actions tab, checks the whole repo and fails on any alert, so a red night means something leaked past the gate. A domain word or acronym that a rule flags on a line you add, and that has no plain rewrite, goes into `.vale/styles/config/vocabularies/Names/accept.txt`, one pattern per line. An entry there exempts the word from every rule that flags it. A Python file that starts with a shebang or a comment defines its acronyms in a `# Acronyms:` comment after that header, because Vale's text rules skip a module docstring behind one.
 
 ## Commits
