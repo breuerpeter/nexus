@@ -2,9 +2,10 @@
 PX4's console, ``px4.log``, and its ULog, and Kit's console, ``kit.log``.
 
 The build picks one folder per run and hands it to each writer: the folder the caller names, or a new one
-under ``~/.cache/nexus/logs``. Picking it creates it, so no two runs share a folder, and a run that writes
+under ``~/.cache/nexus/logs``. Picking the new one creates it, so no two runs share it, and a run that writes
 nothing leaves an empty one. The build refuses a named folder that holds anything, so a run never mixes its
-files with an earlier run's.
+files with an earlier run's. The caller owns a folder it names: two runs that name one folder at once both
+find it empty.
 """
 
 from __future__ import annotations
