@@ -1,4 +1,4 @@
-"""A script separates an error from a failure by one public exception, ``nexus_uav.SetupError``, #321.
+"""A script separates an error from a failure by one public exception, ``nexus_uav.RunError``, #321.
 
 Real builds of the fixture vehicle in ``tests/usd/sensor_vehicle.py`` on the Warp CPU backend, through ``Sim``,
 with the PX4 Software In The Loop (SITL) peer sent to a stand-in of the fake PX4: one that never dials in, one that
@@ -40,9 +40,9 @@ def _raised(call) -> BaseException | None:
     return None
 
 
-def _caught_as_setup_error(exc: BaseException | None) -> bool:
-    """Whether `except nexus_uav.SetupError` catches `exc`."""
-    return exc is not None and isinstance(exc, getattr(nx, "SetupError", ()))
+def _caught_as_run_error(exc: BaseException | None) -> bool:
+    """Whether `except nexus_uav.RunError` catches `exc`."""
+    return exc is not None and isinstance(exc, getattr(nx, "RunError", ()))
 
 
 class _Console(Px4Fake):
@@ -97,11 +97,11 @@ def _lost_mid_run(sim: nx.Sim) -> None:
     _Lost.started[-1].stop()
 
 
-def test_a_run_whose_peer_never_answers_raises_the_public_setup_error_from_start_and_tears_down(tmp_path, monkeypatch):
-    """A run whose peer never answers raises `nexus_uav.SetupError` from `Sim.start()`, and the run's teardown has run.
+def test_a_run_whose_peer_never_answers_raises_the_public_run_error_from_start_and_tears_down(tmp_path, monkeypatch):
+    """A run whose peer never answers raises `nexus_uav.RunError` from `Sim.start()`, and the run's teardown has run.
 
     Given the fixture vehicle on a fake PX4 that never dials in and a recorded run, when `Sim.start(timeout=0.2)` runs
-    under `except nexus_uav.SetupError`, then the handler catches it and the run has closed the recording: its file holds
+    under `except nexus_uav.RunError`, then the handler catches it and the run has closed the recording: its file holds
     the base body's rows.
     """
     monkeypatch.setenv("HOME", str(tmp_path))
@@ -109,11 +109,11 @@ def test_a_run_whose_peer_never_answers_raises_the_public_setup_error_from_start
         error = _raised(lambda: sim.start(timeout=0.2))
         rrd = sim.artifacts()["rrd"]
 
-    assert (_caught_as_setup_error(error), rows(rrd, POSITION) > 0) == (True, True), error
+    assert (_caught_as_run_error(error), rows(rrd, POSITION) > 0) == (True, True), error
 
 
-def test_the_setup_errors_message_carries_the_peers_own_error_lines_and_its_logs_path(tmp_path):
-    """The setup error's message carries the peer's own error lines, not only its log's path.
+def test_the_run_errors_message_carries_the_peers_own_error_lines_and_its_logs_path(tmp_path):
+    """The run error's message carries the peer's own error lines, not only its log's path.
 
     Given a fake PX4 that never dials in and whose error lines hold PX4's `Unknown model` line, when
     `Sim.start(timeout=0.2)` fails, then the message holds that line and the log's path.
@@ -128,14 +128,14 @@ def test_a_peer_that_exits_during_preroll_fails_the_run_at_once(tmp_path):
     """A peer whose process exits during preroll fails the run at once, not after `preroll_timeout`.
 
     Given a fake PX4 that exits during preroll with an error line, when `Sim.start(timeout=60)` runs, then it raises
-    `SetupError` holding that line within 5 s of wall time.
+    `RunError` holding that line within 5 s of wall time.
     """
     with _sim(tmp_path, _Exited) as sim:
         t0 = time.monotonic()
         error = _raised(lambda: sim.start(timeout=60.0))
         took = time.monotonic() - t0
 
-    assert (_caught_as_setup_error(error), UNKNOWN_MODEL in str(error), took < 5.0) == (True, True, True), (
+    assert (_caught_as_run_error(error), UNKNOWN_MODEL in str(error), took < 5.0) == (True, True, True), (
         error,
         took,
     )
@@ -148,11 +148,11 @@ class _KitFailsToStart(KitFake):
         raise KitPeerError("starting the Kit container failed: no such image")
 
 
-def test_a_run_whose_kit_render_peer_fails_to_start_raises_the_public_setup_error(tmp_path, daemon):  # noqa: F811
-    """A run whose Kit render peer fails to start raises `nexus_uav.SetupError`.
+def test_a_run_whose_kit_render_peer_fails_to_start_raises_the_public_run_error(tmp_path, daemon):  # noqa: F811
+    """A run whose Kit render peer fails to start raises `nexus_uav.RunError`.
 
     Given the fixture vehicle with a camera and a Kit fake whose start fails, when the run starts under
-    `except nexus_uav.SetupError`, then the handler catches it.
+    `except nexus_uav.RunError`, then the handler catches it.
     """
     camera = sv.prim("Cam", "NexusCameraAPI", kind="Camera")
     vehicle = sv.vehicle(tmp_path, camera)
@@ -164,14 +164,14 @@ def test_a_run_whose_kit_render_peer_fails_to_start_raises_the_public_setup_erro
 
     error = _raised(start)
 
-    assert _caught_as_setup_error(error), error
+    assert _caught_as_run_error(error), error
 
 
-def test_a_peer_lost_mid_run_raises_the_setup_error_from_step_and_tears_down(tmp_path, monkeypatch):
-    """A peer lost mid-run raises `SetupError` from `step()`.
+def test_a_peer_lost_mid_run_raises_the_run_error_from_step_and_tears_down(tmp_path, monkeypatch):
+    """A peer lost mid-run raises `RunError` from `step()`.
 
     Given the fixture vehicle on the fake PX4 past lockstep, when the fake stops and the script steps, then a
-    `step()` raises `SetupError` naming the peer, and the run has closed the recording: its file holds the base
+    `step()` raises `RunError` naming the peer, and the run has closed the recording: its file holds the base
     body's rows.
     """
     monkeypatch.setenv("HOME", str(tmp_path))
@@ -186,53 +186,53 @@ def test_a_peer_lost_mid_run_raises_the_setup_error_from_step_and_tears_down(tmp
         rrd = sim.artifacts()["rrd"]
 
     named = "px4" in str(error).lower()
-    assert (_caught_as_setup_error(error), named, rows(rrd, POSITION) > 0) == (True, True, True), error
+    assert (_caught_as_run_error(error), named, rows(rrd, POSITION) > 0) == (True, True, True), error
 
 
-def test_a_peer_lost_mid_run_raises_the_setup_error_from_run(tmp_path):
-    """A peer lost mid-run raises `SetupError` from `run()`.
+def test_a_peer_lost_mid_run_raises_the_run_error_from_run(tmp_path):
+    """A peer lost mid-run raises `RunError` from `run()`.
 
     Given the fixture vehicle on the fake PX4 past lockstep, when the fake stops and the script calls `sim.run()`,
-    then `run()` raises `SetupError` naming the peer.
+    then `run()` raises `RunError` naming the peer.
     """
     with _sim(tmp_path, _Lost) as sim:
         _lost_mid_run(sim)
         error = _raised(sim.run)
 
-    assert (_caught_as_setup_error(error), "px4" in str(error).lower()) == (True, True), error
+    assert (_caught_as_run_error(error), "px4" in str(error).lower()) == (True, True), error
 
 
-def test_a_peer_lost_mid_run_raises_the_setup_error_from_wait_until_not_a_timeout(tmp_path):
-    """A peer lost mid-run raises `SetupError` from `wait_until`, not `TimeoutError`.
+def test_a_peer_lost_mid_run_raises_the_run_error_from_wait_until_not_a_timeout(tmp_path):
+    """A peer lost mid-run raises `RunError` from `wait_until`, not `TimeoutError`.
 
     Given the fixture vehicle on the fake PX4 past lockstep, when the fake stops during
-    `sim.wait_until(lambda: False, 60.0)`, then it raises `SetupError`, not `TimeoutError`.
+    `sim.wait_until(lambda: False, 60.0)`, then it raises `RunError`, not `TimeoutError`.
     """
     with _sim(tmp_path, _Lost) as sim:
         _lost_mid_run(sim)
         error = _raised(lambda: sim.wait_until(lambda: False, 60.0))
 
-    assert (_caught_as_setup_error(error), isinstance(error, TimeoutError)) == (True, False), error
+    assert (_caught_as_run_error(error), isinstance(error, TimeoutError)) == (True, False), error
 
 
-def test_a_peer_lost_mid_run_raises_the_setup_error_from_sleep_not_a_quiet_return(tmp_path):
-    """A peer lost mid-run raises `SetupError` from `sleep`, not a quiet return.
+def test_a_peer_lost_mid_run_raises_the_run_error_from_sleep_not_a_quiet_return(tmp_path):
+    """A peer lost mid-run raises `RunError` from `sleep`, not a quiet return.
 
     Given the fixture vehicle on the fake PX4 past lockstep, when the fake stops during `sim.sleep(60.0)`, then it
-    raises `SetupError`.
+    raises `RunError`.
     """
     with _sim(tmp_path, _Lost) as sim:
         _lost_mid_run(sim)
         error = _raised(lambda: sim.sleep(60.0))
 
-    assert _caught_as_setup_error(error), error
+    assert _caught_as_run_error(error), error
 
 
 def test_the_mid_run_errors_message_carries_the_peers_own_error_lines(tmp_path):
     """The mid-run error's message carries the peer's own error lines.
 
     Given a fake PX4 that stops answering past lockstep and whose error lines hold an error line, when the script
-    steps, then the `SetupError` message holds that line.
+    steps, then the `RunError` message holds that line.
     """
     with _sim(tmp_path, _Lost) as sim:
         _lost_mid_run(sim)

@@ -1,4 +1,4 @@
-"""What a script reads when PX4 leaves a run with no verdict, #321: its own error lines in the run's ``SetupError``, and
+"""What a script reads when PX4 leaves a run with no verdict, #321: its own error lines in the run's ``RunError``, and
 ``OffboardClient.connect``, which waits for PX4's heartbeat in sim time.
 
 The tests marked ``px4_sitl`` fly through ``nx.Sim``, which builds and launches PX4 from the tree on this
@@ -49,9 +49,9 @@ def _raised(call) -> BaseException | None:
     return None
 
 
-def _caught_as_setup_error(exc: BaseException | None) -> bool:
-    """Whether `except nexus_uav.SetupError` catches `exc`."""
-    return exc is not None and isinstance(exc, getattr(nx, "SetupError", ()))
+def _caught_as_run_error(exc: BaseException | None) -> bool:
+    """Whether `except nexus_uav.RunError` catches `exc`."""
+    return exc is not None and isinstance(exc, getattr(nx, "RunError", ()))
 
 
 @pytest.mark.px4_sitl
@@ -61,7 +61,7 @@ def test_a_px4_tree_without_the_vehicles_airframe_fails_the_run_with_px4s_own_er
     """A PX4 tree without the vehicle's airframe fails the run with PX4's own error in the message.
 
     Given the fixture vehicle on airframe `no_such_airframe`, which the pinned tree lacks, when `Sim.start(timeout=60)`
-    runs, then it raises `SetupError` whose message holds PX4's `Unknown model` line.
+    runs, then it raises `RunError` whose message holds PX4's `Unknown model` line.
     """
     path = sv.vehicle(tmp_path, px4=True)
     with open(path) as f:
@@ -72,7 +72,7 @@ def test_a_px4_tree_without_the_vehicles_airframe_fails_the_run_with_px4s_own_er
     with nx.Sim(path, scene=sv.SCENE, device="cpu") as sim:
         error = _raised(lambda: sim.start(timeout=60.0))
 
-    assert (_caught_as_setup_error(error), "Unknown model" in str(error)) == (True, True), error
+    assert (_caught_as_run_error(error), "Unknown model" in str(error)) == (True, True), error
 
 
 @pytest.mark.px4_sitl
@@ -117,11 +117,11 @@ class _NoOffboard(Px4Fake):
 
 
 @pytest.mark.usefixtures("warp_cpu")
-def test_offboard_connect_raises_the_setup_error_when_no_heartbeat_comes_in_time(tmp_path):
-    """`OffboardClient.connect` raises `SetupError` when no heartbeat comes within `timeout` sim seconds.
+def test_offboard_connect_raises_the_run_error_when_no_heartbeat_comes_in_time(tmp_path):
+    """`OffboardClient.connect` raises `RunError` when no heartbeat comes within `timeout` sim seconds.
 
     Given a run of the fixture vehicle whose fake PX4 names an offboard port that nothing answers on, when
-    `OffboardClient.connect(sim, 1.0)` runs, then it raises `SetupError` naming the port, with the sim at least
+    `OffboardClient.connect(sim, 1.0)` runs, then it raises `RunError` naming the port, with the sim at least
     1.0 s later.
     """
     vehicle = sv.vehicle(tmp_path, px4=True)
@@ -133,4 +133,4 @@ def test_offboard_connect_raises_the_setup_error_when_no_heartbeat_comes_in_time
         waited = sim.time - t0
 
     named = str(_NoOffboard.port) in str(error)
-    assert (_caught_as_setup_error(error), named, waited >= 1.0) == (True, True, True), (error, waited)
+    assert (_caught_as_run_error(error), named, waited >= 1.0) == (True, True, True), (error, waited)
