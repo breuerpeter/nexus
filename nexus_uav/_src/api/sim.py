@@ -21,6 +21,7 @@ from nexus_uav._src.core import logger
 from nexus_uav._src.recording import History, Recorder
 
 if TYPE_CHECKING:
+    import os
     from collections.abc import Iterator
 
     from nexus_uav._src.core import Loop
@@ -91,6 +92,7 @@ class Sim:
         rtf: float = 0.0,
         layer: str | None = None,
         registry: Registry | None = None,
+        run_dir: str | os.PathLike | None = None,
     ):
         self._registry = registry  # the registry the build resolves each schema with, or None for the default
         self._launch = LaunchConfig()
