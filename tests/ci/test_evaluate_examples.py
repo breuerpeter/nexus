@@ -257,8 +257,14 @@ def test_merged_local_merges_by_name_fresh_winning(tmp_path):
 # A flight inside every committed guard of its example, rtf included, for the examples a CPU box can fly.
 _HEALTHY = {
     "pid": {"reached": 4, "final_dist_m": 0.1, "ape_trans_rmse_m": 0.8, "rtf": 6.7},
-    "gain_tuning": {"gradient_cosine": 0.995, "opt_hold_m": 0.1, "rtf": 6.3},
-    "mass_recovery": {"mass_rel_err": 0.01, "wall_s": 34.0},
+    "gain_tuning": {
+        "gradient_cosine": 0.995,
+        "opt_hold_m": 0.1,
+        "rtf": 6.3,
+        "wall_s": 120.0,
+        "rotor_speed_min_rad_per_sec": 260.0,
+    },
+    "mass_recovery": {"mass_rel_err": 0.01, "wall_s": 34.0, "rotor_speed_min_rad_per_sec": 300.0},
     "sampling_mpc": {
         "reached": 3,
         "final_dist_m": 0.1,

@@ -24,6 +24,12 @@ if [ -z "${VEHICLE_USD:-}" ]; then
     "from nexus_uav._src.config import LaunchConfig, resolve; print(resolve(LaunchConfig().set_vehicle('astro_max_base').set_scene('empty')).vehicle_usd_path)")"
 fi
 
+echo "===== PLANT PARITY (host, nexus-rl project) ====="
+# The RL task and the core fly one plant: tests/examples/test_rl_plant_parity.py needs Isaac Lab, which only
+# the nexus-rl environment holds, so the core's suites skip it and this leg runs it.
+( cd "$REPO" && uv run --locked --project nexus-rl --with pytest --with pytest-xdist \
+    pytest -q -n 0 -p no:cacheprovider --require-cuda tests/examples/test_rl_plant_parity.py )
+
 echo "===== TRAIN (host, kitless, nexus-rl project) ====="
 # `uv run --locked --project nexus-rl` installs Isaac Lab on the Newton backend from nexus-rl/uv.lock
 # (own venv, no container), then runs; a stale lock fails here instead of being re-locked. The trained checkpoints land under --log_dir; record_demo replays them.

@@ -708,6 +708,29 @@ def test_a_px4_run_takes_no_estimator_stage(tmp_path, warp_cpu, caplog):
     ]
 
 
+def test_a_rotor_with_no_newton_motor_fails_the_build(tmp_path, warp_cpu):
+    """A rotor with no Newton motor fails the build.
+
+    Given a vehicle USD whose rotor joint no `NewtonActuator` drives, when a run builds it, then the build fails
+    and names the rotor.
+    """
+    import nexus_uav._src.build.launch as L
+
+    unmotored = tmp_path / "unmotored_vehicle.usda"
+    unmotored.write_text(
+        "#usda 1.0\n(\n"
+        '    defaultPrim = "vehicle"\n'
+        f"    subLayers = [\n        @{sv.vehicle(tmp_path, px4=True)}@\n    ]\n)\n\n"
+        'over "vehicle"\n{\n    over "Physics"\n    {\n'
+        '        over "rotor_2_motor" (\n            active = false\n        )\n        {\n        }\n'
+        "    }\n}\n"
+    )
+    launch = LaunchConfig.from_dict({"vehicle": str(unmotored), "scene": sv.SCENE, "runtime": {"device": "cpu"}})
+
+    with pytest.raises(ValueError, match=f"{sv.ROOT}/body/rotor_2"):
+        L.build_from_launch(launch, preroll_timeout=10.0, components=Registry({"NexusPx4SitlAPI": Px4Fake}))
+
+
 def test_a_layer_path_that_does_not_exist_fails_before_any_peer_starts(tmp_path, daemon):
     """A layer path that doesn't exist fails before any peer starts.
 

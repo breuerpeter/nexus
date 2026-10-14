@@ -87,6 +87,12 @@
     },
     "opt_hold_m": {
       "max": 0.3
+    },
+    "wall_s": {
+      "max": 300.0
+    },
+    "rotor_speed_min_rad_per_sec": {
+      "min": 100.0
     }
   },
   "mass_recovery": {
@@ -95,7 +101,11 @@
     },
     "wall_s": {
       "value": 33.6,
-      "max_frac": 2.0
+      "max_frac": 2.0,
+      "max": 300.0
+    },
+    "rotor_speed_min_rad_per_sec": {
+      "min": 100.0
     }
   },
   "px4_sitl": {
