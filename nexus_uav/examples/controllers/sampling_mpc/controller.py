@@ -30,7 +30,7 @@ from newton.geometry import sdf_capsule  # warp-callable Signed Distance Field (
 from nexus_uav._src.core.interfaces import Component, Stage
 from nexus_uav._src.core.schema import PoseTwist
 from nexus_uav._src.core.signals import Signal
-from nexus_uav.examples._lib import build_rotor_mixer_from_layout, rigid_body_wrench_world
+from nexus_uav.examples._lib import build_rotor_mixer_from_layout, motor_alpha, rigid_body_wrench_world
 
 GRAVITY = 9.81
 
@@ -311,7 +311,7 @@ class SamplingMPCController(Component):
         # stays bounded. alpha uses the plan step, plan_dt. Ω starts each plan from the hover speed.
         self.kf = mixer.kf
         self.omega_max_motor = mixer.omega_max_motor
-        self.motor_alpha = float(1.0 - np.exp(-self.plan_dt / float(motor_tau)))
+        self.motor_alpha = motor_alpha(motor_tau, self.plan_dt)
         self.omega_hover = float(self.hover * self.omega_max_motor)
 
         lo_hi = np.array([[0.05, 1.0]] * self.control_dim, dtype=np.float32)

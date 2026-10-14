@@ -1,7 +1,8 @@
 """Record the Astro Max RL training as a Rerun ``.rrd``: a **swarm of the real Astro Max model**
 improving over training. It logs the actual Newton geometry through Newton's ``ViewerRerun``,
 so you see the real multirotor meshes, not markers, flying to their goals, and replays progressively
-trained policies so the swarm goes from crashing to clean convergence.
+trained policies so the swarm goes from crashing to clean convergence. Each prop turns with its rotor joint,
+which the simulation turns: the recording logs the state as the solver left it.
 
 Two Rerun timelines:
 * ``time``: play it to watch the swarm fly. The takes follow one another: early take = chaos, late
@@ -49,10 +50,6 @@ TASK = "Nexus-AstroMax-GoTo-Direct-v0"
 SNAPSHOT_FRACS = [0.07, 0.3, 0.45, 0.55, 0.67, 0.8, 1.0]
 EP_STEPS = 160  # episode frames to animate per snapshot: ~3 s at 50 Hz, enough to converge
 DEMO_SEED = 777  # seed each rollout reset so all snapshots share goals/starts, a fair before/after
-# The per-rotor env carries the actual per-rotor motor-speed states in env._omega, so the recording spins
-# the rotor meshes at the real simulated speed, not a cosmetic constant: props slow on descent, spin up
-# to climb. The lumped fallback has no Ω state, so it falls back to a constant cosmetic rate.
-SPIN_RATE = 25.0  # rad/s, the cosmetic fallback for the lumped env, which has no per-rotor Ω state
 
 
 def _blueprint() -> rrb.Blueprint:
@@ -157,17 +154,6 @@ def main() -> None:
         dt = float(u.step_dt)
         t_global = 0.0
         goals = None
-        # Per-rotor spin sign from the joint names, …ccw… = + and …cw… = −, broadcast to all envs.
-        spin_dirs = (
-            torch.tensor([1.0 if "ccw" in n else -1.0 for n in u._robot.joint_names], device=u.device)
-            .unsqueeze(0)
-            .expand(u.num_envs, -1)
-            .contiguous()
-        )
-        # Per-rotor env: spin the rotor meshes at the actual motor-speed states, env._omega, integrated
-        # into a joint angle. Falls back to a cosmetic constant rate if the model has no per-rotor Ω state.
-        rotor_angle = torch.zeros(u.num_envs, len(u._robot.joint_names), device=u.device)
-        real_spin = hasattr(u, "_omega") and u._omega.shape[1] == rotor_angle.shape[1]
         for it in chosen:
             runner.load(os.path.join(log_dir, f"model_{it}.pt"))  # the play.py "play a saved policy" flow
             policy = runner.get_inference_policy(device="cuda:0")
@@ -180,12 +166,7 @@ def main() -> None:
                 for _step in range(EP_STEPS):
                     obs, _, _, _ = wenv.step(policy(obs))
                     u._desired_pos_w[vis] = goals  # pin the shown swarm's goals, so they survive a crash reset
-                    if real_spin:  # integrate the real per-rotor motor speed, signed cw/ccw, into the angle
-                        rotor_angle += u._omega * spin_dirs * dt
-                    else:
-                        rotor_angle = SPIN_RATE * t_global * spin_dirs  # cosmetic fallback for the lumped env
-                    u._robot.write_joint_position_to_sim(rotor_angle)
-                    pm.forward()  # refresh body poses via eval_fk before reading the state
+                    pm.forward()  # body poses from the joints, so an env this step reset shows at its start
                     rec.begin_frame(t_global)  # logs the real swarm geometry at t_global
                     rec.log_state(pm.get_state())
                     rec.end_frame()

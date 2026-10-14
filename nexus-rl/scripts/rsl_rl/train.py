@@ -7,7 +7,7 @@ no Kit camera/visualizer → ``launch_simulation()`` never boots a SimulationApp
 
 Run from the separate ``nexus-rl`` uv project; its own venv has Isaac Lab, the core doesn't:
 
-    uv run --project nexus-rl python nexus-rl/scripts/rsl_rl/train.py --num_envs 2048 --max_iterations 150
+    uv run --project nexus-rl python nexus-rl/scripts/rsl_rl/train.py --num_envs 2048 --max_iterations 500
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ def main() -> dict:
     ap = argparse.ArgumentParser()
     ap.add_argument("--task", default=DEFAULT_TASK)
     ap.add_argument("--num_envs", type=int, default=2048)
-    ap.add_argument("--max_iterations", type=int, default=250)
+    ap.add_argument("--max_iterations", type=int, default=500)  # what every seed needs, as CI trains
     ap.add_argument(
         "--seed", type=int, default=42,
         help="pins the random draws, the initial weights, start states and exploration noise, and not the "

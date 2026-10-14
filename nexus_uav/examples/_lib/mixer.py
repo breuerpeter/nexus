@@ -11,9 +11,7 @@ deploy + the differentiable examples:
   → ``[T, τx, τy, τz]``, and its pseudo-inverse ``B⁻¹``, the mixer core: wrench → per-rotor thrust, from
   the rest-pose rotor geometry. ``pinv`` is canonical and handles ``nr ≠ 4``.
 * :func:`ctbr_rate_loop`: the CTBR → inner P rate-loop ``@wp.func`` returning the *target* base-frame
-  wrench ``[T, τ]``, before allocation. Carries the ``substeps`` dilution so the same op serves the
-  Isaac-Lab substep-integrated training env, ``substeps = NUM_SUBSTEPS``, and the standalone deploy,
-  ``substeps = 1``.
+  wrench ``[T, τ]``, before allocation.
 * :func:`wrench_to_cmd`: the shared mixer tail, ``B⁻¹`` → per-rotor thrust → normalized rotor-speed
   command ``u = √(max(f, 0)/kf) / Ω_max``. A clean differentiable allocation op, with no rate loop and no
   motor state, so design-opt's gradient flows through it.
@@ -106,21 +104,14 @@ def build_allocation(
 
 
 @wp.func
-def ctbr_rate_loop(action: wp.vec4, omega_b: wp.vec3, p: CtbrParams, substeps: float) -> wp.vec4:
+def ctbr_rate_loop(action: wp.vec4, omega_b: wp.vec3, p: CtbrParams) -> wp.vec4:
     """CTBR collective thrust + inner P rate-loop → the **target base-frame wrench** ``[T, τx, τy, τz]``,
     before the allocation, as a ``wp.vec4``. The single source of the per-rotor CTBR law, shared by the
-    deploy, ``substeps = 1``, and the Isaac-Lab training, ``substeps = NUM_SUBSTEPS``, launches.
-
-    This op divides the collective and the rate-loop torque by ``substeps``; the motor model
-    ``rigid_body_wrench_batched`` multiplies the final wrench by ``substeps`` after the allocation. With the
-    training twins, ``thrust_to_weight = 1.9·N`` and ``rate_gain = 12``, this recovers the *effective*
-    ``T/W = 1.9`` and rate gain ``3``, byte-equal to the deploy effective values of ``substeps = 1``,
-    ``T/W = 1.9`` and gain ``3``, so a single kernel reproduces both paths' per-tick per-rotor thrust
-    exactly.
+    deploy and the RL training launches.
     """
     thr = (wp.clamp(action[0], -1.0, 1.0) + 1.0) * 0.5
-    thrust = (p.thrust_to_weight / substeps) * p.weight * thr  # [N], effective collective; sign applied later
-    g = p.rate_gain / substeps
+    thrust = p.thrust_to_weight * p.weight * thr  # [N], the collective; sign applied later
+    g = p.rate_gain
     omega_des = (
         wp.vec3(wp.clamp(action[1], -1.0, 1.0), wp.clamp(action[2], -1.0, 1.0), wp.clamp(action[3], -1.0, 1.0))
         * p.omega_max
@@ -166,7 +157,6 @@ def ctbr_to_cmd_batched(
     B_inv: wp.array2d(dtype=float),  # (nr, 4) mixer
     kf: float,
     omega_max_motor: float,
-    substeps: float,  # Isaac-Lab substep factor: NUM_SUBSTEPS for train, 1 for deploy
     nr: int,
     out_cmd: wp.array2d(dtype=float),  # (N, nr) → normalized per-rotor command
 ):
@@ -177,7 +167,7 @@ def ctbr_to_cmd_batched(
     """
     n = wp.tid()
     omega_b = wp.quat_rotate_inv(quat[n], omega_w[n])  # world ω → body
-    wrench_des = ctbr_rate_loop(action[n], omega_b, p, substeps)  # [T, τx, τy, τz] target, ÷substeps
+    wrench_des = ctbr_rate_loop(action[n], omega_b, p)  # [T, τx, τy, τz] target
     wrench_to_cmd(wrench_des, B_inv, kf, omega_max_motor, nr, n, out_cmd)
 
 
@@ -308,10 +298,9 @@ class CtbrMixer:
     ``omega_b`` unchanged with the same op the training launch uses, with no extra state to plumb.
     """
 
-    def __init__(self, mixer: RotorMixer, ctbr_params: CtbrParams, *, substeps: float = 1.0):
+    def __init__(self, mixer: RotorMixer, ctbr_params: CtbrParams):
         self.nr = int(mixer.nr)
         self.p = ctbr_params
-        self.substeps = float(substeps)
         self.kf = float(mixer.kf)
         self.omega_max_motor = float(mixer.omega_max_motor)
         self._B_inv = wp.array(np.asarray(mixer.B_inv, dtype=np.float32), dtype=float)
@@ -339,7 +328,6 @@ class CtbrMixer:
                 self._B_inv,
                 self.kf,
                 self.omega_max_motor,
-                self.substeps,
                 self.nr,
             ),
             outputs=(self._cmd,),

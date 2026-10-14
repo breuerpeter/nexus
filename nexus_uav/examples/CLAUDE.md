@@ -25,22 +25,22 @@ in the script, and it records its flight `.rrd`. The launcher map is `_EXAMPLES`
   its `(1, nr)` `controls` signal. The loop never calls `exchange` itself. A controller that reads `attached` false
   before it connects waits on a peer: it connects after the capture, so its device buffers exist from
   construction. One with no peer connects before the start.
-- An example hands the loop its rotor chain in one of two ways. One that sums the rotor wrench on
-  the base body, the PID, policy and sampling MPC examples, passes `_lib`'s `Rotors` as the loop's
-  `actuator`, the old actuator stage the loop keeps for it. Where such an example keeps the articulated
-  model, it builds its physics with `step_actuators=False`, so the vehicle's Newton motors stay
-  idle and the rotor joints hang free. One on the core rotor chain, the acados example, passes the
-  `commands` and `forces` that `rotor_chain(physics, vehicle_usd)` from
-  `nexus_uav._src.build.assembly` returns, and physics steps the Newton motors between them.
+- Every example flies the articulated vehicle on the core rotor chain: its assembly passes the loop
+  the `commands` and `forces` that `rotor_chain(physics, vehicle_usd)` from
+  `nexus_uav._src.build.assembly` returns, and physics steps the vehicle's Newton motors between them.
+  The gradient examples fly the same parts in the recorded rollout of `_lib/articulated.py`, and RL
+  training in `_lib/rotor_chain.py`. The sampling MPC planner alone keeps a single-body model, to plan on.
 - A controller that logs, as the MPC examples do, names itself with a `name` class attribute. It
   logs only its own row's name, `horizon`, through the logger the loop hands it at `set_logger`,
   so the row lands at `sim/vehicle/controllers/<name>/horizon`.
-- `_lib/` is the shared machinery. It holds the single-body `Rotors` actuator in `rotors.py` plus
-  the mixers in `mixer.py`, and the Universal Scene Description (USD) to single-body collapse in
-  `single_body.py`, which re-exports the rotor parser and geometry helpers `nexus-rl` reads. It also holds the reference planners in `reference.py` and `min_snap.py`, the
-  train↔deploy observation source in `observation.py`, which `nexus-rl` also imports, the
-  evaluation dump in `eval_dump.py`, and in `origin.py` the override layer that moves a shipped
-  scene's geodetic origin, which `mission.py` and the benchmark cell write.
+- `_lib/` is the shared machinery. It holds the mixers in `mixer.py` and the articulated plant as a
+  differentiable rollout in `articulated.py`. `rotor_chain.py` holds the rotor chain of a model with many
+  copies of the vehicle, which `nexus-rl` trains on. `single_body.py` holds the collapse of the
+  Universal Scene Description (USD) file to a single body, the sampling MPC planner's model, and
+  re-exports the rotor parser and geometry helpers `nexus-rl` reads. `reference.py` and `min_snap.py`
+  hold the reference planners, and `observation.py` the train↔deploy observation source, which
+  `nexus-rl` also imports. `eval_dump.py` holds the evaluation dump, and `origin.py` the override layer
+  that moves a shipped scene's geodetic origin, which `mission.py` and the benchmark cell write.
 - The acados example provisions its own acados: `controllers/acados_nmpc/provision.py` fetches the
   commit `acados.ref` pins and builds it under `~/.cache/nexus/acados/<sha>`, on
   `python -m nexus_uav.examples acados_nmpc --provision`. The `acados` extra holds PyPI packages only.

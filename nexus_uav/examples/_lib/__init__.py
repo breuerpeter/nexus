@@ -4,8 +4,9 @@ Examples import from here with absolute imports, ``from nexus_uav.examples._lib 
 which work under every launcher: ``python -m nexus_uav.examples`` and plain
 ``python path/to/flight.py``. Ships in the wheel as the examples themselves do.
 
-:mod:`articulated` holds the articulated plant as a differentiable rollout, which the gradient examples fly;
-:mod:`mixer` holds ``RotorMixer``, the Collective Thrust and Body Rate (CTBR) and moment mixers,
+:mod:`articulated` holds the articulated plant as a differentiable rollout, which the gradient examples fly,
+and :mod:`rotor_chain` the rotor chain of a model with many copies of one vehicle, the plant the RL task trains
+on; :mod:`mixer` holds ``RotorMixer``, the Collective Thrust and Body Rate (CTBR) and moment mixers,
 and the allocation builders. A planner that models the vehicle as one rigid body keeps that model here:
 :mod:`motor` holds the first-order Ω lag and its time constant from the vehicle's motors, :mod:`coupling`
 the single-body wrench kernel, and :mod:`single_body` the collapse from Universal Scene Description (USD)
@@ -33,3 +34,4 @@ from nexus_uav.examples._lib.mixer import (  # noqa: F401
     wrench_to_cmd,
 )
 from nexus_uav.examples._lib.motor import lag_step, motor_alpha  # noqa: F401
+from nexus_uav.examples._lib.rotor_chain import RotorChain, vehicle_rotors  # noqa: F401

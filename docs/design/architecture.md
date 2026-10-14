@@ -171,9 +171,9 @@ that each rotor's rigid body applies in the vehicle USD. The rotor speed at full
 motor's no-load speed, `newton:velocityLimit`. The **mixer**, the
 Collective Thrust and Body Rates (CTBR) rate loop and the `B⁻¹` control allocation, lives in the
 *controllers*, not the rotor chain. So the `controls` signal is always one entry per actuator, and a
-command element only ever applies the forward map. PX4 and the acados example fly this chain. The
-PID, policy and sampling Model Predictive Control (MPC) examples fly a single-body plant with a
-motor lag of their own.
+command element only ever applies the forward map. Every run flies this chain: PX4, each example
+controller, the gradient examples' recorded rollout and RL training. The sampling Model Predictive
+Control (MPC) planner plans on a single-body model of it, with the motors' lag and spin-up reaction.
 
 ## Observability and recording
 

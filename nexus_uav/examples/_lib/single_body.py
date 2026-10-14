@@ -1,22 +1,16 @@
-"""Collapse a quad-X vehicle Universal Scene Description (USD) into a single rigid body: the one framework
-path for the single-body model, the differentiable sampling Model Predictive Control (MPC) +
-design-optimization rollouts, and their real sim.
+"""Collapse a quad-X vehicle Universal Scene Description (USD) into a single rigid body: the model the
+sampling Model Predictive Control (MPC) planner plans its rollouts on. The plant every run flies stays the
+articulated vehicle.
 
-Core framework rule: **models are only ever created from USDs**, never synthesized in code. The
-differentiable controllers need one rigid body, because back-propagating through the articulated
-multi-body, airframe + rotor revolute joints, gives a truncated or unstable
-Backpropagation Through Time (BPTT) gradient. So instead of authoring a second "collapsed" asset, this
-module **collapses the real articulated USD at load time**: retype the rotor REVOLUTE joints to fixed joints, then
-``ModelBuilder.collapse_fixed_joints()`` merges the rotors into the airframe. Newton computes the correct
-lumped mass, inertia, and Center Of Mass (COM), and keeps the rotor disk shapes, re-parented to the single
-body, so the drone still renders with its static rotors.
+Core framework rule: **models are only ever created from USDs**, never synthesized in code. So instead of
+authoring a second "collapsed" asset, this module **collapses the real articulated USD at load time**: retype
+the rotor REVOLUTE joints to fixed joints, then ``ModelBuilder.collapse_fixed_joints()`` merges the rotors
+into the airframe. Newton computes the correct lumped mass, inertia, and Center Of Mass (COM), and keeps the
+rotor disk shapes, re-parented to the single body.
 
-The **actuator is joint-agnostic**, :class:`~nexus_uav.examples._lib.rotors.Rotors`: it drives the base
-body with a single summed wrench built from the rotor *layout*, offsets + spins + thrust map, which
-:func:`collapse_to_single_body` reads from the articulated USD **before** the joints merge away.
-So the one ``Rotors`` actuator flies the collapsed single body identically to the articulated model; see
-the coupling docstring, ``coupling.py``. One asset, one actuator; the collapse is the only
-single-body-specific step, and it lives here.
+The planner's rotors act through one summed base-body wrench, :mod:`~nexus_uav.examples._lib.coupling`,
+built from the rotor *layout*, offsets + spins + thrust map, which :func:`collapse_to_single_body` reads from
+the articulated USD **before** the joints merge away.
 
 Quad-X only, the framework's vehicle class; a different quad is a different USD + a retune, no code change.
 """
@@ -37,7 +31,7 @@ from nexus_uav._src.vehicle.rotors import RPM_PER_RADS, find_rotor_joints, quat_
 @dataclass
 class SingleBody:
     """A quad-X vehicle USD collapsed to ``count`` free single rigid bodies, + the rotor layout and params
-    the joint-agnostic :class:`~nexus_uav.examples._lib.rotors.Rotors` actuator needs to drive it.
+    the planner's coupling, :mod:`~nexus_uav.examples._lib.coupling`, needs to drive it.
 
     Attributes:
         model: The finalized collapsed model: ``count`` independent free single bodies, each with the
@@ -45,9 +39,9 @@ class SingleBody:
         mass: The lumped per-body mass [kg].
         offsets: ``(nr, 3)`` rotor offsets in the base-body frame, the ``r×F`` moment arms.
         dirs: ``(nr,)`` cw/ccw spin sign per rotor, the yaw-reaction sign.
-        act: The USD actuator param dict, ``ct``/``cd``/``rpm_max``/``tau``/``aero_*``. Feeds
-            :func:`~nexus_uav.examples._lib.mixer.build_rotor_mixer_from_layout` + the ``Rotors`` motor
-            model + the hover-thrust calc.
+        act: The rotors' values the USD declares, ``ct``/``cd``/``rpm_max``/``aero_*``. Feeds
+            :func:`~nexus_uav.examples._lib.mixer.build_rotor_mixer_from_layout` + the coupling + the
+            hover-thrust calc.
     """
 
     model: Any
@@ -138,9 +132,8 @@ def collapse_to_single_body(
     b.add_ground_plane()
     for _ in range(int(count)):  # count copies of the catalog vehicle USD
         vehicle_usd.build(b)
-    # Drop any USD-authored NewtonActuator entries, the core path's rotor motors: the collapse
-    # destroys the rotor joints they target, and the single-body regime runs the joint-agnostic
-    # Rotors actuator instead.
+    # Drop the USD-authored NewtonActuator entries, the plant's rotor motors: the collapse destroys the
+    # rotor joints they target, and the planner's coupling models the motors instead.
     b.actuator_entries.clear()
     _fix_rotor_joints(b)
     b.collapse_fixed_joints()  # merge each vehicle's rotors into its airframe → count single bodies

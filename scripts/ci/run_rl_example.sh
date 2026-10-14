@@ -11,10 +11,9 @@
 set -euo pipefail
 REPO="${REPO:-$(cd "$(dirname "$0")/../.." && pwd)}"
 OUT="${OUT:-$REPO/.rl-artifacts}"
-# 300 iters, not 150: at 150 the hover success is still climbing (~0.88) and the exported policy is
-# right at the deploy tour's robustness edge — run-to-run training nondeterminism flipped the leg
-# between 3/3 waypoints (err 0.013 m) and 1/3 (err 3.1 m). The extra ~67 s of training buys margin.
-ENVS="${ENVS:-2048}"; ITERS="${ITERS:-300}"; SEED="${SEED:-42}"
+# 500 iters: on the articulated plant, training first reaches hover success 0.9 at iterations 202 to 274
+# over seeds 42 to 49, and at 300 one seed of the 8 stalled at 0.21. At 500 all 8 passed, at 0.99 to 1.0.
+ENVS="${ENVS:-2048}"; ITERS="${ITERS:-500}"; SEED="${SEED:-42}"
 mkdir -p "$OUT"
 
 # Resolve the Astro Max USD into the asset cache if not supplied (so the GPU caller is a one-liner);

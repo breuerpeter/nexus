@@ -121,9 +121,9 @@ four rotor **revolute** joints, because:
 
 - the shipped rotor chain, the example controllers and the PX4 path all assume thrust along
   **−body-z**, the FRD convention. It's a hardcoded invariant, not a per-call parameter.
-- the differentiable examples, sampling Model Predictive Control (MPC) and design-opt, build their single rigid body by
-  **fixing the rotor revolute joints and collapsing them** with `ModelBuilder.collapse_fixed_joints`.
-  So the rotors must be revolute joints off the base, or the collapse can't find and merge them.
+- the sampling Model Predictive Control (MPC) planner builds its single-body model by **fixing the
+  rotor revolute joints and collapsing them** with `ModelBuilder.collapse_fixed_joints`. So the rotors
+  must be revolute joints off the base, or the collapse can't find and merge them.
 
 ## Rotor indexing
 

@@ -83,9 +83,8 @@ def build_policy_loop(
     # controller runs the CTBR mixer, rate loop → B⁻¹, and the rotor chain PX4 flies takes its commands.
     mixer = build_rotor_mixer_from_model(physics.model, vehicle_usd.rotor_joints(), act, physics.state0.body_q.numpy())
     commands, forces = rotor_chain(physics, vehicle_usd)
-    # CTBR rate-loop params for the controller's mixer: the deploy effective values, substeps=1; the policy
-    # trained on the ×NUM_SUBSTEPS-baked twins, diluted back here. Inertia read from the model so the loop
-    # is inertia-correct, exactly as training reads it. The controller owns the mixer, airframe-aware.
+    # CTBR rate-loop params for the controller's mixer, the values the policy trained with. Inertia read from
+    # the model so the loop is inertia-correct, exactly as training reads it. The controller owns the mixer.
     ctbr_params = CtbrParams()
     ctbr_params.thrust_to_weight = float(thrust_to_weight)
     ctbr_params.weight = float(robot_mass) * 9.81

@@ -113,8 +113,7 @@ class TrainedPolicyController(Component):
         if self._rotor_mixer is not None and self._mixer is None:
             from nexus_uav.examples._lib import CtbrMixer
 
-            # substeps = 1: the standalone applies the wrench once per step, the deploy effective CTBR params.
-            self._mixer = CtbrMixer(self._rotor_mixer, self._ctbr_params, substeps=1.0)
+            self._mixer = CtbrMixer(self._rotor_mixer, self._ctbr_params)
 
     def close(self) -> None:
         self._policy = None

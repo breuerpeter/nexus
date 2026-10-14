@@ -29,15 +29,10 @@ coordinates, ``body_q``, with no joint control; the articulated vehicle uses gen
 coordinates, ``joint_q``, + the joint control buffer. Vehicle USDs follow FRD authoring, body +z down,
 and spawned free they sit upright; see ``docs/design/conventions.md``.
 
-``eval_fk`` is intentionally not re-run after the actuator
-joint update, so ``update_body_f`` reads the earlier step's joint pose, a
-one-step lag in thrust direction.
-
 Two device stages, ``clear`` and ``step``: the collide + solver.step + double-buffer ping-pong
 is a static launch over persistent buffers, so it joins a CUDA graph with the command and force stages
-between them. ``step`` first zeroes ``control.joint_f`` and steps the Newton actuators, where Newton's docs
-place the call, each over double-buffered state copied back in place after the step: the graph-safe twin
-of the state swap, since a Python swap would freeze at a CUDA graph's capture-time binding.
+between them. ``step`` first steps the vehicle's motors, :class:`~nexus_uav._src.physics.motors.Motors`,
+into ``control.joint_f``, then the solver.
 """
 
 from __future__ import annotations
@@ -54,28 +49,12 @@ from nexus_uav._src.vehicle.rotors import RPM_PER_RADS, find_rotor_joints
 from ..scene import world
 from ..scene.ingest import add_scene  # ingestion only: the handlers are the renderer's side
 from ..scene.world import GRAVITY
+from .motors import Motors
 from .outputs import Outputs
 
 STABILIZE_VEL_THRESHOLD = 0.01  # m/s
 STABILIZE_MIN_STEPS = 10
 STABILIZE_MAX_STEPS = 10000
-
-
-def _state_arrays(act_state) -> list[wp.array]:
-    """The Warp arrays inside a composed ``newton.actuators`` Actuator.State, the delay + controller
-    sub-states, in a construction-stable order, so two states built by the same ``actuator.state()``
-    pair up positionally for the in-place copy-back.
-    """
-    out: list[wp.array] = []
-    if act_state is None:
-        return out
-    for sub in (getattr(act_state, "delay_state", None), getattr(act_state, "controller_state", None)):
-        if sub is None:
-            continue
-        for v in vars(sub).values():
-            if isinstance(v, wp.array):
-                out.append(v)
-    return out
 
 
 def make_solver(name: str, model, *, njmax: int = 224):
@@ -140,14 +119,8 @@ class NewtonPhysics:
         self.control = self.model.control() if self.articulated else None
         # The plant's outputs, a PoseTwist per body and a struct per joint, which the state stage writes.
         self.outputs = Outputs(self.model, self.state0)
-        # Every Newton actuator the vehicle declares, rotor motor or not, stepped before the solver. Each
-        # keeps two copies of its state, because ControllerPID is stateful and a Python swap would freeze at
-        # the binding a CUDA graph captured: step() copies next → current in place after each step.
-        self._actuators = list(getattr(self.model, "actuators", None) or [])
-        self._actuator_states = [(a.state(), a.state()) for a in self._actuators]
-        self._actuator_copies = [
-            list(zip(_state_arrays(cur), _state_arrays(nxt), strict=True)) for cur, nxt in self._actuator_states
-        ]
+        # Every Newton motor the vehicle declares, rotor motor or not, stepped before the solver.
+        self.motors = Motors(self.model)
         self.contacts = self.model.collide(self.state0) if self.contacts_on else None
         self.base_index = self._find_base()
         # The base body's label, the leaf of its model label when unique: Sim's default vehicle entity,
@@ -196,17 +169,10 @@ class NewtonPhysics:
         state.clear_forces()
 
     def step(self, state, dt):
-        """Step the Newton actuators into ``control.joint_f``, zeroed first, then the solver, which
-        consumes ``joint_f`` and the force elements' ``body_f`` in one solve.
+        """Step the vehicle's motors into ``control.joint_f``, then the solver, which consumes ``joint_f`` and
+        the force elements' ``body_f`` in one solve.
         """
-        if self._actuators:
-            self.control.joint_f.zero_()
-            for actuator, (cur, nxt), copies in zip(
-                self._actuators, self._actuator_states, self._actuator_copies, strict=True
-            ):
-                actuator.step(state, self.control, cur, nxt, dt)
-                for dst, src in copies:  # current ← next, in place: the graph-safe double-buffer
-                    wp.copy(dst, src)
+        self.motors.step(state, self.control, dt)
         contacts = self.model.collide(state) if self.contacts_on else None
         self.solver.step(state, self.state1, self.control, contacts, dt)
         state.assign(self.state1)
