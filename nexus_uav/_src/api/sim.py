@@ -67,8 +67,8 @@ class Sim:
             and the install's for the rest, so a test maps a schema to a stand-in or a peer to its fake;
             ``None`` takes the install alone.
         run_dir: The folder the run writes its files to: the recording, ``nexus.rrd``, and each peer's
-            files, such as PX4's console, ``px4.log``, and its ULog under ``ulog/``. It's created when
-            absent and must be empty when present; a relative path is taken from the working folder.
+            files, such as PX4's console, ``px4.log``, and its ULog under ``ulog/``. The run creates it
+            when missing and refuses it when it holds files. A relative path starts at the working folder.
             ``None`` takes a new folder under ``~/.cache/nexus/logs``. A peer's container mounts the
             folder at its own path, so a script inside a container that starts peers on the host's
             daemon binds it at the same path on the host.

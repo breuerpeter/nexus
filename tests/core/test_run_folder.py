@@ -8,7 +8,7 @@ from nexus_uav._src.core.run_folder import run_folder
 
 
 def test_a_named_folder_that_holds_a_file_is_refused_by_name(tmp_path):
-    """A named folder that holds a file is refused with an error that names it, and the file stays."""
+    """The call refuses a named folder that holds a file, with an error that names it, and the file stays."""
     folder = tmp_path / "run"
     folder.mkdir()
     (folder / "old.txt").write_text("an earlier run's\n")
