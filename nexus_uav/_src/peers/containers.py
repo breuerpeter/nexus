@@ -97,6 +97,9 @@ def run_container(
         detach: ``True`` returns once the container starts; ``False`` runs it to completion
             and raises on a non-zero exit.
         **kwargs: Passed through to ``containers.run``: ``user``, ``volumes``, ``environment``, and so on.
+            Each of ``volumes`` reaches the daemon as a bind mount, which fails the run when its source is
+            missing on the daemon's host, where docker's ``-v`` would create an empty folder there. So a
+            caller in a container that hands the host's daemon a path the host doesn't have fails naming it.
 
     Returns:
         docker.models.containers.Container: The started, or completed, container.
@@ -105,9 +108,16 @@ def run_container(
         RuntimeError: The daemon is unreachable; see :func:`client`.
         docker.errors.ContainerError: ``detach=False`` and the container exited non-zero.
     """
+    from docker.types import Mount
+
     c = client()
     if name is not None:
         stop_container(name)
+    if volumes := kwargs.pop("volumes", None):
+        kwargs["mounts"] = [
+            Mount(spec["bind"], source, type="bind", read_only=spec.get("mode") == "ro")
+            for source, spec in volumes.items()
+        ]
     container = c.containers.run(image, command=command, name=name, detach=detach, **kwargs)
     if detach and log_path is not None:
         os.makedirs(os.path.dirname(log_path) or ".", exist_ok=True)
