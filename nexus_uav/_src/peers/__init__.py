@@ -41,9 +41,11 @@ class Peer(Protocol):
 
     ``start`` blocks until the process is running, or raises naming why it couldn't start. ``stop``
     is idempotent: a peer that never started, or stopped already, stays stopped. ``alive`` says
-    whether the process still runs; a peer that exited on its own reads dead. A peer that writes
-    files a reader wants after the run, a console log, names them in ``artifacts``, which is
-    optional.
+    whether the process still runs; a peer that exited on its own reads dead, and a run waiting on
+    it fails at once. A peer that writes files a reader wants after the run, a console log, names
+    them in ``artifacts``, which is optional. A peer that can tell its own error lines from the rest
+    of its console, such as PX4's ``ERROR [init] Unknown model none_astro_max``, returns them from
+    ``errors``, which is optional too, and a run that fails quotes them in its ``RunError``.
     """
 
     def start(self) -> None: ...

@@ -160,7 +160,8 @@ class Px4Sitl:
             name=self.container,
             log_path=self.log_path,
             network_mode="host",
-            auto_remove=True,
+            # No auto-remove: a PX4 that exits at once, on an airframe the tree lacks, would leave before its
+            # console reached the log, and the console names why. The peer's stop removes the container.
             labels={LABEL: "px4", _INSTANCE: str(self.instance), _OWNER: str(os.getpid())},
             **kwargs,
         )
@@ -206,7 +207,7 @@ class Px4Sitl:
                 pass
 
     def alive(self) -> bool:
-        """Whether the container still runs; it removes itself when it exits."""
+        """Whether the container still runs: an exited one stays, for its console, until the peer's stop."""
         from docker.errors import NotFound
 
         if self._container is None:
@@ -217,8 +218,18 @@ class Px4Sitl:
             return False
         return self._container.status in ("created", "running")
 
+    def errors(self) -> list[str]:
+        """PX4's own error lines so far, each console line PX4 marks ``ERROR``, such as
+        ``ERROR [init] Unknown model none_astro_max``; none before PX4 starts or when its console is empty.
+        """
+        try:
+            console = Path(self.log_path).read_text(errors="replace")
+        except FileNotFoundError:
+            return []
+        return [line.strip() for line in console.splitlines() if line.startswith("ERROR")]
+
     def stop(self) -> None:
-        """Remove the container this peer started. Idempotent."""
+        """Remove the container this peer started, running or exited. Idempotent."""
         if self._container is None:
             return
         stop_container(self.container)

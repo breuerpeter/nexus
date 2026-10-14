@@ -39,8 +39,9 @@ import nexus_uav._src.build.launch as launch_mod
 import nexus_uav._src.peers.containers as containers
 from nexus_uav._src.api.sim import Sim
 from nexus_uav._src.config import Catalog, LaunchConfig
+from nexus_uav._src.core.errors import RunError
 from nexus_uav._src.core.interfaces import Component, Stage
-from nexus_uav._src.core.loop import Loop, SetupError
+from nexus_uav._src.core.loop import Loop
 from nexus_uav._src.core.registry import Registry
 from nexus_uav._src.core.schema import PoseTwist, SimTime
 from nexus_uav._src.core.signals import Signal
@@ -62,6 +63,10 @@ class _Container:
         self._daemon = daemon
         self.name = name
         self.labels = dict(labels or {})
+        self.status = "running"
+
+    def reload(self):
+        pass
 
     def logs(self, **kwargs):
         yield from ()
@@ -340,29 +345,29 @@ def test_two_managed_runs_in_one_process_on_two_instances_keep_both_containers(d
     assert (len(set(started)), removed_by_first, daemon.removed) == (2, [started[0]], started)
 
 
-def test_a_peer_that_dies_ends_the_run_as_the_controllers_disconnect(daemon, caplog):
-    """A peer that dies ends the run with an error that names the peer.
+def test_a_peer_that_dies_fails_the_run_with_an_error_naming_the_controller(daemon):
+    """A peer that dies fails the run with an error that names the controller, #321.
 
-    Given a PX4 run whose peer is external, when the autopilot's link closes mid-run, then the run
-    stops with ``ConnectionError`` naming PX4 and ``step()`` returns ``False`` after it.
+    Given a PX4 run whose peer is external, when the autopilot's link closes mid-run, then a ``step()``
+    raises `RunError` naming the PX4 controller, and ``step()`` returns ``False`` after it.
     """
-    caplog.set_level(logging.INFO, logger="nexus")
     port = _free_port()
     loop = _loop(ctrl.Px4MavlinkController(instance=port - HIL_PORT), preroll_timeout=10.0)
     autopilot = _Autopilot(port, ticks=5)
     autopilot.start()
 
-    ended = False
+    message = None
     deadline = time.monotonic() + 30.0
-    while time.monotonic() < deadline:
-        if not loop.step():
-            ended = True
-            break
+    try:
+        while time.monotonic() < deadline and loop.step():
+            pass
+    except RunError as exc:
+        message = str(exc)
+    after = loop.step()
     autopilot.join(timeout=5.0)
 
-    assert (ended, autopilot.answered, "Px4MavlinkController disconnected" in caplog.text) == (True, 5, True), (
-        caplog.text
-    )
+    named = message is not None and "Px4MavlinkController lost its peer" in message
+    assert (named, autopilot.answered, after) == (True, 5, False), message
 
 
 def test_the_peers_ports_come_from_the_run(daemon, run):
@@ -679,7 +684,7 @@ def test_the_px4_controller_is_built_the_same_way_whichever_process_answers(
     def plan(loop) -> tuple[bool, list[str]]:
         try:
             flew = loop.step()  # the plan logs before the preroll: the external run then times out waiting for PX4
-        except SetupError:
+        except RunError:
             flew = False
         loop.close()
         lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("stage plan:")]
@@ -692,30 +697,27 @@ def test_the_px4_controller_is_built_the_same_way_whichever_process_answers(
     assert (flew, len(fake), fake) == (True, 1, external)
 
 
-def test_a_fake_px4_whose_link_dies_ends_the_run_as_a_real_peers_death_does(
-    daemon, assembly, catalog, caplog, tmp_path
-):
-    """A fake PX4 whose link dies ends the run as a real peer's death does.
+def test_a_fake_px4_whose_link_dies_fails_the_run_as_a_real_peers_death_does(daemon, assembly, catalog, tmp_path):
+    """A fake PX4 whose link dies fails the run as a real peer's death does, #321.
 
-    Given a run whose fake PX4 stops after 100 ticks, when the run steps on, then it stops with
-    `ConnectionError` naming PX4 and `step()` returns `False` after it.
+    Given a run whose fake PX4 stops after 100 ticks, when the run steps on, then a `step()` raises
+    `RunError` naming PX4 and `step()` returns `False` after it.
     """
-    caplog.set_level(logging.INFO, logger="nexus")
     loop = _faked(catalog, tmp_path)
     answered = _step(loop, 100).count(True)
 
     loop.peers[0].stop()
-    ended = False
+    message = None
     deadline = time.monotonic() + 30.0
-    while time.monotonic() < deadline:
-        if not loop.step():
-            ended = True
-            break
+    try:
+        while time.monotonic() < deadline and loop.step():
+            pass
+    except RunError as exc:
+        message = str(exc)
     after = loop.step()
 
-    assert (answered, ended, after, "Px4MavlinkController disconnected" in caplog.text) == (100, True, False, True), (
-        caplog.text
-    )
+    named = message is not None and "Px4MavlinkController lost its peer" in message
+    assert (answered, named, after) == (100, True, False), message
 
 
 # --- the PX4 SITL peer the vehicle declares, and a layer that drops it -----------------------------
@@ -1041,24 +1043,22 @@ def test_a_scripts_step_raises_when_its_px4_never_dials_in(daemon, brief_preroll
         sim.step()
 
 
-def test_a_run_whose_px4_disconnects_after_lockstep_exits_zero(
-    daemon, brief_preroll, monkeypatch, caplog, tmp_path, warp_cpu
+def test_a_run_whose_px4_stops_answering_after_lockstep_exits_non_zero_naming_the_lost_peer(
+    daemon, brief_preroll, monkeypatch, tmp_path, warp_cpu
 ):
-    """A run whose peer disconnects after lockstep still exits 0 and logs the end at info level.
+    """A run whose peer stops answering after lockstep exits non-zero and says so, #321.
 
     Given `nexus run` on a PX4 stand-in that answers ten ticks and then stops, when it runs, then it
-    exits 0 and logs the disconnect at info level.
+    exits non-zero and its message says the PX4 controller lost its peer.
     """
-    caplog.set_level(logging.INFO, logger="nexus")
     vehicle = sv.vehicle(tmp_path, px4=True)
     autopilot = _StartedAutopilot(daemon, ticks=10)
     autopilot.start()
 
-    code, _ = _nexus_run(monkeypatch, "--vehicle", vehicle, "--scene", sv.SCENE)
+    code, said = _nexus_run(monkeypatch, "--vehicle", vehicle, "--scene", sv.SCENE)
     autopilot.join(timeout=5.0)
 
-    disconnects = [r.levelno for r in caplog.records if "disconnected" in r.getMessage()]
-    assert (code, disconnects) == (0, [logging.INFO]), caplog.text
+    assert (code != 0, "Px4MavlinkController lost its peer" in said) == (True, True), said
 
 
 def test_a_failed_start_closes_the_recording_and_stops_px4(daemon, brief_preroll, monkeypatch, tmp_path, warp_cpu):

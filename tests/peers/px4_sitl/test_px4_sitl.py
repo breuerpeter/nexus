@@ -103,7 +103,8 @@ def test_start_runs_px4_with_the_runs_instance_and_airframe(daemon, tree, tmp_pa
     the way PX4's multi-instance script does, since ``make px4_sitl none_<airframe>`` can't take an
     instance; ``-d`` runs with no pxh shell, which at the end of an unattended stdin spin-loops
     printing its prompt and starves PX4. The run's folder mounts over PX4's log root in its
-    instance's folder, so PX4 writes the run's ULog there and leaves none in the tree.
+    instance's folder, so PX4 writes the run's ULog there and leaves none in the tree. The container
+    doesn't remove itself, so a PX4 that exits at once leaves its console for the log.
     """
     _peer(tree, tmp_path, instance=2).start()
 
@@ -120,7 +121,6 @@ def test_start_runs_px4_with_the_runs_instance_and_airframe(daemon, tree, tmp_pa
             str(tree): {"bind": str(tree), "mode": "rw"},
             str(tmp_path / "run" / "ulog"): {"bind": str(tree / "build/px4_sitl_default/rootfs/2/log"), "mode": "rw"},
         },
-        "auto_remove": True,
         "network_mode": "host",
         "labels": {"nexus.peer": "px4", "nexus.px4.instance": "2", "nexus.owner": str(os.getpid())},
     } and launch["image"].startswith(f"{IMAGE}:")

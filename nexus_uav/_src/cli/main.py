@@ -12,7 +12,7 @@ from nexus_uav._src.api.args import sim_argparser  # import-light: parses before
 
 def _run(args) -> None:
     """Build a ``Sim`` from the shared args and drive it to completion. A PX4 run feeds the peer
-    until it disconnects, the run hits ``max_steps``, or Ctrl-C.
+    until the run hits ``max_steps`` or Ctrl-C; a peer that stops answering ends it with a ``RunError``.
     """
     from nexus_uav._src.api.sim import Sim
 
@@ -28,12 +28,11 @@ def main() -> None:
     if args.log and args.view:  # serve or file, never both: a live server and a complete .rrd can't coexist in-process
         parser.error("--log (write .rrd) and --view (serve viewer) are mutually exclusive, pick one")
 
-    from nexus_uav._src.core.loop import SetupError
-    from nexus_uav._src.peers.kit.runner import KitPeerError
+    from nexus_uav._src.core.errors import RunError
 
     try:
         _run(args)
-    except (KitPeerError, SetupError) as exc:  # a peer couldn't start or never answered: say why, no traceback
+    except RunError as exc:  # the run never started or lost a peer: say why, no traceback
         raise SystemExit(f"nexus: {exc}") from None
 
 
