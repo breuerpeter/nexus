@@ -48,9 +48,9 @@ SCENE = "empty"  # flat ground
 MAX_STEPS = 6000  # safety cap; the guidance ends the run on mission completion
 WAYPOINTS = [(1.5, 1.0, 1.5), (-1.5, 1.0, 2.0), (-0.5, -0.5, 1.8)]  # a small tour
 FENCE = ((-3.0, -3.0, 0.2), (3.0, 3.0, 4.0))  # the box the flight stays inside [m]; leaving it ends the run
-# The hosted default policy, content-addressed and sha-verified, trained by nexus-rl on this
-# vehicle's USD-authored thrust map; see docs/examples/isaac-lab-rl.md for the training recipe.
-POLICY_ASSET = {"name": "goto_policy", "sha256": "6b3edb018f540934bb0aa2c0a23be357684d3a911c9fd986978041a4473902d0"}
+# The hosted default policy, content-addressed and sha-verified, trained by nexus-rl on this vehicle's
+# articulated plant, 2048 envs over 500 iterations at seed 45; see docs/examples/isaac-lab-rl.md for the recipe.
+POLICY_ASSET = {"name": "goto_policy", "sha256": "d87b2c7f1aa68bc78f05c5c19644e3980018952eec6d22b009bb221ad065eed5"}
 
 
 def _resolve_policy(override: str | None, asset: dict = POLICY_ASSET) -> str:

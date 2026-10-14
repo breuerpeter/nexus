@@ -87,7 +87,6 @@ def Xform "vehicle"
     {
         def PhysicsRevoluteJoint "rotor_1_joint"
         {
-            float motor:tau = 0.033
             uniform token physics:axis = "Z"
             rel physics:body0 = </vehicle/body>
             rel physics:body1 = </vehicle/body/rotor_1>
@@ -99,7 +98,6 @@ def Xform "vehicle"
 
         def PhysicsRevoluteJoint "rotor_2_joint"
         {
-            float motor:tau = 0.033
             uniform token physics:axis = "Z"
             rel physics:body0 = </vehicle/body>
             rel physics:body1 = </vehicle/body/rotor_2>
@@ -111,7 +109,6 @@ def Xform "vehicle"
 
         def PhysicsRevoluteJoint "rotor_3_joint"
         {
-            float motor:tau = 0.033
             uniform token physics:axis = "Z"
             rel physics:body0 = </vehicle/body>
             rel physics:body1 = </vehicle/body/rotor_3>
@@ -123,7 +120,6 @@ def Xform "vehicle"
 
         def PhysicsRevoluteJoint "rotor_4_joint"
         {
-            float motor:tau = 0.033
             uniform token physics:axis = "Z"
             rel physics:body0 = </vehicle/body>
             rel physics:body1 = </vehicle/body/rotor_4>

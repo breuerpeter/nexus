@@ -16,7 +16,7 @@ _spec = importlib.util.spec_from_file_location("convert", ROOT / "scripts" / "as
 convert = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(convert)
 
-PARAMS = {"ct": 3.463e-6, "cd": 0.05, "aero_h": 0.0, "aero_hforce": 0.0, "tau": 0.033}
+PARAMS = {"ct": 3.463e-6, "cd": 0.05, "aero_h": 0.0, "aero_hforce": 0.0}
 NEWTON = ["NewtonPIDControlAPI", "NewtonDCMotorClampingAPI"]
 
 
@@ -26,7 +26,8 @@ def _source_vehicle(path, *, declared=True, limit=397.935):
 
     Args:
         path: Where to write the vehicle.
-        declared: Whether the two rotor joints author `propeller:*`, the declaration the schema replaces.
+        declared: Whether the two rotor joints author `propeller:*`, the declaration the schema replaces, and
+            `motor:tau`, a motor lag the run no longer reads.
         limit: The no-load speed each motor declares [rad/s]; 397.935 is the joints' 3800 rpm.
     """
     stage = Usd.Stage.CreateNew(str(path))
@@ -38,7 +39,13 @@ def _source_vehicle(path, *, declared=True, limit=397.935):
         joint.CreateBody0Rel().SetTargets(["/Vehicle/body"])
         joint.CreateBody1Rel().SetTargets([f"/Vehicle/{name}"])
         if declared and name != "gimbal":
-            for attr, value in {"propeller:ct": 3.463e-6, "propeller:cd": 0.05, "propeller:rpm_max": 3800.0}.items():
+            declared_values = {
+                "propeller:ct": 3.463e-6,
+                "propeller:cd": 0.05,
+                "propeller:rpm_max": 3800.0,
+                "motor:tau": 0.033,
+            }
+            for attr, value in declared_values.items():
                 joint.GetPrim().CreateAttribute(attr, Sdf.ValueTypeNames.Float, custom=True).Set(value)
         motor = stage.DefinePrim(f"/Vehicle/{name}_motor", "NewtonActuator")
         motor.CreateRelationship("newton:targets").SetTargets([joint.GetPath()])
@@ -68,8 +75,8 @@ def test_the_converter_authors_the_propeller_schema_on_each_rotor_body_and_keeps
 
     Given `scripts/assets/convert.py` run on a source vehicle, when it finishes, then each actuator prim
     carries only Newton's schemas, each rotor body applies the propeller schema, and no joint authors
-    `propeller:*`. The source authors Newton's schemas alone on its three actuator prims, so they must
-    come out as they went in, and its gimbal, a joint Newton drives that declares no rotor, gains none.
+    `propeller:*` or `motor:*`. The source authors Newton's schemas alone on its three actuator prims, so they
+    must come out as they went in, and its gimbal, a joint Newton drives that declares no rotor, gains none.
     """
     source = _source_vehicle(tmp_path / "source.usda")
     before = _actuator_schemas(source)
@@ -87,7 +94,7 @@ def test_the_converter_authors_the_propeller_schema_on_each_rotor_body_and_keeps
         for p in prims
         if p.GetTypeName() == "PhysicsRevoluteJoint"
         for attr in p.GetAttributes()
-        if attr.GetName().startswith("propeller:")
+        if attr.GetName().startswith(("propeller:", "motor:"))
     ]
     assert (len(before), _actuator_schemas(out), bodies, on_joints) == (
         3,
