@@ -1,9 +1,13 @@
-"""Resolver cache + hash-verify: stdlib only, no network/Amazon Web Services (AWS). It uses file:// URLs,
-and exercises the ``s3://`` path against a stub ``aws`` command-line tool on PATH.
+"""Resolver cache + hash-verify: no network/Amazon Web Services (AWS). It uses file:// URLs, and
+exercises the ``s3://`` path against a stub ``aws`` command-line tool on PATH and a stand-in bucket
+served on a local endpoint.
 """
 
 import hashlib
+import http.server
 import os
+import sys
+import threading
 
 import pytest
 
@@ -88,4 +92,90 @@ def test_s3_fetch_no_credentials_friendly_error(tmp_path, monkeypatch):
 def test_s3_fetch_no_cli_friendly_error(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))  # no aws executable anywhere
     with pytest.raises(RuntimeError, match="credentials for that bucket"):
+        fetch("s3://bkt/catalog/assets/usd/vehicles/x.usdz", "0" * 64, cache_dir=tmp_path / "cache")
+
+
+def _no_aws(tmp_path, monkeypatch):
+    """Drop every AWS setting and the user's AWS files, the instance metadata lookup and every
+    executable on PATH, so no credential and no `aws` tool reaches a fetch.
+    """
+    for key in [k for k in os.environ if k.startswith("AWS_")]:
+        monkeypatch.delenv(key)
+    monkeypatch.setenv("AWS_CONFIG_FILE", str(tmp_path / "no-config"))
+    monkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", str(tmp_path / "no-credentials"))
+    monkeypatch.setenv("AWS_EC2_METADATA_DISABLED", "true")
+    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+
+
+@pytest.fixture
+def bucket(tmp_path, monkeypatch):
+    """A stand-in S3 endpoint on localhost that serves the objects put in the returned dict, keyed
+    ``<bucket>/<key>``, with test credentials in the environment and no `aws` tool on PATH.
+    """
+    objects: dict[str, bytes] = {}
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_HEAD(self):
+            self._reply(body=False)
+
+        def do_GET(self):
+            self._reply(body=True)
+
+        def _reply(self, body):
+            data = objects.get(self.path.split("?", 1)[0].lstrip("/"))
+            if data is None:
+                self.send_response(404)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("ETag", f'"{hashlib.md5(data).hexdigest()}"')
+            self.send_header("Last-Modified", "Wed, 01 Jan 2025 00:00:00 GMT")
+            self.end_headers()
+            if body:
+                self.wfile.write(data)
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    _no_aws(tmp_path, monkeypatch)
+    monkeypatch.setenv("AWS_ENDPOINT_URL", f"http://127.0.0.1:{server.server_port}")
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "test-key")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "test-secret")
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-west-2")
+    yield objects
+    server.shutdown()
+    server.server_close()
+
+
+def test_an_s3_asset_lands_in_the_cache_with_no_aws_tool(tmp_path, bucket):
+    """With `nexus-uav[s3]` installed and no `aws` tool on PATH, an `s3://` asset lands in the
+    verified cache.
+    """
+    bucket["bkt/catalog/assets/usd/vehicles/x.usdz"] = b"astro_max usd bytes"
+    digest = "f64912b37b15da27a2aa364a89fb43ceb77550d414b81b51ce7179f2e0cf97f6"
+    out = fetch("s3://bkt/catalog/assets/usd/vehicles/x.usdz", digest, cache_dir=tmp_path / "cache")
+    assert out.read_bytes() == b"astro_max usd bytes"
+
+
+def test_an_s3_fetch_with_no_credentials_names_the_url_and_the_credential_chain(tmp_path, monkeypatch):
+    """An `s3://` fetch with no credentials fails, naming the URL and the credential chain, not the
+    `aws` tool.
+    """
+    _no_aws(tmp_path, monkeypatch)
+    url = "s3://bkt/catalog/assets/usd/vehicles/x.usdz"
+    with pytest.raises(RuntimeError) as err:
+        fetch(url, "0" * 64, cache_dir=tmp_path / "cache")
+    message = str(err.value)
+    assert url in message and "credentials" in message and "executable" not in message
+
+
+def test_an_s3_fetch_without_the_s3_extra_names_it(tmp_path, monkeypatch):
+    """Without the `s3` extra, an `s3://` fetch fails, naming `nexus-uav[s3]`."""
+    _no_aws(tmp_path, monkeypatch)
+    monkeypatch.setitem(sys.modules, "boto3", None)  # an import of boto3 raises ImportError
+    with pytest.raises(RuntimeError, match=r"nexus-uav\[s3\]"):
         fetch("s3://bkt/catalog/assets/usd/vehicles/x.usdz", "0" * 64, cache_dir=tmp_path / "cache")
