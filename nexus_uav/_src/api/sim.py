@@ -11,6 +11,7 @@ component's or the plant's, by indexing the run with the history's path: ``sim["
 from __future__ import annotations
 
 import argparse
+import os
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
@@ -65,6 +66,15 @@ class Sim:
         registry: The :class:`~nexus_uav.Registry` the build resolves each schema with, its own rows first
             and the install's for the rest, so a test maps a schema to a stand-in or a peer to its fake;
             ``None`` takes the install alone.
+        run_dir: The folder the run writes its files to: the recording, ``nexus.rrd``, and each peer's
+            files, such as PX4's console, ``px4.log``, and its ULog under ``ulog/``. The run creates it
+            when missing and refuses it when it holds files. A relative path starts at the working folder.
+            ``None`` takes a new folder under ``~/.cache/nexus/logs``. A peer's container mounts the
+            folder at its own path, so a script inside a container that starts peers on the host's
+            daemon binds it at the same path on the host.
+
+    Raises:
+        FileExistsError: On entry, ``run_dir`` holds files already; raised before any peer starts.
 
     Example:
         ```python
@@ -91,6 +101,7 @@ class Sim:
         rtf: float = 0.0,
         layer: str | None = None,
         registry: Registry | None = None,
+        run_dir: str | os.PathLike | None = None,
     ):
         self._registry = registry  # the registry the build resolves each schema with, or None for the default
         self._launch = LaunchConfig()
@@ -120,6 +131,9 @@ class Sim:
         self._launch.output.view = view
         self._launch.output.debug = debug  # axes-only scene: coordinate triads, no meshes → a small .rrd
         self._cache_dir = cache_dir
+        # Absolute now, so a relative folder is the working folder's at construction, and a container's mount
+        # gets the absolute path docker requires.
+        self._run_dir = None if run_dir is None else os.path.abspath(run_dir)
         self._orch = None
         self._guidance = None  # a launch-built run has none: a flight hands one to _from_loop
         self._ran = False
@@ -155,6 +169,7 @@ class Sim:
         sim = cls.__new__(cls)
         sim._launch = None
         sim._cache_dir = None
+        sim._run_dir = None
         sim._orch = None
         sim._prebuilt_orch = orch
         sim._guidance = guidance
@@ -198,7 +213,9 @@ class Sim:
                 self._orch.guidance = self._guidance
         else:
             # A vehicle that authors RTX sensors starts the Kit render peer here, from the host.
-            self._orch = build_from_launch(self._launch, cache_dir=self._cache_dir, components=self._registry)
+            self._orch = build_from_launch(
+                self._launch, cache_dir=self._cache_dir, components=self._registry, run_dir=self._run_dir
+            )
         if self._orch.recorder is None:
             # A self-assembled loop that brought no Recorder gets one: the loop hands it the plant and
             # each sensor at its first step.
@@ -451,8 +468,10 @@ class Sim:
         if self._orch is None:
             return {"rrd": None}
         out = {"rrd": self._orch.logger.rrd_path if self._orch.logger is not None else None}
-        for source in (*self._orch.components(), *self._orch.peers):
+        for source in self._orch.components():
             out.update(source.artifacts())
+        for peer in self._orch.peers:  # a peer's artifacts are optional, see Peer
+            out.update(getattr(peer, "artifacts", dict)())
         return out
 
     def stop(self) -> None:

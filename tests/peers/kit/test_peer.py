@@ -11,6 +11,7 @@ import urllib.request
 from pathlib import Path
 
 import pytest
+from docker.types import Mount
 
 from nexus_uav._src.peers.kit.runner import KitPeer, KitPeerError
 from nexus_uav._src.peers.pins import PeerPin
@@ -50,20 +51,20 @@ def _network(monkeypatch, body=b"", requested=None):
 def test_the_container_reads_the_asset_cache_at_its_host_path(daemon, tmp_path):
     cache = tmp_path / "cache"
     KitPeer([_usd(cache / "0a1b")], cache_dir=cache, pin=PIN).start()
-    assert daemon.runs[0]["volumes"][str(cache)] == {"bind": str(cache), "mode": "ro"}
+    assert Mount(str(cache), str(cache), type="bind", read_only=True) in daemon.runs[0]["mounts"]
 
 
 def test_a_local_usd_is_read_from_its_own_folder(daemon, tmp_path):
     project = tmp_path / "project"
     KitPeer([_usd(project, "cam.usda")], cache_dir=tmp_path / "cache", pin=PIN).start()
-    assert daemon.runs[0]["volumes"][str(project)] == {"bind": str(project), "mode": "ro"}
+    assert Mount(str(project), str(project), type="bind", read_only=True) in daemon.runs[0]["mounts"]
 
 
 def test_every_folder_the_container_writes_exists_as_the_user_before_it_starts(daemon, tmp_path):
     """Docker creates a missing bind source owned by root, which a later host run can't write."""
     KitPeer([_usd(tmp_path / "project")], cache_dir=tmp_path / "cache", pin=PIN).start()
     run = daemon.runs[0]
-    writable = [src for src, spec in run["volumes"].items() if spec["mode"] == "rw"]
+    writable = [m["Source"] for m in run["mounts"] if not m["ReadOnly"]]
     assert writable and {run["seen"][src] for src in writable} == {(True, os.getuid())}
 
 

@@ -39,7 +39,7 @@ uv run nexus run --vehicle astro_max_base --scene empty
 Builds PX4 SITL, starts the PX4 container, then the physics sim, and stops the container again
 on exit. Add `--view` to serve the Rerun recording on gRPC :9876, see [Observability in Rerun](#observability-in-rerun). The `astro_max_base` vehicle's
 Universal Scene Description (USD) file declares PX4 and its airframe. Every file a run writes lands in one folder for the run,
-`~/.cache/nexus/logs/<stamp>-<pid>/`: the recording, `nexus.rrd`, and the PX4 console, `px4.log`.
+`~/.cache/nexus/logs/<stamp>-<pid>/`, or the folder a script names with `Sim(run_dir=)`: the recording, `nexus.rrd`, the PX4 console, `px4.log`, and PX4's `.ulg` flight log under `ulog/`.
 
 A run that never starts, or that loses PX4 or the Kit container before it ends, stops with an error
 and exits non-zero. The message names each peer's console log and quotes the peer's own error lines,
@@ -232,6 +232,34 @@ checked-out commit.
 **The image.** The first run builds the `px4-sitl` image, the PX4 build toolchain, from the
 Dockerfile the package ships, and tags it with a hash of that folder. An update rebuilds it only
 when the Dockerfile changes.
+
+**A script in a container.** The daemon that starts PX4 reads each folder the PX4 container mounts
+on its own host. Take a script that runs in a container of its own and starts PX4 on the host's
+daemon through the docker socket. It binds two folders at the same path inside as on the host: the
+PX4 tree, which `NEXUS_PX4_SITL_REF` can name, and the run's folder, which the script names with
+`Sim(run_dir=)`. The script's `HOME` stays the container's own, so its caches stay out of the run's
+folder.
+
+```yaml
+services:
+  test:
+    network_mode: host
+    environment:
+      - NEXUS_PX4_SITL_REF=${PX4_TREE}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${PX4_TREE}:${PX4_TREE}
+      - ${RESULTS_DIR}:${RESULTS_DIR}
+```
+
+```python
+with Sim("astro_max_base", scene="empty", log=True, run_dir=f"{os.environ['RESULTS_DIR']}/run") as sim:
+    ...
+```
+
+The run creates the folder, and refuses one that holds files already. It writes its recording,
+PX4's console and PX4's `.ulg` flight log there and nothing else. A folder the host doesn't have fails
+the run before it flies: docker reports `bind source path does not exist` and the path.
 
 **Ports.** PX4 SITL numbers every link from its **instance** N. It dials the sim's HIL server on
 4560 + N, streams its offboard link to 14540 + N, and takes N + 1 as its MAVLink system id. The run

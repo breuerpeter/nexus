@@ -31,6 +31,6 @@ link from a thread in this process, for tests. The render link's host end is
 - The peer answers ready only after every camera product has rendered once. On a machine with a
   cold shader cache the RTX renderer comes up minutes after Kit's boot, and a ready before that
   starves the loop. The console prints the wait every 30 s.
-- The peer's console is `kit.log` in the run's folder, `~/.cache/nexus/logs/<stamp>-<pid>/`. Its
+- The peer's console is `kit.log` in the run's folder, `~/.cache/nexus/logs/<stamp>-<pid>/` or the folder `Sim(run_dir=)` names. Its
   own lines start `[kit]`. Every 240 frames one of them splits a frame's time into three parts:
   the wait for the host, the render, and the send.
