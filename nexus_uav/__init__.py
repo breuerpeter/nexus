@@ -96,6 +96,7 @@ if TYPE_CHECKING:
     )
     from nexus_uav._src.config import Catalog, LaunchConfig
     from nexus_uav._src.core import logger
+    from nexus_uav._src.core.errors import RunError
     from nexus_uav._src.core.interfaces import Component, Stage, Tick
     from nexus_uav._src.core.registry import Registry, register
     from nexus_uav._src.core.schema import (

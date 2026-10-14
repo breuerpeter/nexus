@@ -10,10 +10,10 @@ class RunError(RuntimeError):
 
     A component never connected or never attached, a peer never answered or exited during the setup, or a
     peer stopped answering mid-run. The message names the cause, then each peer's files, such as its console
-    log, and the peer's own error lines, so a script's output says why even once the machine is gone. A run
-    that ends on ``max_steps``, on ``stop()`` or at its mission's end raises nothing.
+    log, and the peer's own error lines, so a script's output says why even after the machine goes away. A
+    run that ends on ``max_steps``, on ``stop()`` or at its mission's end raises nothing.
 
-    A script tells this error from its own check failing by catching it::
+    A script separates this error from its own check failing by catching it::
 
         try:
             sim.wait_until(op.at_target, sim_timeout=60.0)

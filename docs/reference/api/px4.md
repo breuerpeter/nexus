@@ -6,9 +6,11 @@ description: "API reference for nexus_uav.px4: OffboardClient, the client a scri
 
 `nexus_uav.px4` holds PX4's own names: what a script that commands PX4 imports. `OffboardClient` is the
 host end of the offboard link of PX4 Software In The Loop (SITL). The run owns that link's address
-and names it in its port map, [`sim.ports`](simulation.md), so the script opens the client itself
-once the sim has started. Entering the client returns at once. PX4 runs on the sim's clock, so the
-wait for its heartbeat steps the sim.
+and names it in its port map, [`sim.ports`](simulation.md), so the script connects the client
+itself once the sim has started. `OffboardClient.connect(sim, timeout)` listens on that address and
+waits for PX4's heartbeat. PX4 runs on the sim's clock, so the wait steps the sim, and `timeout`
+counts sim seconds. When no heartbeat comes, it raises [`RunError`](simulation.md), which names the
+port, and so does any wait once the run has lost PX4.
 
 ```python
 import nexus_uav as nx
@@ -16,9 +18,7 @@ from nexus_uav.px4 import OffboardClient
 
 with nx.Sim("astro_max_base", scene="empty") as sim:
     sim.start()
-    link = sim.ports["offboard"]  # {"protocol": "udp", "port": 14540, "system_id": 1} on instance 0
-    with OffboardClient(f"udpin:0.0.0.0:{link['port']}", system_id=link["system_id"]) as op:
-        sim.wait_until(lambda: op.connected, sim_timeout=10.0)
+    with OffboardClient.connect(sim, 10.0) as op:  # sim.ports["offboard"]: UDP 14540 on instance 0
         op.takeoff(2.0)
         sim.wait_until(op.at_target, sim_timeout=60.0)
 ```

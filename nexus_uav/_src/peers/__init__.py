@@ -44,7 +44,7 @@ class Peer(Protocol):
     whether the process still runs; a peer that exited on its own reads dead, and a run waiting on
     it fails at once. A peer that writes files a reader wants after the run, a console log, names
     them in ``artifacts``, which is optional. A peer that can tell its own error lines from the rest
-    of its console, such as PX4's ``ERROR [init] Unknown model none_astro_max``, returns them from
+    of its console, such as the line PX4 prints for an airframe its tree lacks, returns them from
     ``errors``, which is optional too, and a run that fails quotes them in its ``RunError``.
     """
 

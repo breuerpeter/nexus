@@ -66,23 +66,21 @@ _R_EARTH = 6378137.0
 INSPECTION_S = 300.0  # budget [sim s] for the whole inspection, upload to landing
 
 
-def _fly_mission(sim, op) -> bool:
+def _fly_mission(sim) -> bool:
     """Fly the benchmark mission over PX4's offboard link and report whether it completed.
 
-    A plain script against the offboard client: open it, wait for PX4's heartbeat, take off, then
-    each waypoint in turn, waiting on PX4's own telemetry for arrival. The waits are
-    ``sim.wait_until``, so the budgets are in sim seconds and a slow cell isn't a failed one.
+    A plain script against the offboard client: connect, which waits for PX4's heartbeat, take off,
+    then each waypoint in turn, waiting on PX4's own telemetry for arrival. The waits step the sim, so
+    the budgets are in sim seconds and a slow cell isn't a failed one.
 
     Args:
         sim: The running :class:`~nexus_uav.Sim`, already at lockstep.
-        op: The offboard client on the address the run's port map names, not yet open.
 
     Returns:
         ``True`` if the takeoff and every waypoint completed.
     """
     try:
-        with op:  # opens the link and returns at once; closes it at the end
-            sim.wait_until(lambda: op.connected, sim_timeout=FLY_S)  # PX4's heartbeat comes as the sim steps
+        with OffboardClient.connect(sim, FLY_S) as op:  # closes the link at the end
             op.takeoff(ALT)
             sim.wait_until(op.at_target, sim_timeout=FLY_S)
             for i, wp in enumerate(MISSION, 1):
@@ -120,13 +118,12 @@ def _inspection_items() -> list[MissionItem]:
     ]
 
 
-def _fly_inspection(sim, op) -> bool:
-    """Open the offboard client ``op``, upload the inspection, fly it in Mission mode and report
-    whether it landed at its end.
+def _fly_inspection(sim) -> bool:
+    """Connect the offboard client, upload the inspection, fly it in Mission mode and report whether it
+    landed at its end.
     """
     try:
-        with op:  # opens the link and returns at once; closes it at the end
-            sim.wait_until(lambda: op.connected, sim_timeout=60.0)  # PX4's heartbeat comes as the sim steps
+        with OffboardClient.connect(sim, 60.0) as op:  # closes the link at the end
             op.upload_mission(_inspection_items())
             sim.wait_until(op.mission_uploaded, sim_timeout=60.0)
             op.start_mission()
@@ -150,11 +147,9 @@ def main() -> int:
         args.layer = origin_layer(*INSPECTION_GEO)
     with nx.Sim.from_args(args) as sim:
         sim.start(timeout=READY_S)
-        # The run owns the address of the offboard link; the cell's flight opens its own client on
-        # it and closes it before the sim stops.
-        link = sim.ports["offboard"]
-        op = OffboardClient(f"udpin:0.0.0.0:{link['port']}", system_id=link["system_id"])
-        mission_ok = _fly_inspection(sim, op) if args.mission == "inspection" else _fly_mission(sim, op)
+        # The cell's flight connects its own client on the run's offboard link and closes it before the
+        # sim stops.
+        mission_ok = _fly_inspection(sim) if args.mission == "inspection" else _fly_mission(sim)
     # Leaving the `with` stops the sim and kills PX4, so the run is over and the stats are final.
     results = sim.results()
     stats = {

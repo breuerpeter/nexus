@@ -81,12 +81,10 @@ def main() -> int:
             link = sim.ports["offboard"]  # the run owns the address of the link this script opens
             nx.logger.info(f"[mission] PX4 lockstep established: uploading the plan over :{link['port']}")
 
-            # The script opens the offboard client itself, after start(), and closes it on the way
-            # out. Entering it returns at once: PX4 runs on the sim's clock, so the wait for its
-            # heartbeat steps the sim.
+            # The script connects the offboard client itself, after start(), and closes it on the way
+            # out. PX4 runs on the sim's clock, so the wait for its heartbeat steps the sim.
             t_gcs = time.time()
-            with OffboardClient(f"udpin:0.0.0.0:{link['port']}", system_id=link["system_id"]) as op:
-                sim.wait_until(lambda: op.connected, sim_timeout=UPLOAD_TIMEOUT_S)
+            with OffboardClient.connect(sim, UPLOAD_TIMEOUT_S) as op:
                 op.upload_mission(plan)
                 sim.wait_until(op.mission_uploaded, sim_timeout=UPLOAD_TIMEOUT_S)
                 nx.logger.info(f"[mission] PX4 accepted {op.mission_count()} items: engaging AUTO.MISSION")

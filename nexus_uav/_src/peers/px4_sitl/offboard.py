@@ -227,7 +227,7 @@ class OffboardClient:
         Raises:
             KeyError: The run has no offboard link; the message says why, such as a run on the fake PX4.
             RunError: No heartbeat came within ``timeout``, naming the port, or the run lost a peer meanwhile;
-                the client is closed.
+                the client closes first.
         """
         link = sim.ports["offboard"]
         client = cls(f"udpin:0.0.0.0:{link['port']}", system_id=link["system_id"]).open()
@@ -272,9 +272,8 @@ class OffboardClient:
         return self._sysid is not None
 
     def __enter__(self) -> OffboardClient:
-        """Open the link and start the pump, returning at once; see ``open``. A client already open, from
-        :meth:`connect`, stays as it is. The wait for PX4's heartbeat is the caller's, who steps the sim
-        meanwhile.
+        """Open the link and start the pump, returning at once; see ``open``. A client that :meth:`connect`
+        opened keeps its link. The wait for PX4's heartbeat is the caller's, who steps the sim meanwhile.
         """
         return self if self._mav is not None else self.open()
 

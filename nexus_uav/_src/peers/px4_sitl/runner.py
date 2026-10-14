@@ -219,8 +219,8 @@ class Px4Sitl:
         return self._container.status in ("created", "running")
 
     def errors(self) -> list[str]:
-        """PX4's own error lines so far, each console line PX4 marks ``ERROR``, such as
-        ``ERROR [init] Unknown model none_astro_max``; none before PX4 starts or when its console is empty.
+        """PX4's own error lines so far: each console line that starts with PX4's error tag, such as the
+        line PX4 prints for an airframe its tree lacks; none before PX4 starts or when its console is empty.
         """
         try:
             console = Path(self.log_path).read_text(errors="replace")
