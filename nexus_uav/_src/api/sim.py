@@ -449,8 +449,10 @@ class Sim:
         if self._orch is None:
             return {"rrd": None}
         out = {"rrd": self._orch.logger.rrd_path if self._orch.logger is not None else None}
-        for source in (*self._orch.components(), *self._orch.peers):
+        for source in self._orch.components():
             out.update(source.artifacts())
+        for peer in self._orch.peers:  # a peer's artifacts are optional, see Peer
+            out.update(getattr(peer, "artifacts", dict)())
         return out
 
     def stop(self) -> None:
