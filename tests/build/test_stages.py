@@ -24,9 +24,10 @@ from tests.usd import sensor_vehicle as sv
 # per GPU model, flown through main's captured loop before the change: a CUDA trajectory repeats to the
 # byte on one model and differs across models. A local run recorded the RTX 5080's, and a gpu-pytest
 # run the A10G's. The same two runs recorded both again when the rotor speed at full command became
-# the motor's no-load speed, a 32-bit float that reads 3e-8 below 3800 rpm.
+# the motor's no-load speed, a 32-bit float that reads 3e-8 below 3800 rpm, and again when the example
+# came to fly the vehicle's Newton motors, which had stood idle under its summed base wrench.
 _MAIN_TRAJECTORY = {
-    "NVIDIA GeForce RTX 5080": "34dbc4aff792652d26d13262f94a88e56635906bedfd7030978037d970bbc186",
+    "NVIDIA GeForce RTX 5080": "4ed17f824a6cf65ff5b6e423a8e58a3e3e1647c9eccc70e50151f977813a6a18",
     "NVIDIA A10G": "c5ac89a9fdfe35221173d401a9c735969b8b97b6864ca97b24245e4c3723d603",
 }
 
