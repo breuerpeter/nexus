@@ -1,8 +1,8 @@
 """Assemble the core Loop around the :class:`TrainedPolicyController`.
 
 This example-owned assembly, moved out of core since PX4 is the one first-class control path, wires
-the same core components as the PX4 assembly: ``NewtonPhysics``, the full articulated Universal Scene
-Description (USD), the single-body ``Rotors`` actuator, the passthrough estimator, and the core
+the same core components as the PX4 assembly: ``NewtonPhysics`` on the articulated vehicle from its Universal
+Scene Description (USD) file, the rotor chain PX4 flies, the passthrough estimator, and the core
 ``Loop``. The controller builds its own observation from the estimate, the single
 train↔deploy obs source, ``nexus_uav.examples._lib.observation``, and runs its TorchScript
 inference in a host stage; everything else captures, the captured-host-exchange strategy.
@@ -15,6 +15,9 @@ from nexus_uav._src.core import Clock, Loop, logger
 from nexus_uav._src.physics import NewtonPhysics
 from nexus_uav._src.rendering import PEER
 from nexus_uav._src.vehicle.estimators import GroundTruthEstimator
+
+# The RL task's step [s]: the policy acts at 50 Hz, as it trained, and the rate loop and mixer every tick.
+POLICY_DT = 0.02
 
 
 def build_policy_loop(
@@ -38,17 +41,16 @@ def build_policy_loop(
 ) -> Loop:
     """Assemble the core Loop with a trained-policy Controller in place of PX4.
 
-    The actuator is the single-body :class:`Rotors` in Collective Thrust and Body Rates (CTBR)
-    mode, matching the policy's Isaac-Lab **CTBR** action: collective thrust + body-rate setpoints → mixer
-    → per-rotor motor-speed states. The policy thus flies through ``Loop.run()`` exactly as PX4
-    does: same fixed-order tick, same live newton.State, no loop changes.
+    The plant is the articulated vehicle the policy trained on: the rotors' command element sets each Newton
+    motor's speed target, physics steps the motors, and the propellers turn each rotor's speed into its force.
+    The policy's **Collective Thrust and Body Rates (CTBR)** action reaches the rotors through the
+    controller's mixer, an inner rate loop → ``B⁻¹`` → per-rotor commands. The policy runs every
+    ``POLICY_DT / dt`` ticks, at its training rate, and the mixer every tick, as in training, so the policy
+    flies through ``Loop.run()`` exactly as PX4 does: same fixed-order tick, same live newton.State.
 
-    The standalone applies the wrench **once** per step, with no Isaac-Lab substep dilution, so the
-    defaults are the *effective* values the policy trained against: ``thrust_to_weight=1.9``, since
-    training used 1.9·NUM_SUBSTEPS, diluted back to 1.9, and ``rate_gain=3.0``, training's
-    ``_RATE_GAIN``=12 diluted by NUM_SUBSTEPS=4. ``omega_max`` matches ``_OMEGA_MAX`` and
-    ``thrust_sign=-1`` is the Forward Right Down (FRD) USD convention: thrust along −body-z, as the 180°-X
-    flip at start makes it point up.
+    The defaults are the values the policy trained against: ``thrust_to_weight=1.9``, ``rate_gain=3.0`` and
+    ``omega_max`` matching ``_OMEGA_MAX``; ``thrust_sign=-1`` is the Forward Right Down (FRD) USD convention:
+    thrust along −body-z, as the 180°-X flip at start makes it point up.
 
     ``thrust_to_weight`` here is a **declared training constant**, not a plant parameter: it's part
     of the trained network's action interface, what a full-throttle action *means* to the policy,
@@ -58,7 +60,8 @@ def build_policy_loop(
     import numpy as np
     import warp as wp
 
-    from nexus_uav.examples._lib import CtbrParams, Rotors, build_rotor_mixer_from_model
+    from nexus_uav._src.build.assembly import rotor_chain
+    from nexus_uav.examples._lib import CtbrParams, build_rotor_mixer_from_model
     from nexus_uav.examples.controllers.policy.controller import TrainedPolicyController
 
     logger.info(f"device: {resolve_device(cfg)}")
@@ -68,8 +71,7 @@ def build_policy_loop(
     if vehicle_usd is None:
         raise ValueError("vehicle_usd is required (resolve it via build.launch.resolve_scenario)")
     act = vehicle_usd.actuator_params()  # aero/thrust map from the vehicle USD; hash-pinned, not in cfg
-    # The articulated plant, its Newton motors idle: Rotors holds the motor model and the rotors hang free.
-    physics = NewtonPhysics(vehicle_usd=vehicle_usd, cfg=cfg, step_actuators=False)
+    physics = NewtonPhysics(vehicle_usd=vehicle_usd, cfg=cfg)
     robot_mass = float(np.sum(physics.model.body_mass.numpy()))
     # Base-body principal inertia diag for the CTBR inner rate loop, τ = I·gain·Δω, read from the
     # model so the loop is inertia-correct, exactly as training reads it, in goto_env.__init__.
@@ -77,14 +79,10 @@ def build_policy_loop(
     inertia_diag = (float(base_inertia[0, 0]), float(base_inertia[1, 1]), float(base_inertia[2, 2]))
     logger.info(f"policy-loop: robot_mass={robot_mass:.4f} kg, inertia_diag={inertia_diag}, goal={tuple(goal_w)}")
 
-    # The airframe mixer, B⁻¹ + forward B + thrust map, built once from the model rotor geometry + the USD
-    # thrust map; split between the controller and the actuator: the controller runs the CTBR mixer, rate loop → B⁻¹, the actuator
-    # runs the single-body motor model, per-rotor cmd → lag → forward B → wrench. Both derive from this one
-    # RotorMixer so they can't drift.
+    # The airframe mixer, B⁻¹ + thrust map, built once from the model rotor geometry + the USD thrust map: the
+    # controller runs the CTBR mixer, rate loop → B⁻¹, and the rotor chain PX4 flies takes its commands.
     mixer = build_rotor_mixer_from_model(physics.model, vehicle_usd.rotor_joints(), act, physics.state0.body_q.numpy())
-    actuator = Rotors(
-        mixer=mixer, dt=dt, thrust_sign=thrust_sign, motor_tau=act["tau"]
-    )  # τ from the vehicle USD, the single authority
+    commands, forces = rotor_chain(physics, vehicle_usd)
     # CTBR rate-loop params for the controller's mixer: the deploy effective values, substeps=1; the policy
     # trained on the ×NUM_SUBSTEPS-baked twins, diluted back here. Inertia read from the model so the loop
     # is inertia-correct, exactly as training reads it. The controller owns the mixer, airframe-aware.
@@ -102,6 +100,7 @@ def build_policy_loop(
         device="cpu",
         mixer=mixer,
         ctbr_params=ctbr_params,
+        policy_period=max(1, round(POLICY_DT / dt)),
     )
     # Rendering enters here alone, as in the core assembly: an optional renderer + its host-rate sensors.
     renderer, sensors = renderer_factory(physics, vehicle_usd, cfg) if renderer_factory else (None, [])
@@ -123,7 +122,8 @@ def build_policy_loop(
     return Loop(
         clock=Clock(dt, rtf=rtf),
         physics=physics,
-        actuator=actuator,
+        commands=commands,
+        forces=forces,
         sensors=sensors,
         # The controller builds its own obs from the estimate, the single obs source; no observation
         # sensor, no per-tick torch in the graph.

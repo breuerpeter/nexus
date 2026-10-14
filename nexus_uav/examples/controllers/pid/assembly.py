@@ -2,10 +2,10 @@
 :class:`PidController`.
 
 This example-owned assembly, moved out of core because PX4 is the one first-class control path, wires
-the same core components as the PX4 assembly: ``NewtonPhysics``, the single-body ``Rotors``
-actuator, the device-native observation sensor, the passthrough estimator, whose estimate the guidance
-reads, and the core ``Loop``. The actuator's
-aero/thrust map comes from the vehicle's Universal Scene Description (USD) file.
+the same core components as the PX4 assembly: ``NewtonPhysics`` and the rotor chain PX4 flies, the
+device-native observation sensor, the passthrough estimator, whose estimate the guidance reads, and the
+core ``Loop``. The rotors' motors and propellers come from the vehicle's Universal Scene Description (USD)
+file.
 ``Sim._from_loop`` hosts the built loop.
 
 This is also the **determinism authority**: a deterministic controller over the
@@ -30,7 +30,7 @@ def build_pid_loop(
     gains=None,
     thrust_to_weight: float | None = None,  # None -> the plant's true T/W, derived from the USD thrust map
     moment_scale: float = 0.01,
-    spawn=(0.0, 0.0, 2.0),  # where free flight starts in the single-body semi_implicit regime
+    spawn=(0.0, 0.0, 2.0),  # where free flight starts, the rotors at hover speed, as the tuning rollout starts
     max_steps: int | None = 2000,
     physics_substeps: int = 1,
     sink=None,
@@ -44,16 +44,14 @@ def build_pid_loop(
     """Assemble the core Loop with the :class:`PidController`.
 
     The control law's gains are the differentiable design parameters tuned offline by the
-    design-optimization example. ``cfg["physics"]["solver"] == "semi_implicit"`` selects the
-    collapsed single-body free-flight regime, the same differentiable plant the design-opt example
-    tunes its gains on, so a diffsim-tuned controller deploys on the plant the optimizer tuned it for.
-    That's the only stable use of semi_implicit for a quad: on the articulated multibody its small
-    rotor bodies blow up. ``mujoco``, the default, stays the articulated path, the determinism
-    authority.
+    design-optimization example, on the articulated plant this run flies: the vehicle's Newton motors spin
+    its rotor joints, and its propellers turn each rotor's speed into its force. The flight starts where the
+    caller places it, in free flight with the rotors at hover speed, as the tuning rollout starts.
     """
     import numpy as np
 
-    from nexus_uav.examples._lib import Rotors, build_rotor_mixer_from_model
+    from nexus_uav._src.build.assembly import rotor_chain
+    from nexus_uav.examples._lib import build_rotor_mixer_from_model
     from nexus_uav.examples._lib.observation import WarpObservationSensor
     from nexus_uav.examples.controllers.pid.controller import PidController
     from nexus_uav.examples.controllers.pid.law import DEFAULT_GAINS
@@ -65,43 +63,23 @@ def build_pid_loop(
     if vehicle_usd is None:
         raise ValueError("vehicle_usd is required (resolve it via build.launch.resolve_scenario)")
     act = vehicle_usd.actuator_params()  # aero/thrust map from the vehicle USD, hash-pinned and not in cfg
-    single_body = cfg["physics"].get("solver") == "semi_implicit"
-    if single_body:
-        from nexus_uav.examples._lib import build_rotor_mixer_from_layout
-        from nexus_uav.examples._lib.single_body import collapse_to_single_body
-
-        sb = collapse_to_single_body(vehicle_usd)  # the one single-body path: collapse plus rotor layout
-        physics = NewtonPhysics(
-            model=sb.model,
-            cfg={"physics": {"dt": dt, "solver": "semi_implicit", "contacts": False,
-                             "spawn": {"pos": tuple(spawn), "attitude": "flip"}}},
-        )  # fmt: skip
-        robot_mass = sb.mass
-        # Layout mixer: the collapsed body has no rotor joints for build_rotor_mixer_from_model to read.
-        mixer = build_rotor_mixer_from_layout(sb.offsets, sb.dirs, {"ct": act["ct"], "cd": act["cd"], "rpm_max": act["rpm_max"]})  # fmt: skip
-    else:
-        # The articulated plant, its Newton motors idle: Rotors holds the motor model and the rotors hang free.
-        physics = NewtonPhysics(vehicle_usd=vehicle_usd, cfg=cfg, step_actuators=False)
-        robot_mass = float(np.sum(physics.model.body_mass.numpy()))
-        # The airframe mixer built from the model rotor geometry + the settled rest pose.
-        mixer = build_rotor_mixer_from_model(
-            physics.model, vehicle_usd.rotor_joints(), act, physics.state0.body_q.numpy()
-        )
+    physics_cfg = {**cfg["physics"], "spawn": {"pos": tuple(spawn), "attitude": "native", "prespin": "hover"}}
+    physics = NewtonPhysics(vehicle_usd=vehicle_usd, cfg={**cfg, "physics": physics_cfg})
+    robot_mass = float(np.sum(physics.model.body_mass.numpy()))
+    # The airframe mixer built from the model rotor geometry at its start pose.
+    mixer = build_rotor_mixer_from_model(physics.model, vehicle_usd.rotor_joints(), act, physics.state0.body_q.numpy())
+    commands, forces = rotor_chain(physics, vehicle_usd)  # the rotor chain PX4 flies
     if thrust_to_weight is None:
         # The action scale = the plant's true thrust-to-weight, from the USD-authored thrust map, not a
         # declared constant: action = +1 means the plant's real max thrust. DEFAULT_GAINS' altitude
         # gains use this scale, see law.py.
         thrust_to_weight = mixer.thrust_to_weight(robot_mass)
-    logger.info(
-        f"pid-loop: robot_mass={robot_mass:.4f} kg, goal={tuple(goal_w)}, "
-        f"single_body={single_body}, t2w={thrust_to_weight:.3f}"
-    )
+    logger.info(f"pid-loop: robot_mass={robot_mass:.4f} kg, goal={tuple(goal_w)}, t2w={thrust_to_weight:.3f}")
 
     # The PID law emits direct moments [thrust, m_x, m_y, m_z]; the controller's moment mixer, B⁻¹ with no
-    # Collective Thrust and Body Rate (CTBR) rate loop, turns them into per-rotor commands, and the
-    # single-body Rotors motor model realizes them: the same path for the articulated model, with
-    # force-free rotors, and for the collapsed one, see _lib/coupling.py.
-    actuator = Rotors(mixer=mixer, dt=dt, thrust_sign=-1.0, motor_tau=act["tau"])
+    # Collective Thrust and Body Rate (CTBR) rate loop, turns them into per-rotor commands, and the rotor
+    # chain flies them: the rotors' command element sets each motor's speed target, physics steps the
+    # motors, and the propellers add each rotor's force.
     controller = PidController(
         gains=DEFAULT_GAINS if gains is None else gains,
         goal_w=goal_w,
@@ -113,7 +91,7 @@ def build_pid_loop(
     # Device-native obs sensor: writes the signal observation, which the PID's device stage reads, so the
     # whole tick is one graph / tape-able. Its kernel reads the controller's setpoint, the goal a guidance
     # writes, until the observation moves into PID's stage.
-    sensors = [WarpObservationSensor(goal_w=goal_w, setpoint=controller.setpoint)]
+    sensors = [WarpObservationSensor(goal_w=goal_w, body_index=physics.base_index, setpoint=controller.setpoint)]
     # Rendering enters here alone, as in the core assembly: an optional renderer plus its host-rate sensors.
     renderer, extra_sensors = renderer_factory(physics, vehicle_usd, cfg) if renderer_factory else (None, [])
     sensors += extra_sensors
@@ -132,7 +110,8 @@ def build_pid_loop(
     return Loop(
         clock=Clock(dt, rtf=rtf),
         physics=physics,
-        actuator=actuator,
+        commands=commands,
+        forces=forces,
         sensors=sensors,
         estimator=GroundTruthEstimator(),  # the guidance reads its estimate
         controller=controller,

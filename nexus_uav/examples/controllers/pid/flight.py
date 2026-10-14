@@ -1,17 +1,17 @@
 """Proportional Integral Derivative (PID) waypoint tour, the minimal controller example: the
-deterministic, differentiable PID, :mod:`law`, flying the collapsed single-body astro-max around a square,
-fully CUDA-graph captured.
+deterministic, differentiable PID, :mod:`law`, flying the articulated astro-max around a square, fully
+CUDA-graph captured.
 
 This controller is the framework's **determinism authority**, deterministic control over
 the bit-exact Newton CPU physics, the bit-reproducible CI gate real PX4 can't give, and the
 **design-optimization controller**: its gains are the differentiable parameters
-``design_opt/gain_tuning.py`` tunes, and this flight deploys that example's proven configuration,
-the collapsed single-body plant + stable gains. This flight is the smallest end-to-end demo of
+``design_opt/gain_tuning.py`` tunes on the articulated plant this flight flies, and this flight deploys
+the gains it converges to. This flight is the smallest end-to-end demo of
 an example's shape: assemble the loop, the example-owned :mod:`assembly`, host it via
 ``Sim._from_loop``, fly its mission through the guidance it holds.
 
 **The shape.** A zero-arg, self-contained script. On CUDA the whole tick captures into one CUDA
-graph, controller + actuator + physics + sensors; on CPU it runs
+graph, controller + rotor chain + physics + sensors; on CPU it runs
 eager and bit-exact.
 
     uv run -m nexus_uav.examples pid                # flies + asserts + writes the .rrd
@@ -33,10 +33,10 @@ from nexus_uav.examples.controllers.pid.assembly import build_pid_loop
 VEHICLE = "astro_max_base"
 SCENE = "empty"  # flat ground
 MAX_STEPS = 8000  # safety cap; the guidance ends the run on mission completion
-# The proven single-body PID configuration: the collapsed semi_implicit plant + the gains
-# design_opt/gain_tuning.py's optimizer converges to; its deploy gate verifies they reach a far
+# The gains design_opt/gain_tuning.py's optimizer converges to on the articulated plant; its deploy gate
+# verifies they reach a far
 # waypoint and hold it, while the stable-but-undamped hand gains ring around a goal instead of settling.
-GAINS = [0.483, 0.464, 0.062, 0.099, 9.961, 3.103, 1.521]
+GAINS = [0.165, 0.219, 0.059, 0.101, 9.107, 3.011, 0.751]
 MOMENT_SCALE = 0.12
 # A square tour at altitude, from the free-flight start point at (0, 0, 2): four corners, back to start.
 # Leg length ~3-4 m, the goal scale the gain tuning targets; short hops excite under-damped ringing
@@ -47,7 +47,6 @@ WAYPOINTS = [(3.0, 0.0, 2.0), (3.0, 3.0, 2.5), (0.0, 3.0, 2.0), (0.0, 0.0, 2.0)]
 def main() -> None:
     launch = LaunchConfig().set_vehicle(VEHICLE).set_scene(SCENE)
     launch.runtime.device = "cuda"  # prefer CUDA; resolve_device falls back to CPU when there is none
-    launch.runtime.solver = "semi_implicit"  # the collapsed single-body plant this PID's tuning targets
     vehicle_usd, _resolved, cfg = resolve_scenario(launch)
     orch = build_pid_loop(
         cfg,

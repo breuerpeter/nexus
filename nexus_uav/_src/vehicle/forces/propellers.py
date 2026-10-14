@@ -19,8 +19,9 @@ scalar axial thrust and the in-plane H-force, closed-form aerodynamic terms alon
 * **in-plane H-force** ``= −aero_hforce·|Ω|·v_hor``: rotor in-plane drag, opposing the horizontal inflow
   and scaling with rotor speed.
 
-The examples' single-body ``Rotors`` and every differentiable or RL rollout run this one propeller model
-too. With ``aero_h = aero_hforce = 0`` it reduces **exactly** to ``kf·Ω²``, so airflow is a capability
+Every run, every differentiable or RL rollout, and the sampling Model Predictive Control (MPC) planner's own
+model run this one propeller model. With ``aero_h = aero_hforce = 0`` it reduces **exactly** to ``kf·Ω²``,
+so airflow is a capability
 authored per-vehicle, off by default: ``f0 − 0·|v|² = f0`` and ``max(f0, 0) = f0`` since ``f0 ≥ 0``, and
 the H-force is the zero vector, bit for bit the same as the quasi-static map.
 """
@@ -74,7 +75,7 @@ def _propeller_wrench(
     cd: float,  # reaction-torque-per-thrust, the yaw allocation κ
     aero_h: float,  # forward-flight thrust loss; 0 = quasi-static
     aero_hforce: float,  # in-plane rotor H-force, drag
-    base_body: int,  # airframe body index, the body-z thrust reference
+    rotor_bases: wp.array(dtype=wp.int32),  # (nr,) each rotor's airframe body, its body-z thrust reference
     rotor_vel_dofs: wp.array(dtype=wp.int32),  # (nr,) Degrees Of Freedom (DOF) index of each rotor in joint_qd
     rotor_bodies: wp.array(dtype=wp.int32),  # (nr,) body index of each rotor
     joint_qd: wp.array(dtype=float),  # solver-integrated generalized velocities; rotor Ω lives here
@@ -89,7 +90,7 @@ def _propeller_wrench(
     omega = joint_qd[rotor_vel_dofs[i]]  # rad/s, signed; Ω² terms are sign-independent
     bi = rotor_bodies[i]
     q_rot = wp.transform_get_rotation(body_q[bi])
-    base_z_world = wp.quat_rotate(wp.transform_get_rotation(body_q[base_body]), wp.vec3(0.0, 0.0, 1.0))
+    base_z_world = wp.quat_rotate(wp.transform_get_rotation(body_q[rotor_bases[i]]), wp.vec3(0.0, 0.0, 1.0))
     rotor_z_world = wp.quat_rotate(q_rot, wp.vec3(0.0, 0.0, 1.0))
     # In-plane inflow at the rotor: its world linear velocity in the rotor frame, x and y components.
     v_rot = wp.quat_rotate_inv(q_rot, wp.spatial_top(body_qd[bi]))
@@ -118,19 +119,62 @@ class Propellers(Component):
     """
 
     def __init__(self, *, model, joints, ct: float, cd: float, aero_h: float = 0.0, aero_hforce: float = 0.0):
+        vel_dofs, _pos_coords, bodies, base_body = find_rotor_joints(model, joints)
+        self._setup(
+            wp.array(vel_dofs, dtype=wp.int32),
+            wp.array(bodies, dtype=wp.int32),
+            wp.array([base_body] * len(vel_dofs), dtype=wp.int32),
+            ct,
+            cd,
+            aero_h,
+            aero_hforce,
+        )
+
+    @classmethod
+    def for_rotors(
+        cls,
+        *,
+        rotor_vel_dofs: wp.array,
+        rotor_bodies: wp.array,
+        rotor_bases: wp.array,
+        ct: float,
+        cd: float,
+        aero_h: float = 0.0,
+        aero_hforce: float = 0.0,
+    ) -> Propellers:
+        """The force element of rotors the caller has found, each with its own airframe, as the RL task steps the
+        rotors of many vehicles in one model.
+
+        Args:
+            rotor_vel_dofs: ``(nr,)`` each rotor's velocity degree of freedom in ``state.joint_qd``.
+            rotor_bodies: ``(nr,)`` each rotor's body.
+            rotor_bases: ``(nr,)`` each rotor's airframe body, its thrust reference.
+            ct: Thrust coefficient [N/rpm²].
+            cd: Reaction-torque-per-thrust.
+            aero_h: Forward-flight thrust-loss coefficient; 0 = quasi-static.
+            aero_hforce: In-plane rotor H-force coefficient.
+
+        Returns:
+            The force element; :meth:`add` adds the rotors' wrenches to a state.
+        """
+        propellers = cls.__new__(cls)
+        propellers._setup(rotor_vel_dofs, rotor_bodies, rotor_bases, ct, cd, aero_h, aero_hforce)
+        return propellers
+
+    def _setup(self, rotor_vel_dofs, rotor_bodies, rotor_bases, ct, cd, aero_h, aero_hforce) -> None:
         self.kf = float(ct) * RPM_PER_RADS * RPM_PER_RADS  # thrust = kf·Ω², with Ω in rad/s
         self.cd = float(cd)
         self.aero_h = float(aero_h)
         self.aero_hforce = float(aero_hforce)
-        vel_dofs, _pos_coords, bodies, base_body = find_rotor_joints(model, joints)
-        self.nr = len(vel_dofs)
-        self.base = int(base_body)
-        self._rotor_dofs = wp.array(vel_dofs, dtype=wp.int32)
-        self._rotor_bodies = wp.array(bodies, dtype=wp.int32)
+        self.nr = rotor_vel_dofs.shape[0]
+        self._rotor_dofs = rotor_vel_dofs
+        self._rotor_bodies = rotor_bodies
+        self._rotor_bases = rotor_bases
 
-    def _add(self, tick) -> None:
-        """The device stage: each rotor's wrench from the live state into ``state.body_f``."""
-        state = tick.state
+    def add(self, state) -> None:
+        """Add each rotor's thrust, H-force and reaction drag, from its speed in ``state``, to its rotor body's
+        wrench in ``state.body_f``.
+        """
         wp.launch(
             _propeller_wrench,
             dim=self.nr,
@@ -139,7 +183,7 @@ class Propellers(Component):
                 self.cd,
                 self.aero_h,
                 self.aero_hforce,
-                self.base,
+                self._rotor_bases,
                 self._rotor_dofs,
                 self._rotor_bodies,
                 state.joint_qd,
@@ -151,4 +195,4 @@ class Propellers(Component):
 
     def stages(self) -> list[Stage]:
         """One device stage, ``propellers``, over the live state."""
-        return [Stage("propellers", "device", self._add)]
+        return [Stage("propellers", "device", lambda tick: self.add(tick.state))]

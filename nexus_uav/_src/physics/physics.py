@@ -7,10 +7,10 @@ elements add to before ``step``, and the control inputs the command elements wri
 
 **The solver is configurable** via ``cfg["physics"]["solver"]``: ``mujoco``, the default, is the
 high-fidelity contact solver the Software In The Loop (SITL) path uses and the determinism authority
-on CPU; the gradient-capable ``semi_implicit`` / ``featherstone`` integrators back the
-design-optimization path, since ``mujoco-warp`` isn't differentiable, see
-``nexus_uav/examples/design_opt/design_optimization.py``. All three share the ``solver.step(state_in, state_out,
-control, contacts, dt)`` signature, so only the constructor differs.
+on CPU; the gradient-capable ``semi_implicit`` / ``featherstone`` integrators stay selectable, though the
+gradient examples step their own recorded rollout of the same vehicle, since ``mujoco-warp`` isn't
+differentiable, see ``nexus_uav/examples/_lib/articulated.py``. All three share the ``solver.step(state_in,
+state_out, control, contacts, dt)`` signature, so only the constructor differs.
 
 **One class, three regimes**, selected by ``cfg["physics"]``, so the production runtime and the
 standalone Model Predictive Control (MPC) examples drive the same ``reset``, ``clear_forces`` and ``step``:
@@ -20,12 +20,9 @@ standalone Model Predictive Control (MPC) examples drive the same ``reset``, ``c
   path.
 * *Free articulated*, with ``spawn`` set and contacts optional: the real multi-body vehicle placed in free
   flight at ``spawn['pos']`` with no ground-settle, rotors pre-spun to hover via ``prespin: 'hover'``. The
-  acados forward-validation regime, ``nexus_uav/examples/controllers/acados_nmpc/waypoint_tracking.py``.
-* *Free single-body*: pass a pre-built ``model=``, the Universal Scene Description (USD) file collapsed
-  to one rigid body, see :func:`~nexus_uav.examples._lib.single_body.collapse_to_single_body`, with the
-  ``semi_implicit`` solver and ``contacts: False``; spawned upright via the Forward Right Down (FRD)
-  flip, ``attitude: 'flip'``. The differentiable sampling-MPC regime,
-  ``nexus_uav/examples/controllers/sampling_mpc/obstacle_slalom.py``.
+  regime of the acados, Proportional Integral Derivative (PID) and sampling MPC examples.
+* *Pre-built*: pass a finalized ``model=``, as a test that builds its own model does; a single rigid
+  body spawns upright via the Forward Right Down (FRD) flip, ``attitude: 'flip'``.
 
 The reset / step paths branch on ``model.body_count``: a single collapsed body uses maximal
 coordinates, ``body_q``, with no joint control; the articulated vehicle uses generalized
@@ -99,7 +96,7 @@ def make_solver(name: str, model, *, njmax: int = 224):
 
 
 class NewtonPhysics:
-    def __init__(self, *, vehicle_usd=None, model=None, cfg: dict, njmax: int = 224, step_actuators: bool = True):
+    def __init__(self, *, vehicle_usd=None, model=None, cfg: dict, njmax: int = 224):
         self.cfg = cfg
         phys = cfg["physics"]
         self.sim_dt = phys["dt"]
@@ -108,9 +105,7 @@ class NewtonPhysics:
         self.spawn_cfg = phys.get("spawn")  # None → ground-settle; dict → free placement at spawn['pos']
 
         if model is not None:
-            # Pre-built model: the single-body path passes the USD collapsed via
-            # :func:`~nexus_uav.examples._lib.single_body.collapse_to_single_body`, for the sampling-MPC
-            # real sim + its batched rollout twin, and design-opt; the collapse lives in that one function, not here.
+            # Pre-built model: a test that builds its own model hands it over.
             self.model = model
         else:
             logger.info(f"Default warp device: {wp.get_device()}")
@@ -148,10 +143,7 @@ class NewtonPhysics:
         # Every Newton actuator the vehicle declares, rotor motor or not, stepped before the solver. Each
         # keeps two copies of its state, because ControllerPID is stateful and a Python swap would freeze at
         # the binding a CUDA graph captured: step() copies next → current in place after each step.
-        # ``step_actuators=False`` leaves them idle, for a run on the old actuator stage: the examples'
-        # ``Rotors`` holds its own motor model and sums its wrench on the base body, so the rotor joints
-        # hang free there, as they did before physics stepped the motors.
-        self._actuators = list(getattr(self.model, "actuators", None) or []) if step_actuators else []
+        self._actuators = list(getattr(self.model, "actuators", None) or [])
         self._actuator_states = [(a.state(), a.state()) for a in self._actuators]
         self._actuator_copies = [
             list(zip(_state_arrays(cur), _state_arrays(nxt), strict=True)) for cur, nxt in self._actuator_states

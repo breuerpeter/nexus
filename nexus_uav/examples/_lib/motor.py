@@ -1,28 +1,77 @@
-"""The **MotorModel**: a single motor's first-order rotor-speed lag.
+"""The **MotorModel** a planner keeps: a single motor's first-order rotor-speed lag.
 
-A motor's speed ``Ω`` is a real state: each control step it relaxes toward the commanded speed by
-``α = 1 − e^{−Δt/τ}`` and saturates at ``[0, Ω_max]``; thrust is then the propeller's ``kf·Ω²``. This is
-the one motor model the unified :class:`~nexus_uav.examples._lib.rotors.Rotors` actuator runs everywhere:
-RL train + deploy, Proportional Integral Derivative (PID), sampling Model Predictive Control (MPC),
-design-opt, and the PX4 path. The richer DC-motor Ordinary Differential Equation (ODE), servo torque
-compared to rotor inertia + aero load, is on the roadmap; this lag is its zero-inertia special case.
+The plant's motors are Newton's, on the rotor joints, which physics steps. A model-based controller that plans on
+a lumped single body, the sampling Model Predictive Control (MPC) planner, keeps this lag as its own model of
+them: each control step a motor's speed ``Ω`` relaxes toward the commanded speed by ``α = 1 − e^{−Δt/τ}`` and
+saturates at ``[0, Ω_max]``; thrust is then the propeller's ``kf·Ω²``.
 
-**``α`` derives from ``(τ, Δt)``, and is never passed in precomputed.** ``τ = 0.033 s`` is the
-physical invariant; ``Δt`` is each path's own control step, so training, ``Δt ≈ 0.02 s`` → ``α ≈ 0.454``,
-and deploy, ``Δt = 0.004 s`` → ``α ≈ 0.114``, correctly get different ``α`` from the same ``τ``. Baking a
-shared ``α`` would silently change the training dynamics.
+**``τ`` comes from the vehicle's motors and propellers**, :func:`motor_time_constant`, never from a constant of the
+planner's own, and **``α`` derives from ``(τ, Δt)``**, the planner's own step.
 """
 
 from __future__ import annotations
 
 import math
 
+import numpy as np
 import warp as wp
+
+from nexus_uav._src.scene.world import GRAVITY
+from nexus_uav._src.vehicle.rotors import RPM_PER_RADS, find_rotor_joints
 
 
 def motor_alpha(tau: float, dt: float) -> float:
     """The first-order lag coefficient ``α = 1 − e^{−Δt/τ}`` at this path's control step ``dt``."""
     return 1.0 - math.exp(-float(dt) / float(tau))
+
+
+def motor_time_constant(model, joints, values: dict) -> float:
+    """The rotors' speed time constant near hover [s], from the vehicle's motors and propellers.
+
+    A Newton rotor motor is a speed servo with ``kd`` alone whose feedforward cancels the propeller's steady drag,
+    so near hover a rotor's speed follows a small change in its target as a first-order lag: its spin inertia
+    over the servo's ``kd`` plus the slope of the propeller's drag torque, ``2·cd·kf·Ω``, at hover speed.
+
+    Args:
+        model: The finalized articulated model, whose rotor joints carry Newton's motors.
+        joints: The joint path of each rotor the vehicle declares.
+        values: The values the rotors share, ``VehicleUsd.actuator_params()``: ``ct`` and ``cd``.
+
+    Returns:
+        The time constant, averaged over the rotors.
+
+    Raises:
+        ValueError: A rotor joint carries no motor with a ``kd`` gain. The message names its degree of freedom.
+    """
+    vel_dofs, _pos, bodies, _base = find_rotor_joints(model, joints)
+    kd = {}
+    for motor in model.actuators or []:
+        gains = getattr(motor.controller, "kd", None)
+        if gains is not None:
+            kd.update(zip(motor.indices.numpy().tolist(), gains.numpy().tolist(), strict=True))
+    if missing := [dof for dof in vel_dofs if dof not in kd]:
+        raise ValueError(f"no Newton motor with a kd gain drives the rotor degrees of freedom {missing}")
+    kf = float(values["ct"]) * RPM_PER_RADS**2
+    hover = math.sqrt(float(model.body_mass.numpy().sum()) * GRAVITY / len(vel_dofs) / kf)
+    drag_slope = 2.0 * float(values["cd"]) * kf * hover
+    axes, inertia = model.joint_axis.numpy(), model.body_inertia.numpy()
+    taus = [float(axes[d] @ inertia[b] @ axes[d]) / (kd[d] + drag_slope) for d, b in zip(vel_dofs, bodies, strict=True)]
+    return float(np.mean(taus))
+
+
+def rotor_spin_inertia(model, joints) -> float:
+    """The rotors' spin inertia [kg·m²], each rotor body's inertia about its joint's axis, averaged over the rotors.
+
+    Args:
+        model: The finalized articulated model.
+        joints: The joint path of each rotor the vehicle declares.
+
+    Returns:
+        The mean spin inertia.
+    """
+    vel_dofs, _pos, bodies, _base = find_rotor_joints(model, joints)
+    axes, inertia = model.joint_axis.numpy(), model.body_inertia.numpy()
+    return float(np.mean([axes[d] @ inertia[b] @ axes[d] for d, b in zip(vel_dofs, bodies, strict=True)]))
 
 
 @wp.func

@@ -21,14 +21,12 @@ from nexus_uav._src.api.sim import Sim
 from nexus_uav._src.build.assembly import assemble, build_loop, resolve_device
 from nexus_uav._src.build.launch import resolve_vehicle_usd
 from nexus_uav._src.config import LaunchConfig
-from nexus_uav._src.core import Clock
 from nexus_uav._src.core.interfaces import Component, Stage
 from nexus_uav._src.core.loop import Loop
 from nexus_uav._src.core.signals import Signal
 from nexus_uav._src.physics import NewtonPhysics
 from nexus_uav._src.physics.vehicle import VehicleUsd
 from nexus_uav._src.scene.world import GRAVITY
-from nexus_uav.examples._lib import Rotors, build_rotor_mixer_from_model
 from tests.usd.sensor_vehicle import HostController, scenario
 from tests.vehicle import quad
 
@@ -186,29 +184,6 @@ def _loop(path, controller, *, commands=(), forces=()):
     )
 
 
-def _rotors(path, controller):
-    """The run the quad at `path` builds around `controller` with the examples' `Rotors` in place of the
-    rotor chain, the Newton motors idle, as the Proportional Integral Derivative (PID) example flies.
-    """
-    cfg = scenario()
-    cfg["physics"]["force_cpu"] = True
-    resolve_device(cfg)
-    vehicle_usd = VehicleUsd({"usd_path": str(path)})
-    physics = NewtonPhysics(vehicle_usd=vehicle_usd, cfg=cfg, step_actuators=False)
-    mixer = build_rotor_mixer_from_model(
-        physics.model, vehicle_usd.rotor_joints(), vehicle_usd.actuator_params(), physics.state0.body_q.numpy()
-    )
-    dt = cfg["physics"]["dt"]
-    return Loop(
-        clock=Clock(dt),
-        physics=physics,
-        actuator=Rotors(mixer=mixer, dt=dt, motor_tau=0.033),
-        sensors=[],
-        controller=controller,
-        max_steps=quad.FLIGHT_STEPS,
-    )
-
-
 def _flown(orch) -> tuple[float, float | None]:
     """The airframe's climb over the flight [m], and the gimbal joint's final angle [rad] when it has one."""
     with wp.ScopedDevice("cpu"), Sim._from_loop(orch) as sim:
@@ -256,23 +231,21 @@ def test_a_rotor_command_outside_0_to_1_flies_as_the_nearest_bound(tmp_path, out
     assert np.array_equal(flights[0], flights[1])
 
 
-@pytest.mark.parametrize("reader", ["RotorCommand", "Rotors"])
-def test_a_controller_whose_controls_are_narrower_than_a_reader_needs_fails_the_run_naming_both(tmp_path, reader):
+def test_a_controller_whose_controls_are_narrower_than_a_reader_needs_fails_the_run_naming_both(tmp_path):
     """A controller whose controls hold fewer values than a reader needs fails the run before any stage
     runs, and the error names both components and both widths.
 
     Given the fixture quad with four rotors and a controller whose controls hold three values, when the run
-    starts, then it fails before any stage runs, and the error names the controller, the reader, 3 and 4;
-    once with the rotors' command element and once with the examples' `Rotors`. No stage ran, so the
-    recording holds no history.
+    starts, then it fails before any stage runs, and the error names the controller, the rotors' command
+    element, 3 and 4. No stage ran, so the recording holds no history.
     """
     path = quad.author(tmp_path / "quad.usda")
-    orch = quad.build(path, quad.FLIGHT_STEPS, _Narrow()) if reader == "RotorCommand" else _rotors(path, _Narrow())
+    orch = quad.build(path, quad.FLIGHT_STEPS, _Narrow())
     with wp.ScopedDevice("cpu"), Sim._from_loop(orch) as sim:
         with pytest.raises(ValueError) as e:
             sim.run()
         histories = len(sim)
-    named = all(re.search(rf"\b{word}\b", str(e.value)) for word in ("_Narrow", reader, "3", "4"))
+    named = all(re.search(rf"\b{word}\b", str(e.value)) for word in ("_Narrow", "RotorCommand", "3", "4"))
     assert (named, histories) == (True, 0)
 
 

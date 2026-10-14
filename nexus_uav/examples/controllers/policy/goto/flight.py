@@ -4,8 +4,8 @@ and flies it, no Isaac Lab involved.
 
 The training half lives in the separate ``nexus-rl`` Isaac Lab project, ``--project
 nexus-rl``; *this* runs on **standalone Newton** via ``uv``, with no Isaac Lab and no container. It
-loads the exported ``policy.pt`` and flies it with the single-body :class:`Rotors`, the
-same per-rotor model the policy trained against, closing the loop: train on Isaac-Lab-on-Newton →
+loads the exported ``policy.pt`` and flies it on the articulated vehicle, its rotors turned by the Newton
+motors the policy trained against, closing the loop: train on Isaac-Lab-on-Newton →
 deploy on the core.
 
 **The shape.** A zero-arg, self-contained script: it assembles its own loop, the

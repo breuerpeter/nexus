@@ -11,7 +11,6 @@ from nexus_uav._src.vehicle.forces.propellers import Propeller
 from nexus_uav._src.vehicle.rotors import RPM_PER_RADS
 
 PROPELLER_SCHEMA = "NexusPropellerAPI"  # the schema a rotor's rigid body applies to declare its propeller
-_MOTOR_PREFIX = "motor:"  # the joint attributes of the single-body examples' motor model, such as motor:tau
 
 
 def parse_rotors(usd_path: str | Path) -> tuple[dict, list[str]]:
@@ -24,8 +23,7 @@ def parse_rotors(usd_path: str | Path) -> tuple[dict, list[str]]:
 
     Returns:
         The flat map every consumer reads and each rotor's joint path. The map holds the propeller's ``ct``,
-        ``cd``, ``aero_h`` and ``aero_hforce``, the speed at full command as ``rpm_max``, and each ``motor:*``
-        attribute of the rotor joints under its bare name, such as ``tau``.
+        ``cd``, ``aero_h`` and ``aero_hforce``, and the speed at full command as ``rpm_max``.
 
     Raises:
         ValueError: The vehicle declares no rotor; a propeller sits on a prim that isn't the child body of a
@@ -71,9 +69,6 @@ def parse_rotors(usd_path: str | Path) -> tuple[dict, list[str]]:
                 "author the motor's no-load speed"
             )
         values = {**asdict(Propeller(**kwargs)), "rpm_max": speed * RPM_PER_RADS}
-        for a in joint.GetAttributes():
-            if a.GetName().startswith(_MOTOR_PREFIX):
-                values[a.GetName().removeprefix(_MOTOR_PREFIX)] = a.Get()
         parent = next(iter(joint.GetRelationship("physics:body0").GetTargets()), None)
         rotors.append((body, str(parent), str(joint.GetPath()), {k: float(v) for k, v in values.items()}))
 

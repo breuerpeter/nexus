@@ -1,10 +1,10 @@
 """The device-native control path, the capture and autodiff prerequisite: with the Warp signal ``observation``
 the Proportional Integral Derivative (PID) loop has no per-tick host hop. WarpObservationSensor
--> PidController.exchange, the law + moment mixer, -> Rotors.forces_wp all stay on-device, so
+-> PidController.exchange, the law + moment mixer, -> the rotors' command element all stay on-device, so
 the whole tick is one graph. A NumPy observation still takes the host path.
 
-The single-body motor model + the moment mixer need rotor geometry for the allocation, so the fixture
-builds a real rotored vehicle, the local fixture vehicle of ``tests/usd/sensor_vehicle.py``.
+The moment mixer needs rotor geometry for the allocation, so the fixture builds a real rotored vehicle, the
+local fixture vehicle of ``tests/usd/sensor_vehicle.py``.
 """
 
 import numpy as np
@@ -21,7 +21,8 @@ from nexus_uav._src.config import LaunchConfig
 from nexus_uav._src.core.schema import SimTime
 from nexus_uav._src.core.signals import wire
 from nexus_uav._src.core.stages import Bound
-from nexus_uav.examples._lib import Rotors, build_rotor_mixer_from_model
+from nexus_uav._src.vehicle.commands import RotorCommand
+from nexus_uav.examples._lib import build_rotor_mixer_from_model
 from nexus_uav.examples._lib.observation import WarpObservationSensor
 from nexus_uav.examples.controllers.pid import PidController
 from tests.usd import sensor_vehicle as sv
@@ -65,13 +66,15 @@ def test_a_warp_observation_keeps_the_pid_path_on_the_device(tmp_path):
     assert _is_warp_array(controls.command)
     assert controls.command.numpy().reshape(-1).shape == (mixer.nr,)
 
-    # 3. the actuator's device stage applies the Warp command buffer directly, no H2D, and writes a real wrench
-    act = Rotors(mixer=mixer, dt=0.004, thrust_sign=-1.0, motor_tau=0.033)
-    state.clear_forces()
-    act.forces_wp(controls.command, state)
+    # 3. the rotors' command element writes the Warp command buffer into the motors' targets directly, no H2D
+    control = model.control()
+    command = RotorCommand(model=model, control=control, joints=joints, **_ACT_CFG)
+    command.write(controls.command.reshape((1, mixer.nr)))
     wp.synchronize()
-    bf = state.body_f.numpy()[act.base]
-    assert np.isfinite(bf).all() and np.any(bf != 0.0)
+    starts = model.joint_qd_start.numpy()
+    rotors = [int(starts[j]) for j, label in enumerate(model.joint_label) if label in set(joints)]
+    targets = control.joint_target_qd.numpy()[rotors]
+    assert np.isfinite(targets).all() and np.all(targets > 0.0)
 
 
 def test_numpy_observation_takes_host_path():

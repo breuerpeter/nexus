@@ -19,7 +19,8 @@ trained policy.
 The controller is **airframe-aware**, as a real flight controller is: its CTBR **mixer**,
 :class:`~nexus_uav.examples._lib.mixer.CtbrMixer`, an inner rate loop → ``B⁻¹`` allocation,
 turns the policy's CTBR action into the ``nr`` per-rotor commands ``Controls.command`` carries, which
-the single-body :class:`~nexus_uav.examples._lib.rotors.Rotors` motor model then realizes. The mixer
+the rotor chain then flies. The policy acts at its training rate, every ``policy_period`` ticks, and holds
+its action between, while the rate loop and mixer run every tick, as in training. The mixer
 is the same ``ctbr_to_cmd_batched`` op the training env launches with ``dim = N``, the byte-shared
 train↔deploy parity surface. The rate loop needs only the body-frame rate ``ω_b``, which is exactly
 ``obs[3:6]``, which equals ``Rᵀ·ω_w``, so the controller needs no extra state plumbing.
@@ -52,6 +53,8 @@ class TrainedPolicyController(Component):
             ``mixer``. Must match the training env's CTBR params diluted to the deploy step: T/W and rate gain.
         body_index: the articulation body :meth:`obs_from_state` reads; 0 = base. In the loop the
             observation comes from the estimate, the base body's pose and twist.
+        policy_period: the control ticks per inference, the policy's training step over the tick: the policy
+            runs every ``policy_period`` ticks and holds its action between, and the mixer runs every tick.
     """
 
     def __init__(
@@ -64,6 +67,7 @@ class TrainedPolicyController(Component):
         mixer=None,
         ctbr_params=None,
         body_index: int = 0,
+        policy_period: int = 1,
     ):
         self.policy_path = str(policy_path)
         # The goal the goal-relative observation reads, an owned, mutable buffer: `np.array`, not asarray.
@@ -76,6 +80,8 @@ class TrainedPolicyController(Component):
         self.action_clip = float(action_clip)
         self.device = device
         self.body_index = int(body_index)
+        self.policy_period = int(policy_period)
+        self._tick = 0  # the ticks since connect: the policy runs on every period-th tick
         # The airframe CTBR mixer, rate loop + B⁻¹ → per-rotor command, built on connect from the supplied
         # RotorMixer + CtbrParams. None ⇒ emit the raw CTBR action, for a legacy/raw-action consumer.
         self._rotor_mixer = mixer
@@ -103,6 +109,7 @@ class TrainedPolicyController(Component):
         self._policy = torch.jit.load(self.policy_path, map_location=self.device)
         self._policy.eval()
         self._prev_action[:] = 0.0  # fresh action history per rollout, in place: the sensor shares it
+        self._tick = 0
         if self._rotor_mixer is not None and self._mixer is None:
             from nexus_uav.examples._lib import CtbrMixer
 
@@ -130,18 +137,22 @@ class TrainedPolicyController(Component):
         """Run the policy on the **complete** observation -> ``Controls`` carrying ``action[4]``.
 
         The obs function, :meth:`obs_from_state`, builds the observation whole and folds in this
-        controller's last action; the controller doesn't reshape or augment it. After inference the
-        new action lands **in place** in ``_prev_action``, so the next observation carries it, the
-        deploy twin of the training env's ``observation_from_state(..., prev_action=self._actions)``.
+        controller's last action; the controller doesn't reshape or augment it. The policy runs on every
+        ``policy_period``-th call and its action holds between; after inference the new action lands **in
+        place** in ``_prev_action``, so the next inference's observation carries it, the deploy twin of the
+        training env's ``observation_from_state(..., prev_action=self._actions)``.
         """
         if self._policy is None:
             raise RuntimeError("TrainedPolicyController.connect must be called before act().")
         net_obs = np.asarray(obs, dtype=np.float32).reshape(-1)  # the complete obs the obs function built
         omega_b = net_obs[3:6]  # body-frame angular velocity, = Rᵀ·ω_w: the rate loop's only state input
-        with self._torch.no_grad():
-            action = self._policy(self._torch.from_numpy(net_obs.reshape(1, -1)).to(self.device))
-        action = np.clip(action.cpu().numpy().reshape(ACTION_DIM), -self.action_clip, self.action_clip)
-        self._prev_action[:] = action.astype(np.float32)  # in place -> the shared sensor obs reads it next tick
+        if self._tick % self.policy_period == 0:
+            with self._torch.no_grad():
+                action = self._policy(self._torch.from_numpy(net_obs.reshape(1, -1)).to(self.device))
+            action = np.clip(action.cpu().numpy().reshape(ACTION_DIM), -self.action_clip, self.action_clip)
+            self._prev_action[:] = action.astype(np.float32)  # in place -> the next inference's obs reads it
+        self._tick += 1
+        action = self._prev_action.copy()  # the held action
         if self._mixer is None:
             return Controls(command=action.astype(np.float32))  # raw CTBR action, for a legacy / raw-action consumer
         # The airframe CTBR mixer: action + body rate → nr per-rotor commands, the deploy half of the

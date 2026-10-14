@@ -1,7 +1,7 @@
 """The **mixer**: the airframe control-allocation + Collective Thrust and Body Rates (CTBR) and moment
-control laws that turn a high-level controller action into the per-rotor commands the single-body motor
-model consumes. This is the flight-controller half of the rotor chain: the law + the mixer live here and
-in the controllers, the motor model lives in :class:`~nexus_uav.examples._lib.rotors.Rotors`.
+control laws that turn a high-level controller action into the per-rotor commands the rotors' command
+element consumes. This is the flight-controller half of the rotor chain: the law + the mixer live here and
+in the controllers, and the motors are Newton's, on the rotor joints.
 
 ``Controls.command`` is **always** ``nr`` normalized per-rotor commands ``u ∈ [0, 1]``, the rotor-speed
 fraction; the mixer is what produces them. Pieces, all ``B``-authoritative and shared by RL train + RL
@@ -144,8 +144,8 @@ def wrench_to_cmd(
     out_cmd: wp.array2d(dtype=float),  # (·, nr) → normalized per-rotor command u
 ):
     """The shared mixer tail: target wrench → ``B⁻¹`` → per-rotor thrust → **normalized rotor-speed
-    command** ``u = √(max(f, 0)/kf) / Ω_max``. The motor model, :class:`Rotors`, clamps ``u`` to
-    ``[0, 1]``, the single saturation authority, and applies the first-order lag, so this op carries only
+    command** ``u = √(max(f, 0)/kf) / Ω_max``. The rotors' command element clamps ``u`` to
+    ``[0, 1]``, the single saturation authority, and the motors bring the rotors to speed, so this op carries only
     the differentiable allocation + thrust-map inverse, with no rate loop and no motor state, keeping a
     clean full-horizon gradient for the moment-input design-opt path. Splitting it out of the old single
     kernel is exact: ``clamp(u, 0, 1)·Ω_max = min(√(f/kf), Ω_max)`` reproduces the old in-kernel saturation.
@@ -217,9 +217,9 @@ def pack_vec4(a: wp.array(dtype=float), out: wp.array(dtype=wp.vec4)):
 @dataclass
 class RotorMixer:
     """The airframe mixer/coupling config, built once from the rotor geometry + the actuator thrust map,
-    then split between the controller and the actuator: the controller takes the mixer side, ``B_inv`` + the thrust map, the
-    :class:`Rotors` motor model takes the coupling side, forward ``B`` + the thrust map. Both
-    derive from the same :func:`build_allocation`, so they can't drift.
+    used by the controller, which takes the mixer side, ``B_inv`` + the thrust map, and by a planner's single-body
+    model, which takes the coupling side, forward ``B`` + the thrust map. Both derive from the same
+    :func:`build_allocation`, so they can't drift.
     """
 
     B: np.ndarray  # (4, nr) forward allocation, the actuator's body coupling
@@ -243,8 +243,8 @@ class RotorMixer:
 
 def build_rotor_mixer_from_model(model, joints, act_cfg: dict, rest_body_q) -> RotorMixer:
     """Build the :class:`RotorMixer` from a finalized model's rotor joints + the actuator thrust map:
-    the airframe that configures both the controller, ``B_inv``, and the :class:`Rotors` actuator,
-    forward ``B``. ``joints`` is the joint path of each rotor the vehicle declares, the ``VehicleUsd``'s
+    the airframe that configures the controller, ``B_inv``, and forward ``B``. ``joints`` is the joint path of
+    each rotor the vehicle declares, the ``VehicleUsd``'s
     ``rotor_joints()``. ``rest_body_q`` is the settled rest pose ``(nbodies, 7)`` the allocation builds
     from, since the rest-pose geometry is rigid.
     """

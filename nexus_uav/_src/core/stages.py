@@ -57,7 +57,7 @@ def stages_of(component, role: str) -> list[Bound]:
 
 
 # The roles whose stages run once per physics substep, between ``clear`` and ``step``, in this order: the old
-# actuator stage, the examples' single-body ``Rotors``, runs with the force stages, since it writes the body
+# actuator stage, which no shipped component fills, runs with the force stages, since it writes the body
 # forces too.
 SUBSTEP_ROLES = ("command", "force", "actuator")
 # The roles whose stages run once per tick over the state the step left, in this order.

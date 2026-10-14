@@ -86,3 +86,54 @@ def test_hforce_scales_with_rotor_speed():
     assert math.isclose(h2, 2.0 * h1, rel_tol=1e-5)
     assert math.isclose(h_neg, h1, rel_tol=1e-5)  # |Ω| ⇒ spin direction doesn't flip the H-force
     assert np.sign(h1) == -np.sign(vx)  # opposes +x inflow
+
+
+def _two_vehicles():
+    """Two one-rotor vehicles, the second flipped 180° about x, each rotor spinning at 200 rad/s about its
+    airframe's z axis: the model, its state, and each rotor's velocity degree of freedom, body and airframe.
+    """
+    import newton
+
+    builder = newton.ModelBuilder()
+    rotors = []
+    for i, att in enumerate((wp.quat_identity(), wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), wp.pi))):
+        pose = wp.transform(wp.vec3(3.0 * i, 0.0, 1.0), att)
+        base = builder.add_link(xform=pose, mass=1.0, inertia=wp.mat33(np.eye(3) * 0.01))
+        rotor = builder.add_link(xform=pose, mass=0.01, inertia=wp.mat33(np.eye(3) * 1e-4))
+        free = builder.add_joint_free(base)
+        spin = builder.add_joint_revolute(base, rotor, axis=(0.0, 0.0, 1.0))
+        builder.add_articulation([free, spin])
+        rotors.append((spin, rotor, base))
+    model = builder.finalize()
+    starts = model.joint_qd_start.numpy()
+    dofs = [int(starts[spin]) for spin, _, _ in rotors]
+    qd = model.joint_qd.numpy()
+    qd[dofs] = 200.0
+    state = model.state()
+    state.joint_qd.assign(qd)
+    newton.eval_fk(model, model.joint_q, state.joint_qd, state)
+    return state, dofs, [rotor for _, rotor, _ in rotors], [base for _, _, base in rotors]
+
+
+def test_each_rotor_thrusts_off_its_own_airframe():
+    """Each rotor thrusts off its own airframe, the rotors of many vehicles in one launch.
+
+    Given two one-rotor vehicles, the second flipped 180° about x, each rotor spinning at 200 rad/s, and a
+    thrust map of 1e-4 N·s², when the propellers add their forces, then the first rotor's force is
+    (0, 0, -4) N and the flipped one's (0, 0, 4) N: each along its own airframe's thrust axis.
+    """
+    from nexus_uav._src.vehicle.forces.propellers import Propellers
+
+    state, dofs, bodies, bases = _two_vehicles()
+    propellers = Propellers.for_rotors(
+        rotor_vel_dofs=wp.array(dofs, dtype=wp.int32),
+        rotor_bodies=wp.array(bodies, dtype=wp.int32),
+        rotor_bases=wp.array(bases, dtype=wp.int32),
+        ct=1e-4 / RPM_PER_RADS**2,
+        cd=0.0,
+    )
+
+    propellers.add(state)
+
+    forces = state.body_f.numpy()[bodies, :3]
+    np.testing.assert_allclose(forces, [[0.0, 0.0, -4.0], [0.0, 0.0, 4.0]], atol=1e-5)
