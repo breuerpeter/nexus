@@ -140,7 +140,7 @@ def test_an_s3_fetch_with_no_credentials_names_the_url_and_the_credential_chain(
     with pytest.raises(RuntimeError) as err:
         fetch(url, "0" * 64, cache_dir=tmp_path / "cache")
     message = str(err.value)
-    assert url in message and "credentials" in message and "executable" not in message
+    assert all(s in message for s in (url, "AWS_PROFILE", "instance profile")) and "executable" not in message
 
 
 def test_an_s3_fetch_without_the_s3_extra_names_it(tmp_path, monkeypatch):
