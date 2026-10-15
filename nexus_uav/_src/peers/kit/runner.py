@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 
 from nexus_uav._src.assets.resolver import fetch
 from nexus_uav._src.core import logger
+from nexus_uav._src.core.errors import RunError
 from nexus_uav._src.core.run_folder import run_folder
 from nexus_uav._src.peers import (
     LABEL,  # a Kit peer carries nexus.peer=kit, so a runner can find a leftover one
@@ -55,8 +56,10 @@ _CESIUM_EXTS = "/cesium-exts"
 _CESIUM_PLUGINS = f"{_CESIUM_EXTS}/cesium.usd.plugins/plugins/CesiumUsdSchemas/resources"
 
 
-class KitPeerError(RuntimeError):
-    """The Kit render peer couldn't start, or died mid-flight; the message names the cause."""
+class KitPeerError(RunError):
+    """The Kit render peer couldn't start, or died mid-flight; the message names the cause. A run error, so a
+    script's ``except nexus_uav.RunError`` catches it.
+    """
 
 
 def resolve(layers: Sequence[CatalogLayer] = ()) -> PeerPin:

@@ -64,12 +64,10 @@ def main() -> int:
             link = sim.ports["offboard"]  # the run owns the address of the link this script opens
             nx.logger.info(f"[manual] PX4 lockstep established: flying via MANUAL_CONTROL (:{link['port']})")
 
-            # The script opens the offboard client itself, after start(), and closes it on the way
-            # out. Entering it returns at once: PX4 runs on the sim's clock, so the wait for its
-            # heartbeat steps the sim.
+            # The script connects the offboard client itself, after start(), and closes it on the way
+            # out. PX4 runs on the sim's clock, so the wait for its heartbeat steps the sim.
             spawn_alt = float(sim.read(f"vehicle/body/{sim.base_body}").position[2])
-            with OffboardClient(f"udpin:0.0.0.0:{link['port']}", system_id=link["system_id"]) as op:
-                sim.wait_until(lambda: op.connected, sim_timeout=args.timeout)
+            with OffboardClient.connect(sim, args.timeout) as op:
                 # SITL's rcS already sets this, but it's a runtime default rather than a compiled-in
                 # one: an upstream bump could flip it, and the only symptom would be a gesture that
                 # never arms. Say it out loud. MAN_ARM_GESTURE has a compiled-in value of 1 and stays

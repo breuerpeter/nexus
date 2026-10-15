@@ -84,13 +84,11 @@ def main() -> int:
             nx.logger.info(f"[sitl] PX4 lockstep established: flying the profile over :{link['port']}")
 
             # 2. The one PX4 flight profile, as a plain script: Takeoff mode, then yaw sweeps. The
-            #    script opens the offboard client itself, after start(), and closes it on the way
-            #    out. Entering it returns at once: PX4 runs on the sim's clock, so the wait for its
-            #    heartbeat steps the sim.
+            #    script connects the offboard client itself, after start(), and closes it on the way
+            #    out. PX4 runs on the sim's clock, so the wait for its heartbeat steps the sim.
             t_gcs = time.time()
             spawn_alt = float(sim.read(f"vehicle/body/{sim.base_body}").position[2])
-            with OffboardClient(f"udpin:0.0.0.0:{link['port']}", system_id=link["system_id"]) as op:
-                sim.wait_until(lambda: op.connected, sim_timeout=timeout)
+            with OffboardClient.connect(sim, timeout) as op:
                 op.takeoff(TAKEOFF_ALT)  # returns at once; the client's pump arms once armable
                 sim.wait_until(op.at_target, sim_timeout=timeout)
                 nx.logger.info(f"[sitl] climbed to {op.relative_altitude():.2f} m: yaw sweeps {list(YAW_SWEEP)}")

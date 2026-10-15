@@ -24,6 +24,7 @@ import warp as wp
 from nexus_uav._src.diagnostics import diagnostics
 
 from .clock import DeviceClock
+from .errors import RunError
 from .interfaces import Stage, Tick
 from .interrupts import hold_interrupts, stop_signals
 from .logging import logger
@@ -50,16 +51,14 @@ def _on_cuda() -> bool:
     return bool(wp.get_device().is_cuda)
 
 
-class SetupError(RuntimeError):
-    """The run's setup failed: a component never connected, never attached or never had its peer's first
-    answer. The message names the cause and the logs of the peers the run started, where the peer's own
-    error shows. A peer that stops answering after lockstep ends the run normally, with no error.
-    """
-
-
 def _instance(component) -> str:
     """A component's instance name, the leaf of its path: its ``name``, else its class's name."""
     return str(component.name or type(component).__name__)
+
+
+def _peer_name(peer) -> str:
+    """A peer's name, which is optional: its ``name``, else its class's name."""
+    return str(getattr(peer, "name", None) or type(peer).__name__)
 
 
 def _sensor_names(sensors: list) -> list[str]:
@@ -191,7 +190,7 @@ class Loop:
                 after recording: an output-only hook for demos and tests to read the live state,
                 for example to capture a trajectory.
             preroll_timeout: Seconds to wait for a peer to dial in, and again for its first answer,
-                before raising ``SetupError``.
+                before raising ``RunError``.
             exchange_timeout: Per-tick timeout in seconds for the blocking
                 ``controller.exchange`` in the steady loop.
             max_steps: Bound on control steps for the steady loop. ``None`` runs until
@@ -454,7 +453,7 @@ class Loop:
         controller advances one tick per ``next()``, but the first, which runs a peer's preroll ticks too.
         Teardown, renderer,
         controller and logs, runs in the ``finally``, whether the generator runs out, on run to
-        completion or peer disconnect, or closes early, via :meth:`close` on ``stop()`` mid-step.
+        completion, raises, on a peer lost, or closes early, via :meth:`close` on ``stop()`` mid-step.
         The live RTF lands in ``run_stats``. For the span of the run SIGTERM and SIGHUP end it as
         Ctrl-C does, so each reaches this teardown.
         """
@@ -527,10 +526,6 @@ class Loop:
                 self._connected.append(c)
             self._attach(ring, tick, waiting)
             yield from self._loop(segments, graphs, tick, waiting)
-        except ConnectionError as e:
-            # The autopilot's disconnect after lockstep: a run's normal end. A failed setup raises SetupError, and a
-            # dying Kit peer KitPeerError, which each end the run with the error.
-            logger.info(str(e))
         finally:
             try:
                 if self.renderer is not None and hasattr(self.renderer, "close"):
@@ -553,19 +548,32 @@ class Loop:
             finally:
                 self._stop_peers()
 
-    def _peer_logs(self) -> str:
-        """The files each peer the run started leaves, such as its console log, each after the peer's name,
-        as a clause to end an error with; empty for a run whose peers leave none. A peer's ``name`` and its
-        ``artifacts`` are optional, so a peer with no name goes by its class's, and an artifact the peer
-        didn't write, ``None``, names no file.
+    def _peer_report(self) -> str:
+        """What each peer the run started says about itself, as a clause to end an error with: the files it leaves,
+        such as its console log, each after the peer's name, then its own error lines, one a line after the peer's
+        name; empty for a run whose peers leave neither. A peer's ``name``, its ``artifacts`` and its ``errors`` are
+        optional, so a peer with no name goes by its class's, and an artifact the peer didn't write, ``None``, names
+        no file.
         """
         files = [
-            f"{getattr(peer, 'name', None) or type(peer).__name__}'s {key} {path}"
+            f"{_peer_name(peer)}'s {key} {path}"
             for peer in self.peers
             for key, path in getattr(peer, "artifacts", dict)().items()
             if path is not None
         ]
-        return "; see " + ", ".join(files) if files else ""
+        said = [f"\n{_peer_name(peer)}: {line}" for peer in self.peers for line in getattr(peer, "errors", list)()]
+        return ("; see " + ", ".join(files) if files else "") + "".join(said)
+
+    def _check_peers_alive(self, names: str) -> None:
+        """Fail the setup at once when a peer the run started has exited, rather than wait out ``preroll_timeout``
+        for a component that waits on it.
+
+        Raises:
+            RunError: A peer reads dead; the message names it and ends with the report of every peer.
+        """
+        dead = [_peer_name(peer) for peer in self.peers if not peer.alive()]
+        if dead:
+            raise RunError(f"{' and '.join(dead)} exited while {names} waited on it{self._peer_report()}")
 
     def _links_for(self, component) -> dict:
         """The link of each peer `component` requires, by the peer's name, which its ``connect`` takes.
@@ -683,7 +691,7 @@ class Loop:
         boot checks from its first stamp.
 
         Raises:
-            SetupError: A component never attached within ``preroll_timeout``.
+            RunError: A component never attached within ``preroll_timeout``, or a peer exited before it did.
         """
         if not waiting:
             return
@@ -694,7 +702,8 @@ class Loop:
         deadline = time.monotonic() + self.preroll_timeout
         while not all(c.attached for c in waiting):
             if time.monotonic() > deadline:
-                raise SetupError(f"{names} did not attach within {self.preroll_timeout}s{self._peer_logs()}")
+                raise RunError(f"{names} did not attach within {self.preroll_timeout}s{self._peer_report()}")
+            self._check_peers_alive(names)
             for st in polls:
                 st.run(tick)
         logger.info(f"{names} attached")
@@ -729,15 +738,15 @@ class Loop:
         """The steady loop as a generator: one control tick per ``yield``, which step() drives.
         Each tick advances the clock, opens its log, then runs the segments in ring order: a device
         segment replays its graph, or runs stage by stage without one, and a host stage runs on the
-        host between replays. A host stage that reports its peer gone ends the run, and so does a tick
-        a stage marked done, once it completes. While the peers of ``waiting`` boot, the preroll, a tick
+        host between replays. A host stage that reports its peer gone fails the run, and a tick a stage
+        marked done ends it once the tick completes. While the peers of ``waiting`` boot, the preroll, a tick
         whose host stage gets no answer still steps, records its row and moves on, with no ``yield``, until
-        the first tick that every host stage answers, within ``preroll_timeout``. The ``finally``
+        the first tick that every host stage answers, within ``preroll_timeout``, or until a peer exits. The ``finally``
         stamps the RTF, so it runs whether the generator runs out or closes early on stop.
 
         Raises:
-            ConnectionError: A peer stopped answering after its first answer.
-            SetupError: A peer gave no first answer within ``preroll_timeout``.
+            RunError: A peer gave no first answer within ``preroll_timeout``, exited before it, or stopped
+                answering after it.
         """
         count = 0
         t0 = time.monotonic()  # for the end-to-end RTF, sim-time advanced / wall-time, of the live run
@@ -766,11 +775,12 @@ class Loop:
                         st = seg.stages[0]
                         if st.run(tick) is False:
                             answered = False
-                            if not prerolling:  # the peer stopped answering: a run's normal end
-                                count -= 1  # the disconnect tick didn't advance the sim
-                                owner = type(self._owners.get(id(st), self.controller)).__name__
-                                raise ConnectionError(
-                                    f"{owner} disconnected (no answer from its peer in its {st.name} stage)"
+                            if not prerolling:  # the peer stopped answering: the run lost it
+                                count -= 1  # the lost tick didn't advance the sim
+                                owner = _instance(self._owners.get(id(st), self.controller))
+                                raise RunError(
+                                    f"{owner} lost its peer: no answer in its {st.name} stage within "
+                                    f"{tick.timeout}s{self._peer_report()}"
                                 )
                         prof.mark(st.name)
                     elif replay is not None:
@@ -797,9 +807,10 @@ class Loop:
                     names = " and ".join(_instance(c) for c in waiting)
                     if not answered:
                         if time.monotonic() > deadline:
-                            raise SetupError(
-                                f"{names} did not answer within {self.preroll_timeout}s{self._peer_logs()}"
+                            raise RunError(
+                                f"{names} did not answer within {self.preroll_timeout}s{self._peer_report()}"
                             )
+                        self._check_peers_alive(names)
                         continue  # a preroll tick: the peer is still booting
                     prerolling = False
                     tick.timeout = self.exchange_timeout
@@ -812,13 +823,14 @@ class Loop:
 
     def step(self) -> bool:
         """Advance the run one control tick, returning ``True`` if a tick ran or ``False`` when the run has
-        ended: mission complete / ``max_steps`` / ``stop()`` / peer disconnect. Setup, reset, connect and
+        ended: mission complete / ``max_steps`` / ``stop()``. Setup, reset, connect and
         graph capture, runs on the first call; teardown runs automatically when the run ends.
         ``Sim.step`` drives this for every controller, PX4 included. Deterministic:
         no wall-clock.
 
         Raises:
-            SetupError: The setup failed, for example a peer that never answered; teardown has run.
+            RunError: The setup failed, for example a peer that never answered, or the run lost a peer;
+                teardown has run.
         """
         if self._ticks_iter is None:
             self._stepped = True
@@ -838,7 +850,8 @@ class Loop:
         examples' ``sim.run()``.
 
         Raises:
-            SetupError: The setup failed, for example a peer that never answered; teardown has run.
+            RunError: The setup failed, for example a peer that never answered, or the run lost a peer;
+                teardown has run.
         """
         while self.step():
             pass

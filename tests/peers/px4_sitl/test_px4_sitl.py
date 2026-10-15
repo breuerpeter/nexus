@@ -18,11 +18,24 @@ from nexus_uav._src.peers.px4_sitl.runner import IMAGE, Px4Sitl, build
 
 
 class _Calls(list):
-    """What the peer asked of the stand-in daemon, in order; ``held`` seeds the containers it runs already."""
+    """What the peer asked of the stand-in daemon, in order; ``held`` seeds the containers it runs already, and
+    ``console`` is what a container the peer starts has printed.
+    """
 
     def __init__(self):
         super().__init__()
         self.held: list[_Held] = []
+        self.console = b""
+
+
+class _Started:
+    """A container the peer started on the stand-in daemon, which has printed its daemon's ``console``."""
+
+    def __init__(self, calls):
+        self._calls = calls
+
+    def logs(self, **kwargs):
+        return self._calls.console
 
 
 class _Held:
@@ -60,7 +73,7 @@ def daemon(monkeypatch):
     class Containers:
         def run(self, image, **kwargs):
             calls.append(("run", {"image": image, **kwargs}))
-            return b"" if not kwargs.get("detach", True) else object()
+            return b"" if not kwargs.get("detach", True) else _Started(calls)
 
         def get(self, name):
             calls.append(("get", name))
@@ -104,7 +117,8 @@ def test_start_runs_px4_with_the_runs_instance_and_airframe(daemon, tree, tmp_pa
     the way PX4's multi-instance script does, since ``make px4_sitl none_<airframe>`` can't take an
     instance; ``-d`` runs with no pxh shell, which at the end of an unattended stdin spin-loops
     printing its prompt and starves PX4. The run's folder mounts over PX4's log root in its
-    instance's folder, so PX4 writes the run's ULog there and leaves none in the tree.
+    instance's folder, so PX4 writes the run's ULog there and leaves none in the tree. The container
+    doesn't remove itself, so a PX4 that exits at once leaves its console for the log.
     """
     _peer(tree, tmp_path, instance=2).start()
 
@@ -126,7 +140,6 @@ def test_start_runs_px4_with_the_runs_instance_and_airframe(daemon, tree, tmp_pa
                 read_only=False,
             ),
         ],
-        "auto_remove": True,
         "network_mode": "host",
         "labels": {"nexus.peer": "px4", "nexus.px4.instance": "2", "nexus.owner": str(os.getpid())},
     } and launch["image"].startswith(f"{IMAGE}:")
@@ -240,3 +253,18 @@ def test_stop_removes_the_container_this_peer_did_start(daemon, tree, tmp_path):
     peer.stop()
 
     assert ("get", f"nexus-px4-{os.getpid()}-0") in daemon  # the force-remove by name, its process and instance
+
+
+def test_px4s_error_lines_come_whole_from_its_console_before_the_log_holds_them(daemon, tree, tmp_path):
+    """PX4's error lines come whole from its container's console, before its log file holds them, #321.
+
+    A PX4 that exits at once can fail the run before the log pump has written its console to `px4.log`, and the
+    run's error must still quote PX4's own line. Given a started PX4 whose container has printed its instance and
+    then the unknown model line, and whose log file is still empty, when the run reads PX4's error lines, then it
+    reads the unknown model line alone.
+    """
+    daemon.console = b"INFO  [px4] instance: 0\nERROR [init] Unknown model none_astro_max\n"
+    peer = _peer(tree, tmp_path)
+    peer.start()
+
+    assert peer.errors() == ["ERROR [init] Unknown model none_astro_max"]

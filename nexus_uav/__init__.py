@@ -22,6 +22,8 @@ _LAZY_EXPORTS = {
     "Sim": "nexus_uav._src.api",
     "sim_argparser": "nexus_uav._src.api",
     "save_run_artifacts": "nexus_uav._src.api",
+    # The error a run raises when it has no verdict: it never started, or it lost a peer.
+    "RunError": "nexus_uav._src.core.errors",
     # Configuration: the vehicle and scene catalog, and the launch config.
     "Catalog": "nexus_uav._src.config",
     "LaunchConfig": "nexus_uav._src.config",
@@ -70,6 +72,7 @@ __all__ = [
     "PositionGoal",
     "ReferenceTrajectory",
     "Registry",
+    "RunError",
     "Signal",
     "Sim",
     "SimTime",
@@ -93,6 +96,7 @@ if TYPE_CHECKING:
     )
     from nexus_uav._src.config import Catalog, LaunchConfig
     from nexus_uav._src.core import logger
+    from nexus_uav._src.core.errors import RunError
     from nexus_uav._src.core.interfaces import Component, Stage, Tick
     from nexus_uav._src.core.registry import Registry, register
     from nexus_uav._src.core.schema import (

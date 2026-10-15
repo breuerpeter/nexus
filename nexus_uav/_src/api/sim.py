@@ -268,9 +268,9 @@ class Sim:
         Raises:
             RuntimeError: Called outside the ``Sim`` context manager, or the run ended during
                 setup with no error, for example on ``stop()``.
-            KitPeerError: The vehicle renders and its Kit render peer failed to start.
-            SetupError: The run's setup failed, for example PX4 never dialed in or never answered within
-                the preroll timeout; the message names the peers' logs, and the run's teardown has run.
+            RunError: The run's setup failed, for example PX4 never dialed in, never answered within the
+                preroll timeout or exited, or the Kit render peer failed to start; the message names the
+                peers' logs and quotes their error lines, and the run's teardown has run.
         """
         if self._orch is None:
             raise RuntimeError("Sim.start() called outside the context manager (use `with nx.Sim(...) as sim:`)")
@@ -283,18 +283,17 @@ class Sim:
 
     def run(self) -> None:
         """Run the sim **synchronously** to completion on the calling thread: exhaust the tick
-        generator, setup, loop and teardown. Bounded by ``max_steps``, the guidance's mission end, or,
-        for PX4, the peer disconnecting; ``stop()`` ends it early.
+        generator, setup, loop and teardown. Bounded by ``max_steps`` or the guidance's mission end;
+        ``stop()`` ends it early, and a lost peer fails it.
 
         Read any history, ``sim[path]``, with ``.history()``, after it returns. A script
         that wants to observe or command mid-flight uses :meth:`step` or :meth:`wait_until` instead.
 
         Raises:
             RuntimeError: Called outside the ``Sim`` context manager.
-            KitPeerError: The vehicle renders and its Kit render peer died mid-flight; the run's
+            RunError: The run's setup failed, or the run lost a peer, PX4 or the Kit render peer, before
+                it ended; the message names the peers' logs and quotes their error lines, and the run's
                 teardown has run and closed the recording.
-            SetupError: The run's setup failed, for example PX4 never dialed in or never answered within
-                the preroll timeout; the message names the peers' logs, and the run's teardown has run.
         """
         if self._orch is None:
             raise RuntimeError("Sim.run() called outside the context manager (use `with nx.Sim(...) as sim:`)")
@@ -308,14 +307,13 @@ class Sim:
 
         The one driving verb for every controller: one that takes setpoints and PX4 alike advance
         one tick per call. Step, then read ``sim[path]`` between steps. Returns ``False`` when the run
-        has ended: mission complete, ``max_steps``, stopped, or the peer disconnected.
+        has ended: mission complete, ``max_steps`` or stopped. A lost peer raises instead.
 
         Raises:
             RuntimeError: Called outside the ``Sim`` context manager.
-            KitPeerError: The vehicle renders and its Kit render peer died mid-flight; the run's
+            RunError: The run's setup failed, or the run lost a peer, PX4 or the Kit render peer, before
+                it ended; the message names the peers' logs and quotes their error lines, and the run's
                 teardown has run and closed the recording.
-            SetupError: The run's setup failed, for example PX4 never dialed in or never answered within
-                the preroll timeout; the message names the peers' logs, and the run's teardown has run.
         """
         if self._orch is None:
             raise RuntimeError("sim.step() called outside the context manager (use `with nx.Sim(...) as sim:`)")
@@ -415,8 +413,8 @@ class Sim:
 
         Raises:
             TimeoutError: ``sim_timeout`` sim seconds elapsed without the predicate becoming
-                true, or the run ended first: mission complete, ``max_steps``, or the peer
-                disconnected.
+                true, or the run ended first: mission complete or ``max_steps``.
+            RunError: The run lost a peer before the predicate became true; the message names it.
         """
         t0 = self.time
         while True:
@@ -432,10 +430,14 @@ class Sim:
         """Step the sim until ``sim_seconds`` of sim time elapse, not wall-clock.
 
         Measures elapsed time by the advance of the sim clock, the lockstep, so the wait is
-        invariant to the sim's real-time factor. Returns early if the run ends.
+        invariant to the sim's real-time factor. Returns early if the run ends: mission complete or
+        ``max_steps``.
 
         Args:
             sim_seconds: Amount of sim time to wait, in seconds.
+
+        Raises:
+            RunError: The run lost a peer before the time elapsed; the message names it.
         """
         t0 = self.time
         while self.time - t0 < sim_seconds:

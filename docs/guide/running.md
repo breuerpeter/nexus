@@ -41,6 +41,13 @@ on exit. Add `--view` to serve the Rerun recording on gRPC :9876, see [Observabi
 Universal Scene Description (USD) file declares PX4 and its airframe. Every file a run writes lands in one folder for the run,
 `~/.cache/nexus/logs/<stamp>-<pid>/`, or the folder a script names with `Sim(run_dir=)`: the recording, `nexus.rrd`, the PX4 console, `px4.log`, and PX4's `.ulg` flight log under `ulog/`.
 
+A run that never starts, or that loses PX4 or the Kit container before it ends, stops with an error
+and exits non-zero. The message names each peer's console log and quotes the peer's own error lines,
+so the output alone says why. A PX4 tree without the vehicle's airframe, for example, gives
+`ERROR [init] Unknown model none_astro_max`. A PX4 that exits while it boots fails the run at once.
+PX4 counts as lost when it sends no answer for 2 s. A script catches the same error as
+`nexus_uav.RunError`, which separates a broken run from its own check failing.
+
 **3. Rerun viewer, optional:**
 
 ```bash
@@ -73,7 +80,7 @@ no container.
   `--scene` file at their host paths, read-only, so everything it writes under `~/.cache/nexus`
   stays yours.
 - A run whose Kit container can't start fails and names the cause, for example an unreachable
-  Docker daemon. A Kit container that dies mid-flight ends the run the way a lost autopilot does.
+  Docker daemon. A Kit container that dies mid-flight fails the run the way a lost autopilot does.
 
 - `--vehicle` accepts a catalog vehicle name, such as `astro_max_fpv`, **or a local `.usd`/`.usdz`
   path**. `--scene` accepts a catalog scene name, such as `empty`, or a local scene USD path.

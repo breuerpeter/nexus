@@ -12,8 +12,9 @@ pytest.importorskip("warp")
 
 import warp as wp
 
+from nexus_uav._src.core.errors import RunError
 from nexus_uav._src.core.interfaces import Component, Stage
-from nexus_uav._src.core.loop import Loop, SetupError
+from nexus_uav._src.core.loop import Loop
 from nexus_uav._src.core.schema import SimTime
 
 
@@ -341,31 +342,29 @@ def test_a_controller_with_only_device_stages_gets_no_preroll_and_no_exchange_ca
 
 def test_a_peer_that_never_attaches_ends_the_setup_with_a_timeout_error():
     """A peer that never attaches ends the setup with a timeout error that names the wait: with a preroll
-    timeout of 0.2 s the first step raises `SetupError` naming the 0.2 s, and the run finalizes the
+    timeout of 0.2 s the first step raises `RunError` naming the 0.2 s, and the run finalizes the
     recording.
     """
     with wp.ScopedDevice("cpu"):
         sink = _Logger()
         orch = _orch(_PeerController(attached=False, answers=lambda n: False), logger=sink, preroll_timeout=0.2)
-        with pytest.raises(SetupError) as raised:
+        with pytest.raises(RunError) as raised:
             orch.step()
     assert ("0.2" in str(raised.value), sink.closed) == (True, True)
 
 
-def test_a_peer_that_stops_answering_mid_flight_ends_the_run_normally(caplog):
-    """A peer that stops answering mid-flight ends the run as its normal end, and the run finalizes
-    the recording: the peer answers the settled exchange and nine ticks, so ``step()`` returns ``False`` on
-    the tenth, the run logs the disconnect, and the run closes the sink.
+def test_a_peer_that_stops_answering_mid_flight_fails_the_run_and_finalizes_the_recording():
+    """A peer that stops answering mid-flight fails the run with `RunError`, and the run finalizes the
+    recording, #321: the peer answers the settled exchange and nine ticks, so the tenth ``step()`` raises
+    `RunError` naming the controller, and the run closes the sink.
     """
-    with wp.ScopedDevice("cpu"), caplog.at_level(logging.INFO, logger="nexus"):
+    with wp.ScopedDevice("cpu"):
         sink = _Logger()
         orch = _orch(_PeerController(answers=lambda n: n <= 10), logger=sink)
-        steps = [orch.step() for _ in range(10)]
-    assert (steps, any("disconnected" in m for m in _messages(caplog)), sink.closed) == (
-        [True] * 9 + [False],
-        True,
-        True,
-    )
+        steps = [orch.step() for _ in range(9)]
+        with pytest.raises(RunError) as raised:
+            orch.step()
+    assert (steps, "lost its peer" in str(raised.value), sink.closed) == ([True] * 9, True, True)
 
 
 @pytest.mark.gpu
