@@ -1,5 +1,5 @@
 ---
-description: "How nexus works: a fixed-order, deterministic loop of components in roles around Newton's physics. The data model, interfaces, the estimator, guidance and controllers, actuators, observability, configuration, and packaging."
+description: "How nexus works: a fixed-order, deterministic loop of components in roles around Newton's physics. The data model, interfaces, the estimator, guidance and controllers, the rotor chain, observability, configuration, and packaging."
 ---
 
 # Architecture
@@ -60,7 +60,7 @@ can be [CUDA-graph-captured](execution.md).
 | `newton.State` | pose, velocity, body rates, per-body forces: the live Newton state in `body_q`, `body_qd`, and `body_f` |
 | `controls` | the signal a controller writes: one normalized command per actuator, as wide as its actuators, which the command elements read |
 | `PoseTwist` | the estimate: the base body's pose and twist in world axes, what the estimator writes and the guidance and the controller read |
-| `Wrench` | a **per-body** spatial force over the whole articulation, the base body plus each actuator's body, realized as the shared `body_f` buffer, not a single body-level force and torque pair |
+| `Wrench` | a **per-body** spatial force over the whole articulation, the base body plus each rotor's body, realized as the shared `body_f` buffer, not a single body-level force and torque pair |
 | `ImuSample`, `MagSample`, `BaroSample`, `GpsSample` | each analytic sensor's sample, a Warp struct whose first field is the sim time of the tick that took it, which the sensor writes as its signal, `imu`, `mag`, `baro` or `gps` |
 | `Image`, `PointCloud` | a camera's frame and a lidar's scan, each with the sim time it shows, which the sensor writes as its host signal, `camera`, `thermal_camera` or `lidar` |
 | `SimTime` | sim-time and step index |
@@ -151,7 +151,7 @@ link. The run owns that link's address and names it in its [port map](concepts.m
 client there: [`nexus_uav.px4.OffboardClient`](../reference/api/px4.md) on `sim.ports["offboard"]`.
 [Conventions](conventions.md#who-owns-an-address) states the rule.
 
-## Actuators
+## The rotor chain
 
 The rotor chain has three parts, split along Newton's model, so nothing in nexus overlaps
 Newton's actuator.

@@ -188,10 +188,11 @@ def _open_stage(path):
 # ``NexusPropellerAPI`` attributes. The run reads them back in physics/vehicle.parse_rotors.
 _PROPELLER_ATTRS = {"nexus:ct": "ct", "nexus:cd": "cd", "nexus:aeroH": "aero_h", "nexus:aeroHforce": "aero_hforce"}
 # Where a source declares its rotors' values before conversion: on each rotor joint, and on the
-# ``NewtonActuator`` prim that drives it in an as-built USD. A joint or a prim with these is a rotor's. The
-# converter removes the joints' namespaces: the propeller schema replaces ``propeller:*``, and the motor's
-# values are Newton's own, on its ``NewtonActuator`` prim, so ``motor:*`` holds nothing the run reads.
-_JOINT_PREFIXES = ("propeller:", "motor:")
+# ``NewtonActuator`` prim that drives it in an as-built USD. A joint or a prim with these is a rotor's.
+_JOINT_PREFIXES = ("propeller:",)
+# The namespaces the converter removes: the propeller schema replaces ``propeller:*``, and the motor's values
+# are Newton's own, on its ``NewtonActuator`` prim, so ``motor:*`` holds nothing the run reads.
+_RETIRED = ("propeller", "motor")
 _AS_BUILT_PREFIX = "freefly:actuator:"
 _RPM_PER_RADS = 60.0 / (2.0 * math.pi)  # rad/s -> rpm
 
@@ -276,7 +277,7 @@ def author_rotor_params(usdz, out, *, params=None, rotors=None) -> str:
                 )
 
     for prim in prims:
-        for namespace in ("propeller", "motor"):
+        for namespace in _RETIRED:
             for prop in prim.GetAuthoredPropertiesInNamespace(namespace):
                 prim.RemoveProperty(prop.GetName())
     for body in bodies:

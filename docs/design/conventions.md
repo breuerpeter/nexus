@@ -14,7 +14,7 @@ A contract lives at or below its consumer: in the caller's own package, or lower
 `Renderer` and `Recorder`, and the [stages](concepts.md#stage) a command element or a force element states, and sits at
 the bottom layer, so those contracts live in `core/`. A contract that sits higher
 than its consumer ends up written twice: once where the consumer can import it, once beside the
-implementations. That's how the actuator's contract came to exist in two files before this rule.
+implementations. That's how one role's contract came to exist in two files before this rule.
 
 ## Who declares a part
 

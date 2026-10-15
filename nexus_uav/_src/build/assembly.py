@@ -160,8 +160,8 @@ ROTOR_CHAIN_SCHEMAS = ("NexusPropellerAPI",)
 # entry below.
 DEFAULT_SCENARIO = {
     "physics": {"enabled": True, "dt": 0.004, "force_cpu": False, "rtf": 0, "solver": "mujoco"},
-    # No rotor entry, by design. The aero/thrust map (rpm_max, ct, cd, tau, aero_h, aero_hforce)
-    # lives in the vehicle USD, declared per rotor on its body, its motor and its joint, and
+    # No rotor entry, by design. The aero/thrust map (rpm_max, ct, cd, aero_h, aero_hforce)
+    # lives in the vehicle USD, declared per rotor on its body and its motor, and
     # VehicleUsd.actuator_params() reads it; since the USD is content-hashed, the vehicle hash pins the
     # rotor chain, not any config. Every build reads those params directly from the builder.
 }

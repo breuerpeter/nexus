@@ -99,23 +99,21 @@ def collapse_to_single_body(
     requires_grad: bool = False,
     cfg: dict | None = None,
 ) -> SingleBody:
-    """Collapse a quad-X vehicle USD to ``count`` free single rigid bodies: the one single-body path.
+    """Collapse a quad-X vehicle USD to ``count`` free single rigid bodies: the sampling MPC planner's model.
 
     Reads the rotor layout + actuator params from the articulated USD, its rotor joints, stamps ``count``
     vehicle copies into one model, retypes each rotor REVOLUTE joint to a fixed joint and ``collapse_fixed_joints()``
     merges each vehicle's rotors into its airframe, with the correct lumped mass/inertia/COM and the
     rotor-disk visuals kept, loads the scene USD exactly as the full build path does, through
     :func:`~nexus_uav._src.scene.add_scene`, post-collapse so the scene's shape indices are
-    stable, then finalizes. Pair the result with the joint-agnostic
-    :class:`~nexus_uav.examples._lib.rotors.Rotors` actuator, building its mixer from
-    ``sb.offsets``/``sb.dirs``: it drives the collapsed body exactly as the articulated model.
+    stable, then finalizes. The planner drives the collapsed bodies through the coupling,
+    :mod:`~nexus_uav.examples._lib.coupling`, with a mixer built from ``sb.offsets``/``sb.dirs``.
 
     Args:
         vehicle_usd: The articulated quad-X vehicle's ``VehicleUsd``, such as the catalog vehicle's.
-        count: Number of independent single bodies to stamp: ``1`` for the real sim, ``num_rollouts`` for
-            the sampling-MPC batched differentiable rollout.
-        requires_grad: Build the model with gradients, for the differentiable rollout model, or without,
-            for the real sim.
+        count: Number of independent single bodies to stamp, ``num_rollouts`` for the sampling-MPC batched
+            differentiable rollout.
+        requires_grad: Build the model with gradients, for the differentiable rollout, or without.
         cfg: The scenario cfg, read for the resolved scene, ``scene_usd_path``/``scene_start``, as
             ``NewtonPhysics``'s own build path does. ``None`` or no scene = the vehicle alone.
 
