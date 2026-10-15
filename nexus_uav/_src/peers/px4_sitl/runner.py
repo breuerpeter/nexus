@@ -221,12 +221,26 @@ class Px4Sitl:
     def errors(self) -> list[str]:
         """PX4's own error lines so far: each console line that starts with PX4's error tag, such as the
         line PX4 prints for an airframe its tree lacks; none before PX4 starts or when its console is empty.
+
+        The console comes from the container, which stays until the peer's stop, so a PX4 that exits at once
+        gives its lines whole before the log pump has written them to ``px4.log``. Once the peer's stop has
+        removed the container, the console is that file.
         """
+        return [line.strip() for line in self._console().splitlines() if line.startswith("ERROR")]
+
+    def _console(self) -> str:
+        """Everything PX4 has printed: from its container while there is one, else from its log file."""
+        from docker.errors import NotFound
+
+        if self._container is not None:
+            try:
+                return self._container.logs().decode(errors="replace")
+            except NotFound:
+                pass
         try:
-            console = Path(self.log_path).read_text(errors="replace")
+            return Path(self.log_path).read_text(errors="replace")
         except FileNotFoundError:
-            return []
-        return [line.strip() for line in console.splitlines() if line.startswith("ERROR")]
+            return ""
 
     def stop(self) -> None:
         """Remove the container this peer started, running or exited. Idempotent."""

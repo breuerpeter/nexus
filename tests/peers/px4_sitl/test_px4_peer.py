@@ -68,8 +68,8 @@ class _Container:
     def reload(self):
         pass
 
-    def logs(self, **kwargs):
-        yield from ()
+    def logs(self, stream=False, **kwargs):
+        return iter(()) if stream else b""  # printed nothing, as a stream or whole, as the daemon gives it
 
     def remove(self, force=False):
         self._daemon.live.pop(self.name, None)
