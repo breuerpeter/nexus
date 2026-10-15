@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Run the full Astro Max RL example end-to-end and emit the recordings + regression stats.
-# Runner-agnostic (like evaluate_examples.py): needs a CUDA host with `uv` — no Docker, no Isaac Sim. Train +
-# record run **kitless on the host** in the separate `nexus-rl` uv project (Isaac Lab on the Newton
-# backend, its own venv, installed from its lock by `uv run --locked --project nexus-rl`); the fresh export deploys
-# on standalone Newton in the core venv, concurrently with the recording. The gpu-rl workflow calls
-# this via gpu-runner.yml; it runs check_rl_stats.py at the end.
+# Runner-agnostic (like evaluate_examples.py): needs a CUDA host with `uv` — no Docker, no Isaac Sim. The plant
+# parity test, training and the recording run **kitless on the host** in the separate `nexus-rl` uv project (Isaac
+# Lab on the Newton backend, its own venv, installed from its lock by `uv sync --locked --project nexus-rl`). The
+# parity test runs beside training, and the fresh export deploys on standalone Newton in the core venv,
+# concurrently with the recording. The gpu-rl workflow calls this via gpu-runner.yml; it runs check_rl_stats.py
+# at the end.
 #
 # Env (all optional): REPO (repo root), VEHICLE_USD (auto-resolved if unset), OUT (artifact dir),
 #   ENVS, ITERS, SEED, UPLOAD=1 (S3-upload .rrds).
@@ -23,19 +24,30 @@ if [ -z "${VEHICLE_USD:-}" ]; then
     "from nexus_uav._src.config import LaunchConfig, resolve; print(resolve(LaunchConfig().set_vehicle('astro_max_base').set_scene('empty')).vehicle_usd_path)")"
 fi
 
-echo "===== PLANT PARITY (host, nexus-rl project) ====="
+echo "===== PLANT PARITY + TRAIN (concurrent, host, kitless, nexus-rl project) ====="
+# `uv sync --locked --project nexus-rl` installs Isaac Lab on the Newton backend from nexus-rl/uv.lock
+# (own venv, no container); a stale lock fails here instead of being re-locked. Both runs below then share
+# that environment and neither syncs it.
+( cd "$REPO" && uv sync --locked --project nexus-rl )
 # The RL task and the core fly one plant: tests/examples/test_rl_plant_parity.py needs Isaac Lab, which only
-# the nexus-rl environment holds, so the core's suites skip it and this leg runs it.
-( cd "$REPO" && uv run --locked --project nexus-rl \
-    pytest -q -n 0 -p no:cacheprovider --require-cuda tests/examples/test_rl_plant_parity.py )
-
-echo "===== TRAIN (host, kitless, nexus-rl project) ====="
-# `uv run --locked --project nexus-rl` installs Isaac Lab on the Newton backend from nexus-rl/uv.lock
-# (own venv, no container), then runs; a stale lock fails here instead of being re-locked. The trained checkpoints land under --log_dir; record_demo replays them.
-( cd "$REPO" && uv run --locked --project nexus-rl python nexus-rl/scripts/rsl_rl/train.py \
+# the nexus-rl environment holds, so the core's suites skip it and this leg runs it. It reads nothing training
+# writes, so the two share the box.
+( cd "$REPO" && uv run --no-sync --project nexus-rl \
+    pytest -q -n 0 -p no:cacheprovider --require-cuda tests/examples/test_rl_plant_parity.py ) &
+parity=$!
+# The trained checkpoints land under --log_dir; record_demo replays them.
+( cd "$REPO" && uv run --no-sync --project nexus-rl python nexus-rl/scripts/rsl_rl/train.py \
     --num_envs "$ENVS" --max_iterations "$ITERS" --seed "$SEED" --save_interval 10 \
     --vehicle_usd "$VEHICLE_USD" \
-    --log_dir "$OUT/rl" --stats_json "$OUT/train_stats.json" )
+    --log_dir "$OUT/rl" --stats_json "$OUT/train_stats.json" ) &
+train=$!
+parity_rc=0; train_rc=0
+wait "$parity" || parity_rc=$?
+wait "$train" || train_rc=$?
+if [ "$parity_rc" != 0 ] || [ "$train_rc" != 0 ]; then
+  echo "plant parity exit $parity_rc, train exit $train_rc"
+  exit 1
+fi
 
 echo "===== RECORD THE SWARM + DEPLOY THE FRESH POLICY (concurrent, host) ====="
 # Both read only the checkpoints training wrote and neither waits on the other, so they share the

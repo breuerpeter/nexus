@@ -103,8 +103,8 @@ runner**, a g5.2xlarge with 1× A10G. Each gate reads the kind of quantity it fi
   Absolute Pose Error (APE) gate against `scripts/ci/examples_baselines.json` with tight bounds.
   A deploy-side change shows exactly, on the leg that already runs for the deploy-side paths.
 - **The training statistics gate with a margin.** `gpu-rl` runs `scripts/ci/run_rl_example.sh`:
-  train, then the swarm recording and the fresh export's flight concurrently, then
-  `scripts/ci/check_rl_stats.py` against `nexus-rl/stats_baseline.json`. The final hover success
+  the plant parity test beside training, then the swarm recording beside the fresh export's flight,
+  then `scripts/ci/check_rl_stats.py` against `nexus-rl/stats_baseline.json`. The final hover success
   and mean reward over the 2048 envs are tight statistics where the policy is one draw, so they
   gate with absolute floors under the measured spread.
 - **The fresh export's flight gates on completing only.** The flight is one draw, so the harness
