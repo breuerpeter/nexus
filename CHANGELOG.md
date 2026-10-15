@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.4.0](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.3.0...nexus-uav-v0.4.0) (2026-10-15)
+
+
+### ⚠ BREAKING CHANGES
+
+* NewtonPhysics takes no step_actuators, and the examples library drops Rotors and rigid_body_wrench_batched. The nexus-rl GoTo env still imports the latter until it moves to the articulated plant.
+* **core:** a run with no verdict raises the public RunError ([#324](https://github.com/breuerpeter/nexus/issues/324))
+* **build:** NexusPx4API is retired for NexusPx4API_1, which authors no airframe; nexus:airframe is an attribute of NexusPx4SitlAPI, declared on a Scope of its own, and a layer drops the peer by deactivating that Scope. build_from_launch takes no peers mapping, the receipt's px4 field is gone, Px4MavlinkController takes the run's instance in place of port and target_system, and KitPeer takes its pin in place of an image.
+
+### Features
+
+* **api:** a run writes its files to the folder the caller names ([#323](https://github.com/breuerpeter/nexus/issues/323)) ([2a6617b](https://github.com/breuerpeter/nexus/commit/2a6617bec24d528640ed25d224bbe410dc554691)), closes [#320](https://github.com/breuerpeter/nexus/issues/320)
+* **assets:** s3:// assets come through boto3 under nexus-uav[s3] ([#326](https://github.com/breuerpeter/nexus/issues/326)) ([a4d9d62](https://github.com/breuerpeter/nexus/commit/a4d9d625030de5945d32e4554b5599620b946d5c)), closes [#322](https://github.com/breuerpeter/nexus/issues/322)
+* **build:** every role and peer builds from the vehicle's USD ([#315](https://github.com/breuerpeter/nexus/issues/315)) ([46764ac](https://github.com/breuerpeter/nexus/commit/46764acaaf9f8c49c1673b640cc496f77833e643)), closes [#261](https://github.com/breuerpeter/nexus/issues/261)
+* **core:** a run with no verdict raises the public RunError ([#324](https://github.com/breuerpeter/nexus/issues/324)) ([2c2c1d9](https://github.com/breuerpeter/nexus/commit/2c2c1d9913cf85571a10aa104f15d246523d7067)), closes [#321](https://github.com/breuerpeter/nexus/issues/321)
+* every controller flies one plant on the vehicle's Newton motors ([#319](https://github.com/breuerpeter/nexus/issues/319)) ([1c6afe6](https://github.com/breuerpeter/nexus/commit/1c6afe6c145987072e09fcf9db3af4ed689957c8))
+
 ## [0.3.0](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.2.0...nexus-uav-v0.3.0) (2026-10-13)
 
 
