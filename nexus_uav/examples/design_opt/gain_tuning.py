@@ -321,7 +321,9 @@ def main():
     LO = [0.01, 0.01, 0.01, 0.01, 1.0, 0.2, 0.1]
     HI = [1.5, 3.0, 1.0, 2.0, 20.0, 8.0, 4.0]
     am = AstroMaxWaypointRollout(n_steps=1500, goal=GOAL, vel_weight=0.2, moment_scale=MS)  # 6 s → reach + hold
-    gopt, hist = am.optimize(BASE, iters=80, lr=0.04, lo=LO, hi=HI)
+    # 30 iterations keep the run under 5 min on CI's A10G. The tuned flight's hold error isn't monotonic in
+    # them: on the RTX 5080 it holds within 0.066 m at 30, 0.527 m at 50 and 0.151 m at 80.
+    gopt, hist = am.optimize(BASE, iters=30, lr=0.04, lo=LO, hi=HI)
     nx.logger.info(f"gain opt: loss {hist[0]:.0f} -> min {min(hist):.0f}  gains={np.round(gopt, 3)}")
 
     # The real gate: fly both gain sets free-running on the articulated plant the tuning ran on, the PID

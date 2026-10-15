@@ -36,7 +36,7 @@ MAX_STEPS = 8000  # safety cap; the guidance ends the run on mission completion
 # The gains design_opt/gain_tuning.py's optimizer converges to on the articulated plant; its deploy gate
 # verifies they reach a far
 # waypoint and hold it, while the stable-but-undamped hand gains ring around a goal instead of settling.
-GAINS = [0.165, 0.219, 0.059, 0.101, 9.107, 3.011, 0.751]
+GAINS = [0.284, 0.291, 0.053, 0.09, 8.529, 2.98, 0.752]
 MOMENT_SCALE = 0.12
 # A square tour at altitude, from the free-flight start point at (0, 0, 2): four corners, back to start.
 # Leg length ~3-4 m, the goal scale the gain tuning targets; short hops excite under-damped ringing

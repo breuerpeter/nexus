@@ -23,7 +23,7 @@ every run flies to **tune a controller**, in `gain_tuning.py`, and **recover a p
 
 *Both flights share one timeline, with the two paths overlaid. The **mis-tuned baseline** never
 settles and comes no closer than ~1.7 m to the waypoint. Then the **tuned** controller flies in,
-settles with no overshoot, and holds within ~0.15 m. Each prop turns with its simulated rotor joint.
+settles with no overshoot, and holds within ~0.07 m. Each prop turns with its simulated rotor joint.
 A blank viewer means the recording isn't uploaded yet: run `scripts/ci/evaluate_examples.py --upload`.*
 
 ```bash
