@@ -4,8 +4,9 @@ name: gpu-examples
 # scripts/ci/evaluate_examples.py runs each one, scores it (evo pose APE + the example's own stats
 # + the steady RTF), and gates against scripts/ci/examples_baselines.json. The event picks the shape.
 # A pull request flies every example at once on one box, `shared`, gated on the correctness rows
-# alone: sharing the box's vCPUs lowers each flight's RTF, so its rtf rows are skipped. A push or a dispatch flies one box per example, `gpu`,
-# through a matrix over gpu-runner.yml, with the rtf gates: a measured flight cannot share a GPU,
+# alone: sharing the box's vCPUs lowers each flight's RTF and stretches its wall time, so its rtf and wall_s rows
+# are skipped. A push or a dispatch flies one box per example, `gpu`,
+# through a matrix over gpu-runner.yml, with the rtf and wall_s gates: a measured flight cannot share a GPU,
 # so a speed regression is caught on the merge commit. Each box provisions what its examples need,
 # in-command: acados via the example's --provision (cached) — no --skip-missing, so a broken
 # provision fails loudly. PX4 provisions by no hand: evaluate_examples.py fetches the PX4 tree the

@@ -316,6 +316,18 @@ def test_on_a_pull_request_an_examples_rtf_never_fails_the_leg(tmp_path, monkeyp
     assert (rc, "rtf" in _rows(capsys.readouterr().out, "(monitored)")) == (0, True)
 
 
+def test_on_a_pull_request_an_examples_wall_time_never_fails_the_leg(tmp_path, monkeypatch, capsys):
+    """On a pull request an example's `wall_s` never fails the leg: given the committed `examples_baselines.json`
+    and a `gain_tuning` run of 480 s, past its 300 s cap, when the harness gates it as a pull-request run, then
+    the table shows `wall_s` as `(monitored)` and the run exits 0.
+    """
+    _fake_flights(monkeypatch, tmp_path / "rec", {"gain_tuning": ({**_HEALTHY["gain_tuning"], "wall_s": 480.0}, 0)})
+
+    rc = _harness(monkeypatch, "--only", "gain_tuning", "--shared", "--out", str(tmp_path / "out"))
+
+    assert (rc, "wall_s" in _rows(capsys.readouterr().out, "(monitored)")) == (0, True)
+
+
 def test_on_a_pull_request_a_regressed_correctness_row_still_fails_the_leg(tmp_path, monkeypatch, capsys):
     """On a pull request a regressed correctness row still fails the leg: given the committed baselines
     and a `pid` flight that reaches fewer waypoints than recorded, when the harness gates it as a

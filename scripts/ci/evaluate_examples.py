@@ -481,8 +481,9 @@ def main() -> int:
     for name in (name for name, ok in flown.items() if ok):
         scored[name], metas[name] = _score(EXAMPLES[name].get("launcher", name), _dump_dir(name, EXAMPLES[name], out))
 
-    # A shared flight's RTF measures its neighbours as much as itself, so only a box of its own gates it.
-    ungated = frozenset({"rtf"}) if args.shared else frozenset()
+    # A shared flight's RTF and wall time measure its neighbours as much as itself, so only a box of its own
+    # gates them.
+    ungated = frozenset({"rtf", "wall_s"}) if args.shared else frozenset()
     gate_failures: list[str] = []
     red = set(failed_runs)
     for name, metrics in scored.items():
