@@ -30,6 +30,7 @@ from nexus_uav._src.assets.resolver import default_cache
 from nexus_uav._src.config import Catalog, LaunchConfig, ResolvedLaunch, Runtime, resolve
 from nexus_uav._src.core import Loop
 from nexus_uav._src.core.components import ComponentSpec, PeerSpec, resolve_declarations, run_keywords
+from nexus_uav._src.core.errors import RunError
 from nexus_uav._src.core.registry import Registry
 from nexus_uav._src.core.run_folder import run_folder
 from nexus_uav._src.peers import instance, pins
@@ -117,13 +118,15 @@ def build_from_launch(
     cfg: dict | None = None,
     preroll_timeout: float = 30.0,
     components: Registry | None = None,
+    run_dir: str | pathlib.Path | None = None,
 ) -> Loop:
     """Resolve *launch* and build the run the vehicle declares around its one controller.
 
     ``components`` is the registry that resolves each name the run resolves to its class: each schema the
     vehicle applies, a component's or a peer's, and the name a class requires a peer by. Its own rows answer
     first and the install answers the rest; ``None`` takes the install alone. A test sends a peer to its fake
-    with a row of its own.
+    with a row of its own. ``run_dir`` is the folder the run writes its files to, see
+    :func:`~nexus_uav._src.core.run_folder.run_folder`; ``None`` takes a new one.
 
     Raises:
         ValueError: The vehicle declares no controller or two, two estimators or guidances, one off its
@@ -132,7 +135,9 @@ def build_from_launch(
             claims, or a pin file beside a catalog names no peer, or a peer's pin isn't in its form; raised
             before any peer starts.
         FileNotFoundError: The launch names an override layer with no file behind it.
-        KitPeerError: The vehicle declares RTX sensors and the Kit peer couldn't start.
+        FileExistsError: ``run_dir`` holds files already; raised before any peer starts.
+        RunError: A peer couldn't start, the Kit peer for RTX sensors or the PX4 peer among them; the
+            message names the peer and its error.
     """
     vehicle_usd, resolved = resolve_vehicle_usd(launch, catalog, cache_dir=cache_dir)
     if cfg is None:
@@ -156,7 +161,7 @@ def build_from_launch(
     found = {cls.name: (cls, pins.resolve(cls.name, layers)) for cls in classes}
     peer_pins = {name: cls.check_pin(pin) if pin is not None else None for name, (cls, pin) in found.items()}
     # Every file the run writes lands in one folder: the recording and each peer's logs.
-    logs = run_folder()
+    logs = run_folder(run_dir)
     # The run numbers every address its declared peers use from one instance; with none, an autopilot started
     # elsewhere dials instance 0's.
     claim = instance.claim(spec.cls for spec in declared) if declared else None
@@ -175,15 +180,13 @@ def build_from_launch(
         needed = {name: _peer(cls, {}, peer_pins[cls.name], run, None) for name, cls in required.items()}
         # The required peers start first: Kit boots while the declared peers build and the physics compiles.
         for peer in needed.values():
-            peer.start()
-            started.append(peer)
+            _start(peer, started)
         renderer_factory = RtxRendererFactory(needed[KIT], log_dir=logs, components=registry) if KIT in needed else None
         built = {role: _component(spec, run["instance"]) for role, spec in roles.items() if spec is not None}
         # A declared peer starts here, before the assembly: PX4's start builds PX4 incrementally, which must
         # stay outside the sim's preroll window, GH #39, and PX4 boots while the physics compiles.
         for peer in made:
-            peer.start()
-            started.append(peer)
+            _start(peer, started)
         # output.log/view → the Logger, which writes the .rrd or serves :9876; neither → no recording.
         return build_loop(
             label,
@@ -237,6 +240,23 @@ def _required(specs: list[ComponentSpec], registry: Registry) -> dict[str, type]
                 )
             required[name] = cls
     return dict(sorted(required.items()))
+
+
+def _start(peer, started: list) -> None:
+    """Start `peer` and add it to `started`, the peers a failed build stops again.
+
+    Raises:
+        RunError: The peer couldn't start, such as PX4 with no tree or no docker daemon; the message names the
+            peer and its error, which it chains. A peer's own ``RunError``, the Kit peer's, passes through unchanged.
+    """
+    try:
+        peer.start()
+    except RunError:
+        raise
+    except Exception as exc:
+        name = getattr(peer, "name", None) or type(peer).__name__
+        raise RunError(f"the {name} peer couldn't start: {exc}") from exc
+    started.append(peer)
 
 
 def _peer(cls: type, kwargs: dict, pin, run: dict, prim: str | None):

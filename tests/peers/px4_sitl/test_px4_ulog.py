@@ -73,3 +73,22 @@ def test_a_run_names_its_own_ulog_not_an_earlier_runs(two_runs):
     """
     ulogs = [artifacts.get("ulog") for _, _, artifacts in two_runs]
     assert all(_exists(u) for u in ulogs) and ulogs[0] != ulogs[1], ulogs
+
+
+def test_a_px4_run_with_run_dir_leaves_its_recording_console_and_ulog_there_and_nothing_else(tmp_path):
+    """A PX4 run with `run_dir` leaves its recording, PX4's console and its ULog in that folder and nothing else,
+    and `sim.artifacts()` names each there.
+
+    Given a real PX4 run, when it flies under `Sim(..., log=True, run_dir=d)` and closes, then `d` holds
+    `nexus.rrd`, `px4.log` and one `.ulg` under `ulog/` and nothing else, and `sim.artifacts()` names each in `d`.
+    """
+    d = tmp_path / "run"
+    with nx.Sim("astro_max_base", scene="empty", log=True, run_dir=d) as sim:
+        sim.start(timeout=120.0)
+        sim.sleep(1.0)
+    artifacts = sim.artifacts()
+
+    files = sorted(str(p.relative_to(d)) for p in d.rglob("*") if p.is_file())
+    shape = sorted("ulog/*.ulg" if f.startswith("ulog/") and f.endswith(".ulg") else f for f in files)
+    named = {key: Path(artifacts.get(key) or "/").is_relative_to(d) for key in ("rrd", "px4_log", "ulog")}
+    assert (shape, named) == (["nexus.rrd", "px4.log", "ulog/*.ulg"], {"rrd": True, "px4_log": True, "ulog": True})

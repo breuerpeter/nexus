@@ -128,9 +128,8 @@ class KitRenderer:
     def _receive(self, timeout: float, what: str) -> tuple[dict, list]:
         """The peer's next message, waiting at most ``timeout`` and failing at once if the peer dies.
 
-        A failure is a ``KitPeerError``, never a ``ConnectionError``: the loop takes a
-        ``ConnectionError`` as a run's normal end, the autopilot's disconnect, and a dead peer must end
-        the run with an error.
+        A failure is a ``KitPeerError``, a ``RunError`` that names the Kit peer, never a bare
+        ``ConnectionError``, so the script reads which peer the run lost.
         """
         deadline = time.monotonic() + timeout
         while not select.select([self._sock], [], [], 1.0)[0]:

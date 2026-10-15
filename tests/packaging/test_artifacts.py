@@ -10,6 +10,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+from packaging.requirements import Requirement
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -70,3 +71,12 @@ def test_the_wheel_holds_every_file_the_code_reads(wheel_files):
         "nexus_uav/py.typed",
     }
     assert sorted(read - wheel_files) == []
+
+
+def test_only_the_s3_extra_carries_boto3(dist):
+    """A plain `nexus-uav` install carries no Amazon Web Services (AWS) package, and `nexus-uav[s3]` carries boto3."""
+    with zipfile.ZipFile(next(dist.glob("*.whl"))) as wheel:
+        meta = next(name for name in wheel.namelist() if name.endswith(".dist-info/METADATA"))
+        lines = wheel.read(meta).decode().splitlines()
+    requires = [Requirement(line.split(":", 1)[1]) for line in lines if line.startswith("Requires-Dist:")]
+    assert [str(r.marker) for r in requires if r.name == "boto3"] == ['extra == "s3"']

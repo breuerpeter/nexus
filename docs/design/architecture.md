@@ -113,7 +113,7 @@ same loop:
   receiver. So PX4 receives each sensor at the rate its schema declares. Of two sensors of one kind, a
   connection on its prim, such as `nexus:inputs:imu`, picks the one PX4 receives. Its work is two
   **host stages**, `truth` and `exchange`, outside graph capture and not differentiable, and a lost
-  connection ends the run.
+  connection fails the run with `RunError`.
 - **`PidController`**: the device-native, differentiable example, a
   PID controller whose gains are Warp arrays with gradients, so
   it doubles as the [design-optimization](../examples/design-optimization.md) parameter set and the

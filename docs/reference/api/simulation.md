@@ -1,11 +1,11 @@
 ---
-description: "API reference for Sim: the top-level entry point for building, running, and observing a simulation, and the records every history reads as."
+description: "API reference for Sim: the top-level entry point for building, running, and observing a simulation, the records every history reads as, and the error a run with no verdict raises."
 ---
 
 # Simulation
 
 ```python
-from nexus_uav import Sim
+from nexus_uav import RunError, Sim
 ```
 
 A script reads any recorded history by indexing the run with the path of the history below the
@@ -26,6 +26,13 @@ reads as the object its writer wrote, though it keeps no history. `sim.time` is 
 last tick.
 
 ::: nexus_uav.Sim
+
+A run that never starts, or that loses a peer before it ends, raises one error from whichever verb the
+script called: `start`, `step`, `run`, `wait_until` or `sleep`. Its message names each peer's console
+log and quotes the peer's own error lines. A script catches it to report an error, not a failed check.
+A run that ends on `max_steps`, on `stop()` or at its mission's end raises nothing.
+
+::: nexus_uav.RunError
 
 The scripts share one argument parser, and save a run's artifacts with one call:
 

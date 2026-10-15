@@ -53,6 +53,10 @@ examples = ["ruckig>=0.14"]  # jerk-limited reference trajectory the MPC example
 # acados' Python interface imports. The interface itself is not on PyPI: it ships inside the acados
 # tree the example provisions, and the example finds it there. The casadi bound is that interface's.
 acados   = ["casadi>=3.6,<=3.8.1", "ruckig>=0.14", "matplotlib", "Deprecated"]
+# Fetches an asset whose catalog names it by `s3://` URL, through the standard AWS credential chain.
+# A package whose catalog lists such assets depends on `nexus-uav[s3]`. 1.28 is the first boto3 that
+# reads `AWS_ENDPOINT_URL`.
+s3       = ["boto3>=1.28"]
 # Isaac Lab RL training is NOT an extra of the core — it lives in the separate `nexus-rl` uv
 # project (own venv), so the heavy, prerelease-pinned Isaac Lab stack stays out of this environment.
 all      = ["nexus-uav[policy,examples]"]
@@ -119,6 +123,7 @@ dev = [
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
     "pytest-xdist>=3.8",
+    "nexus-uav[s3]",  # the resolver tests fetch `s3://` assets from a stand-in bucket
 ]
 docs = [
     "mkdocs-awesome-pages-plugin>=2.10.1",

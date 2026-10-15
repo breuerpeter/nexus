@@ -11,9 +11,9 @@ The name refers to the **link**: PX4's offboard and onboard API on User Datagram
 port ``:14540``, where MAVSDK connects with ``-m onboard``, *not* PX4's OFFBOARD flight mode. It's
 a separate link from the controller's Hardware In The Loop (HIL) lockstep on ``:4560``, mirroring
 the real topology, the PX4 link map. The link leaves the run: the loop never calls this class. A
-script opens it on the address the run's port map names, ``sim.ports["offboard"]``, after the sim
-has started, and steps the sim while it waits for PX4's heartbeat, since PX4 runs on the sim's
-clock. The public import is ``nexus_uav.px4``.
+script opens it after the sim has started with :meth:`OffboardClient.connect`, which listens on the
+address the run's port map names, ``sim.ports["offboard"]``, and steps the sim while it waits for
+PX4's heartbeat, since PX4 runs on the sim's clock. The public import is ``nexus_uav.px4``.
 """
 
 from __future__ import annotations
@@ -25,7 +25,9 @@ import threading
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
+from nexus_uav._src.core.errors import RunError
 from nexus_uav._src.core.schema import Setpoint, as_position_goal
 
 from . import OFFBOARD_PORT
@@ -39,6 +41,9 @@ os.environ.setdefault("MAVLINK20", "1")
 os.environ.setdefault("MAVLINK_DIALECT", "common")
 
 from pymavlink import mavutil
+
+if TYPE_CHECKING:
+    from nexus_uav._src.api.sim import Sim
 
 # PX4 px4_custom_mode main modes.
 _PX4_MAIN = {"MANUAL": 1, "ALTCTL": 2, "POSCTL": 3, "AUTO": 4, "ACRO": 5, "OFFBOARD": 6, "STABILIZED": 7}
@@ -198,6 +203,46 @@ class OffboardClient:
         self._want_restart = False
 
     # ---- lifecycle ----
+    @classmethod
+    def connect(cls, sim: Sim, timeout: float) -> OffboardClient:
+        """Open a client on the run's offboard link and wait for PX4's heartbeat, stepping the sim.
+
+        The client listens on the address the run's port map names, ``sim.ports["offboard"]``, and
+        addresses the system it names. PX4 runs on the sim's clock, so the wait steps the sim, and
+        ``timeout`` counts sim seconds. Call it once the sim has started; the client returned is open,
+        and entering it as a context manager closes it on the way out::
+
+            sim.start()
+            with OffboardClient.connect(sim, 10.0) as op:
+                op.takeoff(2.0)
+                sim.wait_until(op.at_target, sim_timeout=60.0)
+
+        Args:
+            sim: The started run.
+            timeout: Sim seconds to wait for PX4's first heartbeat.
+
+        Returns:
+            The open client, with PX4's heartbeat: :attr:`connected` is ``True``.
+
+        Raises:
+            KeyError: The run has no offboard link; the message says why, such as a run on the fake PX4.
+            RunError: No heartbeat came within ``timeout``, naming the port, or the run lost a peer meanwhile;
+                the client closes first.
+        """
+        link = sim.ports["offboard"]
+        client = cls(f"udpin:0.0.0.0:{link['port']}", system_id=link["system_id"]).open()
+        try:
+            sim.wait_until(lambda: client.connected, sim_timeout=timeout)
+        except TimeoutError:
+            client.close()
+            raise RunError(
+                f"no PX4 heartbeat on the offboard link, UDP port {link['port']}, within {timeout}s of sim time"
+            ) from None
+        except BaseException:
+            client.close()
+            raise
+        return client
+
     def open(self) -> OffboardClient:
         """Open the MAVLink link and start the pump, returning at once, with no wait for PX4.
 
@@ -227,10 +272,10 @@ class OffboardClient:
         return self._sysid is not None
 
     def __enter__(self) -> OffboardClient:
-        """Open the link and start the pump, returning at once; see ``open``. The wait for PX4's
-        heartbeat is the caller's, who steps the sim meanwhile.
+        """Open the link and start the pump, returning at once; see ``open``. A client that :meth:`connect`
+        opened keeps its link. The wait for PX4's heartbeat is the caller's, who steps the sim meanwhile.
         """
-        return self.open()
+        return self if self._mav is not None else self.open()
 
     def __exit__(self, *exc) -> None:
         """Stop the pump and close the link on exit; see ``close``."""
@@ -245,8 +290,10 @@ class OffboardClient:
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=5.0)
+            self._thread = None
         if self._mav is not None:
             self._mav.close()
+            self._mav = None
 
     # ---- background pump: heartbeat + RC streaming + request service + telemetry cache ----
     def _pump(self) -> None:

@@ -11,6 +11,7 @@ component's or the plant's, by indexing the run with the history's path: ``sim["
 from __future__ import annotations
 
 import argparse
+import os
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
@@ -65,6 +66,15 @@ class Sim:
         registry: The :class:`~nexus_uav.Registry` the build resolves each schema with, its own rows first
             and the install's for the rest, so a test maps a schema to a stand-in or a peer to its fake;
             ``None`` takes the install alone.
+        run_dir: The folder the run writes its files to: the recording, ``nexus.rrd``, and each peer's
+            files, such as PX4's console, ``px4.log``, and its ULog under ``ulog/``. The run creates it
+            when missing and refuses it when it holds files. A relative path starts at the working folder.
+            ``None`` takes a new folder under ``~/.cache/nexus/logs``. A peer's container mounts the
+            folder at its own path, so a script inside a container that starts peers on the host's
+            daemon binds it at the same path on the host.
+
+    Raises:
+        FileExistsError: On entry, ``run_dir`` holds files already; raised before any peer starts.
 
     Example:
         ```python
@@ -91,6 +101,7 @@ class Sim:
         rtf: float = 0.0,
         layer: str | None = None,
         registry: Registry | None = None,
+        run_dir: str | os.PathLike | None = None,
     ):
         self._registry = registry  # the registry the build resolves each schema with, or None for the default
         self._launch = LaunchConfig()
@@ -120,6 +131,9 @@ class Sim:
         self._launch.output.view = view
         self._launch.output.debug = debug  # axes-only scene: coordinate triads, no meshes → a small .rrd
         self._cache_dir = cache_dir
+        # Absolute now, so a relative folder is the working folder's at construction, and a container's mount
+        # gets the absolute path docker requires.
+        self._run_dir = None if run_dir is None else os.path.abspath(run_dir)
         self._orch = None
         self._guidance = None  # a launch-built run has none: a flight hands one to _from_loop
         self._ran = False
@@ -155,6 +169,7 @@ class Sim:
         sim = cls.__new__(cls)
         sim._launch = None
         sim._cache_dir = None
+        sim._run_dir = None
         sim._orch = None
         sim._prebuilt_orch = orch
         sim._guidance = guidance
@@ -198,7 +213,9 @@ class Sim:
                 self._orch.guidance = self._guidance
         else:
             # A vehicle that authors RTX sensors starts the Kit render peer here, from the host.
-            self._orch = build_from_launch(self._launch, cache_dir=self._cache_dir, components=self._registry)
+            self._orch = build_from_launch(
+                self._launch, cache_dir=self._cache_dir, components=self._registry, run_dir=self._run_dir
+            )
         if self._orch.recorder is None:
             # A self-assembled loop that brought no Recorder gets one: the loop hands it the plant and
             # each sensor at its first step.
@@ -251,9 +268,9 @@ class Sim:
         Raises:
             RuntimeError: Called outside the ``Sim`` context manager, or the run ended during
                 setup with no error, for example on ``stop()``.
-            KitPeerError: The vehicle renders and its Kit render peer failed to start.
-            SetupError: The run's setup failed, for example PX4 never dialed in or never answered within
-                the preroll timeout; the message names the peers' logs, and the run's teardown has run.
+            RunError: The run's setup failed, for example PX4 never dialed in, never answered within the
+                preroll timeout or exited, or the Kit render peer failed to start; the message names the
+                peers' logs and quotes their error lines, and the run's teardown has run.
         """
         if self._orch is None:
             raise RuntimeError("Sim.start() called outside the context manager (use `with nx.Sim(...) as sim:`)")
@@ -266,18 +283,17 @@ class Sim:
 
     def run(self) -> None:
         """Run the sim **synchronously** to completion on the calling thread: exhaust the tick
-        generator, setup, loop and teardown. Bounded by ``max_steps``, the guidance's mission end, or,
-        for PX4, the peer disconnecting; ``stop()`` ends it early.
+        generator, setup, loop and teardown. Bounded by ``max_steps`` or the guidance's mission end;
+        ``stop()`` ends it early, and a lost peer fails it.
 
         Read any history, ``sim[path]``, with ``.history()``, after it returns. A script
         that wants to observe or command mid-flight uses :meth:`step` or :meth:`wait_until` instead.
 
         Raises:
             RuntimeError: Called outside the ``Sim`` context manager.
-            KitPeerError: The vehicle renders and its Kit render peer died mid-flight; the run's
+            RunError: The run's setup failed, or the run lost a peer, PX4 or the Kit render peer, before
+                it ended; the message names the peers' logs and quotes their error lines, and the run's
                 teardown has run and closed the recording.
-            SetupError: The run's setup failed, for example PX4 never dialed in or never answered within
-                the preroll timeout; the message names the peers' logs, and the run's teardown has run.
         """
         if self._orch is None:
             raise RuntimeError("Sim.run() called outside the context manager (use `with nx.Sim(...) as sim:`)")
@@ -291,14 +307,13 @@ class Sim:
 
         The one driving verb for every controller: one that takes setpoints and PX4 alike advance
         one tick per call. Step, then read ``sim[path]`` between steps. Returns ``False`` when the run
-        has ended: mission complete, ``max_steps``, stopped, or the peer disconnected.
+        has ended: mission complete, ``max_steps`` or stopped. A lost peer raises instead.
 
         Raises:
             RuntimeError: Called outside the ``Sim`` context manager.
-            KitPeerError: The vehicle renders and its Kit render peer died mid-flight; the run's
+            RunError: The run's setup failed, or the run lost a peer, PX4 or the Kit render peer, before
+                it ended; the message names the peers' logs and quotes their error lines, and the run's
                 teardown has run and closed the recording.
-            SetupError: The run's setup failed, for example PX4 never dialed in or never answered within
-                the preroll timeout; the message names the peers' logs, and the run's teardown has run.
         """
         if self._orch is None:
             raise RuntimeError("sim.step() called outside the context manager (use `with nx.Sim(...) as sim:`)")
@@ -398,8 +413,8 @@ class Sim:
 
         Raises:
             TimeoutError: ``sim_timeout`` sim seconds elapsed without the predicate becoming
-                true, or the run ended first: mission complete, ``max_steps``, or the peer
-                disconnected.
+                true, or the run ended first: mission complete or ``max_steps``.
+            RunError: The run lost a peer before the predicate became true; the message names it.
         """
         t0 = self.time
         while True:
@@ -415,10 +430,14 @@ class Sim:
         """Step the sim until ``sim_seconds`` of sim time elapse, not wall-clock.
 
         Measures elapsed time by the advance of the sim clock, the lockstep, so the wait is
-        invariant to the sim's real-time factor. Returns early if the run ends.
+        invariant to the sim's real-time factor. Returns early if the run ends: mission complete or
+        ``max_steps``.
 
         Args:
             sim_seconds: Amount of sim time to wait, in seconds.
+
+        Raises:
+            RunError: The run lost a peer before the time elapsed; the message names it.
         """
         t0 = self.time
         while self.time - t0 < sim_seconds:
@@ -449,8 +468,10 @@ class Sim:
         if self._orch is None:
             return {"rrd": None}
         out = {"rrd": self._orch.logger.rrd_path if self._orch.logger is not None else None}
-        for source in (*self._orch.components(), *self._orch.peers):
+        for source in self._orch.components():
             out.update(source.artifacts())
+        for peer in self._orch.peers:  # a peer's artifacts are optional, see Peer
+            out.update(getattr(peer, "artifacts", dict)())
         return out
 
     def stop(self) -> None:
