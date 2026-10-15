@@ -1,7 +1,7 @@
 """The **mixer**: the airframe control-allocation + Collective Thrust and Body Rates (CTBR) and moment
-control laws that turn a high-level controller action into the per-rotor commands the single-body motor
-model consumes. This is the flight-controller half of the rotor chain: the law + the mixer live here and
-in the controllers, the motor model lives in :class:`~nexus_uav.examples._lib.rotors.Rotors`.
+control laws that turn a high-level controller action into the per-rotor commands the rotors' command
+element consumes. This is the flight-controller half of the rotor chain: the law + the mixer live here and
+in the controllers, and the motors are Newton's, on the rotor joints.
 
 ``Controls.command`` is **always** ``nr`` normalized per-rotor commands ``u ∈ [0, 1]``, the rotor-speed
 fraction; the mixer is what produces them. Pieces, all ``B``-authoritative and shared by RL train + RL
@@ -11,9 +11,7 @@ deploy + the differentiable examples:
   → ``[T, τx, τy, τz]``, and its pseudo-inverse ``B⁻¹``, the mixer core: wrench → per-rotor thrust, from
   the rest-pose rotor geometry. ``pinv`` is canonical and handles ``nr ≠ 4``.
 * :func:`ctbr_rate_loop`: the CTBR → inner P rate-loop ``@wp.func`` returning the *target* base-frame
-  wrench ``[T, τ]``, before allocation. Carries the ``substeps`` dilution so the same op serves the
-  Isaac-Lab substep-integrated training env, ``substeps = NUM_SUBSTEPS``, and the standalone deploy,
-  ``substeps = 1``.
+  wrench ``[T, τ]``, before allocation.
 * :func:`wrench_to_cmd`: the shared mixer tail, ``B⁻¹`` → per-rotor thrust → normalized rotor-speed
   command ``u = √(max(f, 0)/kf) / Ω_max``. A clean differentiable allocation op, with no rate loop and no
   motor state, so design-opt's gradient flows through it.
@@ -23,7 +21,7 @@ deploy + the differentiable examples:
   ``moment_to_cmd_batched``, so the CTBR→per-rotor mixer is byte-shared between train and deploy, the
   parity surface.
 * :func:`build_rotor_mixer_from_model` and :func:`build_rotor_mixer_from_layout`: build the airframe
-  :class:`RotorMixer`, the ``B``/``B⁻¹`` + thrust map, that configures the controller and the actuator.
+  :class:`RotorMixer`, the ``B``/``B⁻¹`` + thrust map, that configures the controller and a planner's coupling.
 
 ``CtbrParams`` lives here, not in ``controllers/policy``, because it's mixer configuration; homing it in
 this leaf module keeps the import graph acyclic.
@@ -81,11 +79,11 @@ def build_allocation(
     Rows of ``B``: ``[total thrust; roll τx; pitch τy; yaw τz (κ·spin)]``. The roll/pitch moment is the
     physical ``r × (thrust_sign·f·ẑ)``: the moment arms carry ``thrust_sign`` so the allocation is
     consistent with the collective force direction, FRD ⇒ thrust along −body-z. This matters for an
-    external controller such as PX4: it computes per-motor outputs assuming the physical wrench, so the
-    actuator's ``B·f`` must equal that physical wrench. For the controllers whose law runs in nexus, ``B`` and ``B⁻¹``
+    external controller such as PX4: it computes per-motor outputs assuming the physical wrench, so ``B·f``
+    must equal the wrench the rotors make. For the controllers whose law runs in nexus, ``B`` and ``B⁻¹``
     cancel, so the sign convention is internally immaterial, but getting it physically right is what lets
-    PX4 fly the same summed-wrench actuator. Each rotor's cw/ccw spin sign comes from its rotor-z compared
-    to the body-z, as authored in the Universal Scene Description (USD).
+    a planner's single-body model match the plant. Each rotor's cw/ccw spin sign comes from its rotor-z
+    compared to the body-z, as authored in the Universal Scene Description (USD).
     """
     Rb = quat_to_R(quats[base])
     bz_w = Rb @ np.array([0.0, 0.0, 1.0])
@@ -106,21 +104,14 @@ def build_allocation(
 
 
 @wp.func
-def ctbr_rate_loop(action: wp.vec4, omega_b: wp.vec3, p: CtbrParams, substeps: float) -> wp.vec4:
+def ctbr_rate_loop(action: wp.vec4, omega_b: wp.vec3, p: CtbrParams) -> wp.vec4:
     """CTBR collective thrust + inner P rate-loop → the **target base-frame wrench** ``[T, τx, τy, τz]``,
     before the allocation, as a ``wp.vec4``. The single source of the per-rotor CTBR law, shared by the
-    deploy, ``substeps = 1``, and the Isaac-Lab training, ``substeps = NUM_SUBSTEPS``, launches.
-
-    This op divides the collective and the rate-loop torque by ``substeps``; the motor model
-    ``rigid_body_wrench_batched`` multiplies the final wrench by ``substeps`` after the allocation. With the
-    training twins, ``thrust_to_weight = 1.9·N`` and ``rate_gain = 12``, this recovers the *effective*
-    ``T/W = 1.9`` and rate gain ``3``, byte-equal to the deploy effective values of ``substeps = 1``,
-    ``T/W = 1.9`` and gain ``3``, so a single kernel reproduces both paths' per-tick per-rotor thrust
-    exactly.
+    deploy and the RL training launches.
     """
     thr = (wp.clamp(action[0], -1.0, 1.0) + 1.0) * 0.5
-    thrust = (p.thrust_to_weight / substeps) * p.weight * thr  # [N], effective collective; sign applied later
-    g = p.rate_gain / substeps
+    thrust = p.thrust_to_weight * p.weight * thr  # [N], the collective; sign applied later
+    g = p.rate_gain
     omega_des = (
         wp.vec3(wp.clamp(action[1], -1.0, 1.0), wp.clamp(action[2], -1.0, 1.0), wp.clamp(action[3], -1.0, 1.0))
         * p.omega_max
@@ -144,8 +135,8 @@ def wrench_to_cmd(
     out_cmd: wp.array2d(dtype=float),  # (·, nr) → normalized per-rotor command u
 ):
     """The shared mixer tail: target wrench → ``B⁻¹`` → per-rotor thrust → **normalized rotor-speed
-    command** ``u = √(max(f, 0)/kf) / Ω_max``. The motor model, :class:`Rotors`, clamps ``u`` to
-    ``[0, 1]``, the single saturation authority, and applies the first-order lag, so this op carries only
+    command** ``u = √(max(f, 0)/kf) / Ω_max``. The rotors' command element clamps ``u`` to
+    ``[0, 1]``, the single saturation authority, and the motors bring the rotors to speed, so this op carries only
     the differentiable allocation + thrust-map inverse, with no rate loop and no motor state, keeping a
     clean full-horizon gradient for the moment-input design-opt path. Splitting it out of the old single
     kernel is exact: ``clamp(u, 0, 1)·Ω_max = min(√(f/kf), Ω_max)`` reproduces the old in-kernel saturation.
@@ -154,7 +145,7 @@ def wrench_to_cmd(
         f = B_inv[i, 0] * wrench_des[0] + B_inv[i, 1] * wrench_des[1]
         f = f + B_inv[i, 2] * wrench_des[2] + B_inv[i, 3] * wrench_des[3]
         f = wp.max(f, 0.0)  # per-rotor thrusts are non-negative
-        out_cmd[n, i] = wp.sqrt(f / kf) / omega_max_motor  # rotor-speed fraction; the actuator clamps to [0, 1]
+        out_cmd[n, i] = wp.sqrt(f / kf) / omega_max_motor  # rotor-speed fraction; the command element clamps it
 
 
 @wp.kernel
@@ -166,7 +157,6 @@ def ctbr_to_cmd_batched(
     B_inv: wp.array2d(dtype=float),  # (nr, 4) mixer
     kf: float,
     omega_max_motor: float,
-    substeps: float,  # Isaac-Lab substep factor: NUM_SUBSTEPS for train, 1 for deploy
     nr: int,
     out_cmd: wp.array2d(dtype=float),  # (N, nr) → normalized per-rotor command
 ):
@@ -177,7 +167,7 @@ def ctbr_to_cmd_batched(
     """
     n = wp.tid()
     omega_b = wp.quat_rotate_inv(quat[n], omega_w[n])  # world ω → body
-    wrench_des = ctbr_rate_loop(action[n], omega_b, p, substeps)  # [T, τx, τy, τz] target, ÷substeps
+    wrench_des = ctbr_rate_loop(action[n], omega_b, p)  # [T, τx, τy, τz] target
     wrench_to_cmd(wrench_des, B_inv, kf, omega_max_motor, nr, n, out_cmd)
 
 
@@ -216,21 +206,20 @@ def pack_vec4(a: wp.array(dtype=float), out: wp.array(dtype=wp.vec4)):
 
 @dataclass
 class RotorMixer:
-    """The airframe mixer/coupling config, built once from the rotor geometry + the actuator thrust map,
-    then split between the controller and the actuator: the controller takes the mixer side, ``B_inv`` + the thrust map, the
-    :class:`Rotors` motor model takes the coupling side, forward ``B`` + the thrust map. Both
-    derive from the same :func:`build_allocation`, so they can't drift.
+    """The airframe mixer/coupling config, built once from the rotor geometry + the rotors' thrust map,
+    used by the controller, which takes the mixer side, ``B_inv`` + the thrust map, and by a planner's single-body
+    model, which takes the coupling side, forward ``B`` + the thrust map. Both derive from the same
+    :func:`build_allocation`, so they can't drift.
     """
 
-    B: np.ndarray  # (4, nr) forward allocation, the actuator's body coupling
+    B: np.ndarray  # (4, nr) forward allocation, a planner's body coupling
     B_inv: np.ndarray  # (nr, 4) mixer, the controller's allocation
-    spins: np.ndarray  # (nr,) cw/ccw sign per rotor, also the visual rotor-spin direction
+    spins: np.ndarray  # (nr,) cw/ccw sign per rotor, the sign of its reaction on the airframe
     kf: float  # thrust = kf·Ω², with Ω in rad/s
     omega_max_motor: float  # rotor-speed saturation [rad/s]
     kappa: float  # κ = cd, the yaw reaction-torque / thrust ratio
     nr: int  # rotor count
     base: int  # base/airframe body index, where the summed wrench acts
-    rotor_pos_coords: list | None  # rotor joint q-coords for the cosmetic spin: model path; None for a layout proxy
     rotor_offsets: np.ndarray  # (nr, 3) per-rotor base-frame offsets r, the airflow inflow ω×r in the coupling
 
     def thrust_to_weight(self, mass: float) -> float:
@@ -242,13 +231,13 @@ class RotorMixer:
 
 
 def build_rotor_mixer_from_model(model, joints, act_cfg: dict, rest_body_q) -> RotorMixer:
-    """Build the :class:`RotorMixer` from a finalized model's rotor joints + the actuator thrust map:
-    the airframe that configures both the controller, ``B_inv``, and the :class:`Rotors` actuator,
-    forward ``B``. ``joints`` is the joint path of each rotor the vehicle declares, the ``VehicleUsd``'s
+    """Build the :class:`RotorMixer` from a finalized model's rotor joints + the rotors' thrust map:
+    the airframe that configures the controller, ``B_inv``, and forward ``B``. ``joints`` is the joint path of
+    each rotor the vehicle declares, the ``VehicleUsd``'s
     ``rotor_joints()``. ``rest_body_q`` is the settled rest pose ``(nbodies, 7)`` the allocation builds
     from, since the rest-pose geometry is rigid.
     """
-    _vel, pos_coords, bodies, base = find_rotor_joints(model, joints)
+    _vel, _coords, bodies, base = find_rotor_joints(model, joints)
     ct, cd, rpm_max = act_cfg["ct"], act_cfg["cd"], act_cfg["rpm_max"]
     bq = np.asarray(rest_body_q, dtype=np.float32)
     B, B_inv, spins = build_allocation(bq[:, :3], bq[:, 3:7], base, bodies, float(cd))
@@ -263,7 +252,6 @@ def build_rotor_mixer_from_model(model, joints, act_cfg: dict, rest_body_q) -> R
         kappa=float(cd),
         nr=len(bodies),
         base=int(base),
-        rotor_pos_coords=pos_coords,
         rotor_offsets=offsets,
     )
 
@@ -292,7 +280,6 @@ def build_rotor_mixer_from_layout(rotor_offsets, turning_dirs, act_cfg: dict, th
         kappa=float(cd),
         nr=nr,
         base=0,
-        rotor_pos_coords=None,
         rotor_offsets=off,
     )
 
@@ -308,10 +295,9 @@ class CtbrMixer:
     ``omega_b`` unchanged with the same op the training launch uses, with no extra state to plumb.
     """
 
-    def __init__(self, mixer: RotorMixer, ctbr_params: CtbrParams, *, substeps: float = 1.0):
+    def __init__(self, mixer: RotorMixer, ctbr_params: CtbrParams):
         self.nr = int(mixer.nr)
         self.p = ctbr_params
-        self.substeps = float(substeps)
         self.kf = float(mixer.kf)
         self.omega_max_motor = float(mixer.omega_max_motor)
         self._B_inv = wp.array(np.asarray(mixer.B_inv, dtype=np.float32), dtype=float)
@@ -339,7 +325,6 @@ class CtbrMixer:
                 self._B_inv,
                 self.kf,
                 self.omega_max_motor,
-                self.substeps,
                 self.nr,
             ),
             outputs=(self._cmd,),

@@ -144,9 +144,16 @@ to stand in for a real estimator, and PX4's controller, to send PX4 its ground t
 
 ### Physics
 
-The part that steps Newton's model, `NewtonPhysics`. Its `step` steps every Newton actuator
-the vehicle declares, then the solver. It's a fixed part, as the clock, the Recorder, and the
-Logger are: the framework's own, configured by settings, never declared.
+The part that steps Newton's model, `NewtonPhysics`. Its `step` steps every
+[actuator](#actuator) the vehicle declares, then the solver. It's a fixed part, as the clock, the
+Recorder, and the Logger are: the framework's own, configured by settings, never declared.
+
+### Actuator
+
+Newton's motor: a `NewtonActuator` prim the vehicle's USD authors on a joint, such as a rotor's
+motor on its rotor joint. [Physics](#physics) steps every actuator before its solver. An actuator
+reads its joint's state and the targets a command element writes, and writes the joint's torque.
+The word names Newton's motor alone, so the controls carry one command per actuator.
 
 ### Peer
 

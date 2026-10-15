@@ -185,13 +185,14 @@ def _open_stage(path):
 
 
 # The values the converter authors, by their key in ``params``: the propeller's on each rotor body, as
-# ``NexusPropellerAPI`` attributes, and the motor lag on each rotor joint. The run reads them back in
-# physics/builders/usd.parse_rotors.
+# ``NexusPropellerAPI`` attributes. The run reads them back in physics/vehicle.parse_rotors.
 _PROPELLER_ATTRS = {"nexus:ct": "ct", "nexus:cd": "cd", "nexus:aeroH": "aero_h", "nexus:aeroHforce": "aero_hforce"}
-_JOINT_ATTRS = {"motor:tau": "tau"}
 # Where a source declares its rotors' values before conversion: on each rotor joint, and on the
 # ``NewtonActuator`` prim that drives it in an as-built USD. A joint or a prim with these is a rotor's.
-_JOINT_PREFIXES = ("propeller:", "motor:")
+_JOINT_PREFIXES = ("propeller:",)
+# The namespaces the converter removes: the propeller schema replaces ``propeller:*``, and the motor's values
+# are Newton's own, on its ``NewtonActuator`` prim, so ``motor:*`` holds nothing the run reads.
+_RETIRED = ("propeller", "motor")
 _AS_BUILT_PREFIX = "freefly:actuator:"
 _RPM_PER_RADS = 60.0 / (2.0 * math.pi)  # rad/s -> rpm
 
@@ -199,16 +200,16 @@ _RPM_PER_RADS = 60.0 / (2.0 * math.pi)  # rad/s -> rpm
 def author_rotor_params(usdz, out, *, params=None, rotors=None) -> str:
     """Re-author the vehicle USD so each rotor declares its propeller where the run reads it: the
     ``NexusPropellerAPI`` schema and its values on the rotor's rigid body, the child body of the rotor's
-    joint. Each ``NewtonActuator`` prim stays untouched, with Newton's schemas alone, ``motor:tau`` goes on
-    each rotor joint, and the older ``propeller:*`` attributes go. ``pxr``-only: runs host-side. Everything
-    else survives: geometry, joints, the authored ``FpvCam``.
+    joint. Each ``NewtonActuator`` prim stays untouched, with Newton's schemas alone, and the older
+    ``propeller:*`` and ``motor:*`` attributes go. ``pxr``-only: runs host-side. Everything else survives:
+    geometry, joints, the authored ``FpvCam``.
 
     ``rotors`` names the rotor joints by prim path. If omitted, the rotors are the joints the source itself
     declares as such: the revolute joints that author ``propeller:*``, else the joints whose ``NewtonActuator``
     prim authors ``freefly:actuator:*``, as an as-built USD does. A joint Newton drives for another purpose,
     such as a gimbal servo, is no rotor.
 
-    ``params`` is a ``{ct, cd, aero_h, aero_hforce, tau}`` dict that overrides the values the source's rotors
+    ``params`` is a ``{ct, cd, aero_h, aero_hforce}`` dict that overrides the values the source's rotors
     declare; a value neither gives is an error. The rotor speed at full command isn't authored: the run reads
     it from each motor's ``newton:velocityLimit``. A ``rpm_max`` that ``params`` or the source gives must
     agree with it, or the conversion would change the top speed.
@@ -256,7 +257,7 @@ def author_rotor_params(usdz, out, *, params=None, rotors=None) -> str:
             f"the source's rotors declare different values ({per_rotor}); the propeller model takes one set"
         )
     values = {**per_rotor[0], **(params or {})}
-    missing = [k for k in (*_PROPELLER_ATTRS.values(), *_JOINT_ATTRS.values()) if k not in values]
+    missing = [k for k in _PROPELLER_ATTRS.values() if k not in values]
     if missing:
         raise ValueError(
             f"no value for {missing}: neither params nor the source's rotors give one (have {sorted(values)})"
@@ -276,14 +277,13 @@ def author_rotor_params(usdz, out, *, params=None, rotors=None) -> str:
                 )
 
     for prim in prims:
-        for prop in prim.GetAuthoredPropertiesInNamespace("propeller"):
-            prim.RemoveProperty(prop.GetName())
-    for joint, body in zip(joints, bodies, strict=True):
+        for namespace in _RETIRED:
+            for prop in prim.GetAuthoredPropertiesInNamespace(namespace):
+                prim.RemoveProperty(prop.GetName())
+    for body in bodies:
         body.AddAppliedSchema("NexusPropellerAPI")
         for attr_name, key in _PROPELLER_ATTRS.items():
             body.CreateAttribute(attr_name, Sdf.ValueTypeNames.Float).Set(float(values[key]))
-        for attr_name, key in _JOINT_ATTRS.items():
-            joint.CreateAttribute(attr_name, Sdf.ValueTypeNames.Float, custom=True).Set(float(values[key]))
 
     out = str(out)
     if out.endswith(".usdz"):

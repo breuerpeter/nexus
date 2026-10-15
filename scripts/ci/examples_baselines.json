@@ -1,11 +1,11 @@
 {
   "_meta": {
-    "hardware": "g5.2xlarge (1x A10G, eu-central-1) \u2014 recorded 2026-07-10, run 29090563904",
+    "hardware": "g5.2xlarge (1x A10G, eu-central-1) \u2014 recorded 2026-07-10, run 29090563904; rtf and the time gates re-recorded 2026-10-15, run 38685862896",
     "note": "a bare value = exact match; dicts: min/max = absolute guards, min_frac/max_frac = relative to the recorded value (skipped while value is null)"
   },
   "pid": {
     "rtf": {
-      "value": 6.749,
+      "value": 5.285,
       "min_frac": 0.8
     },
     "reached": 4,
@@ -19,7 +19,7 @@
   },
   "acados_nmpc": {
     "rtf": {
-      "value": 0.444,
+      "value": 0.448,
       "min_frac": 0.8
     },
     "ape_trans_rmse_m": {
@@ -49,7 +49,7 @@
   },
   "sampling_mpc": {
     "rtf": {
-      "value": 0.296,
+      "value": 0.291,
       "min_frac": 0.8
     },
     "reached": 3,
@@ -79,7 +79,7 @@
   "goto_policy_fresh": {},
   "gain_tuning": {
     "rtf": {
-      "value": 6.354,
+      "value": 5.311,
       "min_frac": 0.8
     },
     "gradient_cosine": {
@@ -87,15 +87,25 @@
     },
     "opt_hold_m": {
       "max": 0.3
+    },
+    "warm_wall_s": {
+      "max": 300.0
+    },
+    "rotor_speed_min_rad_per_sec": {
+      "min": 100.0
     }
   },
   "mass_recovery": {
     "mass_rel_err": {
       "max": 0.05
     },
-    "wall_s": {
-      "value": 33.6,
-      "max_frac": 2.0
+    "warm_wall_s": {
+      "value": 65.4,
+      "max_frac": 2.0,
+      "max": 300.0
+    },
+    "rotor_speed_min_rad_per_sec": {
+      "min": 100.0
     }
   },
   "px4_sitl": {
@@ -109,7 +119,7 @@
       "max": 5.0
     },
     "rtf": {
-      "value": 2.198,
+      "value": 2.382,
       "min": 1.0,
       "min_frac": 0.8
     }

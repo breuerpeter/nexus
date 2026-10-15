@@ -14,7 +14,7 @@ A contract lives at or below its consumer: in the caller's own package, or lower
 `Renderer` and `Recorder`, and the [stages](concepts.md#stage) a command element or a force element states, and sits at
 the bottom layer, so those contracts live in `core/`. A contract that sits higher
 than its consumer ends up written twice: once where the consumer can import it, once beside the
-implementations. That's how the actuator's contract came to exist in two files before this rule.
+implementations. That's how one role's contract came to exist in two files before this rule.
 
 ## Who declares a part
 
@@ -121,9 +121,9 @@ four rotor **revolute** joints, because:
 
 - the shipped rotor chain, the example controllers and the PX4 path all assume thrust along
   **−body-z**, the FRD convention. It's a hardcoded invariant, not a per-call parameter.
-- the differentiable examples, sampling Model Predictive Control (MPC) and design-opt, build their single rigid body by
-  **fixing the rotor revolute joints and collapsing them** with `ModelBuilder.collapse_fixed_joints`.
-  So the rotors must be revolute joints off the base, or the collapse can't find and merge them.
+- the sampling Model Predictive Control (MPC) planner builds its single-body model by **fixing the
+  rotor revolute joints and collapsing them** with `ModelBuilder.collapse_fixed_joints`. So the rotors
+  must be revolute joints off the base, or the collapse can't find and merge them.
 
 ## Rotor indexing
 

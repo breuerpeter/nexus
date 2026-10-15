@@ -7,10 +7,10 @@ elements add to before ``step``, and the control inputs the command elements wri
 
 **The solver is configurable** via ``cfg["physics"]["solver"]``: ``mujoco``, the default, is the
 high-fidelity contact solver the Software In The Loop (SITL) path uses and the determinism authority
-on CPU; the gradient-capable ``semi_implicit`` / ``featherstone`` integrators back the
-design-optimization path, since ``mujoco-warp`` isn't differentiable, see
-``nexus_uav/examples/design_opt/design_optimization.py``. All three share the ``solver.step(state_in, state_out,
-control, contacts, dt)`` signature, so only the constructor differs.
+on CPU; the gradient-capable ``semi_implicit`` / ``featherstone`` integrators stay selectable, though the
+gradient examples step their own recorded rollout of the same vehicle, since ``mujoco-warp`` isn't
+differentiable, see ``nexus_uav/examples/_lib/articulated.py``. All three share the ``solver.step(state_in,
+state_out, control, contacts, dt)`` signature, so only the constructor differs.
 
 **One class, three regimes**, selected by ``cfg["physics"]``, so the production runtime and the
 standalone Model Predictive Control (MPC) examples drive the same ``reset``, ``clear_forces`` and ``step``:
@@ -20,27 +20,19 @@ standalone Model Predictive Control (MPC) examples drive the same ``reset``, ``c
   path.
 * *Free articulated*, with ``spawn`` set and contacts optional: the real multi-body vehicle placed in free
   flight at ``spawn['pos']`` with no ground-settle, rotors pre-spun to hover via ``prespin: 'hover'``. The
-  acados forward-validation regime, ``nexus_uav/examples/controllers/acados_nmpc/waypoint_tracking.py``.
-* *Free single-body*: pass a pre-built ``model=``, the Universal Scene Description (USD) file collapsed
-  to one rigid body, see :func:`~nexus_uav.examples._lib.single_body.collapse_to_single_body`, with the
-  ``semi_implicit`` solver and ``contacts: False``; spawned upright via the Forward Right Down (FRD)
-  flip, ``attitude: 'flip'``. The differentiable sampling-MPC regime,
-  ``nexus_uav/examples/controllers/sampling_mpc/obstacle_slalom.py``.
+  regime of the acados, Proportional Integral Derivative (PID) and sampling MPC examples.
+* *Pre-built*: pass a finalized ``model=``, as a test that builds its own model does; a single rigid
+  body spawns upright via the Forward Right Down (FRD) flip, ``attitude: 'flip'``.
 
 The reset / step paths branch on ``model.body_count``: a single collapsed body uses maximal
 coordinates, ``body_q``, with no joint control; the articulated vehicle uses generalized
 coordinates, ``joint_q``, + the joint control buffer. Vehicle USDs follow FRD authoring, body +z down,
 and spawned free they sit upright; see ``docs/design/conventions.md``.
 
-``eval_fk`` is intentionally not re-run after the actuator
-joint update, so ``update_body_f`` reads the earlier step's joint pose, a
-one-step lag in thrust direction.
-
 Two device stages, ``clear`` and ``step``: the collide + solver.step + double-buffer ping-pong
 is a static launch over persistent buffers, so it joins a CUDA graph with the command and force stages
-between them. ``step`` first zeroes ``control.joint_f`` and steps the Newton actuators, where Newton's docs
-place the call, each over double-buffered state copied back in place after the step: the graph-safe twin
-of the state swap, since a Python swap would freeze at a CUDA graph's capture-time binding.
+between them. ``step`` first steps the vehicle's motors, :class:`~nexus_uav._src.physics.motors.Motors`,
+into ``control.joint_f``, then the solver.
 """
 
 from __future__ import annotations
@@ -57,28 +49,12 @@ from nexus_uav._src.vehicle.rotors import RPM_PER_RADS, find_rotor_joints
 from ..scene import world
 from ..scene.ingest import add_scene  # ingestion only: the handlers are the renderer's side
 from ..scene.world import GRAVITY
+from .motors import Motors
 from .outputs import Outputs
 
 STABILIZE_VEL_THRESHOLD = 0.01  # m/s
 STABILIZE_MIN_STEPS = 10
 STABILIZE_MAX_STEPS = 10000
-
-
-def _state_arrays(act_state) -> list[wp.array]:
-    """The Warp arrays inside a composed ``newton.actuators`` Actuator.State, the delay + controller
-    sub-states, in a construction-stable order, so two states built by the same ``actuator.state()``
-    pair up positionally for the in-place copy-back.
-    """
-    out: list[wp.array] = []
-    if act_state is None:
-        return out
-    for sub in (getattr(act_state, "delay_state", None), getattr(act_state, "controller_state", None)):
-        if sub is None:
-            continue
-        for v in vars(sub).values():
-            if isinstance(v, wp.array):
-                out.append(v)
-    return out
 
 
 def make_solver(name: str, model, *, njmax: int = 224):
@@ -99,7 +75,7 @@ def make_solver(name: str, model, *, njmax: int = 224):
 
 
 class NewtonPhysics:
-    def __init__(self, *, vehicle_usd=None, model=None, cfg: dict, njmax: int = 224, step_actuators: bool = True):
+    def __init__(self, *, vehicle_usd=None, model=None, cfg: dict, njmax: int = 224):
         self.cfg = cfg
         phys = cfg["physics"]
         self.sim_dt = phys["dt"]
@@ -108,9 +84,7 @@ class NewtonPhysics:
         self.spawn_cfg = phys.get("spawn")  # None → ground-settle; dict → free placement at spawn['pos']
 
         if model is not None:
-            # Pre-built model: the single-body path passes the USD collapsed via
-            # :func:`~nexus_uav.examples._lib.single_body.collapse_to_single_body`, for the sampling-MPC
-            # real sim + its batched rollout twin, and design-opt; the collapse lives in that one function, not here.
+            # Pre-built model: a test that builds its own model hands it over.
             self.model = model
         else:
             logger.info(f"Default warp device: {wp.get_device()}")
@@ -145,17 +119,8 @@ class NewtonPhysics:
         self.control = self.model.control() if self.articulated else None
         # The plant's outputs, a PoseTwist per body and a struct per joint, which the state stage writes.
         self.outputs = Outputs(self.model, self.state0)
-        # Every Newton actuator the vehicle declares, rotor motor or not, stepped before the solver. Each
-        # keeps two copies of its state, because ControllerPID is stateful and a Python swap would freeze at
-        # the binding a CUDA graph captured: step() copies next → current in place after each step.
-        # ``step_actuators=False`` leaves them idle, for a run on the old actuator stage: the examples'
-        # ``Rotors`` holds its own motor model and sums its wrench on the base body, so the rotor joints
-        # hang free there, as they did before physics stepped the motors.
-        self._actuators = list(getattr(self.model, "actuators", None) or []) if step_actuators else []
-        self._actuator_states = [(a.state(), a.state()) for a in self._actuators]
-        self._actuator_copies = [
-            list(zip(_state_arrays(cur), _state_arrays(nxt), strict=True)) for cur, nxt in self._actuator_states
-        ]
+        # Every Newton motor the vehicle declares, rotor motor or not, stepped before the solver.
+        self.motors = Motors(self.model)
         self.contacts = self.model.collide(self.state0) if self.contacts_on else None
         self.base_index = self._find_base()
         # The base body's label, the leaf of its model label when unique: Sim's default vehicle entity,
@@ -204,17 +169,10 @@ class NewtonPhysics:
         state.clear_forces()
 
     def step(self, state, dt):
-        """Step the Newton actuators into ``control.joint_f``, zeroed first, then the solver, which
-        consumes ``joint_f`` and the force elements' ``body_f`` in one solve.
+        """Step the vehicle's motors into ``control.joint_f``, then the solver, which consumes ``joint_f`` and
+        the force elements' ``body_f`` in one solve.
         """
-        if self._actuators:
-            self.control.joint_f.zero_()
-            for actuator, (cur, nxt), copies in zip(
-                self._actuators, self._actuator_states, self._actuator_copies, strict=True
-            ):
-                actuator.step(state, self.control, cur, nxt, dt)
-                for dst, src in copies:  # current ← next, in place: the graph-safe double-buffer
-                    wp.copy(dst, src)
+        self.motors.step(state, self.control, dt)
         contacts = self.model.collide(state) if self.contacts_on else None
         self.solver.step(state, self.state1, self.control, contacts, dt)
         state.assign(self.state1)

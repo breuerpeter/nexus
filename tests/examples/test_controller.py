@@ -109,3 +109,18 @@ def test_exchange_builds_obs_from_the_estimate(tmp_path):
 
     out = c.exchange(t=0.0)
     np.testing.assert_allclose(np.asarray(out.command), [0.5, -0.5, 0.25, 0.1], atol=1e-6)
+
+
+def test_the_policy_acts_at_its_training_rate_and_holds_its_action_between(tmp_path):
+    """The policy acts at its training rate and holds its action between.
+
+    Given the stub policy, which doubles the observation's first four values, and a period of 5 ticks, when the
+    controller acts on ten observations whose first value is the tick over 100, then its actions are 0.0 for ticks
+    0 to 4 and 0.1 for ticks 5 to 9: the policy ran at ticks 0 and 5 alone.
+    """
+    ctrl = TrainedPolicyController(policy_path=_make_stub_policy(tmp_path), policy_period=5)
+    ctrl.connect({})
+
+    actions = [float(ctrl.act(np.r_[tick / 100.0, np.zeros(11)]).command[0]) for tick in range(10)]
+
+    np.testing.assert_allclose(actions, [0.0] * 5 + [0.1] * 5, atol=1e-6)

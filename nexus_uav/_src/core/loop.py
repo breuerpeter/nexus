@@ -158,9 +158,9 @@ class Loop:
                 control inputs, the rotors' speed targets and feedforward, in its device stages.
             forces: The force elements: each adds its body wrenches to the shared ``state.body_f``
                 from the current state, the propellers' thrust and drag, in its device stages.
-            actuator: The old actuator stage, the examples' single-body ``Rotors``: one device stage
-                that writes the shared body forces from the controls the controller writes. ``None``
-                for a run on command elements and force elements.
+            actuator: The old actuator stage: one device stage that writes the shared body forces from
+                the controls the controller writes. No shipped component fills it; ``None`` for a run on
+                command elements and force elements.
             renderer: Optional render-lifecycle object, for example the Kit render peer's
                 :class:`~nexus_uav._src.rendering.KitRenderer`: the loop calls only
                 ``on_physics_ready()``/``close()``; the host-rate RTX camera *sensors* drive

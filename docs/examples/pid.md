@@ -5,8 +5,9 @@ description: "The minimal device-native controller example: a deterministic, dif
 # PID waypoint tour
 
 The smallest end-to-end example of the device-native controller shape: a deterministic,
-differentiable PID flies the collapsed single-body Astro Max around a square of waypoints.
-One CUDA graph captures the whole tick: controller, actuator, physics, and sensors.
+differentiable PID flies the articulated Astro Max, its rotors turned by Newton's motors, around a
+square of waypoints. One CUDA graph captures the whole tick: controller, rotor chain, physics, and
+sensors.
 It deploys the gains the [design-optimization example](design-optimization.md) converges to.
 It also doubles as the framework's **determinism authority**: on CPU it runs eager and bit-exact,
 the bit-reproducible CI gate a real PX4-in-the-loop flight can't give.

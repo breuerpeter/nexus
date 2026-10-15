@@ -80,8 +80,9 @@ ASTRO_MAX_CFG = ArticulationCfg(
         # standalone runtime uses in nexus physics/builders/usd.py.
         rot=(0.0, 1.0, 0.0, 0.0),
         joint_pos={".*": 0.0},
-        joint_vel={".*": 0.0},  # passive rotors, the lumped wrench drives the base; no init spin
+        joint_vel={".*": 0.0},  # the rotors start at rest, and their motors spin them up
     ),
+    # No Isaac Lab drive: the Newton motors the USD authors turn the rotors, which the env steps itself.
     actuators={"dummy": ImplicitActuatorCfg(joint_names_expr=[".*"], stiffness=0.0, damping=0.0)},
 )
 """Astro Max articulation (base body_frd + 4 rotors), spawned from the converted USD."""

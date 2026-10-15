@@ -21,6 +21,9 @@ Conventions, which the harness relies on:
 - ``<name>.json``: ``{"name", "stats", "results", "rrd"}``, the example's stats dict, the
   loop's ``run_stats`` with the steady ``rtf`` and so on, and the ``.rrd`` path, ``null``
   unless the run recorded one.
+- An example the harness times reports :meth:`RunClock.stats`: its ``wall_s``, the ``compile_s`` of it Warp
+  spent compiling kernels, and ``warm_wall_s``, the rest. A time gate reads ``warm_wall_s``, so a cold kernel
+  cache's one-time compiles don't fail it, as a benchmark warms its just-in-time compiler before it times.
 
 Output dir: ``$NEXUS_EVAL_OUT``, which the CI harness sets, else ``~/.cache/nexus/eval``.
 """
@@ -29,9 +32,67 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import time
 from pathlib import Path
 
 import numpy as np
+import warp as wp
+
+# How Warp reports a module it compiled, through its logger: ``Module <name> <hash> load on device '<device>'
+# took <ms> ms (compiled)``. A module it loaded from its cache ends in ``(cached)``.
+_COMPILED = re.compile(r" took ([0-9.]+) ms\s+\(compiled\)")
+
+
+class RunClock:
+    """An example run's wall time, and the part of it Warp spent compiling kernels.
+
+    Inside its ``with`` block the clock is Warp's logger: it reads each report of a module Warp compiled, and
+    passes every report on to the logger it replaced, through :class:`warp.ScopedLogger`. When a report's
+    format changes, the clock counts no compile, so a time gate goes back to the whole wall time: it fails
+    on a cold cache, never passes a slow run.
+    """
+
+    def __init__(self):
+        self._compile_s = 0.0
+        self._start = 0.0
+        self._replaced = wp.get_logger()
+        self._scope = wp.ScopedLogger(self)
+
+    def __enter__(self) -> RunClock:
+        self._replaced = wp.get_logger()
+        self._scope.__enter__()
+        self._start = time.perf_counter()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self._scope.__exit__(exc_type, exc_value, traceback)
+
+    def stats(self) -> dict[str, float]:
+        """The run so far [s]: its ``wall_s``, the ``compile_s`` of it Warp spent compiling kernels, and
+        ``warm_wall_s``, the rest, which a time gate reads.
+        """
+        wall = time.perf_counter() - self._start
+        return {
+            "wall_s": round(wall, 1),
+            "compile_s": round(self._compile_s, 1),
+            "warm_wall_s": round(wall - self._compile_s, 1),
+        }
+
+    # Warp's logger protocol: each message passes on to the logger the clock replaced.
+    def debug(self, message: str) -> None:
+        self._replaced.debug(message)
+
+    def info(self, message: str) -> None:
+        if hit := _COMPILED.search(message):
+            self._compile_s += float(hit.group(1)) / 1000.0
+        self._replaced.info(message)
+
+    def warning(self, message: str, category=None, stacklevel: int = 1) -> None:
+        self._replaced.warning(message, category, stacklevel + 1)
+
+    def error(self, message: str) -> None:
+        self._replaced.error(message)
 
 
 def _out_dir(out_dir: str | Path | None) -> Path:

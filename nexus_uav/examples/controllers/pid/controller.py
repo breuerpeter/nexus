@@ -17,8 +17,8 @@ It's a state-feedback controller, as :class:`TrainedPolicyController` is: it rea
 control law emits a
 direct-moment action ``[thrust, m_x, m_y, m_z]``; the controller's **moment mixer**, ``B⁻¹`` allocation
 with no rate loop, :class:`~nexus_uav.examples._lib.mixer.MomentMixer`, then turns it into the ``nr``
-per-rotor commands the single-body :class:`~nexus_uav.examples._lib.rotors.Rotors`
-motor model consumes. So PID, policy, and PX4 all fly through the same loop tick, all emitting
+per-rotor commands the rotors' command element consumes. So PID, policy, and PX4 all fly through the same
+loop tick, all emitting
 ``Controls.command`` = per-rotor commands; only where the control law runs differs.
 
 The mixer is optional: the differentiable design-optimization rollout configures the controller with no

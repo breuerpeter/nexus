@@ -25,15 +25,14 @@ nexus-rl/
 ├── pyproject.toml                         # nexus-rl: deps nexus (path) + isaaclab[all,newton]
 ├── config/extension.toml                  # Isaac Lab extension metadata
 ├── src/nexus_rl/tasks/direct/goto/    # the GoTo task: fly to a sampled goal + hold (vehicle-agnostic)
-│   ├── quadcopter_newton.py               # reusable Newton-backend base (kitless; the 5 adaptations below)
-│   ├── goto_env.py                        # GoToEnv/Cfg: the single-body per-rotor model (no vehicle)
+│   ├── quadcopter_newton.py               # reusable Newton-backend base (kitless; the adaptations below)
+│   ├── goto_env.py                        # GoToEnv/Cfg: the articulated vehicle the core flies (no vehicle)
 │   ├── agents/rsl_rl_ppo_cfg.py           # GoToPPORunnerCfg (entropy_coef reliability fix)
 │   └── config/astro_max.py                # the Astro Max vehicle config (robot USD + FRD frame) + gym.register
 │                                          #   ("Nexus-AstroMax-GoTo-Direct-v0"); a new vehicle = a new config
 └── scripts/
     ├── rsl_rl/train.py                     # kitless PPO trainer; exports policy.pt + policy.onnx
-    ├── rsl_rl/record_demo.py              # records the swarm-improving Rerun .rrd (the demo below)
-    └── probe_hover.py                     # open-loop dynamics probe (sanity-check the single-body model)
+    └── rsl_rl/record_demo.py              # records the swarm-improving Rerun .rrd (the demo below)
 ```
 
 ## Environment
@@ -56,14 +55,14 @@ caching under `assets/cache/` in the repo, which `$NEXUS_ASSET_CACHE` overrides.
 
 ```bash
 uv run --project nexus-rl python nexus-rl/scripts/rsl_rl/train.py \
-  --num_envs 2048 --max_iterations 150 --log_dir .rl-artifacts/rl
+  --num_envs 2048 --max_iterations 500 --log_dir .rl-artifacts/rl
 # -> kitless (needs_kit=false), physics=NewtonCfg; writes .rl-artifacts/rl/exported/policy.{pt,onnx}
 ```
 
-**Result:** trains to a clean hover, with `success_rate → 1.0`, reward ~129, and full 500-step
-episodes, by about iteration 100, **reliably across seeds**, matching the stock task's native-PhysX
-reference. Reliability comes from a small entropy bonus, `GoToPPORunnerCfg.entropy_coef`, plus
-start-state randomization, the config field `init_randomize`. See [How it works](#how-it-works) #5.
+**Result:** trains to a clean hover, with `success_rate` 0.99 to 1.0 and reward 124 to 128 at iteration
+500. It does so **reliably across seeds**: 8 of 8 seeds at 2048 envs on an RTX 5080, about 95 s each.
+Reliability comes from a small entropy bonus, `GoToPPORunnerCfg.entropy_coef`, plus start-state randomization, the
+config field `init_randomize`. See [How it works](#how-it-works) #5.
 
 ## Record the demo `.rrd`
 
@@ -86,7 +85,7 @@ aws s3 cp astromax_rl.rrd "s3://$NEXUS_BUCKET/public/ci/logs/astromax_rl.rrd" \
 ## How it works
 
 The stock `Isaac-Quadcopter-Direct-v0` is PhysX-only and doesn't learn on Newton out of the box.
-`QuadcopterNewtonEnv` adds, vehicle-agnostically:
+`QuadcopterNewtonEnv` and `GoToEnv` add, vehicle-agnostically:
 
 1. **Newton MJWarp physics and hygiene without Kit**: sets the `physics=NewtonCfg` preset the stock
    config lacks, and disables every `omni.kit` path, `debug_vis`, `ui_window_class_type`, fabric cloning,
@@ -97,10 +96,11 @@ The stock `Isaac-Quadcopter-Direct-v0` is PhysX-only and doesn't learn on Newton
    `NaN` and won't learn. The rate loop's error term *is* the damping. The body inertia, read from the
    model, scales the loop gain, so it transfers unchanged across airframes. The params on the config
    are `omega_max`, `rate_gain`, and `gyro_ff`.
-3. **World-frame wrench**: because Newton's wrench composer applies forces in the **world** frame, a
-   body-z thrust would point straight up regardless of tilt. The drone could change altitude but never
-   translate to the goal. The env rotates the body-frame thrust and torque to world before applying
-   them. *This was the single bug that blocked convergence.*
+3. **The plant every run flies**: the articulated vehicle, its rotor joints turned by the Newton motors
+   the USD authors. Physics steps at the core's 4 ms, one solver step each, and the policy acts every
+   fifth step, at 50 Hz. Before each solver step, Isaac Lab's post-actuator hook runs the CTBR mixer and
+   then the core's rotor chain, `RotorChain` from `nexus_uav.examples._lib`, in the order a run steps
+   them. Isaac Lab drives no joint and applies no body wrench.
 4. **`NaN` robustness**: a finite-state termination and reward sanitize, so the inevitable early-
    training crashes can't poison rsl_rl's `check_nan` and end the run.
 5. **Reliable convergence**: a small entropy bonus, `GoToPPORunnerCfg.entropy_coef`, which the stock
@@ -126,9 +126,10 @@ the core. Two shared "single source of truth" pieces make it transfer with no co
 
 - **Observation**: the same `observation_from_state`, in `nexus_uav.examples._lib.observation`, builds
   the 12-D kinematic obs plus the last action, and training and deploy both call it.
-- **Action**: the policy's action is **CTBR**, collective thrust plus commanded body rates, and the
-  deploy actuator applies it. That actuator mirrors the `_pre_physics_step` of the training env: thrust
-  along ±body-z and an inner P rate loop `τ = I·gain·(ω_des − ω)`.
+- **Action and plant**: the policy's action is **CTBR**, collective thrust plus commanded body rates. The
+  deploy controller runs the same mixer kernel, with the same values, into the same rotor chain on the same
+  articulated vehicle. `tests/examples/test_rl_plant_parity.py` gates that the RL task and the core answer
+  one command alike.
 
 ```bash
 uv run --extra policy python nexus_uav/examples/controllers/policy/goto/flight.py \

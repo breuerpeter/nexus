@@ -257,8 +257,22 @@ def test_merged_local_merges_by_name_fresh_winning(tmp_path):
 # A flight inside every committed guard of its example, rtf included, for the examples a CPU box can fly.
 _HEALTHY = {
     "pid": {"reached": 4, "final_dist_m": 0.1, "ape_trans_rmse_m": 0.8, "rtf": 6.7},
-    "gain_tuning": {"gradient_cosine": 0.995, "opt_hold_m": 0.1, "rtf": 6.3},
-    "mass_recovery": {"mass_rel_err": 0.01, "wall_s": 34.0},
+    "gain_tuning": {
+        "gradient_cosine": 0.995,
+        "opt_hold_m": 0.1,
+        "rtf": 6.3,
+        "wall_s": 120.0,
+        "compile_s": 0.0,
+        "warm_wall_s": 120.0,
+        "rotor_speed_min_rad_per_sec": 260.0,
+    },
+    "mass_recovery": {
+        "mass_rel_err": 0.01,
+        "wall_s": 34.0,
+        "compile_s": 0.0,
+        "warm_wall_s": 34.0,
+        "rotor_speed_min_rad_per_sec": 300.0,
+    },
     "sampling_mpc": {
         "reached": 3,
         "final_dist_m": 0.1,
@@ -308,6 +322,43 @@ def test_on_a_pull_request_an_examples_rtf_never_fails_the_leg(tmp_path, monkeyp
     rc = _harness(monkeypatch, "--only", "pid", "--shared", "--out", str(tmp_path / "out"))
 
     assert (rc, "rtf" in _rows(capsys.readouterr().out, "(monitored)")) == (0, True)
+
+
+def test_on_a_pull_request_an_examples_run_time_never_fails_the_leg(tmp_path, monkeypatch, capsys):
+    """On a pull request an example's run time never fails the leg: given the committed `examples_baselines.json`
+    and a `gain_tuning` run whose warm part took 480 s, past its 300 s cap, when the harness gates it as a
+    pull-request run, then the table shows `warm_wall_s` as `(monitored)` and the run exits 0.
+    """
+    slow = {**_HEALTHY["gain_tuning"], "wall_s": 480.0, "warm_wall_s": 480.0}
+    _fake_flights(monkeypatch, tmp_path / "rec", {"gain_tuning": (slow, 0)})
+
+    rc = _harness(monkeypatch, "--only", "gain_tuning", "--shared", "--out", str(tmp_path / "out"))
+
+    assert (rc, "warm_wall_s" in _rows(capsys.readouterr().out, "(monitored)")) == (0, True)
+
+
+def test_on_its_own_box_a_cold_kernel_caches_compiles_never_fail_an_examples_time_gate(tmp_path, monkeypatch):
+    """On a box of its own a cold kernel cache's compiles never fail an example's time gate: given the committed
+    baselines and a `gain_tuning` run of 365 s, of which Warp spent 130 s compiling kernels, when the harness
+    gates it, then the run exits 0.
+    """
+    cold = {**_HEALTHY["gain_tuning"], "wall_s": 364.8, "compile_s": 130.1, "warm_wall_s": 234.7}
+    _fake_flights(monkeypatch, tmp_path / "rec", {"gain_tuning": (cold, 0)})
+
+    assert _harness(monkeypatch, "--only", "gain_tuning", "--out", str(tmp_path / "out")) == 0
+
+
+def test_on_its_own_box_an_example_whose_warm_run_passes_its_cap_fails(tmp_path, monkeypatch, capsys):
+    """On a box of its own an example whose warm run passes its cap fails: given the committed baselines and a
+    `gain_tuning` run whose warm part took 310 s, past its 300 s cap, when the harness gates it, then
+    `warm_wall_s` shows `REGRESSED` and the run exits 1.
+    """
+    slow = {**_HEALTHY["gain_tuning"], "wall_s": 310.0, "warm_wall_s": 310.0}
+    _fake_flights(monkeypatch, tmp_path / "rec", {"gain_tuning": (slow, 0)})
+
+    rc = _harness(monkeypatch, "--only", "gain_tuning", "--out", str(tmp_path / "out"))
+
+    assert (rc, "warm_wall_s" in _rows(capsys.readouterr().out, "REGRESSED")) == (1, True)
 
 
 def test_on_a_pull_request_a_regressed_correctness_row_still_fails_the_leg(tmp_path, monkeypatch, capsys):

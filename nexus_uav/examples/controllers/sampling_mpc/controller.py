@@ -12,10 +12,10 @@ over the horizon, the optimisation replayed from a captured graph, the sampling 
 The controller is task-parameterized: the caller passes the **batched rollout model**, ``num_rollouts``
 differentiable drones + the cost-only obstacle pillars, the obstacle shape indices, the rotor geometry,
 and the initial ``goal_w``; the guidance advances the active target, the ``PositionGoal`` setpoint the
-rollout reads, uniform with policy/pid. The per-rotor rollout dynamics is the shared single-body motor
-model :func:`~nexus_uav.examples._lib.rigid_body_wrench_world`, so planner ≡ the real-sim
-:class:`~nexus_uav.examples._lib.rotors.Rotors` actuator: both consume per-rotor commands and
-run the forward-``B`` allocation. The cost-weight defaults below tune a gentle arrive-and-stop with
+rollout reads, uniform with policy/pid. The planner models the vehicle as one rigid body, through the
+single-body motor model :func:`~nexus_uav.examples._lib.rigid_body_wrench_world`: per-rotor commands, a
+motor lag and spin inertia from the vehicle's motors, and the forward-``B`` allocation; the plant it flies
+is the articulated vehicle. The cost-weight defaults below tune a gentle arrive-and-stop with
 obstacle avoidance. The vehicle's Universal Scene Description (USD) asset uses the Forward Right
 Down (FRD) convention: thrust points along −body-z.
 """
@@ -30,7 +30,7 @@ from newton.geometry import sdf_capsule  # warp-callable Signed Distance Field (
 from nexus_uav._src.core.interfaces import Component, Stage
 from nexus_uav._src.core.schema import PoseTwist
 from nexus_uav._src.core.signals import Signal
-from nexus_uav.examples._lib import build_rotor_mixer_from_layout, rigid_body_wrench_world
+from nexus_uav.examples._lib import build_rotor_mixer_from_layout, motor_alpha, rigid_body_wrench_world
 
 GRAVITY = 9.81
 
@@ -51,9 +51,14 @@ UPRIGHT_WEIGHT = 600.0  # > the position weight so the optimizer never trades up
 # reversals to keep the nose aligned: it slows/lingers at a turn instead of powering to the next waypoint.
 # 60 keeps the nose tracking the velocity, ~14° median, while staying well below the position term.
 HEAD_WEIGHT = 60.0
-VEL_WEIGHT = 22.0  # damps linear+angular velocity → a crisp arrive-and-stop; the heavier USD-correct
-# inertia is more sluggish in attitude, so the old value of 15 under-damped it into tilt overshoot/oscillation
+VEL_WEIGHT = 44.0  # damps linear+angular velocity → a crisp arrive-and-stop. On the articulated plant, whose
+# motors answer in milliseconds, half this damping tilts the flight past 60° and wanders its altitude, and
+# twice it holds tilt under 30° with the rate weight halved or doubled
 CONTROL_WEIGHT = 3.0
+# How fast a plan changes its rotor commands, knot to knot and from the command flying now: the plant's motors
+# follow a speed change in milliseconds but push it back on the airframe, so a plan that swings its commands
+# asks for a flight the plant can't follow.
+RATE_WEIGHT = 300.0  # without it, a velocity weight a third off either way wanders the altitude past 0.4 m
 COLLISION_WEIGHT = 8.0e3  # the SDF barrier; large so proximity dominates the pull toward the target
 
 
@@ -167,6 +172,31 @@ def drone_cost(
 
 
 @wp.kernel
+def command_jump_cost(
+    rollouts: wp.array3d(dtype=float),  # (num_rollouts, n_points, n_rotors) each plan's command knots
+    nominal: wp.array3d(dtype=float),  # (1, n_points, n_rotors) the plan flying now; its first knot is the command
+    cost: wp.array(dtype=float),
+):
+    """How far each plan's first command jumps from the command flying now."""
+    w, i = wp.tid()
+    d = rollouts[w, 0, i] - nominal[0, 0, i]
+    wp.atomic_add(cost, w, RATE_WEIGHT * d * d)
+
+
+@wp.kernel
+def command_rate_cost(
+    rollouts: wp.array3d(dtype=float),  # (num_rollouts, n_points, n_rotors) each plan's command knots
+    cost: wp.array(dtype=float),
+):
+    """How far each plan moves its commands from one knot to the next. The plan interpolates linearly between
+    knots, so this is its per-step change summed over the segment, up to the knot spacing.
+    """
+    w, k, i = wp.tid()
+    d = rollouts[w, k + 1, i] - rollouts[w, k, i]
+    wp.atomic_add(cost, w, RATE_WEIGHT * d * d)
+
+
+@wp.kernel
 def collision_cost(
     body_q: wp.array(dtype=wp.transform),
     obs_indices: wp.array(dtype=int),  # shape indices of the obstacle pillars
@@ -230,7 +260,8 @@ class SamplingMPCController(Component):
         noise_scale=0.10,
         collision_margin=0.6,
         reaction_k=0.05,
-        motor_tau,  # required: the plant's first-order motor lag [s]; pass the vehicle USD's motor:tau
+        motor_tau,  # required: the rotors' speed time constant [s], from the vehicle's motors, motor_time_constant
+        rotor_inertia,  # required: the rotors' spin inertia [kg·m²], from the vehicle's rotors, rotor_spin_inertia
     ):
         import newton.solvers
 
@@ -266,11 +297,13 @@ class SamplingMPCController(Component):
 
         self.model = batch_model
         self.solver = newton.solvers.SolverSemiImplicit(batch_model)
-        # Airframe mixer from the rotor layout: the same forward B the real-sim Rotors actuator
-        # uses, so planner ≡ real. κ = reaction_k is the yaw allocation, passed as the layout's "cd" key.
+        # Airframe mixer from the rotor layout, the planner's single-body model of the vehicle's rotors.
+        # κ = reaction_k is the yaw allocation, passed as the layout's "cd" key.
         mixer = build_rotor_mixer_from_layout(rotor_offsets, turning_dirs, {"ct": ct, "cd": reaction_k, "rpm_max": rpm_max})  # fmt: skip
         self.B_wp = wp.array(mixer.B.astype(np.float32), dtype=float)  # (4, nr) forward allocation
         self._offsets_wp = wp.array(mixer.rotor_offsets.astype(np.float32), dtype=wp.vec3)  # (nr,) base-frame offsets
+        self._spins_wp = wp.array(np.asarray(mixer.spins, dtype=np.float32), dtype=float)  # (nr,) spin signs
+        self.rotor_inertia = float(rotor_inertia)
         self.thrust_sign = -1.0  # FRD-authored USD: thrust along −body-z, rotors spawned up
         self.hover = float(np.sqrt(mass * GRAVITY / self.n_rotors / ct) / rpm_max)
         # Per-rotor motor lag: the sampled per-rotor command sets a rotor-speed target; Ω relaxes toward it
@@ -278,7 +311,7 @@ class SamplingMPCController(Component):
         # stays bounded. alpha uses the plan step, plan_dt. Ω starts each plan from the hover speed.
         self.kf = mixer.kf
         self.omega_max_motor = mixer.omega_max_motor
-        self.motor_alpha = float(1.0 - np.exp(-self.plan_dt / float(motor_tau)))
+        self.motor_alpha = motor_alpha(motor_tau, self.plan_dt)
         self.omega_hover = float(self.hover * self.omega_max_motor)
 
         lo_hi = np.array([[0.05, 1.0]] * self.control_dim, dtype=np.float32)
@@ -349,6 +382,14 @@ class SamplingMPCController(Component):
 
     def _rollout(self) -> None:
         self.costs.zero_()
+        wp.launch(
+            command_jump_cost, dim=(self.num_rollouts, self.control_dim), inputs=(self.rollouts, self.nominal),
+            outputs=(self.costs,),
+        )  # fmt: skip
+        wp.launch(
+            command_rate_cost, dim=(self.num_rollouts, self.n_points - 1, self.control_dim), inputs=(self.rollouts,),
+            outputs=(self.costs,),
+        )  # fmt: skip
         self.omega[0].fill_(self.omega_hover)  # each plan starts from the hover rotor speed, a graph-safe reset
         for h in range(self.horizon):
             self.S[h].clear_forces()
@@ -367,11 +408,13 @@ class SamplingMPCController(Component):
                     self.S[h].body_qd,  # base twist, for the airflow inflow; airflow off here
                     0,  # base = 0: rollout w drives body w, bodies 0..N-1
                     self._offsets_wp,  # (nr,) base-frame rotor offsets
+                    self._spins_wp,  # (nr,) each rotor's spin sign, for its speed-change reaction
                     self.B_wp,
                     self.kf,
                     self.omega_max_motor,
                     self.motor_alpha,
-                    1.0,  # substeps = 1: the planner integrates the wrench once per plan step
+                    self.rotor_inertia,
+                    self.plan_dt,  # Ω changes over one plan step
                     self.thrust_sign,
                     0.0,  # aero_h: airflow off; single-body proxy, no inflow model
                     0.0,  # aero_hforce

@@ -2,14 +2,14 @@
 hover→waypoint flight to **auto-tune the Proportional Integral Derivative (PID) gains**.
 
 Self-contained example, as NVIDIA's ``example_diffsim_*`` are: it defines its own differentiable rollout
-inline and imports only reusable framework bits, namely the shared PID law, the obs/actuator kernels, and
-the solvers. :class:`AstroMaxWaypointRollout` is a single free body with astro-max's mass/inertia + a
-quad-X rotor layout, actuated by the shared **moment-input Rotors** kernel, namely control
-allocation ``B`` + per-rotor motor lag + saturation with **no Collective Thrust and Body Rate (CTBR) rate
-loop**, under ``SolverSemiImplicit``. Gradient descent on the PID gains makes it fly a waypoint and settle,
-with an **exact full-horizon gradient**, cosine ≈ 1.0 compared to finite-diff at a contractive operating
-point. The rate-loop-free front-end is what keeps the long-horizon Backpropagation Through Time (BPTT)
-bounded; the CTBR variant's inner rate loop pushes the closed-loop spectral radius >1 and explodes it.
+inline and imports only reusable framework bits, namely the shared PID law, the observation and mixer kernels,
+and the articulated rollout. :class:`AstroMaxWaypointRollout` flies the articulated astro-max, the plant every
+run flies: Newton's motors spin its rotor joints, and its propellers turn each rotor's speed into its force, under
+``SolverSemiImplicit``. The PID law's collective and moments reach the rotors through the **moment mixer**, with
+**no Collective Thrust and Body Rate (CTBR) rate loop**. Gradient descent on the PID gains makes it fly a waypoint
+and settle, with an **exact full-horizon gradient**, checked against finite differences. The rate-loop-free
+front-end is what keeps the long-horizon Backpropagation Through Time (BPTT) bounded; the CTBR variant's inner
+rate loop pushes the closed-loop spectral radius >1 and explodes it.
 
 The companion ``mass_recovery.py`` is the other differentiable-design gate, physical-parameter system-ID.
 
@@ -18,28 +18,26 @@ Run:
     uv run --extra examples -m nexus_uav.examples gain_tuning            # asserts gradient-correct + tuned
     uv run --extra examples -m nexus_uav.examples gain_tuning --log      # also write the optimized-flight .rrd
 
-Runs on Compute Unified Device Architecture (CUDA) when present, else the CPU backend; the single-body
-Rotors rollout is light either way.
+Runs on Compute Unified Device Architecture (CUDA) when present, where each gradient replays from one captured
+graph, else on the CPU backend, much slower.
 """
 
 from __future__ import annotations
 
 import newton
-import newton.solvers
 import numpy as np
 import warp as wp
 
 import nexus_uav as nx
 from nexus_uav.examples._lib import (
-    build_rotor_mixer_from_layout,  # airframe B / B⁻¹ + thrust map from the rotor layout
+    RunClock,
+    build_rotor_mixer_from_model,  # airframe B / B⁻¹ + thrust map from the model's rotor joints
     dump_run,
     moment_to_cmd_batched,  # the moment mixer: collective + moments → B⁻¹ → per-rotor command, no rate loop
-    motor_alpha,
     pack_vec4,  # pack the length-4 moment action into the wp.vec4 the mixer reads
-    rigid_body_wrench_world,  # the single-body motor model: per-rotor cmd → lag → forward-B → base wrench
 )
+from nexus_uav.examples._lib.articulated import ArticulatedRollout, CapturedGradient
 from nexus_uav.examples._lib.observation import WarpObservationSensor
-from nexus_uav.examples._lib.single_body import collapse_to_single_body  # the one single-body path
 from nexus_uav.examples.controllers.pid import NUM_GAINS, PidController
 
 GRAVITY = 9.81
@@ -49,6 +47,7 @@ GRAVITY = 9.81
 def waypoint_cost(
     body_q: wp.array(dtype=wp.transform),
     body_qd: wp.array(dtype=wp.spatial_vector),
+    body: int,
     goal: wp.vec3,
     vel_weight: float,
     time_weight: float,
@@ -57,33 +56,28 @@ def waypoint_cost(
     """Per-step cost: distance-to-waypoint + velocity, which penalizes overshoot, ramped in time so
     later steps weigh more, which penalizes slow convergence, the time-to-reach.
     """
-    p = wp.transform_get_translation(body_q[0])
-    v = wp.spatial_top(body_qd[0])
+    p = wp.transform_get_translation(body_q[body])
+    v = wp.spatial_top(body_qd[body])
     d = p - goal
     wp.atomic_add(cost, 0, time_weight * (wp.dot(d, d) + vel_weight * wp.dot(v, v)))
 
 
 class AstroMaxWaypointRollout:
-    """Differentiable hover->waypoint rollout on the **single-body astro-max + the shared Rotors model**.
+    """Differentiable hover→waypoint rollout on the **articulated astro-max**, the plant every run flies.
 
-    Where the old rollout flew the multi-body astro-max Universal Scene Description (USD) with a hand-rolled
-    per-rotor thrust kernel under ``SolverFeatherstone``, whose articulation forced *truncated* BPTT, this
-    flies the **single free body** astro-max proxy from :func:`build_single_body_drone`, real mass/inertia +
-    a quad-X rotor layout, with the shared, fully differentiable **moment mixer**
-    :func:`moment_to_cmd_batched`, collective + moments -> ``B^-1`` -> per-rotor command with NO rate loop,
-    feeding the single-body motor model :func:`rigid_body_wrench_world`, per-rotor command -> first-order
-    motor lag/saturation -> forward ``B`` -> base wrench, under the gradient-capable ``SolverSemiImplicit``.
-    So **BPTT is exact over the full horizon**, cosine ~ 1.0 compared to finite-diff, with no windowing.
+    Each control tick, the shared PID law turns the observation into a collective and three moments, the
+    **moment mixer** :func:`moment_to_cmd_batched` turns those into a normalized command per rotor through
+    ``B^-1``, with NO rate loop, and :class:`ArticulatedRollout` flies the commands: Newton's motors spin the
+    rotor joints toward their speed targets, and the propellers turn each rotor's speed into its force. So the
+    optimizer tunes the gains on the plant they deploy on.
 
     Why the *moment* mixer, not the CTBR one: the CTBR inner rate loop, the ``omega_des - omega_b``
     feedback, pushes the closed-loop BPTT spectral radius >1, so its full-horizon gradient explodes, with a
     measured cosine of ~0.15 at 400 steps. The moment-input front-end skips the rate loop, feeding the
-    controller's collective + moments straight into the stable, first-order allocation + motor-lag
-    back-end, which keeps a clean full-horizon gradient while retaining the per-rotor allocation ``B``,
-    motor lag ``tau``, and rotor-speed saturation fidelity. The moment interface also *matches* the original
-    control, since the old ``pid_to_rotor_rpms`` took ``[collective, roll, pitch, yaw]`` moments, so the
-    shared ``_pid`` law + its gains transfer; the single body spawns upright, so the z-up sign convention
-    holds, with no Forward Right Down (FRD) un-flip, and thrust is +body-z.
+    controller's collective + moments straight into the allocation and the motors, which keeps a clean
+    full-horizon gradient. The moment interface also *matches* the original control, since the old
+    ``pid_to_rotor_rpms`` took ``[collective, roll, pitch, yaw]`` moments, so the shared ``_pid`` law + its
+    gains transfer.
     """
 
     def __init__(
@@ -102,74 +96,59 @@ class AstroMaxWaypointRollout:
         from nexus_uav._src.config import LaunchConfig
 
         vehicle_usd, _ = resolve_vehicle_usd(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
-        # Single rigid body collapsed from the astro-max USD, the same path the sampling
-        # Model Predictive Control (MPC) example uses: correct lumped mass/inertia + the real rotor layout,
-        # FRD with thrust along −body-z, spawned rotors-up.
-        sb = collapse_to_single_body(vehicle_usd, requires_grad=True)
-        self.model, self.total_mass, rotor_offsets, turning_dirs = sb.model, sb.mass, sb.offsets, sb.dirs
-        self.solver = newton.solvers.SolverSemiImplicit(self.model)
-
+        self.rollout = ArticulatedRollout(vehicle_usd, ticks=n_steps, dt=dt, start=start)
+        model = self.rollout.model
         self.N = int(n_steps)
         self.dt = float(dt)
-        self.start = np.asarray(start, dtype=np.float32)
         self.goal_np = np.asarray(goal, dtype=np.float32)
         self.goal = wp.vec3(*[float(x) for x in goal])
         self.vel_weight = float(vel_weight)
         self.ramp_time_weight = bool(ramp_time_weight)
-        self.weight = float(self.total_mass) * GRAVITY
-        self.thrust_sign = -1.0  # FRD-authored USD: thrust along −body-z, rotors spawned up
+        self.weight = self.rollout.mass * GRAVITY
         self.moment_scale = float(moment_scale)
 
-        # Airframe mixer: control allocation B, per-rotor thrust -> [T, tx, ty, tz], + its inverse B^-1, from
-        # the quad-X rotor geometry, the same builder the deploy paths use. The moment mixer, B^-1 with no
-        # rate loop, and the forward B, the Rotors motor model, carry the real arm + kappa yaw
-        # authority.
-        m = vehicle_usd.actuator_params()  # aero/thrust map from the rotors the vehicle USD declares
-        mixer = build_rotor_mixer_from_layout(
-            rotor_offsets, turning_dirs, {"ct": m["ct"], "cd": m["cd"], "rpm_max": m["rpm_max"]}
+        # Airframe mixer: control allocation B, per-rotor thrust -> [T, tx, ty, tz], + its inverse B^-1, from the
+        # model's rotor joints at rest, the same builder the deploy flight uses.
+        rest = model.state()
+        newton.eval_fk(model, model.joint_q, model.joint_qd, rest)
+        mixer = build_rotor_mixer_from_model(
+            model, vehicle_usd.rotor_joints(), vehicle_usd.actuator_params(), rest.body_q.numpy()
         )
         self.nr = mixer.nr
         # The action scale = the plant's true T/W from the USD thrust map, no declared constant:
         # the same derivation the deploy build uses, so tuned gains deploy on the same scale.
-        self.t2w = float(thrust_to_weight) if thrust_to_weight is not None else mixer.thrust_to_weight(self.total_mass)
-        self.B_wp = wp.array(mixer.B.astype(np.float32), dtype=float)  # forward B, the motor model
+        self.t2w = (
+            float(thrust_to_weight) if thrust_to_weight is not None else mixer.thrust_to_weight(self.rollout.mass)
+        )
         self.B_inv_wp = wp.array(mixer.B_inv.astype(np.float32), dtype=float)  # mixer B^-1, the allocation
-        self._offsets_wp = wp.array(mixer.rotor_offsets.astype(np.float32), dtype=wp.vec3)  # (nr,) base-frame offsets
-
-        # Motor map: thrust = kf*O^2; first-order lag tau; saturation at omega_max_motor; m is the USD map read earlier.
         self.kf = mixer.kf
         self.omega_max_motor = mixer.omega_max_motor
-        self.alpha = motor_alpha(m["tau"], dt)
 
-        # Reused loop components, the same as the lumped rollout, + full tape history.
-        self.obs_sensor = WarpObservationSensor(goal_w=goal)
+        # Reused loop components + full tape history, one array per tick.
+        self.obs_sensor = WarpObservationSensor(goal_w=goal, body_index=self.rollout.base)
         self.controller = PidController(goal_w=goal, thrust_to_weight=self.t2w)
-        self.states = [self.model.state(requires_grad=True) for _ in range(self.N + 1)]
         self.obs = [wp.zeros(12, dtype=float, requires_grad=True) for _ in range(self.N)]
         self.acts = [wp.zeros(4, dtype=float, requires_grad=True) for _ in range(self.N)]  # [collective, m_x, m_y, m_z]
         self.act4 = [wp.zeros(1, dtype=wp.vec4, requires_grad=True) for _ in range(self.N)]  # packed moment action
         self.cmd = [wp.zeros((1, self.nr), dtype=float, requires_grad=True) for _ in range(self.N)]  # per-rotor command
-        # per-step motor-speed states O[t] -> O[t+1]; distinct buffers => clean full-horizon BPTT recurrence
-        self.omega = [wp.zeros((1, self.nr), dtype=float, requires_grad=True) for _ in range(self.N + 1)]
-        self._init_start_state()
+        self.rollout.reset()
 
-    def _init_start_state(self) -> None:
-        newton.eval_fk(self.model, self.model.joint_q, self.model.joint_qd, self.states[0])
-        bq = self.states[0].body_q.numpy()
-        bq[0, 0:3] = self.start
-        bq[0, 3:7] = [1.0, 0.0, 0.0, 0.0]  # 180° about X, xyzw: FRD body spawned rotors-up, thrust −body-z → world +z
-        self.states[0].body_q.assign(bq)
-        bqd = self.states[0].body_qd.numpy()
-        bqd[0, :] = 0.0  # start at hover, zero velocity
-        self.states[0].body_qd.assign(bqd)
+    @property
+    def model(self):
+        """The articulated model the rollout flies."""
+        return self.rollout.model
+
+    @property
+    def states(self) -> list:
+        """Every solver step's state, the start first."""
+        return self.rollout.states
 
     def _rollout_step(self, t: int, cost: wp.array | None, record: list | None = None) -> None:
-        """One control+physics tick: obs -> shared PID law, collective + moments -> moment mixer, B⁻¹ →
-        per-rotor command with NO rate loop -> single-body motor model -> SemiImplicit step -> optional cost.
-        The motor-speed state chains omega[t] -> omega[t+1]; distinct buffers ⇒ clean full-horizon BPTT.
+        """One control tick: obs -> shared PID law, collective + moments -> moment mixer, B⁻¹ → per-rotor
+        command with NO rate loop -> the articulated plant's solver steps -> optional cost.
         """
-        self.states[t].clear_forces()
-        self.obs_sensor.sample_wp(self.states[t], self.obs[t])
+        state = self.rollout.state_at(t)
+        self.obs_sensor.sample_wp(state, self.obs[t])
         self.controller.act_wp(self.obs[t], self.acts[t])  # obs -> [collective, roll, pitch, yaw] moments
         wp.launch(pack_vec4, dim=1, inputs=(self.acts[t],), outputs=(self.act4[t],))
         # Moment mixer: collective + moments -> B⁻¹ -> per-rotor command u, the differentiable allocation.
@@ -188,41 +167,18 @@ class AstroMaxWaypointRollout:
             ),
             outputs=(self.cmd[t],),
         )
-        # Single-body motor model: per-rotor command -> motor lag -> kf·Ω² -> forward B -> base-body wrench.
-        wp.launch(
-            rigid_body_wrench_world,
-            dim=1,
-            inputs=(
-                self.cmd[t],
-                self.states[t].body_q,
-                self.states[t].body_qd,  # base twist: airflow inflow; airflow off here
-                0,
-                self._offsets_wp,
-                self.B_wp,
-                self.kf,
-                self.omega_max_motor,
-                self.alpha,
-                1.0,
-                self.thrust_sign,
-                0.0,  # aero_h: airflow off, single-body proxy
-                0.0,  # aero_hforce
-                self.nr,
-                self.omega[t],
-                self.omega[t + 1],
-            ),
-            outputs=(self.states[t].body_f,),
-        )
-        self.solver.step(self.states[t], self.states[t + 1], None, None, self.dt)
+        self.rollout.tick(t, self.cmd[t])
+        nxt = self.rollout.state_at(t + 1)
         if cost is not None:
             tw = (float(t + 1) / float(self.N)) if self.ramp_time_weight else 1.0
             wp.launch(
                 waypoint_cost,
                 dim=1,
-                inputs=(self.states[t + 1].body_q, self.states[t + 1].body_qd, self.goal, self.vel_weight, tw),
+                inputs=(nxt.body_q, nxt.body_qd, self.rollout.base, self.goal, self.vel_weight, tw),
                 outputs=(cost,),
             )
         if record is not None:
-            record.append(self.states[t + 1].body_q.numpy()[0, :3].copy())
+            record.append(nxt.body_q.numpy()[self.rollout.base, :3].copy())
 
     def forward(self, gains: wp.array, cost: wp.array) -> None:
         """Full-horizon closed-loop rollout accumulating the scalar waypoint cost. Run inside a tape for
@@ -237,43 +193,26 @@ class AstroMaxWaypointRollout:
     def _gains_array(self, gains) -> wp.array:
         return wp.array(np.asarray(gains, dtype=np.float32), dtype=float, requires_grad=True)
 
-    def loss(self, gains) -> float:
-        g = self._gains_array(gains)
-        cost = wp.zeros(1, dtype=float, requires_grad=True)
-        self._init_start_state()
-        self.forward(g, cost)
-        wp.synchronize()
-        return float(cost.numpy()[0])
-
-    def gradient(self, gains):
-        """Return ``(loss, grad)`` via one taped full-horizon forward+backward."""
-        g = self._gains_array(gains)
-        cost = wp.zeros(1, dtype=float, requires_grad=True)
-        self._init_start_state()
-        tape = wp.Tape()
-        with tape:
-            self.forward(g, cost)
-        tape.backward(cost)
-        wp.synchronize()
-        loss = float(cost.numpy()[0])
-        grad = g.grad.numpy().copy()
-        tape.zero()
-        return loss, grad
-
     def finite_difference_check(self, gains, eps: float = 1e-3) -> dict:
-        """Check ``tape.backward`` against central finite differences over the full horizon: the exact
-        gradient the moment-input single-body Rotors model affords, the win over truncated BPTT.
+        """Check ``tape.backward`` against central finite differences over the full horizon. One captured graph
+        serves every rollout of the check: each writes its gains into the array the graph reads.
         """
         g0 = np.asarray(gains, dtype=np.float32)
-        _, analytic = self.gradient(g0)
+        g = self._gains_array(g0)
+        cost = wp.zeros(1, dtype=float, requires_grad=True)
+        gradient = CapturedGradient(lambda: self.forward(g, cost), g, cost)
+
+        def at(values):
+            g.assign(values)
+            self.rollout.reset()
+            return gradient()
+
+        analytic = at(g0)[1].numpy().astype(np.float64)
         fd = np.zeros(NUM_GAINS, dtype=np.float64)
         for i in range(NUM_GAINS):
-            gp = g0.copy()
-            gp[i] += eps
-            gm = g0.copy()
-            gm[i] -= eps
-            fd[i] = (self.loss(gp) - self.loss(gm)) / (2.0 * eps)
-        analytic = analytic.astype(np.float64)
+            step = np.zeros_like(g0)
+            step[i] = eps
+            fd[i] = (at(g0 + step)[0] - at(g0 - step)[0]) / (2.0 * eps)
         cos = float(analytic @ fd / (np.linalg.norm(analytic) * np.linalg.norm(fd) + 1e-30))
         floor = 0.05 * np.max(np.abs(fd))
         sig = np.abs(fd) >= floor
@@ -288,14 +227,12 @@ class AstroMaxWaypointRollout:
 
     def trajectory(self, gains) -> np.ndarray:
         """Forward-only, full horizon: the ``(N+1, 3)`` base-body position trajectory, start prepended, for
-        the flight-quality metrics. The flown ``.rrd`` comes from a standard ``nx.Sim`` builtin run on the
-        same collapsed single-body plant with ``solver="semi_implicit"``, so the deploy plant ≡ this tuning
-        plant and the optimized gains actually settle; see :meth:`main`.
+        the flight-quality metrics.
         """
         self.controller.gains_wp = self._gains_array(gains)
         rec: list = []
-        self._init_start_state()
-        rec.append(self.states[0].body_q.numpy()[0, :3].copy())
+        self.rollout.reset()
+        rec.append(self.rollout.state_at(0).body_q.numpy()[self.rollout.base, :3].copy())
         cost = wp.zeros(1, dtype=float, requires_grad=True)
         cost.zero_()
         for t in range(self.N):
@@ -305,12 +242,12 @@ class AstroMaxWaypointRollout:
 
     def optimize(self, gains0, *, iters: int = 40, lr: float = 0.02, lo=None, hi=None):
         """Adam over the PID gains via the exact full-horizon gradient, projected onto physical, non-negative
-        bounds each step, tracking the lowest-loss iterate. Eager, with a fresh tape per iter; returns
-        ``(best_gains, loss_history)``.
+        bounds each step, tracking the lowest-loss iterate. The gradient replays from one captured graph on a
+        CUDA device; returns ``(best_gains, loss_history)``.
         """
         g = self._gains_array(gains0)
-        self.controller.gains_wp = g
         cost = wp.zeros(1, dtype=float, requires_grad=True)
+        gradient = CapturedGradient(lambda: self.forward(g, cost), g, cost)
         opt = wp.optim.Adam([g], lr=lr)
         lo = None if lo is None else np.asarray(lo, dtype=np.float32)
         hi = None if hi is None else np.asarray(hi, dtype=np.float32)
@@ -318,20 +255,13 @@ class AstroMaxWaypointRollout:
         best_gains = np.asarray(gains0, dtype=np.float32).copy()
         history: list[float] = []
         for _ in range(iters):
-            self._init_start_state()
-            cost.zero_()
-            tape = wp.Tape()
-            with tape:
-                self.forward(g, cost)
-            tape.backward(cost)
-            wp.synchronize()
-            total = float(cost.numpy()[0])
+            self.rollout.reset()
+            total, grad = gradient()
             history.append(total)
             if total < best_loss:
                 best_loss = total
                 best_gains = g.numpy().copy()
-            opt.step([g.grad])
-            tape.zero()
+            opt.step([grad])
             if lo is not None or hi is not None:
                 g.assign(np.clip(g.numpy(), lo, hi))
         return best_gains, history
@@ -350,94 +280,103 @@ def overshoot_and_settle(traj: np.ndarray, goal, dt: float, tol: float = 0.05):
 
 
 def main():
-    # Runs on CUDA when present, else CPU; single body + SemiImplicit is light enough either way.
-    if wp.is_cuda_available():
-        wp.set_device("cuda:0")
-    GOAL = (3.0, 2.0, 4.0)  # a far waypoint, ~4 m: the 6 s horizon reaches it by ~3 s and must hold for ~3 s
-    MS = 0.12  # moment scale: the per-rotor allocation B's attitude authority
-    # The moment-input single-body BPTT is exact over the whole horizon: cosine 1.0 to ≥1500 steps, verified
-    # against finite-diff. The closed loop is contractive, so BPTT needs no truncation or windowing; the CTBR
-    # variant's inner rate loop would re-explode it. Crucially the horizon is long enough, 6 s, to include a
-    # genuine hold phase after the drone reaches the far goal. The ramped time-weight then penalizes residual
-    # velocity in the late steps, so the optimizer tunes a controller that SETTLES, comes to rest, not one
-    # that merely reaches by the horizon's end and then overshoots. A short horizon that ends at arrival was
-    # the regression: the tuned gains reached but didn't hold, so the deployed flight flew through the goal.
-    STABLE_REF = np.array([0.3, 1.0, 0.6, 1.2, 8.0, 3.0, 1.0], dtype=np.float32)
-    am_grad = AstroMaxWaypointRollout(n_steps=200, goal=GOAL, vel_weight=0.2, moment_scale=MS)
-    fd2 = am_grad.finite_difference_check(STABLE_REF)
-    nx.logger.info(f"astro-max full-horizon gradient: cosine={fd2['cosine_similarity']:.4f}")
-    assert fd2["cosine_similarity"] > 0.99, "astro-max full-horizon gradient not finite-diff-correct"
+    # The run's time, net of the kernels Warp compiles into a cold cache, is what CI's time gate reads.
+    with RunClock() as clock:
+        # Runs on CUDA when present, where each gradient replays from one captured graph, else on the CPU.
+        if wp.is_cuda_available():
+            wp.set_device("cuda:0")
+        GOAL = (3.0, 2.0, 4.0)  # a far waypoint, ~4 m: the 6 s horizon reaches it by ~3 s and must hold for ~3 s
+        MS = 0.12  # moment scale: the per-rotor allocation B's attitude authority
+        # The moment-input BPTT through the articulated plant is exact over the whole horizon, checked against
+        # finite differences. The closed loop is contractive, so BPTT needs no truncation or windowing; the CTBR
+        # variant's inner rate loop would re-explode it. Crucially the horizon is long enough, 6 s, to include a
+        # genuine hold phase after the drone reaches the far goal. The ramped time-weight then penalizes residual
+        # velocity in the late steps, so the optimizer tunes a controller that SETTLES, comes to rest, not one
+        # that merely reaches by the horizon's end and then overshoots. A short horizon that ends at arrival was
+        # the regression: the tuned gains reached but didn't hold, so the deployed flight flew through the goal.
+        STABLE_REF = np.array([0.3, 1.0, 0.6, 1.2, 8.0, 3.0, 1.0], dtype=np.float32)
+        am_grad = AstroMaxWaypointRollout(n_steps=200, goal=GOAL, vel_weight=0.2, moment_scale=MS)
+        fd2 = am_grad.finite_difference_check(STABLE_REF)
+        nx.logger.info(f"astro-max full-horizon gradient: cosine={fd2['cosine_similarity']:.4f}")
+        assert fd2["cosine_similarity"] > 0.99, "astro-max full-horizon gradient not finite-diff-correct"
 
-    # Deliberately mistuned baseline: weak altitude P, g0, + low horizontal-position P, g2, ⇒ it crawls,
-    # falls short of the waypoint and never settles: a clear "before" against the tuned controller.
-    BASE = np.array([0.07, 0.7, 0.08, 0.35, 8.0, 2.5, 1.0], dtype=np.float32)
-    LO = [0.01, 0.01, 0.01, 0.01, 1.0, 0.2, 0.1]
-    HI = [1.5, 3.0, 1.0, 2.0, 20.0, 8.0, 4.0]
-    am = AstroMaxWaypointRollout(n_steps=1500, goal=GOAL, vel_weight=0.2, moment_scale=MS)  # 6 s → reach + hold
-    gopt, hist = am.optimize(BASE, iters=80, lr=0.04, lo=LO, hi=HI)
-    nx.logger.info(f"gain opt: loss {hist[0]:.0f} -> min {min(hist):.0f}  gains={np.round(gopt, 3)}")
+        # Deliberately mistuned baseline: weak altitude P, g0, + low horizontal-position P, g2, ⇒ it crawls,
+        # falls short of the waypoint and never settles: a clear "before" against the tuned controller.
+        BASE = np.array([0.07, 0.7, 0.08, 0.35, 8.0, 2.5, 1.0], dtype=np.float32)
+        LO = [0.01, 0.01, 0.01, 0.01, 1.0, 0.2, 0.1]
+        HI = [1.5, 3.0, 1.0, 2.0, 20.0, 8.0, 4.0]
+        am = AstroMaxWaypointRollout(n_steps=1500, goal=GOAL, vel_weight=0.2, moment_scale=MS)  # 6 s → reach + hold
+        # 30 iterations keep the run under 5 min on CI's A10G. The tuned flight's hold error isn't monotonic in
+        # them: on the RTX 5080 it holds within 0.066 m at 30, 0.527 m at 50 and 0.151 m at 80.
+        gopt, hist = am.optimize(BASE, iters=30, lr=0.04, lo=LO, hi=HI)
+        nx.logger.info(f"gain opt: loss {hist[0]:.0f} -> min {min(hist):.0f}  gains={np.round(gopt, 3)}")
 
-    # The real gate: fly both gain sets free-running on the collapsed single-body plant the tuning ran on:
-    # the nx.Sim builtin with solver="semi_implicit" → build_pid_loop's collapsed diffsim regime, and
-    # moment_scale=MS matching the tuning. Gate on the FLIGHT, not the fixed-horizon rollout metric: that
-    # metric looked "settled" while the drone was still moving through the goal at the horizon's end, the trap
-    # this example fell into. The tuned controller must reach the far goal and hold it, with no flying through;
-    # the mistuned baseline must not. --log/--view records each flight; the deploy IS the standard Loop run.
-    def fly(gains, name: str):
-        # The deploy flight IS the standard loop run, on the same collapsed single-body plant
-        # the tuning ran on: the example-owned PID assembly with solver=semi_implicit.
-        from nexus_uav._src.build.launch import resolve_scenario
-        from nexus_uav._src.config import LaunchConfig
-        from nexus_uav._src.guidance import MissionGuidance
-        from nexus_uav._src.rendering import rtx_renderer
-        from nexus_uav.examples.controllers.pid.assembly import build_pid_loop
+        # The real gate: fly both gain sets free-running on the articulated plant the tuning ran on, the PID
+        # example's run, with moment_scale=MS matching the tuning. Gate on the FLIGHT, not the fixed-horizon
+        # rollout metric: that metric looked "settled" while the drone was still moving through the goal at the
+        # horizon's end, the trap
+        # this example fell into. The tuned controller must reach the far goal and hold it, with no flying through;
+        # the mistuned baseline must not. --log/--view records each flight; the deploy IS the standard Loop run.
+        def fly(gains, name: str):
+            # The deploy flight IS the standard loop run, on the articulated plant the tuning ran on: the
+            # example-owned PID assembly.
+            from nexus_uav._src.build.launch import resolve_scenario
+            from nexus_uav._src.config import LaunchConfig
+            from nexus_uav._src.guidance import MissionGuidance
+            from nexus_uav._src.rendering import rtx_renderer
+            from nexus_uav.examples.controllers.pid.assembly import build_pid_loop
 
-        launch = LaunchConfig().set_vehicle("astro_max_base").set_scene("empty")
-        launch.runtime.device = "cuda"  # prefer CUDA; falls back to CPU without one
-        launch.runtime.solver = "semi_implicit"  # the collapsed diffsim plant: deploy ≡ tuning plant
-        vehicle_usd_2, _resolved, cfg = resolve_scenario(launch)
-        orch = build_pid_loop(
-            cfg,
-            vehicle_usd=vehicle_usd_2,
-            gains=list(gains),
-            moment_scale=MS,
-            max_steps=2750,
-            rerun=True,
-            renderer_factory=rtx_renderer(vehicle_usd_2, cfg),  # the Kit peer, when the vehicle authors RTX sensors
+            launch = LaunchConfig().set_vehicle("astro_max_base").set_scene("empty")
+            launch.runtime.device = "cuda"  # prefer CUDA; falls back to CPU without one
+            vehicle_usd_2, _resolved, cfg = resolve_scenario(launch)
+            orch = build_pid_loop(
+                cfg,
+                vehicle_usd=vehicle_usd_2,
+                gains=list(gains),
+                moment_scale=MS,
+                max_steps=2750,
+                rerun=True,
+                renderer_factory=rtx_renderer(vehicle_usd_2, cfg),  # the Kit peer, when the vehicle authors RTX sensors
+            )
+            guidance = MissionGuidance(reached_m=0.15, final_hold_s=3.0)
+            with nx.Sim._from_loop(orch, guidance=guidance) as sim:
+                guidance.set_mission([GOAL])
+                sim.run()
+                q = np.asarray(sim[f"vehicle/body/{sim.base_body}"].history()["position"], dtype=float)
+                rotors = [path for path in sim if path.startswith("vehicle/joints/") and "rotor" in path]
+                speeds = [abs(float(sim[path].history()[-1]["qd"][0])) for path in rotors]
+                rrd = sim.artifacts().get("rrd")
+            d = np.linalg.norm(q - np.array(GOAL, dtype=float), axis=1)
+            reached = bool(d.min() < 0.2)  # got to the goal
+            hold = float(d[int(d.argmin()) :].max()) if reached else float("inf")  # worst dist after first reaching it
+            nx.logger.info(
+                f"{name} flight: final {d[-1]:.3f} m, closest {d.min():.3f} m, hold-error {hold:.3f} m"
+                + (f"  ({rrd})" if rrd else "")
+            )
+            return d[-1], reached, hold, sim, guidance, speeds
+
+        base_final, base_reached, _, _, _, _ = fly(BASE, "baseline")
+        _opt_final, opt_reached, opt_hold, opt_sim, opt_guidance, speeds = fly(gopt, "optimized")
+        # Evaluation artifacts first, before any gate can raise, because a failed run must still leave its
+        # trajectory for diagnosis: the tuned deploy flight + the tuning-quality metrics. The CI harness
+        # gates the gradient cosine, the hold error, the run's wall time and the rotors' speed at the end of the
+        # tuned flight, and monitors position Absolute Pose Error (APE) + the deploy Real-Time Factor (RTF).
+        stats = {
+            "gradient_cosine": round(fd2["cosine_similarity"], 4),
+            "opt_hold_m": round(opt_hold, 4),
+            "opt_final_m": round(float(_opt_final), 4),
+            "base_final_m": round(float(base_final), 4),
+            "rotor_speed_min_rad_per_sec": round(min(speeds), 1) if speeds else 0.0,
+            **clock.stats(),
+        }
+        dump_run(opt_sim, "gain_tuning", stats=stats, waypoints=[GOAL], arrival_times=opt_guidance.arrival_times)
+        # The win is HOLDING the waypoint: the tuned controller reaches and stays, hold-error small with no
+        # flying through, where the mistuned baseline never gets there.
+        assert opt_reached and opt_hold < 0.3, (
+            f"tuned controller flew through / didn't hold (hold-error {opt_hold:.3f} m)"
         )
-        guidance = MissionGuidance(reached_m=0.15, final_hold_s=3.0)
-        with nx.Sim._from_loop(orch, guidance=guidance) as sim:
-            guidance.set_mission([GOAL])
-            sim.run()
-            q = np.asarray(sim[f"vehicle/body/{sim.base_body}"].history()["position"], dtype=float)
-            rrd = sim.artifacts().get("rrd")
-        d = np.linalg.norm(q - np.array(GOAL, dtype=float), axis=1)
-        reached = bool(d.min() < 0.2)  # got to the goal
-        hold = float(d[int(d.argmin()) :].max()) if reached else float("inf")  # worst dist after first reaching it
-        nx.logger.info(
-            f"{name} flight: final {d[-1]:.3f} m, closest {d.min():.3f} m, hold-error {hold:.3f} m"
-            + (f"  ({rrd})" if rrd else "")
-        )
-        return d[-1], reached, hold, sim, guidance
-
-    base_final, base_reached, _, _, _ = fly(BASE, "baseline")
-    _opt_final, opt_reached, opt_hold, opt_sim, opt_guidance = fly(gopt, "optimized")
-    # Evaluation artifacts first, before any gate can raise, because a failed run must still leave its
-    # trajectory for diagnosis: the tuned deploy flight + the tuning-quality metrics. The CI harness
-    # gates the gradient cosine and hold error, and monitors position Absolute Pose Error (APE) + the
-    # deploy Real-Time Factor (RTF).
-    stats = {
-        "gradient_cosine": round(fd2["cosine_similarity"], 4),
-        "opt_hold_m": round(opt_hold, 4),
-        "opt_final_m": round(float(_opt_final), 4),
-        "base_final_m": round(float(base_final), 4),
-    }
-    dump_run(opt_sim, "gain_tuning", stats=stats, waypoints=[GOAL], arrival_times=opt_guidance.arrival_times)
-    # The win is HOLDING the waypoint: the tuned controller reaches and stays, hold-error small with no
-    # flying through, where the mistuned baseline never gets there.
-    assert opt_reached and opt_hold < 0.3, f"tuned controller flew through / didn't hold (hold-error {opt_hold:.3f} m)"
-    assert not base_reached, f"the baseline was supposed to be mistuned (it reached; final {base_final:.3f} m)"
-    nx.logger.info("OK: gradient correct; tuned PID reaches + HOLDS the waypoint (mistuned baseline does not)")
+        assert not base_reached, f"the baseline was supposed to be mistuned (it reached; final {base_final:.3f} m)"
+        nx.logger.info("OK: gradient correct; tuned PID reaches + HOLDS the waypoint (mistuned baseline does not)")
 
 
 if __name__ == "__main__":

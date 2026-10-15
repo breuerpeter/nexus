@@ -1,7 +1,7 @@
 name: gpu-rl
 
-# The Astro Max RL pipeline on the GPU runner: train, then the swarm recording and the fresh
-# export's flight concurrently, then the training-stats gate (scripts/ci/run_rl_example.sh →
+# The Astro Max RL pipeline on the GPU runner: the plant parity test beside training, then the swarm
+# recording beside the fresh export's flight, then the training-stats gate (scripts/ci/run_rl_example.sh →
 # check_rl_stats.py). The learning metrics gate with a margin; the fresh flight and every wall-clock
 # number are reported, and the hosted policy's exact deploy gate rides gpu-examples. Advisory. Runs
 # on main pushes touching the RL surface; on PRs it is offered on EVERY PR but runs
@@ -15,6 +15,11 @@ on:
     paths:
       - "nexus-rl/**"
       - "nexus_uav/examples/controllers/policy/**"
+      # The plant the RL task trains on, which the leg's plant parity test flies on both sides.
+      - "nexus_uav/examples/_lib/**"
+      - "nexus_uav/_src/physics/**"
+      - "nexus_uav/_src/vehicle/**"
+      - "tests/examples/test_rl_plant_parity.py"
       - "scripts/ci/run_rl_example.sh"
       - "scripts/ci/check_rl_stats.py"
   pull_request:

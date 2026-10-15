@@ -4,8 +4,8 @@ and flies it, no Isaac Lab involved.
 
 The training half lives in the separate ``nexus-rl`` Isaac Lab project, ``--project
 nexus-rl``; *this* runs on **standalone Newton** via ``uv``, with no Isaac Lab and no container. It
-loads the exported ``policy.pt`` and flies it with the single-body :class:`Rotors`, the
-same per-rotor model the policy trained against, closing the loop: train on Isaac-Lab-on-Newton →
+loads the exported ``policy.pt`` and flies it on the articulated vehicle, its rotors turned by the Newton
+motors the policy trained against, closing the loop: train on Isaac-Lab-on-Newton →
 deploy on the core.
 
 **The shape.** A zero-arg, self-contained script: it assembles its own loop, the
@@ -48,9 +48,10 @@ SCENE = "empty"  # flat ground
 MAX_STEPS = 6000  # safety cap; the guidance ends the run on mission completion
 WAYPOINTS = [(1.5, 1.0, 1.5), (-1.5, 1.0, 2.0), (-0.5, -0.5, 1.8)]  # a small tour
 FENCE = ((-3.0, -3.0, 0.2), (3.0, 3.0, 4.0))  # the box the flight stays inside [m]; leaving it ends the run
-# The hosted default policy, content-addressed and sha-verified, trained by nexus-rl on this
-# vehicle's USD-authored thrust map; see docs/examples/isaac-lab-rl.md for the training recipe.
-POLICY_ASSET = {"name": "goto_policy", "sha256": "6b3edb018f540934bb0aa2c0a23be357684d3a911c9fd986978041a4473902d0"}
+# The hosted default policy, content-addressed and sha-verified: the export of the RL leg's training on CI's
+# A10G, on this vehicle's articulated plant, 2048 envs over 500 iterations at seed 42. It flew the tour there
+# first; see docs/examples/isaac-lab-rl.md for the recipe.
+POLICY_ASSET = {"name": "goto_policy", "sha256": "013e3f1ab11e0bbcc6620a599820132f17fa235702e2e985f6e212c9ba3f8558"}
 
 
 def _resolve_policy(override: str | None, asset: dict = POLICY_ASSET) -> str:

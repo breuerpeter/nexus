@@ -24,18 +24,17 @@ recording isn't uploaded yet: run the pipeline below, then `scripts/ci/evaluate_
 ## Deploy: flying waypoints on the framework
 
 The exported `policy.pt` flies through the **framework's own loop**, with `uv` and no container, on
-the single-body `Rotors` actuator. That actuator is the **same** Collective Thrust and
-Body Rate (CTBR) mixer and per-rotor motor model the policy trained against: byte-shared Warp
-kernels rather than a reimplementation. The drone tours a sequence of waypoints. The next sphere
+the plant it trained on: the articulated vehicle, its rotors turned by Newton's motors. Its
+Collective Thrust and Body Rates (CTBR) action reaches the rotors through the **same** mixer kernel,
+with the same values, as in training. The same rotor chain turns them: shared code rather than a
+reimplementation. The drone tours a sequence of waypoints. The next sphere
 shows up only once the drone reaches the current one. **Gold** marks the active sphere and
 **green** a reached one. This needs no policy change: the policy is goal-relative, so each
 waypoint is a fresh single-goal problem from wherever the drone is.
 
 <iframe src="https://app.rerun.io/version/0.34.1/?url=https://d2837jz4fvtxko.cloudfront.net/public/ci/logs/goto_policy.rrd" width="100%" height="600" frameborder="0"></iframe>
 
-*Props render static. The single-body model tracks per-rotor motor speeds, but a spinning-prop viz
-on the collapsed body isn't wired yet. The fully articulated spinning-prop deploy is a separate
-tracked item.*
+*Each prop turns with its rotor joint, at the speed the simulation integrates.*
 
 CI-measured deploy stats on the pinned runner, see [Benchmarking](../reference/benchmarking.md):
 
@@ -49,13 +48,13 @@ Measured on the pinned GPU CI runner, a g5.2xlarge with 1× A10G. That runner re
 | Metric | Value |
 |--------|-------|
 | Parallel training envs | **2048** |
-| Training throughput | **~120,000** env-steps per second |
-| Full training run | 300 iterations in **~123 s** |
-| Convergence, hover success | **~0.9** from ~iteration 130 on, climbing sharply from ~iteration 100 |
-| Reward at convergence | ~122 over full 500-step episodes |
+| Training throughput | **~130,000** env-steps per second |
+| Full training run | 500 iterations in **~189 s** |
+| Convergence, hover success | **~0.9** from ~iteration 230 on, climbing sharply from ~iteration 200 |
+| Reward at convergence | ~125 over full 500-step episodes |
 | Exported policy | 16-D obs of 12 kinematic values plus the last action → 4-D CTBR action, Multi-Layer Perceptron (MLP) 64×64 |
-| Deploy control loop | **~150 steps per second**, single drone, `mujoco` solver |
-| Deploy tracking error | **0.016 m** final waypoint error, 3 of 3 waypoints reached |
+| Deploy control loop | **~90 steps per second**, single drone, `mujoco` solver |
+| Deploy tracking error | **0.021 m** final waypoint error, 3 of 3 waypoints reached |
 
 ## Reproduce these results
 
@@ -67,9 +66,9 @@ Astro Max Universal Scene Description (USD) file auto-resolves. Pass `--vehicle_
 local override.
 
 ```bash
-# --- 1) TRAIN: 2048 envs, 300 iters, seed 42; exports policy.{pt,onnx} + model_{it}.pt checkpoints ---
+# --- 1) TRAIN: 2048 envs, 500 iters, seed 42; exports policy.{pt,onnx} + model_{it}.pt checkpoints ---
 uv run --project nexus-rl python nexus-rl/scripts/rsl_rl/train.py \
-  --num_envs 2048 --max_iterations 300 --seed 42 --save_interval 10 --log_dir .rl-artifacts/rl
+  --num_envs 2048 --max_iterations 500 --seed 42 --save_interval 10 --log_dir .rl-artifacts/rl
 
 # --- 2) RECORD THE SWARM (reads the checkpoints from step 1) ---
 uv run --project nexus-rl python nexus-rl/scripts/rsl_rl/record_demo.py \
@@ -87,7 +86,7 @@ cache, sha-verified, and offline after the first fetch.
 A `--seed` pins the random draws, the initial weights, the start states and the exploration noise,
 and not the trained policy. The Newton physics step on the GPU isn't bit-reproducible, and PPO
 turns a last-bit difference into a different policy. Two runs at seed 42 end as two policies with
-the same statistics: about 0.99 hover success and a mean reward of 124 to 127 over the 2048 envs.
+the same statistics: about 0.99 to 1.0 hover success and a mean reward of 125 to 127 over the 2048 envs.
 Their weights differ, and so do their waypoint tours. What stays bit-reproducible is the deploy
 flight of one exported policy: fly the same `policy.pt` twice and the trajectories match element
 for element. The script defaults set the recorder's snapshot iterations and the 3-waypoint deploy
@@ -104,8 +103,8 @@ runner**, a g5.2xlarge with 1× A10G. Each gate reads the kind of quantity it fi
   Absolute Pose Error (APE) gate against `scripts/ci/examples_baselines.json` with tight bounds.
   A deploy-side change shows exactly, on the leg that already runs for the deploy-side paths.
 - **The training statistics gate with a margin.** `gpu-rl` runs `scripts/ci/run_rl_example.sh`:
-  train, then the swarm recording and the fresh export's flight concurrently, then
-  `scripts/ci/check_rl_stats.py` against `nexus-rl/stats_baseline.json`. The final hover success
+  the plant parity test beside training, then the swarm recording beside the fresh export's flight,
+  then `scripts/ci/check_rl_stats.py` against `nexus-rl/stats_baseline.json`. The final hover success
   and mean reward over the 2048 envs are tight statistics where the policy is one draw, so they
   gate with absolute floors under the measured spread.
 - **The fresh export's flight gates on completing only.** The flight is one draw, so the harness
@@ -169,8 +168,8 @@ stays stable.
 **The training rhythm** uses `rsl_rl` and the config in
 `nexus-rl/src/nexus_rl/tasks/direct/goto/agents/`. Collect a rollout of 24 steps × 2048
 parallel envs = **49,152 transitions**, then run 5 epochs × 4 mini-batches of the clipped update,
-and repeat. The learning rate of 5e-4 adapts to hold the policy shift near KL ≈ 0.01. 300
-iterations ≈ **15 M env-steps in ~2 min** on the A10G. The massive parallelism is the entire reason
+and repeat. The learning rate of 5e-4 adapts to hold the policy shift near KL ≈ 0.01. 500
+iterations ≈ **25 M env-steps in ~3 min** on the A10G. The massive parallelism is the entire reason
 training is this cheap, and it runs on Newton's batched GPU physics with all 2048 drones stepping
 in lockstep. A small entropy bonus of 0.01 keeps the action distribution from collapsing early.
 Without it, an unlucky seed settles into hovering in place and never explores its way to the goal.
@@ -180,20 +179,17 @@ That bonus is the one PPO change this task needed over the stock config.
 
 There is no shipped Isaac-Lab-on-Newton drone task. This is the stock `Isaac-Quadcopter-Direct-v0`
 `DirectRL` task brought to Newton and made to learn **reliably**. That took a CTBR action with an
-inner rate loop, a world-frame wrench fix, a free-flying base, and `NaN`-robust termination. It
-also took start-state randomization plus an entropy bonus for seed-robust convergence. Full detail
-in the
+inner rate loop, a free-flying base, and `NaN`-robust termination. It also took start-state
+randomization plus an entropy bonus for seed-robust convergence. Full detail in the
 [README](https://github.com/breuerpeter/nexus/tree/main/nexus-rl).
 
-The shipped **`GoTo`** task trains on the **single-body per-rotor model**.
-The CTBR action runs through an inner rate loop and the allocation matrix $B^{-1}$
-into four per-rotor motor-speed states. Those states have first-order lag, $\tau \approx 33$ ms,
-and saturation. Forward $B$ re-mixes them into one base-body wrench. The fully articulated route, with real rotor
-joints, is numerically intractable in the substep-integrated training env. The substep-diluted
-rotor wrench turns into an impulsive kick on the low-inertia rotor bodies. The policy can't observe
-the lagged motor state, which is why the observation carries the **last action**. The policy infers
-the hidden motor state from what it just commanded. The motor lag, mixer,
-and thrust map, read from the vehicle USD, are the **same Warp kernels** the deploy actuator runs,
-and the observation builder is a single shared implementation. So the policy transfers to the core
-runtime with no convention change. Train and deploy meet the same dynamics and observations, bit
-for bit.
+The shipped **`GoTo`** task trains on the **articulated vehicle every run flies**. Physics steps at
+the core's 4 ms, one solver step each. The policy acts every fifth step, at 50 Hz. Before each solver
+step, Isaac Lab's post-actuator hook runs the CTBR action through the inner rate loop and the
+allocation matrix $B^{-1}$ into each rotor's command. Then it runs the core's rotor chain: each Newton
+motor spins its rotor joint toward its speed target, and each propeller lifts its own rotor body.
+Isaac Lab drives no joint and applies no body wrench. The policy can't observe the motors' lag behind
+its commands, which is why the observation carries the **last action**: the policy infers the motors'
+state from what it just commanded. The mixer, the rotor chain and the observation builder are the
+code the deploy side runs. `tests/examples/test_rl_plant_parity.py` gates that the training task and
+the core answer one command alike, to 1e-3 over 0.4 s.
