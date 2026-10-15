@@ -48,13 +48,13 @@ Measured on the pinned GPU CI runner, a g5.2xlarge with 1× A10G. That runner re
 | Metric | Value |
 |--------|-------|
 | Parallel training envs | **2048** |
-| Training throughput | **~120,000** env-steps per second |
-| Full training run | 300 iterations in **~123 s** |
-| Convergence, hover success | **~0.9** from ~iteration 130 on, climbing sharply from ~iteration 100 |
-| Reward at convergence | ~122 over full 500-step episodes |
+| Training throughput | **~130,000** env-steps per second |
+| Full training run | 500 iterations in **~189 s** |
+| Convergence, hover success | **~0.9** from ~iteration 230 on, climbing sharply from ~iteration 200 |
+| Reward at convergence | ~125 over full 500-step episodes |
 | Exported policy | 16-D obs of 12 kinematic values plus the last action → 4-D CTBR action, Multi-Layer Perceptron (MLP) 64×64 |
-| Deploy control loop | **~150 steps per second**, single drone, `mujoco` solver |
-| Deploy tracking error | **0.016 m** final waypoint error, 3 of 3 waypoints reached |
+| Deploy control loop | **~90 steps per second**, single drone, `mujoco` solver |
+| Deploy tracking error | **0.021 m** final waypoint error, 3 of 3 waypoints reached |
 
 ## Reproduce these results
 
@@ -86,7 +86,7 @@ cache, sha-verified, and offline after the first fetch.
 A `--seed` pins the random draws, the initial weights, the start states and the exploration noise,
 and not the trained policy. The Newton physics step on the GPU isn't bit-reproducible, and PPO
 turns a last-bit difference into a different policy. Two runs at seed 42 end as two policies with
-the same statistics: about 0.99 hover success and a mean reward of 124 to 127 over the 2048 envs.
+the same statistics: about 0.99 to 1.0 hover success and a mean reward of 125 to 127 over the 2048 envs.
 Their weights differ, and so do their waypoint tours. What stays bit-reproducible is the deploy
 flight of one exported policy: fly the same `policy.pt` twice and the trajectories match element
 for element. The script defaults set the recorder's snapshot iterations and the 3-waypoint deploy
@@ -168,8 +168,8 @@ stays stable.
 **The training rhythm** uses `rsl_rl` and the config in
 `nexus-rl/src/nexus_rl/tasks/direct/goto/agents/`. Collect a rollout of 24 steps × 2048
 parallel envs = **49,152 transitions**, then run 5 epochs × 4 mini-batches of the clipped update,
-and repeat. The learning rate of 5e-4 adapts to hold the policy shift near KL ≈ 0.01. 300
-iterations ≈ **15 M env-steps in ~2 min** on the A10G. The massive parallelism is the entire reason
+and repeat. The learning rate of 5e-4 adapts to hold the policy shift near KL ≈ 0.01. 500
+iterations ≈ **25 M env-steps in ~3 min** on the A10G. The massive parallelism is the entire reason
 training is this cheap, and it runs on Newton's batched GPU physics with all 2048 drones stepping
 in lockstep. A small entropy bonus of 0.01 keeps the action distribution from collapsing early.
 Without it, an unlucky seed settles into hovering in place and never explores its way to the goal.
