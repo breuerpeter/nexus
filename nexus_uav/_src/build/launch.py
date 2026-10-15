@@ -247,7 +247,7 @@ def _start(peer, started: list) -> None:
 
     Raises:
         RunError: The peer couldn't start, such as PX4 with no tree or no docker daemon; the message names the
-            peer and its error, which it chains. A peer's own ``RunError``, the Kit peer's, passes as it is.
+            peer and its error, which it chains. A peer's own ``RunError``, the Kit peer's, passes through unchanged.
     """
     try:
         peer.start()
