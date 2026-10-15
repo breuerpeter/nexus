@@ -141,6 +141,31 @@ def test_a_peer_that_exits_during_preroll_fails_the_run_at_once(tmp_path):
     )
 
 
+class _FailsToStart(_Console):
+    """A PX4 whose container can't start, as the PX4 runner reports a tree with no PX4 in it."""
+
+    def start(self) -> None:
+        raise RuntimeError("no PX4 tree at /trees/px4: point the PX4 pin at a checkout, or at a commit to fetch")
+
+
+def test_a_run_whose_px4_fails_to_start_raises_the_public_run_error_naming_the_peer(tmp_path):
+    """A run whose PX4 fails to start raises `nexus_uav.RunError` naming the peer and its error.
+
+    Given the fixture vehicle on a PX4 whose start fails with the runner's missing-tree error, when the run enters
+    under `except nexus_uav.RunError`, then the handler catches it, and the message names the PX4 peer and the
+    tree.
+    """
+
+    def enter():
+        with _sim(tmp_path, _FailsToStart):
+            pass
+
+    error = _raised(enter)
+
+    named = ("px4_sitl" in str(error), "/trees/px4" in str(error))
+    assert (_caught_as_run_error(error), named) == (True, (True, True)), error
+
+
 class _KitFailsToStart(KitFake):
     """A Kit render peer whose container fails to start, as the Kit runner reports it."""
 
