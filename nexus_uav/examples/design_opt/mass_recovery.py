@@ -25,7 +25,7 @@ import numpy as np
 import warp as wp
 
 import nexus_uav as nx
-from nexus_uav.examples._lib import dump_stats
+from nexus_uav.examples._lib import RunClock, dump_stats
 from nexus_uav.examples._lib.articulated import ArticulatedRollout, CapturedGradient
 
 GRAVITY = 9.81
@@ -132,29 +132,30 @@ def recover_mass(
 
 
 def main():
-    import time
-
-    # The system-ID math gate, on the articulated plant: CUDA when present, else the CPU backend.
-    if wp.is_cuda_available():
-        wp.set_device("cuda:0")
-    t0 = time.time()
-    mr = recover_mass(true_mass_scale=1.4, init_guess_scale=0.7, n_steps=200, iters=150, lr=0.05)
-    err = abs(mr["recovered_mass"] - mr["true_mass"]) / mr["true_mass"]
-    nx.logger.info(f"mass recovery: true={mr['true_mass']:.3f} recovered={mr['recovered_mass']:.3f} ({err * 100:.2f}%)")
-    # Evaluation artifacts first, before the gate can raise, since a failed run must still leave its
-    # stats for diagnosis; no flight, so the stats JSON only.
-    dump_stats(
-        "mass_recovery",
-        {
-            "mass_rel_err": round(err, 4),
-            "true_mass_kg": round(mr["true_mass"], 4),
-            "recovered_mass_kg": round(mr["recovered_mass"], 4),
-            "rotor_speed_min_rad_per_sec": round(min(mr["rotor_speeds"]), 1),
-            "wall_s": round(time.time() - t0, 1),
-        },
-    )
-    assert err < 0.05, "mass not recovered"
-    nx.logger.info("OK: mass recovered from an open-loop trajectory (differentiable system-ID)")
+    # The run's time, net of the kernels Warp compiles into a cold cache, is what CI's time gate reads.
+    with RunClock() as clock:
+        # The system-ID math gate, on the articulated plant: CUDA when present, else the CPU backend.
+        if wp.is_cuda_available():
+            wp.set_device("cuda:0")
+        mr = recover_mass(true_mass_scale=1.4, init_guess_scale=0.7, n_steps=200, iters=150, lr=0.05)
+        err = abs(mr["recovered_mass"] - mr["true_mass"]) / mr["true_mass"]
+        nx.logger.info(
+            f"mass recovery: true={mr['true_mass']:.3f} recovered={mr['recovered_mass']:.3f} ({err * 100:.2f}%)"
+        )
+        # Evaluation artifacts first, before the gate can raise, since a failed run must still leave its
+        # stats for diagnosis; no flight, so the stats JSON only.
+        dump_stats(
+            "mass_recovery",
+            {
+                "mass_rel_err": round(err, 4),
+                "true_mass_kg": round(mr["true_mass"], 4),
+                "recovered_mass_kg": round(mr["recovered_mass"], 4),
+                "rotor_speed_min_rad_per_sec": round(min(mr["rotor_speeds"]), 1),
+                **clock.stats(),
+            },
+        )
+        assert err < 0.05, "mass not recovered"
+        nx.logger.info("OK: mass recovered from an open-loop trajectory (differentiable system-ID)")
 
 
 if __name__ == "__main__":

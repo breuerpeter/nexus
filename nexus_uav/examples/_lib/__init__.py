@@ -17,7 +17,7 @@ live here too.
 """
 
 from nexus_uav.examples._lib.coupling import rigid_body_wrench_world  # noqa: F401
-from nexus_uav.examples._lib.eval_dump import dump_run, dump_stats  # noqa: F401
+from nexus_uav.examples._lib.eval_dump import RunClock, dump_run, dump_stats  # noqa: F401
 from nexus_uav.examples._lib.mixer import (  # noqa: F401
     Controls,
     CtbrMixer,

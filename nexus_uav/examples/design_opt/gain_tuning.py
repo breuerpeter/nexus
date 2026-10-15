@@ -24,14 +24,13 @@ graph, else on the CPU backend, much slower.
 
 from __future__ import annotations
 
-import time
-
 import newton
 import numpy as np
 import warp as wp
 
 import nexus_uav as nx
 from nexus_uav.examples._lib import (
+    RunClock,
     build_rotor_mixer_from_model,  # airframe B / B⁻¹ + thrust map from the model's rotor joints
     dump_run,
     moment_to_cmd_batched,  # the moment mixer: collective + moments → B⁻¹ → per-rotor command, no rate loop
@@ -296,100 +295,103 @@ def overshoot_and_settle(traj: np.ndarray, goal, dt: float, tol: float = 0.05):
 
 
 def main():
-    # Runs on CUDA when present, where each gradient replays from one captured graph, else on the CPU.
-    t0 = time.time()
-    if wp.is_cuda_available():
-        wp.set_device("cuda:0")
-    GOAL = (3.0, 2.0, 4.0)  # a far waypoint, ~4 m: the 6 s horizon reaches it by ~3 s and must hold for ~3 s
-    MS = 0.12  # moment scale: the per-rotor allocation B's attitude authority
-    # The moment-input BPTT through the articulated plant is exact over the whole horizon, checked against
-    # finite differences. The closed loop is contractive, so BPTT needs no truncation or windowing; the CTBR
-    # variant's inner rate loop would re-explode it. Crucially the horizon is long enough, 6 s, to include a
-    # genuine hold phase after the drone reaches the far goal. The ramped time-weight then penalizes residual
-    # velocity in the late steps, so the optimizer tunes a controller that SETTLES, comes to rest, not one
-    # that merely reaches by the horizon's end and then overshoots. A short horizon that ends at arrival was
-    # the regression: the tuned gains reached but didn't hold, so the deployed flight flew through the goal.
-    STABLE_REF = np.array([0.3, 1.0, 0.6, 1.2, 8.0, 3.0, 1.0], dtype=np.float32)
-    am_grad = AstroMaxWaypointRollout(n_steps=200, goal=GOAL, vel_weight=0.2, moment_scale=MS)
-    fd2 = am_grad.finite_difference_check(STABLE_REF)
-    nx.logger.info(f"astro-max full-horizon gradient: cosine={fd2['cosine_similarity']:.4f}")
-    assert fd2["cosine_similarity"] > 0.99, "astro-max full-horizon gradient not finite-diff-correct"
+    # The run's time, net of the kernels Warp compiles into a cold cache, is what CI's time gate reads.
+    with RunClock() as clock:
+        # Runs on CUDA when present, where each gradient replays from one captured graph, else on the CPU.
+        if wp.is_cuda_available():
+            wp.set_device("cuda:0")
+        GOAL = (3.0, 2.0, 4.0)  # a far waypoint, ~4 m: the 6 s horizon reaches it by ~3 s and must hold for ~3 s
+        MS = 0.12  # moment scale: the per-rotor allocation B's attitude authority
+        # The moment-input BPTT through the articulated plant is exact over the whole horizon, checked against
+        # finite differences. The closed loop is contractive, so BPTT needs no truncation or windowing; the CTBR
+        # variant's inner rate loop would re-explode it. Crucially the horizon is long enough, 6 s, to include a
+        # genuine hold phase after the drone reaches the far goal. The ramped time-weight then penalizes residual
+        # velocity in the late steps, so the optimizer tunes a controller that SETTLES, comes to rest, not one
+        # that merely reaches by the horizon's end and then overshoots. A short horizon that ends at arrival was
+        # the regression: the tuned gains reached but didn't hold, so the deployed flight flew through the goal.
+        STABLE_REF = np.array([0.3, 1.0, 0.6, 1.2, 8.0, 3.0, 1.0], dtype=np.float32)
+        am_grad = AstroMaxWaypointRollout(n_steps=200, goal=GOAL, vel_weight=0.2, moment_scale=MS)
+        fd2 = am_grad.finite_difference_check(STABLE_REF)
+        nx.logger.info(f"astro-max full-horizon gradient: cosine={fd2['cosine_similarity']:.4f}")
+        assert fd2["cosine_similarity"] > 0.99, "astro-max full-horizon gradient not finite-diff-correct"
 
-    # Deliberately mistuned baseline: weak altitude P, g0, + low horizontal-position P, g2, ⇒ it crawls,
-    # falls short of the waypoint and never settles: a clear "before" against the tuned controller.
-    BASE = np.array([0.07, 0.7, 0.08, 0.35, 8.0, 2.5, 1.0], dtype=np.float32)
-    LO = [0.01, 0.01, 0.01, 0.01, 1.0, 0.2, 0.1]
-    HI = [1.5, 3.0, 1.0, 2.0, 20.0, 8.0, 4.0]
-    am = AstroMaxWaypointRollout(n_steps=1500, goal=GOAL, vel_weight=0.2, moment_scale=MS)  # 6 s → reach + hold
-    # 30 iterations keep the run under 5 min on CI's A10G. The tuned flight's hold error isn't monotonic in
-    # them: on the RTX 5080 it holds within 0.066 m at 30, 0.527 m at 50 and 0.151 m at 80.
-    gopt, hist = am.optimize(BASE, iters=30, lr=0.04, lo=LO, hi=HI)
-    nx.logger.info(f"gain opt: loss {hist[0]:.0f} -> min {min(hist):.0f}  gains={np.round(gopt, 3)}")
+        # Deliberately mistuned baseline: weak altitude P, g0, + low horizontal-position P, g2, ⇒ it crawls,
+        # falls short of the waypoint and never settles: a clear "before" against the tuned controller.
+        BASE = np.array([0.07, 0.7, 0.08, 0.35, 8.0, 2.5, 1.0], dtype=np.float32)
+        LO = [0.01, 0.01, 0.01, 0.01, 1.0, 0.2, 0.1]
+        HI = [1.5, 3.0, 1.0, 2.0, 20.0, 8.0, 4.0]
+        am = AstroMaxWaypointRollout(n_steps=1500, goal=GOAL, vel_weight=0.2, moment_scale=MS)  # 6 s → reach + hold
+        # 30 iterations keep the run under 5 min on CI's A10G. The tuned flight's hold error isn't monotonic in
+        # them: on the RTX 5080 it holds within 0.066 m at 30, 0.527 m at 50 and 0.151 m at 80.
+        gopt, hist = am.optimize(BASE, iters=30, lr=0.04, lo=LO, hi=HI)
+        nx.logger.info(f"gain opt: loss {hist[0]:.0f} -> min {min(hist):.0f}  gains={np.round(gopt, 3)}")
 
-    # The real gate: fly both gain sets free-running on the articulated plant the tuning ran on, the PID
-    # example's run, with moment_scale=MS matching the tuning. Gate on the FLIGHT, not the fixed-horizon
-    # rollout metric: that metric looked "settled" while the drone was still moving through the goal at the
-    # horizon's end, the trap
-    # this example fell into. The tuned controller must reach the far goal and hold it, with no flying through;
-    # the mistuned baseline must not. --log/--view records each flight; the deploy IS the standard Loop run.
-    def fly(gains, name: str):
-        # The deploy flight IS the standard loop run, on the articulated plant the tuning ran on: the
-        # example-owned PID assembly.
-        from nexus_uav._src.build.launch import resolve_scenario
-        from nexus_uav._src.config import LaunchConfig
-        from nexus_uav._src.guidance import MissionGuidance
-        from nexus_uav._src.rendering import rtx_renderer
-        from nexus_uav.examples.controllers.pid.assembly import build_pid_loop
+        # The real gate: fly both gain sets free-running on the articulated plant the tuning ran on, the PID
+        # example's run, with moment_scale=MS matching the tuning. Gate on the FLIGHT, not the fixed-horizon
+        # rollout metric: that metric looked "settled" while the drone was still moving through the goal at the
+        # horizon's end, the trap
+        # this example fell into. The tuned controller must reach the far goal and hold it, with no flying through;
+        # the mistuned baseline must not. --log/--view records each flight; the deploy IS the standard Loop run.
+        def fly(gains, name: str):
+            # The deploy flight IS the standard loop run, on the articulated plant the tuning ran on: the
+            # example-owned PID assembly.
+            from nexus_uav._src.build.launch import resolve_scenario
+            from nexus_uav._src.config import LaunchConfig
+            from nexus_uav._src.guidance import MissionGuidance
+            from nexus_uav._src.rendering import rtx_renderer
+            from nexus_uav.examples.controllers.pid.assembly import build_pid_loop
 
-        launch = LaunchConfig().set_vehicle("astro_max_base").set_scene("empty")
-        launch.runtime.device = "cuda"  # prefer CUDA; falls back to CPU without one
-        vehicle_usd_2, _resolved, cfg = resolve_scenario(launch)
-        orch = build_pid_loop(
-            cfg,
-            vehicle_usd=vehicle_usd_2,
-            gains=list(gains),
-            moment_scale=MS,
-            max_steps=2750,
-            rerun=True,
-            renderer_factory=rtx_renderer(vehicle_usd_2, cfg),  # the Kit peer, when the vehicle authors RTX sensors
+            launch = LaunchConfig().set_vehicle("astro_max_base").set_scene("empty")
+            launch.runtime.device = "cuda"  # prefer CUDA; falls back to CPU without one
+            vehicle_usd_2, _resolved, cfg = resolve_scenario(launch)
+            orch = build_pid_loop(
+                cfg,
+                vehicle_usd=vehicle_usd_2,
+                gains=list(gains),
+                moment_scale=MS,
+                max_steps=2750,
+                rerun=True,
+                renderer_factory=rtx_renderer(vehicle_usd_2, cfg),  # the Kit peer, when the vehicle authors RTX sensors
+            )
+            guidance = MissionGuidance(reached_m=0.15, final_hold_s=3.0)
+            with nx.Sim._from_loop(orch, guidance=guidance) as sim:
+                guidance.set_mission([GOAL])
+                sim.run()
+                q = np.asarray(sim[f"vehicle/body/{sim.base_body}"].history()["position"], dtype=float)
+                rotors = [path for path in sim if path.startswith("vehicle/joints/") and "rotor" in path]
+                speeds = [abs(float(sim[path].history()[-1]["qd"][0])) for path in rotors]
+                rrd = sim.artifacts().get("rrd")
+            d = np.linalg.norm(q - np.array(GOAL, dtype=float), axis=1)
+            reached = bool(d.min() < 0.2)  # got to the goal
+            hold = float(d[int(d.argmin()) :].max()) if reached else float("inf")  # worst dist after first reaching it
+            nx.logger.info(
+                f"{name} flight: final {d[-1]:.3f} m, closest {d.min():.3f} m, hold-error {hold:.3f} m"
+                + (f"  ({rrd})" if rrd else "")
+            )
+            return d[-1], reached, hold, sim, guidance, speeds
+
+        base_final, base_reached, _, _, _, _ = fly(BASE, "baseline")
+        _opt_final, opt_reached, opt_hold, opt_sim, opt_guidance, speeds = fly(gopt, "optimized")
+        # Evaluation artifacts first, before any gate can raise, because a failed run must still leave its
+        # trajectory for diagnosis: the tuned deploy flight + the tuning-quality metrics. The CI harness
+        # gates the gradient cosine, the hold error, the run's wall time and the rotors' speed at the end of the
+        # tuned flight, and monitors position Absolute Pose Error (APE) + the deploy Real-Time Factor (RTF).
+        stats = {
+            "gradient_cosine": round(fd2["cosine_similarity"], 4),
+            "opt_hold_m": round(opt_hold, 4),
+            "opt_final_m": round(float(_opt_final), 4),
+            "base_final_m": round(float(base_final), 4),
+            "rotor_speed_min_rad_per_sec": round(min(speeds), 1) if speeds else 0.0,
+            **clock.stats(),
+        }
+        dump_run(opt_sim, "gain_tuning", stats=stats, waypoints=[GOAL], arrival_times=opt_guidance.arrival_times)
+        # The win is HOLDING the waypoint: the tuned controller reaches and stays, hold-error small with no
+        # flying through, where the mistuned baseline never gets there.
+        assert opt_reached and opt_hold < 0.3, (
+            f"tuned controller flew through / didn't hold (hold-error {opt_hold:.3f} m)"
         )
-        guidance = MissionGuidance(reached_m=0.15, final_hold_s=3.0)
-        with nx.Sim._from_loop(orch, guidance=guidance) as sim:
-            guidance.set_mission([GOAL])
-            sim.run()
-            q = np.asarray(sim[f"vehicle/body/{sim.base_body}"].history()["position"], dtype=float)
-            rotors = [path for path in sim if path.startswith("vehicle/joints/") and "rotor" in path]
-            speeds = [abs(float(sim[path].history()[-1]["qd"][0])) for path in rotors]
-            rrd = sim.artifacts().get("rrd")
-        d = np.linalg.norm(q - np.array(GOAL, dtype=float), axis=1)
-        reached = bool(d.min() < 0.2)  # got to the goal
-        hold = float(d[int(d.argmin()) :].max()) if reached else float("inf")  # worst dist after first reaching it
-        nx.logger.info(
-            f"{name} flight: final {d[-1]:.3f} m, closest {d.min():.3f} m, hold-error {hold:.3f} m"
-            + (f"  ({rrd})" if rrd else "")
-        )
-        return d[-1], reached, hold, sim, guidance, speeds
-
-    base_final, base_reached, _, _, _, _ = fly(BASE, "baseline")
-    _opt_final, opt_reached, opt_hold, opt_sim, opt_guidance, speeds = fly(gopt, "optimized")
-    # Evaluation artifacts first, before any gate can raise, because a failed run must still leave its
-    # trajectory for diagnosis: the tuned deploy flight + the tuning-quality metrics. The CI harness
-    # gates the gradient cosine, the hold error, the run's wall time and the rotors' speed at the end of the
-    # tuned flight, and monitors position Absolute Pose Error (APE) + the deploy Real-Time Factor (RTF).
-    stats = {
-        "gradient_cosine": round(fd2["cosine_similarity"], 4),
-        "opt_hold_m": round(opt_hold, 4),
-        "opt_final_m": round(float(_opt_final), 4),
-        "base_final_m": round(float(base_final), 4),
-        "rotor_speed_min_rad_per_sec": round(min(speeds), 1) if speeds else 0.0,
-        "wall_s": round(time.time() - t0, 1),
-    }
-    dump_run(opt_sim, "gain_tuning", stats=stats, waypoints=[GOAL], arrival_times=opt_guidance.arrival_times)
-    # The win is HOLDING the waypoint: the tuned controller reaches and stays, hold-error small with no
-    # flying through, where the mistuned baseline never gets there.
-    assert opt_reached and opt_hold < 0.3, f"tuned controller flew through / didn't hold (hold-error {opt_hold:.3f} m)"
-    assert not base_reached, f"the baseline was supposed to be mistuned (it reached; final {base_final:.3f} m)"
-    nx.logger.info("OK: gradient correct; tuned PID reaches + HOLDS the waypoint (mistuned baseline does not)")
+        assert not base_reached, f"the baseline was supposed to be mistuned (it reached; final {base_final:.3f} m)"
+        nx.logger.info("OK: gradient correct; tuned PID reaches + HOLDS the waypoint (mistuned baseline does not)")
 
 
 if __name__ == "__main__":
