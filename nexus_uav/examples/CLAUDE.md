@@ -37,7 +37,7 @@ in the script, and it records its flight `.rrd`. The launcher map is `_EXAMPLES`
   differentiable rollout in `articulated.py`. `rotor_chain.py` holds the rotor chain of a model with many
   copies of the vehicle, which `nexus-rl` trains on. `single_body.py` holds the collapse of the
   Universal Scene Description (USD) file to a single body, the sampling MPC planner's model, and
-  re-exports the rotor parser and geometry helpers `nexus-rl` reads. `reference.py` and `min_snap.py`
+  re-exports the rotor parser and `RPM_PER_RADS`, which `nexus-rl` reads. `reference.py` and `min_snap.py`
   hold the reference planners, and `observation.py` the train↔deploy observation source, which
   `nexus-rl` also imports. `eval_dump.py` holds the evaluation dump, and `origin.py` the override layer
   that moves a shipped scene's geodetic origin, which `mission.py` and the benchmark cell write.
