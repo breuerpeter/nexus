@@ -6,8 +6,8 @@ exported `.pt` policy. `<name>` is the file's stem and `<base>` is what a catalo
 line here, so no checkout carries an account's name.
 
 - CloudFront serves the shipped catalog's base anonymously. A catalog that keeps blobs nobody else
-  can read names them by full `s3://` URL, and the `aws` command-line tool fetches those with
-  Amazon Web Services (AWS) credentials. CI artifacts, the docs `.rrd` embeds and the bench feed,
+  can read names them by full `s3://` URL, and boto3, from the `nexus-uav[s3]` extra, fetches
+  those with Amazon Web Services (AWS) credentials. CI artifacts, the docs `.rrd` embeds and the bench feed,
   live on the same bucket under `public/ci/{logs,bench}/`.
 - The Kit-only scripts, `obj_to_usd.py`, `site_scan_splat.py` and `author_cesium_scene.py`, run
   from the host with `uv run python scripts/assets/<script>.py …`. Each starts the Kit image with
