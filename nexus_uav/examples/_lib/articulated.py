@@ -182,12 +182,13 @@ class ArticulatedRollout:
 
 
 class CapturedGradient:
-    """The loss and gradient of a recorded rollout, replayed from one CUDA graph after the first.
+    """The loss and gradient of a recorded rollout, replayed from one CUDA graph.
 
-    The first call records the rollout on a tape eagerly, which compiles its kernels. On a CUDA device it then
-    captures the forward pass, the backward pass, the copy-out of the loss and the gradient, and the zeroing of every
-    gradient for the next call, all in one graph, since the solver allocates per step and that memory exists only
-    while the graph runs. Each later call replays the graph. On the CPU every call records eagerly.
+    On a CUDA device the first call captures the forward pass, the backward pass, the copy-out of the loss and the
+    gradient, and the zeroing of every gradient for the next call, all in one graph, since the solver allocates per
+    step and that memory exists only while the graph runs. Warp loads each kernel as the capture first launches it.
+    Every call, the first too, then replays the graph, so the graph reads ``params`` as the caller last wrote it. On
+    the CPU every call records eagerly.
 
     Args:
         forward: Runs the rollout and accumulates the loss into ``loss``; it reads ``params``.
@@ -200,7 +201,6 @@ class CapturedGradient:
         self._grad = wp.zeros_like(params, requires_grad=False)
         self._loss = wp.zeros(1, dtype=float)
         self._graph = None
-        self._calls = 0
 
     def _record(self) -> wp.Tape:
         tape = wp.Tape()
@@ -214,14 +214,12 @@ class CapturedGradient:
 
     def __call__(self) -> tuple[float, wp.array]:
         """Run the rollout once more: the loss, and the gradient as a device array the next call overwrites."""
-        if self._graph is not None:
-            wp.capture_launch(self._graph)
-        elif self._calls == 0 or not self.params.device.is_cuda:
+        if not self.params.device.is_cuda:
             self._tape = self._record()
         else:
-            with wp.ScopedCapture() as capture:
-                self._tape = self._record()
-            self._graph = capture.graph
+            if self._graph is None:
+                with wp.ScopedCapture() as capture:
+                    self._tape = self._record()
+                self._graph = capture.graph
             wp.capture_launch(self._graph)
-        self._calls += 1
         return float(self._loss.numpy()[0]), self._grad

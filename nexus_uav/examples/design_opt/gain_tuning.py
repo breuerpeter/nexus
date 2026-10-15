@@ -193,41 +193,26 @@ class AstroMaxWaypointRollout:
     def _gains_array(self, gains) -> wp.array:
         return wp.array(np.asarray(gains, dtype=np.float32), dtype=float, requires_grad=True)
 
-    def loss(self, gains) -> float:
-        g = self._gains_array(gains)
-        cost = wp.zeros(1, dtype=float, requires_grad=True)
-        self.rollout.reset()
-        self.forward(g, cost)
-        wp.synchronize()
-        return float(cost.numpy()[0])
-
-    def gradient(self, gains):
-        """Return ``(loss, grad)`` via one taped full-horizon forward+backward."""
-        g = self._gains_array(gains)
-        cost = wp.zeros(1, dtype=float, requires_grad=True)
-        self.rollout.reset()
-        tape = wp.Tape()
-        with tape:
-            self.forward(g, cost)
-        tape.backward(cost)
-        wp.synchronize()
-        loss = float(cost.numpy()[0])
-        grad = g.grad.numpy().copy()
-        tape.zero()
-        return loss, grad
-
     def finite_difference_check(self, gains, eps: float = 1e-3) -> dict:
-        """Check ``tape.backward`` against central finite differences over the full horizon."""
+        """Check ``tape.backward`` against central finite differences over the full horizon. One captured graph
+        serves every rollout of the check: each writes its gains into the array the graph reads.
+        """
         g0 = np.asarray(gains, dtype=np.float32)
-        _, analytic = self.gradient(g0)
+        g = self._gains_array(g0)
+        cost = wp.zeros(1, dtype=float, requires_grad=True)
+        gradient = CapturedGradient(lambda: self.forward(g, cost), g, cost)
+
+        def at(values):
+            g.assign(values)
+            self.rollout.reset()
+            return gradient()
+
+        analytic = at(g0)[1].numpy().astype(np.float64)
         fd = np.zeros(NUM_GAINS, dtype=np.float64)
         for i in range(NUM_GAINS):
-            gp = g0.copy()
-            gp[i] += eps
-            gm = g0.copy()
-            gm[i] -= eps
-            fd[i] = (self.loss(gp) - self.loss(gm)) / (2.0 * eps)
-        analytic = analytic.astype(np.float64)
+            step = np.zeros_like(g0)
+            step[i] = eps
+            fd[i] = (at(g0 + step)[0] - at(g0 - step)[0]) / (2.0 * eps)
         cos = float(analytic @ fd / (np.linalg.norm(analytic) * np.linalg.norm(fd) + 1e-30))
         floor = 0.05 * np.max(np.abs(fd))
         sig = np.abs(fd) >= floor
