@@ -58,10 +58,12 @@ def _dead_pid() -> int:
 
 
 @pytest.fixture
-def daemon(monkeypatch):
+def daemon(monkeypatch, tmp_path):
     """A stand-in docker daemon that already holds the px4-sitl image: it records what the peer asks
-    of it, and touches nothing real.
+    of it, and touches nothing real. Home is a test folder too, so a start empties no real instance's
+    working folder, which a live run can hold.
     """
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
     calls = _Calls()
 
     class Images:
@@ -116,8 +118,9 @@ def test_start_runs_px4_with_the_runs_instance_and_airframe(daemon, tree, tmp_pa
     """The container definition is a contract, field by field. The peer runs PX4's binary itself,
     the way PX4's multi-instance script does, since ``make px4_sitl none_<airframe>`` can't take an
     instance; ``-d`` runs with no pxh shell, which at the end of an unattended stdin spin-loops
-    printing its prompt and starves PX4. The run's folder mounts over PX4's log root in its
-    instance's folder, so PX4 writes the run's ULog there and leaves none in the tree. The container
+    printing its prompt and starves PX4. The instance's own working folder mounts over its folder of
+    the tree, so PX4 boots with no state an earlier run left there, and the run's folder mounts over
+    PX4's log root inside it, so PX4 writes the run's ULog there and leaves none in the tree. The container
     doesn't remove itself, so a PX4 that exits at once leaves its console for the log.
     """
     _peer(tree, tmp_path, instance=2).start()
@@ -133,6 +136,12 @@ def test_start_runs_px4_with_the_runs_instance_and_airframe(daemon, tree, tmp_pa
         "working_dir": str(tree),
         "mounts": [
             Mount(str(tree), str(tree), type="bind", read_only=False),
+            Mount(
+                str(tree / "build/px4_sitl_default/rootfs/2"),
+                str(tmp_path / "home" / ".cache" / "nexus" / "px4-work" / "2"),
+                type="bind",
+                read_only=False,
+            ),
             Mount(
                 str(tree / "build/px4_sitl_default/rootfs/2/log"),
                 str(tmp_path / "run" / "ulog"),

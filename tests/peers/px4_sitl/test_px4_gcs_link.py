@@ -80,10 +80,6 @@ class _Peer:
         with self._lock:
             self._mav.mav.command_long_send(1, 1, command, 0, *params, *[0.0] * (7 - len(params)))
 
-    def param_request(self, name: str) -> None:
-        with self._lock:
-            self._mav.mav.param_request_read_send(1, 1, name.encode(), -1)
-
     def param_set_int(self, name: str, value: int) -> None:
         # PX4 reads an INT32 parameter from the bits of PARAM_SET's float field, not from its value.
         bits = struct.unpack("<f", struct.pack("<i", value))[0]
@@ -153,7 +149,7 @@ def run_with_no_gcs():
 
     A command link on the offboard port, which never heartbeats, puts PX4 in Hold, where a command arms it
     without sticks, and waits until PX4 reports it could arm and has been up past the datalink timeout. Then
-    it makes a GCS required, ``NAV_DLL_ACT`` 2, asks PX4 to arm, and puts the parameter back.
+    it makes a GCS required, ``NAV_DLL_ACT`` 2, and asks PX4 to arm. No later run boots with the parameter.
     """
     with nx.Sim("astro_max_base", scene="empty", log=True, rtf=1.0) as sim:
         sim.start(timeout=120.0)
@@ -168,17 +164,8 @@ def run_with_no_gcs():
                 lambda: sim.time > _DATALINK_TIMEOUT_S,
                 sim_timeout=60.0,
             )
-            _retry_until(
-                sim, lambda: "NAV_DLL_ACT" in link.params, lambda: link.param_request("NAV_DLL_ACT"), sim_timeout=30.0
-            )
-            found = link.params["NAV_DLL_ACT"]
             _set_param(sim, link, "NAV_DLL_ACT", 2)
-            try:
-                _retry_until(sim, lambda: _ARM in link.acks, lambda: link.command(_ARM, 1.0), sim_timeout=30.0)
-            finally:
-                # PX4 saves each parameter change in the checkout, and the next PX4 run reads it back.
-                _set_param(sim, link, "NAV_DLL_ACT", found)
-            _fly(sim, 2.0)  # PX4 writes a changed parameter back a moment after the change
+            _retry_until(sim, lambda: _ARM in link.acks, lambda: link.command(_ARM, 1.0), sim_timeout=30.0)
         finally:
             link.close()
     return SimpleNamespace(arm_result=link.acks[_ARM], **sim.artifacts())
