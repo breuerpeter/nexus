@@ -11,7 +11,8 @@ The image is the px4-sitl build toolchain, built on this machine from ``image/``
 package data, and tagged with a hash of that folder. The PX4 tree comes from :mod:`.checkout`: the
 pinned commit fetched into a cache folder, or a checkout the pin names. ``start`` builds the tree incrementally
 before it launches, since a launch must reach the sim inside its 30 s preroll window and a cold
-build never does.
+build never does. PX4 works in a folder of the run's instance outside the tree, which each start
+empties, so no run's PX4 boots with a parameter or a mission an earlier run left.
 
 This module is the one definition of the PX4 SITL container. It used to be one of three: a compose
 service and a CI shell script held their own copies, which drifted, see GH #86. So a change to the
@@ -24,6 +25,7 @@ No flight logic lives here: the flight is always a script against ``nexus_uav.px
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 
 from nexus_uav._src.core import logger
@@ -144,14 +146,23 @@ class Px4Sitl:
         # itself the way PX4's multi-instance script does. `-d` runs with no pxh shell: at the end of
         # an unattended stdin that shell spin-loops printing its prompt and starves PX4.
         kwargs["environment"]["PX4_SIM_MODEL"] = f"none_{self.airframe}"
-        # PX4 writes its ULog to ./log in its instance's folder of the tree, which keeps it across
-        # runs. The run's own folder mounts there instead, so the tree keeps no ULog and the run's
-        # folder holds this run's alone. This process makes the mount point, so docker makes no
-        # folder in the tree as root.
+        # PX4 works in its instance's folder of the tree, where it stores the parameters and the
+        # mission a run sets and loads them at its next boot. An empty folder mounts there instead,
+        # the instance's own, which this run holds with the instance, so PX4 boots with nothing an
+        # earlier run left and the tree keeps nothing of this run's. The start empties it, so a run
+        # killed before its stop leaves the next one nothing either.
+        work = Path("~/.cache/nexus/px4-work").expanduser() / str(self.instance)
+        shutil.rmtree(work, ignore_errors=True)
+        work.mkdir(parents=True)
+        instance_dir = self.tree / "build" / "px4_sitl_default" / "rootfs" / str(self.instance)
+        instance_dir.mkdir(parents=True, exist_ok=True)
+        kwargs["volumes"][str(work)] = {"bind": str(instance_dir), "mode": "rw"}
+        # PX4 writes its ULog to ./log there. The run's own folder mounts there in turn, so the run's
+        # folder holds this run's ULog alone. This process makes each mount point, so docker makes
+        # none as root.
         self.ulog_dir.mkdir(parents=True, exist_ok=True)
-        log_root = self.tree / "build" / "px4_sitl_default" / "rootfs" / str(self.instance) / "log"
-        log_root.mkdir(parents=True, exist_ok=True)
-        kwargs["volumes"][str(self.ulog_dir)] = {"bind": str(log_root), "mode": "rw"}
+        (work / "log").mkdir()
+        kwargs["volumes"][str(self.ulog_dir)] = {"bind": str(instance_dir / "log"), "mode": "rw"}
         logger.info(
             f"launching PX4 SITL {self.container} (none_{self.airframe}, instance {self.instance}) -> {self.log_path}"
         )
