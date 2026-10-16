@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.4.0...nexus-uav-v0.4.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **px4:** a run boots PX4 with no state an earlier run left ([#328](https://github.com/breuerpeter/nexus/issues/328)) ([b5f43e5](https://github.com/breuerpeter/nexus/commit/b5f43e5ba2d24823a7aea4d676eed99c893b8562)), closes [#327](https://github.com/breuerpeter/nexus/issues/327)
+
 ## [0.4.0](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.3.0...nexus-uav-v0.4.0) (2026-10-15)
 
 
