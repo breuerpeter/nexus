@@ -61,7 +61,7 @@ def _dead_pid() -> int:
 def daemon(monkeypatch, tmp_path):
     """A stand-in docker daemon that already holds the px4-sitl image: it records what the peer asks
     of it, and touches nothing real. Home is a test folder too, so a start empties no real instance's
-    working folder, which a live run may hold.
+    working folder, which a live run can hold.
     """
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     calls = _Calls()
