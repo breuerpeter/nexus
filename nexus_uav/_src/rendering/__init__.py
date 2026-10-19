@@ -86,7 +86,7 @@ class RtxRendererFactory:
         tick = cfg["physics"]["dt"]
         # A camera's frame period: its rate's, and the tick's when its rate makes every tick due.
         periods = [max(tick, 1.0 / s.rate) if s.rate > 0.0 else tick for s in sensors if s.output != "points"]
-        benchmark = self._log_dir / "benchmark.json"
+        benchmark = self._log_dir / PEER / "benchmark.json"  # the peer's folder, which its container mounts
         renderer.setup = {
             "scene": cfg.get("scene_usd_path"),
             "scene_start": list(cfg.get("scene_start") or (0.0, 0.0, 0.0)),
@@ -147,8 +147,8 @@ def rtx_renderer(
             ``None`` resolves it against the catalog a run in the working folder finds.
         components: The registry that resolves the vehicle's schemas to classes; ``None`` takes the
             default one.
-        log_dir: The run's folder, which takes Kit's console and its benchmark metrics; ``None``
-            takes a new run folder.
+        log_dir: The run's folder, which takes Kit's console and its benchmark metrics under ``kit/``;
+            ``None`` takes a new run folder.
 
     Returns:
         The factory the assembly calls after the physics build, or ``None`` for a vehicle that

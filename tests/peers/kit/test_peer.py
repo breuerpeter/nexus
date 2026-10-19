@@ -176,3 +176,16 @@ def test_a_scene_with_no_cesium_tileset_fetches_no_cesium(daemon, tmp_path, monk
     files = [_usd(project, "cam.usda"), _usd(project, "empty.usda", EMPTY_SCENE)]
     KitPeer(files, cache_dir=tmp_path / "cache", pin=PIN).start()
     assert [url for url in requested if "cesium" in url.lower()] == []
+
+
+def test_kits_console_lands_at_kit_console_log_in_the_runs_folder(daemon, tmp_path):
+    """Kit's console lands at `kit/console.log` in the run's folder.
+
+    Given the Kit peer on the stand-in daemon with a run folder, when it starts, then its console path is
+    `kit/console.log` under that folder.
+    """
+    peer = KitPeer([_usd(tmp_path / "project")], cache_dir=tmp_path / "cache", pin=PIN, log_dir=tmp_path / "run")
+
+    peer.start()
+
+    assert Path(peer.log_path) == tmp_path / "run" / "kit" / "console.log"

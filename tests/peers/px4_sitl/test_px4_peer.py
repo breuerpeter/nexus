@@ -389,20 +389,30 @@ def test_the_peers_ports_come_from_the_run(daemon, run):
     assert (len(launches), numbered, literals) == (1, [True], []), request
 
 
-def test_the_peers_console_log_stays_in_the_runs_artifacts(daemon, assembly, catalog, tmp_path, monkeypatch):
-    """The peer's console log stays in the run's artifacts.
+def test_px4s_console_and_ulog_land_under_px4_sitl_in_the_runs_folder(daemon, assembly, catalog, tmp_path, monkeypatch):
+    """PX4's console and ULog land under `px4_sitl/` in the run's folder.
 
-    Given a PX4 run with a managed peer, when the run closes, then its artifacts list the peer's
-    console log path.
+    Given a PX4 run on the stand-in daemon with a `run_dir`, when it closes, then `sim.artifacts()["px4_log"]`
+    is `px4_sitl/console.log` under it and the ULog mount binds `px4_sitl/` under it, where PX4 writes
+    `<date>/<time>.ulg`.
     """
     project = tmp_path / "nexus.catalog.yaml"
     project.write_text(yaml.safe_dump({"vehicles": _vehicle(tmp_path)}))
+    run_dir = tmp_path / "run"
 
-    with Sim("astro", scene="empty", catalog=str(project), device="cpu") as sim:
+    with Sim("astro", scene="empty", catalog=str(project), device="cpu", run_dir=run_dir) as sim:
         pass
 
-    log = Path(sim.artifacts()["px4_log"]).name
-    assert log == "px4.log", log
+    launches = [r for r in daemon.runs if r.get("detach", True)]  # PX4's own run, not the build's
+    ulog_sources = [
+        Path(m["Source"]).relative_to(run_dir) if Path(m["Source"]).is_relative_to(run_dir) else m["Source"]
+        for r in launches
+        for m in r.get("mounts", [])
+        if m["Target"].endswith("/log")
+    ]
+    console = Path(sim.artifacts()["px4_log"])
+    seen = (console.relative_to(run_dir) if console.is_relative_to(run_dir) else console, ulog_sources)
+    assert seen == (Path("px4_sitl/console.log"), [Path("px4_sitl")]), daemon.runs
 
 
 def test_a_run_whose_px4_wrote_no_ulog_reports_none_though_the_tree_holds_an_earlier_one(
@@ -850,7 +860,7 @@ def test_a_managed_run_takes_a_free_px4_instance_itself(daemon, assembly, tmp_pa
     from nexus_uav._src.peers import LABEL
 
     held = _Container(
-        daemon, "nexus-px4-held-0", {LABEL: "px4", "nexus.px4.instance": "0", "nexus.owner": str(os.getpid())}
+        daemon, "nexus-px4_sitl-held-0", {LABEL: "px4_sitl", "nexus.px4.instance": "0", "nexus.owner": str(os.getpid())}
     )
     daemon.live[held.name] = held
 
@@ -891,10 +901,11 @@ def test_a_run_skips_an_instance_another_runs_claim_holds(daemon, assembly, tmp_
 
 # --- a run whose PX4 never starts lockstep, #129 ---------------------------------------------------
 
-# The PX4 console log a run names, `~/.cache/nexus/logs/<run>/px4.log`, whichever home folder it expands.
-_PX4_LOG = re.compile(r"\.cache/nexus/logs/[^/\s]+/px4\.log")
-# The PX4 peer a run names, its container `nexus-px4-<process id>-<instance>`, then its console log.
-_PX4_PEER_LOG = re.compile(r"px4_sitl's px4_log \S*\.cache/nexus/logs/[^/\s]+/px4\.log")
+# The PX4 console log a run names, `~/.cache/nexus/logs/<run>/px4_sitl/console.log`, whichever home folder it
+# expands.
+_PX4_LOG = re.compile(r"\.cache/nexus/logs/[^/\s]+/px4_sitl/console\.log")
+# The PX4 peer a run names, its container `nexus-px4_sitl-<process id>-<instance>`, then its console log.
+_PX4_PEER_LOG = re.compile(r"px4_sitl's px4_log \S*\.cache/nexus/logs/[^/\s]+/px4_sitl/console\.log")
 
 
 @pytest.fixture
@@ -1010,7 +1021,7 @@ def test_a_run_whose_px4_never_answers_names_the_px4_log(daemon, brief_preroll, 
     """The failure's message names the peer that never answered and the peer's console log.
 
     Given a PX4 run whose PX4 stand-in never dials in, when it fails, then its last line names the
-    PX4 peer and its `px4_log` path, `~/.cache/nexus/logs/<run>/px4.log`.
+    PX4 peer and its `px4_log` path, `~/.cache/nexus/logs/<run>/px4_sitl/console.log`.
     """
     vehicle = sv.vehicle(tmp_path, px4=True)
 

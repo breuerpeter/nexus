@@ -1,5 +1,6 @@
-"""The folder that holds one run's files: its recording, ``nexus.rrd``, and each peer's logs, such as
-PX4's console, ``px4.log``, and its ULog, and Kit's console, ``kit.log``.
+"""The folder that holds one run's files: its recording, ``nexus.rrd``, and each peer's files under a folder
+named for the peer, such as PX4's console, ``px4_sitl/console.log``, and its ULog beside it, and Kit's console,
+``kit/console.log``.
 
 The build picks one folder per run and hands it to each writer: the folder the caller names, or a new one
 under ``~/.cache/nexus/logs``. Picking the new one creates it, so no two runs share it, and a run that writes

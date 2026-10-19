@@ -16,7 +16,7 @@ link from a thread in this process, for tests. The render link's host end is
   into the asset cache only when a file the run renders declares a `CesiumTilesetPrim`, and mounts
   it at `/cesium-exts`, as `scripts/assets/kit_container.py` does for the Cesium author script.
 - `scripts/assets/kit_container.py` starts the same image for the Kit-only asset scripts and
-  imports `resolve`, `ensure_image`, `_run_options`, `_cesium_mount`, `LABEL` and `client` from `runner.py`:
+  imports `resolve`, `pull_image`, `_run_options`, `_cesium_mount` and `client` from `runner.py`:
   renaming or moving one of them changes that file too.
 - The render link's framing and its message set live once, in `peer-src/link.py`. The peer imports
   it as a sibling module. The host end and `fake.py` run the same file by path and take `send`,
@@ -31,6 +31,6 @@ link from a thread in this process, for tests. The render link's host end is
 - The peer answers ready only after every camera product has rendered once. On a machine with a
   cold shader cache the RTX renderer comes up minutes after Kit's boot, and a ready before that
   starves the loop. The console prints the wait every 30 s.
-- The peer's console is `kit.log` in the run's folder, `~/.cache/nexus/logs/<stamp>-<pid>/` or the folder `Sim(run_dir=)` names. Its
+- The peer's files live under `kit/` in the run's folder, `~/.cache/nexus/logs/<stamp>-<pid>/` or the folder `Sim(run_dir=)` names: its console, `console.log`, and its benchmark metrics. Its
   own lines start `[kit]`. Every 240 frames one of them splits a frame's time into three parts:
   the wait for the host, the render, and the send.

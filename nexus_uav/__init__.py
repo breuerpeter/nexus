@@ -35,8 +35,11 @@ _LAZY_EXPORTS = {
     # The registry, a value a run takes, and its registration call.
     "Registry": "nexus_uav._src.core.registry",
     "register": "nexus_uav._src.core.registry",
-    # The peer contract.
+    # The peer contract, the container peer a project's container peer subclasses, and the image a peer
+    # builds from a folder.
     "Peer": "nexus_uav._src.peers",
+    "ContainerPeer": "nexus_uav._src.peers.containers",
+    "ensure_image": "nexus_uav._src.peers.containers",
     # The signal value types a component reads or writes: the tick's time, the estimate, the setpoints
     # and each shipped sensor's sample.
     "SimTime": "nexus_uav._src.core.schema",
@@ -61,6 +64,7 @@ __all__ = [
     "BaroSample",
     "Catalog",
     "Component",
+    "ContainerPeer",
     "GpsSample",
     "Image",
     "ImuSample",
@@ -79,6 +83,7 @@ __all__ = [
     "Stage",
     "Tick",
     "Waypoints",
+    "ensure_image",
     "logger",
     "register",
     "save_run_artifacts",
@@ -114,6 +119,7 @@ if TYPE_CHECKING:
     )
     from nexus_uav._src.core.signals import Signal
     from nexus_uav._src.peers import Peer
+    from nexus_uav._src.peers.containers import ContainerPeer, ensure_image
 
 
 def __getattr__(name: str):

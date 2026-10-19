@@ -39,7 +39,7 @@ uv run nexus run --vehicle astro_max_base --scene empty
 Builds PX4 SITL, starts the PX4 container, then the physics sim, and stops the container again
 on exit. Add `--view` to serve the Rerun recording on gRPC :9876, see [Observability in Rerun](#observability-in-rerun). The `astro_max_base` vehicle's
 Universal Scene Description (USD) file declares PX4 and its airframe. Every file a run writes lands in one folder for the run,
-`~/.cache/nexus/logs/<stamp>-<pid>/`, or the folder a script names with `Sim(run_dir=)`: the recording, `nexus.rrd`, the PX4 console, `px4.log`, and PX4's `.ulg` flight log under `ulog/`.
+`~/.cache/nexus/logs/<stamp>-<pid>/`, or the folder a script names with `Sim(run_dir=)`. It holds the recording, `nexus.rrd`, and each peer's files under a folder named for it. PX4's console is `px4_sitl/console.log`, and its `.ulg` flight log lands beside it, `px4_sitl/<date>/<time>.ulg`.
 
 A run that never starts, or that loses PX4 or the Kit container before it ends, stops with an error
 and exits non-zero. The message names each peer's console log and quotes the peer's own error lines,
@@ -75,7 +75,7 @@ no container.
   into the asset cache on its first run. No other scene fetches it.
 - Kit boots in the background while PX4 builds and the physics compiles. Its shader cache lives in
   `~/.cache/nexus/kit/`, so the first boot is the slow one. The container's console goes to
-  `kit.log` in the run's folder, next to the run's recording.
+  `kit/console.log` in the run's folder, next to the run's recording.
 - The container runs as you and reads the asset cache and the folder of a local `--vehicle` or
   `--scene` file at their host paths, read-only, so everything it writes under `~/.cache/nexus`
   stays yours.
@@ -116,13 +116,13 @@ examples launcher, `uv run -m nexus_uav.examples <name> --profile`, spell them i
   Isaac, which capture the system envelope the loop profiler can't see. They record render **GPU** frame time
   from `HydraEngineStats`, GPU memory plus host Resident Set Size (RSS), process CPU%, app-update
   frame time, and windowed-RTF stability. It writes one summary `INFO` line plus a full
-  `benchmark.json` in the run's folder, beside its other logs. It complements the profiler: the profiler
+  `kit/benchmark.json` in the run's folder, beside its console. It complements the profiler: the profiler
   partitions the tick, and this measures Kit and the system. The PhysX-bound recorders stay out,
   because physics here is Newton.
 
 ## Fly
 
-Once PX4 logs `Ready for takeoff!` in `px4.log` in the run's folder,
+Once PX4 logs `Ready for takeoff!` in `px4_sitl/console.log` in the run's folder,
 QGroundControl auto-connects. Arm and fly with the on-screen virtual joysticks.
 Sim physics and PX4 state both appear in the Rerun viewer, because they share the
 `nexus` recording.
@@ -284,7 +284,7 @@ Everything lands in **one** recording, app ID `nexus` and recording ID
   `/sim/model/shapes/shape_0`, **by default** because it occludes the vehicle.
 - **framework events**: the `nexus` logger, at `sim/logs/<module>`.
 - **PX4's own view of the flight**: not in the recording. PX4 keeps it in its console log,
-  `px4.log`, and in its `ULog`, under `ulog/`, both in the run's folder and both artifacts of the run.
+  `px4_sitl/console.log`, and in its `ULog`, `px4_sitl/<date>/<time>.ulg`, both in the run's folder and both artifacts of the run.
 - **test and driver stages**: a driver in the sim's process logs each stage with `nx.logger.info("…")`,
   which writes to the console and, when recording, the Logs pane.
 
@@ -307,7 +307,7 @@ Both modes carry the same content, PX4 included: there is no second recording an
 ## Gotchas
 
 !!! note "One PX4 per instance"
-    Each run's container carries the run's own name, `nexus-px4-<pid>-<instance>`, and the run removes it on
+    Each run's container carries the run's own name, `nexus-px4_sitl-<pid>-<instance>`, and the run removes it on
     exit, so a second run stops nothing of the first. A second run takes the next free instance. A
     run killed without its teardown, a closed terminal or a harness's timeout, leaves its PX4
     running, and the next run on that instance removes it. Two runs that fly autopilots started

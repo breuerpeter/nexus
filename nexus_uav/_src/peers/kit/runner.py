@@ -28,10 +28,9 @@ from nexus_uav._src.core import logger
 from nexus_uav._src.core.errors import RunError
 from nexus_uav._src.core.run_folder import run_folder
 from nexus_uav._src.peers import (
-    LABEL,  # a Kit peer carries nexus.peer=kit, so a runner can find a leftover one
     pins,
 )
-from nexus_uav._src.peers.containers import client, run_container, stop_container
+from nexus_uav._src.peers.containers import ContainerPeer, client
 from nexus_uav._src.peers.pins import PeerPin
 
 if TYPE_CHECKING:
@@ -89,7 +88,7 @@ def check(pin: PeerPin) -> PeerPin:
     return pin
 
 
-def ensure_image(image: str) -> str:
+def pull_image(image: str) -> str:
     """Pull ``image`` when this machine lacks it, and return its name.
 
     NVIDIA's Isaac Sim image is about 21 GB and needs no login. The pull prints a line per finished
@@ -205,30 +204,30 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
-class KitPeer:
-    """One Kit render peer container for one run.
+class KitPeer(ContainerPeer):
+    """One Kit render peer container for one run, a :class:`ContainerPeer`.
 
     Args:
         files: Every USD file the run renders, vehicle and scene: the peer reads each at its host path.
         cache_dir: The asset cache the run fetched into; mounted whole when a file lies inside it.
         pin: The image the container runs, checked by :meth:`check_pin`.
-        log_dir: The run's folder: Kit's console streams to ``kit.log`` there, and Kit writes its
-            ``--benchmark`` metrics there. ``None`` takes a new run folder.
-        **run: The run's other values, its instance among them, which the peer needs none of.
+        log_dir: The run's folder: the peer's files live under ``kit/`` there, Kit's console as ``console.log``
+            and its ``--benchmark`` metrics. ``None`` takes a new run folder.
+        instance: The run's instance, which names the container; 0 outside a run, as the tests make one.
+        **run: The run's other values, which the peer needs none of.
     """
 
     name = NAME
     check_pin = staticmethod(check)
 
-    def __init__(self, files: list = (), *, cache_dir, pin: PeerPin, log_dir: Path | None = None, **run):
+    def __init__(
+        self, files: list = (), *, cache_dir, pin: PeerPin, log_dir: Path | None = None, instance: int = 0, **run
+    ):
+        super().__init__(instance=instance, log_dir=Path(log_dir) if log_dir is not None else run_folder())
         self._files = [Path(f).resolve() for f in files if f]
         self._cache_dir = Path(cache_dir).resolve()
         self.image = pin.ref
-        self.log_dir = Path(log_dir) if log_dir is not None else run_folder()
-        self.container = f"nexus-kit-{os.getpid()}"
         self.port: int | None = None
-        self.log_path: Path | None = None
-        self._container = None
 
     def _read_mounts(self) -> dict:
         mounts: list[Path] = []
@@ -249,60 +248,43 @@ class KitPeer:
         """
         from docker.errors import DockerException
 
-        volumes, env = {}, {}
-        if any(_declares_cesium_tileset(f) for f in self._files):
-            volumes, env = _cesium_mount(self._cache_dir)
         try:
-            image = ensure_image(self.image)
+            super().start()
         except KitPeerError:
             raise
         except RuntimeError as exc:
             raise KitPeerError(f"the RTX sensors render in a Kit container, but {exc}") from exc
-        self.log_dir.mkdir(parents=True, exist_ok=True)
-        volumes.update(self._read_mounts())
-        volumes[str(self.log_dir)] = {"bind": str(self.log_dir), "mode": "rw"}  # the --benchmark JSON
-        # The ion token rides the setup message, never the environment.
-        self.port = _free_port()
-        self.log_path = self.log_dir / "kit.log"
-        try:
-            self._container = run_container(
-                image=image,
-                command=[f"{_PEER_DIR}/serve.py", "--port", str(self.port)],
-                name=self.container,
-                log_path=str(self.log_path),
-                ports={f"{self.port}/tcp": ("127.0.0.1", self.port)},
-                labels={LABEL: "kit"},
-                auto_remove=True,
-                **_run_options(volumes, env),
-            )
         except DockerException as exc:
             raise KitPeerError(
                 f"starting the Kit container failed: {getattr(exc, 'explanation', None) or exc}"
             ) from exc
         logger.info(f"Kit render peer {self.container} booting on :{self.port}; its console -> {self.log_path}")
 
-    def alive(self) -> bool:
-        """Whether the container still runs; it removes itself when it exits."""
-        from docker.errors import NotFound
-
-        if self._container is None:
-            return False
-        try:
-            self._container.reload()
-        except NotFound:
-            return False
-        return self._container.status in ("created", "running")
-
-    def stop(self) -> None:
-        """Remove the container. Idempotent."""
-        if self._container is not None:
-            stop_container(self.container)
-            self._container = None
+    def run_options(self) -> dict:
+        """The pulled image serving the render link on a free port, with the files the run renders, the Cesium
+        extensions when a file needs them, and the peer's folder mounted. The container removes itself when it
+        exits.
+        """
+        volumes, env = {}, {}
+        if any(_declares_cesium_tileset(f) for f in self._files):
+            volumes, env = _cesium_mount(self._cache_dir)
+        image = pull_image(self.image)
+        volumes.update(self._read_mounts())
+        volumes[str(self.dir)] = {"bind": str(self.dir), "mode": "rw"}  # the --benchmark JSON
+        # The ion token rides the setup message, never the environment.
+        self.port = _free_port()
+        return {
+            "image": image,
+            "command": [f"{_PEER_DIR}/serve.py", "--port", str(self.port)],
+            "ports": {f"{self.port}/tcp": ("127.0.0.1", self.port)},
+            "auto_remove": True,
+            **_run_options(volumes, env),
+        }
 
     def console_tail(self, lines: int = 20) -> str:
         """The last ``lines`` of the container's console, for an error message."""
         try:
-            text = self.log_path.read_text(errors="replace") if self.log_path else ""
+            text = self.log_path.read_text(errors="replace")
         except OSError:
             return ""
         return "\n".join(text.splitlines()[-lines:])

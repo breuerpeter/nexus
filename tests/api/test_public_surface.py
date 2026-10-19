@@ -67,13 +67,15 @@ _IMPORT_LINE = re.compile(r"^from nexus_uav import (.+)$", re.MULTILINE)
 
 # The public surface, pinned: every name `import nexus_uav` exports, sorted. A removed name needs no test of its
 # absence: it leaves this list. The run's entry and its helpers, the component contract with its stage, tick,
-# signal and sensor-run types, the registry and its registration call, the peer contract, the catalog and the
-# launch config, the signal value types a component reads or writes, the error a run with no verdict raises,
-# and the logger.
+# signal and sensor-run types, the registry and its registration call, the peer contract, the container peer a
+# project's container peer subclasses and the image a peer builds from a folder, the catalog and the launch
+# config, the signal value types a component reads or writes, the error a run with no verdict raises, and the
+# logger.
 PINNED = [
     "BaroSample",
     "Catalog",
     "Component",
+    "ContainerPeer",
     "GpsSample",
     "Image",
     "ImuSample",
@@ -92,6 +94,7 @@ PINNED = [
     "Stage",
     "Tick",
     "Waypoints",
+    "ensure_image",
     "logger",
     "register",
     "save_run_artifacts",

@@ -30,13 +30,14 @@ from pathlib import Path
 
 from nexus_uav._src.core import logger
 from nexus_uav._src.peers import LABEL, containers
-from nexus_uav._src.peers.containers import ensure_image, run_container, stop_container
+from nexus_uav._src.peers.containers import ContainerPeer, ensure_image, run_container
 from nexus_uav._src.peers.pins import PeerPin
 
 from . import checkout
 from .instance import hil_free
 
 IMAGE = "nexus-px4-sitl"
+NAME = checkout.NAME  # the peer's kind: its label, its container's name and its folder in the run's folder
 _INSTANCE = "nexus.px4.instance"  # the label that carries the container's PX4 instance
 _OWNER = "nexus.owner"  # the label that carries the process that started the container
 IMAGE_DIR = Path(__file__).with_name("image")
@@ -93,8 +94,8 @@ def prepare(pin: PeerPin | None = None) -> Path:
     return tree
 
 
-class Px4Sitl:
-    """One PX4 SITL container for one run, on the peer contract.
+class Px4Sitl(ContainerPeer):
+    """One PX4 SITL container for one run, a :class:`ContainerPeer`.
 
     Args:
         airframe: The airframe's make target without PX4's ``none_`` prefix, ``astro_max``: the
@@ -102,15 +103,15 @@ class Px4Sitl:
         pin: The peer's pin, checked by :meth:`check_pin`; the start resolves the PX4 tree from it
             through :func:`checkout.tree`.
         instance: The run's instance, which numbers PX4's ports and its system id.
-        log_dir: The run's folder: PX4's console streams to ``px4.log`` there, the ``px4_log``
-            artifact, and PX4 writes its ULog under ``ulog/`` there, the ``ulog`` artifact.
+        log_dir: The run's folder: the peer's files live under ``px4_sitl/`` there, PX4's console as
+            ``console.log``, the ``px4_log`` artifact, and its ULog as ``<date>/<time>.ulg``, the ``ulog`` artifact.
         **run: The run's other values, which the peer needs none of.
 
     Raises:
         ValueError: The vehicle authors no airframe; raised as the build makes the peer, before any peer starts.
     """
 
-    name = checkout.NAME
+    name = NAME
     check_pin = staticmethod(checkout.check)
 
     def __init__(self, *, airframe: str = "", pin: PeerPin, instance: int, log_dir: Path, **run) -> None:
@@ -118,15 +119,10 @@ class Px4Sitl:
             raise ValueError(
                 "NexusPx4SitlAPI authors no nexus:airframe; name the PX4 SITL airframe the peer boots, such as astro_max"
             )
+        super().__init__(instance=instance, log_dir=log_dir)
         self.pin = pin
         self.tree: Path | None = None  # resolved at start, which can fetch it
         self.airframe = airframe
-        self.instance = instance
-        # The container's name carries the process and the instance, so two runs in one process keep both.
-        self.container = f"nexus-px4-{os.getpid()}-{instance}"
-        self.log_path = str(Path(log_dir) / "px4.log")
-        self.ulog_dir = Path(log_dir) / "ulog"
-        self._container = None
 
     def start(self) -> None:
         """Fetch the PX4 tree, then build the image and the tree if this machine lacks them, then start
@@ -140,6 +136,15 @@ class Px4Sitl:
         self._clear_leftovers()
         self.tree = checkout.tree(self.pin)
         build(self.tree)
+        logger.info(
+            f"launching PX4 SITL {self.container} (none_{self.airframe}, instance {self.instance}) -> {self.log_path}"
+        )
+        super().start()
+
+    def run_options(self) -> dict:
+        """PX4's binary on its instance over the built tree, on host networking, with the instance's working
+        folder and the peer's folder mounted over PX4's own.
+        """
         kwargs = _container_kwargs(self.tree)
         # PX4's own `make px4_sitl none_<airframe>` runs the binary with the airframe in its
         # environment; the instance is what that target can't take, so the peer runs the binary
@@ -157,25 +162,19 @@ class Px4Sitl:
         instance_dir = self.tree / "build" / "px4_sitl_default" / "rootfs" / str(self.instance)
         instance_dir.mkdir(parents=True, exist_ok=True)
         kwargs["volumes"][str(work)] = {"bind": str(instance_dir), "mode": "rw"}
-        # PX4 writes its ULog to ./log there. The run's own folder mounts there in turn, so the run's
-        # folder holds this run's ULog alone. This process makes each mount point, so docker makes
-        # none as root.
-        self.ulog_dir.mkdir(parents=True, exist_ok=True)
+        # PX4 writes its ULog to ./log there, as <date>/<time>.ulg. The peer's folder mounts there in turn, so
+        # it holds this run's ULog alone, beside the console. This process makes each mount point, so docker
+        # makes none as root.
         (work / "log").mkdir()
-        kwargs["volumes"][str(self.ulog_dir)] = {"bind": str(instance_dir / "log"), "mode": "rw"}
-        logger.info(
-            f"launching PX4 SITL {self.container} (none_{self.airframe}, instance {self.instance}) -> {self.log_path}"
-        )
-        self._container = run_container(
-            command=["build/px4_sitl_default/bin/px4", "-i", str(self.instance), "-d"],
-            name=self.container,
-            log_path=self.log_path,
-            network_mode="host",
+        kwargs["volumes"][str(self.dir)] = {"bind": str(instance_dir / "log"), "mode": "rw"}
+        return {
+            "command": ["build/px4_sitl_default/bin/px4", "-i", str(self.instance), "-d"],
+            "network_mode": "host",
             # No auto-remove: a PX4 that exits at once, on an airframe the tree lacks, would leave before its
             # console reached the log, and the console names why. The peer's stop removes the container.
-            labels={LABEL: "px4", _INSTANCE: str(self.instance), _OWNER: str(os.getpid())},
+            "labels": {_INSTANCE: str(self.instance), _OWNER: str(os.getpid())},
             **kwargs,
-        )
+        }
 
     @staticmethod
     def instance_free(instance: int) -> bool:
@@ -185,7 +184,7 @@ class Px4Sitl:
         if not hil_free(instance):
             return False
         held = containers.client().containers.list(
-            all=True, filters={"label": [f"{LABEL}=px4", f"{_INSTANCE}={instance}"]}
+            all=True, filters={"label": [f"{LABEL}={NAME}", f"{_INSTANCE}={instance}"]}
         )
         return not any((owner := int(c.labels.get(_OWNER) or 0)) and _alive(owner) for c in held)
 
@@ -202,7 +201,7 @@ class Px4Sitl:
 
         # Through the module, not a name imported here, so a stand-in daemon a test patches in reaches it.
         held = containers.client().containers.list(
-            all=True, filters={"label": [f"{LABEL}=px4", f"{_INSTANCE}={self.instance}"]}
+            all=True, filters={"label": [f"{LABEL}={NAME}", f"{_INSTANCE}={self.instance}"]}
         )
         for other in held:
             owner = int(other.labels.get(_OWNER) or 0)
@@ -217,24 +216,12 @@ class Px4Sitl:
             except NotFound:
                 pass
 
-    def alive(self) -> bool:
-        """Whether the container still runs: an exited one stays, for its console, until the peer's stop."""
-        from docker.errors import NotFound
-
-        if self._container is None:
-            return False
-        try:
-            self._container.reload()
-        except NotFound:
-            return False
-        return self._container.status in ("created", "running")
-
     def errors(self) -> list[str]:
         """PX4's own error lines so far: each console line that starts with PX4's error tag, such as the
         line PX4 prints for an airframe its tree lacks; none before PX4 starts or when its console is empty.
 
         The console comes from the container, which stays until the peer's stop, so a PX4 that exits at once
-        gives its lines whole before the log pump has written them to ``px4.log``. Once the peer's stop has
+        gives its lines whole before the log pump has written them to ``console.log``. Once the peer's stop has
         removed the container, the console is that file.
         """
         return [line.strip() for line in self._console().splitlines() if line.startswith("ERROR")]
@@ -249,24 +236,17 @@ class Px4Sitl:
             except NotFound:
                 pass
         try:
-            return Path(self.log_path).read_text(errors="replace")
+            return self.log_path.read_text(errors="replace")
         except FileNotFoundError:
             return ""
 
-    def stop(self) -> None:
-        """Remove the container this peer started, running or exited. Idempotent."""
-        if self._container is None:
-            return
-        stop_container(self.container)
-        self._container = None
-
     def artifacts(self) -> dict:
         """The PX4 console log of this run, the ``px4_log`` artifact the PX4 warnings gate reads, and
-        the ULog PX4 wrote for it, the ``ulog`` artifact: the newest ``.ulg`` in the run's folder, or
+        the ULog PX4 wrote for it, the ``ulog`` artifact: the newest ``.ulg`` under the peer's folder, or
         ``None`` when PX4 wrote none.
         """
-        ulogs = sorted(self.ulog_dir.glob("**/*.ulg"), key=lambda p: p.stat().st_mtime)
-        return {"px4_log": self.log_path, "ulog": str(ulogs[-1]) if ulogs else None}
+        ulogs = sorted(self.dir.glob("**/*.ulg"), key=lambda p: p.stat().st_mtime)
+        return {"px4_log": str(self.log_path), "ulog": str(ulogs[-1]) if ulogs else None}
 
 
 def _alive(pid: int) -> bool:

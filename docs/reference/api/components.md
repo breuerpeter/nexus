@@ -22,3 +22,5 @@ builds it, and a [peer](../../design/concepts.md#peer) is a process the run star
 ::: nexus_uav.Registry
 ::: nexus_uav.register
 ::: nexus_uav.Peer
+::: nexus_uav.ContainerPeer
+::: nexus_uav.ensure_image
