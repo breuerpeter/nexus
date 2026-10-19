@@ -21,6 +21,8 @@ from pathlib import Path
 from typing import ClassVar
 
 import nexus_uav._src.build.launch as L
+import nexus_uav._src.core.clock as clock_mod
+import nexus_uav._src.core.loop as loop_mod
 from nexus_uav._src.config import LaunchConfig
 from nexus_uav._src.core.interfaces import Stage
 from nexus_uav._src.core.registry import Registry
@@ -237,28 +239,58 @@ def _free() -> type:
     return Free
 
 
-# The tick of the paced runs: 20 ms, five times the fixture's 4 ms, so a tick of the stand-ins fits its budget on a
-# loaded CI runner too, and only the slow sensor, which holds a tick for 50 ms, falls behind.
+# The tick of the paced runs: 20 ms, which the quick stand-in sensor's 5 ms hold fits and the slow one's 50 ms overruns.
 PACED_DT = 0.02
 
 
-class _SlowSensor(sv.StandInSensor):
-    """A stand-in sensor whose host stage holds each tick past its budget: 50 ms against the paced runs' 20 ms."""
+class _WallClock:
+    """A wall clock the test drives, in place of the box's: the loop's pacing and the clock's throttle read it, and
+    its `sleep` advances it at once. So a tick costs what its stages hold it for, whatever the box takes, and the
+    live real-time factor the loop measures follows from the test's own numbers, on a loaded box too.
+    """
 
-    def stages(self):
-        return [Stage("stand_in", "host", lambda tick: time.sleep(0.05))]
+    def __init__(self):
+        self.now = 1000.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def time(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.now += seconds
 
 
-def _steps_for(seconds: float):
-    """A `during` that steps the run for `seconds` of wall time after its first tick, which sets the run up and
-    compiles its kernels, past two live real-time factor readings when `seconds` is more than 2. Returns how many
-    ticks it ran.
+@pytest.fixture
+def wall_clock(monkeypatch) -> _WallClock:
+    """The wall clock the run's pacing reads, which the test drives."""
+    clock = _WallClock()
+    monkeypatch.setattr(clock_mod, "time", clock)
+    monkeypatch.setattr(loop_mod, "time", clock)
+    return clock
+
+
+def _holding(clock, seconds: float) -> type:
+    """A stand-in sensor class whose host stage holds each tick for `seconds` of `clock`."""
+
+    class Holding(sv.StandInSensor):
+        def stages(self):
+            return [Stage("stand_in", "host", lambda tick: clock.sleep(seconds))]
+
+    return Holding
+
+
+def _steps_for(clock, seconds: float):
+    """A `during` that steps the run for `seconds` of `clock`, the `time` module or a `_WallClock`, after its first
+    tick, which sets the run up and compiles its kernels, past two live real-time factor readings when `seconds` is
+    more than 2. Returns how many ticks it ran.
     """
 
     def step(loop) -> int:
         n = 1 if loop.step() else 0
-        deadline = time.monotonic() + seconds
-        while n and time.monotonic() < deadline and loop.step():
+        deadline = clock.monotonic() + seconds
+        while n and clock.monotonic() < deadline and loop.step():
             n += 1
         return n
 
@@ -342,20 +374,22 @@ def test_a_run_that_declares_a_free_running_peer_starts_it_and_flies_at_a_real_t
 
 
 def test_a_run_at_a_factor_of_1_with_a_free_running_peer_warns_once_when_its_live_factor_falls_below_0_95(
-    daemon, tmp_path, caplog
+    daemon, tmp_path, caplog, wall_clock
 ):
     """A run at a factor of 1 with a free-running peer warns once when its live real-time factor falls below 0.95.
 
     Given the fixture vehicle that declares the PX4 SITL peer, a free-running stand-in peer, `radio`, and a stand-in
-    sensor whose host stage holds each tick past its budget, when the run steps at a real-time factor of 1 past two
-    live readings, then the log holds one warning naming `radio` and a measured factor below 0.95.
+    sensor whose host stage holds each tick for 50 ms of a wall clock the test drives, past its 20 ms budget, when
+    the run steps at a real-time factor of 1 past two live readings, then the log holds one warning naming `radio`
+    and a measured factor below 0.95.
     """
     free = _free()
     path = sv.vehicle(tmp_path, sv.prim("Slow", "StandInSensorAPI"), root=sv.companion(), px4=True)
-    registry = sv.components(NexusPx4SitlAPI=Px4Fake, StandInPeerAPI=free, StandInSensorAPI=_SlowSensor)
+    slow = _holding(wall_clock, 0.05)
+    registry = sv.components(NexusPx4SitlAPI=Px4Fake, StandInPeerAPI=free, StandInSensorAPI=slow)
 
     with caplog.at_level(logging.WARNING, logger="nexus"):
-        outcome = _built(path, registry, during=_steps_for(2.5), rtf=1.0, dt=PACED_DT)
+        outcome = _built(path, registry, during=_steps_for(wall_clock, 2.5), rtf=1.0, dt=PACED_DT)
 
     warnings = _pace_warnings(caplog)
     factors = [float(m.group()) for w in warnings for m in [re.search(r"\d+\.\d+", w)] if m]
@@ -363,24 +397,23 @@ def test_a_run_at_a_factor_of_1_with_a_free_running_peer_warns_once_when_its_liv
     assert seen == (1, True, True, 1), (warnings, outcome["error"])
 
 
-def test_a_run_at_a_factor_of_1_with_a_free_running_peer_that_keeps_pace_logs_no_warning(daemon, tmp_path, caplog):
+def test_a_run_at_a_factor_of_1_with_a_free_running_peer_that_keeps_pace_logs_no_warning(
+    daemon, tmp_path, caplog, wall_clock
+):
     """A run at a factor of 1 with a free-running peer that keeps pace logs no falling-behind warning.
 
-    Given the fixture vehicle that declares the PX4 SITL peer and a free-running stand-in peer, `radio`, with every
-    tick inside its budget, when the run steps at a real-time factor of 1 past two live readings, then the log
-    holds no warning about its real-time factor.
+    Given the fixture vehicle that declares the PX4 SITL peer, a free-running stand-in peer, `radio`, and a stand-in
+    sensor whose host stage holds each tick for 5 ms of a wall clock the test drives, inside its 20 ms budget, when
+    the run steps at a real-time factor of 1 past two live readings, then the log holds no warning about its
+    real-time factor, on a loaded box too.
     """
     free = _free()
-    path = sv.vehicle(tmp_path, root=sv.companion(), px4=True)
+    path = sv.vehicle(tmp_path, sv.prim("Quick", "StandInSensorAPI"), root=sv.companion(), px4=True)
+    quick = _holding(wall_clock, 0.005)
+    registry = sv.components(NexusPx4SitlAPI=Px4Fake, StandInPeerAPI=free, StandInSensorAPI=quick)
 
     with caplog.at_level(logging.WARNING, logger="nexus"):
-        outcome = _built(
-            path,
-            sv.components(NexusPx4SitlAPI=Px4Fake, StandInPeerAPI=free),
-            during=_steps_for(2.5),
-            rtf=1.0,
-            dt=PACED_DT,
-        )
+        outcome = _built(path, registry, during=_steps_for(wall_clock, 2.5), rtf=1.0, dt=PACED_DT)
 
     assert (_pace_warnings(caplog), outcome["error"]) == ([], None)
 
@@ -397,6 +430,6 @@ def test_a_run_with_no_free_running_peer_keeps_any_factor_and_warns_of_nothing(d
     registry = Registry({"NexusPx4SitlAPI": Px4Fake, "kit": KitFake})
 
     with caplog.at_level(logging.WARNING, logger="nexus"):
-        outcome = _built(path, registry, during=_steps_for(2.5), rtf=rtf, dt=PACED_DT)
+        outcome = _built(path, registry, during=_steps_for(time, 2.5), rtf=rtf, dt=PACED_DT)
 
     assert (_pace_warnings(caplog), outcome["error"]) == ([], None)
