@@ -50,7 +50,8 @@ def sim_argparser(description: str | None = None) -> argparse.ArgumentParser:
     p.add_argument("--max-steps", type=int, default=None, help="cap the run at N control steps")
     p.add_argument(
         "--rtf", type=float, default=0.0,
-        help="real-time-factor throttle: 0 = unthrottled (default); 1.0 = pace to wall-clock for interactive flying",
+        help="real-time-factor throttle: 0 = unthrottled (default); 1.0 = pace to wall-clock for interactive flying, "
+        "which a vehicle with a free-running peer needs",
     )  # fmt: skip
     p.add_argument(
         "--layer", default=None, metavar="PATH",

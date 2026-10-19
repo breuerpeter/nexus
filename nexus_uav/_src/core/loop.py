@@ -252,6 +252,10 @@ class Loop:
         # Distinct from _last_log_t, the sim-time scene decimation, and from run_stats' post-hoc RTF.
         self._rtf_wall_prev: float | None = None
         self._rtf_sim_prev = 0.0
+        # The peers that keep their own wall clock, which only a run paced at 1 keeps up with: the loop warns
+        # once when its live real-time factor falls below 0.95, since pacing can't stop it falling behind.
+        self._free_peers = [_peer_name(peer) for peer in self.peers if getattr(peer, "clock", None) == "free"]
+        self._pace_warned = False
         # The Recorder records everything itself: every device signal a component writes, the plant's
         # outputs among them, which the loop hands it once it wires the ring. Its taps are device launches in the record
         # stage, so recording never adds a host stage. The loop reads the attribute at the first step, so
@@ -364,11 +368,13 @@ class Loop:
             self.logger.set_time(float(t.sim_time))
 
     def _log_rtf(self, st: float) -> None:
-        """Emit the live real-time factor ~1 Hz wall-clock: sim seconds over wall seconds since the
-        last emission, a rolling window exactly one emission interval wide. Only completed ticks reach
-        this call, so a stalled exchange shows as a *low* next reading, not a live countdown.
+        """Take the live real-time factor ~1 Hz wall-clock: sim seconds over wall seconds since the
+        last reading, a rolling window exactly one interval wide. Only completed ticks reach
+        this call, so a stalled exchange shows as a *low* next reading, not a live countdown. The reading
+        goes to the recording when there is one, and a run with a free-running peer warns once when it
+        falls below 0.95, naming the peer: sim time then trails that peer's wall clock.
         """
-        if self.logger is None:
+        if self.logger is None and (not self._free_peers or self._pace_warned):
             return
         now = time.monotonic()
         if self._rtf_wall_prev is None:
@@ -377,7 +383,15 @@ class Loop:
         wall = now - self._rtf_wall_prev
         if wall < 1.0:
             return
-        self.logger.log_rtf((st - self._rtf_sim_prev) / wall)
+        rtf = (st - self._rtf_sim_prev) / wall
+        if self.logger is not None:
+            self.logger.log_rtf(rtf)
+        if self._free_peers and rtf < 0.95 and not self._pace_warned:
+            self._pace_warned = True
+            logger.warning(
+                f"the live real-time factor fell to {rtf:.2f}, and {' and '.join(self._free_peers)} runs free on "
+                "its own clock: sim time now trails it"
+            )
         self._rtf_wall_prev, self._rtf_sim_prev = now, st
 
     def _close_logs(self) -> None:

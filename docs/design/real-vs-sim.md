@@ -21,7 +21,7 @@ counterpart is a tracked gap.
 |---|---|---|
 | **Physical** | airframe, sensors, actuators, power, payload hardware, the world | **Simulated**: the *only* plane the sim replaces |
 | **Autopilot** | PX4 on the Flight Management Unit (FMU) | **Real, as-is** via PX4 Software In The Loop (SITL): the boundary cuts *through* the FMU |
-| **Companion** | the system-on-module and its services | **Real, emulated**: the companion image under an emulator |
+| **Companion** | the system-on-module and its services | **Real, emulated**: the companion image under an emulator, on its own wall clock, so a run with it paces at a real-time factor of 1 |
 | **Links** | radios, Wi-Fi, LTE | **Network-emulated**: bridged or loopback with added latency and loss |
 | **Operator** | controller, GCS, mobile-device apps | **Real apps**: scripted, real hardware, or the browser build depending on the app |
 | **Cloud** | NTRIP, Suite, fleet | **Real services or local doubles** |
@@ -54,6 +54,9 @@ than one monolith:
 | **Customer preview** | simulated | PX4 SITL | companion | browser GCS + joystick | Suite import + NTRIP |
 | **Flight-stack development** | simulated | PX4 SITL | optional | API client | none |
 | **Design optimization** | simulated | the differentiable Proportional Integral Derivative (PID) law | none | none | none |
+
+A run that starts the emulated companion paces at a real-time factor of 1, in CI too, since the
+companion keeps its own wall clock. The other apps run as fast as they can.
 
 The sim replaces the physical plane in every case. The rest of the stack runs progressively more real
 code as an app moves from batch CI toward a human flying the sim from real hardware. The items

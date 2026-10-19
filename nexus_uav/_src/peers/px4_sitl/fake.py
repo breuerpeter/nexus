@@ -46,6 +46,7 @@ class Px4Fake:
 
     name = checkout.NAME
     check_pin = staticmethod(checkout.check)
+    clock = "stepped"
     instance_free = staticmethod(hil_free)
 
     def __init__(self, *, instance: int, **run) -> None:

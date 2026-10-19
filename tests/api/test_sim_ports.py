@@ -122,6 +122,7 @@ class _Px4OnInstance2:
     """
 
     name = "px4_sitl"
+    clock = "stepped"
 
     @staticmethod
     def check_pin(pin):
