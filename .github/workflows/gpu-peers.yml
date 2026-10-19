@@ -104,10 +104,12 @@ jobs:
       # -rfEsp lists each passed and skipped test beside the failures, so the log shows which tests ran.
       command: >-
         uv run --locked python -c "from nexus_uav._src.peers.${{ matrix.peer }}.runner import prepare; prepare()" &&
-        ${{ matrix.tests && format('uv run --locked --extra policy pytest -m {0} --require {0} -n 0 -rfEsp --durations=25', matrix.tests) || 'true' }} &&
+        ${{ matrix.tests && format('uv run --locked --extra policy pytest -m {0} --require {0} -n 0 -rfEsp --cov=nexus_uav --cov-report=xml --durations=25', matrix.tests) || 'true' }} &&
         ${{ matrix.example && format('uv run --locked --group ci --extra examples python scripts/ci/evaluate_examples.py --only {0}', matrix.example) || 'true' }}
       artifact-name: peer-eval-${{ matrix.peer }}
       artifact-path: .eval-artifacts
+      # The coverage of the peer's real tests, under the peer's flag: no other leg runs them.
+      coverage-flags: ${{ matrix.peer }}
     secrets: inherit
 
   # The branch-protection context — see the note in gpu-examples.yml.

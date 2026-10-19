@@ -24,5 +24,9 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       # pre-commit.ci skips uv-lock (no network there); GitHub Actions has network, so this also
       # doubles as the freshness check for uv.lock and nexus-rl/uv.lock.
+      # The vale-added hook needs Vale on the machine, which this runner lacks; vale.yml makes the same
+      # check on a pull request's added lines with reviewdog.
       - run: uvx pre-commit run --all-files --show-diff-on-failure
+        env:
+          SKIP: vale-added
       - run: uv run --locked lint-imports

@@ -1,7 +1,8 @@
 name: cpu-pytest
 
 # The pytest suite on CPU (ubuntu), the per-PR merge gate: every test but the `gpu` tests, which need
-# a CUDA device, and the `px4_sitl` tests, which fly a real PX4 SITL; gpu-pytest.yml runs those.
+# a CUDA device and run in gpu-pytest.yml, and the `px4_sitl` tests, which fly a real PX4 SITL on the
+# PX4 peer's own box in gpu-peers.yml.
 # No path filter so it's a clean required check (a path-filtered required check stays stuck-pending
 # on PRs that don't match).
 # The tests run on one worker per vCPU, as pyproject.toml sets: the log names the workers and the

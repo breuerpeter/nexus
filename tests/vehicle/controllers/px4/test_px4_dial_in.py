@@ -1,0 +1,88 @@
+"""Where PX4's clock starts when it dials in late to the sim's Hardware In The Loop (HIL) server, as it can on
+a slow CI runner.
+
+A real build of the fixture vehicle in ``tests/usd/sensor_vehicle.py`` on the Warp CPU backend, flown through
+``nx.Sim`` with the PX4 Software In The Loop (SITL) peer sent to its fake, which dials the HIL port as PX4 does:
+the loop's side of the link, so the test needs no PX4 tree, no docker and no network. The sim's HIL server is
+the boundary: patched, it takes no connection until 17 s after it first looks for one, the state a slow PX4
+boot leaves the sim in, and the test reads the stamp off the bytes the sim writes to the link. Skipped without
+newton, pxr or pymavlink.
+"""
+
+import os
+import time
+
+import pytest
+
+pytest.importorskip("newton")
+pytest.importorskip("pxr")
+pytest.importorskip("pymavlink")
+
+# Pin the MAVLink dialect before importing mavutil, as the PX4 controller does: whichever import runs
+# first sets it, and the controller's HIL_GPS needs the common dialect's fields.
+os.environ.setdefault("MAVLINK20", "1")
+os.environ.setdefault("MAVLINK_DIALECT", "common")
+
+from pymavlink import mavutil
+
+import nexus_uav as nx
+from nexus_uav._src.peers import containers
+from nexus_uav._src.peers.px4_sitl.fake import Px4Fake
+from tests.usd import sensor_vehicle as sv
+
+# PX4's ports are the machine's, so the tests that bind or dial them run on one worker, one at a time.
+pytestmark = [pytest.mark.usefixtures("warp_cpu"), pytest.mark.xdist_group("px4_ports")]
+
+_DIAL_IN_S = 17.0  # how long after the sim starts waiting PX4's connection reaches it, as on a slow CI runner
+
+
+def _no_docker():
+    """The docker daemon this machine has none of: a run that reaches for it fails here."""
+    raise AssertionError("the run reached for the docker daemon, which a run on the fake PX4 needs none of")
+
+
+def _first_sensor_stamp_of_a_late_dial_in(monkeypatch, vehicle: str) -> int:
+    """The ``time_usec`` of the first ``HIL_SENSOR`` a run of ``vehicle`` sends PX4, when PX4 dials in 17 s
+    after the sim starts waiting for it.
+    """
+    recv, write = mavutil.mavtcpin.recv, mavutil.mavtcpin.write
+    parser = mavutil.mavlink.MAVLink(None)
+    first_look = None
+    stamps = []
+
+    def recv_once_px4_dialed_in(self, n=None):
+        nonlocal first_look
+        if self.port is None:
+            first_look = first_look or time.monotonic()
+            if time.monotonic() - first_look < _DIAL_IN_S:
+                return ""
+        return recv(self, n)
+
+    def write_and_read_stamps(self, buf):
+        if self.port is not None:  # before PX4 dials in, a write reaches nobody
+            stamps.extend(m.time_usec for m in parser.parse_buffer(bytes(buf)) or [] if m.get_type() == "HIL_SENSOR")
+        return write(self, buf)
+
+    monkeypatch.setattr(mavutil.mavtcpin, "recv", recv_once_px4_dialed_in)
+    monkeypatch.setattr(mavutil.mavtcpin, "write", write_and_read_stamps)
+    registry = nx.Registry({"NexusPx4SitlAPI": Px4Fake})
+    with nx.Sim(vehicle, scene=sv.SCENE, device="cpu", registry=registry) as sim:
+        sim.start(timeout=60.0)
+    return stamps[0]
+
+
+def test_px4s_clock_starts_near_zero_even_when_px4_dials_in_late(monkeypatch, tmp_path, cut_network):
+    """The late dial-in test proves the loop's side on the fake PX4, with no PX4 tree and no docker.
+
+    Given the fixture vehicle on the fake PX4, no PX4 tree, no docker and the network cut, when the sim's HIL
+    server takes no connection until 17 s after it first looks for one, then the first `HIL_SENSOR` the run
+    sends carries `time_usec` under 10 ms.
+    """
+    # No PX4 tree: a home folder with no fetched tree, and no pin variable naming one.
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("NEXUS_PX4_SITL_REF", raising=False)
+    monkeypatch.setattr(containers, "client", _no_docker)
+    cut_network()
+    vehicle = sv.vehicle(tmp_path, px4=True)
+
+    assert _first_sensor_stamp_of_a_late_dial_in(monkeypatch, vehicle) < 10_000
