@@ -172,7 +172,11 @@ before any peer starts, and warns once when its live factor falls below 0.95.
 
 The defined protocol between a component and a peer, or between two peers. The PX4 controller and
 PX4 SITL share the Hardware In The Loop (HIL) link, and the RTX sensors and the Kit render peer the
-render link. The offboard link leaves the run for a script.
+render link. The offboard link leaves the run for a script. A serial link joins two peers as a serial
+line joins a companion computer to the flight controller. A declared peer names the peers it links to
+in `serial`. The run makes each link, two pseudo-terminals joined, before any peer starts, and hands
+each peer the path of its end, by the other peer's name. PX4 SITL starts a MAVLink instance on each
+of its ends.
 
 ### Port map
 

@@ -154,6 +154,33 @@ def test_start_runs_px4_with_the_runs_instance_and_airframe(daemon, tree, tmp_pa
     } and launch["image"].startswith(f"{IMAGE}:")
 
 
+def test_start_mounts_each_serial_links_device_and_starts_a_mavlink_instance_on_it_from_px4s_post_hook(
+    daemon, tree, tmp_path
+):
+    """A peer with a serial link mounts its end into the container as `/dev/serial/<peer>`, and PX4 starts a MAVLink
+    instance on it from its own `<airframe>.post` hook, a file of this run's mounted over the tree's copy.
+
+    Given a peer whose serial link to `radio` is `/dev/pts/7`, over a tree whose built startup folder holds the airframe
+    `80000_none_astro_max`, when it starts, then the container binds `/dev/pts/7` at `/dev/serial/radio`
+    read-write, and the run's `serial.post` read-only at `80000_none_astro_max.post` beside the airframe, holding
+    `mavlink start -d /dev/serial/radio -b 3000000 -m onboard -x`.
+    """
+    airframes = tree / "build" / "px4_sitl_default" / "etc" / "init.d-posix" / "airframes"
+    airframes.mkdir(parents=True)
+    (airframes / "80000_none_astro_max").write_text("# the airframe\n")
+    post = tmp_path / "home" / ".cache" / "nexus" / "px4-work" / "0" / "serial.post"
+
+    _peer(tree, tmp_path, serial={"radio": "/dev/pts/7"}).start()
+
+    launch = next(kw for kind, kw in daemon if kind == "run" and kw.get("detach", True))
+    added = [m for m in launch["mounts"] if m["Source"] in ("/dev/pts/7", str(post))]
+    expected = [
+        Mount(f"{airframes}/80000_none_astro_max.post", str(post), type="bind", read_only=True),
+        Mount("/dev/serial/radio", "/dev/pts/7", type="bind", read_only=False),
+    ]
+    assert (added, post.read_text()) == (expected, "mavlink start -d /dev/serial/radio -b 3000000 -m onboard -x\n")
+
+
 def test_start_empties_the_instances_work_folder_of_what_an_earlier_run_left(daemon, tree, tmp_path):
     """A start empties the instance's work folder, so PX4 boots with no parameter and no mission an earlier run
     stored there, whether that run ended or died before its teardown: the peer finds one folder either way.

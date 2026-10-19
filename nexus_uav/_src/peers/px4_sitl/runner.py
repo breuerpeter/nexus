@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import os
 import shutil
+from collections.abc import Mapping
 from pathlib import Path
 
 from nexus_uav._src.core import logger
@@ -105,6 +106,9 @@ class Px4Sitl(ContainerPeer):
         instance: The run's instance, which numbers PX4's ports and its system id.
         log_dir: The run's folder: the peer's files live under ``px4_sitl/`` there, PX4's console as
             ``console.log``, the ``px4_log`` artifact, and its ULog as ``<date>/<time>.ulg``, the ``ulog`` artifact.
+        serial: The path of PX4's end of each serial link the run made for it, by the other peer's name. PX4 opens
+            each as ``/dev/serial/<name>`` and starts a MAVLink instance on it in onboard mode, the stream set a
+            companion computer expects, at 3 Mbaud with MAVLink's file transfer, the link stock SITL doesn't start.
         **run: The run's other values, which the peer needs none of.
 
     Raises:
@@ -115,7 +119,16 @@ class Px4Sitl(ContainerPeer):
     check_pin = staticmethod(checkout.check)
     clock = "stepped"
 
-    def __init__(self, *, airframe: str = "", pin: PeerPin, instance: int, log_dir: Path, **run) -> None:
+    def __init__(
+        self,
+        *,
+        airframe: str = "",
+        pin: PeerPin,
+        instance: int,
+        log_dir: Path,
+        serial: Mapping[str, str] = (),
+        **run,
+    ) -> None:
         if not airframe:
             raise ValueError(
                 "NexusPx4SitlAPI authors no nexus:airframe; name the PX4 SITL airframe the peer boots, such as astro_max"
@@ -124,6 +137,7 @@ class Px4Sitl(ContainerPeer):
         self.pin = pin
         self.tree: Path | None = None  # resolved at start, which can fetch it
         self.airframe = airframe
+        self.serial = dict(serial)
 
     def start(self) -> None:
         """Fetch the PX4 tree, then build the image and the tree if this machine lacks them, then start
@@ -168,6 +182,18 @@ class Px4Sitl(ContainerPeer):
         # makes none as root.
         (work / "log").mkdir()
         kwargs["volumes"][str(self.dir)] = {"bind": str(instance_dir / "log"), "mode": "rw"}
+        if self.serial:
+            # Each serial link's device, and PX4's own hook for commands after its airframe and its network links,
+            # `<airframe>.post` beside the airframe file: a file of this run's, mounted over the tree's copy inside
+            # the container, so the host tree keeps nothing of this run's. A bind mount of the device keeps the
+            # kernel's lookup of the pseudo-terminal, which a device node made inside the container would lose.
+            post = work / "serial.post"
+            post.write_text(
+                "".join(f"mavlink start -d /dev/serial/{name} -b 3000000 -m onboard -x\n" for name in self.serial)
+            )
+            kwargs["volumes"][str(post)] = {"bind": f"{_airframe_file(self.tree, self.airframe)}.post", "mode": "ro"}
+            for name, path in self.serial.items():
+                kwargs["volumes"][path] = {"bind": f"/dev/serial/{name}", "mode": "rw"}
         return {
             "command": ["build/px4_sitl_default/bin/px4", "-i", str(self.instance), "-d"],
             "network_mode": "host",
@@ -248,6 +274,15 @@ class Px4Sitl(ContainerPeer):
         """
         ulogs = sorted(self.dir.glob("**/*.ulg"), key=lambda p: p.stat().st_mtime)
         return {"px4_log": str(self.log_path), "ulog": str(ulogs[-1]) if ulogs else None}
+
+
+def _airframe_file(tree: Path, airframe: str) -> Path:
+    """The file in the built tree's startup folder that PX4 runs for `airframe`, ``<id>_none_<airframe>``, and reads
+    ``.post`` beside; with none built, a name PX4 never reads, so PX4's own `Unknown model` line names the fault.
+    """
+    airframes = tree / "build" / "px4_sitl_default" / "etc" / "init.d-posix" / "airframes"
+    found = sorted(airframes.glob(f"*_none_{airframe}"))
+    return found[0] if found else airframes / f"0_none_{airframe}"
 
 
 def _alive(pid: int) -> bool:

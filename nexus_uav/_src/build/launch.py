@@ -10,9 +10,15 @@ Kit render peer an RTX sensor requires, it starts once by the name the class req
 
 A component's schema attributes are its class's keyword arguments, and so are a peer's. What only the run
 knows reaches a peer as keywords beside them: its pin, the run's instance, the run's folder, the files the
-run reads and the asset cache. A component whose class states ``needs_instance`` takes the instance too. The
-run claims one instance on this machine when it starts a declared peer, which every address its peers use
-counts from, and instance 0 when it starts none, for an autopilot started elsewhere.
+run reads, the asset cache and its serial links, a device path by the other peer's name. A component whose
+class states ``needs_instance`` takes the instance too. The run claims one instance on this machine when it
+starts a declared peer, which every address its peers use counts from, and instance 0 when it starts none,
+for an autopilot started elsewhere.
+
+A declared peer that links to another peer over a serial line, as a companion computer links to the flight
+controller over one, names that peer in its class's ``serial``. The run owns the link as it owns every
+port: it makes one :class:`~nexus_uav._src.peers.serial.SerialLink` per pair before any peer starts, hands
+each peer the path of its end, and stops the links with the peers at the run's end.
 
 Before any peer starts, the build resolves and checks the pin of each peer it starts, through
 :mod:`nexus_uav._src.peers.pins` and the peer's own ``check_pin``, and the receipt records each started
@@ -35,6 +41,7 @@ from nexus_uav._src.core.registry import Registry
 from nexus_uav._src.core.run_folder import run_folder
 from nexus_uav._src.peers import CLOCKS, instance, pins
 from nexus_uav._src.peers.files import run_files
+from nexus_uav._src.peers.serial import SerialLink
 from nexus_uav._src.physics import VehicleUsd
 from nexus_uav._src.rendering import PEER as KIT
 from nexus_uav._src.rendering import RtxRendererFactory
@@ -132,8 +139,8 @@ def build_from_launch(
         ValueError: The vehicle declares no controller or two, two estimators or guidances, one off its
             ``Scope``, a schema no class claims, a component schema that states no role or two, a peer that
             fails its own check of the values its schema authors, or a class requires a peer no class
-            claims, or a pin file beside a catalog names no peer, or a peer's pin isn't in its form; raised
-            before any peer starts.
+            claims, or a peer links over a serial line to a peer the run doesn't start, or a pin file beside
+            a catalog names no peer, or a peer's pin isn't in its form; raised before any peer starts.
         FileNotFoundError: The launch names an override layer with no file behind it.
         FileExistsError: ``run_dir`` holds files already; raised before any peer starts.
         RunError: A peer couldn't start, the Kit peer for RTX sensors or the PX4 peer among them; the
@@ -175,10 +182,13 @@ def build_from_launch(
     resolved.tested_config.peers = {name: pin for name, pin in peer_pins.items() if pin is not None}
     resolved.tested_config.declarations = [_declaration(spec) for spec in [*specs, *declared]]
     started: list = []
+    links: list = []
     try:
+        # Every serial link exists before any peer starts, so each end's path is a device when its peer opens it.
+        links, ends = _serial_links(declared, list(required.values()))
         # The build makes each peer before any starts, so a peer that fails its own check fails the run first.
-        made = [_peer(spec.cls, spec.kwargs, peer_pins[spec.cls.name], run, spec.prim) for spec in declared]
-        needed = {name: _peer(cls, {}, peer_pins[cls.name], run, None) for name, cls in required.items()}
+        made = [_peer(spec.cls, spec.kwargs, peer_pins[spec.cls.name], run, spec.prim, ends) for spec in declared]
+        needed = {name: _peer(cls, {}, peer_pins[cls.name], run, None, ends) for name, cls in required.items()}
         # The required peers start first: Kit boots while the declared peers build and the physics compiles.
         for peer in needed.values():
             _start(peer, started)
@@ -197,8 +207,9 @@ def build_from_launch(
             instance=run["instance"],
             estimator=built.get("estimator"),
             guidance=built.get("guidance"),
-            # The run's instance stays held until the loop has stopped every peer.
-            peers=[*started, *([claim] if claim is not None else [])],
+            # The serial links close with the peers, and the run's instance stays held until the loop has stopped
+            # every peer.
+            peers=[*started, *links, *([claim] if claim is not None else [])],
             peer_links={name: peer for name, peer in needed.items() if name != KIT},
             connections=read_connections(usd),
             prims={roles[role].prim: component for role, component in built.items()},
@@ -216,7 +227,7 @@ def build_from_launch(
         )
     except BaseException:
         # The loop never took the peers over, so they stop here, and the instance is free again.
-        for peer in started:
+        for peer in [*started, *links]:
             peer.stop()
         if claim is not None:
             claim.stop()
@@ -241,6 +252,31 @@ def _required(specs: list[ComponentSpec], registry: Registry) -> dict[str, type]
                 )
             required[name] = cls
     return dict(sorted(required.items()))
+
+
+def _serial_links(declared: list[PeerSpec], required: list[type]) -> tuple[list[SerialLink], dict[str, dict[str, str]]]:
+    """One serial link per peer a declared peer's class names in ``serial``, and each peer's ends, by the other
+    peer's name: ``ends[peer][other]`` is the path of `peer`'s end of its link to `other`.
+
+    Raises:
+        ValueError: A declared peer links to a peer this run starts no peer of; the message names the prim, the
+            peer and the name.
+    """
+    names = {spec.cls.name for spec in declared} | {cls.name for cls in required}
+    links: list[SerialLink] = []
+    ends: dict[str, dict[str, str]] = {}
+    for spec in declared:
+        for other in getattr(spec.cls, "serial", ()):
+            if other not in names:
+                raise ValueError(
+                    f"{spec.prim}: {spec.cls.name} links to {other!r} over a serial line, and this run starts no "
+                    f"{other} peer"
+                )
+            link = SerialLink(spec.cls.name, other)
+            links.append(link)
+            ends.setdefault(spec.cls.name, {})[other] = link.paths[spec.cls.name]
+            ends.setdefault(other, {})[spec.cls.name] = link.paths[other]
+    return links, ends
 
 
 def _check_clocks(classes: list[type], rtf: float) -> None:
@@ -282,14 +318,15 @@ def _start(peer, started: list) -> None:
     started.append(peer)
 
 
-def _peer(cls: type, kwargs: dict, pin, run: dict, prim: str | None):
-    """The peer `cls` makes from its schema's attributes, `kwargs`, its checked `pin` and the run's values.
+def _peer(cls: type, kwargs: dict, pin, run: dict, prim: str | None, ends: dict[str, dict[str, str]]):
+    """The peer `cls` makes from its schema's attributes, `kwargs`, its checked `pin`, the run's values and its
+    serial links' ends, by the other peer's name.
 
     Raises:
         ValueError: The peer fails its own check of its values; the message names its prim.
     """
     try:
-        return cls(**kwargs, pin=pin, **run)
+        return cls(**kwargs, pin=pin, **run, serial=ends.get(cls.name, {}))
     except ValueError as exc:
         raise ValueError(f"{prim}: {exc}" if prim else str(exc)) from exc
 

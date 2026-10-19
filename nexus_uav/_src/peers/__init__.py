@@ -27,8 +27,9 @@ it built or a shader cache, lives under ``~/.cache/nexus/<name>/``, so CI caches
 rule. This folder itself holds the contract,
 :mod:`.containers`, the container peer every container peer subclasses and the image a peer builds from a
 folder, both public, :mod:`.pins`, which finds every peer's pin the same way, :mod:`.instance`, which claims
-the instance a run numbers its peers' ports from, and :mod:`.files`, the files a run's peers read. The peers
-are the PX4 Software In The Loop (SITL) container, :mod:`.px4_sitl`, and the Kit render peer, :mod:`.kit`.
+the instance a run numbers its peers' ports from, :mod:`.files`, the files a run's peers read, and
+:mod:`.serial`, the serial link the run makes between two peers. The peers are the
+PX4 Software In The Loop (SITL) container, :mod:`.px4_sitl`, and the Kit render peer, :mod:`.kit`.
 """
 
 from __future__ import annotations
@@ -62,6 +63,11 @@ class Peer(Protocol):
     wall clock, as a companion computer under an emulator does. Sim time and a free-running peer's clock
     agree only while the run paces at a real-time factor of 1, so the build fails a run that declares one
     at any other factor, before any peer starts, and the loop warns when the live factor falls below 0.95.
+
+    ``serial``, optional, names the peers this one links to over a serial line, by their ``name``, as a companion
+    computer links to the flight controller over one. The run owns the link, :mod:`.serial`: it makes one per
+    pair before any peer starts and hands each peer the path of its end in the keyword ``serial``, a device path by
+    the other peer's name, so a peer takes ``serial`` beside the run's other values and opens the path it names.
     """
 
     clock: ClassVar[Literal["stepped", "on_request", "free"]]
