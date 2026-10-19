@@ -126,6 +126,15 @@ def pull_image(image: str) -> str:
     return image
 
 
+def prepare(pin: PeerPin | None = None) -> str:
+    """Pull the pinned image the way a run's first start does, and return its name.
+
+    For a caller that wants the cold work done outside a run's budget: CI before a flight or a test, or a
+    machine's first setup. ``None`` takes the pin with no project catalog.
+    """
+    return pull_image((pin or resolve()).ref)
+
+
 def _declares_cesium_tileset(path: Path) -> bool:
     """Whether the USD at ``path`` holds a Cesium tileset, the prim the peer claims a Cesium scene by."""
     from pxr import Usd

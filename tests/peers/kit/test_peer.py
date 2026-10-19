@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 from docker.types import Mount
 
-from nexus_uav._src.peers.kit.runner import KitPeer, KitPeerError
+from nexus_uav._src.peers.kit.runner import KitPeer, KitPeerError, prepare
 from nexus_uav._src.peers.pins import PeerPin
 
 _spec = importlib.util.spec_from_file_location(
@@ -147,6 +147,16 @@ def test_a_machine_that_lacks_the_image_pulls_it_once(daemon, tmp_path):
     for _ in range(2):
         KitPeer([vehicle], cache_dir=tmp_path / "cache", pin=PIN).start()
     assert (daemon.pulls, daemon.builds) == ([ISAAC_SIM], [])
+
+
+def test_prepare_pulls_the_pinned_image_once_and_starts_nothing(daemon):
+    """`prepare` does the cold work of a first start outside a run: given a machine that lacks the image, when
+    the peer prepares twice, then it pulls the pinned image once and starts no container.
+    """
+    daemon.held = set()
+    for _ in range(2):
+        prepare(PIN)
+    assert (daemon.pulls, daemon.runs) == ([ISAAC_SIM], [])
 
 
 def test_a_failed_pull_ends_the_run_with_the_image_and_the_cause(daemon, tmp_path):

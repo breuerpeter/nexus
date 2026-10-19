@@ -7,8 +7,10 @@ name: gpu-peers
 # the example one table maps it to. A touched peer with neither has nothing to fly, so no box starts for it,
 # and the plan's summary says so. A push to main runs every peer's tests, one box each, and no example:
 # gpu-examples flies those. The box's cache is the peer's, ~/.cache/nexus/<peer>, keyed on the peer's source
-# folder, and the command is what a user runs, so the first use builds what the peer needs, its tree and its
-# image, the way a user's first run does, and the leg knows no peer by name.
+# folder. The command calls the peer runner's prepare(), the cold work a first start does, a fetch and a
+# build or an image pull, then runs what a user runs; `--require <peer>` fails a marked test that skips, so
+# a box that lacks the peer's tree reds the leg instead of passing it with nothing run. The leg knows no
+# peer by name.
 # `label` reds a pull request that touches a peer with something to fly and carries no `gpu` label, naming
 # the label, on a hosted runner: a peer change cannot merge unproven. The label itself is the GPU-spend
 # approval, gated once in gpu-runner.yml. A labeled fork PR flies through pull_request_target on per-run
@@ -101,7 +103,8 @@ jobs:
       cache-files: nexus_uav/_src/peers/${{ matrix.peer }}
       # -rfEsp lists each passed and skipped test beside the failures, so the log shows which tests ran.
       command: >-
-        ${{ matrix.tests && format('uv run --locked --extra policy pytest -m {0} -n 0 -rfEsp --durations=25', matrix.tests) || 'true' }} &&
+        uv run --locked python -c "from nexus_uav._src.peers.${{ matrix.peer }}.runner import prepare; prepare()" &&
+        ${{ matrix.tests && format('uv run --locked --extra policy pytest -m {0} --require {0} -n 0 -rfEsp --durations=25', matrix.tests) || 'true' }} &&
         ${{ matrix.example && format('uv run --locked --group ci --extra examples python scripts/ci/evaluate_examples.py --only {0}', matrix.example) || 'true' }}
       artifact-name: peer-eval-${{ matrix.peer }}
       artifact-path: .eval-artifacts
