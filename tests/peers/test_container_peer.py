@@ -116,7 +116,7 @@ def _radio(image_dir: Path | None = None) -> type:
             super().__init__(instance=instance, log_dir=log_dir)
             type(self).made.append(self)
 
-        def launch(self) -> dict:
+        def run_options(self) -> dict:
             image = "example.invalid/radio:1" if image_dir is None else ensure_image(image_dir, "radio")
             return {"image": image, "command": ["radio", "--serve"]}
 
