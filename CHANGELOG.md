@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.5.0](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.4.0...nexus-uav-v0.5.0) (2026-10-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* **peers:** a run's folder holds `px4_sitl/console.log` and `px4_sitl/<date>/<time>.ulg` in place of `px4.log` and `ulog/`, and `kit/console.log` in place of `kit.log`.
+
+### Features
+
+* **peers:** a peer states how it keeps time, and a run that can't keep it fails first ([#336](https://github.com/breuerpeter/nexus/issues/336)) ([317ebfb](https://github.com/breuerpeter/nexus/commit/317ebfb8da8af7e42d79853618cdcf1ebbd8e654)), closes [#325](https://github.com/breuerpeter/nexus/issues/325)
+* **peers:** a project's container peer subclasses the public container peer ([#333](https://github.com/breuerpeter/nexus/issues/333)) ([9cab39e](https://github.com/breuerpeter/nexus/commit/9cab39e8a6b1d09b3551a5015d9bdb50d156cadd)), closes [#306](https://github.com/breuerpeter/nexus/issues/306)
+
+
+### Bug Fixes
+
+* **px4:** a run boots PX4 with no state an earlier run left ([#328](https://github.com/breuerpeter/nexus/issues/328)) ([b5f43e5](https://github.com/breuerpeter/nexus/commit/b5f43e5ba2d24823a7aea4d676eed99c893b8562)), closes [#327](https://github.com/breuerpeter/nexus/issues/327)
+
 ## [0.4.0](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.3.0...nexus-uav-v0.4.0) (2026-10-15)
 
 
