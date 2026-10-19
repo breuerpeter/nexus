@@ -6,8 +6,9 @@ import pytest
 @pytest.fixture(scope="module")
 def px4_vehicle(tmp_path_factory) -> str:
     """The fixture vehicle a real PX4 flies, written once for the module: PX4 declared on airframe `astro_max`, and
-    the four sensors it reads at the shipped vehicle's rates, the IMU each tick, the magnetometer at 100 Hz, the
-    barometer at 50 Hz and the GPS at 30 Hz, so PX4's estimator converges and it arms. A run flies it in `sv.SCENE`.
+    the four sensors it reads at the shipped vehicle's rates, the Inertial Measurement Unit (IMU) each tick, the
+    magnetometer at 100 Hz, the barometer at 50 Hz and the Global Positioning System (GPS) at 30 Hz, so PX4's
+    estimator converges and it arms. A run flies it in the fixture scene.
     """
     pytest.importorskip("pxr")
     from tests.usd import sensor_vehicle as sv
