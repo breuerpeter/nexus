@@ -24,10 +24,12 @@ _ROOT = Path(__file__).resolve().parents[2]
 def _pytest(*args: str, cuda: bool = True) -> subprocess.CompletedProcess:
     """Run pytest from the repo root in a fresh process, whose Warp default device is ``cuda:0``, or ``cpu``
     with ``cuda`` false, which hides every CUDA device from it.
+
+    The run takes no workers, so its tests share the one process in the order of ``args``.
     """
     env = None if cuda else {**os.environ, "CUDA_VISIBLE_DEVICES": ""}
     return subprocess.run(
-        [sys.executable, "-m", "pytest", "-vv", "-rfE", "-p", "no:cacheprovider", *args],
+        [sys.executable, "-m", "pytest", "-vv", "-rfE", "-p", "no:cacheprovider", "-n", "0", *args],
         check=False,
         cwd=_ROOT,
         capture_output=True,
@@ -48,17 +50,14 @@ def _outcome(run: subprocess.CompletedProcess) -> tuple[int, list[str]]:
     return run.returncode, sorted(entry.split()[1] for entry in _failures(run))
 
 
-def test_api_passes_before_sensors():
-    """`pytest tests/api tests/vehicle/sensors/test_sensors.py` passes on a GPU machine as it does with no CUDA device."""
+def test_api_passes_alone_and_before_sensors():
+    """`pytest tests/api tests/vehicle/sensors/test_sensors.py` passes on a GPU machine as it does with no CUDA device.
+
+    pytest runs its arguments in order, so the api tests run first, as they would alone, and one run proves both.
+    """
     args = ("tests/api", "tests/vehicle/sensors/test_sensors.py")
     run = _pytest(*args)
     assert _outcome(run) == _outcome(_pytest(*args, cuda=False)), run.stdout[-3000:] + run.stderr[-3000:]
-
-
-def test_api_passes_alone():
-    """`pytest tests/api` alone still passes on a GPU machine as it does with no CUDA device."""
-    run = _pytest("tests/api")
-    assert _outcome(run) == _outcome(_pytest("tests/api", cuda=False)), run.stdout[-3000:] + run.stderr[-3000:]
 
 
 def test_a_test_that_leaves_the_device_changed_fails_naming_the_device(tmp_path):
