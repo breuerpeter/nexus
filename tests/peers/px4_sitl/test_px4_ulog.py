@@ -80,7 +80,8 @@ def test_a_px4_run_with_run_dir_leaves_its_recording_console_and_ulog_there_and_
     and `sim.artifacts()` names each there.
 
     Given a real PX4 run, when it flies under `Sim(..., log=True, run_dir=d)` and closes, then `d` holds
-    `nexus.rrd`, `px4.log` and one `.ulg` under `ulog/` and nothing else, and `sim.artifacts()` names each in `d`.
+    `nexus.rrd`, `px4_sitl/console.log` and one `.ulg` at `px4_sitl/<date>/<time>.ulg` and nothing else, and
+    `sim.artifacts()` names each in `d`.
     """
     d = tmp_path / "run"
     with nx.Sim("astro_max_base", scene="empty", log=True, run_dir=d) as sim:
@@ -89,6 +90,12 @@ def test_a_px4_run_with_run_dir_leaves_its_recording_console_and_ulog_there_and_
     artifacts = sim.artifacts()
 
     files = sorted(str(p.relative_to(d)) for p in d.rglob("*") if p.is_file())
-    shape = sorted("ulog/*.ulg" if f.startswith("ulog/") and f.endswith(".ulg") else f for f in files)
+    shape = sorted(
+        "px4_sitl/*/*.ulg" if f.startswith("px4_sitl/") and f.endswith(".ulg") and f.count("/") == 2 else f
+        for f in files
+    )
     named = {key: Path(artifacts.get(key) or "/").is_relative_to(d) for key in ("rrd", "px4_log", "ulog")}
-    assert (shape, named) == (["nexus.rrd", "px4.log", "ulog/*.ulg"], {"rrd": True, "px4_log": True, "ulog": True})
+    assert (shape, named) == (
+        ["nexus.rrd", "px4_sitl/*/*.ulg", "px4_sitl/console.log"],
+        {"rrd": True, "px4_log": True, "ulog": True},
+    )

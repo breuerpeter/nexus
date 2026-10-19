@@ -150,14 +150,14 @@ def test_a_projects_container_peer_subclasses_the_public_container_peer_and_star
     Given a package whose peer class subclasses the public container peer, imports nothing under
     `nexus_uav._src`, states its image, command, name and label, and a `Registry` row for its schema, on the
     stand-in docker daemon, when a run that declares it builds, then the daemon ran the container under that
-    name and label and the peer's console streams into a file in the run's folder.
+    name and label and the peer's console streams into `radio/console.log` in the run's folder.
     """
     radio = _radio()
 
     with _run(tmp_path, radio) as sim:
         sim.start(timeout=5.0)
         run = daemon.runs[0] if daemon.runs else {}
-        console = _console(tmp_path / "run" / "radio.log")
+        console = _console(tmp_path / "run" / "radio" / "console.log")
 
     seen = (run.get("image"), run.get("command"), "radio" in str(run.get("name")), run.get("labels"), console)
     assert seen == ("example.invalid/radio:1", ["radio", "--serve"], True, {"nexus.peer": "radio"}, "radio up\n")
