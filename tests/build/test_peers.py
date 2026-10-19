@@ -276,16 +276,16 @@ def test_a_peer_class_whose_clock_is_none_of_the_three_fails_the_build_before_an
     """A peer class whose clock is none of the three fails the build before any peer starts.
 
     Given the fixture vehicle that declares the PX4 SITL peer and a stand-in peer, `radio`, whose class states the
-    clock `fre`, when the run builds, then it raises `RunError` naming `radio` and `fre`, and no peer's `start` ran.
+    clock `wall`, when the run builds, then it raises `RunError` naming `radio` and `wall`, and no peer's `start` ran.
     """
     fake, typo = _counting(), _free()
-    typo.clock = "fre"
+    typo.clock = "wall"
     path = sv.vehicle(tmp_path, root=sv.companion(), px4=True)
 
     outcome = _built(path, sv.components(NexusPx4SitlAPI=fake, StandInPeerAPI=typo), rtf=1.0)
 
     message = str(outcome["error"] or "")
-    seen = (type(outcome["error"]).__name__, "radio" in message, "fre" in message, fake.starts, typo.events)
+    seen = (type(outcome["error"]).__name__, "radio" in message, "wall" in message, fake.starts, typo.events)
     assert seen == ("RunError", True, True, [], []), outcome["error"]
 
 
