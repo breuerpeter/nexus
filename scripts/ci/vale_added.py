@@ -59,8 +59,8 @@ def alerts_on(lines: dict[str, set[int]]) -> list[str]:
     if run.returncode not in (0, 1) or not run.stdout.strip():  # 1 is Vale's exit on an error-level alert
         sys.exit(f"vale failed: {run.stderr.strip() or run.stdout.strip()}")
     out = []
-    for path, found in json.loads(run.stdout).items():
-        path = str(Path(path).resolve().relative_to(Path.cwd()))
+    for reported, found in json.loads(run.stdout).items():
+        path = str(Path(reported).resolve().relative_to(Path.cwd()))
         for alert in found:
             if alert["Line"] in lines.get(path, ()):
                 out.append((path, alert["Line"], alert["Span"][0], alert["Severity"], alert["Message"], alert["Check"]))
