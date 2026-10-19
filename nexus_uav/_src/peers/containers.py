@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from nexus_uav._src.core import logger
+from nexus_uav._src.peers import Peer
 
 if TYPE_CHECKING:
     from docker.models.containers import Container
@@ -189,3 +190,21 @@ def ensure_image(root: Path, name: str) -> str:
             sys.stderr.flush()
     logger.info(f"built the image {tag}")
     return tag
+
+
+class ContainerPeer(Peer):
+    """A peer whose process is one container: the shipped peers subclass it, and so does a project's."""
+
+    name = "container"
+
+    def __init__(self, *, instance: int, log_dir: Path) -> None:
+        self.container = f"nexus-{self.name}-{os.getpid()}-{instance}"
+        self.log_path = Path(log_dir) / f"{self.name}.log"
+
+    def launch(self) -> dict[str, Any]: ...
+
+    def start(self) -> None: ...
+
+    def stop(self) -> None: ...
+
+    def alive(self) -> bool: ...
