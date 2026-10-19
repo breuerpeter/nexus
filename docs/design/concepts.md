@@ -165,7 +165,7 @@ how it keeps time in its `clock`, one of three ways. `stepped`: a component step
 SITL runs on the sim time the lockstep link carries. `on_request`: it answers a request for a given sim
 time, as the Kit render peer renders the frame a tick asks for. `free`: it runs on its own wall clock,
 as a companion computer under an emulator does. Sim time and a free-running peer's clock agree only
-while the run paces at a real-time factor of 1, so a run that declares one fails at any other factor
+while the run paces at a real-time factor of 1. So a run that declares one fails at any other factor
 before any peer starts, and warns once when its live factor falls below 0.95.
 
 ### Link

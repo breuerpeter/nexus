@@ -118,8 +118,8 @@ role: its class is a peer, and so the build sorts it from a component. Its attri
 the keyword arguments of the class, as `nexus:airframe` is the PX4 peer's. The run's values join
 them as keywords: `pin`, `instance`, `log_dir`, `files`, the USD files the run reads, and
 `cache_dir`. A peer a class requires, as an RTX camera requires `kit`, the registry maps by that
-name. The class states its `name`, the folder name its pin file takes, `check_pin`, which fails
-a pin not in its form and returns the pin it checked, and `clock`, how it keeps time: `stepped`,
+name. The class states its `name`, the folder name its pin file takes, and `check_pin`, which fails
+a pin not in its form and returns the pin it checked. It states `clock`, how it keeps time: `stepped`,
 `on_request` or `free`, per [Peer](../design/concepts.md#peer). A run that declares a free-running
 peer needs `--rtf 1`, and fails before any peer starts without it. It can state `instance_free`, which says
 whether an instance is free for it, and `ports`, the links it knows of that leave the run. A run's

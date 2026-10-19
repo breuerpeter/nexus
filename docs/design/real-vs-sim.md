@@ -56,7 +56,7 @@ than one monolith:
 | **Design optimization** | simulated | the differentiable Proportional Integral Derivative (PID) law | none | none | none |
 
 A run that starts the emulated companion paces at a real-time factor of 1, in CI too, since the
-companion keeps its own wall clock; the other apps run unthrottled.
+companion keeps its own wall clock. The other apps run as fast as they can.
 
 The sim replaces the physical plane in every case. The rest of the stack runs progressively more real
 code as an app moves from batch CI toward a human flying the sim from real hardware. The items

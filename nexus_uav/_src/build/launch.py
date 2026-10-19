@@ -248,8 +248,8 @@ def _check_clocks(classes: list[type], rtf: float) -> None:
     clock, which agrees with sim time only at a real-time factor of 1.
 
     Raises:
-        RunError: A peer class states no ``clock``, or runs free and `rtf` is not 1; the message names the peer
-            and the factor.
+        RunError: A peer class states no ``clock``, or runs free at an `rtf` other than 1; the message names the
+            peer and the factor.
     """
     for cls in classes:
         clock = getattr(cls, "clock", None)
