@@ -34,3 +34,4 @@ link from a thread in this process, for tests. The render link's host end is
 - The peer's files live under `kit/` in the run's folder, `~/.cache/nexus/logs/<stamp>-<pid>/` or the folder `Sim(run_dir=)` names: its console, `console.log`, and its benchmark metrics. Its
   own lines start `[kit]`. Every 240 frames one of them splits a frame's time into three parts:
   the wait for the host, the render, and the send.
+- The peer leg of gpu-peers reads this folder as the Kit peer, and flies it real once #125 gives it an example.
