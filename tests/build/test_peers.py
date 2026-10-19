@@ -58,12 +58,14 @@ class _RadarSensor(sv.StandInSensor):
     requires = ("radar",)
 
 
-def _built(path: str, registry: Registry, during=lambda loop: None, rtf: float | None = None) -> dict:
+def _built(
+    path: str, registry: Registry, during=lambda loop: None, rtf: float | None = None, dt: float | None = None
+) -> dict:
     """Build the vehicle at `path` in the fixture scene with `registry`, call `during` on the built run, and close
     it. Returns what `during` returned, the run's receipt and its port map, or the error the build raised. `rtf`
-    is the run's real-time factor, the default one when `None`.
+    is the run's real-time factor and `dt` its tick, the default ones when `None`.
     """
-    runtime = {"device": "cpu", **({} if rtf is None else {"rtf": rtf})}
+    runtime = {"device": "cpu", **({} if rtf is None else {"rtf": rtf}), **({} if dt is None else {"dt": dt})}
     launch = LaunchConfig.from_dict({"vehicle": path, "scene": sv.SCENE, "runtime": runtime})
     try:
         loop = L.build_from_launch(launch, preroll_timeout=10.0, components=registry)
@@ -235,22 +237,28 @@ def _free() -> type:
     return Free
 
 
+# The tick of the paced runs: 20 ms, five times the fixture's 4 ms, so a tick of the stand-ins fits its budget on a
+# loaded CI runner too, and only the slow sensor, which holds a tick for 50 ms, falls behind.
+PACED_DT = 0.02
+
+
 class _SlowSensor(sv.StandInSensor):
-    """A stand-in sensor whose host stage holds each tick past its budget: 10 ms against the fixture's 4 ms."""
+    """A stand-in sensor whose host stage holds each tick past its budget: 50 ms against the paced runs' 20 ms."""
 
     def stages(self):
-        return [Stage("stand_in", "host", lambda tick: time.sleep(0.01))]
+        return [Stage("stand_in", "host", lambda tick: time.sleep(0.05))]
 
 
 def _steps_for(seconds: float):
-    """A `during` that steps the run for `seconds` of wall time, past two live real-time factor readings when
-    `seconds` is more than 2, and returns how many ticks it ran.
+    """A `during` that steps the run for `seconds` of wall time after its first tick, which sets the run up and
+    compiles its kernels, past two live real-time factor readings when `seconds` is more than 2. Returns how many
+    ticks it ran.
     """
 
     def step(loop) -> int:
-        n = 0
+        n = 1 if loop.step() else 0
         deadline = time.monotonic() + seconds
-        while time.monotonic() < deadline and loop.step():
+        while n and time.monotonic() < deadline and loop.step():
             n += 1
         return n
 
@@ -330,7 +338,7 @@ def test_a_run_at_a_factor_of_1_with_a_free_running_peer_warns_once_when_its_liv
     registry = sv.components(NexusPx4SitlAPI=Px4Fake, StandInPeerAPI=free, StandInSensorAPI=_SlowSensor)
 
     with caplog.at_level(logging.WARNING, logger="nexus"):
-        outcome = _built(path, registry, during=_steps_for(2.5), rtf=1.0)
+        outcome = _built(path, registry, during=_steps_for(2.5), rtf=1.0, dt=PACED_DT)
 
     warnings = _pace_warnings(caplog)
     factors = [float(m.group()) for w in warnings for m in [re.search(r"\d+\.\d+", w)] if m]
@@ -350,7 +358,11 @@ def test_a_run_at_a_factor_of_1_with_a_free_running_peer_that_keeps_pace_logs_no
 
     with caplog.at_level(logging.WARNING, logger="nexus"):
         outcome = _built(
-            path, sv.components(NexusPx4SitlAPI=Px4Fake, StandInPeerAPI=free), during=_steps_for(2.5), rtf=1.0
+            path,
+            sv.components(NexusPx4SitlAPI=Px4Fake, StandInPeerAPI=free),
+            during=_steps_for(2.5),
+            rtf=1.0,
+            dt=PACED_DT,
         )
 
     assert (_pace_warnings(caplog), outcome["error"]) == ([], None)
@@ -368,6 +380,6 @@ def test_a_run_with_no_free_running_peer_keeps_any_factor_and_warns_of_nothing(d
     registry = Registry({"NexusPx4SitlAPI": Px4Fake, "kit": KitFake})
 
     with caplog.at_level(logging.WARNING, logger="nexus"):
-        outcome = _built(path, registry, during=_steps_for(2.5), rtf=rtf)
+        outcome = _built(path, registry, during=_steps_for(2.5), rtf=rtf, dt=PACED_DT)
 
     assert (_pace_warnings(caplog), outcome["error"]) == ([], None)

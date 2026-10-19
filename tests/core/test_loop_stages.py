@@ -290,9 +290,10 @@ def test_a_run_with_a_free_running_peer_warns_once_when_its_live_real_time_facto
     peer and the factor: it ran 2.5 s of wall time at 0.4x, with no recording, and logged one warning that
     names ``radio`` and a factor below 0.95.
     """
-    deadline = time.monotonic() + 2.5
     with wp.ScopedDevice("cpu"), caplog.at_level(logging.WARNING, logger="nexus"):
         orch = _orch(_DeviceController(), sensors=[_SlowSensor()], peers=[_FreePeer()])
+        orch.step()  # the first tick sets the run up and compiles its kernels
+        deadline = time.monotonic() + 2.5
         while time.monotonic() < deadline and orch.step():
             pass
         orch.close()
