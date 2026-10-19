@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from nexus_uav._src.core import logger
-from nexus_uav._src.peers import Peer
+from nexus_uav._src.peers import LABEL, Peer
 
 if TYPE_CHECKING:
     from docker.models.containers import Container
@@ -193,18 +193,82 @@ def ensure_image(root: Path, name: str) -> str:
 
 
 class ContainerPeer(Peer):
-    """A peer whose process is one container: the shipped peers subclass it, and so does a project's."""
+    """A peer whose process is one container, on the ``Peer`` contract: the PX4 SITL and Kit peers subclass it,
+    and so does a project's.
 
-    name = "container"
+    A subclass states ``name``, the peer's kind, and ``run_options``, what its container runs. The class does the
+    rest. ``start`` removes a leftover container of this peer's name, runs the container under that name with the
+    label ``nexus.peer=<name>``, and streams its console into ``console.log`` under the peer's folder. ``stop``
+    removes the container, running or exited, and is idempotent. ``alive`` reads from the daemon whether the
+    container still runs.
 
-    def __init__(self, *, instance: int, log_dir: Path) -> None:
+    The run hands every peer its folder, and the peer's files live under ``<log_dir>/<name>/``, ``dir``: its
+    console at ``log_path``, ``console.log`` there, and whatever else it writes. The container's name,
+    ``container``, is ``nexus-<name>-<pid>-<instance>``, so two runs in one process keep both containers.
+
+    Args:
+        instance: The run's instance, which names the container.
+        log_dir: The run's folder, which holds the peer's folder.
+
+    Example:
+        A project's peer that runs the image built from a folder it ships:
+
+        ```python
+        class Radio(ContainerPeer):
+            name = "radio"
+
+            def __init__(self, *, instance, log_dir, **run):
+                super().__init__(instance=instance, log_dir=log_dir)
+
+            def run_options(self):
+                return {"image": ensure_image(IMAGE_DIR, "radio"), "command": ["radio", "--serve"]}
+        ```
+    """
+
+    name: str = ""
+    """The peer's kind: the value of its label, the stem of its container's name and the name of its folder."""
+
+    def __init__(self, *, instance: int, log_dir: str | os.PathLike) -> None:
+        self.instance = instance
+        self.dir = Path(log_dir) / self.name
+        self.log_path = self.dir / "console.log"
         self.container = f"nexus-{self.name}-{os.getpid()}-{instance}"
-        self.log_path = Path(log_dir) / f"{self.name}.log"
+        self._container: Container | None = None
 
-    def launch(self) -> dict[str, Any]: ...
+    def run_options(self) -> dict[str, Any]:
+        """What the container runs: ``image``, ``command`` and the other keywords of the docker SDK's
+        ``containers.run``, such as ``volumes``, ``environment`` or ``labels``. Called by ``start``, so an image a
+        peer builds or pulls at start resolves here.
+        """
+        raise NotImplementedError(f"{type(self).__name__} states no run_options")
 
-    def start(self) -> None: ...
+    def start(self) -> None:
+        """Run the container, after removing a leftover of its name; its console streams to ``log_path``.
 
-    def stop(self) -> None: ...
+        Raises:
+            RuntimeError: The daemon is unreachable; see :func:`client`.
+            docker.errors.DockerException: The daemon refused the run.
+        """
+        self.dir.mkdir(parents=True, exist_ok=True)
+        options = self.run_options()
+        labels = {LABEL: self.name, **options.pop("labels", {})}
+        self._container = run_container(name=self.container, log_path=str(self.log_path), labels=labels, **options)
 
-    def alive(self) -> bool: ...
+    def stop(self) -> None:
+        """Remove the container this peer started, running or exited. Idempotent."""
+        if self._container is None:
+            return
+        stop_container(self.container)
+        self._container = None
+
+    def alive(self) -> bool:
+        """Whether the container still runs; one that exited, or that the daemon no longer holds, reads dead."""
+        from docker.errors import NotFound
+
+        if self._container is None:
+            return False
+        try:
+            self._container.reload()
+        except NotFound:
+            return False
+        return self._container.status in ("created", "running")

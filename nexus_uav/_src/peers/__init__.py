@@ -19,11 +19,12 @@ Its host-side modules sit at the top of the folder, and what crosses into the pr
 subfolder with a fixed name: ``image/``, a docker build context the image tag hashes, and
 ``peer-src/``, what the container mounts read-only. The hyphen keeps ``peer-src/`` out of every
 dotted import, so no host module loads the peer's program. Each peer pins what it runs, a commit
-or an image, in ``pin.ref`` at the top of its folder. This folder itself holds the contract,
-:mod:`.containers`, the docker runner every container peer shares, :mod:`.pins`, which finds every
-peer's pin the same way, :mod:`.instance`, which claims the instance a run numbers its peers' ports
-from, and :mod:`.files`, the files a run's peers read. The peers are the PX4
-Software In The Loop (SITL) container, :mod:`.px4_sitl`, and the Kit render peer, :mod:`.kit`.
+or an image, in ``pin.ref`` at the top of its folder. Every peer's files live under a folder named for
+the peer in the run's folder, its console as ``console.log`` there. This folder itself holds the contract,
+:mod:`.containers`, the container peer every container peer subclasses and the image a peer builds from a
+folder, both public, :mod:`.pins`, which finds every peer's pin the same way, :mod:`.instance`, which claims
+the instance a run numbers its peers' ports from, and :mod:`.files`, the files a run's peers read. The peers
+are the PX4 Software In The Loop (SITL) container, :mod:`.px4_sitl`, and the Kit render peer, :mod:`.kit`.
 """
 
 from __future__ import annotations
@@ -31,8 +32,8 @@ from __future__ import annotations
 from typing import Protocol, runtime_checkable
 
 LABEL = "nexus.peer"
-"""The container label that marks a peer by its kind, ``px4`` or ``kit``, so a start or a runner can
-find a leftover one."""
+"""The container label that marks a peer by its kind, its ``name``, ``px4_sitl`` or ``kit``, so a start or a
+runner can find a leftover one."""
 
 
 @runtime_checkable

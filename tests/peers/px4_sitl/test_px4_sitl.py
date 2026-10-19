@@ -44,7 +44,7 @@ class _Held:
     def __init__(self, calls, name, *, instance, owner):
         self._calls = calls
         self.name = name
-        self.labels = {"nexus.peer": "px4", "nexus.px4.instance": str(instance), "nexus.owner": str(owner)}
+        self.labels = {"nexus.peer": "px4_sitl", "nexus.px4.instance": str(instance), "nexus.owner": str(owner)}
 
     def remove(self, force=False):
         self._calls.append(("remove", self.name))
@@ -129,7 +129,7 @@ def test_start_runs_px4_with_the_runs_instance_and_airframe(daemon, tree, tmp_pa
     assert launch == {
         "image": launch["image"],
         "command": ["build/px4_sitl_default/bin/px4", "-i", "2", "-d"],
-        "name": f"nexus-px4-{os.getpid()}-2",
+        "name": f"nexus-px4_sitl-{os.getpid()}-2",
         "detach": True,
         "user": f"{os.getuid()}:{os.getgid()}",
         "environment": {"HOME": "/tmp", "PX4_SIM_MODEL": "none_astro_max"},
@@ -144,13 +144,13 @@ def test_start_runs_px4_with_the_runs_instance_and_airframe(daemon, tree, tmp_pa
             ),
             Mount(
                 str(tree / "build/px4_sitl_default/rootfs/2/log"),
-                str(tmp_path / "run" / "ulog"),
+                str(tmp_path / "run" / "px4_sitl"),
                 type="bind",
                 read_only=False,
             ),
         ],
         "network_mode": "host",
-        "labels": {"nexus.peer": "px4", "nexus.px4.instance": "2", "nexus.owner": str(os.getpid())},
+        "labels": {"nexus.peer": "px4_sitl", "nexus.px4.instance": "2", "nexus.owner": str(os.getpid())},
     } and launch["image"].startswith(f"{IMAGE}:")
 
 
@@ -176,7 +176,7 @@ def test_start_removes_a_leftover_of_its_instance_whose_process_has_exited(daemo
     """PX4 SITL outlives a run killed without its teardown and keeps dialing the sim's port, and no
     later run shares its container's name, so the next start on that instance removes it first.
     """
-    daemon.held.append(_Held(daemon, "nexus-px4-1-0", instance=0, owner=_dead_pid()))
+    daemon.held.append(_Held(daemon, "nexus-px4_sitl-1-0", instance=0, owner=_dead_pid()))
 
     _peer(tree, tmp_path).start()
 
@@ -189,7 +189,7 @@ def test_start_fails_naming_the_live_process_that_holds_its_instance(daemon, tre
     and neither removes the live run's autopilot nor starts a second one.
     """
     holder = os.getppid()
-    daemon.held.append(_Held(daemon, "nexus-px4-7-0", instance=0, owner=holder))
+    daemon.held.append(_Held(daemon, "nexus-px4_sitl-7-0", instance=0, owner=holder))
 
     with pytest.raises(RuntimeError, match=f"instance 0 is in use by process {holder}"):
         _peer(tree, tmp_path).start()
@@ -199,7 +199,7 @@ def test_start_fails_naming_the_live_process_that_holds_its_instance(daemon, tre
 
 def test_start_leaves_a_container_of_another_instance_alone(daemon, tree, tmp_path):
     """Runs on two instances fly at once, so a start touches only its own instance's containers."""
-    daemon.held.append(_Held(daemon, "nexus-px4-7-1", instance=1, owner=os.getppid()))
+    daemon.held.append(_Held(daemon, "nexus-px4_sitl-7-1", instance=1, owner=os.getppid()))
 
     _peer(tree, tmp_path).start()
 
@@ -261,13 +261,13 @@ def test_stop_removes_the_container_this_peer_did_start(daemon, tree, tmp_path):
 
     peer.stop()
 
-    assert ("get", f"nexus-px4-{os.getpid()}-0") in daemon  # the force-remove by name, its process and instance
+    assert ("get", f"nexus-px4_sitl-{os.getpid()}-0") in daemon  # the force-remove by name, its process and instance
 
 
 def test_px4s_error_lines_come_whole_from_its_console_before_the_log_holds_them(daemon, tree, tmp_path):
     """PX4's error lines come whole from its container's console, before its log file holds them, #321.
 
-    A PX4 that exits at once can fail the run before the log pump has written its console to `px4.log`, and the
+    A PX4 that exits at once can fail the run before the log pump has written its console to `console.log`, and the
     run's error must still quote PX4's own line. Given a started PX4 whose container has printed its instance and
     then the unknown model line, and whose log file is still empty, when the run reads PX4's error lines, then it
     reads the unknown model line alone.

@@ -134,6 +134,38 @@ the variable `NEXUS_<PEER>_REF` overrides both, where `<peer>` is the folder nam
 receipt records each pin and where it came from. A peer of your own follows the same rule: its
 package ships `nexus.<peer>.ref` beside its catalog. A peer that no source pins runs with none.
 
+A peer whose process is one container subclasses
+[`ContainerPeer`](../reference/api/components.md), as the shipped peers do. The subclass states
+its `name`, the peer's kind, and `run_options`, what its container runs: the image, the command and
+the other keywords of the docker SDK's `containers.run`. The class does the rest. It removes a
+leftover container of the peer's name, then runs the container under that name with the label
+`nexus.peer=<name>`. It streams the console into `<name>/console.log` in the run's folder. It
+removes the container at `stop`, and reads `alive` from the daemon. A peer that ships its own build
+context builds its image with `ensure_image`. That tags the image by a hash of the folder, so it
+builds once per machine and again when the folder changes.
+
+```python
+from pathlib import Path
+
+from nexus_uav import ContainerPeer, ensure_image
+
+IMAGE_DIR = Path(__file__).with_name("image")
+
+
+class Radio(ContainerPeer):
+    name = "radio"
+
+    def __init__(self, *, instance, log_dir, **run):
+        super().__init__(instance=instance, log_dir=log_dir)
+
+    def run_options(self):
+        return {"image": ensure_image(IMAGE_DIR, "radio"), "command": ["radio", "--serve"]}
+```
+
+Every peer's files live under a folder named for it in the run's folder, its console as
+`console.log` there. PX4's are under `px4_sitl/`, its `ULog` beside the console, and Kit's under
+`kit/`.
+
 ## What an integration exports
 
 A project that ships a component also ships the names a script needs to command it, in a namespace
