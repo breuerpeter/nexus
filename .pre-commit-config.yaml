@@ -49,6 +49,14 @@ repos:
         entry: python scripts/check_heading_case.py
         language: python
         files: ^docs/.*\.md$
+      # Prose lint on the lines the branch adds, the check CI's vale-changed makes, so a push fails here
+      # first. It reads the branch's diff itself, so it takes no filenames and runs on every commit.
+      - id: vale-added
+        name: vale on the lines the branch adds
+        entry: python3 scripts/ci/vale_added.py
+        language: system
+        pass_filenames: false
+        always_run: true
   # Enforce conventional commit messages
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: v4.4.0
