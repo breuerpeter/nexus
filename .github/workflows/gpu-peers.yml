@@ -1,0 +1,125 @@
+name: gpu-peers
+
+# A change to a peer's folder, nexus_uav/_src/peers/<name>/, flies that peer real on a GPU box of its own,
+# beside the shared examples box: the fake on the shared box proves nothing about the process behind it.
+# scripts/ci/peer_legs.py plans the legs on a hosted runner: the peers the pull request's diff touches, by
+# one rule over the peers tree, and for each what its box runs, the tests marked with the peer's name and
+# the example one table maps it to. A touched peer with neither has nothing to fly, so no box starts for it,
+# and the plan's summary says so. A push to main runs every peer's tests, one box each, and no example:
+# gpu-examples flies those. The box's cache is the peer's, ~/.cache/nexus/<peer>, keyed on the peer's source
+# folder. The command calls the peer runner's prepare(), the cold work a first start does, a fetch and a
+# build or an image pull, then runs what a user runs; `--require <peer>` fails a marked test that skips, so
+# a box that lacks the peer's tree reds the leg instead of passing it with nothing run. The leg knows no
+# peer by name.
+# `label` reds a pull request that touches a peer with something to fly and carries no `gpu` label, naming
+# the label, on a hosted runner: a peer change cannot merge unproven. The label itself is the GPU-spend
+# approval, gated once in gpu-runner.yml. A labeled fork PR flies through pull_request_target on per-run
+# approval; `plan` runs the base's code there and reads the fork's changed paths through the API.
+
+on:
+  push:
+    branches: [main]
+    paths: ["nexus_uav/**", "tests/**", "pyproject.toml", "uv.lock"]
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  # The fork path: fires for every PR; gpu-runner.yml narrows it to labeled fork PRs with a
+  # per-run approval and checks out the approved head sha, never the base.
+  pull_request_target:
+    types: [opened, synchronize, reopened, labeled]
+  workflow_dispatch:
+
+permissions:
+  id-token: write # OIDC — gpu-runner assumes the AWS role to start/stop the box
+  contents: read
+  pull-requests: read # plan lists the pull request's changed files
+
+concurrency:
+  # One group per PR per event: the two events of one PR must not cancel each other, and on
+  # pull_request_target github.ref is the base branch, which would pool every fork PR with main.
+  group: gpu-peers-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The legs to fly, as the matrix below reads them, and the report of every peer touched. No GPU. On
+  # pull_request_target the checkout is the base branch, so a fork's code never runs here.
+  plan:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, pull-requests: read }
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      fly: ${{ steps.plan.outputs.fly }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - name: Plan the legs
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if [ -n "$PR" ]; then
+            gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[].filename' > "$RUNNER_TEMP/changed"
+            plan=$(python3 scripts/ci/peer_legs.py --changed "$RUNNER_TEMP/changed")
+          else
+            plan=$(python3 scripts/ci/peer_legs.py --all)
+          fi
+          echo "matrix=$(jq -c .matrix <<<"$plan")" >> "$GITHUB_OUTPUT"
+          echo "fly=$(jq -r '.matrix.include | length > 0' <<<"$plan")" >> "$GITHUB_OUTPUT"
+          jq -r .report <<<"$plan" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # The guard: a peer with something to fly real needs the `gpu` label, which flies it. A pull request
+  # that touches no such peer passes, label or not.
+  label:
+    needs: plan
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    env:
+      FLY: ${{ needs.plan.outputs.fly }}
+      LABELLED: ${{ contains(github.event.pull_request.labels.*.name, 'gpu') }}
+    steps:
+      - name: Require the gpu label on a peer change
+        run: |
+          echo "peers to fly: $FLY, gpu label: $LABELLED"
+          if [ "$FLY" = true ] && [ "$LABELLED" != true ]; then
+            echo "::error::this pull request changes a peer with real tests or an example to fly and carries no gpu label: add the gpu label, which flies the peer real on a box of its own"
+            exit 1
+          fi
+
+  # The GPU-spend gate lives in gpu-runner.yml, once, on the job that starts the instance. One box per
+  # peer; fail-fast is off so one red peer never cancels another's evidence.
+  gpu:
+    needs: plan
+    if: ${{ !cancelled() && needs.plan.outputs.fly == 'true' }}
+    name: ${{ matrix.peer }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    uses: ./.github/workflows/gpu-runner.yml
+    with:
+      cache-scope: ${{ matrix.peer }}
+      cache-path: ~/.cache/nexus/${{ matrix.peer }}
+      cache-name: ${{ matrix.peer }}
+      cache-files: nexus_uav/_src/peers/${{ matrix.peer }}
+      # -rfEsp lists each passed and skipped test beside the failures, so the log shows which tests ran.
+      command: >-
+        uv run --locked python -c "from nexus_uav._src.peers.${{ matrix.peer }}.runner import prepare; prepare()" &&
+        ${{ matrix.tests && format('uv run --locked --extra policy pytest -m {0} --require {0} -n 0 -rfEsp --durations=25', matrix.tests) || 'true' }} &&
+        ${{ matrix.example && format('uv run --locked --group ci --extra examples python scripts/ci/evaluate_examples.py --only {0}', matrix.example) || 'true' }}
+      artifact-name: peer-eval-${{ matrix.peer }}
+      artifact-path: .eval-artifacts
+    secrets: inherit
+
+  # The branch-protection context — see the note in gpu-examples.yml.
+  peers:
+    needs: gpu
+    # Skip when the legs skipped, so this reports `skipped` — which satisfies the required context
+    # without claiming the GPU work passed. `always()` with the explicit != 'skipped' is load-bearing:
+    # a bare `needs:` would ALSO skip on failure, and a skipped required check counts as satisfied.
+    if: ${{ always() && needs.gpu.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report the peer legs' result
+        run: |
+          echo "peer legs: ${{ needs.gpu.result }}"
+          [ "${{ needs.gpu.result }}" = "success" ] || exit 1

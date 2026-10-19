@@ -68,7 +68,7 @@ jobs:
       # one would feed the next cell from disk, so its RTF no longer measures a network stream: it
       # goes before the entry is saved.
       cache-path: |
-        ~/.cache/nexus/px4
+        ~/.cache/nexus/px4_sitl
         ~/.cache/nexus/ci/px4-sitl.tar
         ${{ matrix.cell.renders && '~/.cache/nexus/kit' || '' }}
       cache-name: ${{ matrix.cell.renders && 'px4-kit' || 'px4' }}

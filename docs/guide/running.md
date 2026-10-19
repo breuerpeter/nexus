@@ -209,7 +209,7 @@ declared value or selects a variant without re-authoring the hosted vehicle.
 
 **The PX4 tree.** The PX4 SITL peer pins the PX4-Autopilot commit it flies, in
 `nexus_uav/_src/peers/px4_sitl/pin.ref`, which ships in the package. The first managed run on
-a machine fetches that commit into `~/.cache/nexus/px4/<commit>/` and builds it there, minutes
+a machine fetches that commit into `~/.cache/nexus/px4_sitl/<commit>/` and builds it there, minutes
 once. Later runs rebuild only what changed. Every peer resolves its pin the same way, so PX4 has
 the two overrides every peer has:
 

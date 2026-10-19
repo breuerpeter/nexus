@@ -43,6 +43,7 @@ The workflows under `.github/workflows/` run these. Each also runs by hand with 
 |---|---|---|
 | `scripts/ci/evaluate_examples.py` | Flies the examples and gates each against `scripts/ci/examples_baselines.json`, see [Benchmarking](../../reference/benchmarking.md). | `uv run --group ci --extra examples python scripts/ci/evaluate_examples.py --only pid` |
 | `scripts/ci/merge_eval_parts.py` | Joins the results the `gpu-examples` boxes upload, one example each, into one folder. | `python3 scripts/ci/merge_eval_parts.py <parts dir> <out dir>` |
+| `scripts/ci/peer_legs.py` | Plans the peer legs of `gpu-peers`: the peers a pull request's diff touches, read from the peers tree, and what each one's box runs. | `python3 scripts/ci/peer_legs.py --all` |
 | `scripts/ci/benchmark_cell.py` | Flies one cell of the benchmark matrix: one vehicle, scene, and device. | `uv run python scripts/ci/benchmark_cell.py --vehicle astro_max_base --scene empty --device cpu` |
 | `scripts/ci/benchmark_matrix.py` | Flies every cell of the benchmark matrix and writes `docs/data/rtf_matrix.json`. In CI, `--list`, `--cell` and `--merge` split the run across boxes. | `uv run python scripts/ci/benchmark_matrix.py --only physics` |
 | `scripts/ci/run_rl_example.sh` | Trains, records and gates the Astro Max RL example, see [Astro Max RL](../../examples/isaac-lab-rl.md). | `bash scripts/ci/run_rl_example.sh` |

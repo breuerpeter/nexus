@@ -151,7 +151,7 @@ def test_the_receipt_records_the_class_each_declaration_resolved_to(daemon, tmp_
     daemon with the shipped pin's tree on this machine, it names `Px4Sitl`.
     """
     ref = pins._shipped("px4_sitl").read_text().splitlines()[0].strip()
-    tree = tmp_path / "home" / ".cache" / "nexus" / "px4" / ref.split("@", 1)[1]
+    tree = tmp_path / "home" / ".cache" / "nexus" / "px4_sitl" / ref.split("@", 1)[1]
     tree.mkdir(parents=True)
     (tree / "Makefile").write_text("px4_sitl:\n\ttrue\n")
     path = sv.vehicle(tmp_path, px4=True)

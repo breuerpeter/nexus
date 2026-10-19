@@ -1,6 +1,6 @@
 """A `gpu` marker labels the tests that need a CUDA device, and the suite's hook decides when they run.
 
-On a box with no CUDA device a `gpu` test skips, and with `--require-cuda`, the GPU leg's setting, a
+On a box with no CUDA device a `gpu` test skips, and with `--require gpu`, the GPU leg's setting, a
 `gpu` test that doesn't run fails. Each test runs pytest in a subprocess on a scratch test file, with
 the repo's pytest settings and ``tests/conftest.py`` loaded as a plugin.
 """
@@ -82,7 +82,7 @@ def test_on_the_gpu_leg_a_gpu_test_that_finds_no_cuda_device_fails(tmp_path):
     hidden from the process, when pytest runs a `gpu` test, then it fails and names the missing device.
     """
     test = _scratch(tmp_path, '@pytest.mark.gpu\ndef test_uses_cuda():\n    wp.zeros(1, device="cuda:0")\n')
-    run = _pytest(test, "--require-cuda", cuda=False)
+    run = _pytest(test, "--require", "gpu", cuda=False)
     failed = [e for e in _summary(run, "FAILED") + _summary(run, "ERROR") if "::test_uses_cuda" in e]
     assert any("no CUDA device" in e for e in failed), run.stdout[-3000:] + run.stderr[-3000:]
 
@@ -95,7 +95,19 @@ def test_on_the_gpu_leg_a_gpu_test_that_skips_for_its_own_reason_fails(tmp_path)
     """
     reason = "the trajectory was never recorded on this GPU"
     test = _scratch(tmp_path, f'@pytest.mark.gpu\ndef test_skips():\n    pytest.skip("{reason}")\n')
-    run = _pytest(test, "--require-cuda")
+    run = _pytest(test, "--require", "gpu")
+    failed = [e for e in _summary(run, "FAILED") if "::test_skips" in e]
+    assert any(reason in e for e in failed), run.stdout[-3000:] + run.stderr[-3000:]
+
+
+def test_on_a_peers_leg_a_test_marked_with_the_peer_that_skips_fails(tmp_path):
+    """On a peer's leg, a test marked with the peer's name that skips fails: given the leg's setting,
+    `--require px4_sitl`, and a `px4_sitl` test that skips for a PX4 tree the box lacks, when pytest runs it,
+    then it fails with the skip's reason.
+    """
+    reason = "needs docker and a PX4 tree on this machine"
+    test = _scratch(tmp_path, f'@pytest.mark.px4_sitl\ndef test_skips():\n    pytest.skip("{reason}")\n')
+    run = _pytest(test, "--require", "px4_sitl")
     failed = [e for e in _summary(run, "FAILED") if "::test_skips" in e]
     assert any(reason in e for e in failed), run.stdout[-3000:] + run.stderr[-3000:]
 

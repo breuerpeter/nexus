@@ -110,14 +110,20 @@ def cut_network(monkeypatch):
     return cut
 
 
-# A `gpu` test needs a CUDA device. Without one it skips here, the one place a test skips for that, and
-# with `--require-cuda`, the GPU leg's setting, a `gpu` test that skips for any reason fails instead.
+# A `gpu` test needs a CUDA device. Without one it skips here, the one place a test skips for that. A leg
+# that exists to run the tests of one marker passes `--require <marker>`, gpu-pytest `--require gpu` and a
+# peer's leg `--require <peer>`, and a test carrying that marker that skips for any reason fails instead: a
+# lost device, or a peer's tree the box lacks, reds the leg rather than passing it with nothing run.
 _NO_CUDA = "no CUDA device"
 
 
 def pytest_addoption(parser):
-    """Add `--require-cuda`: fail a `gpu` test that skips, so a lost device reds the GPU leg."""
-    parser.addoption("--require-cuda", action="store_true", help="fail a `gpu` test that skips")
+    """Add `--require MARKER`, repeatable: fail a test carrying MARKER that skips, so a lost device reds the GPU
+    leg and a missing peer tree the peer's leg.
+    """
+    parser.addoption(
+        "--require", action="append", default=[], metavar="MARKER", help="fail a test carrying MARKER that skips"
+    )
 
 
 def pytest_runtest_setup(item):
@@ -128,16 +134,16 @@ def pytest_runtest_setup(item):
 
 @pytest.hookimpl(wrapper=True)
 def pytest_runtest_makereport(item, call):
-    """Fail a `gpu` test that skips under `--require-cuda`, and a test with no `gpu` marker that skips for CUDA."""
+    """Fail a test carrying a `--require` marker that skips, and a test with no `gpu` marker that skips for CUDA."""
     report = yield
     if not report.skipped or hasattr(report, "wasxfail"):
         return report
     reason = report.longrepr[2].removeprefix("Skipped: ") if isinstance(report.longrepr, tuple) else ""
-    if item.get_closest_marker("gpu"):
-        if item.config.getoption("require_cuda"):
-            report.outcome = "failed"
-            report.longrepr = f"a gpu test skipped under --require-cuda: {reason}"
-    elif "CUDA" in reason:
+    required = [marker for marker in item.config.getoption("require") if item.get_closest_marker(marker)]
+    if required:
+        report.outcome = "failed"
+        report.longrepr = f"a {required[0]} test skipped under --require {required[0]}: {reason}"
+    elif not item.get_closest_marker("gpu") and "CUDA" in reason:
         report.outcome = "failed"
         report.longrepr = f"skipped for CUDA ({reason}): mark the test gpu, and the suite skips it without a device"
     return report

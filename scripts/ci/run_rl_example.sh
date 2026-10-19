@@ -33,7 +33,7 @@ echo "===== PLANT PARITY + TRAIN (concurrent, host, kitless, nexus-rl project) =
 # the nexus-rl environment holds, so the core's suites skip it and this leg runs it. It reads nothing training
 # writes, so the two share the box.
 ( cd "$REPO" && uv run --no-sync --project nexus-rl \
-    pytest -q -n 0 -p no:cacheprovider --require-cuda tests/examples/test_rl_plant_parity.py ) &
+    pytest -q -n 0 -p no:cacheprovider --require gpu tests/examples/test_rl_plant_parity.py ) &
 parity=$!
 # The trained checkpoints land under --log_dir; record_demo replays them.
 ( cd "$REPO" && uv run --no-sync --project nexus-rl python nexus-rl/scripts/rsl_rl/train.py \

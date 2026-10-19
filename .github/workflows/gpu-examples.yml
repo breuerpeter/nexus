@@ -89,7 +89,7 @@ jobs:
               uv run --locked --extra acados -m nexus_uav.examples acados_nmpc --provision
           - example: px4_sitl
             cache-path: |
-              ~/.cache/nexus/px4
+              ~/.cache/nexus/px4_sitl
               ~/.cache/nexus/ci/px4-sitl.tar
             cache-name: px4
             cache-files: |
@@ -126,7 +126,7 @@ jobs:
       # names and key files: GitHub lets a pull request restore only its own entries and its base
       # branch's, so a first run restores main's, and one that leaves those files alone saves none.
       cache-path: |
-        ~/.cache/nexus/px4
+        ~/.cache/nexus/px4_sitl
         ~/.cache/nexus/ci/px4-sitl.tar
       cache-name: px4
       cache-files: |
