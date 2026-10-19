@@ -1,8 +1,9 @@
 """Resolve a ``LaunchConfig`` against the catalog into a ``ResolvedLaunch``.
 
-Flow: look the named vehicle variant up → resolve the named scene → fetch and sha-verify every ``{url, sha256}`` asset, for the vehicle and scene
-Universal Scene Description (USD) files and the policy → emit the tested-config receipt plus local
-paths.
+Flow: look the named vehicle variant up, its base and layers for a composed entry → resolve the named scene →
+fetch and sha-verify every ``{url, sha256}`` asset, the vehicle's file and layers and the scene's
+Universal Scene Description (USD) file → stack the layers over each → emit the tested-config receipt plus
+local paths.
 """
 
 from __future__ import annotations
@@ -10,20 +11,16 @@ from __future__ import annotations
 import hashlib
 import pathlib
 
+from nexus_uav._src.assets.resolver import resolve as _fetch
+from nexus_uav._src.assets.resolver import stack_layers
 from nexus_uav._src.core import logger
 
-from .catalog import Catalog, CatalogError, CatalogLayer, NoMatchError, VehicleVariant, catalog_layers, load_layers
+from .catalog import Catalog, CatalogError, CatalogSource, NoMatchError, catalog_sources, load_sources
 from .models import AssetRef, LaunchConfig
 from .receipt import ResolvedLaunch, TestedConfig
 
 
-def _resolve_asset(ref, cache_dir):
-    if ref is None:
-        return None
-    try:
-        from nexus_uav._src.assets import resolve as _fetch
-    except ImportError:  # pragma: no cover, depends on how nexus_uav._src.assets re-exports
-        from nexus_uav._src.assets.resolver import resolve as _fetch
+def _resolve_asset(ref, cache_dir) -> pathlib.Path:
     kw = {"cache_dir": cache_dir} if (cache_dir is not None and cache_dir != "") else {}
     return _fetch(ref.model_dump(exclude_none=True), **kw)
 
@@ -63,28 +60,6 @@ def _layer(path: str | None) -> tuple[pathlib.Path, AssetRef] | None:
     return local, _local_ref(local)
 
 
-def _stack(layer: pathlib.Path, layer_sha: str, asset: pathlib.Path, asset_sha: str, cache_dir) -> pathlib.Path:
-    """A root file in the asset cache that stacks *layer* over *asset*, the vehicle or the scene, so each
-    reader of the asset opens the composed asset by one path. USD composes the two; the file only lists
-    them, strongest first, and carries the asset's stage metadata: its default prim, units, up axis and
-    layer data, such as a scene's render recipe, which a stage reads from its root file alone.
-    """
-    from pxr import Sdf
-
-    from nexus_uav._src.assets.resolver import default_cache
-
-    out = pathlib.Path(cache_dir or default_cache()) / "layered" / f"{asset_sha}-{layer_sha}" / f"{asset.stem}.usda"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    root = Sdf.Layer.CreateAnonymous(".usda")
-    root.subLayerPaths = [str(layer), str(asset)]
-    source = Sdf.Layer.FindOrOpen(str(asset))  # held, so its spec outlives the read
-    for key in source.pseudoRoot.ListInfoKeys():
-        if not key.startswith("subLayer"):  # its own sublayers and their offsets stay the asset's
-            root.pseudoRoot.SetInfo(key, source.pseudoRoot.GetInfo(key))
-    root.Export(str(out))
-    return out
-
-
 def resolve(
     launch: LaunchConfig,
     catalog: Catalog | None = None,
@@ -92,7 +67,7 @@ def resolve(
     fetch: bool = True,
     cache_dir: str | pathlib.Path | None = None,
 ) -> ResolvedLaunch:
-    """Resolve *launch* against *catalog*, which defaults to the catalogs :func:`.catalog_layers` lists for ``launch.catalog``.
+    """Resolve *launch* against *catalog*, which defaults to the catalogs :func:`.catalog_sources` lists for ``launch.catalog``.
 
     With ``fetch=True``, the default, the resolver downloads and sha-verifies every ``{url, sha256}``
     asset into the local cache and returns its path: the vehicle USD and the scene USD.
@@ -103,11 +78,11 @@ def resolve(
     """
     # A caller that hands over a Catalog owns it; otherwise the run finds its own catalogs and says
     # which ones it flew, so a recording beside it answers whose entries produced it.
-    layers: list[CatalogLayer] = []
+    sources: list[CatalogSource] = []
     if catalog is None:
-        layers = catalog_layers(launch.catalog)
-        catalog = load_layers(layers)
-        logger.info(f"catalogs: {', '.join(str(layer.path) for layer in layers)}")
+        sources = catalog_sources(launch.catalog)
+        catalog = load_sources(sources)
+        logger.info(f"catalogs: {', '.join(str(source.path) for source in sources)}")
 
     if launch.vehicle is None:
         raise NoMatchError(f"the launch names no vehicle; name one of {list(catalog.vehicles)}")
@@ -115,14 +90,12 @@ def resolve(
         raise CatalogError(f"the launch names no scene; name one of {list(catalog.scenes)}")
     local = _local_usd(launch.vehicle, "vehicle")
     if local is None:
-        if launch.vehicle not in catalog.vehicles:  # `--vehicle <name>`
-            raise NoMatchError(f"no vehicle named {launch.vehicle!r}; catalog names: {list(catalog.vehicles)}")
-        variant = catalog.vehicles[launch.vehicle]
+        vehicle_usd, vehicle_layers = catalog.stack(launch.vehicle)  # `--vehicle <name>`, flat or composed
     else:
         # Local vehicle USD, the variant-development workflow: the file *is* the authority. Its
         # controller, actuator params, cameras, and lidars are all authored on it, so it needs no
         # catalog row. The receipt stays honest: the file gets a sha256 the same way as a catalog asset.
-        variant = VehicleVariant(usd=_local_ref(local))
+        vehicle_usd, vehicle_layers = _local_ref(local), []
 
     scene_id = launch.scene
     local_scene = _local_usd(scene_id, "scene")
@@ -142,21 +115,25 @@ def resolve(
         scene = catalog.scenes[scene_id]
 
     layer = _layer(launch.layer)
-    veh_path = local if local is not None else (_resolve_asset(variant.usd, cache_dir) if fetch else None)
-    if layer is not None and veh_path is not None:
-        veh_path = _stack(layer[0], layer[1].sha256, pathlib.Path(veh_path), variant.usd.sha256, cache_dir)
+    over = [(layer[0], layer[1].sha256)] if layer is not None else []  # the launch layer, strongest of all
+    veh_path = local if local is not None else (_resolve_asset(vehicle_usd, cache_dir) if fetch else None)
+    if veh_path is not None:
+        stacked = [*over, *((_resolve_asset(ref, cache_dir), ref.sha256) for ref in vehicle_layers)]
+        if stacked:
+            veh_path = stack_layers(stacked, pathlib.Path(veh_path), vehicle_usd.sha256, cache_dir)
     if local_scene is not None:
         scn_path = local_scene  # in place: sibling files such as a mesh's textures/ must stay resolvable
     else:
         scn_path = _resolve_asset(scene.usd, cache_dir) if fetch else None
-    if layer is not None and scn_path is not None:
+    if over and scn_path is not None:
         # The scene's own layers keep resolving their asset paths, a mesh's textures/ among them, since
         # USD resolves each path against the layer that authors it.
-        scn_path = _stack(layer[0], layer[1].sha256, pathlib.Path(scn_path), scene.usd.sha256, cache_dir)
+        scn_path = stack_layers(over, pathlib.Path(scn_path), scene.usd.sha256, cache_dir)
     tested = TestedConfig(
         vehicle=str(local) if local is not None else launch.vehicle,
-        catalogs=layers,
-        vehicle_usd=variant.usd,
+        catalogs=sources,
+        vehicle_usd=vehicle_usd,
+        vehicle_layers=vehicle_layers,
         layer=layer[1] if layer is not None else None,
         scene=scene_id,
         scene_usd=scene.usd,

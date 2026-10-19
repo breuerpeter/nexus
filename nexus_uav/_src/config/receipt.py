@@ -15,7 +15,7 @@ from pydantic import Field
 
 from nexus_uav._src.peers.pins import PeerPin
 
-from .catalog import CatalogLayer
+from .catalog import CatalogSource
 from .models import AssetRef, Runtime, _Base
 
 
@@ -35,8 +35,10 @@ class TestedConfig(_Base):
     vehicle: str  # the variant's key in the catalog, or the local ``.usd`` path a run flew
     # Each catalog the run loaded itself, in load order, with its kind, its owner and its file: the bundled
     # one, each installed package's, the project's. Empty for a run handed its catalog.
-    catalogs: list[CatalogLayer] = Field(default_factory=list)
-    vehicle_usd: AssetRef
+    catalogs: list[CatalogSource] = Field(default_factory=list)
+    vehicle_usd: AssetRef  # the vehicle's file: a flat entry's, or the one a composed entry's chain rests on
+    # A composed entry's layers over that file, strongest first: the entry's own, then its base's down the
+    # chain. Empty for a flat entry and for a local path.
     vehicle_layers: list[AssetRef] = Field(default_factory=list)
     layer: AssetRef | None = None  # the override layer the run composed over the vehicle and the scene
     # Each component and peer the run built: its prim, its schema, the class it resolved to, `module:Class`,

@@ -27,7 +27,8 @@ from pathlib import Path
 # Hosted assets sit on a flat, content-addressed scheme under a catalog's base:
 # ``<base>/assets/<kind>/<name>-<sha256>.<ext>``, where ``<kind>`` is the whole folder under
 # ``assets/``: ``usd/vehicles`` and ``usd/scenes`` for the self-contained ``.usdz`` files and their
-# ``.glb`` previews, ``policies`` for an example's exported ``.pt`` policy. ``<name>`` is
+# ``.glb`` previews, ``usd/layers`` for the layers a composed vehicle entry stacks over its base,
+# ``policies`` for an example's exported ``.pt`` policy. ``<name>`` is
 # human-readable and the sha in the key makes objects immutable, cached forever. This is the single
 # source of truth for the scheme; the base is the catalog's own, so where the blobs live is data a
 # catalog carries and not a name in this package. The docs preview hook and
@@ -36,7 +37,7 @@ from pathlib import Path
 
 def hosted_url(base: str, kind: str, name: str, sha256: str, ext: str = "usdz") -> str:
     """URL of a content-addressed hosted asset under *base*. ``kind`` is the folder under
-    ``assets/``: ``usd/vehicles``, ``usd/scenes`` or ``policies``.
+    ``assets/``: ``usd/vehicles``, ``usd/scenes``, ``usd/layers`` or ``policies``.
 
     The scheme of *base* decides how :func:`fetch` reads it: ``https://`` anonymously, ``file://``
     from disk, and ``s3://`` through boto3's credential chain. An entry that
@@ -145,3 +146,61 @@ def fetch(
 def resolve(ref: dict, **kw) -> Path:
     """Resolve a catalog asset ref ``{"url": ..., "sha256": ...}`` to a local path."""
     return fetch(ref["url"], ref["sha256"], filename=ref.get("filename"), **kw)
+
+
+def stack_layers(
+    layers: list[tuple[Path, str]], asset: Path, asset_sha: str, cache_dir: str | Path | None = None
+) -> Path:
+    """A root file in the asset cache that stacks *layers* over *asset*, a vehicle or a scene, so each
+    reader opens the composed asset by one path.
+
+    USD composes the files; the root only lists them, strongest first, and carries the asset's stage
+    metadata: its default prim, units, up axis and layer data, such as a scene's render recipe, which a
+    stage reads from its root file alone. The root sits under ``layered/<hash>/``, the hash over the
+    asset's sha256 and each layer's, so one stack writes one file.
+
+    Args:
+        layers: Each layer's local path and sha256, strongest first: a launch's override layer, then a
+            composed entry's layers in the entry's order.
+        asset: The local path of the asset under them.
+        asset_sha: The asset's sha256.
+        cache_dir: The cache root; defaults to :func:`default_cache`.
+
+    Returns:
+        The root file's path.
+    """
+    from pxr import Sdf
+
+    key = hashlib.sha256("\n".join([asset_sha, *(sha for _, sha in layers)]).encode()).hexdigest()
+    out = Path(cache_dir or default_cache()) / "layered" / key / f"{asset.stem}.usda"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    root = Sdf.Layer.CreateAnonymous(".usda")
+    root.subLayerPaths = [*(str(path) for path, _ in layers), str(asset)]
+    source = Sdf.Layer.FindOrOpen(str(asset))  # held, so its spec outlives the read
+    for info in source.pseudoRoot.ListInfoKeys():
+        if not info.startswith("subLayer"):  # its own sublayers and their offsets stay the asset's
+            root.pseudoRoot.SetInfo(info, source.pseudoRoot.GetInfo(info))
+    root.Export(str(out))
+    return out
+
+
+def stage_hash(path: str | Path) -> str:
+    """The sha256 of the stage at *path* with its layer stack flattened into one layer: the content a
+    composed vehicle entry resolves to, the same wherever its files sit in a cache.
+
+    A composed entry has no file of its own to hash, so its preview ``.glb`` takes this hash as its key.
+    The flattened layer stack is deterministic text; a full flatten numbers its prototypes in no fixed
+    order, so it isn't.
+
+    Args:
+        path: The stage's root file, such as the one :func:`stack_layers` writes.
+
+    Returns:
+        The hex digest.
+    """
+    from pxr import Usd, UsdUtils
+
+    flat = UsdUtils.FlattenLayerStack(Usd.Stage.Open(str(path)))
+    flat.comment = ""  # the flattener names the root file's path in both
+    flat.documentation = ""
+    return hashlib.sha256(flat.ExportToString().encode()).hexdigest()

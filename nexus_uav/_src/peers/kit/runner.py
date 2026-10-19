@@ -34,7 +34,7 @@ from nexus_uav._src.peers.containers import ContainerPeer, client
 from nexus_uav._src.peers.pins import PeerPin
 
 if TYPE_CHECKING:
-    from nexus_uav._src.config.catalog import CatalogLayer
+    from nexus_uav._src.config.catalog import CatalogSource
 
 KIT_DIR = Path(__file__).with_name("peer-src")
 NAME = "kit"  # the peer's folder name, which names its pin file and its variable
@@ -61,18 +61,18 @@ class KitPeerError(RunError):
     """
 
 
-def resolve(layers: Sequence[CatalogLayer] = ()) -> PeerPin:
+def resolve(sources: Sequence[CatalogSource] = ()) -> PeerPin:
     """The image the peer runs, checked, through :func:`nexus_uav._src.peers.pins.resolve`: the shipped
     ``pin.ref`` names NVIDIA's Isaac Sim, and a package's or a project's ``nexus.kit.ref`` or
     ``$NEXUS_KIT_REF`` names another, a local tag among them.
 
     Args:
-        layers: The catalog layers the run loaded, in load order; none for a run handed its catalog.
+        sources: The catalog sources the run loaded, in load order; none for a run handed its catalog.
 
     Raises:
         ValueError: The pin names no image, or two installed packages pin it; the message names its source.
     """
-    return check(pins.resolve(NAME, layers))
+    return check(pins.resolve(NAME, sources))
 
 
 def check(pin: PeerPin) -> PeerPin:

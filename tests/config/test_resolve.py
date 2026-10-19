@@ -284,8 +284,10 @@ def _usd_asset(tmp_path, name, text):
 
 
 def _composed_catalog(tmp_path, **vehicles):
-    """A catalog whose vehicles are *vehicles*, each an entry dict, with one scene, `empty`, a real file."""
-    scene = _file_asset(tmp_path, "stage.usdz", b"USD-STAGE")
+    """A catalog whose vehicles are *vehicles*, each an entry dict, with one scene, `empty`, a real USD file."""
+    scene = _usd_asset(
+        tmp_path, "scene.usda", '#usda 1.0\n(\n    defaultPrim = "World"\n)\n\ndef Xform "World"\n{\n}\n'
+    )
     return Catalog.from_dict({"vehicles": vehicles, "scenes": {"empty": {"usd": scene}}})
 
 
@@ -460,6 +462,28 @@ def test_a_projects_entry_names_a_bundled_vehicle_as_its_base(tmp_path, monkeypa
         BUNDLED_ASTRO_BASE,
         ["s3://example-bucket/catalog/assets/usd/layers/payload-abc.usdz"],
     )
+
+
+def test_a_composed_stage_hashes_the_same_from_any_cache(tmp_path):
+    """A composed stage hashes the same from any cache, and differently from its base alone.
+
+    Given one composed entry resolved into two caches, when each root hashes, then the two hashes are equal,
+    and the base's file alone hashes to another value.
+    """
+    pytest.importorskip("pxr")
+    from nexus_uav._src.assets import stage_hash
+
+    catalog = _composed_catalog(
+        tmp_path,
+        base={"usd": _usd_asset(tmp_path, "base.usda", _BASE_USD)},
+        fpv={"base": "base", "layers": [_usd_asset(tmp_path, "camera.usda", _probe_layer(0, "cam"))]},
+    )
+    launch = LaunchConfig().set_vehicle("fpv").set_scene("empty")
+    roots = [resolve(launch, catalog, fetch=True, cache_dir=tmp_path / f"cache{i}").vehicle_usd_path for i in (1, 2)]
+
+    hashes = [stage_hash(root) for root in roots]
+
+    assert (hashes[0] == hashes[1], hashes[0] == stage_hash(tmp_path / "base.usda")) == (True, False)
 
 
 def test_a_layer_whose_bytes_mismatch_its_sha256_fails_like_a_vehicles(tmp_path):

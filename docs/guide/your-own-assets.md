@@ -11,7 +11,7 @@ catalog beside it, with no fork of this one and no patch on top of it.
 
 ## How a run finds its catalog
 
-A run loads its catalogs in layers, each over the ones before it:
+A run loads its catalogs in order, each over the ones before it:
 
 1. the catalog bundled in the package
 2. the catalog of each installed package that adds one, see
@@ -22,8 +22,8 @@ A run loads its catalogs in layers, each over the ones before it:
     2. the nearest **`nexus.catalog.yaml`** in the working directory or a directory over it, the same
        walk up that `uv`, `ruff` and `pytest` do for their own files
 
-Each catalog extends the layers below it, so it lists only what it adds, and a run can still fly every
-bundled vehicle and scene. A name that two layers define takes the upper layer's entry, and the load logs a
+Each catalog extends the ones before it, so it lists only what it adds, and a run can still fly every
+bundled vehicle and scene. A name that two catalogs define takes the later one's entry, and the load logs a
 warning with the name and both hashes. That's how you pin a bundled asset to another version on
 purpose, and how a stale copy of an entry shows up. Two installed packages that define one name fail
 the load, since no order between them means anything. A catalog
@@ -71,9 +71,25 @@ vehicles:
     usd: { url: "https://cdn.example/x-3f1c…d92.usdz", sha256: 3f1c…d92 }   # hosted elsewhere
   in_progress:
     usd: { url: "file:///home/me/assets/draft.usdz", sha256: 9ab2…40f }     # still being authored
+  my_quad_lidar:
+    base: my_quad                                        # another entry, by its key
+    layers:
+      - { name: lidar_payload, sha256: 7c0e…1a3 }        # strongest first, each completed against the base
 ```
 
-A vehicle entry names no controller: the vehicle's Universal Scene Description (USD) file declares
+A vehicle entry is flat or composed. A flat entry carries `usd`, the vehicle's file. A composed entry
+names its `base`, another vehicle entry by its key, and its `layers`, the first listed strongest. Each
+layer is a small Universal Scene Description (USD) file, hosted as any other asset is, that the run
+stacks over the base. A layer adds a
+prim under the vehicle's body, such as a payload camera with its API schema or a companion's scope,
+or overrides a declared value. So a change to one layer touches no other file. A base can itself be a
+composed entry: an entry that names `astro_max_fpv` as its base gets its camera layer with it, and stacks its
+own layers over both. The base can sit in another catalog, so a project's entry stacks its payload over
+a bundled vehicle. The run's receipt records the file at the bottom of the chain and each layer, and a
+launch's `--layer` composes over them all. The bundled `astro_max_fpv` is `astro_max_base` plus one
+camera layer.
+
+A vehicle entry names no controller: the vehicle's USD file declares
 it. PX4 flies a vehicle whose controller's scope applies `NexusPx4API_1`. The scope of its PX4 Software
 In The Loop peer applies `NexusPx4SitlAPI` and names the airframe in `nexus:airframe`, the make target
 without PX4's `none_` prefix. Each scope is a `Scope` prim under the vehicle's root prim, named
@@ -82,8 +98,9 @@ declares its propeller with `NexusPropellerAPI` on its rigid body, and its motor
 `NewtonActuator` prim that drives its joint, whose `newton:velocityLimit` is the rotor speed at full
 command. The [schema reference](../reference/schemas.md) lists the attributes.
 
-An entry either carries a full `url` or a compact `{name, sha256}` that its own catalog's
-`assets.base` completes into `<base>/assets/usd/{vehicles,scenes}/<name>-<sha256>.usdz`. The hosted
+An entry's `usd`, and each of a composed entry's layers, either carries a full `url` or a compact
+`{name, sha256}` that its own catalog's `assets.base` completes into
+`<base>/assets/usd/{vehicles,scenes,layers}/<name>-<sha256>.usdz`. The hosted
 policy the `goto_policy` example flies sits beside them at `<base>/assets/policies/<name>-<sha256>.pt`.
 The sha256 is the version pin: the resolver verifies it on fetch, and because it sits in the key the object
 never changes and caches forever.
@@ -99,10 +116,13 @@ extra, so a package whose catalog lists `s3://` assets depends on `nexus-uav[s3]
 
 Any host that serves bytes over HTTPS works. This project uses a bucket behind a
 Content Delivery Network (CDN), with objects at
-`<prefix>/assets/usd/{vehicles,scenes}/<name>-<sha256>.usdz`. The sha256 sits in the key, so nothing
+`<prefix>/assets/usd/{vehicles,scenes,layers}/<name>-<sha256>.usdz`. The sha256 sits in the key, so nothing
 ever overwrites anything. `scripts/assets/prepare_asset_upload.py` prepares an asset: it hashes the
 Universal Scene Description (USD) file, prints the key to put it at and the catalog snippet to
-paste, and for a vehicle converts a `.glb` preview.
+paste, and for a vehicle converts a `.glb` preview. `--layer` prepares a layer the same way.
+`--composed <entry>` converts a composed entry's `.glb` once the layers are up and the entry is in
+the catalog. Its key is the entry's name and the hash of its composed stage, which the docs preview
+derives the same way.
 
 An asset is one self-contained `.usdz`, one blob and one sha256, so package a multi-file USD before
 publishing it. [Converting scenes](convert-scenes.md) covers turning a scan into one.

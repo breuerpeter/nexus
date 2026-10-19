@@ -105,7 +105,8 @@ def test_the_shipped_catalog_resolves_exactly_as_today():
     """
     catalog = load_catalog()
     base = "https://d2837jz4fvtxko.cloudfront.net/public/assets/usd"
-    hosted = [v.usd.url for v in catalog.vehicles.values()] + [s.usd.url for s in catalog.scenes.values() if s.usd]
+    hosted = [v.usd.url for v in catalog.vehicles.values() if v.usd] + [s.usd.url for s in catalog.scenes.values()]
+    hosted += [layer.url for v in catalog.vehicles.values() for layer in v.layers]
     astro = catalog.vehicles["astro_max_base"].usd
     assert all(u.startswith(base) for u in hosted)
     assert astro.url == f"{base}/vehicles/astro_max_base-{astro.sha256}.usdz"
@@ -129,15 +130,19 @@ def test_the_shipped_catalog_lists_a_hosted_scene_with_static_geometry():
 HOSTED = "https://d2837jz4fvtxko.cloudfront.net/public/assets/usd/vehicles"
 
 
-def test_the_two_astro_max_vehicles_keep_the_usds_they_fly_today():
-    """`astro_max_base` and `astro_max_fpv` keep the USDs they fly today: the published USDs, pinned
-    by hash, stay the source of record once the scripts that authored them leave the tree.
+HOSTED_LAYERS = "https://d2837jz4fvtxko.cloudfront.net/public/assets/usd/layers"
+
+
+def test_astro_max_fpv_is_astro_max_base_plus_the_camera_layer():
+    """`astro_max_fpv` is `astro_max_base` plus the camera layer: the bundled catalog carries one airframe,
+    pinned by hash, and the fpv entry stacks one hosted layer over it.
     """
     catalog = nexus_uav.Catalog.from_yaml()
-    assert [catalog.vehicles[name].usd.url for name in ("astro_max_base", "astro_max_fpv")] == [
+    usd, layers = catalog.stack("astro_max_fpv")
+    assert (usd.url, [layer.url for layer in layers]) == (
         f"{HOSTED}/astro_max_base-4148dd38579c3fc6d8be3a4d052a1cd5c2bfd6fd36bac186df640e52e2eb5d4b.usdz",
-        f"{HOSTED}/astro_max_fpv-3408245bdbb747820e87f3b711ee0d50ad8732be3c01d601d743a66a526ea7e7.usdz",
-    ]
+        [f"{HOSTED_LAYERS}/fpv_camera-5cc47d56dea67f04fc3018fd8c73cc367798ec55849257603dec186eac3a6180.usdz"],
+    )
 
 
 BUNDLED_ASTRO = f"{HOSTED}/astro_max_base-4148dd38579c3fc6d8be3a4d052a1cd5c2bfd6fd36bac186df640e52e2eb5d4b.usdz"
@@ -277,7 +282,7 @@ def test_a_project_catalog_that_lists_only_what_it_adds_loads_on_its_own(tmp_pat
 
 
 BUNDLED_ASTRO_SHA = "4148dd38579c3fc6d8be3a4d052a1cd5c2bfd6fd36bac186df640e52e2eb5d4b"
-BUNDLED_FPV_SHA = "3408245bdbb747820e87f3b711ee0d50ad8732be3c01d601d743a66a526ea7e7"
+BUNDLED_FPV_LAYER_SHA = "5cc47d56dea67f04fc3018fd8c73cc367798ec55849257603dec186eac3a6180"
 
 KEYED_REPIN = f"""\
 vehicles:
@@ -298,18 +303,19 @@ def test_a_project_vehicle_keyed_by_a_bundled_name_replaces_the_bundled_entry_wi
     """A project vehicle keyed by a bundled name replaces the bundled entry and warns with both hashes.
 
     Given a project catalog with `vehicles: { astro_max_base: { usd: … } }`, when `load_catalog`
-    loads it, then `astro_max_base` resolves to the project's USD, `astro_max_fpv` still resolves to
-    the bundled one, and one warning names both sha256 values.
+    loads it, then `astro_max_base` resolves to the project's USD, `astro_max_fpv` stacks its bundled
+    camera layer over that USD, and one warning names both sha256 values.
     """
     (tmp_path / "nexus.catalog.yaml").write_text(KEYED_REPIN)
     monkeypatch.chdir(tmp_path)
 
     with caplog.at_level(logging.WARNING):
         catalog = load_catalog()
-    shas = (catalog.vehicles["astro_max_base"].usd.sha256, catalog.vehicles["astro_max_fpv"].usd.sha256)
+    usd, layers = catalog.stack("astro_max_fpv")
+    shas = (catalog.vehicles["astro_max_base"].usd.sha256, usd.sha256, [layer.sha256 for layer in layers])
     named = [all(s in m for s in ("astro_max_base", REPIN_SHA, BUNDLED_ASTRO_SHA)) for m in _warnings(caplog)]
 
-    assert (shas, named) == ((REPIN_SHA, BUNDLED_FPV_SHA), [True])
+    assert (shas, named) == ((REPIN_SHA, REPIN_SHA, [BUNDLED_FPV_LAYER_SHA]), [True])
 
 
 def test_a_project_catalog_that_adds_one_vehicle_by_key_still_flies_the_bundled_ones(tmp_path, monkeypatch):
@@ -395,6 +401,30 @@ vehicles:
     layers:
       - { url: "file:///payload.usdz", sha256: abc }
 """
+
+
+LOOPED_BASES = """\
+vehicles:
+  ouroboros:
+    base: tail
+    layers: []
+  tail:
+    base: ouroboros
+    layers: []
+"""
+
+
+def test_an_entry_whose_bases_loop_fails_at_load(tmp_path):
+    """An entry whose bases loop fails at load.
+
+    Given a catalog with two entries that name each other as base, when it loads, then the load fails and
+    the message names the loop.
+    """
+    catalog = tmp_path / "project.yaml"
+    catalog.write_text(LOOPED_BASES)
+
+    with pytest.raises(CatalogError, match="ouroboros -> tail -> ouroboros"):
+        load_catalog(catalog)
 
 
 def test_an_entry_whose_base_no_catalog_names_fails_at_load(tmp_path):

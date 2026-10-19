@@ -16,7 +16,8 @@ Astro is an industrial quadrotor for professional applications such as mapping a
 inspection. Learn more on the [Freefly Systems](https://freeflysystems.com/) website.
 
 The catalog carries two Astro Max vehicles: `astro_max_base`, the base build, and
-`astro_max_fpv`, which adds a First Person View (FPV) camera.
+`astro_max_fpv`, which is `astro_max_base` plus a layer that adds a First Person View (FPV) camera,
+so the catalog carries one airframe.
 
 ### Base
 

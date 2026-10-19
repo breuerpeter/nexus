@@ -13,7 +13,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from nexus_uav._src.config.catalog import catalog_layers
+from nexus_uav._src.config.catalog import catalog_sources
 from nexus_uav._src.core import logger
 from nexus_uav._src.core.registry import Registry
 from nexus_uav._src.core.run_folder import run_folder
@@ -169,7 +169,7 @@ def rtx_renderer(
     prims = [spec.prim for spec in specs]
     logger.info(f"the vehicle declares RTX sensors {prims}: they render in the Kit container")
     if pin is None:
-        pin = resolve(catalog_layers())
+        pin = resolve(catalog_sources())
     log_dir = log_dir if log_dir is not None else run_folder()
     files = run_files(usd, cfg.get("scene_usd_path"))
     started = peer(files, cache_dir=cache_dir or default_cache(), pin=pin, log_dir=log_dir)
