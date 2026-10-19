@@ -36,6 +36,10 @@ LABEL = "nexus.peer"
 runner can find a leftover one."""
 
 
+CLOCKS = ("stepped", "on_request", "free")
+"""The three ways a peer keeps time, the values of a peer class's ``clock``."""
+
+
 @runtime_checkable
 class Peer(Protocol):
     """A process the run starts, stops and can ask after.
@@ -63,4 +67,4 @@ class Peer(Protocol):
     def alive(self) -> bool: ...
 
 
-__all__ = ["LABEL", "Peer"]
+__all__ = ["CLOCKS", "LABEL", "Peer"]

@@ -33,7 +33,7 @@ from nexus_uav._src.core.components import ComponentSpec, PeerSpec, resolve_decl
 from nexus_uav._src.core.errors import RunError
 from nexus_uav._src.core.registry import Registry
 from nexus_uav._src.core.run_folder import run_folder
-from nexus_uav._src.peers import instance, pins
+from nexus_uav._src.peers import CLOCKS, instance, pins
 from nexus_uav._src.peers.files import run_files
 from nexus_uav._src.physics import VehicleUsd
 from nexus_uav._src.rendering import PEER as KIT
@@ -248,13 +248,16 @@ def _check_clocks(classes: list[type], rtf: float) -> None:
     clock, which agrees with sim time only at a real-time factor of 1.
 
     Raises:
-        RunError: A peer class states no ``clock``, or runs free at an `rtf` other than 1; the message names the
-            peer and the factor.
+        RunError: A peer class states no ``clock``, or one outside the three, or runs free at an `rtf` other than 1;
+            the message names the peer and the value or the factor.
     """
     for cls in classes:
         clock = getattr(cls, "clock", None)
-        if clock is None:
-            raise RunError(f"the {cls.name} peer states no clock; a peer class states how it keeps time in `clock`")
+        if clock not in CLOCKS:
+            stated = "no clock" if clock is None else f"the clock {clock!r}"
+            raise RunError(
+                f"the {cls.name} peer states {stated}; a peer class states how it keeps time in `clock`, one of {CLOCKS}"
+            )
         if clock == "free" and rtf != 1:
             raise RunError(
                 f"the {cls.name} peer runs free on its own clock, and this run paces at a real-time factor of "
