@@ -1,9 +1,9 @@
 """What PX4 concludes about a Ground Control Station (GCS) in a recording run, now that nothing in
 the sim heartbeats to it.
 
-Each module fixture flies one recording run through ``nx.Sim``, which builds and launches PX4 from
-the tree on this machine, so the tests need docker and a PX4 tree carrying the airframe the sim
-flies; they skip without one. The runs pace at real time, ``rtf=1.0``, so a heartbeat sent once a wall-clock
+Each module fixture flies one recording run of the fixture vehicle through ``nx.Sim``, which builds and
+launches PX4 from the tree on this machine, so the tests need docker and a PX4 tree carrying the airframe
+the sim flies; they skip without one. The runs pace at real time, ``rtf=1.0``, so a heartbeat sent once a wall-clock
 second also arrives once a second of PX4's lockstep time, as it does when a person flies.
 """
 
@@ -18,6 +18,7 @@ import pytest
 
 pytest.importorskip("pymavlink")
 pytest.importorskip("newton")
+pytest.importorskip("pxr")
 
 # Pin the MAVLink dialect before importing mavutil, as the PX4 controller does: whichever import runs
 # first sets it, and the controller's HIL_GPS needs the common dialect's fields.
@@ -28,6 +29,7 @@ from pymavlink import mavutil
 
 import nexus_uav as nx
 from nexus_uav._src.peers.px4_sitl import checkout
+from tests.usd import sensor_vehicle as sv
 
 # The tree the run would fly, with no fetch: the checkout the pin names, or the pinned tree once a run fetched it.
 _TREE = checkout.tree(fetch_missing=False)
@@ -144,14 +146,14 @@ def _set_param(sim, link: _Peer, name: str, value: int) -> None:
 
 
 @pytest.fixture(scope="module")
-def run_with_no_gcs():
+def run_with_no_gcs(px4_vehicle):
     """A recording run with no GCS and a silent offboard link.
 
     A command link on the offboard port, which never heartbeats, puts PX4 in Hold, where a command arms it
     without sticks, and waits until PX4 reports it could arm and has been up past the datalink timeout. Then
     it makes a GCS required, ``NAV_DLL_ACT`` 2, and asks PX4 to arm. No later run boots with the parameter.
     """
-    with nx.Sim("astro_max_base", scene="empty", log=True, rtf=1.0) as sim:
+    with nx.Sim(px4_vehicle, scene=sv.SCENE, log=True, rtf=1.0) as sim:
         sim.start(timeout=120.0)
         link = _Peer(_OFFBOARD_LINK, heartbeat=False)
         try:
@@ -172,12 +174,12 @@ def run_with_no_gcs():
 
 
 @pytest.fixture(scope="module")
-def run_where_the_gcs_leaves():
+def run_where_the_gcs_leaves(px4_vehicle):
     """A recording run with a GCS on its usual port. The GCS heartbeats once a second and sends a mode
     request that names no mode, which PX4 answers with a status message. Then it goes quiet for longer than
     the datalink timeout, the way a GCS device does when it drops off the network.
     """
-    with nx.Sim("astro_max_base", scene="empty", log=True, rtf=1.0) as sim:
+    with nx.Sim(px4_vehicle, scene=sv.SCENE, log=True, rtf=1.0) as sim:
         sim.start(timeout=120.0)
         gcs = _Peer(_GCS_LINK, heartbeat=True)
         try:

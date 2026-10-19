@@ -1,9 +1,9 @@
 """The ULog a PX4 Software In The Loop (SITL) run names in its artifacts: the file PX4 wrote for that
 run, and not one an earlier run left in the PX4 tree.
 
-The module fixture flies two runs in a row through ``nx.Sim``, which builds and launches PX4 from the
-tree on this machine, so the tests need docker and a PX4 tree carrying the airframe the sim flies;
-they skip without one.
+The module fixture flies two runs of the fixture vehicle in a row through ``nx.Sim``, which builds and
+launches PX4 from the tree on this machine, so the tests need docker and a PX4 tree carrying the airframe
+the sim flies; they skip without one.
 """
 
 import time
@@ -13,9 +13,11 @@ import pytest
 
 pytest.importorskip("pymavlink")
 pytest.importorskip("newton")
+pytest.importorskip("pxr")
 
 import nexus_uav as nx
 from nexus_uav._src.peers.px4_sitl import checkout
+from tests.usd import sensor_vehicle as sv
 
 # The tree the run would fly, with no fetch: $PX4_DIR, or the pinned tree once a run fetched it.
 _TREE = checkout.tree(fetch_missing=False)
@@ -33,12 +35,12 @@ pytestmark = [
 
 
 @pytest.fixture(scope="module")
-def two_runs():
+def two_runs(px4_vehicle):
     """Two PX4 runs in a row, each its wall-clock start, its wall-clock end and its artifacts."""
     runs = []
     for _ in range(2):
         began = time.time()
-        with nx.Sim("astro_max_base", scene="empty") as sim:
+        with nx.Sim(px4_vehicle, scene=sv.SCENE) as sim:
             sim.start(timeout=120.0)
             sim.sleep(1.0)
         runs.append((began, time.time(), sim.artifacts()))
@@ -75,7 +77,7 @@ def test_a_run_names_its_own_ulog_not_an_earlier_runs(two_runs):
     assert all(_exists(u) for u in ulogs) and ulogs[0] != ulogs[1], ulogs
 
 
-def test_a_px4_run_with_run_dir_leaves_its_recording_console_and_ulog_there_and_nothing_else(tmp_path):
+def test_a_px4_run_with_run_dir_leaves_its_recording_console_and_ulog_there_and_nothing_else(tmp_path, px4_vehicle):
     """A PX4 run with `run_dir` leaves its recording, PX4's console and its ULog in that folder and nothing else,
     and `sim.artifacts()` names each there.
 
@@ -84,7 +86,7 @@ def test_a_px4_run_with_run_dir_leaves_its_recording_console_and_ulog_there_and_
     `sim.artifacts()` names each in `d`.
     """
     d = tmp_path / "run"
-    with nx.Sim("astro_max_base", scene="empty", log=True, run_dir=d) as sim:
+    with nx.Sim(px4_vehicle, scene=sv.SCENE, log=True, run_dir=d) as sim:
         sim.start(timeout=120.0)
         sim.sleep(1.0)
     artifacts = sim.artifacts()

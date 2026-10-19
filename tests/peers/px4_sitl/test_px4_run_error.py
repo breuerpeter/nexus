@@ -77,13 +77,13 @@ def test_a_px4_tree_without_the_vehicles_airframe_fails_the_run_with_px4s_own_er
 
 @pytest.mark.px4_sitl
 @_NEEDS_TREE
-def test_offboard_connect_returns_a_client_that_has_px4s_heartbeat():
+def test_offboard_connect_returns_a_client_that_has_px4s_heartbeat(px4_vehicle):
     """`OffboardClient.connect(sim, timeout)` returns a client that has PX4's heartbeat.
 
-    Given `astro_max_base` started on PX4, when `OffboardClient.connect(sim, 10.0)` returns, then the client has
+    Given the fixture vehicle started on PX4, when `OffboardClient.connect(sim, 10.0)` returns, then the client has
     the heartbeat, and a `takeoff(2.0)` it sends reaches its target within 60 s of sim time.
     """
-    with nx.Sim("astro_max_base", scene="empty") as sim:
+    with nx.Sim(px4_vehicle, scene=sv.SCENE) as sim:
         sim.start(timeout=120.0)
         clients = []
         error = _raised(lambda: clients.append(OffboardClient.connect(sim, 10.0)))

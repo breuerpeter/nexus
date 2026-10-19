@@ -154,6 +154,23 @@ def test_start_runs_px4_with_the_runs_instance_and_airframe(daemon, tree, tmp_pa
     } and launch["image"].startswith(f"{IMAGE}:")
 
 
+def test_start_empties_the_instances_work_folder_of_what_an_earlier_run_left(daemon, tree, tmp_path):
+    """A start empties the instance's work folder, so PX4 boots with no parameter and no mission an earlier run
+    stored there, whether that run ended or died before its teardown: the peer finds one folder either way.
+
+    Given the instance's work folder holding `parameters.bson` and `dataman`, when the peer starts, then the folder
+    holds only the empty `log` the run's folder mounts over.
+    """
+    work = tmp_path / "home" / ".cache" / "nexus" / "px4-work" / "0"
+    work.mkdir(parents=True)
+    (work / "parameters.bson").write_bytes(b"left by an earlier run")
+    (work / "dataman").write_bytes(b"left by an earlier run")
+
+    _peer(tree, tmp_path).start()
+
+    assert sorted(p.name for p in work.iterdir()) == ["log"]
+
+
 def test_start_builds_the_tree_before_it_launches(daemon, tree, tmp_path):
     """A launch must reach the sim inside its preroll window, which an incremental build fits and a
     cold build never does, so the build comes first, in the foreground.
