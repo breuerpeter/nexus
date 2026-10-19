@@ -5,6 +5,7 @@ use, so the default device is the same after them.
 """
 
 import logging
+import time
 
 import pytest
 
@@ -257,6 +258,51 @@ def _orch(controller, *, sensors=(), physics=None, **kw):
 
 def _messages(caplog):
     return [r.getMessage() for r in caplog.records]
+
+
+class _SlowSensor(Component):
+    """A sensor whose host stage holds each tick past its budget: 10 ms against the clock's 4 ms."""
+
+    host_rate = True
+
+    def stages(self):
+        return [Stage("sample", "host", lambda tick: time.sleep(0.01))]
+
+
+class _FreePeer:
+    """A peer that keeps its own wall clock, the companion's shape, and starts no process."""
+
+    name = "radio"
+    clock = "free"
+
+    def start(self):
+        pass
+
+    def stop(self):
+        pass
+
+    def alive(self):
+        return True
+
+
+def test_a_run_with_a_free_running_peer_warns_once_when_its_live_real_time_factor_falls_below_0_95(caplog):
+    """A run with a free-running peer warns once when its live real-time factor falls below 0.95, naming the
+    peer and the factor: it ran 2.5 s of wall time at 0.4x, with no recording, and logged one warning that
+    names ``radio`` and a factor below 0.95.
+    """
+    deadline = time.monotonic() + 2.5
+    with wp.ScopedDevice("cpu"), caplog.at_level(logging.WARNING, logger="nexus"):
+        orch = _orch(_DeviceController(), sensors=[_SlowSensor()], peers=[_FreePeer()])
+        while time.monotonic() < deadline and orch.step():
+            pass
+        orch.close()
+    warnings = [m for m in _messages(caplog) if "real-time factor" in m]
+    factors = [float(w.split("fell to ")[1].split(",")[0]) for w in warnings if "fell to " in w]
+    assert (len(warnings), all("radio" in w for w in warnings), factors and all(f < 0.95 for f in factors)) == (
+        1,
+        True,
+        True,
+    )
 
 
 def _cuda():
