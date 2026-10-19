@@ -263,3 +263,19 @@ def test_a_projects_peer_start_with_no_reachable_daemon_fails_naming_the_daemons
 
     message = str(failed.value)
     assert ("radio" in message, "unix:///var/run/docker.sock" in message, pinged) == (True, True, ["ping"])
+
+
+def test_the_peer_label_holds_over_a_subclasss_own_labels(daemon, tmp_path):
+    """The container carries `nexus.peer=<name>` whatever labels the subclass's run options add.
+
+    Given a project's peer whose run options set `nexus.peer` to another value and a label of its own, when it
+    starts, then the daemon ran the container with `nexus.peer=radio` and the peer's own label.
+    """
+
+    class Labelled(_radio()):
+        def run_options(self) -> dict:
+            return {**super().run_options(), "labels": {"nexus.peer": "other", "radio.band": "uhf"}}
+
+    Labelled(instance=1, log_dir=tmp_path).start()
+
+    assert daemon.runs[0].get("labels") == {"nexus.peer": "radio", "radio.band": "uhf"}

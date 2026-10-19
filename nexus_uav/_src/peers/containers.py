@@ -251,7 +251,7 @@ class ContainerPeer(Peer):
         """
         self.dir.mkdir(parents=True, exist_ok=True)
         options = self.run_options()
-        labels = {LABEL: self.name, **options.pop("labels", {})}
+        labels = {**options.pop("labels", {}), LABEL: self.name}  # the peer label last, so no subclass unsets it
         self._container = run_container(name=self.container, log_path=str(self.log_path), labels=labels, **options)
 
     def stop(self) -> None:
