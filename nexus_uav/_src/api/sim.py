@@ -57,7 +57,9 @@ class Sim:
         max_steps: Cap the run at this many control steps; ``None`` = the launch-config default.
         rtf: Real-time-factor throttle. ``0``, the default, runs unthrottled, as fast as the
             controller keeps up. ``1.0`` paces the loop to wall-clock for human-in-the-loop
-            flying: 1:1 stick feel, and sim-time protocol timeouts align with wall-clock peers.
+            flying: 1:1 stick feel, and sim-time protocol timeouts align with wall-clock peers. A
+            vehicle that declares a free-running peer, one on its own wall clock, needs ``1.0``, and
+            the build fails at any other value before a peer starts.
         layer: Path to an override layer, a local Universal Scene Description (USD) file the run
             composes over the vehicle and the scene: it changes a declared value, such as the scene's
             geodetic origin on its ``PhysicsScene`` prim, selects a variant, or drops a declaration.

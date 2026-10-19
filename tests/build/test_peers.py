@@ -14,11 +14,15 @@ import pytest
 pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
+import logging
+import re
+import time
 from pathlib import Path
 from typing import ClassVar
 
 import nexus_uav._src.build.launch as L
 from nexus_uav._src.config import LaunchConfig
+from nexus_uav._src.core.interfaces import Stage
 from nexus_uav._src.core.registry import Registry
 from nexus_uav._src.peers.kit.fake import KitFake
 from nexus_uav._src.peers.px4_sitl.fake import Px4Fake
@@ -54,11 +58,15 @@ class _RadarSensor(sv.StandInSensor):
     requires = ("radar",)
 
 
-def _built(path: str, registry: Registry, during=lambda loop: None) -> dict:
+def _built(
+    path: str, registry: Registry, during=lambda loop: None, rtf: float | None = None, dt: float | None = None
+) -> dict:
     """Build the vehicle at `path` in the fixture scene with `registry`, call `during` on the built run, and close
-    it. Returns what `during` returned, the run's receipt and its port map, or the error the build raised.
+    it. Returns what `during` returned, the run's receipt and its port map, or the error the build raised. `rtf`
+    is the run's real-time factor and `dt` its tick, the default ones when `None`.
     """
-    launch = LaunchConfig.from_dict({"vehicle": path, "scene": sv.SCENE, "runtime": {"device": "cpu"}})
+    runtime = {"device": "cpu", **({} if rtf is None else {"rtf": rtf}), **({} if dt is None else {"dt": dt})}
+    launch = LaunchConfig.from_dict({"vehicle": path, "scene": sv.SCENE, "runtime": runtime})
     try:
         loop = L.build_from_launch(launch, preroll_timeout=10.0, components=registry)
     except Exception as exc:
@@ -213,3 +221,182 @@ def test_a_peer_schema_no_class_claims_fails_before_any_peer_starts(daemon, tmp_
     message = str(outcome["error"] or "")
     named = [s in message for s in ("/vehicle/Companion", "StandInPeerAPI", "no class claims")]
     assert (named, fake.starts, daemon.started()) == ([True] * 3, [], []), outcome["error"]
+
+
+# --- how a peer keeps time ------------------------------------------------------------------------------------
+
+
+def _free() -> type:
+    """A stand-in class of a project's own peer that runs free on its own wall clock, as a companion under an
+    emulator does. Each call makes a class of its own, for one run.
+    """
+
+    class Free(sv.radio()):
+        clock = "free"
+
+    return Free
+
+
+# The tick of the paced runs: 20 ms, five times the fixture's 4 ms, so a tick of the stand-ins fits its budget on a
+# loaded CI runner too, and only the slow sensor, which holds a tick for 50 ms, falls behind.
+PACED_DT = 0.02
+
+
+class _SlowSensor(sv.StandInSensor):
+    """A stand-in sensor whose host stage holds each tick past its budget: 50 ms against the paced runs' 20 ms."""
+
+    def stages(self):
+        return [Stage("stand_in", "host", lambda tick: time.sleep(0.05))]
+
+
+def _steps_for(seconds: float):
+    """A `during` that steps the run for `seconds` of wall time after its first tick, which sets the run up and
+    compiles its kernels, past two live real-time factor readings when `seconds` is more than 2. Returns how many
+    ticks it ran.
+    """
+
+    def step(loop) -> int:
+        n = 1 if loop.step() else 0
+        deadline = time.monotonic() + seconds
+        while n and time.monotonic() < deadline and loop.step():
+            n += 1
+        return n
+
+    return step
+
+
+def _pace_warnings(caplog) -> list[str]:
+    """The warnings the run logged about its real-time factor."""
+    return [
+        r.getMessage() for r in caplog.records if r.levelno == logging.WARNING and "real-time factor" in r.getMessage()
+    ]
+
+
+def test_a_peer_class_whose_clock_is_none_of_the_three_fails_the_build_before_any_peer_starts(daemon, tmp_path):
+    """A peer class whose clock is none of the three fails the build before any peer starts.
+
+    Given the fixture vehicle that declares the PX4 SITL peer and a stand-in peer, `radio`, whose class states the
+    clock `wall`, when the run builds, then it raises `RunError` naming `radio` and `wall`, and no peer's `start` ran.
+    """
+    fake, typo = _counting(), _free()
+    typo.clock = "wall"
+    path = sv.vehicle(tmp_path, root=sv.companion(), px4=True)
+
+    outcome = _built(path, sv.components(NexusPx4SitlAPI=fake, StandInPeerAPI=typo), rtf=1.0)
+
+    message = str(outcome["error"] or "")
+    seen = (type(outcome["error"]).__name__, "radio" in message, "wall" in message, fake.starts, typo.events)
+    assert seen == ("RunError", True, True, [], []), outcome["error"]
+
+
+def test_a_run_that_declares_a_free_running_peer_fails_at_the_default_real_time_factor_before_any_peer_starts(
+    daemon, tmp_path
+):
+    """A run that declares a free-running peer fails at the default real-time factor, before any peer starts,
+    naming the peer and the factor.
+
+    Given the fixture vehicle that declares the PX4 SITL peer and a free-running stand-in peer, `radio`, when the
+    run builds with no real-time factor set, then it raises `RunError` naming `radio` and `0`, and no peer's
+    `start` ran.
+    """
+    fake, free = _counting(), _free()
+    path = sv.vehicle(tmp_path, root=sv.companion(), px4=True)
+
+    outcome = _built(path, sv.components(NexusPx4SitlAPI=fake, StandInPeerAPI=free))
+
+    message = str(outcome["error"] or "")
+    seen = (type(outcome["error"]).__name__, "radio" in message, "0" in message, fake.starts, free.events)
+    assert seen == ("RunError", True, True, [], []), outcome["error"]
+
+
+@pytest.mark.parametrize("rtf", [0.5, 2.0])
+def test_a_run_that_declares_a_free_running_peer_fails_at_any_factor_but_1(daemon, tmp_path, rtf):
+    """A run that declares a free-running peer fails at any factor but 1, slower or faster.
+
+    Given the fixture vehicle that declares the PX4 SITL peer and a free-running stand-in peer, `radio`, when the
+    run builds at a real-time factor of 0.5 and at 2, then each raises `RunError` naming `radio` and its factor,
+    and no peer's `start` ran.
+    """
+    fake, free = _counting(), _free()
+    path = sv.vehicle(tmp_path, root=sv.companion(), px4=True)
+
+    outcome = _built(path, sv.components(NexusPx4SitlAPI=fake, StandInPeerAPI=free), rtf=rtf)
+
+    message = str(outcome["error"] or "")
+    seen = (type(outcome["error"]).__name__, "radio" in message, f"{rtf:g}" in message, fake.starts, free.events)
+    assert seen == ("RunError", True, True, [], []), outcome["error"]
+
+
+def test_a_run_that_declares_a_free_running_peer_starts_it_and_flies_at_a_real_time_factor_of_1(daemon, tmp_path):
+    """A run that declares a free-running peer starts it and flies at a real-time factor of 1.
+
+    Given the fixture vehicle that declares the PX4 SITL peer and a free-running stand-in peer, `radio`, when the
+    run builds at a real-time factor of 1 and steps 5 ticks, then `radio` started and the run flew all 5.
+    """
+    free = _free()
+    path = sv.vehicle(tmp_path, root=sv.companion(), px4=True)
+
+    outcome = _built(path, sv.components(NexusPx4SitlAPI=Px4Fake, StandInPeerAPI=free), during=_steps(5), rtf=1.0)
+
+    assert (free.events[:1], outcome["during"]) == (["start"], 5), outcome["error"]
+
+
+def test_a_run_at_a_factor_of_1_with_a_free_running_peer_warns_once_when_its_live_factor_falls_below_0_95(
+    daemon, tmp_path, caplog
+):
+    """A run at a factor of 1 with a free-running peer warns once when its live real-time factor falls below 0.95.
+
+    Given the fixture vehicle that declares the PX4 SITL peer, a free-running stand-in peer, `radio`, and a stand-in
+    sensor whose host stage holds each tick past its budget, when the run steps at a real-time factor of 1 past two
+    live readings, then the log holds one warning naming `radio` and a measured factor below 0.95.
+    """
+    free = _free()
+    path = sv.vehicle(tmp_path, sv.prim("Slow", "StandInSensorAPI"), root=sv.companion(), px4=True)
+    registry = sv.components(NexusPx4SitlAPI=Px4Fake, StandInPeerAPI=free, StandInSensorAPI=_SlowSensor)
+
+    with caplog.at_level(logging.WARNING, logger="nexus"):
+        outcome = _built(path, registry, during=_steps_for(2.5), rtf=1.0, dt=PACED_DT)
+
+    warnings = _pace_warnings(caplog)
+    factors = [float(m.group()) for w in warnings for m in [re.search(r"\d+\.\d+", w)] if m]
+    seen = (len(warnings), all("radio" in w for w in warnings), all(f < 0.95 for f in factors), len(factors))
+    assert seen == (1, True, True, 1), (warnings, outcome["error"])
+
+
+def test_a_run_at_a_factor_of_1_with_a_free_running_peer_that_keeps_pace_logs_no_warning(daemon, tmp_path, caplog):
+    """A run at a factor of 1 with a free-running peer that keeps pace logs no falling-behind warning.
+
+    Given the fixture vehicle that declares the PX4 SITL peer and a free-running stand-in peer, `radio`, with every
+    tick inside its budget, when the run steps at a real-time factor of 1 past two live readings, then the log
+    holds no warning about its real-time factor.
+    """
+    free = _free()
+    path = sv.vehicle(tmp_path, root=sv.companion(), px4=True)
+
+    with caplog.at_level(logging.WARNING, logger="nexus"):
+        outcome = _built(
+            path,
+            sv.components(NexusPx4SitlAPI=Px4Fake, StandInPeerAPI=free),
+            during=_steps_for(2.5),
+            rtf=1.0,
+            dt=PACED_DT,
+        )
+
+    assert (_pace_warnings(caplog), outcome["error"]) == ([], None)
+
+
+@pytest.mark.parametrize("rtf", [None, 1.0])
+def test_a_run_with_no_free_running_peer_keeps_any_factor_and_warns_of_nothing(daemon, tmp_path, caplog, rtf):
+    """A run with no free-running peer keeps any factor and warns of nothing.
+
+    Given the fixture vehicle with a camera that declares the PX4 SITL peer, so the run starts the stepped PX4 peer
+    and the on-request Kit peer, each on its fake, when the run builds at the default real-time factor and at 1 and
+    steps past two live readings, then neither raises and neither logs a warning about its real-time factor.
+    """
+    path = sv.vehicle(tmp_path, pins.CAMERA, px4=True)
+    registry = Registry({"NexusPx4SitlAPI": Px4Fake, "kit": KitFake})
+
+    with caplog.at_level(logging.WARNING, logger="nexus"):
+        outcome = _built(path, registry, during=_steps_for(2.5), rtf=rtf, dt=PACED_DT)
+
+    assert (_pace_warnings(caplog), outcome["error"]) == ([], None)

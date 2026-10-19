@@ -33,7 +33,7 @@ from nexus_uav._src.core.components import ComponentSpec, PeerSpec, resolve_decl
 from nexus_uav._src.core.errors import RunError
 from nexus_uav._src.core.registry import Registry
 from nexus_uav._src.core.run_folder import run_folder
-from nexus_uav._src.peers import instance, pins
+from nexus_uav._src.peers import CLOCKS, instance, pins
 from nexus_uav._src.peers.files import run_files
 from nexus_uav._src.physics import VehicleUsd
 from nexus_uav._src.rendering import PEER as KIT
@@ -160,6 +160,7 @@ def build_from_launch(
     pins.check(layers, sorted({*pins.shipped(), *(cls.name for cls in classes)}))
     found = {cls.name: (cls, pins.resolve(cls.name, layers)) for cls in classes}
     peer_pins = {name: cls.check_pin(pin) if pin is not None else None for name, (cls, pin) in found.items()}
+    _check_clocks(classes, launch.runtime.rtf)
     # Every file the run writes lands in one folder: the recording and each peer's logs.
     logs = run_folder(run_dir)
     # The run numbers every address its declared peers use from one instance; with none, an autopilot started
@@ -240,6 +241,28 @@ def _required(specs: list[ComponentSpec], registry: Registry) -> dict[str, type]
                 )
             required[name] = cls
     return dict(sorted(required.items()))
+
+
+def _check_clocks(classes: list[type], rtf: float) -> None:
+    """Fail a run that can't keep a peer's time, before any peer starts: a free-running peer keeps its own wall
+    clock, which agrees with sim time only at a real-time factor of 1.
+
+    Raises:
+        RunError: A peer class states no ``clock``, or one outside the three, or runs free at an `rtf` other than 1;
+            the message names the peer and the value or the factor.
+    """
+    for cls in classes:
+        clock = getattr(cls, "clock", None)
+        if clock not in CLOCKS:
+            stated = "no clock" if clock is None else f"the clock {clock!r}"
+            raise RunError(
+                f"the {cls.name} peer states {stated}; a peer class states how it keeps time in `clock`, one of {CLOCKS}"
+            )
+        if clock == "free" and rtf != 1:
+            raise RunError(
+                f"the {cls.name} peer runs free on its own clock, and this run paces at a real-time factor of "
+                f"{rtf:g}; pass --rtf 1 to fly it"
+            )
 
 
 def _start(peer, started: list) -> None:

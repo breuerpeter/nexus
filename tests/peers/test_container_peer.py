@@ -110,6 +110,7 @@ def _radio(image_dir: Path | None = None) -> type:
 
     class Radio(ContainerPeer):
         name = "radio"
+        clock = "stepped"
         made: ClassVar[list] = []
 
         def __init__(self, *, instance: int, log_dir, **run):

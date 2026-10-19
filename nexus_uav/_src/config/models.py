@@ -44,7 +44,8 @@ class Runtime(_Base):
     # Real-time factor throttle: 0 = unthrottled, run as fast as the controller keeps up, the
     # headless/CI default. 1.0 paces the loop to wall-clock for human-in-the-loop flying: sticks
     # feel 1:1 and sim-time protocol timeouts line up with wall-clock peers such as the companion's
-    # 1 Hz Remote ID heartbeat, since PX4's hrt runs on sim time under lockstep.
+    # 1 Hz Remote ID heartbeat, since PX4's hrt runs on sim time under lockstep. A peer whose clock is
+    # free, a companion under an emulator, needs 1.0, and the build fails any other value.
     rtf: float = 0.0
     # Physics integrator: mujoco, with contact fidelity, is the SITL default; the
     # gradient-capable semi_implicit / featherstone serve the design-optimization path.

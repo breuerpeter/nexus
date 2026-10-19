@@ -272,6 +272,7 @@ def radio() -> type:
 
     class Radio:
         name = "radio"
+        clock = "stepped"  # a stand-in: nothing steps it, and a run at the default real-time factor builds
         first_port = 50000
         built: ClassVar[list] = []
         events: ClassVar[list] = []

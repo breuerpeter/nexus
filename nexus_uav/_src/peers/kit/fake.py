@@ -51,6 +51,7 @@ class KitFake:
 
     name = NAME
     check_pin = staticmethod(check)
+    clock = "on_request"
 
     def __init__(
         self,

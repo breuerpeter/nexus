@@ -113,6 +113,7 @@ class Px4Sitl(ContainerPeer):
 
     name = NAME
     check_pin = staticmethod(checkout.check)
+    clock = "stepped"
 
     def __init__(self, *, airframe: str = "", pin: PeerPin, instance: int, log_dir: Path, **run) -> None:
         if not airframe:
