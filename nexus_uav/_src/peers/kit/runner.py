@@ -219,6 +219,7 @@ class KitPeer(ContainerPeer):
 
     name = NAME
     check_pin = staticmethod(check)
+    clock = "on_request"
 
     def __init__(
         self, files: list = (), *, cache_dir, pin: PeerPin, log_dir: Path | None = None, instance: int = 0, **run

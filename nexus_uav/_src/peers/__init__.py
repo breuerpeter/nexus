@@ -29,7 +29,7 @@ are the PX4 Software In The Loop (SITL) container, :mod:`.px4_sitl`, and the Kit
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import ClassVar, Literal, Protocol, runtime_checkable
 
 LABEL = "nexus.peer"
 """The container label that marks a peer by its kind, its ``name``, ``px4_sitl`` or ``kit``, so a start or a
@@ -47,7 +47,16 @@ class Peer(Protocol):
     them in ``artifacts``, which is optional. A peer that can tell its own error lines from the rest
     of its console, such as the line PX4 prints for an airframe its tree lacks, returns them from
     ``errors``, which is optional too, and a run that fails quotes them in its ``RunError``.
+
+    ``clock`` states how the peer keeps time, one of three ways. ``stepped``: a component steps it each
+    tick, as PX4 SITL runs on the sim time the lockstep link carries. ``on_request``: it answers a request
+    for a given sim time, as the Kit peer renders the frame a tick asks for. ``free``: it runs on its own
+    wall clock, as a companion computer under an emulator does. Sim time and a free-running peer's clock
+    agree only while the run paces at a real-time factor of 1, so the build fails a run that declares one
+    at any other factor, before any peer starts, and the loop warns when the live factor falls below 0.95.
     """
+
+    clock: ClassVar[Literal["stepped", "on_request", "free"]]
 
     def start(self) -> None: ...
     def stop(self) -> None: ...
