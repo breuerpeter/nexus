@@ -9,6 +9,8 @@ ci:
   # Both lockfiles' freshness is checked by a separate CI workflow instead.
   skip:
     - uv-lock
+    # pre-commit.ci has no Vale; vale.yml makes the check on a pull request.
+    - vale-added
 
 # See https://pre-commit.com for more information
 # See https://pre-commit.com/hooks.html for more hooks

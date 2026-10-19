@@ -55,7 +55,7 @@ def alerts_on(lines: dict[str, set[int]]) -> list[str]:
     """
     if not lines:
         return []
-    run = subprocess.run(["vale", "--output=JSON", *lines], capture_output=True, text=True)
+    run = subprocess.run(["vale", "--output=JSON", *lines], check=False, capture_output=True, text=True)
     if run.returncode not in (0, 1) or not run.stdout.strip():  # 1 is Vale's exit on an error-level alert
         sys.exit(f"vale failed: {run.stderr.strip() or run.stdout.strip()}")
     out = []
@@ -64,7 +64,10 @@ def alerts_on(lines: dict[str, set[int]]) -> list[str]:
         for alert in found:
             if alert["Line"] in lines.get(path, ()):
                 out.append((path, alert["Line"], alert["Span"][0], alert["Severity"], alert["Message"], alert["Check"]))
-    return [f"{path}:{line}:{col}  {severity}  {message}  ({check})" for path, line, col, severity, message, check in sorted(out)]
+    return [
+        f"{path}:{line}:{col}  {severity}  {message}  ({check})"
+        for path, line, col, severity, message, check in sorted(out)
+    ]
 
 
 def main() -> int:
