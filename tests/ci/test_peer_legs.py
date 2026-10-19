@@ -3,7 +3,9 @@ what each touched peer's box runs, its tests and the example one table maps it t
 """
 
 import importlib.util
+import json
 import pathlib
+import subprocess
 import sys
 import textwrap
 
@@ -18,13 +20,13 @@ _spec.loader.exec_module(peer_legs)
 
 
 def _tree(root: pathlib.Path, *peers: str, markers: tuple[str, ...] = ()) -> pathlib.Path:
-    """A repo tree at ``root`` with a peer folder per name, each with its ``pin.ref``, and a ``pyproject.toml``
-    that registers ``markers`` with pytest, as the repo's does.
+    """A repo tree at ``root`` with a peer folder per name, each a package, and a ``pyproject.toml`` that
+    registers ``markers`` with pytest, as the repo's does.
     """
     for name in peers:
         folder = root / "nexus_uav" / "_src" / "peers" / name
         folder.mkdir(parents=True)
-        (folder / "pin.ref").write_text("example/repo@0123abc\n")
+        (folder / "__init__.py").write_text("")
     registered = "".join(f'    "{m}: flies {m}",\n' for m in markers)
     (root / "pyproject.toml").write_text(
         textwrap.dedent(
@@ -106,3 +108,52 @@ def test_the_report_names_a_touched_peer_with_nothing_to_fly():
     legs = [peer_legs.Leg(peer="kit", tests=None, example=None)]
 
     assert peer_legs.report(legs) == "kit: touched, no test marked kit and no example, nothing to fly"
+
+
+def test_a_folder_under_peers_that_is_no_package_is_no_peer(tmp_path):
+    """The peers are the package folders: given a tree with a `__pycache__` folder beside a peer under
+    `nexus_uav/_src/peers/`, when the leg reads the peers, then the peer alone.
+    """
+    root = _tree(tmp_path, "foo")
+    (root / "nexus_uav" / "_src" / "peers" / "__pycache__").mkdir()
+
+    assert peer_legs.peers(root) == ["foo"]
+
+
+def test_a_push_runs_every_peer_with_tests_and_no_example():
+    """A push to main runs every peer's tests on a box of its own and no example, since gpu-examples flies the
+    examples there: given the repo's tree, when the leg plans a push, then `px4_sitl` with its tests alone.
+    """
+    assert peer_legs.every(ROOT) == [peer_legs.Leg(peer="px4_sitl", tests="px4_sitl", example=None)]
+
+
+def test_the_report_names_what_a_peers_box_runs():
+    """The report names what a box runs: given the PX4 leg with its tests and its example, when the leg writes
+    the report, then its line names both.
+    """
+    legs = [peer_legs.Leg(peer="px4_sitl", tests="px4_sitl", example="px4_sitl")]
+
+    assert peer_legs.report(legs) == "px4_sitl: tests marked px4_sitl, example px4_sitl"
+
+
+def test_the_command_line_prints_the_matrix_rows_and_the_report(tmp_path):
+    """The plan job reads one JSON: given a file of changed paths, one under the PX4 peer's folder and one under
+    the Kit peer's, when the script runs on it, then the matrix holds the PX4 leg alone and the report names both.
+    """
+    changed = tmp_path / "changed"
+    changed.write_text("nexus_uav/_src/peers/px4_sitl/runner.py\nnexus_uav/_src/peers/kit/runner.py\n")
+
+    out = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "ci" / "peer_legs.py"), "--changed", str(changed)],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+
+    assert json.loads(out) == {
+        "matrix": {"include": [{"peer": "px4_sitl", "tests": "px4_sitl", "example": "px4_sitl"}]},
+        "report": (
+            "kit: touched, no test marked kit and no example, nothing to fly\n"
+            "px4_sitl: tests marked px4_sitl, example px4_sitl"
+        ),
+    }

@@ -20,7 +20,9 @@ subfolder with a fixed name: ``image/``, a docker build context the image tag ha
 ``peer-src/``, what the container mounts read-only. The hyphen keeps ``peer-src/`` out of every
 dotted import, so no host module loads the peer's program. Each peer pins what it runs, a commit
 or an image, in ``pin.ref`` at the top of its folder. Every peer's files live under a folder named for
-the peer in the run's folder, its console as ``console.log`` there. This folder itself holds the contract,
+the peer in the run's folder, its console as ``console.log`` there, and what a peer keeps across runs, a tree
+it built or a shader cache, lives under ``~/.cache/nexus/<name>/``, so CI caches a peer's box by that one
+rule. This folder itself holds the contract,
 :mod:`.containers`, the container peer every container peer subclasses and the image a peer builds from a
 folder, both public, :mod:`.pins`, which finds every peer's pin the same way, :mod:`.instance`, which claims
 the instance a run numbers its peers' ports from, and :mod:`.files`, the files a run's peers read. The peers

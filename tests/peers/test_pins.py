@@ -199,7 +199,7 @@ def test_a_px4_run_with_no_project_pin_flies_the_shipped_pin_and_records_it(daem
     """
     shipped = _shipped("px4_sitl")
     ref = shipped.read_text().splitlines()[0].strip() if shipped.is_file() else "PX4/PX4-Autopilot@" + "0" * 40
-    tree = tmp_path / "home" / ".cache" / "nexus" / "px4" / ref.split("@", 1)[1]
+    tree = tmp_path / "home" / ".cache" / "nexus" / "px4_sitl" / ref.split("@", 1)[1]
     tree.mkdir(parents=True)
     (tree / "Makefile").write_text("px4_sitl:\n\ttrue\n")
 
@@ -225,7 +225,7 @@ def test_a_projects_px4_pin_file_overrides_the_shipped_pin_and_the_receipt_names
     outcome = _run(tmp_path)
 
     assert (_px4_tree(daemon), _pin(outcome, "px4_sitl")) == (
-        str(tmp_path / "home" / ".cache" / "nexus" / "px4" / sha),
+        str(tmp_path / "home" / ".cache" / "nexus" / "px4_sitl" / sha),
         {"ref": f"example/px4@{sha}", "source": str(project / "nexus.px4_sitl.ref"), "commit": None},
     ), outcome["error"]
 
@@ -280,7 +280,7 @@ def test_the_px4_variable_beats_a_projects_pin_file_and_the_receipt_names_it(dae
     outcome = _run(tmp_path)
 
     assert (_px4_tree(daemon), _pin(outcome, "px4_sitl")) == (
-        str(tmp_path / "home" / ".cache" / "nexus" / "px4" / sha),
+        str(tmp_path / "home" / ".cache" / "nexus" / "px4_sitl" / sha),
         {"ref": f"example/px4@{sha}", "source": "NEXUS_PX4_SITL_REF", "commit": None},
     ), outcome["error"]
 

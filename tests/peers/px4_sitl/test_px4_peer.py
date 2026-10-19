@@ -574,7 +574,7 @@ def test_a_run_whose_peer_mapping_sends_the_px4_sitl_peer_to_its_fake_starts_no_
     stepped = _step(loop, 500)
     loop.close()
 
-    fetched = (tmp_path / "home" / ".cache" / "nexus" / "px4").exists()
+    fetched = (tmp_path / "home" / ".cache" / "nexus" / "px4_sitl").exists()
     assert (daemon.runs, daemon.builds, fetched, stepped.count(True)) == ([], [], False, 500)
 
 
