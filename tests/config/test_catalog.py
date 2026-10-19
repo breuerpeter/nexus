@@ -375,3 +375,53 @@ def test_an_unknown_vehicle_name_fails_and_names_the_known_ones():
     """
     with pytest.raises(Exception, match=r"astro_max_base.*astro_max_fpv"):
         nexus_uav.Catalog.from_yaml().fetch_vehicle("no_such_vehicle")
+
+
+# A catalog vehicle entry composes a base vehicle and its layers, #331: the load errors.
+
+UNKNOWN_BASE = """\
+vehicles:
+  probe:
+    base: no_such_vehicle
+    layers:
+      - { url: "file:///payload.usdz", sha256: abc }
+"""
+
+USD_AND_BASE = """\
+vehicles:
+  probe:
+    usd: { url: "file:///probe.usdz", sha256: abc }
+    base: astro_max_base
+    layers:
+      - { url: "file:///payload.usdz", sha256: abc }
+"""
+
+
+def test_an_entry_whose_base_no_catalog_names_fails_at_load(tmp_path):
+    """An entry whose base no catalog names fails at load.
+
+    Given a catalog whose entry names a base that no loaded catalog defines, when the catalogs load, then the
+    load fails and the message names the entry and the base.
+    """
+    catalog = tmp_path / "project.yaml"
+    catalog.write_text(UNKNOWN_BASE)
+
+    with pytest.raises(CatalogError) as e:
+        load_catalog(catalog)
+
+    assert [word in str(e.value) for word in ("probe", "no_such_vehicle")] == [True, True]
+
+
+def test_an_entry_with_both_usd_and_a_base_fails_at_load(tmp_path):
+    """An entry with both `usd` and a base fails at load.
+
+    Given an entry carrying `usd` and `base`, when the catalog loads, then the load fails and the message names
+    the entry and the two forms.
+    """
+    catalog = tmp_path / "project.yaml"
+    catalog.write_text(USD_AND_BASE)
+
+    with pytest.raises((CatalogError, ValueError)) as e:
+        nexus_uav.Catalog.from_yaml(catalog)
+
+    assert [word in str(e.value) for word in ("probe", "usd", "base")] == [True, True, True]

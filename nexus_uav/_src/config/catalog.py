@@ -58,7 +58,9 @@ class VehicleVariant(_Base):
     The entry's name is its key in :attr:`Catalog.vehicles`.
     """
 
-    usd: AssetRef
+    usd: AssetRef | None = None
+    base: str | None = None
+    layers: list[AssetRef] = Field(default_factory=list)
 
 
 class Scene(_Base):

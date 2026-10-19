@@ -37,6 +37,7 @@ class TestedConfig(_Base):
     # one, each installed package's, the project's. Empty for a run handed its catalog.
     catalogs: list[CatalogLayer] = Field(default_factory=list)
     vehicle_usd: AssetRef
+    vehicle_layers: list[AssetRef] = Field(default_factory=list)
     layer: AssetRef | None = None  # the override layer the run composed over the vehicle and the scene
     # Each component and peer the run built: its prim, its schema, the class it resolved to, `module:Class`,
     # and its attributes' values, so a recording says it flew a fake or a stand-in.
