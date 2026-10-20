@@ -28,7 +28,7 @@ from nexus_uav._src.physics.vehicle import VehicleUsd
 from nexus_uav._src.scene.world import GRAVITY
 from nexus_uav._src.vehicle.commands import Escs
 from nexus_uav._src.vehicle.forces import Propellers
-from nexus_uav._src.vehicle.rotors import RPM_PER_RADS, rotor_of
+from nexus_uav._src.vehicle.rotors import RPM_PER_RADS, rotor_of, rotor_speeds
 
 SUBSTEPS = 16  # solver steps per 4 ms control tick: 0.25 ms, the step SemiImplicit holds the rotor joints at
 JOINT_KE = 1000.0  # SemiImplicit's joint spring stiffness; its default goes NaN on a rotor of 1.5e-4 kg·m²
@@ -125,12 +125,13 @@ class ArticulatedRollout:
         self.rotor_bodies = [body for _dof, _coord, body, _base in found]
         self.base = found[0][3]
         values = {key: [rotor.propeller[key] for rotor in rotors] for key in ("ct", "cd", "aero_h", "aero_hforce")}
+        self.rpm_max = rotor_speeds(model, rotors)  # each rotor's speed at full command [rpm], its motor's
         self.command = Escs(
             rotor_vel_dofs=wp.array([self.rotor_dofs], dtype=wp.int32),
             channels=[rotor.channel for rotor in rotors],
             ct=values["ct"],
             cd=values["cd"],
-            rpm_max=[rotor.rpm_max for rotor in rotors],
+            rpm_max=self.rpm_max,
         )
         self.propellers = Propellers(
             rotor_vel_dofs=wp.array(self.rotor_dofs, dtype=wp.int32),

@@ -36,7 +36,7 @@ from typing import Any
 import numpy as np
 import warp as wp
 
-from nexus_uav._src.vehicle.rotors import RPM_PER_RADS, quat_to_R, rotor_of
+from nexus_uav._src.vehicle.rotors import RPM_PER_RADS, quat_to_R, rotor_of, rotor_speeds
 
 
 @dataclass(slots=True)
@@ -250,7 +250,7 @@ def build_rotor_mixer_from_model(model, rotors, rest_body_q) -> RotorMixer:
     found = [rotor_of(model, rotor.body) for rotor in rotors]  # each rotor's dof, coord, body and airframe
     bodies, base = [body for _dof, _coord, body, _base in found], found[0][3]
     kf, omega_max, kappa = _thrust_map(
-        [r.propeller["ct"] for r in rotors], [r.rpm_max for r in rotors], [r.propeller["cd"] for r in rotors]
+        [r.propeller["ct"] for r in rotors], rotor_speeds(model, rotors), [r.propeller["cd"] for r in rotors]
     )
     bq = np.asarray(rest_body_q, dtype=np.float32)
     B, B_inv, spins = build_allocation(bq[:, :3], bq[:, 3:7], base, bodies, kappa)

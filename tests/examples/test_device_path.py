@@ -22,7 +22,7 @@ from nexus_uav._src.core.schema import SimTime
 from nexus_uav._src.core.signals import wire
 from nexus_uav._src.core.stages import Bound
 from nexus_uav._src.vehicle.commands import Escs
-from nexus_uav._src.vehicle.rotors import rotor_of
+from nexus_uav._src.vehicle.rotors import rotor_of, rotor_speeds
 from nexus_uav.examples._lib import build_rotor_mixer_from_model
 from nexus_uav.examples._lib.observation import WarpObservationSensor
 from nexus_uav.examples.controllers.pid import PidController
@@ -73,7 +73,7 @@ def test_a_warp_observation_keeps_the_pid_path_on_the_device(tmp_path):
         channels=[rotor.channel for rotor in rotors],
         ct=[rotor.propeller["ct"] for rotor in rotors],
         cd=[rotor.propeller["cd"] for rotor in rotors],
-        rpm_max=[rotor.rpm_max for rotor in rotors],
+        rpm_max=rotor_speeds(model, rotors),
     )
     escs.write(controls.command.reshape((1, mixer.nr)), control)
     wp.synchronize()

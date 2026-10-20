@@ -19,7 +19,7 @@ from nexus_uav._src.physics.vehicle import VehicleUsd
 from nexus_uav._src.scene.world import GRAVITY
 from nexus_uav._src.vehicle.commands import Escs
 from nexus_uav._src.vehicle.forces import Propellers
-from nexus_uav._src.vehicle.rotors import rotor_of
+from nexus_uav._src.vehicle.rotors import rotor_of, rotor_speeds
 from nexus_uav.examples._lib.rotor_chain import RotorChain, vehicle_rotors
 from tests.vehicle import quad
 
@@ -64,7 +64,7 @@ def _alone(path, place, command):
         channels=[rotor.channel for rotor in rotors],
         ct=values["ct"],
         cd=values["cd"],
-        rpm_max=[rotor.rpm_max for rotor in rotors],
+        rpm_max=rotor_speeds(model, rotors),
     ).write(wp.array([command], dtype=float), control)
     Propellers(
         rotor_vel_dofs=wp.array(dofs, dtype=wp.int32),

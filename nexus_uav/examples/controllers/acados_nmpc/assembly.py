@@ -36,7 +36,7 @@ def build_acados_loop(
     import newton
     import numpy as np
 
-    from nexus_uav._src.vehicle.rotors import rotor_of
+    from nexus_uav._src.vehicle.rotors import rotor_of, rotor_speeds
     from nexus_uav.examples.controllers.acados_nmpc.controller import AcadosNMPCController
 
     logger.info(f"device: {resolve_device(cfg)}")
@@ -76,7 +76,7 @@ def build_acados_loop(
     logger.info(f"acados-loop: mass={mass:.4f} kg")
     controller = AcadosNMPCController(
         mass=mass, inertia=base_inertia, rotor_offsets=rotor_offsets, turning_dirs=turning_dirs,
-        ct=[rotor.propeller["ct"] for rotor in rotors], rpm_max=[rotor.rpm_max for rotor in rotors], dt=dt,
+        ct=[rotor.propeller["ct"] for rotor in rotors], rpm_max=rotor_speeds(physics.model, rotors), dt=dt,
     )  # fmt: skip
 
     if sink is None and rerun:

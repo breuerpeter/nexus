@@ -84,7 +84,7 @@ def recover_mass(
 
     rotors = vehicle_usd.rotors()  # in channel order, each with its own thrust map
     kf = np.array([rotor.propeller["ct"] for rotor in rotors]) * RPM_PER_RADS**2
-    omega_max = np.array([rotor.rpm_max for rotor in rotors]) / RPM_PER_RADS
+    omega_max = rollout.rpm_max / RPM_PER_RADS  # each rotor's speed at full command [rad/s], from its motor
     speed = np.sqrt(LIFT * rollout.mass * GRAVITY / len(rotors) / kf)  # rad/s, each rotor's
     command = wp.array([(speed / omega_max).tolist()], dtype=float)
 

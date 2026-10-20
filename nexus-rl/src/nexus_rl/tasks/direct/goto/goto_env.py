@@ -94,7 +94,7 @@ class GoToEnv(QuadcopterNewtonEnv):
         self._nr = self._chain.nr
         # Each rotor's thrust = kf·Ω², with Ω in rad/s, and its speed at full command [rad/s]
         kf = np.array([rotor.propeller["ct"] for rotor in declared], dtype=np.float32) * RPM_PER_RADS**2
-        omega_max = np.array([rotor.rpm_max for rotor in declared], dtype=np.float32) / RPM_PER_RADS
+        omega_max = self._chain.rpm_max.astype(np.float32) / RPM_PER_RADS
         self._kf = wp.array(kf, dtype=float, device=self.device)
         self._omega_max = wp.array(omega_max, dtype=float, device=self.device)
         # The mixer's B⁻¹, from the first env's rest-pose rotor geometry, through the one allocation builder the

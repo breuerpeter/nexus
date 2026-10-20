@@ -148,7 +148,7 @@ def test_the_rotor_reader_returns_each_rotor_with_its_own_values_in_channel_orde
 
     Given the fixture with its ESCs on channels 3, 2, 1 and 0 and rotor 2's `ct` twice the others', when read,
     then the rotors come in channel order, rotor 3 first, each with its body, its joint, the airframe, its
-    channel, its own propeller values and the motor's no-load speed, 398 rad/s or 3800.62 rpm.
+    channel and its own propeller values.
     """
     read = rotors(_author(tmp_path / "quad.usda", odd_ct=2 * LIFT_CT, channels=(3, 2, 1, 0)))
     expected = [
@@ -158,7 +158,6 @@ def test_the_rotor_reader_returns_each_rotor_with_its_own_values_in_channel_orde
             parent=f"{ROOT}/body",
             channel=3 - i,
             propeller={"ct": 2 * LIFT_CT if i == 2 else LIFT_CT, "cd": 0.05, "aero_h": 0.0, "aero_hforce": 0.0},
-            rpm_max=3800.62,
         )
         for i in (3, 2, 1, 0)
     ]
@@ -166,7 +165,6 @@ def test_the_rotor_reader_returns_each_rotor_with_its_own_values_in_channel_orde
         (r.body, r.joint, r.parent, r.channel) for r in expected
     ]
     assert [r.propeller for r in read] == [pytest.approx(r.propeller, rel=1e-5) for r in expected]
-    assert [r.rpm_max for r in read] == pytest.approx([r.rpm_max for r in expected], rel=1e-5)
 
 
 def test_a_rotor_that_declares_a_propeller_and_no_esc_fails_the_build_and_names_the_prim(tmp_path):

@@ -6,7 +6,8 @@ per-consumer copy.
 * :func:`rotor_of`: find one rotor in a finalized model by its rigid body's prim path: the Degrees Of
   Freedom (DOF) and coord index of its revolute joint, its body and the joint's parent body, so a declared
   ESC or propeller finds its rotor from its own prim, with no list of joints.
-* :func:`motor_speed`: the no-load speed of the Newton motor that drives a DOF, the rotor speed at full command.
+* :func:`motor_speed`: the no-load speed of the Newton motor that drives a DOF, the rotor speed at full command,
+  and :func:`rotor_speeds`, the same for each rotor a vehicle declares: the model is the one source of it.
 * :func:`find_rotor_joints`: find the joints the vehicle declares its rotors on in a finalized model,
   returning the DOF and coord indices, the rotor child bodies and the shared airframe
   parent, so the rotor indexing comes from the declaration and the model rather than an assumption, and
@@ -76,6 +77,16 @@ def motor_speed(model, dof: int, body: str) -> float:
             "author the motor's no-load speed as newton:velocityLimit"
         )
     raise ValueError(f"{body}: no NewtonActuator prim drives its joint, so it has no motor")
+
+
+def rotor_speeds(model, rotors) -> np.ndarray:
+    """Each rotor's speed at full command [rpm], its motor's no-load speed from the model, in the order of
+    `rotors`, the rotors the vehicle declares, each with its rigid body's prim path as ``body``.
+
+    Raises:
+        ValueError: As :func:`rotor_of` and :func:`motor_speed` state; the message names the prim.
+    """
+    return np.array([motor_speed(model, rotor_of(model, r.body)[0], r.body) * RPM_PER_RADS for r in rotors])
 
 
 def find_rotor_joints(model, joints) -> tuple[list[int], list[int], list[int], int]:

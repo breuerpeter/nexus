@@ -40,6 +40,7 @@ def build_sampling_mpc_loop(
     The guidance sequences the mission and writes each goal to the setpoint the controller reads.
     """
     from nexus_uav._src.build.assembly import elements
+    from nexus_uav._src.vehicle.rotors import rotor_speeds
     from nexus_uav.examples._lib.motor import motor_time_constant, rotor_spin_inertia
     from nexus_uav.examples._lib.single_body import collapse_to_single_body
     from nexus_uav.examples.controllers.sampling_mpc.controller import SamplingMPCController
@@ -71,7 +72,7 @@ def build_sampling_mpc_loop(
     )
     controller = SamplingMPCController(
         batch_model=batch.model, mass=mass, rotor_offsets=offsets, turning_dirs=dirs,
-        ct=[r.propeller["ct"] for r in rotors], rpm_max=[r.rpm_max for r in rotors], goal_w=goal_w, dt=dt,
+        ct=[r.propeller["ct"] for r in rotors], rpm_max=rotor_speeds(physics.model, rotors), goal_w=goal_w, dt=dt,
         num_rollouts=num_rollouts, reaction_k=[r.propeller["cd"] for r in rotors],
         motor_tau=tau,  # plan with the time constant of the vehicle's motors
         rotor_inertia=inertia,  # and with the reaction each rotor's speed change pushes on the airframe

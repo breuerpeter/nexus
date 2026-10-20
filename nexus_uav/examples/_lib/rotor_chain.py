@@ -15,6 +15,7 @@ import warp as wp
 from nexus_uav._src.physics.motors import Motors
 from nexus_uav._src.vehicle.commands import Escs
 from nexus_uav._src.vehicle.forces import Propellers
+from nexus_uav._src.vehicle.rotors import RPM_PER_RADS, motor_speed
 
 __all__ = ["RotorChain", "vehicle_rotors"]
 
@@ -65,8 +66,8 @@ class RotorChain:
         model: The finalized model, one copy of the vehicle per environment, with each copy's Newton motors on
             ``model.actuators``.
         rotors: The rotors the vehicle's USD file declares, in channel order,
-            :func:`~nexus_uav.examples._lib.single_body.rotors`: each with its joint, its channel, its propeller's
-            values and its motor's no-load speed.
+            :func:`~nexus_uav.examples._lib.single_body.rotors`: each with its joint, its channel and its
+            propeller's values. Each motor's no-load speed comes from the model, in ``rpm_max``.
     """
 
     def __init__(self, model, rotors):
@@ -75,12 +76,19 @@ class RotorChain:
         self.rotor_dofs, self.rotor_bodies, self.rotor_bases = dofs, bodies, bases  # each (copies, nr)
         self.bases = wp.array(bases[:, 0], dtype=wp.int32, device=model.device)  # each copy's airframe body
         values = {key: [rotor.propeller[key] for rotor in rotors] for key in ("ct", "cd", "aero_h", "aero_hforce")}
+        # Each rotor's speed at full command [rpm], its motor's no-load speed, from the first copy's motors.
+        self.rpm_max = np.array(
+            [
+                motor_speed(model, int(dof), rotor.body) * RPM_PER_RADS
+                for dof, rotor in zip(dofs[0], rotors, strict=True)
+            ]
+        )
         self.command = Escs(
             rotor_vel_dofs=wp.array(dofs, dtype=wp.int32, device=model.device),
             channels=[rotor.channel for rotor in rotors],
             ct=values["ct"],
             cd=values["cd"],
-            rpm_max=[rotor.rpm_max for rotor in rotors],
+            rpm_max=self.rpm_max,
         )
         self.propellers = Propellers(
             rotor_vel_dofs=wp.array(dofs.ravel(), dtype=wp.int32, device=model.device),
