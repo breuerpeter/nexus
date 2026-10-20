@@ -149,7 +149,7 @@ receipt records each pin and where it came from. A peer of your own follows the 
 package ships `nexus.<peer>.ref` beside its catalog. A peer that no source pins runs with none.
 Every run fails on a pin file that names no peer the install knows, so a typo can't go unseen. The
 install knows a peer by its schema: its type in `plugInfo.json` names it, `"nexusPeer": "radio"`, as
-`NexusPx4SitlAPI` names `px4_sitl`. A run that doesn't start your peer then accepts its pin file and
+`NexusPx4SitlAPI` names `px4_sitl`, and its `nexus.registry` entry maps the schema. A run that doesn't start your peer then accepts its pin file and
 imports nothing of its class.
 
 A peer whose process is one container subclasses

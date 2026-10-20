@@ -33,6 +33,10 @@ class Registry:
         """Map `name` to `target`, a class or an import path, `module:Class`, replacing any row it had."""
         self._entries[name] = target
 
+    def __contains__(self, name: str) -> bool:
+        """Whether this registry's row or the install's maps `name`, with no import of the class it maps to."""
+        return name in self._entries or name in _installed()
+
     def resolve(self, name: str) -> type | None:
         """The class `name` maps to: this registry's row, else the install's, or ``None`` when neither claims it.
 
