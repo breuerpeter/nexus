@@ -104,6 +104,35 @@ def tree(tmp_path):
     return px4
 
 
+@pytest.fixture
+def pty():
+    """A pseudo-terminal of the test's own, as the run makes a serial link's end: the path of its slave, which this
+    process owns, closed after the test.
+    """
+    master, slave = os.openpty()
+    yield os.ttyname(slave)
+    os.close(master)
+    os.close(slave)
+
+
+def _owned_by(monkeypatch, tree, uid: int, gid: int) -> None:
+    """Make `tree` read as owned by `uid:gid`, as a tree another user built does, with the rest of its stat real."""
+    real_stat = pathlib.Path.stat
+
+    class _Stat:
+        st_uid, st_gid = uid, gid
+
+        def __init__(self, real):
+            self._real = real
+
+        def __getattr__(self, name):
+            return getattr(self._real, name)
+
+    monkeypatch.setattr(
+        pathlib.Path, "stat", lambda self, **kw: _Stat(real_stat(self, **kw)) if self == tree else real_stat(self, **kw)
+    )
+
+
 def _peer(tree, tmp_path, **kw):
     args = {
         "pin": PeerPin(ref=str(tree), source="a test"),
@@ -152,6 +181,73 @@ def test_start_runs_px4_with_the_runs_instance_and_airframe(daemon, tree, tmp_pa
         "network_mode": "host",
         "labels": {"nexus.peer": "px4_sitl", "nexus.px4.instance": "2", "nexus.owner": str(os.getpid())},
     } and launch["image"].startswith(f"{IMAGE}:")
+
+
+def test_start_mounts_each_serial_lines_device_and_starts_a_mavlink_instance_on_it_from_px4s_post_hook(
+    daemon, tree, tmp_path, pty
+):
+    """A peer with a serial line mounts its end into the container as `/dev/serial/<prim>`, named for the prim that
+    wires the line, and PX4 starts a MAVLink instance on it from its own `<airframe>.post` hook, a file of this run's
+    mounted over the tree's copy.
+
+    Given a peer whose end of the line from `Companion` is a pseudo-terminal of the test's, over a tree whose built
+    startup folder holds the airframe `80000_none_astro_max`, when it starts, then the container binds that terminal
+    at `/dev/serial/Companion` read-write, and the run's `serial.post` read-only at `80000_none_astro_max.post`
+    beside the airframe, holding `mavlink start -d /dev/serial/Companion -b 3000000 -m onboard -x`.
+    """
+    airframes = tree / "build" / "px4_sitl_default" / "etc" / "init.d-posix" / "airframes"
+    airframes.mkdir(parents=True)
+    (airframes / "80000_none_astro_max").write_text("# the airframe\n")
+    post = tmp_path / "home" / ".cache" / "nexus" / "px4-work" / "0" / "serial.post"
+
+    _peer(tree, tmp_path, serial={"Companion": pty}).start()
+
+    launch = next(kw for kind, kw in daemon if kind == "run" and kw.get("detach", True))
+    added = [m for m in launch["mounts"] if m["Source"] in (pty, str(post))]
+    expected = [
+        Mount(f"{airframes}/80000_none_astro_max.post", str(post), type="bind", read_only=True),
+        Mount("/dev/serial/Companion", pty, type="bind", read_only=False),
+    ]
+    assert (added, post.read_text()) == (expected, "mavlink start -d /dev/serial/Companion -b 3000000 -m onboard -x\n")
+
+
+def test_start_gives_px4s_user_each_serial_end_this_process_owns(daemon, tree, tmp_path, pty, monkeypatch):
+    """The run makes each serial end as this process, and PX4 runs as the tree's owner, so when the two differ PX4
+    couldn't open its end: the start gives the end to PX4's user first.
+
+    Given a tree owned by `4242:4343` and an end this process owns, when the peer starts, then it made `4242` the
+    end's owner, its group untouched, and the container runs as `4242:4343`.
+    """
+    _owned_by(monkeypatch, tree, 4242, 4343)
+    given = []
+    monkeypatch.setattr(os, "chown", lambda path, uid, gid: given.append((path, uid, gid)))
+
+    _peer(tree, tmp_path, serial={"Companion": pty}).start()
+
+    users = [kw["user"] for kind, kw in daemon if kind == "run" and kw.get("detach", True)]
+    assert (given, users) == ([(pty, 4242, -1)], ["4242:4343"])
+
+
+def test_start_fails_naming_the_serial_end_and_the_user_when_it_cannot_give_it(
+    daemon, tree, tmp_path, pty, monkeypatch
+):
+    """A process that can't give an end away fails the start, before PX4 runs, naming the device and the user.
+
+    Given a tree owned by `4242:4343`, an end this process owns and a kernel that refuses the change of owner, when
+    the peer starts, then it fails naming the end's path and `4242`, and the daemon ran the build alone.
+    """
+    _owned_by(monkeypatch, tree, 4242, 4343)
+
+    def refuse(path, uid, gid):
+        raise PermissionError(1, "Operation not permitted", path)
+
+    monkeypatch.setattr(os, "chown", refuse)
+
+    with pytest.raises(RuntimeError) as e:
+        _peer(tree, tmp_path, serial={"Companion": pty}).start()
+
+    commands = [kw["command"] for kind, kw in daemon if kind == "run"]
+    assert (pty in str(e.value), "4242" in str(e.value), commands) == (True, True, [["make", "px4_sitl"]]), str(e.value)
 
 
 def test_start_empties_the_instances_work_folder_of_what_an_earlier_run_left(daemon, tree, tmp_path):
@@ -242,22 +338,7 @@ def test_container_user_is_the_trees_owner(daemon, tree, tmp_path, monkeypatch):
     """Inside the Kit container this process is root, so `os.getuid()` would build the bind-mounted
     host tree as uid 0 and leave its build/ folder root-owned. The tree's own owner is right in both places.
     """
-    real_stat = pathlib.Path.stat
-
-    class _Stat:
-        """The tree's real stat, owned by another user."""
-
-        st_uid, st_gid = 4242, 4343
-
-        def __init__(self, real):
-            self._real = real
-
-        def __getattr__(self, name):
-            return getattr(self._real, name)
-
-    monkeypatch.setattr(
-        pathlib.Path, "stat", lambda self, **kw: _Stat(real_stat(self, **kw)) if self == tree else real_stat(self, **kw)
-    )
+    _owned_by(monkeypatch, tree, 4242, 4343)
 
     _peer(tree, tmp_path).start()
 

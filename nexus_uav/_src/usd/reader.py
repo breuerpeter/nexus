@@ -4,7 +4,9 @@ A nexus schema is an applied API schema whose attributes sit in the `nexus:` nam
 defines it, so a project's own schemas read the same way as the ones nexus ships. A component schema states
 the role its component fills by including a role schema, such as `NexusSensorRoleAPI`, as a built-in. A
 role schema defines no attribute, so the reader skips it. A component schema can also declare a connection,
-a relationship `nexus:inputs:<signal>` whose target picks which component's output its component reads.
+a relationship `nexus:inputs:<signal>` whose target picks which component's output its component reads, and a
+peer schema a serial line, a relationship `nexus:serial:<line>` whose target is the prim of the peer at the
+line's other end.
 """
 
 from __future__ import annotations
@@ -16,6 +18,9 @@ from pathlib import Path
 _NAMESPACE = "nexus:"
 # A connection's namespace: the relationship `nexus:inputs:imu` picks the writer of the signal `imu`.
 _INPUTS = "nexus:inputs:"
+# A serial line's namespace: the relationship `nexus:serial:autopilot` picks the peer at the other end of the line
+# its peer calls `autopilot`.
+_SERIAL = "nexus:serial:"
 
 # Each role schema, which a component schema includes as a built-in, and the role it states.
 ROLES = {
@@ -109,7 +114,8 @@ def read_declarations(usd_path: str | Path) -> list[tuple[str, str, dict]]:
     """One `(prim path, schema, keyword arguments)` per applied nexus schema on the stage's active prims.
 
     Each attribute the schema defines becomes the keyword of the same name in snake case. A relationship it
-    declares is a connection, which :func:`read_connections` reads.
+    declares is a connection, which :func:`read_connections` reads, or a serial line, which
+    :func:`read_serial_lines` reads.
 
     Raises:
         ValueError: A prim authors a `nexus:` attribute that none of its applied schemas defines, an
@@ -157,17 +163,35 @@ def read_connections(usd_path: str | Path) -> dict[str, dict[str, str]]:
     Raises:
         ValueError: A connection targets more than one prim; the message names the prim and the connection.
     """
+    return _targets(usd_path, _INPUTS, "a connection")
+
+
+def read_serial_lines(usd_path: str | Path) -> dict[str, dict[str, str]]:
+    """Each serial line the stage's active prims author, by prim: the line a relationship `nexus:serial:<line>`
+    names, and the path of the prim it targets, the peer at the line's other end.
+
+    The reader of :func:`read_declarations` fails a relationship no applied schema declares, so each line here
+    is one a schema declares.
+
+    Raises:
+        ValueError: A line targets more than one prim; the message names the prim and the line.
+    """
+    return _targets(usd_path, _SERIAL, "a serial line")
+
+
+def _targets(usd_path: str | Path, prefix: str, what: str) -> dict[str, dict[str, str]]:
+    """The one target of each relationship in the namespace `prefix` that the stage's active prims author, by prim
+    and by the relationship's name past the prefix. `what` names the kind in the error on two targets.
+    """
     from pxr import Usd
 
     stage = Usd.Stage.Open(str(usd_path), Usd.Stage.LoadAll)
-    connections: dict[str, dict[str, str]] = {}
+    found: dict[str, dict[str, str]] = {}
     for prim in stage.Traverse(Usd.TraverseInstanceProxies()):
         for rel in prim.GetRelationships():
-            targets = rel.GetTargets() if rel.GetName().startswith(_INPUTS) else []
+            targets = rel.GetTargets() if rel.GetName().startswith(prefix) else []
             if len(targets) > 1:
-                raise ValueError(
-                    f"{prim.GetPath()}: {rel.GetName()} targets {len(targets)} prims; a connection names one"
-                )
+                raise ValueError(f"{prim.GetPath()}: {rel.GetName()} targets {len(targets)} prims; {what} names one")
             if targets:
-                connections.setdefault(str(prim.GetPath()), {})[rel.GetName().removeprefix(_INPUTS)] = str(targets[0])
-    return connections
+                found.setdefault(str(prim.GetPath()), {})[rel.GetName().removeprefix(prefix)] = str(targets[0])
+    return found

@@ -189,3 +189,27 @@ def test_a_connection_the_schema_declares_reads_as_its_signal_and_the_prim_it_na
         {"/Vehicle/Estimator": {"imu": "/Vehicle/body/Imu"}},
         ["position"],
     )
+
+
+def test_a_serial_line_the_schema_declares_reads_as_its_name_and_the_prim_it_targets(tmp_path):
+    """A serial line the schema declares reads as its name and the prim it targets, not as a keyword argument.
+
+    Given a scope applying the stand-in peer schema, which declares the relationship `nexus:serial:autopilot`,
+    authored to target the prim `/Vehicle/Px4Sitl`, when the reader reads the file, then the scope's serial lines
+    map `autopilot` to that prim, its connections are none, and its keyword arguments name no line.
+    """
+    from nexus_uav._src.usd.reader import read_connections, read_declarations, read_serial_lines
+
+    vehicle = tmp_path / "vehicle.usda"
+    stage = Usd.Stage.CreateNew(str(vehicle))
+    prim = UsdGeom.Scope.Define(stage, "/Vehicle/Companion").GetPrim()
+    prim.ApplyAPI("StandInPeerAPI")
+    prim.GetRelationship("nexus:serial:autopilot").SetTargets([Sdf.Path("/Vehicle/Px4Sitl")])
+    stage.GetRootLayer().Save()
+    (kwargs,) = [kw for path, _, kw in read_declarations(vehicle) if path == "/Vehicle/Companion"]
+
+    assert (read_serial_lines(vehicle), read_connections(vehicle), sorted(kwargs)) == (
+        {"/Vehicle/Companion": {"autopilot": "/Vehicle/Px4Sitl"}},
+        {},
+        ["greeting"],
+    )

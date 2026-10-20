@@ -4,9 +4,10 @@ starts no process.
 It dials the run's HIL port as PX4 does and answers each ``HIL_SENSOR`` with one fixed
 ``HIL_ACTUATOR_CONTROLS``, over the same MAVLink lockstep. So the controller and the loop run
 exactly as they do against PX4, and a test proves their side of the link, its encoding, its stage
-order and its error paths, with no PX4 tree, no image and no container. It proves nothing about PX4
-itself, and it answers no other link: a run against it has no offboard link, and its port map lists
-none.
+order and its error paths, with no PX4 tree, no image and no container. On each serial link the run
+hands it, it opens its end and answers a ``HEARTBEAT`` with its own, as PX4's MAVLink instance on
+that device does. It proves nothing about PX4 itself, and it answers no other link: a run against it
+has no offboard link, and its port map lists none.
 
 A test sends the PX4 SITL peer to this class with a row of its own registry, `NexusPx4SitlAPI`.
 """
@@ -18,6 +19,8 @@ import os
 import select
 import socket
 import threading
+import tty
+from collections.abc import Mapping
 
 # Set the MAVLink dialect before importing mavutil, as the controller does.
 os.environ.setdefault("MAVLINK20", "1")
@@ -40,6 +43,7 @@ class Px4Fake:
     Args:
         instance: The run's instance: the fake dials the HIL port ``HIL_PORT + instance`` and speaks
             as system ``instance + 1``, as PX4 does.
+        serial: The path of the fake's end of each serial line a peer's prim wires to the fake's, by that prim's name.
         **run: The schema's airframe and the run's other values, its pin and its folder, which the fake
             needs none of.
     """
@@ -49,24 +53,36 @@ class Px4Fake:
     clock = "stepped"
     instance_free = staticmethod(hil_free)
 
-    def __init__(self, *, instance: int, **run) -> None:
+    def __init__(self, *, instance: int, serial: Mapping[str, str] = (), **run) -> None:
         self.instance = instance
+        self.serial = dict(serial)
         self.received: collections.Counter[str] = collections.Counter()
         """How many of each MAVLink message the fake received, by type."""
         self.last: dict[str, object] = {}
         """The last MAVLink message of each type the fake received, by type."""
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self._serial_threads: list[threading.Thread] = []
 
     def ports(self) -> PortMap:
         """No offboard link: the fake answers the HIL link alone, so a lookup of the offboard link says why."""
         return PortMap(missing={"offboard": "this run flies the fake PX4, which answers only the HIL link"})
 
     def start(self) -> None:
-        """Start dialing the HIL port in the background; the fake answers once the run listens."""
+        """Start dialing the HIL port in the background, and open each serial link; the fake answers once the run
+        listens.
+        """
         self._stop.clear()
         self._thread = threading.Thread(target=self._serve, name=f"px4-fake-{self.instance}", daemon=True)
         self._thread.start()
+        self._serial_threads = [
+            threading.Thread(
+                target=self._serve_serial, args=(path,), name=f"px4-fake-{self.instance}-{name}", daemon=True
+            )
+            for name, path in self.serial.items()
+        ]
+        for thread in self._serial_threads:
+            thread.start()
 
     def alive(self) -> bool:
         """Whether the fake still serves the link."""
@@ -78,6 +94,9 @@ class Px4Fake:
         if self._thread is not None:
             self._thread.join(timeout=5.0)
             self._thread = None
+        for thread in self._serial_threads:
+            thread.join(timeout=5.0)
+        self._serial_threads = []
 
     def _dial(self) -> socket.socket | None:
         """A socket connected to the run's HIL port, dialing again until the run listens or the fake stops."""
@@ -110,3 +129,30 @@ class Px4Fake:
             pass
         finally:
             sock.close()
+
+    def _serve_serial(self, path: str) -> None:
+        fd = os.open(path, os.O_RDWR | os.O_NOCTTY)
+        tty.setraw(fd)
+        mav = mavutil.mavlink.MAVLink(
+            os.fdopen(fd, "wb", buffering=0, closefd=False), srcSystem=self.instance + 1, srcComponent=1
+        )
+        try:
+            while not self._stop.is_set():
+                if not select.select([fd], [], [], 0.1)[0]:
+                    continue
+                for msg in mav.parse_buffer(os.read(fd, 65536)) or []:
+                    kind = msg.get_type()
+                    self.received[kind] += 1
+                    self.last[kind] = msg
+                    if kind == "HEARTBEAT":
+                        mav.heartbeat_send(
+                            mavutil.mavlink.MAV_TYPE_QUADROTOR,
+                            mavutil.mavlink.MAV_AUTOPILOT_PX4,
+                            0,
+                            0,
+                            mavutil.mavlink.MAV_STATE_STANDBY,
+                        )
+        except OSError:
+            pass
+        finally:
+            os.close(fd)
