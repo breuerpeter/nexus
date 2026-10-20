@@ -1,4 +1,4 @@
-"""A package's pin file for a peer it registers is a pin file the install knows, whether or not a run starts the peer.
+"""A package's pin file for a peer it registers is a pin file the install knows, on a run that starts the peer or not.
 
 Each test installs a package that maps its own peer, `radio`, through a `nexus.registry` entry point, ships the
 schema plugin whose peer type names `radio`, and ships `nexus.radio.ref` beside its catalog, and builds a run of the fixture vehicle, which doesn't declare `radio`. An
@@ -58,7 +58,7 @@ class "AcmeRadioAPI" (
 """
 
 # Builds the fixture vehicle with no peer declared, with the stand-in controller, and prints whether the build
-# raised, its message, and whether the package's peer module was imported.
+# raised, its message, and whether the build imported the package's peer module.
 _BUILD = """
 import sys
 import nexus_uav._src.build.launch as L
@@ -98,7 +98,7 @@ def _install(site: Path, files: dict[str, str]) -> Path:
 
 def _build(tmp_path: Path, files: dict[str, str]) -> dict[str, str]:
     """Install the package with `files` beside its catalog, build the run in a child process, and return what it
-    printed: `error`, the build's message or empty, and `imported`, whether the peer module was imported.
+    printed: `error`, the build's message or empty, and `imported`, whether the build imported the peer module.
     """
     site = tmp_path / "site-packages"
     _install(site, files)
