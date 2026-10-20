@@ -54,7 +54,7 @@ def author(
         reparent: Hang rotor 3's joint off rotor 0's body instead of the airframe.
         servo: Add the gimbal joint and a `NewtonActuator` position servo on it, with its target at 0.
         no_motor: The index of a rotor whose joint gets no `NewtonActuator` prim.
-        channels: The controls channel each rotor's command declares, `NexusRotorAPI` on the rotor's body, in
+        channels: The controls channel each rotor's command declares, `NexusEscAPI` on the rotor's body, in
             rotor order; `None` declares no rotor command.
     """
     stage = Usd.Stage.CreateNew(str(path))
@@ -121,7 +121,7 @@ def author(
         if propeller:
             apply_propeller(rotor.GetPrim(), odd_ct if odd_ct is not None and i == 2 else ct)
         if channels is not None:
-            rotor.GetPrim().AddAppliedSchema("NexusRotorAPI")
+            rotor.GetPrim().AddAppliedSchema("NexusEscAPI")
             rotor.GetPrim().CreateAttribute("nexus:channel", Sdf.ValueTypeNames.Int).Set(int(channels[i]))
     if gimbal or servo:
         offset = (0.0, 0.0, 0.12)

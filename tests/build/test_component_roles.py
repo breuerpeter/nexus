@@ -446,8 +446,8 @@ def test_a_declared_force_element_that_needs_the_instance_takes_the_runs(tmp_pat
     assert (numbered.given, len(kept)) == (kept, 1)
 
 
-class _StandInRotor(Component):
-    """A command element a rotor's body declares, `NexusRotorAPI`: its device stage reads its controls channel and
+class _StandInEsc(Component):
+    """A command element a rotor's body declares, `NexusEscAPI`: its device stage reads its controls channel and
     writes nothing; the class counts in `ticks` how often each instance's stage ran, by its prim.
     """
 
@@ -458,7 +458,7 @@ class _StandInRotor(Component):
         self.controls = Signal("controls", wp.float32, shape=(1, int(channel) + 1))
 
     def stages(self):
-        return [Stage("rotor", "device", self._run, reads=(self.controls,))]
+        return [Stage("esc", "device", self._run, reads=(self.controls,))]
 
     def _run(self, tick):
         type(self).ticks[self.path] = type(self).ticks.get(self.path, 0) + 1
@@ -483,7 +483,7 @@ class _StandInPropeller(Component):
 
 # Each rotor body of the fixture vehicle declares its command, on the controls channel of its number.
 ROTOR_COMMANDS = "".join(
-    f'        over "rotor_{i}" (\n            prepend apiSchemas = ["NexusRotorAPI"]\n        )\n'
+    f'        over "rotor_{i}" (\n            prepend apiSchemas = ["NexusEscAPI"]\n        )\n'
     f"        {{\n            int nexus:channel = {i - 1}\n        }}\n"
     for i in (1, 2, 3, 4)
 )
@@ -505,13 +505,13 @@ def test_every_class_a_run_flies_comes_from_the_registry_and_the_builder_names_n
     sensor = sv.prim("Own", "StandInSensorAPI", "float nexus:gain = 2.5")
     guidance = sv.prim("Guidance", "StandInGuidanceAPI", "float3 nexus:setpoint = (1, 2, 3)", kind="Scope")
     path = sv.vehicle(tmp_path, sensor + ROTOR_COMMANDS, root=ESTIMATOR + guidance, px4=True)
-    rotor = type("Rotor", (_StandInRotor,), {"ticks": {}})
+    esc = type("Esc", (_StandInEsc,), {"ticks": {}})
     propeller = type("Propeller", (_StandInPropeller,), {"ticks": {}})
     registry = Registry(
         {
             "NexusPx4API_1": _setpoint_reader(),
             "NexusPropellerAPI": propeller,
-            "NexusRotorAPI": rotor,
+            "NexusEscAPI": esc,
             "StandInSensorAPI": _ConnectingSensor,
             "StandInEstimatorAPI": StandInEstimator,
             "StandInGuidanceAPI": _FixedGuidance,
@@ -537,17 +537,17 @@ def test_every_class_a_run_flies_comes_from_the_registry_and_the_builder_names_n
         ("/vehicle/Guidance", "StandInGuidanceAPI"): "_FixedGuidance",
         ("/vehicle/Px4Sitl", "NexusPx4SitlAPI"): "KeepingFake",
         **{(prim, "NexusPropellerAPI"): "Propeller" for prim in rotors},
-        **{(prim, "NexusRotorAPI"): "Rotor" for prim in rotors},
+        **{(prim, "NexusEscAPI"): "Esc" for prim in rotors},
     }
     stages = {
         name
         for part in plan.removeprefix("stage plan: ").split(") ")
         for name in part.split("(")[-1].rstrip(")").split(" -> ")
     }
-    ran = (rotor.ticks, propeller.ticks)
+    ran = (esc.ticks, propeller.ticks)
     assert (resolved, stages - RUN_STAGES, ran, ticks) == (
         expected,
-        {"stand_in", "estimate", "guide", "exchange", "rotor", "propeller"},
+        {"stand_in", "estimate", "guide", "exchange", "esc", "propeller"},
         (dict.fromkeys(rotors, 5), dict.fromkeys(rotors, 5)),
         5,
     )
