@@ -94,9 +94,11 @@ it. PX4 flies a vehicle whose controller's scope applies `NexusPx4API_1`. The sc
 In The Loop peer applies `NexusPx4SitlAPI` and names the airframe in `nexus:airframe`, the make target
 without PX4's `none_` prefix. Each scope is a `Scope` prim under the vehicle's root prim, named
 `Controller` and `Px4Sitl` by convention. Each rotor
-declares its propeller with `NexusPropellerAPI` on its rigid body, and its motor with a
+declares its propeller with `NexusPropellerAPI` and its ESC with `NexusEscAPI` on its rigid body, the
+ESC's `nexus:channel` the entry of the controls it reads, and its motor with a
 `NewtonActuator` prim that drives its joint, whose `newton:velocityLimit` is the rotor speed at full
-command. The [schema reference](../reference/schemas.md) lists the attributes.
+command. Each rotor's propeller carries its own values, so two propeller sizes can fly on one
+vehicle. The [schema reference](../reference/schemas.md) lists the attributes.
 
 An entry's `usd`, and each of a composed entry's layers, either carries a full `url` or a compact
 `{name, sha256}` that its own catalog's `assets.base` completes into

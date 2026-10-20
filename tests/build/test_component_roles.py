@@ -529,7 +529,9 @@ def test_every_class_a_run_flies_comes_from_the_registry_and_the_builder_names_n
         receipt, ticks, plan = {"declarations": []}, 0, f"stage plan: host({exc})"
 
     rotors = [f"/vehicle/body/rotor_{i}" for i in (1, 2, 3, 4)]
-    resolved = {(d["prim"], d["schema"]): d["class"].rsplit(":", 1)[-1] for d in receipt["declarations"]}
+    resolved = {
+        (d["prim"], d["schema"]): d["class"].rsplit(":", 1)[-1].rsplit(".", 1)[-1] for d in receipt["declarations"]
+    }
     expected = {
         ("/vehicle/Controller", "NexusPx4API_1"): "Reader",
         ("/vehicle/body/Own", "StandInSensorAPI"): "_ConnectingSensor",

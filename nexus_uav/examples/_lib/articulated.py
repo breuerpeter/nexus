@@ -1,7 +1,7 @@
 """The articulated plant as a differentiable rollout: the vehicle every run flies, recorded on a tape.
 
 :class:`ArticulatedRollout` builds the vehicle from its Universal Scene Description (USD) file as physics does:
-its rotor joints turn under the Newton motors the file authors, the core's rotor command writes each motor's
+its rotor joints turn under the Newton motors the file authors, the core's ESCs write each motor's
 speed target, and the core's propellers turn each rotor's speed into its force. So a gradient example tunes the
 plant PX4 flies, not a stand-in. Three things make the rollout differentiable:
 
@@ -18,8 +18,6 @@ plant PX4 flies, not a stand-in. Three things make the rollout differentiable:
 
 from __future__ import annotations
 
-import math
-
 import newton
 import newton.solvers
 import numpy as np
@@ -28,9 +26,9 @@ from newton.actuators import Actuator, ClampingDCMotor, ClampingMaxEffort, Contr
 
 from nexus_uav._src.physics.vehicle import VehicleUsd
 from nexus_uav._src.scene.world import GRAVITY
-from nexus_uav._src.vehicle.commands import RotorCommand
+from nexus_uav._src.vehicle.commands import Escs
 from nexus_uav._src.vehicle.forces import Propellers
-from nexus_uav._src.vehicle.rotors import RPM_PER_RADS, find_rotor_joints
+from nexus_uav._src.vehicle.rotors import RPM_PER_RADS, rotor_of
 
 SUBSTEPS = 16  # solver steps per 4 ms control tick: 0.25 ms, the step SemiImplicit holds the rotor joints at
 JOINT_KE = 1000.0  # SemiImplicit's joint spring stiffness; its default goes NaN on a rotor of 1.5e-4 kg·m²
@@ -121,25 +119,31 @@ class ArticulatedRollout:
         self.motors = [per_step_motors(motor, self.steps) for motor in model.actuators or []]
         self.motor_states = [[motor.state() for _ in range(self.steps + 1)] for motor in model.actuators or []]
 
-        values, joints = vehicle_usd.actuator_params(), vehicle_usd.rotor_joints()
-        self.command = RotorCommand(
-            model=model, control=None, joints=joints, ct=values["ct"], cd=values["cd"], rpm_max=values["rpm_max"]
-        )
-        self.propellers = Propellers(
-            model=model,
-            joints=joints,
+        rotors = vehicle_usd.rotors()  # in channel order, so a command's entries are the rotors'
+        found = [rotor_of(model, rotor.body) for rotor in rotors]  # each rotor's dof, coord, body and airframe
+        self.rotor_dofs = [dof for dof, _coord, _body, _base in found]
+        self.rotor_bodies = [body for _dof, _coord, body, _base in found]
+        self.base = found[0][3]
+        values = {key: [rotor.propeller[key] for rotor in rotors] for key in ("ct", "cd", "aero_h", "aero_hforce")}
+        self.command = Escs(
+            rotor_vel_dofs=wp.array([self.rotor_dofs], dtype=wp.int32),
+            channels=[rotor.channel for rotor in rotors],
             ct=values["ct"],
             cd=values["cd"],
-            aero_h=values.get("aero_h", 0.0),
-            aero_hforce=values.get("aero_hforce", 0.0),
+            rpm_max=[rotor.rpm_max for rotor in rotors],
         )
-        self.rotor_dofs, _coords, self.rotor_bodies, self.base = find_rotor_joints(model, joints)
+        self.propellers = Propellers(
+            rotor_vel_dofs=wp.array(self.rotor_dofs, dtype=wp.int32),
+            rotor_bodies=wp.array(self.rotor_bodies, dtype=wp.int32),
+            rotor_bases=wp.array([self.base] * len(found), dtype=wp.int32),
+            **values,
+        )
         self.mass = float(model.body_mass.numpy().sum())
-        kf = float(values["ct"]) * RPM_PER_RADS * RPM_PER_RADS
-        self.hover_speed = math.sqrt(self.mass * GRAVITY / len(self.rotor_dofs) / kf)  # rad/s
+        kf = np.asarray(values["ct"], dtype=np.float64) * RPM_PER_RADS * RPM_PER_RADS
+        self.hover_speed = np.sqrt(self.mass * GRAVITY / len(self.rotor_dofs) / kf)  # (nr,) rad/s, each rotor's
 
     def reset(self) -> None:
-        """Put the vehicle back at its start, at rest with its rotors at hover speed, and its motors' state at zero."""
+        """Put the vehicle back at its start, at rest with each rotor at its hover speed, and its motors' state at zero."""
         joint_q = self.model.joint_q.numpy()
         joint_qd = np.zeros_like(self.model.joint_qd.numpy())
         joint_qd[self.rotor_dofs] = self.hover_speed
@@ -154,7 +158,7 @@ class ArticulatedRollout:
 
     def step(self, i: int, cmd: wp.array) -> None:
         """Solver step ``i`` under ``cmd``, one row of normalized rotor commands, in the order a run steps physics:
-        the rotor command, the propellers, Newton's motors, then the solver. The joints' coordinates of the next state
+        the ESCs, the propellers, Newton's motors, then the solver. The joints' coordinates of the next state
         follow its bodies, since the solver integrates the bodies alone.
         """
         state, nxt, control = self.states[i], self.states[i + 1], self.controls[i]

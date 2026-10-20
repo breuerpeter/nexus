@@ -1,13 +1,13 @@
-"""The propellers: the force element of the shipped rotor chain, and the propeller model it runs.
+"""The propellers: the force element of each rotor, and the propeller model it runs.
 
-Each rotor's rigid body applies the ``NexusPropellerAPI`` schema, :class:`Propeller`, in the vehicle's
-Universal Scene Description (USD) file, which the build reads.
-The force element, :class:`Propellers`, turns each rotor's solver-integrated speed Ω and the hub's in-plane
-inflow into the airflow-aware thrust and H-force, through :func:`propeller_force`, and the reaction drag
-torque, and adds them to the rotor body's wrench in ``state.body_f`` in one device stage, ``propellers``.
-The revolute joint transmits the lift to the airframe and the motor's reaction torque yaws it; putting the
-drag on the base would double-count the motor reaction, the runaway-yaw lesson from the original
-conformed-actuator validation.
+Each rotor's rigid body applies the ``NexusPropellerAPI`` schema in the vehicle's Universal Scene
+Description (USD) file, and the registry builds it as :class:`Propeller`, one force element per rotor. The element turns
+its rotor's solver-integrated speed Ω and the hub's in-plane inflow into the airflow-aware thrust and H-force,
+through :func:`propeller_force`, and the reaction drag torque, and adds them to the rotor body's wrench in
+``state.body_f`` in one device stage, ``propeller``. The revolute joint transmits the lift to the airframe and
+the motor's reaction torque yaws it; putting the drag on the base would double-count the motor reaction, the
+runaway-yaw lesson from the original conformed-actuator validation. :class:`Propellers` runs the same kernel
+over the rotors of many vehicles at once, as the RL task and the gradient rollout step them.
 
 The propeller model, :func:`propeller_force`: given a motor speed ``Ω`` and the rotor hub's in-plane inflow
 ``(vx, vy)``, the airframe velocity at the rotor offset perpendicular to the thrust axis, it returns the
@@ -28,31 +28,13 @@ the H-force is the zero vector, bit for bit the same as the quasi-static map.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
+import numpy as np
 import warp as wp
 
 from nexus_uav._src.core.interfaces import Component, Stage
-from nexus_uav._src.vehicle.rotors import RPM_PER_RADS, find_rotor_joints
+from nexus_uav._src.vehicle.rotors import RPM_PER_RADS, rotor_of
 
 __all__ = ["RPM_PER_RADS", "Propeller", "Propellers", "propeller_force"]
-
-
-@dataclass(frozen=True)
-class Propeller:
-    """One rotor's propeller, as the ``NexusPropellerAPI`` schema on the rotor's rigid body declares it.
-
-    Args:
-        ct: Thrust coefficient [N/rpm²]: the static thrust is ``ct·rpm²``.
-        cd: Reaction torque per unit of thrust [m], the yaw allocation κ.
-        aero_h: Forward-flight thrust-loss coefficient [kg/m]; 0 is the quasi-static ``kf·Ω²``.
-        aero_hforce: In-plane rotor H-force coefficient [kg/rad].
-    """
-
-    ct: float
-    cd: float
-    aero_h: float
-    aero_hforce: float
 
 
 @wp.func
@@ -71,10 +53,10 @@ def propeller_force(omega: float, vx: float, vy: float, kf: float, aero_h: float
 
 @wp.kernel
 def _propeller_wrench(
-    kf: float,  # ct·RPM_PER_RADS²: static thrust = kf·Ω²
-    cd: float,  # reaction-torque-per-thrust, the yaw allocation κ
-    aero_h: float,  # forward-flight thrust loss; 0 = quasi-static
-    aero_hforce: float,  # in-plane rotor H-force, drag
+    kf: wp.array(dtype=float),  # (nr,) ct·RPM_PER_RADS² of each propeller: static thrust = kf·Ω²
+    cd: wp.array(dtype=float),  # (nr,) reaction-torque-per-thrust, the yaw allocation κ
+    aero_h: wp.array(dtype=float),  # (nr,) forward-flight thrust loss; 0 = quasi-static
+    aero_hforce: wp.array(dtype=float),  # (nr,) in-plane rotor H-force, drag
     rotor_bases: wp.array(dtype=wp.int32),  # (nr,) each rotor's airframe body, its body-z thrust reference
     rotor_vel_dofs: wp.array(dtype=wp.int32),  # (nr,) Degrees Of Freedom (DOF) index of each rotor in joint_qd
     rotor_bodies: wp.array(dtype=wp.int32),  # (nr,) body index of each rotor
@@ -94,82 +76,42 @@ def _propeller_wrench(
     rotor_z_world = wp.quat_rotate(q_rot, wp.vec3(0.0, 0.0, 1.0))
     # In-plane inflow at the rotor: its world linear velocity in the rotor frame, x and y components.
     v_rot = wp.quat_rotate_inv(q_rot, wp.spatial_top(body_qd[bi]))
-    f_b = propeller_force(omega, v_rot[0], v_rot[1], kf, aero_h, aero_hforce)  # (h_x, h_y, thrust_mag)
+    f_b = propeller_force(omega, v_rot[0], v_rot[1], kf[i], aero_h[i], aero_hforce[i])  # (h_x, h_y, thrust_mag)
     # rotor-z encodes the USD-authored cw/ccw spin direction; thrust always points "up" off the body.
     thrust_sign = -wp.sign(wp.dot(rotor_z_world, base_z_world))
     force_world = wp.quat_rotate(q_rot, wp.vec3(f_b[0], f_b[1], thrust_sign * f_b[2]))
-    drag_world = -f_b[2] * cd * rotor_z_world  # reaction drag torque opposes the spin, via rotor-z
+    drag_world = -f_b[2] * cd[i] * rotor_z_world  # reaction drag torque opposes the spin, via rotor-z
     # Both on the rotor body: force in the top slot, w, torque in the bottom slot, v. Added, never assigned:
     # another force element on the body keeps its wrench.
     wp.atomic_add(body_f, bi, wp.spatial_vector(w=force_world, v=drag_world))
 
 
-class Propellers(Component):
-    """The propellers' force element: each rotor's thrust, H-force and reaction drag, from its
-    solver-integrated speed, added to its rotor body's wrench.
+class Propellers:
+    """The propellers of rotors the caller has found, each with its own values and its own airframe, as the RL
+    task steps the rotors of many vehicles in one model.
 
     Args:
-        model: The finalized articulated model, whose rotor joints really turn.
-        joints: The joint path of each rotor the vehicle USD declares, the ``VehicleUsd``'s
-            ``rotor_joints()``.
-        ct: Thrust coefficient [N/rpm²], the propeller schema's ``nexus:ct``, the vehicle USD authority.
-        cd: Reaction-torque-per-thrust, ``nexus:cd``, the yaw allocation κ.
-        aero_h: Forward-flight thrust-loss coefficient, ``nexus:aeroH``; 0 = quasi-static.
-        aero_hforce: In-plane rotor H-force coefficient, ``nexus:aeroHforce``.
+        rotor_vel_dofs: ``(nr,)`` each rotor's velocity degree of freedom in ``state.joint_qd``.
+        rotor_bodies: ``(nr,)`` each rotor's body.
+        rotor_bases: ``(nr,)`` each rotor's airframe body, its thrust reference.
+        ct: ``(nr,)`` each propeller's thrust coefficient [N/rpm²].
+        cd: ``(nr,)`` each propeller's reaction-torque-per-thrust.
+        aero_h: ``(nr,)`` each propeller's forward-flight thrust-loss coefficient; 0 = quasi-static.
+        aero_hforce: ``(nr,)`` each propeller's in-plane rotor H-force coefficient.
     """
 
-    def __init__(self, *, model, joints, ct: float, cd: float, aero_h: float = 0.0, aero_hforce: float = 0.0):
-        vel_dofs, _pos_coords, bodies, base_body = find_rotor_joints(model, joints)
-        self._setup(
-            wp.array(vel_dofs, dtype=wp.int32),
-            wp.array(bodies, dtype=wp.int32),
-            wp.array([base_body] * len(vel_dofs), dtype=wp.int32),
-            ct,
-            cd,
-            aero_h,
-            aero_hforce,
-        )
-
-    @classmethod
-    def for_rotors(
-        cls,
-        *,
-        rotor_vel_dofs: wp.array,
-        rotor_bodies: wp.array,
-        rotor_bases: wp.array,
-        ct: float,
-        cd: float,
-        aero_h: float = 0.0,
-        aero_hforce: float = 0.0,
-    ) -> Propellers:
-        """The force element of rotors the caller has found, each with its own airframe, as the RL task steps the
-        rotors of many vehicles in one model.
-
-        Args:
-            rotor_vel_dofs: ``(nr,)`` each rotor's velocity degree of freedom in ``state.joint_qd``.
-            rotor_bodies: ``(nr,)`` each rotor's body.
-            rotor_bases: ``(nr,)`` each rotor's airframe body, its thrust reference.
-            ct: Thrust coefficient [N/rpm²].
-            cd: Reaction-torque-per-thrust.
-            aero_h: Forward-flight thrust-loss coefficient; 0 = quasi-static.
-            aero_hforce: In-plane rotor H-force coefficient.
-
-        Returns:
-            The force element; :meth:`add` adds the rotors' wrenches to a state.
-        """
-        propellers = cls.__new__(cls)
-        propellers._setup(rotor_vel_dofs, rotor_bodies, rotor_bases, ct, cd, aero_h, aero_hforce)
-        return propellers
-
-    def _setup(self, rotor_vel_dofs, rotor_bodies, rotor_bases, ct, cd, aero_h, aero_hforce) -> None:
-        self.kf = float(ct) * RPM_PER_RADS * RPM_PER_RADS  # thrust = kf·Ω², with Ω in rad/s
-        self.cd = float(cd)
-        self.aero_h = float(aero_h)
-        self.aero_hforce = float(aero_hforce)
+    def __init__(self, *, rotor_vel_dofs: wp.array, rotor_bodies: wp.array, rotor_bases: wp.array, ct, cd, aero_h, aero_hforce):  # fmt: skip
+        device = rotor_vel_dofs.device
         self.nr = rotor_vel_dofs.shape[0]
         self._rotor_dofs = rotor_vel_dofs
         self._rotor_bodies = rotor_bodies
         self._rotor_bases = rotor_bases
+        # thrust = kf·Ω², with Ω in rad/s: in double, then single
+        kf = np.asarray(ct, dtype=np.float64) * RPM_PER_RADS * RPM_PER_RADS
+        self._kf = wp.array(kf.astype(np.float32), dtype=float, device=device)
+        self._cd = wp.array(np.asarray(cd, dtype=np.float32), dtype=float, device=device)
+        self._aero_h = wp.array(np.asarray(aero_h, dtype=np.float32), dtype=float, device=device)
+        self._aero_hforce = wp.array(np.asarray(aero_hforce, dtype=np.float32), dtype=float, device=device)
 
     def add(self, state) -> None:
         """Add each rotor's thrust, H-force and reaction drag, from its speed in ``state``, to its rotor body's
@@ -179,10 +121,10 @@ class Propellers(Component):
             _propeller_wrench,
             dim=self.nr,
             inputs=(
-                self.kf,
-                self.cd,
-                self.aero_h,
-                self.aero_hforce,
+                self._kf,
+                self._cd,
+                self._aero_h,
+                self._aero_hforce,
                 self._rotor_bases,
                 self._rotor_dofs,
                 self._rotor_bodies,
@@ -193,6 +135,32 @@ class Propellers(Component):
             outputs=(state.body_f,),
         )
 
+
+class Propeller(Component):
+    """The propeller of one rotor, which its rigid body declares with ``NexusPropellerAPI``: its thrust, H-force
+    and reaction drag, from its rotor's solver-integrated speed, added to the rotor body's wrench.
+
+    Args:
+        model: The finalized articulated model, whose rotor joints really turn.
+        path: The rotor's rigid body, the prim that applies the schema.
+        ct: Thrust coefficient [N/rpm²], ``nexus:ct``, the vehicle USD authority.
+        cd: Reaction-torque-per-thrust, ``nexus:cd``, the yaw allocation κ.
+        aero_h: Forward-flight thrust-loss coefficient, ``nexus:aeroH``; 0 = quasi-static.
+        aero_hforce: In-plane rotor H-force coefficient, ``nexus:aeroHforce``.
+    """
+
+    def __init__(self, model, path: str, *, ct: float, cd: float, aero_h: float = 0.0, aero_hforce: float = 0.0):
+        dof, _coord, body, base = rotor_of(model, path)
+        self._propellers = Propellers(
+            rotor_vel_dofs=wp.array([dof], dtype=wp.int32),
+            rotor_bodies=wp.array([body], dtype=wp.int32),
+            rotor_bases=wp.array([base], dtype=wp.int32),
+            ct=[ct],
+            cd=[cd],
+            aero_h=[aero_h],
+            aero_hforce=[aero_hforce],
+        )
+
     def stages(self) -> list[Stage]:
-        """One device stage, ``propellers``, over the live state."""
-        return [Stage("propellers", "device", lambda tick: self.add(tick.state))]
+        """One device stage, ``propeller``, over the live state."""
+        return [Stage("propeller", "device", lambda tick: self._propellers.add(tick.state))]

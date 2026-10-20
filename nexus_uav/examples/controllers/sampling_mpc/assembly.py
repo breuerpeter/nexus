@@ -39,7 +39,7 @@ def build_sampling_mpc_loop(
     ``set_scene("slalom")``; the controller discovers the scene's shapes from its planning model.
     The guidance sequences the mission and writes each goal to the setpoint the controller reads.
     """
-    from nexus_uav._src.build.assembly import rotor_chain
+    from nexus_uav._src.build.assembly import elements
     from nexus_uav.examples._lib.motor import motor_time_constant, rotor_spin_inertia
     from nexus_uav.examples._lib.single_body import collapse_to_single_body
     from nexus_uav.examples.controllers.sampling_mpc.controller import SamplingMPCController
@@ -55,23 +55,24 @@ def build_sampling_mpc_loop(
     # hover speed, through the rotor chain PX4 flies.
     physics_cfg = {**cfg["physics"], "spawn": {"pos": tuple(spawn), "attitude": "native", "prespin": "hover"}}
     physics = NewtonPhysics(vehicle_usd=vehicle_usd, cfg={**cfg, "physics": physics_cfg})
-    commands, forces = rotor_chain(physics, vehicle_usd)
+    commands, forces = elements(physics, vehicle_usd)  # each rotor's ESC and propeller, the chain PX4 flies
     # The planner's own model: the vehicle collapsed to a single body, num_rollouts of them for the batched
     # differentiable rollout. The collapse loads the scene USD exactly as the full build path does; its
     # authored semantics ride with it: the slalom pillars ship ``physics:collisionEnabled = false``, so
     # they're cost-only. The collapse reads the rotor layout/params from the articulated USD before it
     # merges the joints. The planner's motor lag is the time constant of the vehicle's motors.
     batch = collapse_to_single_body(vehicle_usd, count=num_rollouts, requires_grad=True, cfg=cfg)
-    mass, offsets, dirs, m = batch.mass, batch.offsets, batch.dirs, batch.act
-    tau = motor_time_constant(physics.model, vehicle_usd.rotor_joints(), m)
-    inertia = rotor_spin_inertia(physics.model, vehicle_usd.rotor_joints())
+    mass, offsets, dirs, rotors = batch.mass, batch.offsets, batch.dirs, batch.rotors
+    tau = motor_time_constant(physics.model, rotors)
+    inertia = rotor_spin_inertia(physics.model, [rotor.joint for rotor in rotors])
     logger.info(
         f"sampling-mpc-loop: mass={mass:.4f} kg, goal={tuple(goal_w)}, num_rollouts={num_rollouts}, "
         f"motor time constant {tau * 1000:.1f} ms"
     )
     controller = SamplingMPCController(
         batch_model=batch.model, mass=mass, rotor_offsets=offsets, turning_dirs=dirs,
-        ct=m["ct"], rpm_max=m["rpm_max"], goal_w=goal_w, dt=dt, num_rollouts=num_rollouts, reaction_k=m["cd"],
+        ct=[r.propeller["ct"] for r in rotors], rpm_max=[r.rpm_max for r in rotors], goal_w=goal_w, dt=dt,
+        num_rollouts=num_rollouts, reaction_k=[r.propeller["cd"] for r in rotors],
         motor_tau=tau,  # plan with the time constant of the vehicle's motors
         rotor_inertia=inertia,  # and with the reaction each rotor's speed change pushes on the airframe
     )  # fmt: skip

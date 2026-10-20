@@ -168,9 +168,10 @@ class AcadosNMPCController(Component):
         self.dt = float(dt)
         self.N = int(horizon)
         self.node_dt = float(tf) / self.N
-        self.ct = float(ct)
-        self.rpm_max = float(rpm_max)
-        self.t_max = self.ct * self.rpm_max * self.rpm_max  # per-rotor max thrust [N] = actuator clamp at throttle 1
+        # Each rotor's thrust map, in channel order: ct [N/rpm²] and the speed at full command [rpm].
+        self.ct = np.asarray(ct, dtype=np.float64)
+        self.rpm_max = np.asarray(rpm_max, dtype=np.float64)
+        self.t_max = self.ct * self.rpm_max * self.rpm_max  # each rotor's max thrust [N] = its clamp at throttle 1
         self.hover = float(mass) * GRAVITY / self.n
         # The setpoint the guidance writes, a ReferenceTrajectory on the host, and the one this controller
         # last read, so it notices a new reference by its identity.
@@ -287,8 +288,8 @@ class AcadosNMPCController(Component):
 
     def _hover_throttle(self) -> np.ndarray:
         """Per-rotor hover throttle, held until the guidance writes a reference."""
-        throttle = float(np.sqrt(np.clip(self.hover, 0.0, self.t_max) / self.ct) / self.rpm_max)
-        return np.full(self.n, throttle, dtype=np.float32)
+        throttle = np.sqrt(np.clip(self.hover, 0.0, self.t_max) / self.ct) / self.rpm_max
+        return throttle.astype(np.float32)
 
     def exchange(self, t, timeout=None):
         from nexus_uav.examples._lib.mixer import Controls

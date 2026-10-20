@@ -17,9 +17,9 @@ import warp as wp
 from nexus_uav._src.physics.motors import Motors
 from nexus_uav._src.physics.vehicle import VehicleUsd
 from nexus_uav._src.scene.world import GRAVITY
-from nexus_uav._src.vehicle.commands import RotorCommand
+from nexus_uav._src.vehicle.commands import Escs
 from nexus_uav._src.vehicle.forces import Propellers
-from nexus_uav._src.vehicle.rotors import find_rotor_joints
+from nexus_uav._src.vehicle.rotors import rotor_of
 from nexus_uav.examples._lib.rotor_chain import RotorChain, vehicle_rotors
 from tests.vehicle import quad
 
@@ -40,8 +40,8 @@ def _model(path, places):
         VehicleUsd({"usd_path": str(path), "spawn_pos": place}).build(builder)
     builder.gravity = -GRAVITY
     model = builder.finalize()
-    joints = VehicleUsd({"usd_path": str(path)}).rotor_joints()
-    dofs = find_rotor_joints(model, joints)[0]
+    joints = [rotor.joint for rotor in VehicleUsd({"usd_path": str(path)}).rotors()]
+    dofs = vehicle_rotors(model, joints)[0].ravel()  # every copy's rotors
     state = model.state()
     qd = state.joint_qd.numpy()
     qd[dofs] = SPEED
@@ -54,15 +54,25 @@ def _alone(path, place, command):
     """The core's rotor chain on the vehicle alone at ``place`` under ``command``: its rotors' torque and their
     bodies' wrenches.
     """
-    vehicle = VehicleUsd({"usd_path": str(path)})
-    values, joints = vehicle.actuator_params(), vehicle.rotor_joints()
+    rotors = VehicleUsd({"usd_path": str(path)}).rotors()
     model, state, control = _model(path, [place])
-    RotorCommand(
-        model=model, control=control, joints=joints, ct=values["ct"], cd=values["cd"], rpm_max=values["rpm_max"]
-    ).write(wp.array([command], dtype=float))
-    Propellers(model=model, joints=joints, ct=values["ct"], cd=values["cd"]).add(state)
+    found = [rotor_of(model, rotor.body) for rotor in rotors]  # each rotor's dof, coord, body and airframe
+    dofs, bodies, base = [f[0] for f in found], [f[2] for f in found], found[0][3]
+    values = {key: [rotor.propeller[key] for rotor in rotors] for key in ("ct", "cd", "aero_h", "aero_hforce")}
+    Escs(
+        rotor_vel_dofs=wp.array([dofs], dtype=wp.int32),
+        channels=[rotor.channel for rotor in rotors],
+        ct=values["ct"],
+        cd=values["cd"],
+        rpm_max=[rotor.rpm_max for rotor in rotors],
+    ).write(wp.array([command], dtype=float), control)
+    Propellers(
+        rotor_vel_dofs=wp.array(dofs, dtype=wp.int32),
+        rotor_bodies=wp.array(bodies, dtype=wp.int32),
+        rotor_bases=wp.array([base] * len(found), dtype=wp.int32),
+        **values,
+    ).add(state)
     Motors(model).step(state, control, DT)
-    dofs, _coords, bodies, _base = find_rotor_joints(model, joints)
     return control.joint_f.numpy()[dofs], state.body_f.numpy()[bodies]
 
 
@@ -75,9 +85,8 @@ def test_each_copy_flies_its_rotor_chain_as_the_core_flies_the_vehicle_alone(tmp
     """
     path = tmp_path / "quad.usda"
     quad.author(path)
-    vehicle = VehicleUsd({"usd_path": str(path)})
     model, state, control = _model(path, PLACES)
-    chain = RotorChain(model, joints=vehicle.rotor_joints(), values=vehicle.actuator_params())
+    chain = RotorChain(model, VehicleUsd({"usd_path": str(path)}).rotors())
 
     chain.step(state, control, wp.array(COMMANDS, dtype=float), DT)
 
@@ -96,7 +105,7 @@ def test_a_rotor_joint_the_model_does_not_hold_fails_naming_each_joints_count(tm
     path = tmp_path / "quad.usda"
     quad.author(path)
     model, _state, _control = _model(path, PLACES)
-    joints = [*VehicleUsd({"usd_path": str(path)}).rotor_joints(), f"{quad.ROOT}/no_such_joint"]
+    joints = [*(rotor.joint for rotor in VehicleUsd({"usd_path": str(path)}).rotors()), f"{quad.ROOT}/no_such_joint"]
 
     with pytest.raises(ValueError, match=r"'/no_such_joint': 0"):
         vehicle_rotors(model, joints)

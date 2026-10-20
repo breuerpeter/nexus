@@ -39,7 +39,7 @@ def author(
     reparent=False,
     servo=False,
     no_motor=None,
-    channels=None,
+    channels=(0, 1, 2, 3),
 ):
     """A quad whose rotor bodies each declare the propeller schema, with Newton's motor on each rotor joint.
 
@@ -54,8 +54,8 @@ def author(
         reparent: Hang rotor 3's joint off rotor 0's body instead of the airframe.
         servo: Add the gimbal joint and a `NewtonActuator` position servo on it, with its target at 0.
         no_motor: The index of a rotor whose joint gets no `NewtonActuator` prim.
-        channels: The controls channel each rotor's command declares, `NexusEscAPI` on the rotor's body, in
-            rotor order; `None` declares no rotor command.
+        channels: The controls channel each rotor's ESC declares, `NexusEscAPI` on the rotor's body, in
+            rotor order; `None` declares no ESC.
     """
     stage = Usd.Stage.CreateNew(str(path))
     UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)

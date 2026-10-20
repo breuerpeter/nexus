@@ -37,7 +37,7 @@ from nexus_uav.examples._lib.observation import (  # shared single source for tr
 )
 from nexus_uav.examples._lib.single_body import (  # the rotors the vehicle USD declares
     RPM_PER_RADS,
-    parse_rotors,
+    rotors,
 )
 
 from .quadcopter_newton import QuadcopterNewtonEnv, QuadcopterNewtonEnvCfg
@@ -80,25 +80,29 @@ class GoToEnvCfg(QuadcopterNewtonEnvCfg):
 class GoToEnv(QuadcopterNewtonEnv):
     """The GoTo task on the articulated vehicle: CTBR action → inner rate loop → ``B⁻¹`` → each rotor's command →
     the rotor chain, before each solver step. Reuses the base env's CTBR params, obs including the last action,
-    reward, NaN-robustness and start-state randomization. The env reads the rotors and their values, ct, cd and
-    rpm_max, from the vehicle's USD file, so it carries no per-vehicle constants.
+    reward, NaN-robustness and start-state randomization. The env reads the rotors and each one's values, its
+    channel, ct, cd and rpm_max, from the vehicle's USD file, so it carries no per-vehicle constants.
     """
 
     def __init__(self, cfg, render_mode=None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
-        values, joints = parse_rotors(cfg.robot.spawn.usd_path)
+        declared = rotors(cfg.robot.spawn.usd_path)  # in channel order, so the mixer's columns are the controls'
         model = NewtonManager.get_model()
-        self._chain = RotorChain(model, joints=joints, values=values)
+        self._chain = RotorChain(model, declared)
         if self._chain.copies != self.num_envs:
             raise ValueError(f"the model holds {self._chain.copies} copies of the vehicle for {self.num_envs} envs")
         self._nr = self._chain.nr
-        self._kf = float(values["ct"]) * RPM_PER_RADS**2  # thrust = kf·Ω², with Ω in rad/s
-        self._omega_max = float(values["rpm_max"]) / RPM_PER_RADS  # rotor speed at full command [rad/s]
+        # Each rotor's thrust = kf·Ω², with Ω in rad/s, and its speed at full command [rad/s]
+        kf = np.array([rotor.propeller["ct"] for rotor in declared], dtype=np.float32) * RPM_PER_RADS**2
+        omega_max = np.array([rotor.rpm_max for rotor in declared], dtype=np.float32) / RPM_PER_RADS
+        self._kf = wp.array(kf, dtype=float, device=self.device)
+        self._omega_max = wp.array(omega_max, dtype=float, device=self.device)
         # The mixer's B⁻¹, from the first env's rest-pose rotor geometry, through the one allocation builder the
         # deploy mixer builds from.
         body_q = NewtonManager.get_state_0().body_q.numpy()
-        base, rotors = int(self._chain.rotor_bases[0, 0]), self._chain.rotor_bodies[0]
-        _B, B_inv, _spins = build_allocation(body_q[:, :3], body_q[:, 3:7], base, rotors, float(values["cd"]))
+        base, bodies = int(self._chain.rotor_bases[0, 0]), self._chain.rotor_bodies[0]
+        kappa = np.array([rotor.propeller["cd"] for rotor in declared])
+        _B, B_inv, _spins = build_allocation(body_q[:, :3], body_q[:, 3:7], base, bodies, kappa)
         self._B_inv = wp.array(B_inv.astype(np.float32), dtype=float, device=self.device)
         n = self.num_envs
         # The action the hook holds over a policy step, a persistent buffer the mixer reads through a view.

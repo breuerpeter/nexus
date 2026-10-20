@@ -12,7 +12,7 @@ the captured-host-exchange strategy. acados needs provisioning first: ``python -
 
 from __future__ import annotations
 
-from nexus_uav._src.build.assembly import resolve_device, rotor_chain
+from nexus_uav._src.build.assembly import elements, resolve_device
 from nexus_uav._src.core import Clock, Loop, logger
 from nexus_uav._src.physics import NewtonPhysics
 from nexus_uav._src.rendering import PEER
@@ -36,14 +36,14 @@ def build_acados_loop(
     import newton
     import numpy as np
 
-    from nexus_uav._src.vehicle.rotors import find_rotor_joints
+    from nexus_uav._src.vehicle.rotors import rotor_of
     from nexus_uav.examples.controllers.acados_nmpc.controller import AcadosNMPCController
 
     logger.info(f"device: {resolve_device(cfg)}")
     dt = cfg["physics"]["dt"]
     if vehicle_usd is None:
         raise ValueError("vehicle_usd is required (resolve it via build.launch.resolve_scenario)")
-    m = vehicle_usd.actuator_params()  # aero/thrust map from the vehicle USD, hash-pinned and not in cfg
+    rotors = vehicle_usd.rotors()  # each rotor's thrust map, from the vehicle USD, hash-pinned and not in cfg
 
     # Flown sim: the real articulated astro-max USD. Free articulated regime: spawned in free
     # flight, with no ground-settle, at its native Forward Right Down (FRD) orientation with rotors
@@ -54,16 +54,17 @@ def build_acados_loop(
         cfg={"physics": {"dt": dt, "solver": "mujoco", "contacts": True,
                          "spawn": {"pos": tuple(spawn), "attitude": "native", "prespin": "hover"}}},
     )  # the hover pre-spin reads ct from vehicle_usd's USD params, not cfg  # fmt: skip
-    # The core rotor chain, the same one PX4 flies: the rotors' command element, the USD-authored
-    # newton.actuators rotor motors physics steps, and the propellers' airflow-aware force element from
-    # the solver-integrated Ω. Real motor lag, spinning props.
-    joints = vehicle_usd.rotor_joints()  # the joint of each rotor the vehicle USD declares
-    commands, forces = rotor_chain(physics, vehicle_usd)
+    # The core rotor chain, the same one PX4 flies: each rotor's ESC, the USD-authored newton.actuators rotor
+    # motors physics steps, and each propeller's airflow-aware force element from the solver-integrated Ω. Real
+    # motor lag, spinning props.
+    commands, forces = elements(physics, vehicle_usd)
 
     # NMPC rigid-body params, read from the real model in the NMPC's upright frame. Spawned at FRD, the NMPC
     # frame coincides with world, q_nmpc = identity, so the body-frame moment arms = the world-frame rotor
     # offsets at the authored rest pose; the yaw reaction sign matches the aero kernel's drag, ∝ −rotor_z·z.
-    _vel, _pos, bodies, base = find_rotor_joints(physics.model, joints)
+    # The rotors come in channel order, so the controller's throttles land on the controls' entries.
+    found = [rotor_of(physics.model, rotor.body) for rotor in rotors]
+    bodies, base = [body for _dof, _coord, body, _base in found], found[0][3]
     rest = physics.model.state()
     newton.eval_fk(physics.model, physics.model.joint_q, physics.model.joint_qd, rest)
     bq = rest.body_q.numpy()
@@ -75,7 +76,7 @@ def build_acados_loop(
     logger.info(f"acados-loop: mass={mass:.4f} kg")
     controller = AcadosNMPCController(
         mass=mass, inertia=base_inertia, rotor_offsets=rotor_offsets, turning_dirs=turning_dirs,
-        ct=m["ct"], rpm_max=m["rpm_max"], dt=dt,
+        ct=[rotor.propeller["ct"] for rotor in rotors], rpm_max=[rotor.rpm_max for rotor in rotors], dt=dt,
     )  # fmt: skip
 
     if sink is None and rerun:

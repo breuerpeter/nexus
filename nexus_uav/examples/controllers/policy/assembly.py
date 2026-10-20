@@ -41,7 +41,7 @@ def build_policy_loop(
 ) -> Loop:
     """Assemble the core Loop with a trained-policy Controller in place of PX4.
 
-    The plant is the articulated vehicle the policy trained on: the rotors' command element sets each Newton
+    The plant is the articulated vehicle the policy trained on: each rotor's ESC sets its Newton
     motor's speed target, physics steps the motors, and the propellers turn each rotor's speed into its force.
     The policy's **Collective Thrust and Body Rates (CTBR)** action reaches the rotors through the
     controller's mixer, an inner rate loop → ``B⁻¹`` → per-rotor commands. The policy runs every
@@ -60,7 +60,7 @@ def build_policy_loop(
     import numpy as np
     import warp as wp
 
-    from nexus_uav._src.build.assembly import rotor_chain
+    from nexus_uav._src.build.assembly import elements
     from nexus_uav.examples._lib import CtbrParams, build_rotor_mixer_from_model
     from nexus_uav.examples.controllers.policy.controller import TrainedPolicyController
 
@@ -70,7 +70,6 @@ def build_policy_loop(
 
     if vehicle_usd is None:
         raise ValueError("vehicle_usd is required (resolve it via build.launch.resolve_scenario)")
-    act = vehicle_usd.actuator_params()  # aero/thrust map from the vehicle USD; hash-pinned, not in cfg
     physics = NewtonPhysics(vehicle_usd=vehicle_usd, cfg=cfg)
     robot_mass = float(np.sum(physics.model.body_mass.numpy()))
     # Base-body principal inertia diag for the CTBR inner rate loop, τ = I·gain·Δω, read from the
@@ -79,10 +78,11 @@ def build_policy_loop(
     inertia_diag = (float(base_inertia[0, 0]), float(base_inertia[1, 1]), float(base_inertia[2, 2]))
     logger.info(f"policy-loop: robot_mass={robot_mass:.4f} kg, inertia_diag={inertia_diag}, goal={tuple(goal_w)}")
 
-    # The airframe mixer, B⁻¹ + thrust map, built once from the model rotor geometry + the USD thrust map: the
-    # controller runs the CTBR mixer, rate loop → B⁻¹, and the rotor chain PX4 flies takes its commands.
-    mixer = build_rotor_mixer_from_model(physics.model, vehicle_usd.rotor_joints(), act, physics.state0.body_q.numpy())
-    commands, forces = rotor_chain(physics, vehicle_usd)
+    # The airframe mixer, B⁻¹ + each rotor's thrust map, built once from the model rotor geometry + the USD's rotors,
+    # hash-pinned and not in cfg: the controller runs the CTBR mixer, rate loop → B⁻¹, and the rotor chain PX4
+    # flies, each rotor's ESC and propeller, takes its commands.
+    mixer = build_rotor_mixer_from_model(physics.model, vehicle_usd.rotors(), physics.state0.body_q.numpy())
+    commands, forces = elements(physics, vehicle_usd)
     # CTBR rate-loop params for the controller's mixer, the values the policy trained with. Inertia read from
     # the model so the loop is inertia-correct, exactly as training reads it. The controller owns the mixer.
     ctbr_params = CtbrParams()

@@ -15,7 +15,7 @@ pytest.importorskip("pxr")
 import newton
 import warp as wp
 
-from nexus_uav._src.physics.vehicle import VehicleUsd, parse_rotors
+from nexus_uav._src.physics.vehicle import Rotor, VehicleUsd, rotors
 from nexus_uav._src.vehicle.rotors import find_rotor_joints
 from tests.vehicle.quad import FLIGHT_STEPS, LIFT_CT, ROOT, WEAK_CT
 from tests.vehicle.quad import author as _author
@@ -76,16 +76,6 @@ def test_rotors_that_do_not_share_one_parent_body_fail_the_build_and_name_the_pr
     """
     message = _build_error(_author(tmp_path / "quad.usda", reparent=True))
     assert all(name in message for name in (f"{ROOT}/rotor_3", f"{ROOT}/rotor_0", f"{ROOT}/body"))
-
-
-def test_rotors_whose_propeller_values_differ_fail_the_build_and_name_the_prims(tmp_path):
-    """Rotors whose propeller values differ fail the build and name the prims.
-
-    Given the fixture with one rotor's `ct` changed, when built, then the build fails naming the rotor
-    bodies whose values differ.
-    """
-    message = _build_error(_author(tmp_path / "quad.usda", odd_ct=2 * LIFT_CT))
-    assert all(f"{ROOT}/rotor_{i}" in message for i in (0, 2))
 
 
 def _final_tilt(path) -> tuple[float | None, str | None]:
@@ -153,15 +143,40 @@ def test_newton_still_builds_each_rotors_motor_from_its_actuator_prim(tmp_path):
     assert motors == [("ControllerPID", ("ClampingDCMotor",))] * 4
 
 
-def test_the_rotor_reader_returns_the_values_the_rotors_share_and_each_rotors_joint(tmp_path):
-    """The rotor reader returns the values the rotors share and each rotor's joint.
+def test_the_rotor_reader_returns_each_rotor_with_its_own_values_in_channel_order(tmp_path):
+    """The rotor reader returns each rotor with its own values, in channel order.
 
-    Given the fixture, when read, then the map holds the propeller's values, with the motor's no-load
-    speed, 398 rad/s or 3800.62 rpm, as the speed at full command, and the joints are the four rotor joints.
+    Given the fixture with its ESCs on channels 3, 2, 1 and 0 and rotor 2's `ct` twice the others', when read,
+    then the rotors come in channel order, rotor 3 first, each with its body, its joint, the airframe, its
+    channel, its own propeller values and the motor's no-load speed, 398 rad/s or 3800.62 rpm.
     """
-    values = {"ct": LIFT_CT, "cd": 0.05, "aero_h": 0.0, "aero_hforce": 0.0, "rpm_max": 3800.62}
-    expected = (pytest.approx(values, rel=1e-5), [f"{ROOT}/rotor_{i}_joint" for i in range(4)])
-    assert parse_rotors(_author(tmp_path / "quad.usda")) == expected
+    read = rotors(_author(tmp_path / "quad.usda", odd_ct=2 * LIFT_CT, channels=(3, 2, 1, 0)))
+    expected = [
+        Rotor(
+            body=f"{ROOT}/rotor_{i}",
+            joint=f"{ROOT}/rotor_{i}_joint",
+            parent=f"{ROOT}/body",
+            channel=3 - i,
+            propeller={"ct": 2 * LIFT_CT if i == 2 else LIFT_CT, "cd": 0.05, "aero_h": 0.0, "aero_hforce": 0.0},
+            rpm_max=3800.62,
+        )
+        for i in (3, 2, 1, 0)
+    ]
+    assert [(r.body, r.joint, r.parent, r.channel) for r in read] == [
+        (r.body, r.joint, r.parent, r.channel) for r in expected
+    ]
+    assert [r.propeller for r in read] == [pytest.approx(r.propeller, rel=1e-5) for r in expected]
+    assert [r.rpm_max for r in read] == pytest.approx([r.rpm_max for r in expected], rel=1e-5)
+
+
+def test_a_rotor_that_declares_a_propeller_and_no_esc_fails_the_build_and_names_the_prim(tmp_path):
+    """A rotor that declares a propeller and no ESC fails the build and names the prim.
+
+    Given the fixture with no ESC on any rotor, when built, then the build fails naming rotor 0 and the ESC's
+    schema.
+    """
+    message = _build_error(_author(tmp_path / "quad.usda", channels=None))
+    assert f"{ROOT}/rotor_0" in message and "NexusEscAPI" in message
 
 
 def test_find_rotor_joints_returns_the_declared_joints_and_no_other(tmp_path):

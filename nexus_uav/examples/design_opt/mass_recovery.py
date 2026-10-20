@@ -19,8 +19,6 @@ graph, else on the CPU backend, much slower.
 
 from __future__ import annotations
 
-import math
-
 import numpy as np
 import warp as wp
 
@@ -84,11 +82,11 @@ def recover_mass(
     nominal_mass = float(model.body_mass.numpy()[base])
     true_mass = nominal_mass * true_mass_scale
 
-    values = vehicle_usd.actuator_params()
-    kf = float(values["ct"]) * RPM_PER_RADS**2
-    nr = len(rollout.rotor_dofs)
-    speed = math.sqrt(LIFT * rollout.mass * GRAVITY / nr / kf)  # rad/s
-    command = wp.array([[speed / (float(values["rpm_max"]) / RPM_PER_RADS)] * nr], dtype=float)
+    rotors = vehicle_usd.rotors()  # in channel order, each with its own thrust map
+    kf = np.array([rotor.propeller["ct"] for rotor in rotors]) * RPM_PER_RADS**2
+    omega_max = np.array([rotor.rpm_max for rotor in rotors]) / RPM_PER_RADS
+    speed = np.sqrt(LIFT * rollout.mass * GRAVITY / len(rotors) / kf)  # rad/s, each rotor's
+    command = wp.array([(speed / omega_max).tolist()], dtype=float)
 
     def forward(mass: wp.array, cost: wp.array | None = None, ref: wp.array | None = None, record=None):
         wp.launch(set_airframe_mass, dim=1, inputs=(mass, base), outputs=(model.body_mass, model.body_inv_mass))

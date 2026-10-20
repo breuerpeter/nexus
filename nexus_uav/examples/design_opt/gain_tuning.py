@@ -111,9 +111,7 @@ class AstroMaxWaypointRollout:
         # model's rotor joints at rest, the same builder the deploy flight uses.
         rest = model.state()
         newton.eval_fk(model, model.joint_q, model.joint_qd, rest)
-        mixer = build_rotor_mixer_from_model(
-            model, vehicle_usd.rotor_joints(), vehicle_usd.actuator_params(), rest.body_q.numpy()
-        )
+        mixer = build_rotor_mixer_from_model(model, vehicle_usd.rotors(), rest.body_q.numpy())
         self.nr = mixer.nr
         # The action scale = the plant's true T/W from the USD thrust map, no declared constant:
         # the same derivation the deploy build uses, so tuned gains deploy on the same scale.
@@ -121,8 +119,8 @@ class AstroMaxWaypointRollout:
             float(thrust_to_weight) if thrust_to_weight is not None else mixer.thrust_to_weight(self.rollout.mass)
         )
         self.B_inv_wp = wp.array(mixer.B_inv.astype(np.float32), dtype=float)  # mixer B^-1, the allocation
-        self.kf = mixer.kf
-        self.omega_max_motor = mixer.omega_max_motor
+        self.kf = wp.array(mixer.kf.astype(np.float32), dtype=float)  # each rotor's thrust map
+        self.omega_max_motor = wp.array(mixer.omega_max_motor.astype(np.float32), dtype=float)
 
         # Reused loop components + full tape history, one array per tick.
         self.obs_sensor = WarpObservationSensor(goal_w=goal, body_index=self.rollout.base)

@@ -125,12 +125,14 @@ def test_each_rotor_thrusts_off_its_own_airframe():
     from nexus_uav._src.vehicle.forces.propellers import Propellers
 
     state, dofs, bodies, bases = _two_vehicles()
-    propellers = Propellers.for_rotors(
+    propellers = Propellers(
         rotor_vel_dofs=wp.array(dofs, dtype=wp.int32),
         rotor_bodies=wp.array(bodies, dtype=wp.int32),
         rotor_bases=wp.array(bases, dtype=wp.int32),
-        ct=1e-4 / RPM_PER_RADS**2,
-        cd=0.0,
+        ct=[1e-4 / RPM_PER_RADS**2] * 2,
+        cd=[0.0, 0.0],
+        aero_h=[0.0, 0.0],
+        aero_hforce=[0.0, 0.0],
     )
 
     propellers.add(state)

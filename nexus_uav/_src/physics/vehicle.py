@@ -1,5 +1,5 @@
 import math
-from dataclasses import asdict
+from dataclasses import dataclass
 from pathlib import Path
 
 import newton
@@ -7,29 +7,55 @@ import warp as wp
 
 from nexus_uav._src.core import logger
 from nexus_uav._src.usd.reader import read_declarations
-from nexus_uav._src.vehicle.forces.propellers import Propeller
 from nexus_uav._src.vehicle.rotors import RPM_PER_RADS
 
 PROPELLER_SCHEMA = "NexusPropellerAPI"  # the schema a rotor's rigid body applies to declare its propeller
+ESC_SCHEMA = "NexusEscAPI"  # the schema a rotor's rigid body applies to declare its ESC, beside its propeller
 
 
-def parse_rotors(usd_path: str | Path) -> tuple[dict, list[str]]:
-    """Read the rotors the vehicle's Universal Scene Description (USD) file declares.
+class NoRotor(ValueError):
+    """The vehicle declares no rotor: no body applies the ESC's or the propeller's schema."""
 
-    A rotor is a rigid body that applies ``NexusPropellerAPI``. Its joint is the revolute joint that has it
-    as child body, and its motor is the ``NewtonActuator`` prim that drives that joint. The motor's no-load speed,
-    ``newton:velocityLimit``, is the rotor speed at full command. The propeller model is a lumped-scalar one,
-    so the rotors must declare the same values.
+
+@dataclass(frozen=True)
+class Rotor:
+    """One rotor the vehicle declares: an Electronic Speed Controller (ESC) and a propeller on one rigid body, and
+    the Newton motor on the body's joint.
+
+    Attributes:
+        body: The rigid body's prim path.
+        joint: The path of the revolute joint that has the body as its child.
+        parent: The joint's parent body, the airframe.
+        channel: The entry of the controls the ESC reads.
+        propeller: The propeller's values: ``ct``, ``cd``, ``aero_h`` and ``aero_hforce``.
+        rpm_max: The rotor speed at full command [rpm], the motor's no-load speed.
+    """
+
+    body: str
+    joint: str
+    parent: str
+    channel: int
+    propeller: dict
+    rpm_max: float
+
+
+def rotors(usd_path: str | Path) -> list[Rotor]:
+    """Read the rotors the vehicle's Universal Scene Description (USD) file declares, in channel order.
+
+    A rotor is a rigid body that applies ``NexusEscAPI`` and ``NexusPropellerAPI``. Its joint is the revolute
+    joint that has it as child body, and its motor is the ``NewtonActuator`` prim that drives that joint. The
+    motor's no-load speed, ``newton:velocityLimit``, is the rotor speed at full command. Each rotor flies its own
+    propeller's values.
 
     Returns:
-        The flat map every consumer reads and each rotor's joint path. The map holds the propeller's ``ct``,
-        ``cd``, ``aero_h`` and ``aero_hforce``, and the speed at full command as ``rpm_max``.
+        One :class:`Rotor` per rotor, ordered by channel.
 
     Raises:
-        ValueError: The vehicle declares no rotor; a propeller sits on a prim that isn't the child body of a
-            revolute joint; the rotors don't share one parent body or one set of values; no motor with a finite
-            ``newton:velocityLimit`` drives a rotor's joint; or a prim still authors a ``propeller:*`` attribute,
-            which the schema replaces. The message names the prim.
+        NoRotor: The vehicle declares no rotor; the message names the vehicle's root prim.
+        ValueError: An ESC or a propeller sits on a prim that isn't the child body of a revolute joint; a body
+            applies one of the two schemas without the other; two ESCs declare one channel; the rotors don't
+            share one parent body; no motor with a finite ``newton:velocityLimit`` drives a rotor's joint; or a
+            prim still authors a ``propeller:*`` attribute, which the schema replaces. The message names the prim.
     """
     from pxr import Usd
 
@@ -48,15 +74,21 @@ def parse_rotors(usd_path: str | Path) -> tuple[dict, list[str]]:
             for joint in prim.GetRelationship("newton:targets").GetTargets()[:1]:  # Newton honors the first
                 motor_of[str(joint)] = prim
 
-    rotors = []  # each rotor's body path, its parent body's path, its joint's path and its values
+    declared: dict[str, dict[str, dict]] = {}  # each body's declarations, by schema
     for body, schema, kwargs in read_declarations(usd_path):
-        if schema != PROPELLER_SCHEMA:
-            continue
+        if schema in (PROPELLER_SCHEMA, ESC_SCHEMA):
+            declared.setdefault(body, {})[schema] = kwargs
+    found = []
+    for body, schemas in declared.items():
+        for schema in (ESC_SCHEMA, PROPELLER_SCHEMA):
+            if schema not in schemas:
+                other = PROPELLER_SCHEMA if schema == ESC_SCHEMA else ESC_SCHEMA
+                raise ValueError(f"{body}: {other} declares a rotor's part, and the body applies no {schema} beside it")
         joint = joint_of.get(body)
         if joint is None:
             raise ValueError(
-                f"{body}: {PROPELLER_SCHEMA} sits on a prim that isn't the child body of a revolute joint; "
-                "apply it to a rotor's rigid body"
+                f"{body}: {ESC_SCHEMA} and {PROPELLER_SCHEMA} sit on a prim that isn't the child body of a revolute "
+                "joint; apply them to a rotor's rigid body"
             )
         motor = motor_of.get(str(joint.GetPath()))
         if motor is None:
@@ -68,23 +100,35 @@ def parse_rotors(usd_path: str | Path) -> tuple[dict, list[str]]:
                 f"{motor.GetPath()}: newton:velocityLimit is the rotor speed at full command, and it is {speed}; "
                 "author the motor's no-load speed"
             )
-        values = {**asdict(Propeller(**kwargs)), "rpm_max": speed * RPM_PER_RADS}
         parent = next(iter(joint.GetRelationship("physics:body0").GetTargets()), None)
-        rotors.append((body, str(parent), str(joint.GetPath()), {k: float(v) for k, v in values.items()}))
-
-    if not rotors:
-        root = stage.GetDefaultPrim().GetPath() if stage.GetDefaultPrim() else usd_path
-        raise ValueError(f"{root}: the vehicle declares no rotor; apply {PROPELLER_SCHEMA} to each rotor's rigid body")
-    if len({parent for _, parent, _, _ in rotors}) > 1:
-        placed = ", ".join(f"{body} on {parent}" for body, parent, _, _ in rotors)
-        raise ValueError(f"the rotors don't share one parent body: {placed}")
-    first = rotors[0][3]
-    if odd := [f"{body} {values}" for body, _, _, values in rotors if values != first]:
-        raise ValueError(
-            "the rotors declare different values, and the propeller model takes one set: "
-            f"{rotors[0][0]} {first}, {', '.join(odd)}"
+        found.append(
+            Rotor(
+                body=body,
+                joint=str(joint.GetPath()),
+                parent=str(parent),
+                channel=int(schemas[ESC_SCHEMA]["channel"]),
+                propeller={k: float(v) for k, v in schemas[PROPELLER_SCHEMA].items()},
+                rpm_max=float(speed) * RPM_PER_RADS,
+            )
         )
-    return first, [joint for _, _, joint, _ in rotors]
+
+    if not found:
+        root = stage.GetDefaultPrim().GetPath() if stage.GetDefaultPrim() else usd_path
+        raise NoRotor(
+            f"{root}: the vehicle declares no rotor; apply {ESC_SCHEMA} and {PROPELLER_SCHEMA} to each rotor's rigid body"
+        )
+    if len({rotor.parent for rotor in found}) > 1:
+        placed = ", ".join(f"{rotor.body} on {rotor.parent}" for rotor in found)
+        raise ValueError(f"the rotors don't share one parent body: {placed}")
+    by_channel: dict[int, Rotor] = {}
+    for rotor in found:
+        if rotor.channel in by_channel:
+            raise ValueError(
+                f"{by_channel[rotor.channel].body} and {rotor.body} both declare channel {rotor.channel}; "
+                "each ESC reads a channel of its own"
+            )
+        by_channel[rotor.channel] = rotor
+    return [by_channel[channel] for channel in sorted(by_channel)]
 
 
 class VehicleUsd:
@@ -100,8 +144,9 @@ class VehicleUsd:
 
     USD support needs ``usd-core`` to parse and ``newton-usd-schemas`` for the schema resolvers: newton's
     ``importers`` deps *minus* the open3d remesh and convex-decomp stack the lean runtime skips, see the
-    pyproject. Each rotor declares its propeller with the ``NexusPropellerAPI`` schema on its rigid body, beside
-    the ``NewtonActuator`` prim that declares its motor, which :func:`parse_rotors` reads at build time.
+    pyproject. Each rotor declares its ESC and its propeller with the ``NexusEscAPI`` and ``NexusPropellerAPI``
+    schemas on its rigid body, beside the ``NewtonActuator`` prim that declares its motor, which :func:`rotors`
+    reads at build time.
 
     Start pose: ``cfg['spawn_pos']``; the default is support-height placement, where the lowest point
     of the USD bounds, in the start attitude, lands 1 cm off the ground, so no more 2 m settle drop.
@@ -117,13 +162,9 @@ class VehicleUsd:
     def __init__(self, cfg: dict):
         self.cfg = cfg
 
-    def actuator_params(self) -> dict:
-        """The values the rotors the USD declares share; see :func:`parse_rotors`."""
-        return parse_rotors(self.cfg["usd_path"])[0]
-
-    def rotor_joints(self) -> list[str]:
-        """The joint path of each rotor the USD declares; see :func:`parse_rotors`."""
-        return parse_rotors(self.cfg["usd_path"])[1]
+    def rotors(self) -> list[Rotor]:
+        """The rotors the USD declares, in channel order; see :func:`rotors`."""
+        return rotors(self.cfg["usd_path"])
 
     @staticmethod
     def _ground_spawn(usd_path, att) -> tuple:

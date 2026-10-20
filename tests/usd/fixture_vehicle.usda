@@ -31,9 +31,10 @@ def Xform "vehicle"
         }
 
         def Xform "rotor_1" (
-            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI", "NexusPropellerAPI"]
+            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI", "NexusPropellerAPI", "NexusEscAPI"]
         )
         {
+            int nexus:channel = 0
             float nexus:cd = 0.05
             float nexus:ct = 0.000003463
             float physics:mass = 0.25
@@ -44,9 +45,10 @@ def Xform "vehicle"
         }
 
         def Xform "rotor_2" (
-            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI", "NexusPropellerAPI"]
+            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI", "NexusPropellerAPI", "NexusEscAPI"]
         )
         {
+            int nexus:channel = 1
             float nexus:cd = 0.05
             float nexus:ct = 0.000003463
             float physics:mass = 0.25
@@ -57,9 +59,10 @@ def Xform "vehicle"
         }
 
         def Xform "rotor_3" (
-            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI", "NexusPropellerAPI"]
+            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI", "NexusPropellerAPI", "NexusEscAPI"]
         )
         {
+            int nexus:channel = 2
             float nexus:cd = 0.05
             float nexus:ct = 0.000003463
             float physics:mass = 0.25
@@ -70,9 +73,10 @@ def Xform "vehicle"
         }
 
         def Xform "rotor_4" (
-            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI", "NexusPropellerAPI"]
+            prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI", "NexusPropellerAPI", "NexusEscAPI"]
         )
         {
+            int nexus:channel = 3
             float nexus:cd = 0.05
             float nexus:ct = 0.000003463
             float physics:mass = 0.25

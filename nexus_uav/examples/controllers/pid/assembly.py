@@ -50,7 +50,7 @@ def build_pid_loop(
     """
     import numpy as np
 
-    from nexus_uav._src.build.assembly import rotor_chain
+    from nexus_uav._src.build.assembly import elements
     from nexus_uav.examples._lib import build_rotor_mixer_from_model
     from nexus_uav.examples._lib.observation import WarpObservationSensor
     from nexus_uav.examples.controllers.pid.controller import PidController
@@ -62,13 +62,13 @@ def build_pid_loop(
 
     if vehicle_usd is None:
         raise ValueError("vehicle_usd is required (resolve it via build.launch.resolve_scenario)")
-    act = vehicle_usd.actuator_params()  # aero/thrust map from the vehicle USD, hash-pinned and not in cfg
     physics_cfg = {**cfg["physics"], "spawn": {"pos": tuple(spawn), "attitude": "native", "prespin": "hover"}}
     physics = NewtonPhysics(vehicle_usd=vehicle_usd, cfg={**cfg, "physics": physics_cfg})
     robot_mass = float(np.sum(physics.model.body_mass.numpy()))
-    # The airframe mixer built from the model rotor geometry at its start pose.
-    mixer = build_rotor_mixer_from_model(physics.model, vehicle_usd.rotor_joints(), act, physics.state0.body_q.numpy())
-    commands, forces = rotor_chain(physics, vehicle_usd)  # the rotor chain PX4 flies
+    # The airframe mixer built from the model rotor geometry at its start pose and each rotor's thrust map, from
+    # the vehicle USD, hash-pinned and not in cfg.
+    mixer = build_rotor_mixer_from_model(physics.model, vehicle_usd.rotors(), physics.state0.body_q.numpy())
+    commands, forces = elements(physics, vehicle_usd)  # each rotor's ESC and propeller, the chain PX4 flies
     if thrust_to_weight is None:
         # The action scale = the plant's true thrust-to-weight, from the USD-authored thrust map, not a
         # declared constant: action = +1 means the plant's real max thrust. DEFAULT_GAINS' altitude
@@ -78,8 +78,8 @@ def build_pid_loop(
 
     # The PID law emits direct moments [thrust, m_x, m_y, m_z]; the controller's moment mixer, B⁻¹ with no
     # Collective Thrust and Body Rate (CTBR) rate loop, turns them into per-rotor commands, and the rotor
-    # chain flies them: the rotors' command element sets each motor's speed target, physics steps the
-    # motors, and the propellers add each rotor's force.
+    # chain flies them: each rotor's ESC sets its motor's speed target, physics steps the
+    # motors, and each propeller adds its rotor's force.
     controller = PidController(
         gains=DEFAULT_GAINS if gains is None else gains,
         goal_w=goal_w,

@@ -30,6 +30,13 @@
   },
   "NexusCommandRoleAPI": {},
   "NexusControllerRoleAPI": {},
+  "NexusEscAPI": {
+    "nexus:channel": {
+      "fallback": "0",
+      "type": "int",
+      "units": "none"
+    }
+  },
   "NexusEstimatorRoleAPI": {},
   "NexusForceRoleAPI": {},
   "NexusGpsAPI": {

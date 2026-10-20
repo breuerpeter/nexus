@@ -704,7 +704,7 @@ def test_a_px4_run_takes_no_estimator_stage(tmp_path, warp_cpu, caplog):
 
     plans = [r.getMessage() for r in caplog.records if r.getMessage().startswith("stage plan:")]
     assert plans == [
-        "stage plan: eager(clock -> clear -> rotors -> propellers -> step -> state) host(truth) host(exchange) "
+        "stage plan: eager(clock -> clear -> esc -> esc -> esc -> esc -> propeller -> propeller -> propeller -> propeller -> step -> state) host(truth) host(exchange) "
         "eager(record)"
     ]
 
