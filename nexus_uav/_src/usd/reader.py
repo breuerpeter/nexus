@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 from importlib.metadata import version
 from pathlib import Path
+from typing import Any
 
 _NAMESPACE = "nexus:"
 # A connection's namespace: the relationship `nexus:inputs:imu` picks the writer of the signal `imu`.
@@ -153,17 +154,16 @@ def read_declarations(usd_path: str | Path) -> list[tuple[str, str, dict]]:
     return declarations
 
 
-def read_connections(usd_path: str | Path) -> dict[str, dict[str, str]]:
+def read_connections(usd_path: str | Path) -> dict[str, dict[str, list[str]]]:
     """Each connection the stage's active prims author, by prim: the signal a relationship `nexus:inputs:<signal>`
-    names, and the path of the prim it targets, whose component writes that signal.
+    names, and the paths of the prims it targets, whose components write that signal, in the authored order. A
+    component's input takes one writer, and the builder fails a second; a peer's input takes each writer the
+    vehicle plugs into it.
 
     The reader of :func:`read_declarations` fails a relationship no applied schema declares, so each
     connection here is one a schema declares.
-
-    Raises:
-        ValueError: A connection targets more than one prim; the message names the prim and the connection.
     """
-    return _targets(usd_path, _INPUTS, "a connection")
+    return _targets(usd_path, _INPUTS, "a connection", many=True)
 
 
 def read_serial_lines(usd_path: str | Path) -> dict[str, dict[str, str]]:
@@ -179,19 +179,23 @@ def read_serial_lines(usd_path: str | Path) -> dict[str, dict[str, str]]:
     return _targets(usd_path, _SERIAL, "a serial line")
 
 
-def _targets(usd_path: str | Path, prefix: str, what: str) -> dict[str, dict[str, str]]:
-    """The one target of each relationship in the namespace `prefix` that the stage's active prims author, by prim
-    and by the relationship's name past the prefix. `what` names the kind in the error on two targets.
+def _targets(usd_path: str | Path, prefix: str, what: str, *, many: bool = False) -> dict[str, dict[str, Any]]:
+    """The targets of each relationship in the namespace `prefix` that the stage's active prims author, by prim
+    and by the relationship's name past the prefix: every target as a list, in the authored order, with `many`,
+    else the one target, and `what` names the kind in the error on two.
     """
     from pxr import Usd
 
     stage = Usd.Stage.Open(str(usd_path), Usd.Stage.LoadAll)
-    found: dict[str, dict[str, str]] = {}
+    found: dict[str, dict[str, Any]] = {}
     for prim in stage.Traverse(Usd.TraverseInstanceProxies()):
         for rel in prim.GetRelationships():
             targets = rel.GetTargets() if rel.GetName().startswith(prefix) else []
-            if len(targets) > 1:
+            if len(targets) > 1 and not many:
                 raise ValueError(f"{prim.GetPath()}: {rel.GetName()} targets {len(targets)} prims; {what} names one")
             if targets:
-                found.setdefault(str(prim.GetPath()), {})[rel.GetName().removeprefix(prefix)] = str(targets[0])
+                paths = [str(target) for target in targets]
+                found.setdefault(str(prim.GetPath()), {})[rel.GetName().removeprefix(prefix)] = (
+                    paths if many else paths[0]
+                )
     return found

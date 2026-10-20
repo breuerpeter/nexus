@@ -69,6 +69,15 @@ class Peer(Protocol):
     link, :mod:`.serial`: it makes one per line before any peer starts and hands each of the two peers the path of
     its end in the keyword ``serial``, the declaring peer by the line's name and the other by the declaring prim's
     name. A peer with an end takes ``serial`` beside the run's other values and opens the path it names.
+
+    A peer's schema can declare an input, a relationship ``nexus:inputs:<signal>`` whose targets are the prims
+    whose components write that signal, one or more, as a camera's USB cable plugs into a companion computer. The
+    loop end of that link is the run's: once per tick, after the writers, it hands the peer each writer's value
+    through ``take(signal, writer, value)``, with the writer's instance name, which a peer with an input states.
+    The peer decides what it makes of a value and how it carries it. The loop hands a host value once, on the
+    write that produced it, so a frame reaches the peer at the camera's rate, and a device value every tick,
+    since a kernel writes it every tick. A ``take`` that raises fails the run, and
+    the error names the peer.
     """
 
     clock: ClassVar[Literal["stepped", "on_request", "free"]]

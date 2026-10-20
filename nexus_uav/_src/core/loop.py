@@ -116,6 +116,7 @@ class Loop:
         renderer: object | None = None,
         links: Mapping[str, object] | None = None,
         peers: Iterable[Peer] = (),
+        peer_inputs: Iterable[Component] = (),
         connections: Iterable[tuple[Component, str, Component]] | None = None,
         logger: Logger | None = None,
         recorder: Recorder | None = None,
@@ -173,6 +174,11 @@ class Loop:
                 Loop (SITL) container. The loop stops each when the run ends, whether it ran out,
                 stopped early or never stepped; it starts none, since a peer boots while the build
                 goes on.
+            peer_inputs: The loop end of each declared peer's wired inputs, a
+                :class:`~nexus_uav._src.core.peer_inputs.PeerInputs` per peer the vehicle plugs a writer into:
+                its one host stage runs after every writer of the tick, in the ``link`` role, and hands the peer
+                each value. The builder makes them from the vehicle's connections; empty for a run that wires
+                none.
             connections: Quadruples of a reader, an input's name, the writer it reads that input from and
                 the name of the writer's output, which the build resolves from the vehicle's
                 ``nexus:inputs:`` relationships: where more than one component writes a signal, a reader
@@ -215,6 +221,7 @@ class Loop:
         self.renderer = renderer
         self.links = dict(links or {})
         self.peers = list(peers)
+        self.peer_inputs = list(peer_inputs)
         self.connections = list(connections or ())
         self.run_stats: dict = {}  # set when a run finishes; empty until then
         self._connected: list = []  # the components the run connected, which the teardown closes
@@ -619,6 +626,7 @@ class Loop:
             "estimator": one(self.estimator),
             "guidance": one(self.guidance),
             "controller": one(self.controller),
+            "link": list(self.peer_inputs),
             "command": list(self.commands),
             "force": list(self.forces),
             "actuator": one(self.actuator),
@@ -626,7 +634,8 @@ class Loop:
 
     def components(self) -> list:
         """Every component of the run, in ring order: the sensors, the estimator, the guidance, the controller,
-        the command elements, the force elements and the old actuator stage.
+        the loop end of each declared peer's inputs, the command elements, the force elements and the old
+        actuator stage.
         """
         roles = self.roles()
         return [c for role in (*TICK_ROLES, *SUBSTEP_ROLES) for c in roles[role]]

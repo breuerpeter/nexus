@@ -173,4 +173,10 @@ class "StandInPeerAPI" (
     rel nexus:serial:autopilot (
         doc = "The stand-in peer's serial line to the autopilot: the prim of the peer at its other end."
     )
+    rel nexus:inputs:camera (
+        doc = "The cameras whose frames the stand-in peer takes: the prims of their sensors, one or more."
+    )
+    rel nexus:inputs:imu (
+        doc = "The Inertial Measurement Unit (IMU) whose samples the stand-in peer takes: the prim of its sensor."
+    )
 }

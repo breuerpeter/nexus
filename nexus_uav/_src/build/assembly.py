@@ -27,6 +27,7 @@ import warp as wp
 
 from nexus_uav._src.core import Clock, Loop, SeedTree, logger
 from nexus_uav._src.core.components import resolve_components, run_keywords, sibling_keywords
+from nexus_uav._src.core.peer_inputs import PeerInputs
 from nexus_uav._src.physics import NewtonPhysics
 from nexus_uav._src.recording import Recorder
 from nexus_uav._src.vehicle.sensors.rtx_sensor import PEER
@@ -166,6 +167,41 @@ def build_scenario() -> dict:
     return copy.deepcopy(DEFAULT_SCENARIO)
 
 
+def _link_ends(peers: dict, connections: dict, by_prim: dict) -> dict:
+    """The loop end of each declared peer's wired inputs, by the peer's prim: for each connection on a peer's prim,
+    the outputs its targets' components declare under the signal's name, from which the end declares what it reads.
+    A peer whose prim wires nothing has no end.
+
+    Raises:
+        ValueError: A target declares no component, or its component writes no signal of that name; the message
+            names the peer's prim, the signal and the target.
+    """
+    ends = {}
+    for prim, peer in peers.items():
+        inputs = {}
+        for signal, targets in connections.get(prim, {}).items():
+            outputs = []
+            for target in targets:
+                component = by_prim.get(target)
+                output = _output(component, signal) if component is not None else None
+                if output is None:
+                    what = "declares no component" if component is None else f"writes no {signal!r}"
+                    raise ValueError(
+                        f"{prim} connects {signal!r} to {target}, which {what}: a peer's input targets the prims "
+                        "whose components write the signal"
+                    )
+                outputs.append(output)
+            inputs[signal] = outputs
+        if inputs:
+            ends[prim] = PeerInputs(peer, inputs)
+    return ends
+
+
+def _output(component, name: str):
+    """The signal `name` among the outputs the stages of `component` declare, or ``None``."""
+    return next((signal for stage in component.stages() for signal in stage.writes if signal.name == name), None)
+
+
 def resolve_device(cfg: dict) -> str:
     """Select + activate the Warp device for this build, returning its name. ``physics.force_cpu``
     forces CPU, the bit-exact determinism authority; otherwise prefer CUDA when available so
@@ -195,6 +231,7 @@ def build_loop(
     renderer_factory=None,
     peers=(),
     peer_links=None,
+    peer_inputs=None,
     connections=None,
     prims=None,
     preroll_timeout: float = 30.0,
@@ -213,8 +250,11 @@ def build_loop(
     ``peers`` are the processes the build started for this run, which the loop stops when the run ends.
     ``peer_links`` holds the link of each peer a class requires, by the peer's name, beside the Kit peer's, which
     the renderer gives.
-    ``connections`` are the vehicle's, by prim: for a reader's prim, each signal it reads and the prim
-    whose component writes it, or the body's or joint's prim whose output the plant writes; ``prims`` names
+    ``peer_inputs`` maps the prim of each declared peer to the peer: for each input the vehicle wires on that
+    prim, the loop end of the link is a component in the ``link`` role, which hands the peer each writer's value.
+    ``connections`` are the vehicle's, by prim: for a reader's prim, each signal it reads and the prims
+    whose components write it, one for a component's input and one or more for a peer's, or the body's or joint's
+    prim whose output the plant writes; ``prims`` names
     the controller, the estimator and the guidance by their prims, as the assembly names each sensor and
     element, so the loop takes each
     connection between the two components, or between the reader and the plant's output.
@@ -244,23 +284,28 @@ def build_loop(
         rtx = [s for s in a.sensors if s.requires]
         renderer_factory.finish(renderer, rtx, vehicle_usd, cfg, physics.model)
     by_prim = {**a.prims, **(prims or {})}
+    ends = _link_ends(peer_inputs or {}, connections or {}, by_prim)
+    by_prim.update(ends)
     links = []
     for reader, inputs in (connections or {}).items():
-        for signal, writer in inputs.items():
+        for signal, writers in inputs.items():
             if reader not in by_prim:
-                raise ValueError(f"{reader} connects {signal!r} to {writer}, and declares no component itself")
-            # A body's or a joint's prim names the plant's output of it, even where an element sits on that prim, as
-            # a rotor's ESC and propeller sit on its body: an element writes no pose.
-            if writer in physics.outputs.by_label:
-                links.append((by_prim[reader], signal, physics, physics.outputs.by_label[writer].name))
-            elif writer in by_prim:
-                links.append((by_prim[reader], signal, by_prim[writer], signal))
-            else:
-                who = type(by_prim[reader]).__name__
                 raise ValueError(
-                    f"{who} on {reader} connects {signal!r} to {writer}, which declares no component and is no "
-                    "body or joint of the model"
+                    f"{reader} connects {signal!r} to {' and '.join(writers)}, and declares no component itself"
                 )
+            for writer in writers:
+                # A body's or a joint's prim names the plant's output of it, even where an element sits on that
+                # prim, as a rotor's ESC and propeller sit on its body: an element writes no pose.
+                if writer in physics.outputs.by_label:
+                    links.append((by_prim[reader], signal, physics, physics.outputs.by_label[writer].name))
+                elif writer in by_prim:
+                    links.append((by_prim[reader], signal, by_prim[writer], signal))
+                else:
+                    who = type(by_prim[reader]).__name__
+                    raise ValueError(
+                        f"{who} on {reader} connects {signal!r} to {writer}, which declares no component and is no "
+                        "body or joint of the model"
+                    )
     return Loop(
         clock=a.clock,
         physics=a.physics,
@@ -275,6 +320,7 @@ def build_loop(
         renderer=renderer,
         links={**(peer_links or {}), **({} if renderer is None else {PEER: renderer})},
         peers=peers,
+        peer_inputs=list(ends.values()),
         connections=links,
         preroll_timeout=preroll_timeout,
         max_steps=max_steps,

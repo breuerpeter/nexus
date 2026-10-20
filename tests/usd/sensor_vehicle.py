@@ -255,14 +255,25 @@ def estimator(*reads: Signal) -> type:
     return StandInEstimator
 
 
-def companion(greeting: str = "hello", *, name: str = "Companion", autopilot: str | None = None) -> str:
+def companion(
+    greeting: str = "hello",
+    *,
+    name: str = "Companion",
+    autopilot: str | None = None,
+    inputs: dict[str, str | list[str]] | None = None,
+) -> str:
     """The text of the scope `name` under the root prim, which declares a project's peer with the stand-in schema
     `StandInPeerAPI`, started with `greeting`. `autopilot`, when given, is the path of the prim its serial line
     `nexus:serial:autopilot` targets, the peer at the line's other end: `PX4_PRIM` wires it to the PX4 peer.
+    `inputs` wires each input the schema declares, `camera` or `imu`, to the prim or prims whose sensors write it:
+    the relationship `nexus:inputs:<signal>` targets them.
     """
     attrs = f'string nexus:greeting = "{greeting}"'
     if autopilot is not None:
         attrs += f"\nrel nexus:serial:autopilot = <{autopilot}>"
+    for signal, targets in (inputs or {}).items():
+        paths = [targets] if isinstance(targets, str) else list(targets)
+        attrs += f"\nrel nexus:inputs:{signal} = [{', '.join(f'<{p}>' for p in paths)}]"
     return prim(name, "StandInPeerAPI", attrs, kind="Scope")
 
 
