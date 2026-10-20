@@ -13,8 +13,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
-# The package's peer class, in a module of its own, so a run that imports it leaves the module in `sys.modules`.
+# The package's peer class, in a module that records its import: it writes the file `imported` beside itself.
 _PEER = '''
+from pathlib import Path
+
+Path(__file__).with_name("imported").touch()
+
+
 class Radio:
     """A project's own peer, `radio`."""
 
@@ -57,10 +62,9 @@ class "AcmeRadioAPI" (
 }
 """
 
-# Builds the fixture vehicle with no peer declared, with the stand-in controller, and prints whether the build
-# raised, its message, and whether the build imported the package's peer module.
+# Builds the fixture vehicle with no peer declared, with the stand-in controller, and prints the build's message,
+# empty when it raised none.
 _BUILD = """
-import sys
 import nexus_uav._src.build.launch as L
 from nexus_uav._src.config import LaunchConfig
 from tests.usd import sensor_vehicle as sv
@@ -71,8 +75,7 @@ try:
     error = ""
 except Exception as exc:
     error = str(exc)
-print("> error", error)
-print("> imported", "acme_radio.peer" in sys.modules)
+print(">", error)
 """
 
 
@@ -96,9 +99,9 @@ def _install(site: Path, files: dict[str, str]) -> Path:
     return folder
 
 
-def _build(tmp_path: Path, files: dict[str, str]) -> dict[str, str]:
-    """Install the package with `files` beside its catalog, build the run in a child process, and return what it
-    printed: `error`, the build's message or empty, and `imported`, whether the build imported the peer module.
+def _build(tmp_path: Path, files: dict[str, str]) -> str:
+    """Install the package with `files` beside its catalog under `tmp_path`, build the run in a child process, and
+    return the build's message, empty when it raised none.
     """
     site = tmp_path / "site-packages"
     _install(site, files)
@@ -107,8 +110,7 @@ def _build(tmp_path: Path, files: dict[str, str]) -> dict[str, str]:
     code = f"from pathlib import Path\nTMP = Path({str(tmp_path)!r})\n" + _BUILD
     r = subprocess.run([sys.executable, "-c", code], check=False, cwd=tmp_path, env=env, capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
-    lines = [line[2:].partition(" ") for line in r.stdout.splitlines() if line.startswith("> ")]
-    return {key: value for key, _, value in lines}
+    return next(line[2:] for line in r.stdout.splitlines() if line.startswith("> "))
 
 
 def test_a_packages_pin_file_for_a_peer_it_registers_breaks_no_run_that_doesnt_declare_it(tmp_path):
@@ -118,7 +120,7 @@ def test_a_packages_pin_file_for_a_peer_it_registers_breaks_no_run_that_doesnt_d
     `nexus.radio.ref` beside its catalog, when a run of a vehicle that doesn't declare `radio` builds, then it
     builds with no error.
     """
-    assert _build(tmp_path, {"nexus.radio.ref": "radio@1.2\n"})["error"] == ""
+    assert _build(tmp_path, {"nexus.radio.ref": "radio@1.2\n"}) == ""
 
 
 def test_a_run_imports_nothing_of_a_registered_peer_it_doesnt_start(tmp_path):
@@ -127,7 +129,9 @@ def test_a_run_imports_nothing_of_a_registered_peer_it_doesnt_start(tmp_path):
     Given that package, with `radio`'s class in a module that records its import, when the same run builds, then
     the module stays unimported.
     """
-    assert _build(tmp_path, {"nexus.radio.ref": "radio@1.2\n"})["imported"] == "False"
+    _build(tmp_path, {"nexus.radio.ref": "radio@1.2\n"})
+
+    assert not (tmp_path / "site-packages" / "acme_radio" / "imported").exists()
 
 
 def test_a_pin_file_that_names_no_shipped_or_registered_peer_fails_listing_the_registered_peers_pin_files(tmp_path):
@@ -137,7 +141,7 @@ def test_a_pin_file_that_names_no_shipped_or_registered_peer_fails_listing_the_r
     Given that package and a second pin file `nexus.nosuch.ref` beside its catalog, when a run builds, then it fails
     before any peer starts naming `nexus.nosuch.ref`, `nexus.radio.ref`, `nexus.px4_sitl.ref` and `nexus.kit.ref`.
     """
-    error = _build(tmp_path, {"nexus.radio.ref": "radio@1.2\n", "nexus.nosuch.ref": "x\n"})["error"]
+    error = _build(tmp_path, {"nexus.radio.ref": "radio@1.2\n", "nexus.nosuch.ref": "x\n"})
 
     named = [s in error for s in ("nexus.nosuch.ref", "nexus.radio.ref", "nexus.px4_sitl.ref", "nexus.kit.ref")]
     assert named == [True, True, True, True], error
