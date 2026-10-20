@@ -17,11 +17,17 @@ import warp as wp
 
 from nexus_uav._src.physics.vehicle import VehicleUsd, parse_rotors
 from nexus_uav._src.vehicle.rotors import find_rotor_joints
-from tests.vehicle.quad import LIFT_CT, ROOT, WEAK_CT
+from tests.vehicle.quad import FLIGHT_STEPS, LIFT_CT, ROOT, WEAK_CT
 from tests.vehicle.quad import author as _author
 from tests.vehicle.quad import build as _build
 from tests.vehicle.quad import build_error as _build_error
 from tests.vehicle.quad import climb as _climb
+from tests.vehicle.quad import fly as _fly
+from tests.vehicle.quad import tilt as _tilt
+
+CHANNELS = (0, 1, 2, 3)  # each rotor's controls channel, in rotor order
+TILTED = 5.0  # how far off level a quad with one stronger rotor ends, at least [degrees]
+LEVEL = 1.0  # how far off level a quad with equal rotors ends, at most [degrees]
 
 
 @pytest.mark.parametrize(("ct", "climbs"), [(LIFT_CT, True), (WEAK_CT, False)])
@@ -80,6 +86,45 @@ def test_rotors_whose_propeller_values_differ_fail_the_build_and_name_the_prims(
     """
     message = _build_error(_author(tmp_path / "quad.usda", odd_ct=2 * LIFT_CT))
     assert all(f"{ROOT}/rotor_{i}" in message for i in (0, 2))
+
+
+def _final_tilt(path) -> tuple[float | None, str | None]:
+    """How far off level the airframe ends [degrees] after the flight at full command, and the build's error
+    message when it fails instead.
+    """
+    try:
+        with wp.ScopedDevice("cpu"):
+            rows = _fly(_build(path, FLIGHT_STEPS), field="orientation")
+    except ValueError as exc:
+        return None, str(exc)
+    return _tilt(rows[-1]), None
+
+
+def test_a_vehicle_whose_rotors_declare_different_propeller_values_builds_and_each_rotor_flies_its_own(tmp_path):
+    """A vehicle whose rotors declare different propeller values builds, and each rotor flies its own.
+
+    Given the fixture quad with rotor 2's `ct` twice the others', when the run flies 125 ticks at one equal
+    command on every rotor, then it builds and the airframe ends tilted, where the quad with equal `ct` ends
+    level.
+    """
+    odd = _author(tmp_path / "odd.usda", odd_ct=2 * LIFT_CT, channels=CHANNELS)
+    even = _author(tmp_path / "even.usda", channels=CHANNELS)
+
+    (odd_tilt, odd_error), (even_tilt, even_error) = _final_tilt(odd), _final_tilt(even)
+
+    tilted = odd_tilt is not None and odd_tilt > TILTED
+    level = even_tilt is not None and even_tilt < LEVEL
+    assert (tilted, level) == (True, True), (odd_tilt, odd_error, even_tilt, even_error)
+
+
+def test_two_rotors_that_declare_one_controls_channel_fail_the_build_naming_both(tmp_path):
+    """Two rotors that declare one controls channel fail the build, naming both.
+
+    Given the fixture quad with rotors 1 and 2 declaring the same channel, when the run builds, then it raises
+    naming both rotor prims and the channel, and no stage ran.
+    """
+    message = _build_error(_author(tmp_path / "quad.usda", channels=(0, 1, 1, 3)))
+    assert all(name in message for name in (f"{ROOT}/rotor_1", f"{ROOT}/rotor_2", "channel"))
 
 
 def test_a_vehicle_that_still_authors_propeller_joint_attributes_fails_the_build_and_names_the_prim(tmp_path):

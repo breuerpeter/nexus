@@ -6,6 +6,8 @@ DC motor clamp. The motor's no-load speed, 398 rad/s, is the rotor speed at full
 on the Warp CPU backend around a stand-in controller that sends one fixed command every tick.
 """
 
+import math
+
 import numpy as np
 import pytest
 import warp as wp
@@ -37,6 +39,7 @@ def author(
     reparent=False,
     servo=False,
     no_motor=None,
+    channels=None,
 ):
     """A quad whose rotor bodies each declare the propeller schema, with Newton's motor on each rotor joint.
 
@@ -51,6 +54,8 @@ def author(
         reparent: Hang rotor 3's joint off rotor 0's body instead of the airframe.
         servo: Add the gimbal joint and a `NewtonActuator` position servo on it, with its target at 0.
         no_motor: The index of a rotor whose joint gets no `NewtonActuator` prim.
+        channels: The controls channel each rotor's command declares, `NexusRotorAPI` on the rotor's body, in
+            rotor order; `None` declares no rotor command.
     """
     stage = Usd.Stage.CreateNew(str(path))
     UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
@@ -115,6 +120,9 @@ def author(
             motor.GetAttribute("newton:velocityLimit").Set(398.0)
         if propeller:
             apply_propeller(rotor.GetPrim(), odd_ct if odd_ct is not None and i == 2 else ct)
+        if channels is not None:
+            rotor.GetPrim().AddAppliedSchema("NexusRotorAPI")
+            rotor.GetPrim().CreateAttribute("nexus:channel", Sdf.ValueTypeNames.Int).Set(int(channels[i]))
     if gimbal or servo:
         offset = (0.0, 0.0, 0.12)
         mount = child_body("gimbal", offset)
@@ -158,11 +166,19 @@ def build(path, steps=0, controller=None):
     )
 
 
-def fly(orch):
-    """Fly the built run to its end and return the airframe's recorded positions, one row per tick [m]."""
+def fly(orch, field="position"):
+    """Fly the built run to its end and return the airframe's recorded `field`, one row per tick: its positions
+    [m], or its orientations, `(x, y, z, w)`.
+    """
     with wp.ScopedDevice("cpu"), Sim._from_loop(orch) as sim:
         sim.run()
-        return sim["vehicle/body/body"].history_arrays()["position"]
+        return sim["vehicle/body/body"].history_arrays()[field]
+
+
+def tilt(orientation) -> float:
+    """How far the airframe's axis is off vertical [degrees], from one recorded orientation, `(x, y, z, w)`."""
+    x, y = float(orientation[0]), float(orientation[1])
+    return math.degrees(math.acos(min(1.0, abs(1.0 - 2.0 * (x * x + y * y)))))
 
 
 def climb(path, controller=None):
