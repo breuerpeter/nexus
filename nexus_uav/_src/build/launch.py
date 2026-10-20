@@ -215,6 +215,7 @@ def build_from_launch(
             # every peer.
             peers=[*started, *links, *([claim] if claim is not None else [])],
             peer_links={name: peer for name, peer in needed.items() if name != KIT},
+            peer_inputs={spec.prim: peer for spec, peer in zip(declared, made, strict=True)},
             connections=read_connections(usd),
             prims={roles[role].prim: component for role, component in built.items()},
             rerun=launch.output.log or launch.output.view,

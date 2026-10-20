@@ -424,6 +424,26 @@ def test_a_list_input_reads_every_writers_value_in_the_order_of_the_ring():
 
 
 @pytest.mark.usefixtures("warp_cpu")
+def test_a_list_input_with_connections_reads_the_writers_they_name_in_ring_order_and_learns_their_names():
+    """A list input with connections reads the writers they name, in the order of the ring, and learns their
+    names, so a reader of two or more writers has each one's name.
+
+    Given three stand-in sensors on the prims `A`, `B` and `C` that write 1, 2 and 3 to the signal `count`, and a
+    reader of `count` as a list whose prim connects it to `C` and `A`, when the loop wires them, then the reader
+    reads 1 and 3, and the signal's writers are `A` and `C`.
+    """
+    writers = [_Writer("/vehicle/body/A", 1), _Writer("/vehicle/body/B", 2), _Writer("/vehicle/body/C", 3)]
+    reader = _Reader(list[Count])
+    pairs = [*((w, "sensor") for w in writers), (reader, "estimator")]
+    links = [(reader, "count", writers[2], "count"), (reader, "count", writers[0], "count")]
+    wire([Bound(stage, c, role) for c, role in pairs for stage in c.stages()], links)
+    for w in writers:
+        w.count.write([(w.value,)])
+
+    assert ([int(value.n) for value in reader.count.read()], reader.count.writers) == ([1, 3], ("A", "C"))
+
+
+@pytest.mark.usefixtures("warp_cpu")
 def test_two_writers_a_reader_takes_through_neither_a_connection_nor_a_list_fail_the_wiring_naming_both():
     """Two writers of a signal that a reader takes through neither a connection nor a list fail the wiring, and
     the error names both writers' prims and the reader, and says a connection on the reader's prim picks one.

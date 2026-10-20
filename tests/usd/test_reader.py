@@ -186,9 +186,31 @@ def test_a_connection_the_schema_declares_reads_as_its_signal_and_the_prim_it_na
     (kwargs,) = [kw for path, _, kw in read_declarations(vehicle) if path == "/Vehicle/Estimator"]
 
     assert (read_connections(vehicle), sorted(kwargs)) == (
-        {"/Vehicle/Estimator": {"imu": "/Vehicle/body/Imu"}},
+        {"/Vehicle/Estimator": {"imu": ["/Vehicle/body/Imu"]}},
         ["position"],
     )
+
+
+def test_a_connection_on_a_peers_scope_reads_every_prim_it_targets_in_authored_order(tmp_path):
+    """A connection on a peer's scope reads every prim it targets, in the authored order, since a peer's input
+    takes each writer the vehicle plugs into it.
+
+    Given a scope applying the stand-in peer schema, which declares the relationship `nexus:inputs:camera`,
+    authored to target the prims `/Vehicle/body/Cam` and `/Vehicle/body/Cam2`, when the reader reads the file,
+    then the scope's connections map `camera` to both prims in that order.
+    """
+    from nexus_uav._src.usd.reader import read_connections
+
+    vehicle = tmp_path / "vehicle.usda"
+    stage = Usd.Stage.CreateNew(str(vehicle))
+    prim = UsdGeom.Scope.Define(stage, "/Vehicle/Companion").GetPrim()
+    prim.ApplyAPI("StandInPeerAPI")
+    prim.GetRelationship("nexus:inputs:camera").SetTargets(
+        [Sdf.Path("/Vehicle/body/Cam"), Sdf.Path("/Vehicle/body/Cam2")]
+    )
+    stage.GetRootLayer().Save()
+
+    assert read_connections(vehicle) == {"/Vehicle/Companion": {"camera": ["/Vehicle/body/Cam", "/Vehicle/body/Cam2"]}}
 
 
 def test_a_serial_line_the_schema_declares_reads_as_its_name_and_the_prim_it_targets(tmp_path):
