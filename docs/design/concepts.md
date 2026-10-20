@@ -188,7 +188,12 @@ declared peer's prim declares it, as a component's prim declares its inputs. The
 `nexus:serial:<line>` targets the prim of the peer at the other end. The run makes each link, two
 pseudo-terminals joined, before any peer starts, and hands each of the two peers the path of its end.
 The declaring peer gets it by the line's name, the other by the declaring prim's name. PX4 SITL
-starts a MAVLink instance on each of its ends.
+starts a MAVLink instance on each of its ends. A peer's prim also declares a link from a component's
+output to the peer, as a camera's USB cable plugs into a companion computer. The peer's schema
+declares the input as a relationship `nexus:inputs:<signal>`. The vehicle targets one or more prims
+whose components write it. The run makes the link's loop end: one host stage per wired peer, in the
+`link` role after every writer of the tick. That stage hands the peer each writer's value through
+its `take`.
 
 ### Port map
 

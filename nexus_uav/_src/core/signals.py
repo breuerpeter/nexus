@@ -26,12 +26,15 @@ if TYPE_CHECKING:
 
 
 class HostBuffer:
-    """A host signal's buffer: one object, which the writer replaces and each reader reads."""
+    """A host signal's buffer: one object, which the writer replaces and each reader reads, and the count of its
+    writes, which a reader that takes each value once, a peer's end, compares.
+    """
 
-    __slots__ = ("value",)
+    __slots__ = ("value", "writes")
 
     def __init__(self, value: Any = None):
         self.value = value
+        self.writes = 0
 
 
 class Signal:
@@ -51,12 +54,17 @@ class Signal:
     """The one buffer the builder hands the writer and every reader, before the capture; for a list input,
     the buffer of each writer."""
 
+    writers: tuple[str, ...]
+    """For a list input, the instance name of each writer whose buffer it holds, in the same order, which the
+    builder sets when it wires the ring, so a reader of two or more writers has each one's name; empty otherwise."""
+
     def __init__(self, name: str, type: type, *, shape: tuple[int, ...] | None = None, default: Any = None):
         self.name = name
         self.type = type
         self.shape = None if shape is None else tuple(int(n) for n in shape)
         self.default = default
         self.buffer = None
+        self.writers = ()
 
     @property
     def device(self) -> bool:
@@ -83,6 +91,7 @@ class Signal:
             self.buffer.assign(np.asarray(value, dtype=dtype))
         else:
             self.buffer.value = value
+            self.buffer.writes += 1
 
     def _allocate(self) -> Any:
         """A new buffer from the signal's type: zeros on the current Warp device, or an empty host buffer."""
@@ -123,7 +132,8 @@ def wire(ring: list[Bound], connections: Iterable[tuple[object, str, object]] | 
 
     The builder allocates one buffer per output and hands it to its writer. An input takes the buffer of the
     one writer of its name, or of the writer its reader's connection names; a list input takes every
-    writer's buffer, in ring order. A reader's default fills the buffer it takes until its writer first
+    writer's buffer, or the buffers of the writers its connections name, in ring order, and learns their names.
+    A reader's default fills the buffer it takes until its writer first
     writes. An input that no component writes reads its own buffer, which holds its default.
 
     Args:
@@ -136,9 +146,9 @@ def wire(ring: list[Bound], connections: Iterable[tuple[object, str, object]] | 
     Raises:
         ValueError: A device stage declares a host signal, a device signal has no shape or a leading axis
             other than one, two components write one signal that a third reads through neither a connection
-            nor a list, a connection names a writer that writes no such signal, a reader and its writer
-            disagree on the type, a reader needs more of an axis than its writer's buffer holds, or an input
-            has neither a writer nor a default.
+            nor a list, two connections name writers for an input of one value, a connection names a writer
+            that writes no such signal, a reader and its writer disagree on the type, a reader needs more of an
+            axis than its writer's buffer holds, or an input has neither a writer nor a default.
             The message names both ends, or the stage or the reader and the signal.
     """
     writes, reads = _declared(ring)
@@ -149,10 +159,16 @@ def wire(ring: list[Bound], connections: Iterable[tuple[object, str, object]] | 
     links = list(connections or ())
     for name, readers in reads.items():
         for bound, signal in readers:
+            named = [link for link in links if link[0] is bound.component and link[1] == name]
             if typing.get_origin(signal.type) is list:
-                _take_all(bound, signal, writes.get(name, []))
+                _take_all(bound, signal, writes, named)
+            elif len(named) > 1:
+                raise ValueError(
+                    f"{_owner(bound)} connects {name!r} to {' and '.join(_name(link[2]) for link in named)}: a "
+                    "connection on an input of one value names one writer, and a list input takes several"
+                )
             else:
-                link = next((link for link in links if link[0] is bound.component and link[1] == name), None)
+                link = named[0] if named else None
                 writer, output = (link[2], link[3]) if link is not None else (None, name)
                 _take_one(bound, signal, output, writes.get(output, []), writer, defaulted)
 
@@ -226,14 +242,31 @@ def _take_one(
         signal.write(signal.default)
 
 
-def _take_all(bound: Bound, signal: Signal, written: list) -> None:
-    """Hand a list input every writer's buffer, in ring order, or none when no component writes it."""
+def _take_all(bound: Bound, signal: Signal, writes: dict, named: list) -> None:
+    """Hand a list input every writer's buffer, in ring order, or the buffers of the writers its connections
+    ``named`` name, in ring order too, or none when no component writes it, and each writer's name beside it.
+    """
+    if named:
+        for _, _, writer, output in named:
+            if not any(w.component is writer for w, _ in writes.get(output, [])):
+                raise ValueError(
+                    f"{_owner(bound)} connects {signal.name!r} to {_name(writer)}, which writes no {output!r}: a "
+                    "connection names a component that writes the signal"
+                )
+        wanted = {(id(writer), output) for _, _, writer, output in named}
+        outputs = list(dict.fromkeys(output for _, _, _, output in named))
+        written = [
+            (w, o) for output in outputs for w, o in writes.get(output, []) if (id(w.component), output) in wanted
+        ]
+    else:
+        written = writes.get(signal.name, [])
     if not written:
         _unwritten(bound, signal)
     (element,) = typing.get_args(signal.type)
     for writer, output in written:
         _check(writer, output, bound, signal, element)
     signal.buffer = [output.buffer for _, output in written]
+    signal.writers = tuple(_owner(writer) for writer, _ in written)
 
 
 def _unwritten(bound: Bound, signal: Signal) -> None:

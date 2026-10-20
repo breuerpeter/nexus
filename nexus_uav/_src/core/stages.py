@@ -3,7 +3,8 @@
 A tick is an ordered ring of stages, per docs/design/execution.md. :func:`build_ring` lays every
 component's stages out in the canonical order: the clock, ``clear`` -> the command elements -> the force
 elements -> ``step`` per physics substep, ``state``, then the sensors, the estimator, the guidance and the
-controller over the state the step left, then record. So the physics step opens a tick, as a fixed-step
+controller over the state the step left, then the loop end of each declared peer's inputs, then record. So the
+physics step opens a tick, as a fixed-step
 simulator's does, and every row the tick records describes the state at the tick's time. :func:`partition`
 cuts the ring at its host stages, in ring order, so each maximal run of device stages becomes one CUDA graph.
 A controller that blocks on a peer or solves on the host states its own host stage, which writes its controls
@@ -60,8 +61,9 @@ def stages_of(component, role: str) -> list[Bound]:
 # actuator stage, which no shipped component fills, runs with the force stages, since it writes the body
 # forces too.
 SUBSTEP_ROLES = ("command", "force", "actuator")
-# The roles whose stages run once per tick over the state the step left, in this order.
-TICK_ROLES = ("sensor", "estimator", "guidance", "controller")
+# The roles whose stages run once per tick over the state the step left, in this order. The link role is last:
+# the loop end of each declared peer's inputs, which reads what every writer of the tick wrote.
+TICK_ROLES = ("sensor", "estimator", "guidance", "controller", "link")
 
 
 def build_ring(*, clock, physics, roles: Mapping[str, Sequence], record: Stage, substeps: int) -> list[Bound]:

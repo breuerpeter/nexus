@@ -126,13 +126,21 @@ whether an instance is free for it, and `ports`, the links it knows of that leav
 talks to another peer over a serial line, as a companion computer talks to PX4, declares the line in
 its schema as a relationship `nexus:serial:<line>`. The vehicle targets the prim of the peer at the
 other end. The run then hands it the path of its end in the keyword `serial`, by the line's name, per
-[Link](../design/concepts.md#link). A run's override layer drops a declared peer by deactivating
-its scope, `active = false`.
+[Link](../design/concepts.md#link). A peer that takes a component's output, as a companion computer
+takes a camera's frames over a USB cable, declares each input in its schema as a relationship
+`nexus:inputs:<signal>`. The vehicle targets one or more prims whose components write that signal.
+The loop hands the peer each writer's value once per tick, after the writers, through
+`take(signal, writer, value)`, with the writer's instance name. The peer's `take` is its end of the
+link, and the peer decides what it makes of a value and how it carries it. The loop hands a host value
+once, on the write that produced it, so the peer takes each frame once at the camera's rate. It hands a
+device value every tick, since a kernel writes it every tick. A `take` that raises fails the run naming
+the peer. A run's override layer drops a declared peer by deactivating its scope, `active = false`.
 
 Every peer ships a fake: a class on the same contract that speaks the links of the peer in-process
 and starts no process. A test flies the component against it in seconds. PX4's is `Px4Fake`,
-which answers the HIL link with a fixed command. A test hands the row of the fake to the run through
-the registry, as it hands a stand-in component.
+which answers the HIL link with a fixed command. A fake of a peer with an input offers the same `take`
+and drops what it takes. A test hands the row of the fake to the run through the registry, as it hands
+a stand-in component.
 
 Every peer pins what it runs, a commit or an image, in `pin.ref` in its own folder, with the pin on
 line one. A project overrides it with `nexus.<peer>.ref` beside its catalog, in the same form, and
