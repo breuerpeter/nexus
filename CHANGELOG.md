@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.6.0](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.5.0...nexus-uav-v0.6.0) (2026-10-20)
+
+
+### Features
+
+* **ci:** a labelled PR touching a peer's folder flies that peer real ([#337](https://github.com/breuerpeter/nexus/issues/337)) ([b9d4eea](https://github.com/breuerpeter/nexus/commit/b9d4eeabe952915a184ff9673c3c618af3490ba2)), closes [#162](https://github.com/breuerpeter/nexus/issues/162)
+* **config:** a catalog vehicle entry composes a base vehicle and its layers ([#346](https://github.com/breuerpeter/nexus/issues/346)) ([877eae2](https://github.com/breuerpeter/nexus/commit/877eae20c1d7bf60e3055492d31f36e17f1000a9)), closes [#331](https://github.com/breuerpeter/nexus/issues/331)
+* **peers:** a declared peer's link reads the signals it names ([#347](https://github.com/breuerpeter/nexus/issues/347)) ([03f82ae](https://github.com/breuerpeter/nexus/commit/03f82ae7e1166db455533214893e5c7b556e2e7f)), closes [#341](https://github.com/breuerpeter/nexus/issues/341)
+* **peers:** the run joins a declared peer and PX4 SITL over a serial link it owns ([#345](https://github.com/breuerpeter/nexus/issues/345)) ([60949e1](https://github.com/breuerpeter/nexus/commit/60949e11b12445280360f2bae5156d7a5dcdfd85)), closes [#342](https://github.com/breuerpeter/nexus/issues/342)
+* **vehicle:** each rotor flies its own propeller values, not one shared set ([#348](https://github.com/breuerpeter/nexus/issues/348)) ([f92a746](https://github.com/breuerpeter/nexus/commit/f92a746567262db3fadd17c9d929e04198868e82)), closes [#185](https://github.com/breuerpeter/nexus/issues/185)
+
+
+### Bug Fixes
+
+* **peers:** a package's pin file for a peer it registers breaks no run ([#352](https://github.com/breuerpeter/nexus/issues/352)) ([a35b24a](https://github.com/breuerpeter/nexus/commit/a35b24a5a193d2058b86b06a7e79f0c430cfeaa5)), closes [#316](https://github.com/breuerpeter/nexus/issues/316)
+
 ## [0.5.0](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.4.0...nexus-uav-v0.5.0) (2026-10-19)
 
 
