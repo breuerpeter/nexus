@@ -5,9 +5,9 @@ whose components write that signal, one or more, as each camera on the drone plu
 The builder makes one :class:`PeerInputs` per wired peer, a component in the ``link`` role, whose one host stage
 runs after every writer of the tick: it reads each input as a list, one value per targeted writer, and hands each
 to the peer's ``take`` with the writer's name. ``take`` is the peer's end of the link, and the peer decides what
-it makes of a value and how it carries it. A host signal its writer hasn't written yet, a camera before its first
-frame, is skipped, and a value with no fixed width stays on its signal until the next, so a peer's end sends a
-frame once, by its time. A ``take`` that raises fails the run with a ``RunError`` naming the peer.
+it makes of a value and how it carries it. The stage skips a host signal its writer hasn't written yet, a camera
+before its first frame, and a value with no fixed width stays on its signal until the next, so a peer's end sends
+a frame once, by its time. A ``take`` that raises fails the run with a ``RunError`` naming the peer.
 """
 
 from __future__ import annotations
