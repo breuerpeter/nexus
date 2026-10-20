@@ -1,0 +1,106 @@
+"""A package's pin file for a peer it registers is a pin file the install knows, whether or not a run starts the peer.
+
+Each test installs a package that maps its own peer, `radio`, through a `nexus.registry` entry point and ships
+`nexus.radio.ref` beside its catalog, and builds a run of the fixture vehicle, which doesn't declare `radio`. An
+installed entry point changes the install's table, so the build runs in a child process and no test mutates module
+state.
+"""
+
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+
+# The package's peer class, in a module of its own, so a run that imports it leaves the module in `sys.modules`.
+_PEER = '''
+class Radio:
+    """A project's own peer, `radio`."""
+
+    name = "radio"
+'''
+
+# Builds the fixture vehicle with no peer declared, with the stand-in controller, and prints whether the build
+# raised, its message, and whether the package's peer module was imported.
+_BUILD = """
+import sys
+import nexus_uav._src.build.launch as L
+from nexus_uav._src.config import LaunchConfig
+from tests.usd import sensor_vehicle as sv
+
+launch = LaunchConfig.from_dict({"vehicle": sv.vehicle(TMP), "scene": sv.SCENE, "runtime": {"device": "cpu"}})
+try:
+    L.build_from_launch(launch, components=sv.components(), run_dir=TMP / "run").close()
+    error = ""
+except Exception as exc:
+    error = str(exc)
+print("> error", error)
+print("> imported", "acme_radio.peer" in sys.modules)
+"""
+
+
+def _install(site: Path, files: dict[str, str]) -> Path:
+    """Install `acme_radio` under `site`: its folder holds `files` and its peer module, and its `.dist-info`
+    names its catalog in `nexus.catalog` and maps `StandInPeerAPI` to its peer class in `nexus.registry`.
+    """
+    folder = site / "acme_radio"
+    folder.mkdir(parents=True)
+    (folder / "__init__.py").write_text("")
+    (folder / "peer.py").write_text(_PEER)
+    for filename, text in {"nexus.catalog.yaml": "vehicles: {}\nscenes: {}\n", **files}.items():
+        (folder / filename).write_text(text)
+    info = site / "acme_radio-0.1.dist-info"
+    info.mkdir()
+    (info / "METADATA").write_text("Metadata-Version: 2.1\nName: acme_radio\nVersion: 0.1\n")
+    (info / "entry_points.txt").write_text(
+        "[nexus.catalog]\nacme_radio = acme_radio\n\n[nexus.registry]\nStandInPeerAPI = acme_radio.peer:Radio\n"
+    )
+    return folder
+
+
+def _build(tmp_path: Path, files: dict[str, str]) -> dict[str, str]:
+    """Install the package with `files` beside its catalog, build the run in a child process, and return what it
+    printed: `error`, the build's message or empty, and `imported`, whether the peer module was imported.
+    """
+    site = tmp_path / "site-packages"
+    _install(site, files)
+    env = {k: v for k, v in os.environ.items() if not (k.startswith("NEXUS_") and k.endswith("_REF"))}
+    env |= {"PYTHONPATH": os.pathsep.join([str(site), str(ROOT)]), "HOME": str(tmp_path / "home")}
+    code = f"from pathlib import Path\nTMP = Path({str(tmp_path)!r})\n" + _BUILD
+    r = subprocess.run([sys.executable, "-c", code], check=False, cwd=tmp_path, env=env, capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    lines = [line[2:].partition(" ") for line in r.stdout.splitlines() if line.startswith("> ")]
+    return {key: value for key, _, value in lines}
+
+
+def test_a_packages_pin_file_for_a_peer_it_registers_breaks_no_run_that_doesnt_declare_it(tmp_path):
+    """A package's pin file for a peer it registers breaks no run of a vehicle that doesn't declare that peer.
+
+    Given an installed package that maps a peer `radio` through a `nexus.registry` entry point and ships
+    `nexus.radio.ref` beside its catalog, when a run of a vehicle that doesn't declare `radio` builds, then it
+    builds with no error.
+    """
+    assert _build(tmp_path, {"nexus.radio.ref": "radio@1.2\n"})["error"] == ""
+
+
+def test_a_run_imports_nothing_of_a_registered_peer_it_doesnt_start(tmp_path):
+    """That run imports nothing of the registered peer it doesn't start.
+
+    Given that package, with `radio`'s class in a module that records its import, when the same run builds, then
+    the module stays unimported.
+    """
+    assert _build(tmp_path, {"nexus.radio.ref": "radio@1.2\n"})["imported"] == "False"
+
+
+def test_a_pin_file_that_names_no_shipped_or_registered_peer_fails_listing_the_registered_peers_pin_files(tmp_path):
+    """A pin file that names no shipped or registered peer still fails, and the message lists the registered peers'
+    pin files among those accepted.
+
+    Given that package and a second pin file `nexus.nosuch.ref` beside its catalog, when a run builds, then it fails
+    before any peer starts naming `nexus.nosuch.ref`, `nexus.radio.ref`, `nexus.px4_sitl.ref` and `nexus.kit.ref`.
+    """
+    error = _build(tmp_path, {"nexus.radio.ref": "radio@1.2\n", "nexus.nosuch.ref": "x\n"})["error"]
+
+    named = [s in error for s in ("nexus.nosuch.ref", "nexus.radio.ref", "nexus.px4_sitl.ref", "nexus.kit.ref")]
+    assert named == [True, True, True, True], error
