@@ -210,9 +210,9 @@ def _prepare_composed(entry: str, rotate_x: float, base_override: str | None) ->
     from nexus_uav._src.config import load_catalog
 
     catalog = load_catalog()
-    _, layers = catalog.stack(entry)
-    if not layers:
+    if catalog.vehicles[entry].base is None:
         raise SystemExit(f"{entry} is a flat entry: prepare its file with --vehicle")
+    _, layers = catalog.stack(entry)  # any number, zero included: the hash is the composed stage's either way
     root = catalog.fetch_vehicle(entry)  # the root file that stacks the layers over the base, in the cache
     sha = stage_hash(root)
     base = base_override or _catalog_base()
