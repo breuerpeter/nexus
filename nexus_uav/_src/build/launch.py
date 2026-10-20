@@ -48,6 +48,7 @@ from nexus_uav._src.peers.serial import SerialLink
 from nexus_uav._src.physics import VehicleUsd
 from nexus_uav._src.rendering import PEER as KIT
 from nexus_uav._src.rendering import RtxRendererFactory
+from nexus_uav._src.usd import peer_names
 from nexus_uav._src.usd.reader import read_connections, read_serial_lines
 
 from .assembly import build_loop, build_scenario
@@ -164,11 +165,13 @@ def build_from_launch(
         "guidance": declared_guidance(usd, registry),
     }
     required = _required(specs, registry)
-    # Every pin file beside a catalog names a peer, and the pin of each peer the run starts is in its form,
-    # before any peer starts, so a stale or broken pin file fails each run, not only the runs of its peer.
+    # Every pin file beside a catalog names a peer the install knows, one shipped, one whose schema the registry
+    # maps, or one the run starts, and the pin of each peer the run starts is in its form, before any peer starts,
+    # so a stale or broken pin file fails each run, not only the runs of its peer.
     layers = resolved.tested_config.catalogs
     classes = [spec.cls for spec in declared] + list(required.values())
-    pins.check(layers, sorted({*pins.shipped(), *(cls.name for cls in classes)}))
+    registered = {peer for schema, peer in peer_names().items() if schema in registry}
+    pins.check(layers, sorted({*pins.shipped(), *registered, *(cls.name for cls in classes)}))
     found = {cls.name: (cls, pins.resolve(cls.name, layers)) for cls in classes}
     peer_pins = {name: cls.check_pin(pin) if pin is not None else None for name, (cls, pin) in found.items()}
     _check_clocks(classes, launch.runtime.rtf)

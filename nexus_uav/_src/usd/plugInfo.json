@@ -90,7 +90,8 @@
             "bases": ["UsdAPISchemaBase"],
             "schemaIdentifier": "NexusPx4SitlAPI",
             "schemaKind": "singleApplyAPI",
-            "apiSchemaCanOnlyApplyTo": ["Scope"]
+            "apiSchemaCanOnlyApplyTo": ["Scope"],
+            "nexusPeer": "px4_sitl"
           },
           "NexusSchemaSceneAPI": {
             "alias": {"UsdSchemaBase": "NexusSceneAPI"},
