@@ -131,8 +131,9 @@ takes a camera's frames over a USB cable, declares each input in its schema as a
 `nexus:inputs:<signal>`. The vehicle targets one or more prims whose components write that signal.
 The loop hands the peer each writer's value once per tick, after the writers, through
 `take(signal, writer, value)`, with the writer's instance name. The peer's `take` is its end of the
-link, and the peer decides what it makes of a value and how it carries it. A frame stays on its signal
-until the next, so the peer sends one once, by its time. A `take` that raises fails the run naming
+link, and the peer decides what it makes of a value and how it carries it. The loop hands a host value
+once, on the write that produced it, so the peer takes each frame once at the camera's rate. It hands a
+device value every tick, since a kernel writes it every tick. A `take` that raises fails the run naming
 the peer. A run's override layer drops a declared peer by deactivating its scope, `active = false`.
 
 Every peer ships a fake: a class on the same contract that speaks the links of the peer in-process

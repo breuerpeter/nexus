@@ -73,16 +73,9 @@ def _fly(path: str, registry: nx.Registry, run_dir, ticks: int = TICKS) -> int:
     return n
 
 
-def _firsts(took: list, writer: str) -> list:
-    """Each value `writer` gave the peer's end, once, in the order it came: a value is new when its time is, since
-    a frame stays on its signal until the next.
-    """
-    firsts, seen = [], set()
-    for _, who, value in took:
-        if who == writer and value.time not in seen:
-            seen.add(value.time)
-            firsts.append(value)
-    return firsts
+def _took(took: list, writer: str) -> list:
+    """Each value `writer` gave the peer's end, in the order it came."""
+    return [value for _, who, value in took if who == writer]
 
 
 def _written(kept: list, column: int) -> list[float]:
@@ -100,8 +93,8 @@ def test_every_frame_the_camera_writes_reaches_the_peers_link_in_order_with_the_
 
     Given the fixture vehicle with a camera on the Kit fake and a stand-in peer on its `Companion` scope whose
     `nexus:inputs:camera` targets the camera's prim, when the run steps 1 s of sim time at 25 Hz, then the stand-in
-    took the frames the camera wrote, 23 give or take one, each at the camera's width and height with the sim time
-    it shows, in the order written. A stand-in estimator reading `camera` says what the camera wrote.
+    took the frames the camera wrote, 23 give or take one, each once, each at the camera's width and height with
+    the sim time it shows, in the order written. A stand-in estimator reading `camera` says what the camera wrote.
     """
     peer = _companion()
     reader = sv.estimator(nx.Signal("camera", nx.Image))
@@ -110,7 +103,7 @@ def test_every_frame_the_camera_writes_reaches_the_peers_link_in_order_with_the_
 
     _fly(path, registry, tmp_path / "run")
 
-    frames = _firsts(peer.took, "cam")
+    frames = _took(peer.took, "cam")
     seen = (
         22 <= len(frames) <= 24,
         all(frame.pixels.shape[:2] == (6, 8) for frame in frames),
@@ -124,8 +117,8 @@ def test_each_of_two_cameras_feeds_the_peer_told_apart_by_its_sensors_name(daemo
 
     Given the fixture vehicle with two cameras, `Cam` at 8 by 6 pixels and `Cam2` at 16 by 12, on the Kit fake and
     a stand-in peer whose `nexus:inputs:camera` targets both, when the run steps 1 s, then the stand-in took each
-    camera's frames under that camera's name, `cam` and `cam2`, 23 give or take one each, and neither camera's
-    frames under the other's: every frame under `cam` is 8 by 6 and every frame under `cam2` 16 by 12.
+    camera's frames under that camera's name, `cam` and `cam2`, 23 give or take one each, each once, and neither
+    camera's frames under the other's: every frame under `cam` is 8 by 6 and every frame under `cam2` 16 by 12.
     """
     peer = _companion()
     path = sv.vehicle(tmp_path, pins.CAMERA + CAMERA_2, root=sv.companion(inputs={"camera": [CAM, CAM_2]}))
@@ -133,7 +126,7 @@ def test_each_of_two_cameras_feeds_the_peer_told_apart_by_its_sensors_name(daemo
 
     _fly(path, registry, tmp_path / "run")
 
-    cam, cam2 = _firsts(peer.took, "cam"), _firsts(peer.took, "cam2")
+    cam, cam2 = _took(peer.took, "cam"), _took(peer.took, "cam2")
     seen = (
         {writer for _, writer, _ in peer.took},
         22 <= len(cam) <= 24,

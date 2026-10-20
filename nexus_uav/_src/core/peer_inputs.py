@@ -5,9 +5,11 @@ whose components write that signal, one or more, as each camera on the drone plu
 The builder makes one :class:`PeerInputs` per wired peer, a component in the ``link`` role, whose one host stage
 runs after every writer of the tick: it reads each input as a list, one value per targeted writer, and hands each
 to the peer's ``take`` with the writer's name. ``take`` is the peer's end of the link, and the peer decides what
-it makes of a value and how it carries it. The stage skips a host signal its writer hasn't written yet, a camera
-before its first frame, and a value with no fixed width stays on its signal until the next, so a peer's end sends
-a frame once, by its time. A ``take`` that raises fails the run with a ``RunError`` naming the peer.
+it makes of a value and how it carries it. The wire carries each value once, as a camera's cable carries each
+frame once: the stage hands a host value on the write that produced it, so a frame reaches the peer at the
+camera's rate and not at the tick's, and a device value every tick, since a kernel writes it every tick. A host
+signal its writer hasn't written yet, a camera before its first frame, waits. A ``take`` that raises fails the
+run with a ``RunError`` naming the peer.
 """
 
 from __future__ import annotations
@@ -16,7 +18,7 @@ from collections.abc import Mapping, Sequence
 
 from .errors import RunError
 from .interfaces import Component, Stage
-from .signals import Signal
+from .signals import HostBuffer, Signal
 
 
 class PeerInputs(Component):
@@ -34,6 +36,8 @@ class PeerInputs(Component):
         self._inputs = tuple(
             Signal(name, list[outputs[0].type], shape=outputs[0].shape, default=()) for name, outputs in inputs.items()
         )
+        # The writes of each host buffer whose value the peer has, by input and writer.
+        self._handed: dict[tuple[str, str], int] = {}
 
     def stages(self) -> list[Stage]:
         """One host stage, named for the peer, which reads every wired input and hands each value to the peer."""
@@ -41,9 +45,13 @@ class PeerInputs(Component):
 
     def _take(self, tick) -> None:
         for signal in self._inputs:
-            for writer, value in zip(signal.writers, signal.read(), strict=True):
-                if value is None:
-                    continue  # a host signal its writer hasn't written yet, a camera before its first frame
+            buffers = signal.buffer if signal.buffer else ()
+            for writer, buffer, value in zip(signal.writers, buffers, signal.read(), strict=True):
+                if isinstance(buffer, HostBuffer):
+                    # A host value once, on the write that produced it; none before the first write.
+                    if buffer.writes == self._handed.get((signal.name, writer), 0):
+                        continue
+                    self._handed[signal.name, writer] = buffer.writes
                 try:
                     self.peer.take(signal.name, writer, value)
                 except Exception as exc:

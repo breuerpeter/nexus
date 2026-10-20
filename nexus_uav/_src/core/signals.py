@@ -26,12 +26,15 @@ if TYPE_CHECKING:
 
 
 class HostBuffer:
-    """A host signal's buffer: one object, which the writer replaces and each reader reads."""
+    """A host signal's buffer: one object, which the writer replaces and each reader reads, and the count of its
+    writes, which a reader that takes each value once, a peer's end, compares.
+    """
 
-    __slots__ = ("value",)
+    __slots__ = ("value", "writes")
 
     def __init__(self, value: Any = None):
         self.value = value
+        self.writes = 0
 
 
 class Signal:
@@ -88,6 +91,7 @@ class Signal:
             self.buffer.assign(np.asarray(value, dtype=dtype))
         else:
             self.buffer.value = value
+            self.buffer.writes += 1
 
     def _allocate(self) -> Any:
         """A new buffer from the signal's type: zeros on the current Warp device, or an empty host buffer."""

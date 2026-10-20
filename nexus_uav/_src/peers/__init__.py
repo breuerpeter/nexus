@@ -74,8 +74,9 @@ class Peer(Protocol):
     whose components write that signal, one or more, as a camera's USB cable plugs into a companion computer. The
     loop end of that link is the run's: once per tick, after the writers, it hands the peer each writer's value
     through ``take(signal, writer, value)``, with the writer's instance name, which a peer with an input states.
-    The peer decides what it makes of a value and how it carries it. A value with no fixed width stays on its
-    signal until the next, so a peer sends a frame once, by its time. A ``take`` that raises fails the run, and
+    The peer decides what it makes of a value and how it carries it. The loop hands a host value once, on the
+    write that produced it, so a frame reaches the peer at the camera's rate, and a device value every tick,
+    since a kernel writes it every tick. A ``take`` that raises fails the run, and
     the error names the peer.
     """
 
