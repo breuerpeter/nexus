@@ -147,6 +147,10 @@ line one. A project overrides it with `nexus.<peer>.ref` beside its catalog, in 
 the variable `NEXUS_<PEER>_REF` overrides both, where `<peer>` is the folder name of the peer. The run's
 receipt records each pin and where it came from. A peer of your own follows the same rule: its
 package ships `nexus.<peer>.ref` beside its catalog. A peer that no source pins runs with none.
+Every run fails on a pin file that names no peer the install knows, so a typo can't go unseen. The
+install knows a peer by its schema: its type in `plugInfo.json` names it, `"nexusPeer": "radio"`, as
+`NexusPx4SitlAPI` names `px4_sitl`. A run that doesn't start your peer then accepts its pin file and
+imports nothing of its class.
 
 A peer whose process is one container subclasses
 [`ContainerPeer`](../reference/api/components.md), as the shipped peers do. The subclass states

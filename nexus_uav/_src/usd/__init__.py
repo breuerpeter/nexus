@@ -38,6 +38,17 @@ def register_plugins() -> None:
     Plug.Registry().RegisterPlugins(paths)
 
 
+def peer_names() -> tuple[str, ...]:
+    """The name of each peer whose schema a registered plugin defines: the `nexusPeer` its type states in
+    `plugInfo.json`, as `px4_sitl` for `NexusPx4SitlAPI`. OpenUSD reads it from the plugin, so the call imports no
+    peer's class.
+    """
+    from pxr import Plug
+
+    types = [info for plugin in Plug.Registry().GetAllPlugins() for info in plugin.metadata.get("Types", {}).values()]
+    return tuple(sorted({info["nexusPeer"] for info in types if "nexusPeer" in info}))
+
+
 def schema_names() -> tuple[str, ...]:
     """The identifiers of every applied API schema the nexus plugin defines, from its `plugInfo.json`."""
     (plugin,) = json.loads((_PLUGIN / "plugInfo.json").read_text())["Plugins"]
