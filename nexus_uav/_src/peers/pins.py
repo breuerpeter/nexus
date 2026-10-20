@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict
 
 if TYPE_CHECKING:
-    from nexus_uav._src.config.catalog import CatalogLayer
+    from nexus_uav._src.config.catalog import CatalogSource
 
 _PEERS = Path(__file__).parent
 
@@ -48,20 +48,20 @@ def shipped() -> list[str]:
     return sorted(folder.name for folder in _PEERS.iterdir() if (folder / "pin.ref").is_file())
 
 
-def _pin_folders(layers: Sequence[CatalogLayer]) -> list[CatalogLayer]:
-    """The layers that can hold pin files: every one but the bundled catalog, whose pins live in the peers' folders."""
-    return [layer for layer in layers if layer.kind != "bundled"]
+def _pin_folders(sources: Sequence[CatalogSource]) -> list[CatalogSource]:
+    """The sources that can hold pin files: every one but the bundled catalog, whose pins live in the peers' folders."""
+    return [source for source in sources if source.kind != "bundled"]
 
 
-def resolve(name: str, layers: Sequence[CatalogLayer] = ()) -> PeerPin | None:
-    """Peer ``name``'s pin and its source: the variable, else the pin file of the top layer that holds one,
+def resolve(name: str, sources: Sequence[CatalogSource] = ()) -> PeerPin | None:
+    """Peer ``name``'s pin and its source: the variable, else the pin file of the top source that holds one,
     else the pin file the peer ships, or ``None`` for a peer, a project's own, that no source pins. The variable
     wins whenever the environment holds it, empty or not, so the peer's form check fails on it rather than fly a
     pin the variable meant to replace.
 
     Args:
         name: The peer's folder name, such as ``px4_sitl``.
-        layers: The catalog layers the run loaded, in load order; none for a run handed its catalog.
+        sources: The catalog sources the run loaded, in load order; none for a run handed its catalog.
 
     Raises:
         ValueError: Two installed packages ship a pin file for the peer and neither a project file nor the
@@ -70,9 +70,9 @@ def resolve(name: str, layers: Sequence[CatalogLayer] = ()) -> PeerPin | None:
     if (value := os.environ.get(variable(name))) is not None:
         return PeerPin(ref=value.strip(), source=variable(name))
     filename = f"nexus.{name}.ref"
-    holding = [layer for layer in _pin_folders(layers) if (layer.path.parent / filename).is_file()]
+    holding = [source for source in _pin_folders(sources) if (source.path.parent / filename).is_file()]
     if len(holding) > 1 and holding[-1].kind == "package":
-        packages = " and ".join(layer.name for layer in holding)
+        packages = " and ".join(source.name for source in holding)
         raise ValueError(
             f"peer {name!r}: installed packages {packages} each ship {filename}, and no order between them means "
             f"anything; a project's {filename} or {variable(name)} picks the pin"
@@ -84,15 +84,15 @@ def resolve(name: str, layers: Sequence[CatalogLayer] = ()) -> PeerPin | None:
     return PeerPin(ref=lines[0].strip() if lines else "", source=str(source))
 
 
-def check(layers: Sequence[CatalogLayer], names: list[str]) -> None:
-    """Fail on a pin file beside a catalog of ``layers`` that names no peer of ``names``.
+def check(sources: Sequence[CatalogSource], names: list[str]) -> None:
+    """Fail on a pin file beside a catalog of ``sources`` that names no peer of ``names``.
 
     Raises:
         ValueError: A ``nexus.<name>.ref`` beside a catalog names no peer; the message names the
             file and the peer names a pin file takes.
     """
-    for layer in _pin_folders(layers):
-        for path in sorted(layer.path.parent.glob("nexus.*.ref")):
+    for source in _pin_folders(sources):
+        for path in sorted(source.path.parent.glob("nexus.*.ref")):
             if path.name.removeprefix("nexus.").removesuffix(".ref") not in names:
                 accepted = ", ".join(f"nexus.{n}.ref" for n in sorted(names))
                 raise ValueError(f"{path} names no peer; a pin file beside a catalog is one of {accepted}")

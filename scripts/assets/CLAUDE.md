@@ -1,6 +1,7 @@
 Hosted assets are content-addressed on a flat scheme,
 `<base>/assets/<kind>/<name>-<sha256>.<ext>`, where `<kind>` is `usd/vehicles` or `usd/scenes` for a
-Universal Scene Description (USD) file and its `.glb` preview, and `policies` for an example's
+Universal Scene Description (USD) file and its `.glb` preview, `usd/layers` for a layer a composed
+vehicle entry stacks over its base, and `policies` for an example's
 exported `.pt` policy. `<name>` is the file's stem and `<base>` is what a catalog declares in its
 `assets` block. The bucket behind the published base is a setting, `$NEXUS_BUCKET`, rather than a
 line here, so no checkout carries an account's name.
@@ -17,11 +18,13 @@ line here, so no checkout carries an account's name.
   on both sides, and the working folder isn't. `convert_urdf.py` isn't one of them: it runs by
   hand inside an Isaac Lab image, not through `kit_container.py`.
 - Uploads are **manual**. Prepare an asset with
-  `uv run python scripts/assets/prepare_asset_upload.py {--vehicle|--scene} <usd> [--rotate-x 180]`.
+  `uv run python scripts/assets/prepare_asset_upload.py {--vehicle|--scene|--layer} <usd> [--rotate-x 180]`.
   It sha256s the USD, prints where to upload it and the `nexus_uav/_src/config/catalog.yaml`
   snippet, and, for vehicles only, converts to a preview `.glb` in `assets/local/` via headless
-  `bpy`. Pass `--rotate-x 180` for assets authored "up = -Z" such as Astro Max. Scenes get no
-  `.glb`.
+  `bpy`. Pass `--rotate-x 180` for assets authored "up = -Z" such as Astro Max. Scenes and layers
+  get no `.glb`. A composed entry's `.glb` comes from `--composed <entry>` once its layers are up.
+  It fetches the base and layers and hashes the composed stage with `stage_hash`. The `.glb` key is
+  the entry's name and that hash, as `docs/hooks/vehicle_previews.py` derives it.
 - A vehicle re-pin that changes a flown value changes the per-GPU trajectory hashes in
   `tests/build/test_stages.py`. It's a `gpu` test: it skips without CUDA, and it fails gpu-pytest on
   a GPU model with no recorded hash. Record the local GPU's hash from

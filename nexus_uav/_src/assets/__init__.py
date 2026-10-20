@@ -6,6 +6,6 @@ the upload target and the glb, is a prep step done out of band by
 ``scripts/assets/prepare_asset_upload.py``; uploads are manual.
 """
 
-from .resolver import default_cache, fetch, resolve, sha256_file
+from .resolver import default_cache, fetch, resolve, sha256_file, stack_layers, stage_hash
 
-__all__ = ["default_cache", "fetch", "resolve", "sha256_file"]
+__all__ = ["default_cache", "fetch", "resolve", "sha256_file", "stack_layers", "stage_hash"]

@@ -64,7 +64,10 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
   filters out underscore-prefixed members and the `nexus_uav._src` layout, so document the curated
   public API, not internals.
 - **Vehicle and scene USDs are content-addressed, hosted assets.** The catalog is
-  `nexus_uav/_src/config/catalog.yaml`. The runtime resolver, `nexus_uav._src.assets.resolver`,
+  `nexus_uav/_src/config/catalog.yaml`. A vehicle entry is flat, a `usd`, or composed, a `base` entry
+  plus `layers`, each a hosted USD file the resolver stacks over the base, the first listed
+  strongest. `astro_max_fpv` is `astro_max_base` plus a camera layer. The runtime resolver,
+  `nexus_uav._src.assets.resolver`,
   fetches `{url, sha256}` to a verified cache at `assets/cache/`, which `$NEXUS_ASSET_CACHE`
   overrides. Read `scripts/assets/CLAUDE.md` before adding or updating an asset.
 - **A recorded row's entity path names who wrote it**: the process, `sim` or a peer's folder name,

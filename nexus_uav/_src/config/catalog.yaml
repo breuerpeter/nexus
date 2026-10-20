@@ -1,17 +1,18 @@
 # catalog.yaml — the checked-in vehicle/scene catalog.
 #
 # S3 holds only content-addressed blobs; this file is the semantic <-> content binding. Every
-# vehicle variant is a name, its key, plus its USD, which declares its controller. A launch names the variant it flies,
+# vehicle variant is a name, its key, plus its USD, which declares its controller, or a `base`, another
+# entry's key, plus the `layers` stacked over it, the first listed strongest. A launch names the variant it flies,
 # `--vehicle astro_max_fpv`, and the scene it flies in, `--scene empty`. The name is what the run's
 # receipt records.
 #
 # Assets are referenced by `{name, sha256}`, completed against `assets.base` below into a
-# self-contained `.usdz` at <base>/assets/usd/{vehicles,scenes}/<name>-<sha256>.usdz; see
+# self-contained `.usdz` at <base>/assets/usd/{vehicles,scenes,layers}/<name>-<sha256>.usdz; see
 # nexus_uav/_src/assets/resolver.py, which also places an example's hosted policy at
 # <base>/assets/policies/<name>-<sha256>.pt. An entry may carry a full `url` instead, which is how a catalog
-# names a blob hosted somewhere else, or a local file. Each USD declares
+# names a blob hosted somewhere else, or a local file. Each vehicle USD declares
 # its rotors, a `NexusPropellerAPI` propeller on each rotor body beside the `NewtonActuator` motor on its
-# joint, AND — for the FPV mods — an authored FpvCam the Kit render peer renders.
+# joint. The fpv_camera layer adds the FpvCam the Kit render peer renders under the body.
 #
 # Each vehicle USD declares PX4 with `NexusPx4API_1` on its controller's scope, the Scope
 # /astro_max/Controller, and the PX4 SITL peer, which the run starts, with `NexusPx4SitlAPI` on a Scope of
@@ -29,7 +30,9 @@ vehicles:
     usd: { name: astro_max_base, sha256: 4148dd38579c3fc6d8be3a4d052a1cd5c2bfd6fd36bac186df640e52e2eb5d4b }
 
   astro_max_fpv:
-    usd: { name: astro_max_fpv, sha256: 3408245bdbb747820e87f3b711ee0d50ad8732be3c01d601d743a66a526ea7e7 }
+    base: astro_max_base
+    layers:
+      - { name: fpv_camera, sha256: 5cc47d56dea67f04fc3018fd8c73cc367798ec55849257603dec186eac3a6180 }
 
 # The scene USD is the single authority on what it is: authored UsdPhysics collision schemas ->
 # simulation geometry (ModelBuilder); no physics schemas -> visual-only; and since the stage-5

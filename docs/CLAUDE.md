@@ -6,9 +6,11 @@
 - **3D vehicle previews.** Vehicle pages embed interactive `<model-viewer>` previews, vendored
   under `javascripts/`. The hook `hooks/vehicle_previews.py` generates them from
   `nexus_uav/_src/config/catalog.yaml` wherever it finds a `<!-- model-preview: <name> -->`
-  marker. `<name>` is the Universal Scene Description (USD) filename stem, for example
-  `astro_max_fpv`. The `.glb` is the content-addressed sibling of the vehicle's USD on
-  CloudFront. When a local copy exists under `assets/local/` at the repo root, the site serves
+  marker. `<name>` is the vehicle entry's key, which is the Universal Scene Description (USD)
+  filename stem for a flat entry, for example `astro_max_base`. The `.glb` is the content-addressed
+  sibling of the vehicle's USD on CloudFront. A composed entry's `.glb` takes its name and the
+  hash of its composed stage as its key, so the hook fetches its base and layers into the asset cache
+  to derive it. When a local copy exists under `assets/local/` at the repo root, the site serves
   that copy instead: a preview before publishing, injected into the site without writing into
   `docs/`.
 - **Benchmark trends.** `javascripts/bench-trends.js` draws the Benchmarking page's trend panels

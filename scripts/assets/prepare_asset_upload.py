@@ -1,5 +1,5 @@
-"""Prepare a vehicle or scene Universal Scene Description (USD) for **manual** upload to
-content-addressed asset storage.
+"""Prepare a vehicle, scene or layer Universal Scene Description (USD) for **manual** upload to
+content-addressed asset storage, or a composed vehicle entry's preview.
 
 This does everything *except* upload; you upload by hand, out of band:
 
@@ -8,6 +8,7 @@ This does everything *except* upload; you upload by hand, out of band:
 
        <base>/assets/usd/vehicles/<name>-<sha256>.usdz     (a --vehicle asset)
        <base>/assets/usd/scenes/<name>-<sha256>.usdz       (a --scene asset)
+       <base>/assets/usd/layers/<name>-<sha256>.usdz       (a --layer asset)
 
    ``<name>`` is the USD's filename stem. Hosted assets are self-contained ``.usdz``, one blob and
    one sha256, so the hash sits in the key and nothing ever overwrites the object: a
@@ -18,14 +19,21 @@ This does everything *except* upload; you upload by hand, out of band:
    companion, written next to the USD under ``assets/local/`` so the docs preview works before
    you publish the asset; ``docs/hooks/vehicle_previews.py`` serves that local copy when present,
    and this writes nothing into ``docs/``. Its upload key is the ``.glb`` sibling of the USD key.
-   **Scenes get no glb.**
+   **Scenes and layers get no glb.**
 4. Print the files to upload, their upload keys + CloudFront URLs, and the `catalog.yaml`
    snippet to paste in.
 
+A **composed** entry, one that names a base and layers, has no file of its own to upload. ``--composed
+<entry>`` fetches its base and layers, hashes the composed stage, converts the composition to its
+``.glb`` and prints the key, ``usd/vehicles/<entry>-<stage hash>.glb``, which the docs preview hook
+derives the same way. Run it after the layers are up and the entry is in the catalog.
+
 Usage, run in the project env so the sha helper imports:
 
-    uv run python scripts/assets/prepare_asset_upload.py --vehicle assets/local/astro_max_fpv.usdz [--rotate-x 180]
+    uv run python scripts/assets/prepare_asset_upload.py --vehicle assets/local/astro_max_base.usdz [--rotate-x 180]
     uv run python scripts/assets/prepare_asset_upload.py --scene   assets/local/slalom.usdz
+    uv run python scripts/assets/prepare_asset_upload.py --layer   assets/local/fpv_camera.usdz
+    uv run python scripts/assets/prepare_asset_upload.py --composed astro_max_fpv [--rotate-x 180]
 
 The glb conversion needs Blender-as-a-module, `bpy`, whose wheels pin a specific
 Python minor, cp311, that differs from the project interpreter, so this script re-invokes
@@ -186,12 +194,40 @@ def _catalog_base() -> str:
     return load_catalog().assets.base or ""
 
 
-def _catalog_snippet(name: str, sha: str, url: str, compact: bool) -> str:
+def _catalog_snippet(kind_dir: str, name: str, sha: str, url: str, compact: bool) -> str:
     # An asset under the catalog's own base is compact, because that base completes it. One published
     # anywhere else carries its full URL, which is how a catalog names a blob hosted elsewhere.
     ref = f"{{ name: {name}, sha256: {sha} }}" if compact else f'{{ url: "{url}", sha256: {sha} }}'
+    if kind_dir == "layers":  # a layer is a line in a composed entry's list, under the base it stacks over
+        return f"  <entry>:\n    base: <vehicle>\n    layers:\n      - {ref}"
     # A scene's PhysicsScene authors its geodetic origin, so a vehicle and a scene take one snippet.
     return f"  {name}:\n    usd: {ref}"
+
+
+def _prepare_composed(entry: str, rotate_x: float, base_override: str | None) -> int:
+    """The preview of a composed entry: fetch its base and layers, hash the composed stage, convert the glb."""
+    from nexus_uav._src.assets.resolver import hosted_url, stage_hash
+    from nexus_uav._src.config import load_catalog
+
+    catalog = load_catalog()
+    if catalog.vehicles[entry].base is None:
+        raise SystemExit(f"{entry} is a flat entry: prepare its file with --vehicle")
+    _, layers = catalog.stack(entry)  # any number, zero included: the hash is the composed stage's either way
+    root = catalog.fetch_vehicle(entry)  # the root file that stacks the layers over the base, in the cache
+    sha = stage_hash(root)
+    base = base_override or _catalog_base()
+    glb_url = hosted_url(base, "usd/vehicles", entry, sha, "glb")
+    glb_local = LOCAL_ASSETS / f"{entry}-{sha}.glb"
+    print("kind      composed vehicle")
+    print(f"name      {entry}")
+    print(f"stage sha256    {sha}")
+    print(f"layers    {', '.join(layer.sha256 for layer in layers)}")
+    print("\nupload to:")
+    print(f"  {glb_local}  ->  {glb_url}")
+    print("\nconverting to glb (isolated bpy env) ...")
+    _reinvoke_convert(root, glb_local, rotate_x)
+    print(f"  glb  -> {glb_url}  (local preview copy: {glb_local.relative_to(ROOT)})")
+    return 0
 
 
 def main(argv: list[str]) -> int:
@@ -199,6 +235,10 @@ def main(argv: list[str]) -> int:
     kind = parser.add_mutually_exclusive_group(required=True)
     kind.add_argument("--vehicle", type=Path, metavar="USD", help="prepare a vehicle asset (USD + glb preview)")
     kind.add_argument("--scene", type=Path, metavar="USD", help="prepare a scene asset (USD only, no glb)")
+    kind.add_argument("--layer", type=Path, metavar="USD", help="prepare a layer asset (USD only, no glb)")
+    kind.add_argument(
+        "--composed", metavar="ENTRY", help="prepare a composed catalog entry's glb preview, keyed by its stage hash"
+    )
     parser.add_argument(
         "--rotate-x", type=float, default=0.0, metavar="DEG",
         help="glb: rotate about world X (180 for assets authored 'up = -Z', e.g. Astro Max)",
@@ -209,8 +249,10 @@ def main(argv: list[str]) -> int:
     )  # fmt: skip
     args = parser.parse_args(argv)
 
+    if args.composed:
+        return _prepare_composed(args.composed, args.rotate_x, args.base)
     is_vehicle = args.vehicle is not None
-    usd: Path = args.vehicle if is_vehicle else args.scene
+    usd: Path = args.vehicle or args.scene or args.layer
     if not usd.exists():
         parser.error(f"input not found: {usd}")
     if usd.suffix != ".usdz":
@@ -218,7 +260,7 @@ def main(argv: list[str]) -> int:
 
     from nexus_uav._src.assets.resolver import hosted_url, sha256_file  # reuse the scheme + hasher, no duplicate
 
-    kind_dir = "vehicles" if is_vehicle else "scenes"
+    kind_dir = "vehicles" if is_vehicle else "scenes" if args.scene else "layers"
     name = usd.stem  # <name> is the filename stem; the catalog stores just this + the sha
     sha = sha256_file(usd)
     catalog_base = _catalog_base()
@@ -244,8 +286,8 @@ def main(argv: list[str]) -> int:
         if not compact:
             print("  NOTE: the docs preview reads the local copy until this base is one the site can reach.")
 
-    print(f"\ncatalog.yaml snippet (add under `{kind_dir}:`):\n")
-    print(_catalog_snippet(name, sha, usd_url, compact))
+    print(f"\ncatalog.yaml snippet (add under `{'vehicles' if kind_dir == 'layers' else kind_dir}:`):\n")
+    print(_catalog_snippet(kind_dir, name, sha, usd_url, compact))
     return 0
 
 

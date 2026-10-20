@@ -255,3 +255,252 @@ def test_a_layered_scene_opens_with_the_scenes_units_up_axis_and_render_recipe(t
         UsdGeom.GetStageUpAxis(stage),
         dict(stage.GetRootLayer().customLayerData.get("renderSettings", {})),
     ) == (1.0, "Z", {"rtx:post:lensFlares:enabled": True})
+
+
+# A catalog vehicle entry composes a base vehicle and its layers, #331. Each test writes small real USD
+# files and serves them by `file://` URL, so the run opens the composed stage as it would a hosted one.
+
+_BASE_USD = (
+    "#usda 1.0\n"
+    '(\n    defaultPrim = "veh"\n    metersPerUnit = 1\n    upAxis = "Z"\n)\n\n'
+    'def Xform "veh"\n{\n    def Xform "body"\n    {\n        custom int probe = 0\n    }\n}\n'
+)
+
+
+def _probe_layer(value: int, prim: str | None = None) -> str:
+    """A layer that sets `/veh/body.probe` to *value*, and defines a camera *prim* under the body when named."""
+    camera = (
+        f'        def Camera "{prim}" (\n            apiSchemas = ["NexusCameraAPI"]\n        )\n'
+        "        {\n            int nexus:width = 640\n            int nexus:height = 480\n"
+        "            float nexus:rate = 10\n        }\n"
+        if prim
+        else ""
+    )
+    return f'#usda 1.0\n\nover "veh"\n{{\n    over "body"\n    {{\n        custom int probe = {value}\n{camera}    }}\n}}\n'
+
+
+def _usd_asset(tmp_path, name, text):
+    return _file_asset(tmp_path, name, text.encode())
+
+
+def _composed_catalog(tmp_path, **vehicles):
+    """A catalog whose vehicles are *vehicles*, each an entry dict, with one scene, `empty`, a real USD file."""
+    scene = _usd_asset(
+        tmp_path, "scene.usda", '#usda 1.0\n(\n    defaultPrim = "World"\n)\n\ndef Xform "World"\n{\n}\n'
+    )
+    return Catalog.from_dict({"vehicles": vehicles, "scenes": {"empty": {"usd": scene}}})
+
+
+def _stage(tmp_path, catalog, vehicle, layer=None):
+    """The vehicle stage a run of *vehicle* opens, resolved with fetch into a cache under *tmp_path*."""
+    from pxr import Usd
+
+    launch = LaunchConfig().set_vehicle(vehicle).set_scene("empty")
+    launch.layer = layer
+    resolved = resolve(launch, catalog, fetch=True, cache_dir=tmp_path / "cache")
+    return Usd.Stage.Open(resolved.vehicle_usd_path), resolved.tested_config
+
+
+def test_a_vehicle_entry_names_a_base_and_layers_and_a_run_of_it_flies_the_composition(tmp_path):
+    """A vehicle entry names a base by its catalog name and layers by `{name, sha256}`, and a run of it
+    flies the composition.
+
+    Given a catalog with a base vehicle and an entry naming it plus a layer that adds a camera prim, when a
+    run resolves the entry with fetch, then the vehicle USD the run opens holds the camera with its applied
+    schema and every prim of the base.
+    """
+    pytest.importorskip("pxr")
+    catalog = _composed_catalog(
+        tmp_path,
+        base={"usd": _usd_asset(tmp_path, "base.usda", _BASE_USD)},
+        fpv={"base": "base", "layers": [_usd_asset(tmp_path, "camera.usda", _probe_layer(0, "cam"))]},
+    )
+
+    stage, _ = _stage(tmp_path, catalog, "fpv")
+    cam = stage.GetPrimAtPath("/veh/body/cam")
+
+    assert (
+        cam.GetTypeName(),
+        "NexusCameraAPI" in cam.GetAppliedSchemas(),
+        stage.GetPrimAtPath("/veh/body").IsValid(),
+    ) == ("Camera", True, True)
+
+
+def test_the_first_listed_layer_is_strongest(tmp_path):
+    """The first listed layer is strongest.
+
+    Given an entry with two layers that author one attribute to different values, when the run resolves,
+    then the stage reads the first layer's value.
+    """
+    pytest.importorskip("pxr")
+    catalog = _composed_catalog(
+        tmp_path,
+        base={"usd": _usd_asset(tmp_path, "base.usda", _BASE_USD)},
+        stacked={
+            "base": "base",
+            "layers": [
+                _usd_asset(tmp_path, "first.usda", _probe_layer(1)),
+                _usd_asset(tmp_path, "second.usda", _probe_layer(2)),
+            ],
+        },
+    )
+
+    stage, _ = _stage(tmp_path, catalog, "stacked")
+
+    assert stage.GetAttributeAtPath("/veh/body.probe").Get() == 1
+
+
+def test_the_receipt_records_the_base_and_each_layer(tmp_path):
+    """The receipt records the base and each layer.
+
+    Given a composed entry, when the run resolves, then the receipt carries the base's URL and sha256 and each
+    layer's in the entry's order, and `--vehicle <path>` and a flat entry record as today.
+    """
+    base = _usd_asset(tmp_path, "base.usda", _BASE_USD)
+    first = _usd_asset(tmp_path, "first.usda", _probe_layer(1))
+    second = _usd_asset(tmp_path, "second.usda", _probe_layer(2))
+    catalog = _composed_catalog(tmp_path, base={"usd": base}, stacked={"base": "base", "layers": [first, second]})
+    local = tmp_path / "local.usda"
+    local.write_text(_BASE_USD)
+
+    def receipt(vehicle):
+        return resolve(LaunchConfig().set_vehicle(vehicle).set_scene("empty"), catalog, fetch=False).tested_config
+
+    composed, flat, path = receipt("stacked"), receipt("base"), receipt(str(local))
+
+    assert (
+        (composed.vehicle_usd.url, composed.vehicle_usd.sha256),
+        [(layer.url, layer.sha256) for layer in composed.vehicle_layers],
+        (flat.vehicle_usd.url, flat.vehicle_layers),
+        (path.vehicle_usd.url, path.vehicle_layers),
+    ) == (
+        (base["url"], base["sha256"]),
+        [(first["url"], first["sha256"]), (second["url"], second["sha256"])],
+        (base["url"], []),
+        (local.as_uri(), []),
+    )
+
+
+def test_a_launch_layer_composes_over_the_composed_entry(tmp_path):
+    """A launch `--layer` composes over the composed entry.
+
+    Given a composed entry whose layer authors a value and a launch layer that authors it too, when the run
+    resolves, then the stage reads the launch layer's value and the receipt records the launch layer beside
+    the entry's.
+    """
+    pytest.importorskip("pxr")
+    entry_layer = _usd_asset(tmp_path, "entry.usda", _probe_layer(1))
+    catalog = _composed_catalog(
+        tmp_path,
+        base={"usd": _usd_asset(tmp_path, "base.usda", _BASE_USD)},
+        stacked={"base": "base", "layers": [entry_layer]},
+    )
+    launch_layer = tmp_path / "launch.usda"
+    launch_layer.write_text(_probe_layer(9))
+
+    stage, receipt = _stage(tmp_path, catalog, "stacked", layer=str(launch_layer))
+
+    assert (
+        stage.GetAttributeAtPath("/veh/body.probe").Get(),
+        receipt.layer.sha256,
+        [layer.sha256 for layer in receipt.vehicle_layers],
+    ) == (9, hashlib.sha256(launch_layer.read_bytes()).hexdigest(), [entry_layer["sha256"]])
+
+
+def test_a_base_may_itself_be_a_composed_entry(tmp_path):
+    """A base can itself be a composed entry.
+
+    Given entry B naming composed entry A as its base plus a layer of its own, when a run of B resolves, then
+    the stage holds A's layer's prim and B's, and B's layer wins where both author one value.
+    """
+    pytest.importorskip("pxr")
+    catalog = _composed_catalog(
+        tmp_path,
+        base={"usd": _usd_asset(tmp_path, "base.usda", _BASE_USD)},
+        a={"base": "base", "layers": [_usd_asset(tmp_path, "a.usda", _probe_layer(1, "cam_a"))]},
+        b={"base": "a", "layers": [_usd_asset(tmp_path, "b.usda", _probe_layer(2, "cam_b"))]},
+    )
+
+    stage, _ = _stage(tmp_path, catalog, "b")
+
+    assert (
+        stage.GetPrimAtPath("/veh/body/cam_a").IsValid(),
+        stage.GetPrimAtPath("/veh/body/cam_b").IsValid(),
+        stage.GetAttributeAtPath("/veh/body.probe").Get(),
+    ) == (True, True, 2)
+
+
+BUNDLED_ASTRO_BASE = (
+    "https://d2837jz4fvtxko.cloudfront.net/public/assets/usd/vehicles/"
+    "astro_max_base-4148dd38579c3fc6d8be3a4d052a1cd5c2bfd6fd36bac186df640e52e2eb5d4b.usdz"
+)
+
+PROJECT_OVER_BUNDLED = """\
+assets:
+  base: s3://example-bucket/catalog
+vehicles:
+  payload_vehicle:
+    base: astro_max_base
+    layers:
+      - { name: payload, sha256: abc }
+"""
+
+
+def test_a_projects_entry_names_a_bundled_vehicle_as_its_base(tmp_path, monkeypatch):
+    """A project's entry names a bundled vehicle as its base.
+
+    Given a project catalog with its own `assets.base` whose entry names a bundled vehicle as base plus a
+    compact layer, when the run resolves, then the base fetches from the bundled catalog's URL and the layer
+    from the project's.
+    """
+    (tmp_path / "nexus.catalog.yaml").write_text(PROJECT_OVER_BUNDLED)
+    monkeypatch.chdir(tmp_path)
+
+    tc = resolve(LaunchConfig().set_vehicle("payload_vehicle").set_scene("empty"), fetch=False).tested_config
+
+    assert (tc.vehicle_usd.url, [layer.url for layer in tc.vehicle_layers]) == (
+        BUNDLED_ASTRO_BASE,
+        ["s3://example-bucket/catalog/assets/usd/layers/payload-abc.usdz"],
+    )
+
+
+def test_a_composed_stage_hashes_the_same_from_any_cache(tmp_path):
+    """A composed stage hashes the same from any cache, and differently from its base alone.
+
+    Given one composed entry resolved into two caches, when each root hashes, then the two hashes are equal,
+    and the base's file alone hashes to another value.
+    """
+    pytest.importorskip("pxr")
+    from nexus_uav._src.assets import stage_hash
+
+    catalog = _composed_catalog(
+        tmp_path,
+        base={"usd": _usd_asset(tmp_path, "base.usda", _BASE_USD)},
+        fpv={"base": "base", "layers": [_usd_asset(tmp_path, "camera.usda", _probe_layer(0, "cam"))]},
+    )
+    launch = LaunchConfig().set_vehicle("fpv").set_scene("empty")
+    roots = [resolve(launch, catalog, fetch=True, cache_dir=tmp_path / f"cache{i}").vehicle_usd_path for i in (1, 2)]
+
+    hashes = [stage_hash(root) for root in roots]
+
+    assert (hashes[0] == hashes[1], hashes[0] == stage_hash(tmp_path / "base.usda")) == (True, False)
+
+
+def test_a_layer_whose_bytes_mismatch_its_sha256_fails_like_a_vehicles(tmp_path):
+    """A layer whose bytes mismatch its sha256 fails as a vehicle's does.
+
+    Given a composed entry whose layer's hosted bytes differ from its sha256, when the run resolves with
+    fetch, then the fetch fails and names the layer.
+    """
+    layer = {**_usd_asset(tmp_path, "layer.usda", _probe_layer(1)), "sha256": "0" * 64}
+    catalog = _composed_catalog(
+        tmp_path,
+        base={"usd": _usd_asset(tmp_path, "base.usda", _BASE_USD)},
+        stacked={"base": "base", "layers": [layer]},
+    )
+    launch = LaunchConfig().set_vehicle("stacked").set_scene("empty")
+
+    with pytest.raises(ValueError, match="hash mismatch") as e:
+        resolve(launch, catalog, fetch=True, cache_dir=tmp_path / "cache")
+
+    assert layer["url"] in str(e.value)

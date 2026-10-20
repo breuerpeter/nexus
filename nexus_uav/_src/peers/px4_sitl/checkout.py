@@ -28,7 +28,7 @@ from nexus_uav._src.peers import pins
 from nexus_uav._src.peers.pins import PeerPin
 
 if TYPE_CHECKING:
-    from nexus_uav._src.config.catalog import CatalogLayer
+    from nexus_uav._src.config.catalog import CatalogSource
 
 NAME = "px4_sitl"  # the peer's folder name, which names its pin file and its variable
 _AIRFRAME = Path("ROMFS/px4fmu_common/init.d-posix/airframes/80000_none_astro_max")
@@ -73,17 +73,17 @@ def parse(pin: PeerPin) -> Pin | Path:
     return Pin(repo, sha)
 
 
-def resolve(layers: Sequence[CatalogLayer] = ()) -> PeerPin:
+def resolve(sources: Sequence[CatalogSource] = ()) -> PeerPin:
     """The peer's pin, checked, through :func:`nexus_uav._src.peers.pins.resolve`; a checkout's pin
     carries its checked-out commit.
 
     Args:
-        layers: The catalog layers the run loaded, in load order; none for a run handed its catalog.
+        sources: The catalog sources the run loaded, in load order; none for a run handed its catalog.
 
     Raises:
         ValueError: The pin isn't in the form :func:`parse` takes, or two installed packages pin it.
     """
-    return check(pins.resolve(NAME, layers))
+    return check(pins.resolve(NAME, sources))
 
 
 def check(pin: PeerPin) -> PeerPin:

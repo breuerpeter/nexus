@@ -27,7 +27,8 @@ import yaml
 from mkdocs.structure.files import File
 from mkdocs.utils import get_relative_url
 
-from nexus_uav._src.assets.resolver import hosted_url
+from nexus_uav._src.assets.resolver import hosted_url, stage_hash
+from nexus_uav._src.config import Catalog
 
 _REPO = Path(__file__).resolve().parents[2]
 _CATALOG = _REPO / "nexus_uav/_src/config/catalog.yaml"
@@ -37,19 +38,26 @@ _MARKER = re.compile(r"(?P<indent>[ \t]*)<!--\s*model-preview:\s*(?P<name>[\w.-]
 
 
 def _glb_targets() -> dict[str, tuple[str, str]]:
-    """Map asset name -> (cloudfront_glb_url, glb_basename) for every catalog vehicle.
+    """Map vehicle name -> (cloudfront_glb_url, glb_basename) for every catalog vehicle.
 
     A compact entry stores ``{name, sha256}``; the glb is the content-addressed sibling of the
     vehicle's USD, with the same key and the ``.glb`` suffix, derived against the catalog's own base
-    through the shared ``hosted_url`` scheme.
+    through the shared ``hosted_url`` scheme. A composed entry, a base plus layers, has no file of its
+    own: its glb takes the entry's name and the hash of its composed stage as its key, which takes a
+    fetch of its base and layers into the asset cache, as ``prepare_asset_upload.py --composed`` keys
+    the upload.
     """
     data = yaml.safe_load(_CATALOG.read_text())
     base = (data.get("assets") or {}).get("base")
     targets: dict[str, tuple[str, str]] = {}
-    for vehicle in (data.get("vehicles") or {}).values():
+    if not base:
+        return targets
+    for entry, vehicle in (data.get("vehicles") or {}).items():
         usd = vehicle.get("usd") or {}
         name, sha = usd.get("name"), usd.get("sha256")
-        if not (name and sha and base):  # an entry with a URL of its own carries no derivable preview
+        if vehicle.get("base"):
+            name, sha = entry, stage_hash(Catalog.from_yaml(_CATALOG).fetch_vehicle(entry))
+        if not (name and sha):  # an entry with a URL of its own carries no derivable preview
             continue
         targets.setdefault(name, (hosted_url(base, "usd/vehicles", name, sha, "glb"), f"{name}-{sha}.glb"))
     return targets
@@ -78,7 +86,7 @@ def _embed(src: str, name: str) -> str:
         '  environment-image="neutral" exposure="1.1"\n'
         '  shadow-intensity="1" shadow-softness="0.8"\n'
         '  style="width:100%;height:480px;border-radius:8px;'
-        "background:radial-gradient(circle at 50% 35%,#f5f6f8 0%,#d6dadf 65%,#c2c6cc 100%);\">\n"
+        'background:radial-gradient(circle at 50% 35%,#f5f6f8 0%,#d6dadf 65%,#c2c6cc 100%);">\n'
         "</model-viewer>\n</div>"
     )
 

@@ -28,10 +28,20 @@ same path, `sim.read(path)`, the sim time through `sim.time`, and the port map t
 ### Catalog
 
 The list of named vehicles and scenes a run resolves by name, the class `Catalog`. Each entry pins
-a content-addressed USD file by its `url` and `sha256`. A run loads catalogs in layers: the one
+a content-addressed USD file by its `url` and `sha256`, or names a base entry and the
+[layers](#layer) over it. A run loads its catalogs in order: the one
 bundled in the wheel, `nexus_uav/_src/config/catalog.yaml`, then the catalog of each installed
 package that adds one, then a project's `nexus.catalog.yaml` or the file `--catalog` names. Each
-extends the layers below it. [Your own assets](../guide/your-own-assets.md) says how a run finds them.
+extends the ones before it. [Your own assets](../guide/your-own-assets.md) says how a run finds them.
+
+### Layer
+
+A small USD file a run stacks over a vehicle or a scene, as a USD sublayer. It adds a prim, such as a
+payload camera with its API schema or a companion's scope, or overrides a declared value. A catalog
+vehicle entry names its base entry and its layers, the first listed strongest. Each layer is a
+content-addressed asset, as the vehicle's file is, and a base can itself be a composed entry. A
+launch's override layer, `--layer`, composes over them all. The receipt records the file at the
+bottom, each layer, and the override layer.
 
 ### Builder
 
