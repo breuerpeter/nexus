@@ -170,4 +170,7 @@ class "StandInPeerAPI" (
     string nexus:greeting = "" (
         doc = "A word the stand-in peer starts with."
     )
+    rel nexus:serial:autopilot (
+        doc = "The stand-in peer's serial line to the autopilot: the prim of the peer at its other end."
+    )
 }

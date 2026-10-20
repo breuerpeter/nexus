@@ -50,20 +50,9 @@ _NEEDS_TREE = pytest.mark.skipif(
 daemon = pins.daemon
 
 
-def _companion() -> type:
-    """A stand-in class of a project's companion peer, which links to the PX4 SITL peer over a serial line and keeps
-    the keyword arguments the build gave it in `built`. Each call makes a class of its own, for one run.
-    """
-
-    class Companion(sv.radio()):
-        serial = ("px4_sitl",)
-
-    return Companion
-
-
 def _end(companion: type):
-    """The path of the companion's end of its serial link to PX4, as the build handed it, or `None`."""
-    return dict(companion.built[0].get("serial") or {}).get("px4_sitl") if companion.built else None
+    """The path of the companion's end of its serial line `autopilot`, as the build handed it, or `None`."""
+    return dict(companion.built[0].get("serial") or {}).get("autopilot") if companion.built else None
 
 
 class _Companion:
@@ -119,11 +108,11 @@ class _Companion:
 def test_px4s_fake_answers_heartbeats_on_the_serial_link_as_on_the_hil_link(daemon, tmp_path):
     """PX4's fake answers heartbeats on the serial link as on the HIL link.
 
-    Given the PX4 fake and a stand-in declared peer that links to it over a serial line, when the stand-in writes a
-    MAVLink heartbeat to its end, then a heartbeat from the fake comes back on it within 2 s.
+    Given the PX4 fake and a stand-in declared peer whose prim wires its serial line to the fake's, when the stand-in
+    writes a MAVLink heartbeat to its end, then a heartbeat from the fake comes back on it within 2 s.
     """
-    companion = _companion()
-    path = sv.vehicle(tmp_path, root=sv.companion(), px4=True)
+    companion = sv.radio()
+    path = sv.vehicle(tmp_path, root=sv.companion(autopilot=sv.PX4_PRIM), px4=True)
     launch = LaunchConfig.from_dict({"vehicle": path, "scene": sv.SCENE, "runtime": {"device": "cpu"}})
     registry = sv.components(NexusPx4SitlAPI=Px4Fake, StandInPeerAPI=companion)
 
@@ -148,17 +137,18 @@ def test_px4s_fake_answers_heartbeats_on_the_serial_link_as_on_the_hil_link(daem
 def test_the_pinned_px4_opens_a_mavlink_instance_on_its_end_of_the_serial_link(tmp_path):
     """The pinned PX4 opens a MAVLink instance on its end of the serial link.
 
-    Given the fixture vehicle that declares a stand-in peer which links to the PX4 SITL peer over a serial line,
-    when the run starts the pinned PX4, then a MAVLink heartbeat from PX4 arrives on the stand-in's end within 10 s.
+    Given the fixture vehicle that declares a stand-in peer whose prim wires its serial line to the PX4 SITL peer's
+    prim, when the run starts the pinned PX4, then a MAVLink heartbeat from PX4 arrives on the stand-in's end within
+    10 s.
     """
-    companion = _companion()
+    companion = sv.radio()
     sensors = (
         sv.prim("Imu", "NexusImuAPI")
         + sv.prim("Mag", "NexusMagAPI", "float nexus:rate = 100")
         + sv.prim("Baro", "NexusBaroAPI", "float nexus:rate = 50")
         + sv.prim("Gps", "NexusGpsAPI", "float nexus:rate = 30")
     )
-    path = sv.vehicle(tmp_path, sensors, root=sv.companion(), px4=True)
+    path = sv.vehicle(tmp_path, sensors, root=sv.companion(autopilot=sv.PX4_PRIM), px4=True)
 
     arrived = False
     with nx.Sim(path, scene=sv.SCENE, registry=nx.Registry({"StandInPeerAPI": companion})) as sim:

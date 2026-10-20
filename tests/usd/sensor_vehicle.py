@@ -73,6 +73,7 @@ _MAST_JOINT = f"""
 
 
 # The PX4 peer on its own scope under the root prim, on airframe `astro_max`.
+PX4_PRIM = f"{ROOT}/Px4Sitl"
 PX4_SITL = (
     '    def Scope "Px4Sitl" (\n        prepend apiSchemas = ["NexusPx4SitlAPI"]\n    )\n'
     '    {\n        string nexus:airframe = "astro_max"\n    }\n'
@@ -254,11 +255,15 @@ def estimator(*reads: Signal) -> type:
     return StandInEstimator
 
 
-def companion(greeting: str = "hello") -> str:
-    """The text of the scope `Companion` under the root prim, which declares a project's peer with the stand-in
-    schema `StandInPeerAPI`, started with `greeting`.
+def companion(greeting: str = "hello", *, name: str = "Companion", autopilot: str | None = None) -> str:
+    """The text of the scope `name` under the root prim, which declares a project's peer with the stand-in schema
+    `StandInPeerAPI`, started with `greeting`. `autopilot`, when given, is the path of the prim its serial line
+    `nexus:serial:autopilot` targets, the peer at the line's other end: `PX4_PRIM` wires it to the PX4 peer.
     """
-    return prim("Companion", "StandInPeerAPI", f'string nexus:greeting = "{greeting}"', kind="Scope")
+    attrs = f'string nexus:greeting = "{greeting}"'
+    if autopilot is not None:
+        attrs += f"\nrel nexus:serial:autopilot = <{autopilot}>"
+    return prim(name, "StandInPeerAPI", attrs, kind="Scope")
 
 
 def radio() -> type:

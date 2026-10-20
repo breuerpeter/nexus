@@ -1,6 +1,7 @@
 """The serial link the run owns between a declared peer and the PX4 Software In The Loop (SITL) peer: the
-run makes it before any peer starts, hands each peer a path, and closes it at the run's end. A vehicle that
-declares no such peer flies PX4 on its User Datagram Protocol (UDP) links alone.
+vehicle wires it on the declared peer's prim, the run makes it before any peer starts, hands each peer a path, and
+closes it at the run's end. A vehicle that wires no such line flies PX4 on its User Datagram Protocol (UDP) links
+alone.
 
 The docker daemon and the network are the system boundaries: the stand-in daemon of the pin tests records any
 container a run starts, and every fetch fails at once on a cut network. Real builds on the Warp CPU backend of
@@ -45,14 +46,14 @@ def _open_tty(path) -> bool:
 
 
 def _companion() -> type:
-    """A stand-in class of a project's companion peer, which links to the PX4 SITL peer over a serial line.
+    """A stand-in class of a project's companion peer, whose prim wires its serial line `autopilot` to the PX4 SITL
+    peer.
 
-    The class keeps, in `ttys`, whether the path the build handed it for that link was an open terminal when its
+    The class keeps, in `ttys`, whether the path the build handed it for that line was an open terminal when its
     `start` ran. Each call makes a class of its own, for one run.
     """
 
     class Companion(sv.radio()):
-        serial = ("px4_sitl",)
         ttys: ClassVar[list] = []
 
         def start(self) -> None:
@@ -60,15 +61,15 @@ def _companion() -> type:
             super().start()
 
         def path(self):
-            return dict(self.run.get("serial") or {}).get("px4_sitl")
+            return dict(self.run.get("serial") or {}).get("autopilot")
 
     return Companion
 
 
 def _fake() -> type:
-    """A fake PX4 peer class that keeps the serial paths the build handed each fake, by the other peer's name, in
-    `handed`, and in `ttys` whether the path to `radio` was an open terminal when its `start` ran. Each call makes
-    a class of its own, for one run.
+    """A fake PX4 peer class that keeps the serial paths the build handed each fake, by the name of the prim that
+    wires each, in `handed`, and in `ttys` whether the path from `Companion` was an open terminal when its `start`
+    ran. Each call makes a class of its own, for one run.
     """
 
     class Fake(Px4Fake):
@@ -81,7 +82,7 @@ def _fake() -> type:
             type(self).handed.append(self.serial)
 
         def start(self) -> None:
-            type(self).ttys.append(_open_tty(self.serial.get("radio")))
+            type(self).ttys.append(_open_tty(self.serial.get("Companion")))
             super().start()
 
     return Fake
@@ -114,15 +115,20 @@ def _steps(ticks: int):
     return step
 
 
+def _survivors(before: set) -> list:
+    """The names of the threads alive now that weren't in `before`."""
+    return [t.name for t in threading.enumerate() if t not in before and t.is_alive()]
+
+
 def test_both_ends_of_the_serial_link_exist_before_either_peer_starts(daemon, tmp_path):
     """Both ends of the serial link exist before either peer starts.
 
-    Given a stand-in declared peer that links to the PX4 SITL peer over a serial line, and PX4 on its fake, when the
-    run builds, then each peer's `start` found the path the build handed it, by the other peer's name, an open
-    terminal, whichever started first.
+    Given a stand-in declared peer whose prim wires its serial line to the PX4 SITL peer's prim, and PX4 on its
+    fake, when the run builds, then each peer's `start` found the path the build handed it, the stand-in by its
+    line's name and the fake by the stand-in prim's name, an open terminal, whichever started first.
     """
     companion, fake = _companion(), _fake()
-    path = sv.vehicle(tmp_path, root=sv.companion(), px4=True)
+    path = sv.vehicle(tmp_path, root=sv.companion(autopilot=sv.PX4_PRIM), px4=True)
 
     outcome = _built(path, sv.components(NexusPx4SitlAPI=fake, StandInPeerAPI=companion))
 
@@ -136,23 +142,22 @@ def test_a_runs_end_closes_the_serial_link(daemon, tmp_path):
     neither path the build handed out is an open terminal, and no thread the run started survives.
     """
     companion, fake = _companion(), _fake()
-    path = sv.vehicle(tmp_path, root=sv.companion(), px4=True)
+    path = sv.vehicle(tmp_path, root=sv.companion(autopilot=sv.PX4_PRIM), px4=True)
     before = set(threading.enumerate())
 
     outcome = _built(path, sv.components(NexusPx4SitlAPI=fake, StandInPeerAPI=companion))
 
-    ends = [companion.built[0].get("serial", {}).get("px4_sitl") if companion.built else None]
-    ends.append(fake.handed[0].get("radio") if fake.handed else None)
-    survivors = [t.name for t in threading.enumerate() if t not in before and t.is_alive()]
-    seen = ([bool(end) for end in ends], [_open_tty(end) for end in ends], survivors)
+    ends = [companion.built[0].get("serial", {}).get("autopilot") if companion.built else None]
+    ends.append(fake.handed[0].get("Companion") if fake.handed else None)
+    seen = ([bool(end) for end in ends], [_open_tty(end) for end in ends], _survivors(before))
     assert seen == ([True, True], [False, False], []), (outcome["error"], ends)
 
 
-def test_a_vehicle_that_declares_no_serial_peer_flies_px4_on_its_udp_links_alone(daemon, tmp_path):
-    """A vehicle that declares no such peer flies PX4 on its UDP links alone.
+def test_a_vehicle_that_wires_no_serial_line_flies_px4_on_its_udp_links_alone(daemon, tmp_path):
+    """A vehicle that wires no serial line flies PX4 on its UDP links alone.
 
-    Given the fixture vehicle that declares the PX4 SITL peer and no peer that links to it over a serial line, with
-    PX4 on its fake, when the run steps 5 ticks, then the build handed the fake no serial path and the run flew all 5.
+    Given the fixture vehicle that declares the PX4 SITL peer and wires no serial line to it, with PX4 on its fake,
+    when the run steps 5 ticks, then the build handed the fake no serial path and the run flew all 5.
     """
     fake = _fake()
     path = sv.vehicle(tmp_path, px4=True)
@@ -160,3 +165,23 @@ def test_a_vehicle_that_declares_no_serial_peer_flies_px4_on_its_udp_links_alone
     outcome = _built(path, sv.components(NexusPx4SitlAPI=fake), during=_steps(5))
 
     assert (fake.handed, outcome["during"]) == ([{}], 5), outcome["error"]
+
+
+def test_a_serial_line_to_a_prim_that_declares_no_peer_fails_the_build_before_any_link_or_peer_exists(daemon, tmp_path):
+    """A serial line to a prim that declares no peer fails the build before any link or peer exists.
+
+    Given two stand-in peers, `Companion` wiring its line to the PX4 SITL peer's prim and `Second` wiring its line
+    to the base body, with PX4 on its fake, when the run builds, then it fails naming `Second`'s prim and its line,
+    the build made and started no peer, and no relay thread survives: the build checks every line before it makes any.
+    """
+    companion, fake = _companion(), _fake()
+    root = sv.companion(autopilot=sv.PX4_PRIM) + sv.companion(name="Second", autopilot=sv.BODY)
+    path = sv.vehicle(tmp_path, root=root, px4=True)
+    before = set(threading.enumerate())
+
+    outcome = _built(path, sv.components(NexusPx4SitlAPI=fake, StandInPeerAPI=companion))
+
+    error = str(outcome["error"])
+    seen = (type(outcome["error"]), f"{sv.ROOT}/Second" in error, "nexus:serial:autopilot" in error)
+    assert seen == (ValueError, True, True), error
+    assert (companion.built, companion.ttys, fake.handed, _survivors(before)) == ([], [], [], [])
