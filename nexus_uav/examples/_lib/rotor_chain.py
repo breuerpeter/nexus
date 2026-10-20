@@ -1,10 +1,10 @@
 """The rotor chain of many copies of one vehicle in one model: the plant the RL task trains on.
 
-A run's loop steps the rotor chain around each solver step: the rotors' command element sets each Newton
-motor's speed target and drag feedforward, the propellers add each rotor's thrust and drag to its body, and
-physics steps the Newton motors into the rotor joints' torque. :class:`RotorChain` runs the same core parts in
-the same order for a model that holds one copy of the vehicle per environment, as the RL task's model does, so
-training flies the plant every run flies.
+A run's loop steps the rotor chain around each solver step: each rotor's ESC sets its Newton motor's speed
+target and drag feedforward, each propeller adds its rotor's thrust and drag to its body, and physics steps the
+Newton motors into the rotor joints' torque. :class:`RotorChain` runs the same core parts in the same order for a
+model that holds one copy of the vehicle per environment, as the RL task's model does, so training flies the
+plant every run flies, each rotor with its own values.
 """
 
 from __future__ import annotations
@@ -13,8 +13,9 @@ import numpy as np
 import warp as wp
 
 from nexus_uav._src.physics.motors import Motors
-from nexus_uav._src.vehicle.commands import RotorCommand
+from nexus_uav._src.vehicle.commands import Escs
 from nexus_uav._src.vehicle.forces import Propellers
+from nexus_uav._src.vehicle.rotors import RPM_PER_RADS, motor_speed
 
 __all__ = ["RotorChain", "vehicle_rotors"]
 
@@ -27,8 +28,8 @@ def vehicle_rotors(model, joints) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
     Args:
         model: The finalized model.
-        joints: The joint path of each rotor the vehicle's Universal Scene Description (USD) file declares,
-            the second value of :func:`~nexus_uav.examples._lib.single_body.parse_rotors`.
+        joints: The joint path of each rotor the vehicle's Universal Scene Description (USD) file declares, each
+            rotor's ``joint`` of :func:`~nexus_uav.examples._lib.single_body.rotors`.
 
     Returns:
         Each rotor's velocity degree of freedom, its body and its airframe body, each ``(copies, rotors)``,
@@ -58,38 +59,42 @@ def vehicle_rotors(model, joints) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
 
 class RotorChain:
-    """The rotor chain of every copy of one vehicle in a model: the core's rotor command element, propellers and
-    Newton motors, stepped in the order a run steps them.
+    """The rotor chain of every copy of one vehicle in a model: the core's ESCs, propellers and Newton motors,
+    stepped in the order a run steps them, each rotor with its own values.
 
     Args:
         model: The finalized model, one copy of the vehicle per environment, with each copy's Newton motors on
             ``model.actuators``.
-        joints: The joint path of each rotor the vehicle's USD file declares.
-        values: The rotors' values the file declares, the first value of
-            :func:`~nexus_uav.examples._lib.single_body.parse_rotors`: ``ct``, ``cd``, ``rpm_max``, and the
-            optional ``aero_h`` and ``aero_hforce``.
+        rotors: The rotors the vehicle's USD file declares, in channel order,
+            :func:`~nexus_uav.examples._lib.single_body.rotors`: each with its joint, its channel and its
+            propeller's values. Each motor's no-load speed comes from the model, in ``rpm_max``.
     """
 
-    def __init__(self, model, *, joints, values: dict):
-        dofs, bodies, bases = vehicle_rotors(model, joints)
+    def __init__(self, model, rotors):
+        dofs, bodies, bases = vehicle_rotors(model, [rotor.joint for rotor in rotors])
         self.copies, self.nr = dofs.shape
         self.rotor_dofs, self.rotor_bodies, self.rotor_bases = dofs, bodies, bases  # each (copies, nr)
         self.bases = wp.array(bases[:, 0], dtype=wp.int32, device=model.device)  # each copy's airframe body
-        self.command = RotorCommand.for_rotors(
+        values = {key: [rotor.propeller[key] for rotor in rotors] for key in ("ct", "cd", "aero_h", "aero_hforce")}
+        # Each rotor's speed at full command [rpm], its motor's no-load speed, from the first copy's motors.
+        self.rpm_max = np.array(
+            [
+                motor_speed(model, int(dof), rotor.body) * RPM_PER_RADS
+                for dof, rotor in zip(dofs[0], rotors, strict=True)
+            ]
+        )
+        self.command = Escs(
             rotor_vel_dofs=wp.array(dofs, dtype=wp.int32, device=model.device),
-            control=None,
+            channels=[rotor.channel for rotor in rotors],
             ct=values["ct"],
             cd=values["cd"],
-            rpm_max=values["rpm_max"],
+            rpm_max=self.rpm_max,
         )
-        self.propellers = Propellers.for_rotors(
+        self.propellers = Propellers(
             rotor_vel_dofs=wp.array(dofs.ravel(), dtype=wp.int32, device=model.device),
             rotor_bodies=wp.array(bodies.ravel(), dtype=wp.int32, device=model.device),
             rotor_bases=wp.array(bases.ravel(), dtype=wp.int32, device=model.device),
-            ct=values["ct"],
-            cd=values["cd"],
-            aero_h=values.get("aero_h", 0.0),
-            aero_hforce=values.get("aero_hforce", 0.0),
+            **{key: np.tile(value, self.copies) for key, value in values.items()},  # each copy's rotors, in order
         )
         self.motors = Motors(model)
 

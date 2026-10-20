@@ -137,9 +137,10 @@ four rotor **revolute** joints, because:
         - **Rotor 2** and **Rotor 3**: the same
         - **Rotor 4**, `rotor_4`: a link on a revolute joint, positive rotation along the $z$ axis
 
-Each rotor link applies `NexusPropellerAPI`, which declares its propeller, and a `NewtonActuator`
-prim drives each rotor joint as its motor. A revolute joint whose link declares no propeller is no
-rotor. The [schema reference](../reference/schemas.md) lists the propeller's attributes.
+Each rotor link applies `NexusPropellerAPI`, which declares its propeller, and `NexusEscAPI`, which
+declares its ESC and the entry of the controls it reads, and a `NewtonActuator` prim drives each rotor
+joint as its motor. Each rotor flies its own propeller's values. A revolute joint whose link declares
+neither is no rotor. The [schema reference](../reference/schemas.md) lists the attributes.
 
 ## Frames
 

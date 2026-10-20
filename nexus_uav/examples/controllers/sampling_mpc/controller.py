@@ -297,29 +297,31 @@ class SamplingMPCController(Component):
 
         self.model = batch_model
         self.solver = newton.solvers.SolverSemiImplicit(batch_model)
-        # Airframe mixer from the rotor layout, the planner's single-body model of the vehicle's rotors.
-        # κ = reaction_k is the yaw allocation, passed as the layout's "cd" key.
-        mixer = build_rotor_mixer_from_layout(rotor_offsets, turning_dirs, {"ct": ct, "cd": reaction_k, "rpm_max": rpm_max})  # fmt: skip
+        # Airframe mixer from the rotor layout, the planner's single-body model of the vehicle's rotors, each with
+        # its own thrust map. κ = reaction_k is the yaw allocation, each rotor's cd.
+        mixer = build_rotor_mixer_from_layout(rotor_offsets, turning_dirs, ct=ct, cd=reaction_k, rpm_max=rpm_max)
         self.B_wp = wp.array(mixer.B.astype(np.float32), dtype=float)  # (4, nr) forward allocation
         self._offsets_wp = wp.array(mixer.rotor_offsets.astype(np.float32), dtype=wp.vec3)  # (nr,) base-frame offsets
         self._spins_wp = wp.array(np.asarray(mixer.spins, dtype=np.float32), dtype=float)  # (nr,) spin signs
         self.rotor_inertia = float(rotor_inertia)
         self.thrust_sign = -1.0  # FRD-authored USD: thrust along −body-z, rotors spawned up
-        self.hover = float(np.sqrt(mass * GRAVITY / self.n_rotors / ct) / rpm_max)
+        # Each rotor's hover command, its share of the weight through its own thrust map, in channel order.
+        self.hover = np.sqrt(mass * GRAVITY / self.n_rotors / np.asarray(ct, dtype=np.float64)) / np.asarray(rpm_max)
         # Per-rotor motor lag: the sampled per-rotor command sets a rotor-speed target; Ω relaxes toward it
         # with time constant tau, and thrust = kf·Ω² re-mixes through forward B. Stable filter ⇒ the BPTT
-        # stays bounded. alpha uses the plan step, plan_dt. Ω starts each plan from the hover speed.
-        self.kf = mixer.kf
-        self.omega_max_motor = mixer.omega_max_motor
+        # stays bounded. alpha uses the plan step, plan_dt. Ω starts each plan from each rotor's hover speed.
+        self.kf = wp.array(mixer.kf.astype(np.float32), dtype=float)
+        self.omega_max_motor = wp.array(mixer.omega_max_motor.astype(np.float32), dtype=float)
         self.motor_alpha = motor_alpha(motor_tau, self.plan_dt)
-        self.omega_hover = float(self.hover * self.omega_max_motor)
+        omega_hover = (self.hover * mixer.omega_max_motor).astype(np.float32)  # (nr,) rad/s
+        self._omega_hover = wp.array(np.tile(omega_hover, (self.num_rollouts, 1)), dtype=float)  # (rollouts, nr)
 
         lo_hi = np.array([[0.05, 1.0]] * self.control_dim, dtype=np.float32)
         self.control_limits = wp.array(lo_hi, dtype=float)
 
         # Plans: the single nominal, and the sampled rollouts, which get optimised.
         self.nominal = wp.zeros((1, self.n_points, self.control_dim), dtype=float)
-        self.nominal.assign(np.full((1, self.n_points, self.control_dim), self.hover, dtype=np.float32))
+        self.nominal.assign(np.tile(self.hover.astype(np.float32), (1, self.n_points, 1)))
         self.rollouts = wp.zeros((self.num_rollouts, self.n_points, self.control_dim), dtype=float, requires_grad=True)
         self.seed = wp.zeros(1, dtype=int)
 
@@ -390,7 +392,7 @@ class SamplingMPCController(Component):
             command_rate_cost, dim=(self.num_rollouts, self.n_points - 1, self.control_dim), inputs=(self.rollouts,),
             outputs=(self.costs,),
         )  # fmt: skip
-        self.omega[0].fill_(self.omega_hover)  # each plan starts from the hover rotor speed, a graph-safe reset
+        wp.copy(self.omega[0], self._omega_hover)  # each plan starts from each rotor's hover speed, a graph-safe reset
         for h in range(self.horizon):
             self.S[h].clear_forces()
             wp.launch(

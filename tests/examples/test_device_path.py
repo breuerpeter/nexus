@@ -1,6 +1,6 @@
 """The device-native control path, the capture and autodiff prerequisite: with the Warp signal ``observation``
 the Proportional Integral Derivative (PID) loop has no per-tick host hop. WarpObservationSensor
--> PidController.exchange, the law + moment mixer, -> the rotors' command element all stay on-device, so
+-> PidController.exchange, the law + moment mixer, -> the rotors' ESCs all stay on-device, so
 the whole tick is one graph. A NumPy observation still takes the host path.
 
 The moment mixer needs rotor geometry for the allocation, so the fixture builds a real rotored vehicle, the
@@ -21,15 +21,14 @@ from nexus_uav._src.config import LaunchConfig
 from nexus_uav._src.core.schema import SimTime
 from nexus_uav._src.core.signals import wire
 from nexus_uav._src.core.stages import Bound
-from nexus_uav._src.vehicle.commands import RotorCommand
+from nexus_uav._src.vehicle.commands import Escs
+from nexus_uav._src.vehicle.rotors import rotor_of, rotor_speeds
 from nexus_uav.examples._lib import build_rotor_mixer_from_model
 from nexus_uav.examples._lib.observation import WarpObservationSensor
 from nexus_uav.examples.controllers.pid import PidController
 from tests.usd import sensor_vehicle as sv
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")
-
-_ACT_CFG = {"ct": 0.000003463, "cd": 0.05, "rpm_max": 3800.0}  # the thrust map the fixture's rotors declare
 
 
 def _is_warp_array(x) -> bool:
@@ -45,12 +44,12 @@ def _rotored_model(tmp_path):
     state = model.state()
     newton.eval_fk(model, model.joint_q, model.joint_qd, state)  # populate body_q, the rotor offsets
     mass = float(np.sum(model.body_mass.numpy()))
-    return model, vehicle_usd.rotor_joints(), state, mass
+    return model, vehicle_usd.rotors(), state, mass
 
 
 def test_a_warp_observation_keeps_the_pid_path_on_the_device(tmp_path):
-    model, joints, state, mass = _rotored_model(tmp_path)
-    mixer = build_rotor_mixer_from_model(model, joints, _ACT_CFG, state.body_q.numpy())
+    model, rotors, state, mass = _rotored_model(tmp_path)
+    mixer = build_rotor_mixer_from_model(model, rotors, state.body_q.numpy())
 
     # 1. obs sensor writes the signal observation, a Warp array that PID reads, not numpy
     sensor = WarpObservationSensor(goal_w=(0.0, 0.0, 1.5))
@@ -66,14 +65,19 @@ def test_a_warp_observation_keeps_the_pid_path_on_the_device(tmp_path):
     assert _is_warp_array(controls.command)
     assert controls.command.numpy().reshape(-1).shape == (mixer.nr,)
 
-    # 3. the rotors' command element writes the Warp command buffer into the motors' targets directly, no H2D
+    # 3. the rotors' ESCs write the Warp command buffer into the motors' targets directly, no H2D
     control = model.control()
-    command = RotorCommand(model=model, control=control, joints=joints, **_ACT_CFG)
-    command.write(controls.command.reshape((1, mixer.nr)))
+    dofs = [rotor_of(model, rotor.body)[0] for rotor in rotors]
+    escs = Escs(
+        rotor_vel_dofs=wp.array([dofs], dtype=wp.int32),
+        channels=[rotor.channel for rotor in rotors],
+        ct=[rotor.propeller["ct"] for rotor in rotors],
+        cd=[rotor.propeller["cd"] for rotor in rotors],
+        rpm_max=rotor_speeds(model, rotors),
+    )
+    escs.write(controls.command.reshape((1, mixer.nr)), control)
     wp.synchronize()
-    starts = model.joint_qd_start.numpy()
-    rotors = [int(starts[j]) for j, label in enumerate(model.joint_label) if label in set(joints)]
-    targets = control.joint_target_qd.numpy()[rotors]
+    targets = control.joint_target_qd.numpy()[dofs]
     assert np.isfinite(targets).all() and np.all(targets > 0.0)
 
 

@@ -26,8 +26,10 @@ in the script, and it records its flight `.rrd`. The launcher map is `_EXAMPLES`
   before it connects waits on a peer: it connects after the capture, so its device buffers exist from
   construction. One with no peer connects before the start.
 - Every example flies the articulated vehicle on the core rotor chain: its assembly passes the loop
-  the `commands` and `forces` that `rotor_chain(physics, vehicle_usd)` from
-  `nexus_uav._src.build.assembly` returns, and physics steps the vehicle's Newton motors between them.
+  the `commands` and `forces` that `elements(physics, vehicle_usd)` from
+  `nexus_uav._src.build.assembly` returns, each rotor's ESC and propeller built by the registry from
+  the vehicle's file, and physics steps the vehicle's Newton motors between them. Each rotor flies its own
+  values, which `vehicle_usd.rotors()` lists in channel order, and the mixers take them per rotor.
   The gradient examples fly the same parts in the recorded rollout of `_lib/articulated.py`, and RL
   training in `_lib/rotor_chain.py`. The sampling MPC planner alone keeps a single-body model, to plan on.
 - A controller that logs, as the MPC examples do, names itself with a `name` class attribute. It

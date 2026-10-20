@@ -22,10 +22,10 @@ from typing import Any
 
 import numpy as np
 
-# The rotor values the vehicle USD declares and the rotor geometry: the single-body model reads them, and
+# The rotors the vehicle USD declares and the rotor geometry: the single-body model reads them, and
 # so does nexus-rl, which imports them from here, since the core reads them too and never imports the examples.
-from nexus_uav._src.physics.vehicle import parse_rotors  # noqa: F401
-from nexus_uav._src.vehicle.rotors import RPM_PER_RADS, find_rotor_joints, quat_to_R  # noqa: F401
+from nexus_uav._src.physics.vehicle import Rotor, rotors  # noqa: F401
+from nexus_uav._src.vehicle.rotors import RPM_PER_RADS, quat_to_R, rotor_of  # noqa: F401
 
 
 @dataclass
@@ -39,16 +39,16 @@ class SingleBody:
         mass: The lumped per-body mass [kg].
         offsets: ``(nr, 3)`` rotor offsets in the base-body frame, the ``r×F`` moment arms.
         dirs: ``(nr,)`` cw/ccw spin sign per rotor, the yaw-reaction sign.
-        act: The rotors' values the USD declares, ``ct``/``cd``/``rpm_max``/``aero_*``. Feeds
-            :func:`~nexus_uav.examples._lib.mixer.build_rotor_mixer_from_layout` + the coupling + the
-            hover-thrust calc.
+        rotors: The rotors the USD declares, in channel order, each with its own ``ct``, ``cd``, ``rpm_max`` and
+            ``aero_*``. Feeds :func:`~nexus_uav.examples._lib.mixer.build_rotor_mixer_from_layout` + the coupling +
+            the hover-thrust calc.
     """
 
     model: Any
     mass: float
     offsets: np.ndarray
     dirs: np.ndarray
-    act: dict
+    rotors: list[Rotor]
 
 
 def _fix_rotor_joints(builder) -> int:
@@ -67,9 +67,9 @@ def _fix_rotor_joints(builder) -> int:
     return n
 
 
-def _read_rotor_layout(vehicle_usd):
-    """Read ``(mass, offsets(nr,3), dirs(nr,))`` from the articulated USD, its declared rotor joints, before
-    the collapse: offsets in the base-body frame, spin signs from each rotor-z compared to the base-z,
+def _read_rotor_layout(vehicle_usd, declared):
+    """Read ``(mass, offsets(nr,3), dirs(nr,))`` from the articulated USD, its declared rotors in channel order,
+    before the collapse: offsets in the base-body frame, spin signs from each rotor-z compared to the base-z,
     USD-authored.
     """
     import newton
@@ -81,7 +81,8 @@ def _read_rotor_layout(vehicle_usd):
     st = m.state()
     newton.eval_fk(m, m.joint_q, m.joint_qd, st)
     bq = st.body_q.numpy()
-    _vel, _pos, bodies, base = find_rotor_joints(m, vehicle_usd.rotor_joints())
+    found = [rotor_of(m, rotor.body) for rotor in declared]  # each rotor's dof, coord, body and airframe
+    bodies, base = [body for _dof, _coord, body, _base in found], found[0][3]
     rb = quat_to_R(bq[base, 3:7])
     bz = rb @ np.array([0.0, 0.0, 1.0])
     offsets = np.array([rb.T @ (bq[r, :3] - bq[base, :3]) for r in bodies], dtype=np.float32)  # base-frame
@@ -101,7 +102,7 @@ def collapse_to_single_body(
 ) -> SingleBody:
     """Collapse a quad-X vehicle USD to ``count`` free single rigid bodies: the sampling MPC planner's model.
 
-    Reads the rotor layout + actuator params from the articulated USD, its rotor joints, stamps ``count``
+    Reads the rotor layout + each rotor's values from the articulated USD, its rotors, stamps ``count``
     vehicle copies into one model, retypes each rotor REVOLUTE joint to a fixed joint and ``collapse_fixed_joints()``
     merges each vehicle's rotors into its airframe, with the correct lumped mass/inertia/COM and the
     rotor-disk visuals kept, loads the scene USD exactly as the full build path does, through
@@ -118,14 +119,14 @@ def collapse_to_single_body(
             ``NewtonPhysics``'s own build path does. ``None`` or no scene = the vehicle alone.
 
     Returns:
-        SingleBody: the collapsed ``model`` + the rotor layout, ``mass``/``offsets``/``dirs``, + ``act``.
+        SingleBody: the collapsed ``model`` + the rotor layout, ``mass``/``offsets``/``dirs``, + ``rotors``.
     """
     import newton
 
     from nexus_uav._src.scene import add_scene
 
-    mass, offsets, dirs = _read_rotor_layout(vehicle_usd)
-    act = dict(vehicle_usd.actuator_params())
+    declared = vehicle_usd.rotors()
+    mass, offsets, dirs = _read_rotor_layout(vehicle_usd, declared)
     b = newton.ModelBuilder()
     b.add_ground_plane()
     for _ in range(int(count)):  # count copies of the catalog vehicle USD
@@ -137,4 +138,4 @@ def collapse_to_single_body(
     b.collapse_fixed_joints()  # merge each vehicle's rotors into its airframe → count single bodies
     add_scene(b, cfg or {})  # scene USD -> builder, exactly as for the vehicle USD
     model = b.finalize(requires_grad=requires_grad)
-    return SingleBody(model=model, mass=mass, offsets=offsets, dirs=dirs, act=act)
+    return SingleBody(model=model, mass=mass, offsets=offsets, dirs=dirs, rotors=declared)

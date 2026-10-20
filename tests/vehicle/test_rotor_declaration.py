@@ -15,13 +15,19 @@ pytest.importorskip("pxr")
 import newton
 import warp as wp
 
-from nexus_uav._src.physics.vehicle import VehicleUsd, parse_rotors
+from nexus_uav._src.physics.vehicle import Rotor, VehicleUsd, rotors
 from nexus_uav._src.vehicle.rotors import find_rotor_joints
-from tests.vehicle.quad import LIFT_CT, ROOT, WEAK_CT
+from tests.vehicle.quad import FLIGHT_STEPS, LIFT_CT, ROOT, WEAK_CT
 from tests.vehicle.quad import author as _author
 from tests.vehicle.quad import build as _build
 from tests.vehicle.quad import build_error as _build_error
 from tests.vehicle.quad import climb as _climb
+from tests.vehicle.quad import fly as _fly
+from tests.vehicle.quad import tilt as _tilt
+
+CHANNELS = (0, 1, 2, 3)  # each rotor's controls channel, in rotor order
+TILTED = 5.0  # how far off level a quad with one stronger rotor ends, at least [degrees]
+LEVEL = 1.0  # how far off level a quad with equal rotors ends, at most [degrees]
 
 
 @pytest.mark.parametrize(("ct", "climbs"), [(LIFT_CT, True), (WEAK_CT, False)])
@@ -72,14 +78,43 @@ def test_rotors_that_do_not_share_one_parent_body_fail_the_build_and_name_the_pr
     assert all(name in message for name in (f"{ROOT}/rotor_3", f"{ROOT}/rotor_0", f"{ROOT}/body"))
 
 
-def test_rotors_whose_propeller_values_differ_fail_the_build_and_name_the_prims(tmp_path):
-    """Rotors whose propeller values differ fail the build and name the prims.
-
-    Given the fixture with one rotor's `ct` changed, when built, then the build fails naming the rotor
-    bodies whose values differ.
+def _final_tilt(path) -> tuple[float | None, str | None]:
+    """How far off level the airframe ends [degrees] after the flight at full command, and the build's error
+    message when it fails instead.
     """
-    message = _build_error(_author(tmp_path / "quad.usda", odd_ct=2 * LIFT_CT))
-    assert all(f"{ROOT}/rotor_{i}" in message for i in (0, 2))
+    try:
+        with wp.ScopedDevice("cpu"):
+            rows = _fly(_build(path, FLIGHT_STEPS), field="orientation")
+    except ValueError as exc:
+        return None, str(exc)
+    return _tilt(rows[-1]), None
+
+
+def test_a_vehicle_whose_rotors_declare_different_propeller_values_builds_and_each_rotor_flies_its_own(tmp_path):
+    """A vehicle whose rotors declare different propeller values builds, and each rotor flies its own.
+
+    Given the fixture quad with rotor 2's `ct` twice the others', when the run flies 125 ticks at one equal
+    command on every rotor, then it builds and the airframe ends tilted, where the quad with equal `ct` ends
+    level.
+    """
+    odd = _author(tmp_path / "odd.usda", odd_ct=2 * LIFT_CT, channels=CHANNELS)
+    even = _author(tmp_path / "even.usda", channels=CHANNELS)
+
+    (odd_tilt, odd_error), (even_tilt, even_error) = _final_tilt(odd), _final_tilt(even)
+
+    tilted = odd_tilt is not None and odd_tilt > TILTED
+    level = even_tilt is not None and even_tilt < LEVEL
+    assert (tilted, level) == (True, True), (odd_tilt, odd_error, even_tilt, even_error)
+
+
+def test_two_rotors_that_declare_one_controls_channel_fail_the_build_naming_both(tmp_path):
+    """Two rotors that declare one controls channel fail the build, naming both.
+
+    Given the fixture quad with rotors 1 and 2 declaring the same channel, when the run builds, then it raises
+    naming both rotor prims and the channel, and no stage ran.
+    """
+    message = _build_error(_author(tmp_path / "quad.usda", channels=(0, 1, 1, 3)))
+    assert all(name in message for name in (f"{ROOT}/rotor_1", f"{ROOT}/rotor_2", "channel"))
 
 
 def test_a_vehicle_that_still_authors_propeller_joint_attributes_fails_the_build_and_names_the_prim(tmp_path):
@@ -108,15 +143,38 @@ def test_newton_still_builds_each_rotors_motor_from_its_actuator_prim(tmp_path):
     assert motors == [("ControllerPID", ("ClampingDCMotor",))] * 4
 
 
-def test_the_rotor_reader_returns_the_values_the_rotors_share_and_each_rotors_joint(tmp_path):
-    """The rotor reader returns the values the rotors share and each rotor's joint.
+def test_the_rotor_reader_returns_each_rotor_with_its_own_values_in_channel_order(tmp_path):
+    """The rotor reader returns each rotor with its own values, in channel order.
 
-    Given the fixture, when read, then the map holds the propeller's values, with the motor's no-load
-    speed, 398 rad/s or 3800.62 rpm, as the speed at full command, and the joints are the four rotor joints.
+    Given the fixture with its ESCs on channels 3, 2, 1 and 0 and rotor 2's `ct` twice the others', when read,
+    then the rotors come in channel order, rotor 3 first, each with its body, its joint, the airframe, its
+    channel and its own propeller values.
     """
-    values = {"ct": LIFT_CT, "cd": 0.05, "aero_h": 0.0, "aero_hforce": 0.0, "rpm_max": 3800.62}
-    expected = (pytest.approx(values, rel=1e-5), [f"{ROOT}/rotor_{i}_joint" for i in range(4)])
-    assert parse_rotors(_author(tmp_path / "quad.usda")) == expected
+    read = rotors(_author(tmp_path / "quad.usda", odd_ct=2 * LIFT_CT, channels=(3, 2, 1, 0)))
+    expected = [
+        Rotor(
+            body=f"{ROOT}/rotor_{i}",
+            joint=f"{ROOT}/rotor_{i}_joint",
+            parent=f"{ROOT}/body",
+            channel=3 - i,
+            propeller={"ct": 2 * LIFT_CT if i == 2 else LIFT_CT, "cd": 0.05, "aero_h": 0.0, "aero_hforce": 0.0},
+        )
+        for i in (3, 2, 1, 0)
+    ]
+    assert [(r.body, r.joint, r.parent, r.channel) for r in read] == [
+        (r.body, r.joint, r.parent, r.channel) for r in expected
+    ]
+    assert [r.propeller for r in read] == [pytest.approx(r.propeller, rel=1e-5) for r in expected]
+
+
+def test_a_rotor_that_declares_a_propeller_and_no_esc_fails_the_build_and_names_the_prim(tmp_path):
+    """A rotor that declares a propeller and no ESC fails the build and names the prim.
+
+    Given the fixture with no ESC on any rotor, when built, then the build fails naming rotor 0 and the ESC's
+    schema.
+    """
+    message = _build_error(_author(tmp_path / "quad.usda", channels=None))
+    assert f"{ROOT}/rotor_0" in message and "NexusEscAPI" in message
 
 
 def test_find_rotor_joints_returns_the_declared_joints_and_no_other(tmp_path):

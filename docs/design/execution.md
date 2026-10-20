@@ -34,7 +34,7 @@ host stage the whole ring is one graph. With one, the record stage runs in a gra
 stages, so the tick's row holds what they wrote. A component that states no stages fails the build with an
 error that names it, and so does a stage of a kind the loop doesn't know. Nothing falls back to a
 slower path in silence. A [run](concepts.md#run) logs its plan once at start, for example
-`stage plan: graph(clock -> clear -> rotors -> propellers -> step -> state -> imu -> mag -> baro -> gps) host(truth) host(exchange) graph(record)`.
+`stage plan: graph(clock -> clear -> esc -> esc -> esc -> esc -> propeller -> propeller -> propeller -> propeller -> step -> state -> imu -> mag -> baro -> gps) host(truth) host(exchange) graph(record)`.
 
 ## Signals
 

@@ -44,13 +44,14 @@ import warp as wp
 from nexus_uav._src.core import logger
 from nexus_uav._src.core.interfaces import Stage
 from nexus_uav._src.core.labels import leaf_keys
-from nexus_uav._src.vehicle.rotors import RPM_PER_RADS, find_rotor_joints
+from nexus_uav._src.vehicle.rotors import RPM_PER_RADS, find_rotor_joints, rotor_of
 
 from ..scene import world
 from ..scene.ingest import add_scene  # ingestion only: the handlers are the renderer's side
 from ..scene.world import GRAVITY
 from .motors import Motors
 from .outputs import Outputs
+from .vehicle import NoRotor
 
 STABILIZE_VEL_THRESHOLD = 0.01  # m/s
 STABILIZE_MIN_STEPS = 10
@@ -128,18 +129,19 @@ class NewtonPhysics:
         self.base_body = leaf_keys([str(k) for k in self.model.body_label])[self.base_index]
         logger.info(f"control dim {self.model.joint_dof_count}")
 
-        # Free-placement rotor pre-spin: start the articulated vehicle at the hover rotor speed so it's in
-        # equilibrium, with no spin-up dip. Ω = √(mg/(n·ct))/RPM_PER_RADS from the model mass + the USD ct,
-        # read straight from the vehicle, the single hash-pinned actuator source, not a config value.
-        self._rotor_vel_dofs = None
+        # Free-placement rotor pre-spin: start the articulated vehicle at the hover rotor speeds so it's in
+        # equilibrium, with no spin-up dip. Each rotor's Ω = √(mg/(n·ct))/RPM_PER_RADS from the model mass + its
+        # own ct, read straight from the vehicle's file, the single hash-pinned source, not a config value.
+        self._hover_omega: dict[int, float] = {}  # each rotor's hover speed [rad/s], by its velocity dof
         if self.articulated and self.spawn_cfg and self.spawn_cfg.get("prespin") == "hover":
             if self.vehicle_usd is None:
-                raise ValueError("prespin='hover' needs a vehicle_usd to read ct from the USD")
-            ct = float(self.vehicle_usd.actuator_params()["ct"])
-            self._rotor_vel_dofs, _pos, _bodies, _base = find_rotor_joints(self.model, self.vehicle_usd.rotor_joints())
+                raise ValueError("prespin='hover' needs a vehicle_usd to read each rotor's ct from the USD")
+            rotors = self.vehicle_usd.rotors()
             mass = float(self.model.body_mass.numpy().sum())
-            hover_thrust = mass * GRAVITY / len(self._rotor_vel_dofs)
-            self._hover_omega = float(np.sqrt(hover_thrust / ct) / RPM_PER_RADS)
+            hover_thrust = mass * GRAVITY / len(rotors)
+            for rotor in rotors:
+                dof, _coord, _body, _base = rotor_of(self.model, rotor.body)
+                self._hover_omega[dof] = float(np.sqrt(hover_thrust / rotor.propeller["ct"]) / RPM_PER_RADS)
 
     @property
     def current_state(self):
@@ -158,11 +160,22 @@ class NewtonPhysics:
         return self.state0
 
     def _find_base(self) -> int:
-        """The index of the base body, the vehicle's airframe: the declared rotor joints' shared parent, else body 0."""
+        """The index of the base body, the vehicle's airframe: the declared rotor joints' shared parent, else body 0.
+
+        Raises:
+            ValueError: A rotor's declaration is wrong, as :func:`~nexus_uav._src.physics.vehicle.rotors` states;
+                a vehicle that declares no rotor builds, with body 0 as its base.
+        """
+        if self.vehicle_usd is None:
+            return 0
+        try:
+            rotors = self.vehicle_usd.rotors()  # a wrong rotor declaration fails the build here
+        except NoRotor:
+            return 0  # no rotor declared, as a lone body: body 0 is the base body
         try:  # articulated: the declared rotor joints' shared parent
-            joints = self.vehicle_usd.rotor_joints() if self.vehicle_usd is not None else []
-            return find_rotor_joints(self.model, joints)[3]
-        except ValueError:
+            return find_rotor_joints(self.model, [rotor.joint for rotor in rotors])[3]
+        except ValueError as exc:
+            logger.debug(f"no rotor joint in the model: {exc}")
             return 0  # single body, no rotor joints: body 0 is the base body
 
     def clear_forces(self, state) -> None:
@@ -215,9 +228,8 @@ class NewtonPhysics:
         jqd = self.model.joint_qd.numpy().copy()
         jq[0:3] = self.spawn_cfg["pos"]  # reposition the free-joint base; keep the authored orientation
         jqd[:] = 0.0
-        if self._rotor_vel_dofs is not None:
-            for d in self._rotor_vel_dofs:
-                jqd[d] = self._hover_omega
+        for d, omega in self._hover_omega.items():
+            jqd[d] = omega
         self.state0.joint_q.assign(jq)
         self.state0.joint_qd.assign(jqd)
         newton.eval_fk(self.model, self.state0.joint_q, self.state0.joint_qd, self.state0)

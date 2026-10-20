@@ -144,23 +144,20 @@ def test_a_registry_handed_to_the_builder_replaces_the_default_and_leaves_it_unt
     assert (stand_in.cls, imu.cls) == (StandIn, ImuSensor)
 
 
-def test_the_default_registry_builds_a_propeller_from_its_schemas_keywords():
-    """The default registry maps the propeller schema to `Propeller`, which its keywords build.
+def test_the_default_registry_resolves_a_propeller_to_its_class_with_its_schemas_keywords():
+    """The default registry maps the propeller schema to `Propeller`, with the schema's attributes as its keywords.
 
     Given the fixture's rotor, which authors `nexus:ct` alone, when the default registry resolves it, then
-    its class built with its keywords is the propeller with that `ct` and each other value at its fallback.
+    its class is the propeller force element and its keywords hold that `ct` and each other value at its fallback.
     """
-    from dataclasses import asdict
-
     import pytest
 
     from nexus_uav._src.build.components import resolve_components
     from nexus_uav._src.vehicle.forces.propellers import Propeller
 
     (rotor,) = [spec for spec in resolve_components(FIXTURE) if spec.schema == "NexusPropellerAPI"]
-    built = rotor.cls(**rotor.kwargs)
     expected = pytest.approx({"ct": 3.463e-6, "cd": 0.0, "aero_h": 0.0, "aero_hforce": 0.0})
-    assert (type(built), asdict(built)) == (Propeller, expected)
+    assert (rotor.cls, rotor.kwargs) == (Propeller, expected)
 
 
 def test_the_build_imports_an_entry_class_only_when_a_run_declares_its_schema(tmp_path):

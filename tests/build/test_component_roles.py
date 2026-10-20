@@ -444,3 +444,112 @@ def test_a_declared_force_element_that_needs_the_instance_takes_the_runs(tmp_pat
     sv.build(path, components=sv.components(NexusPx4SitlAPI=Kept, StandInLiftAPI=numbered)).close()
 
     assert (numbered.given, len(kept)) == (kept, 1)
+
+
+class _StandInEsc(Component):
+    """A command element a rotor's body declares, `NexusEscAPI`: its device stage reads its controls channel and
+    writes nothing; the class counts in `ticks` how often each instance's stage ran, by its prim.
+    """
+
+    ticks: ClassVar[dict] = {}
+
+    def __init__(self, model, path, *, channel: int = 0):
+        self.path = path
+        self.controls = Signal("controls", wp.float32, shape=(1, int(channel) + 1))
+
+    def stages(self):
+        return [Stage("esc", "device", self._run, reads=(self.controls,))]
+
+    def _run(self, tick):
+        type(self).ticks[self.path] = type(self).ticks.get(self.path, 0) + 1
+
+
+class _StandInPropeller(Component):
+    """A force element a rotor's body declares, `NexusPropellerAPI`: its device stage adds no force; the class
+    counts in `ticks` how often each instance's stage ran, by its prim.
+    """
+
+    ticks: ClassVar[dict] = {}
+
+    def __init__(self, model, path, *, ct: float, cd: float, aero_h: float = 0.0, aero_hforce: float = 0.0):
+        self.path = path
+
+    def stages(self):
+        return [Stage("propeller", "device", self._run)]
+
+    def _run(self, tick):
+        type(self).ticks[self.path] = type(self).ticks.get(self.path, 0) + 1
+
+
+# Each rotor body of the fixture vehicle declares its command, on the controls channel of its number.
+ROTOR_COMMANDS = "".join(
+    f'        over "rotor_{i}" (\n            prepend apiSchemas = ["NexusEscAPI"]\n        )\n'
+    f"        {{\n            int nexus:channel = {i - 1}\n        }}\n"
+    for i in (1, 2, 3, 4)
+)
+# The stages a run owns beside its components': its clock, its physics and its recorder.
+RUN_STAGES = {"clock", "clear", "step", "state", "record"}
+
+
+@pytest.mark.xdist_group("px4_ports")  # the fake PX4 dials its instance's port
+def test_every_class_a_run_flies_comes_from_the_registry_and_the_builder_names_none(tmp_path, caplog):
+    """Every class a run flies comes from the registry, and the builder names none.
+
+    Given a registry that maps every schema the fixture vehicle applies, each sensor's, the propeller's, the
+    rotor's command's, the controller's, the estimator's, the guidance's and the PX4 SITL peer's, to a stand-in,
+    when `Sim(registry=...)` steps 5 ticks, then the receipt names the stand-in for every declaration and each
+    tick's stages are the stand-ins' alone.
+    """
+    import logging
+
+    sensor = sv.prim("Own", "StandInSensorAPI", "float nexus:gain = 2.5")
+    guidance = sv.prim("Guidance", "StandInGuidanceAPI", "float3 nexus:setpoint = (1, 2, 3)", kind="Scope")
+    path = sv.vehicle(tmp_path, sensor + ROTOR_COMMANDS, root=ESTIMATOR + guidance, px4=True)
+    esc = type("Esc", (_StandInEsc,), {"ticks": {}})
+    propeller = type("Propeller", (_StandInPropeller,), {"ticks": {}})
+    registry = Registry(
+        {
+            "NexusPx4API_1": _setpoint_reader(),
+            "NexusPropellerAPI": propeller,
+            "NexusEscAPI": esc,
+            "StandInSensorAPI": _ConnectingSensor,
+            "StandInEstimatorAPI": StandInEstimator,
+            "StandInGuidanceAPI": _FixedGuidance,
+            "NexusPx4SitlAPI": sv.KeepingFake,
+        }
+    )
+
+    try:
+        with caplog.at_level(logging.INFO, logger="nexus"):
+            loop = sv.build(path, components=registry)
+            receipt = loop.settings
+            ticks = sv.steps(loop, 5)
+        plan = next(m for m in (r.getMessage() for r in caplog.records) if m.startswith("stage plan:"))
+    except ValueError as exc:
+        receipt, ticks, plan = {"declarations": []}, 0, f"stage plan: host({exc})"
+
+    rotors = [f"/vehicle/body/rotor_{i}" for i in (1, 2, 3, 4)]
+    resolved = {
+        (d["prim"], d["schema"]): d["class"].rsplit(":", 1)[-1].rsplit(".", 1)[-1] for d in receipt["declarations"]
+    }
+    expected = {
+        ("/vehicle/Controller", "NexusPx4API_1"): "Reader",
+        ("/vehicle/body/Own", "StandInSensorAPI"): "_ConnectingSensor",
+        ("/vehicle/Estimator", "StandInEstimatorAPI"): "StandInEstimator",
+        ("/vehicle/Guidance", "StandInGuidanceAPI"): "_FixedGuidance",
+        ("/vehicle/Px4Sitl", "NexusPx4SitlAPI"): "KeepingFake",
+        **{(prim, "NexusPropellerAPI"): "Propeller" for prim in rotors},
+        **{(prim, "NexusEscAPI"): "Esc" for prim in rotors},
+    }
+    stages = {
+        name
+        for part in plan.removeprefix("stage plan: ").split(") ")
+        for name in part.split("(")[-1].rstrip(")").split(" -> ")
+    }
+    ran = (esc.ticks, propeller.ticks)
+    assert (resolved, stages - RUN_STAGES, ran, ticks) == (
+        expected,
+        {"stand_in", "estimate", "guide", "exchange", "esc", "propeller"},
+        (dict.fromkeys(rotors, 5), dict.fromkeys(rotors, 5)),
+        5,
+    )

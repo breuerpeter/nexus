@@ -186,6 +186,19 @@ class "NexusPropellerAPI" (
     )
 }
 
+class "NexusEscAPI" (
+    doc = "An Electronic Speed Controller (ESC) on its rotor's rigid body, beside the rotor's propeller: it turns one entry of the controller's controls into the speed target and the drag feedforward of the Newton motor that drives the rotor's joint."
+    prepend apiSchemas = ["NexusCommandRoleAPI"]
+)
+{
+    int nexus:channel = 0 (
+        doc = """The entry of the controls this ESC reads, counted from 0: the rotor's output channel, PX4's motor number minus one. No two ESCs of one vehicle share a channel.
+
+        Range: [0, inf)
+        Units: none"""
+    )
+}
+
 class "NexusPx4API_1" (
     doc = "PX4 flies the vehicle over its Software In The Loop (SITL) link, on the controller's `Scope`, a child of the vehicle's root prim named `Controller` by convention. Version 1 leaves the airframe to the PX4 SITL peer, `NexusPx4SitlAPI`."
     prepend apiSchemas = ["NexusControllerRoleAPI"]

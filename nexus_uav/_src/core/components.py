@@ -46,6 +46,24 @@ def run_keywords(cls: type, instance: int) -> dict:
     return {"instance": instance} if getattr(cls, "needs_instance", False) else {}
 
 
+def sibling_keywords(spec: ComponentSpec, specs: list[ComponentSpec]) -> dict:
+    """The attributes of each schema `spec`'s class names in ``siblings``, a keyword to a schema applied on the
+    same prim, as that keyword: a rotor's ESC takes its propeller's values as ``propeller``.
+
+    Raises:
+        ValueError: The prim applies no such schema; the message names the prim and both schemas.
+    """
+    out = {}
+    for keyword, schema in getattr(spec.cls, "siblings", {}).items():
+        beside = [other for other in specs if other.prim == spec.prim and other.schema == schema]
+        if not beside:
+            raise ValueError(
+                f"{spec.prim}: {spec.schema} reads {schema} on the same prim, and the prim doesn't apply it"
+            )
+        out[keyword] = dict(beside[0].kwargs)
+    return out
+
+
 def is_peer(cls: type) -> bool:
     """Whether `cls` is a peer's class: it states ``start``, ``stop`` and ``alive``."""
     return all(callable(getattr(cls, name, None)) for name in ("start", "stop", "alive"))

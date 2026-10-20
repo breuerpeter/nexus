@@ -17,7 +17,7 @@ import numpy as np
 import warp as wp
 
 from nexus_uav._src.scene.world import GRAVITY
-from nexus_uav._src.vehicle.rotors import RPM_PER_RADS, find_rotor_joints
+from nexus_uav._src.vehicle.rotors import RPM_PER_RADS, find_rotor_joints, rotor_of
 
 
 def motor_alpha(tau: float, dt: float) -> float:
@@ -25,7 +25,7 @@ def motor_alpha(tau: float, dt: float) -> float:
     return 1.0 - math.exp(-float(dt) / float(tau))
 
 
-def motor_time_constant(model, joints, values: dict) -> float:
+def motor_time_constant(model, rotors) -> float:
     """The rotors' speed time constant near hover [s], from the vehicle's motors and propellers.
 
     A Newton rotor motor is a speed servo with ``kd`` alone whose feedforward cancels the propeller's steady drag,
@@ -34,8 +34,7 @@ def motor_time_constant(model, joints, values: dict) -> float:
 
     Args:
         model: The finalized articulated model, whose rotor joints carry Newton's motors.
-        joints: The joint path of each rotor the vehicle declares.
-        values: The values the rotors share, ``VehicleUsd.actuator_params()``: ``ct`` and ``cd``.
+        rotors: The rotors the vehicle declares, the ``VehicleUsd``'s ``rotors()``, each with its own values.
 
     Returns:
         The time constant, averaged over the rotors.
@@ -43,7 +42,8 @@ def motor_time_constant(model, joints, values: dict) -> float:
     Raises:
         ValueError: A rotor joint carries no motor with a ``kd`` gain. The message names its degree of freedom.
     """
-    vel_dofs, _pos, bodies, _base = find_rotor_joints(model, joints)
+    found = [rotor_of(model, rotor.body) for rotor in rotors]  # each rotor's dof, coord, body and airframe
+    vel_dofs, bodies = [dof for dof, _coord, _body, _base in found], [body for _dof, _coord, body, _base in found]
     kd = {}
     for motor in model.actuators or []:
         gains = getattr(motor.controller, "kd", None)
@@ -51,11 +51,14 @@ def motor_time_constant(model, joints, values: dict) -> float:
             kd.update(zip(motor.indices.numpy().tolist(), gains.numpy().tolist(), strict=True))
     if missing := [dof for dof in vel_dofs if dof not in kd]:
         raise ValueError(f"no Newton motor with a kd gain drives the rotor degrees of freedom {missing}")
-    kf = float(values["ct"]) * RPM_PER_RADS**2
-    hover = math.sqrt(float(model.body_mass.numpy().sum()) * GRAVITY / len(vel_dofs) / kf)
-    drag_slope = 2.0 * float(values["cd"]) * kf * hover
+    mass = float(model.body_mass.numpy().sum())
     axes, inertia = model.joint_axis.numpy(), model.body_inertia.numpy()
-    taus = [float(axes[d] @ inertia[b] @ axes[d]) / (kd[d] + drag_slope) for d, b in zip(vel_dofs, bodies, strict=True)]
+    taus = []
+    for rotor, d, b in zip(rotors, vel_dofs, bodies, strict=True):
+        kf = float(rotor.propeller["ct"]) * RPM_PER_RADS**2
+        hover = math.sqrt(mass * GRAVITY / len(vel_dofs) / kf)
+        drag_slope = 2.0 * float(rotor.propeller["cd"]) * kf * hover
+        taus.append(float(axes[d] @ inertia[b] @ axes[d]) / (kd[d] + drag_slope))
     return float(np.mean(taus))
 
 

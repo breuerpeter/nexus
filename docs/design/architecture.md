@@ -153,27 +153,31 @@ client there: [`nexus_uav.px4.OffboardClient`](../reference/api/px4.md) on `sim.
 
 ## The rotor chain
 
-The rotor chain has three parts, split along Newton's model, so nothing in nexus overlaps
-Newton's actuator.
+Each rotor's chain has three parts, split along Newton's model, so nothing in nexus overlaps
+Newton's actuator. Each rotor declares two of them on its rigid body, and the registry builds each
+from its declaration, so the builder names no rotor class.
 
-- The rotors' **[command element](concepts.md#role)** scales each command to a rotor-speed target,
-  the job of an Electronic Speed Controller (ESC) reduced to one multiply, and adds a drag
-  feedforward.
+- The rotor's Electronic Speed Controller (ESC) is a **[command element](concepts.md#role)** the
+  `NexusEscAPI` [schema](concepts.md#schema) declares. It reads one entry of the `controls`, its
+  `nexus:channel`, and scales it to a rotor-speed target, the ESC's job reduced to one multiply. It adds
+  a drag feedforward from its propeller's values.
 - The motor is **Newton's actuator**, a `NewtonActuator` prim authored in the vehicle USD: a velocity
   servo under a torque-speed envelope on the real rotor joint. Physics steps every Newton actuator
   the vehicle declares, rotor motor or not, before its solver. So the rotor speed is a
   solver-integrated state with physical lag and saturation.
-- The propellers' **[force element](concepts.md#role)** is the airflow-aware closed form that turns
-  rotor speed and inflow into thrust and in-plane force on the rotor body.
+- The rotor's propeller, a **[force element](concepts.md#role)** the `NexusPropellerAPI` schema
+  declares, is the airflow-aware closed form that turns rotor speed and inflow into thrust and
+  in-plane force on the rotor body.
 
-The propeller's parameters, `ct`, `cd` and the aero terms, come from the `NexusPropellerAPI` [schema](concepts.md#schema)
-that each rotor's rigid body applies in the vehicle USD. The rotor speed at full command is the
+The propeller's parameters, `ct`, `cd` and the aero terms, come from each rotor's own `NexusPropellerAPI`,
+so a vehicle's rotors can differ, as two propeller sizes do. The rotor speed at full command is the
 motor's no-load speed, `newton:velocityLimit`. The **mixer**, the
 Collective Thrust and Body Rates (CTBR) rate loop and the `B⁻¹` control allocation, lives in the
-*controllers*, not the rotor chain. So the `controls` signal is always one entry per actuator, and a
-command element only ever applies the forward map. Every run flies this chain: PX4, each example
-controller, the gradient examples' recorded rollout and RL training. The sampling Model Predictive
-Control (MPC) planner plans on a single-body model of it, with the motors' lag and spin-up reaction.
+*controllers*, not the rotor chain, and allocates each rotor's command from that rotor's values. So the
+`controls` signal is always one entry per actuator, and an ESC only ever applies the forward map. Every
+run flies this chain: PX4, each example controller, the gradient examples' recorded rollout and RL
+training. The sampling Model Predictive Control (MPC) planner plans on a single-body model of it, with
+the motors' lag and spin-up reaction.
 
 ## Observability and recording
 

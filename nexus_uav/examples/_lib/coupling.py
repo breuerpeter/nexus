@@ -35,8 +35,8 @@ def _summed_wrench(
     thrust_sign: float,  # +1 = thrust along +body-z, −1 = Forward Right Down (FRD), −body-z
     B: wp.array2d(dtype=float),  # (4, nr) forward allocation: per-rotor thrust → [T, τx, τy, τz]
     cmd: wp.array2d(dtype=float),  # (·, nr) normalized per-rotor command u
-    kf: float,  # thrust = kf·Ω², with Ω in rad/s
-    omega_max_motor: float,  # rotor-speed saturation [rad/s]
+    kf: wp.array(dtype=float),  # (nr,) each rotor's thrust = kf·Ω², with Ω in rad/s
+    omega_max_motor: wp.array(dtype=float),  # (nr,) each rotor's speed saturation [rad/s]
     alpha: float,  # first-order motor lag at this path's control step
     rotor_inertia: float,  # each rotor's spin inertia [kg·m²]
     step_dt: float,  # the step Ω changes over [s]
@@ -68,12 +68,12 @@ def _summed_wrench(
     force_w = wp.vec3(0.0, 0.0, 0.0)
     torque_w = wp.vec3(0.0, 0.0, 0.0)
     for i in range(nr):
-        omega_cmd = wp.clamp(cmd[n, i], 0.0, 1.0) * omega_max_motor  # u → rotor-speed target, saturated
-        om = lag_step(omega_prev[n, i], omega_cmd, alpha, omega_max_motor)  # the motor lag
+        omega_cmd = wp.clamp(cmd[n, i], 0.0, 1.0) * omega_max_motor[i]  # u → rotor-speed target, saturated
+        om = lag_step(omega_prev[n, i], omega_cmd, alpha, omega_max_motor[i])  # the motor lag
         omega_next[n, i] = om
         r = offsets[i]
         v_rot = v_base_b + wp.cross(w_base_b, r)  # rotor-hub inflow, body frame
-        pf = propeller_force(om, v_rot[0], v_rot[1], kf, aero_h, aero_hforce)  # (h_x, h_y, thrust_mag)
+        pf = propeller_force(om, v_rot[0], v_rot[1], kf[i], aero_h, aero_hforce)  # (h_x, h_y, thrust_mag)
         f_act = pf[2]  # axial thrust, with the forward-flight loss; == kf·Ω² at aero_h = 0
         h_x = pf[0]  # in-plane H-force, body x/y; zero at aero_hforce = 0
         h_y = pf[1]
@@ -103,8 +103,8 @@ def rigid_body_wrench_world(
     offsets: wp.array(dtype=wp.vec3),  # (nr,) per-rotor base-frame offset
     spins: wp.array(dtype=float),  # (nr,) each rotor's spin sign
     B: wp.array2d(dtype=float),  # (4, nr) forward allocation
-    kf: float,
-    omega_max_motor: float,
+    kf: wp.array(dtype=float),  # (nr,) each rotor's thrust map
+    omega_max_motor: wp.array(dtype=float),  # (nr,) each rotor's speed saturation [rad/s]
     alpha: float,
     rotor_inertia: float,
     step_dt: float,

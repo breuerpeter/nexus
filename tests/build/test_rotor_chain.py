@@ -245,7 +245,7 @@ def test_a_controller_whose_controls_are_narrower_than_a_reader_needs_fails_the_
         with pytest.raises(ValueError) as e:
             sim.run()
         histories = len(sim)
-    named = all(re.search(rf"\b{word}\b", str(e.value)) for word in ("_Narrow", "RotorCommand", "3", "4"))
+    named = all(re.search(rf"\b{word}\b", str(e.value)) for word in ("_Narrow", "Esc", "3", "4"))
     assert (named, histories) == (True, 0)
 
 
@@ -262,7 +262,7 @@ def test_an_input_no_component_writes_fails_the_run_naming_the_reader_and_the_si
         with pytest.raises(ValueError) as e:
             sim.run()
         histories = len(sim)
-    named = all(word in str(e.value) for word in ("RotorCommand", "controls"))
+    named = all(word in str(e.value) for word in ("Esc", "controls"))
     assert (named, histories) == (True, 0)
 
 

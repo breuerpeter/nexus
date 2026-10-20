@@ -3,9 +3,9 @@
 
 A force element runs once per physics substep, after the command elements and before the physics ``step``
 stage, and adds to the shared ``body_f`` buffer, never assigns: the physics ``clear`` stage zeroes it once
-per tick, so two elements on one body both act, whatever their order. The shipped one is the propellers',
-:class:`~nexus_uav._src.vehicle.forces.propellers.Propellers`, each rotor's thrust, H-force and reaction drag
-from its solver-integrated speed. Airframe drag, wind or ground effect would be one more class here.
+per tick, so two elements on one body both act, whatever their order. The shipped one is the propeller,
+:class:`~nexus_uav._src.vehicle.forces.propellers.Propeller`, one per rotor: its thrust, H-force and reaction
+drag from its rotor's solver-integrated speed. Airframe drag, wind or ground effect would be one more class here.
 """
 
 from .propellers import Propeller, Propellers, propeller_force

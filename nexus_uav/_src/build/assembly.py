@@ -1,10 +1,11 @@
 """The core loop assembly, shared by every run, per §12.
 
 Controller-agnostic by construction: the assembly wires the plant, ``NewtonPhysics`` from nexus_uav's
-own ModelBuilder + solvers, the shipped rotor chain, the rotors' command element and the propellers' force
-element around the Newton motors physics steps, the sensor suite authored in
+own ModelBuilder + solvers, every command element and force element the vehicle declares, each rotor's ESC and
+propeller among them, around the Newton motors physics steps, the sensor suite authored in
 Universal Scene Description (USD) over the model's sites and world values, and the Rerun sink around a
-**caller-supplied controller**. Which controller flies is a decision one layer up: the run's builder
+**caller-supplied controller**. The registry builds each of them from its declaration; the assembly names no
+class. Which controller flies is a decision one layer up: the run's builder
 builds the controller the vehicle USD declares, and the example controllers self-assemble beside their flight
 scripts in ``nexus_uav/examples/controllers/*/assembly.py``, reusing the helpers here,
 ``build_scenario`` / ``resolve_device``.
@@ -25,7 +26,7 @@ from typing import Any
 import warp as wp
 
 from nexus_uav._src.core import Clock, Loop, SeedTree, logger
-from nexus_uav._src.core.components import resolve_components, run_keywords
+from nexus_uav._src.core.components import resolve_components, run_keywords, sibling_keywords
 from nexus_uav._src.core.peer_inputs import PeerInputs
 from nexus_uav._src.physics import NewtonPhysics
 from nexus_uav._src.recording import Recorder
@@ -38,37 +39,45 @@ class Assembly:
 
     clock: Any
     physics: Any
-    commands: list  # the command elements: the rotors', then each the vehicle declares
-    forces: list  # the force elements: the propellers', then each the vehicle declares
+    commands: list  # the command elements the vehicle declares, each rotor's ESC among them
+    forces: list  # the force elements the vehicle declares, each rotor's propeller among them
     sensors: list
     controller: Any
     logger: Any  # the Rerun sink, or None for no recording
     prims: dict  # each declared component by the path of its prim, for the vehicle's connections
 
 
-def rotor_chain(physics, vehicle_usd) -> tuple[list, list]:
-    """The shipped rotor chain from the rotors the vehicle USD declares, the single, hash-pinned source:
-    the rotors' command element and the propellers' force element, as the command elements and force elements
-    a loop takes. The motors between them are Newton's, ``NewtonActuator`` prims the USD authors on the
-    rotor joints, a ControllerPID velocity servo + the ClampingDCMotor envelope each, which physics steps
-    before its solver, so the rotor speed is a physical joint state: real motor lag + saturation, and
-    spinning props at no extra cost.
+def declared_elements(physics, usd_path, components, instance: int) -> list[tuple]:
+    """Every command element and force element the vehicle declares, built through the registry as a sensor is:
+    the model and its prim's path, then the schema's attributes, the run's values its class states it needs, and
+    the attributes of each schema beside its own that its class names in ``siblings``. Returns each spec with its
+    component, in the order of the prims.
     """
-    from nexus_uav._src.vehicle.commands import RotorCommand
-    from nexus_uav._src.vehicle.forces import Propellers
+    elements = [spec for spec in resolve_components(usd_path, components) if spec.role in ("command", "force")]
+    return [
+        (
+            spec,
+            spec.cls(
+                physics.model,
+                spec.prim,
+                **spec.kwargs,
+                **run_keywords(spec.cls, instance),
+                **sibling_keywords(spec, elements),
+            ),
+        )
+        for spec in elements
+    ]
 
-    values = vehicle_usd.actuator_params()
-    joints = vehicle_usd.rotor_joints()
-    command = RotorCommand(
-        model=physics.model, control=physics.control, joints=joints, ct=values["ct"], cd=values["cd"],
-        rpm_max=values["rpm_max"],
-    )  # fmt: skip
-    propellers = Propellers(
-        model=physics.model, joints=joints, ct=values["ct"], cd=values["cd"],
-        aero_h=values.get("aero_h", 0.0),  # forward-flight thrust loss; 0 = quasi-static kf·Ω²
-        aero_hforce=values.get("aero_hforce", 0.0),  # in-plane H-force, drag
-    )  # fmt: skip
-    return [command], [propellers]
+
+def elements(physics, vehicle_usd, components=None, instance: int = 0) -> tuple[list, list]:
+    """The command elements and the force elements the vehicle declares, each rotor's ESC and propeller among them,
+    as the two lists a loop takes: what an example's own assembly builds beside its controller.
+    """
+    built = declared_elements(physics, vehicle_usd.cfg["usd_path"], components, instance)
+    return (
+        [component for spec, component in built if spec.role == "command"],
+        [component for spec, component in built if spec.role == "force"],
+    )
 
 
 def assemble(
@@ -97,25 +106,16 @@ def assemble(
 
     dt = cfg["physics"]["dt"]
     rtf = cfg["physics"].get("rtf", 0)
-    commands, forces = rotor_chain(physics, vehicle_usd)  # from the vehicle USD's rotors, not cfg
-    # Every other command and force element the vehicle declares, built through the registry as a sensor is:
-    # the model and its prim's path, then the schema's attributes.
+    # Every command and force element the vehicle declares, each rotor's ESC and propeller among them, from the
+    # vehicle USD's declarations, the single, hash-pinned source, not cfg.
     usd_path = vehicle_usd.cfg["usd_path"]
-    elements = [
-        spec
-        for spec in resolve_components(usd_path, components)
-        if spec.role in ("command", "force") and spec.schema not in ROTOR_CHAIN_SCHEMAS
-    ]
-    built = {
-        spec.prim: spec.cls(physics.model, spec.prim, **spec.kwargs, **run_keywords(spec.cls, instance))
-        for spec in elements
-    }
-    commands += [built[spec.prim] for spec in elements if spec.role == "command"]
-    forces += [built[spec.prim] for spec in elements if spec.role == "force"]
+    built = declared_elements(physics, usd_path, components, instance)
+    commands = [component for spec, component in built if spec.role == "command"]
+    forces = [component for spec, component in built if spec.role == "force"]
 
     seedtree = SeedTree(cfg.get("seed", 42))  # the run's builder threads runtime.seed; string-name path keeps 42
     # The sensors come from the schemas the vehicle USD applies, the single, hash-pinned source, the
-    # same as the preceding rotor chain. Each reads its site and the world's values, which the scene's
+    # same as the elements. Each reads its site and the world's values, which the scene's
     # PhysicsScene authors, from the model. A vehicle that declares no sensor builds: which sensors a
     # flight needs is its controller's matter.
     specs = sensor_specs(usd_path, components)
@@ -145,26 +145,21 @@ def assemble(
         sensors=sensors,
         controller=controller,
         logger=sink,
-        prims={**dict(zip([spec.prim for spec in specs], sensors, strict=True)), **built},
+        prims={
+            **dict(zip([spec.prim for spec in specs], sensors, strict=True)),
+            **{spec.prim: component for spec, component in built},
+        },
     )
-
-
-# The schemas the shipped rotor chain builds from, which no other build reads: each rotor's propeller. The
-# registry builds every other declared command and force element. The rotor chain stays one command element and
-# one force element for all rotors until #185 Each rotor flies its own propeller values, not one shared set.
-ROTOR_CHAIN_SCHEMAS = ("NexusPropellerAPI",)
 
 
 # Default scenario. No sensor entry, by design: the scene's PhysicsScene authors its geodetic origin
 # and the world's values, which the model holds, and the sensor suite, which sensors exist + their
-# noise/mount params, lives in the vehicle USD as applied sensor schemas, the same as the actuator
-# entry below.
+# noise/mount params, lives in the vehicle USD as applied sensor schemas, the same as the rotors.
 DEFAULT_SCENARIO = {
     "physics": {"enabled": True, "dt": 0.004, "force_cpu": False, "rtf": 0, "solver": "mujoco"},
-    # No rotor entry, by design. The aero/thrust map (rpm_max, ct, cd, aero_h, aero_hforce)
-    # lives in the vehicle USD, declared per rotor on its body and its motor, and
-    # VehicleUsd.actuator_params() reads it; since the USD is content-hashed, the vehicle hash pins the
-    # rotor chain, not any config. Every build reads those params directly from the builder.
+    # No rotor entry, by design. Each rotor's values, its channel, its ct, cd, aero_h and aero_hforce, and its
+    # motor's no-load speed, live in the vehicle USD, declared on its body and its motor, and VehicleUsd.rotors()
+    # reads them; since the USD is content-hashed, the vehicle hash pins the rotors, not any config.
 }
 
 
@@ -299,10 +294,12 @@ def build_loop(
                     f"{reader} connects {signal!r} to {' and '.join(writers)}, and declares no component itself"
                 )
             for writer in writers:
-                if writer in by_prim:
-                    links.append((by_prim[reader], signal, by_prim[writer], signal))
-                elif writer in physics.outputs.by_label:
+                # A body's or a joint's prim names the plant's output of it, even where an element sits on that
+                # prim, as a rotor's ESC and propeller sit on its body: an element writes no pose.
+                if writer in physics.outputs.by_label:
                     links.append((by_prim[reader], signal, physics, physics.outputs.by_label[writer].name))
+                elif writer in by_prim:
+                    links.append((by_prim[reader], signal, by_prim[writer], signal))
                 else:
                     who = type(by_prim[reader]).__name__
                     raise ValueError(
