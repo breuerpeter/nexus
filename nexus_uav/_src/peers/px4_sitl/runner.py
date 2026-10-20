@@ -106,9 +106,9 @@ class Px4Sitl(ContainerPeer):
         instance: The run's instance, which numbers PX4's ports and its system id.
         log_dir: The run's folder: the peer's files live under ``px4_sitl/`` there, PX4's console as
             ``console.log``, the ``px4_log`` artifact, and its ULog as ``<date>/<time>.ulg``, the ``ulog`` artifact.
-        serial: The path of PX4's end of each serial link the run made for it, by the other peer's name. PX4 opens
-            each as ``/dev/serial/<name>`` and starts a MAVLink instance on it in onboard mode, the stream set a
-            companion computer expects, at 3 Mbaud with MAVLink's file transfer, the link stock SITL doesn't start.
+        serial: The path of PX4's end of each serial line a peer's prim wires to PX4's, by that prim's name. PX4
+            opens each as ``/dev/serial/<name>`` and starts a MAVLink instance on it in onboard mode, the stream set
+            a companion computer expects, at 3 Mbaud with MAVLink's file transfer, the link stock SITL doesn't start.
         **run: The run's other values, which the peer needs none of.
 
     Raises:
@@ -145,7 +145,8 @@ class Px4Sitl(ContainerPeer):
 
         Raises:
             RuntimeError: A live process holds this instance, or there is no PX4 tree, or the image
-                build failed, or the docker daemon is unreachable.
+                build failed, or the docker daemon is unreachable, or this process can't make PX4's user the
+                owner of a serial end; the message names the end and the user.
             docker.errors.ContainerError: The PX4 build failed.
         """
         self._clear_leftovers()
@@ -192,7 +193,9 @@ class Px4Sitl(ContainerPeer):
                 "".join(f"mavlink start -d /dev/serial/{name} -b 3000000 -m onboard -x\n" for name in self.serial)
             )
             kwargs["volumes"][str(post)] = {"bind": f"{_airframe_file(self.tree, self.airframe)}.post", "mode": "ro"}
+            uid = int(kwargs["user"].split(":")[0])
             for name, path in self.serial.items():
+                _give(path, uid)
                 kwargs["volumes"][path] = {"bind": f"/dev/serial/{name}", "mode": "rw"}
         return {
             "command": ["build/px4_sitl_default/bin/px4", "-i", str(self.instance), "-d"],
@@ -283,6 +286,25 @@ def _airframe_file(tree: Path, airframe: str) -> Path:
     airframes = tree / "build" / "px4_sitl_default" / "etc" / "init.d-posix" / "airframes"
     found = sorted(airframes.glob(f"*_none_{airframe}"))
     return found[0] if found else airframes / f"0_none_{airframe}"
+
+
+def _give(path: str, uid: int) -> None:
+    """Make `uid`, the user PX4 runs as, the owner of the serial end `path` when another user owns it: the run made
+    the end as this process, and the container runs as the tree's owner, which differ under a root launcher.
+
+    Raises:
+        RuntimeError: This process can't change the end's owner; the message names the end and the user.
+    """
+    owner = os.stat(path).st_uid
+    if owner == uid:
+        return
+    try:
+        os.chown(path, uid, -1)
+    except OSError as exc:
+        raise RuntimeError(
+            f"PX4 runs as user {uid}, the tree's owner, and its serial end {path} belongs to user {owner}, which this "
+            f"process can't change: {exc.strerror}"
+        ) from exc
 
 
 def _alive(pid: int) -> bool:

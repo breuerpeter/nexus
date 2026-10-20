@@ -123,9 +123,10 @@ a pin not in its form and returns the pin it checked. It states `clock`, how it 
 `on_request` or `free`, per [Peer](../design/concepts.md#peer). A run that declares a free-running
 peer needs `--rtf 1`, and fails before any peer starts without it. It can state `instance_free`, which says
 whether an instance is free for it, and `ports`, the links it knows of that leave the run. A peer that
-talks to another peer over a serial line, as a companion computer talks to PX4, names that peer in
-`serial`. The run then hands it the path of its end in the keyword `serial`, by the other peer's name,
-per [Link](../design/concepts.md#link). A run's override layer drops a declared peer by deactivating
+talks to another peer over a serial line, as a companion computer talks to PX4, declares the line in
+its schema as a relationship `nexus:serial:<line>`. The vehicle targets the prim of the peer at the
+other end. The run then hands it the path of its end in the keyword `serial`, by the line's name, per
+[Link](../design/concepts.md#link). A run's override layer drops a declared peer by deactivating
 its scope, `active = false`.
 
 Every peer ships a fake: a class on the same contract that speaks the links of the peer in-process

@@ -43,7 +43,7 @@ class Px4Fake:
     Args:
         instance: The run's instance: the fake dials the HIL port ``HIL_PORT + instance`` and speaks
             as system ``instance + 1``, as PX4 does.
-        serial: The path of the fake's end of each serial link the run made for it, by the other peer's name.
+        serial: The path of the fake's end of each serial line a peer's prim wires to the fake's, by that prim's name.
         **run: The schema's airframe and the run's other values, its pin and its folder, which the fake
             needs none of.
     """
@@ -77,9 +77,9 @@ class Px4Fake:
         self._thread.start()
         self._serial_threads = [
             threading.Thread(
-                target=self._serve_serial, args=(path,), name=f"px4-fake-{self.instance}-{peer}", daemon=True
+                target=self._serve_serial, args=(path,), name=f"px4-fake-{self.instance}-{name}", daemon=True
             )
-            for peer, path in self.serial.items()
+            for name, path in self.serial.items()
         ]
         for thread in self._serial_threads:
             thread.start()

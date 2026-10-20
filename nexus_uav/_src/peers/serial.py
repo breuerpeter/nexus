@@ -20,29 +20,31 @@ _CHUNK = 65536
 
 
 class SerialLink:
-    """One serial link between the peers ``first`` and ``second``, each the name of a peer the run starts.
+    """One serial link, the run's cable for the line ``line``, the Universal Scene Description (USD) name of the
+    relationship that wires it, such as ``/vehicle/Companion.nexus:serial:autopilot``.
 
-    ``paths`` maps each peer's name to the path of its end, a ``/dev/pts/N`` the peer opens as a serial device.
-    The relay runs from the moment the run makes the link, so a peer that starts first can write before the other
-    opens its end; the bytes wait in the other end's buffer.
+    ``ends`` holds the two paths, each a ``/dev/pts/N`` a peer opens as a serial device: the first for the peer
+    whose prim wires the line, the second for the peer at its other end. The relay runs from the moment the run
+    makes the link, so a peer that starts first can write before the other opens its end; the bytes wait in the
+    other end's buffer.
 
     Args:
-        first: The name of the peer that stated the link.
-        second: The name of the peer it links to.
+        line: The USD name of the line the link stands for, which names the relay's thread.
     """
 
-    def __init__(self, first: str, second: str) -> None:
-        self.name = f"serial link {first}-{second}"
+    def __init__(self, line: str) -> None:
+        self.name = f"serial link {line}"
         self._masters = []
         self._slaves = []
-        self.paths: dict[str, str] = {}
-        for peer in (first, second):
+        ends = []
+        for _ in range(2):
             master, slave = os.openpty()
             tty.setraw(slave)
             os.set_blocking(master, False)  # a full far end never blocks the relay past a stop
             self._masters.append(master)
             self._slaves.append(slave)
-            self.paths[peer] = os.ttyname(slave)
+            ends.append(os.ttyname(slave))
+        self.ends: tuple[str, str] = (ends[0], ends[1])
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._relay, name=self.name, daemon=True)
         self._thread.start()
