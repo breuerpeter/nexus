@@ -147,8 +147,8 @@ def test_start_runs_px4_with_the_runs_instance_and_airframe(daemon, tree, tmp_pa
     """The container definition is a contract, field by field. The peer runs PX4's binary itself,
     the way PX4's multi-instance script does, since ``make px4_sitl none_<airframe>`` can't take an
     instance; ``-d`` runs with no pxh shell, which at the end of an unattended stdin spin-loops
-    printing its prompt and starves PX4. The instance's own working folder mounts over its folder of
-    the tree, so PX4 boots with no state an earlier run left there, and the run's folder mounts over
+    printing its prompt and starves PX4. The store of the airframe and the instance mounts over the
+    instance's folder of the tree, so the tree keeps no state of the run's, and the run's folder mounts over
     PX4's log root inside it, so PX4 writes the run's ULog there and leaves none in the tree. The container
     doesn't remove itself, so a PX4 that exits at once leaves its console for the log.
     """
@@ -167,7 +167,7 @@ def test_start_runs_px4_with_the_runs_instance_and_airframe(daemon, tree, tmp_pa
             Mount(str(tree), str(tree), type="bind", read_only=False),
             Mount(
                 str(tree / "build/px4_sitl_default/rootfs/2"),
-                str(tmp_path / "home" / ".cache" / "nexus" / "px4-work" / "2"),
+                str(tmp_path / "home" / ".cache" / "nexus" / "px4_sitl" / "store" / "astro_max" / "2"),
                 type="bind",
                 read_only=False,
             ),
@@ -198,7 +198,7 @@ def test_start_mounts_each_serial_lines_device_and_starts_a_mavlink_instance_on_
     airframes = tree / "build" / "px4_sitl_default" / "etc" / "init.d-posix" / "airframes"
     airframes.mkdir(parents=True)
     (airframes / "80000_none_astro_max").write_text("# the airframe\n")
-    post = tmp_path / "home" / ".cache" / "nexus" / "px4-work" / "0" / "serial.post"
+    post = tmp_path / "home" / ".cache" / "nexus" / "px4_sitl" / "store" / "astro_max" / "0" / "serial.post"
 
     _peer(tree, tmp_path, serial={"Companion": pty}).start()
 

@@ -75,6 +75,10 @@ class Sim:
             ``None`` takes a new folder under ``~/.cache/nexus/logs``. A peer's container mounts the
             folder at its own path, so a script inside a container that starts peers on the host's
             daemon binds it at the same path on the host.
+        clean: Start every peer from nothing an earlier run stored. A peer with a store keeps it across runs,
+            as a real vehicle does across a reboot: PX4 boots with the parameters and the mission an earlier
+            run on the same airframe and instance stored. ``True`` empties each store first; ``None`` takes
+            ``$NEXUS_CLEAN``, where ``1`` means clean, and else keeps the store.
 
     Raises:
         FileExistsError: On entry, ``run_dir`` holds files already; raised before any peer starts.
@@ -105,7 +109,7 @@ class Sim:
         layer: str | None = None,
         registry: Registry | None = None,
         run_dir: str | os.PathLike | None = None,
-        clean: bool = False,
+        clean: bool | None = None,
     ):
         self._registry = registry  # the registry the build resolves each schema with, or None for the default
         self._launch = LaunchConfig()
@@ -127,6 +131,8 @@ class Sim:
         if max_steps is not None:
             self._launch.runtime.max_steps = int(max_steps)
         self._launch.runtime.rtf = float(rtf)  # 0 = unthrottled; 1.0 = wall-clock pacing
+        if clean is not None:  # None keeps the launch's default, $NEXUS_CLEAN
+            self._launch.runtime.clean = clean
         # Rerun, serve or file but not both: view serves live on :9876; log writes the .rrd. Omitting *both*
         # builds no Logger at all: no recording, no per-tick log fan-out → max headless speed. The two are exclusive.
         if log and view:
@@ -203,6 +209,7 @@ class Sim:
             "max_steps": getattr(args, "max_steps", None),
             "rtf": getattr(args, "rtf", 0.0),
             "layer": getattr(args, "layer", None),
+            "clean": True if getattr(args, "clean", False) else None,
         }
         kw.update(overrides)
         return cls(**kw)

@@ -38,7 +38,7 @@ def px4_store(daemon, tmp_path, monkeypatch):  # noqa: F811
 
 
 def test_a_run_from_the_command_line_can_be_asked_to_start_clean(px4_store, monkeypatch):
-    """A run from the command line can be asked to start clean.
+    """The command line can ask a run to start clean.
 
     Given a store on `astro_max`, instance 0, outside the test suite's own default, when the command line's
     arguments with `--clean` build that vehicle, then the store holds only the empty `log` the run's folder mounts

@@ -29,6 +29,10 @@ if platform.machine() == "x86_64":
 import tests.usd.stand_in.nexus_stand_in  # noqa: F401
 from nexus_uav._src.core.interfaces import Component
 
+# Every run the suite makes starts clean unless it asks to keep the store: a peer boots on nothing an earlier
+# run, of this suite or of a pilot on this machine, stored. A test's subprocess inherits it.
+os.environ.setdefault("NEXUS_CLEAN", "1")
+
 # A worker's resident memory settles near 2.8 GiB over the suite, 5.2 GiB when one worker runs it all:
 # the flights keep the memory they take. One worker per logical CPU would want 56 GiB on a 20-CPU laptop.
 _WORKER_MIB = 3 * 1024

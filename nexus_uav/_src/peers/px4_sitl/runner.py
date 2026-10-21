@@ -11,8 +11,9 @@ The image is the px4-sitl build toolchain, built on this machine from ``image/``
 package data, and tagged with a hash of that folder. The PX4 tree comes from :mod:`.checkout`: the
 pinned commit fetched into a cache folder, or a checkout the pin names. ``start`` builds the tree incrementally
 before it launches, since a launch must reach the sim inside its 30 s preroll window and a cold
-build never does. PX4 works in a folder of the run's instance outside the tree, which each start
-empties, so no run's PX4 boots with a parameter or a mission an earlier run left.
+build never does. PX4 works in a store outside the tree, one per airframe and instance, and boots with the
+parameters and the mission an earlier run there stored, as a real vehicle does across a reboot. A run that starts
+clean empties the store first.
 
 This module is the one definition of the PX4 SITL container. It used to be one of three: a compose
 service and a CI shell script held their own copies, which drifted, see GH #86. So a change to the
@@ -109,6 +110,8 @@ class Px4Sitl(ContainerPeer):
         serial: The path of PX4's end of each serial line a peer's prim wires to PX4's, by that prim's name. PX4
             opens each as ``/dev/serial/<name>`` and starts a MAVLink instance on it in onboard mode, the stream set
             a companion computer expects, at 3 Mbaud with MAVLink's file transfer, the link stock SITL doesn't start.
+        clean: Whether the run starts clean: the start empties the store of the airframe and the instance, so PX4
+            boots with no parameter and no mission an earlier run stored.
         **run: The run's other values, which the peer needs none of.
 
     Raises:
@@ -127,6 +130,7 @@ class Px4Sitl(ContainerPeer):
         instance: int,
         log_dir: Path,
         serial: Mapping[str, str] = (),
+        clean: bool = False,
         **run,
     ) -> None:
         if not airframe:
@@ -138,6 +142,7 @@ class Px4Sitl(ContainerPeer):
         self.tree: Path | None = None  # resolved at start, which can fetch it
         self.airframe = airframe
         self.serial = dict(serial)
+        self.clean = clean
 
     def start(self) -> None:
         """Fetch the PX4 tree, then build the image and the tree if this machine lacks them, then start
@@ -158,8 +163,8 @@ class Px4Sitl(ContainerPeer):
         super().start()
 
     def run_options(self) -> dict:
-        """PX4's binary on its instance over the built tree, on host networking, with the instance's working
-        folder and the peer's folder mounted over PX4's own.
+        """PX4's binary on its instance over the built tree, on host networking, with the store of its airframe and
+        instance and the peer's folder mounted over PX4's own.
         """
         kwargs = _container_kwargs(self.tree)
         # PX4's own `make px4_sitl none_<airframe>` runs the binary with the airframe in its
@@ -167,21 +172,27 @@ class Px4Sitl(ContainerPeer):
         # itself the way PX4's multi-instance script does. `-d` runs with no pxh shell: at the end of
         # an unattended stdin that shell spin-loops printing its prompt and starves PX4.
         kwargs["environment"]["PX4_SIM_MODEL"] = f"none_{self.airframe}"
-        # PX4 works in its instance's folder of the tree, where it stores the parameters and the
-        # mission a run sets and loads them at its next boot. An empty folder mounts there instead,
-        # the instance's own, which this run holds with the instance, so PX4 boots with nothing an
-        # earlier run left and the tree keeps nothing of this run's. The start empties it, so a run
-        # killed before its stop leaves the next one nothing either.
-        work = Path("~/.cache/nexus/px4-work").expanduser() / str(self.instance)
-        shutil.rmtree(work, ignore_errors=True)
-        work.mkdir(parents=True)
+        # PX4 works in its instance's folder of the tree, where it stores the parameters and the mission a run
+        # sets and loads them at its next boot. The store of the airframe and the instance mounts there instead,
+        # which this run holds with the instance, so the tree keeps nothing of this run's. PX4 wipes its stored
+        # parameters at a boot on another airframe, so each airframe keeps a store of its own. A clean start
+        # empties the store, so a run killed before its stop leaves a clean run nothing either.
+        work = Path("~/.cache/nexus").expanduser() / NAME / "store" / self.airframe / str(self.instance)
+        if self.clean:
+            shutil.rmtree(work, ignore_errors=True)
+        work.mkdir(parents=True, exist_ok=True)
+        # PX4 links the store to the tree at each boot, but keeps a link at ./test_data that points into a tree
+        # since removed and then fails to make its own. It makes both again, so the start removes every link.
+        for entry in work.iterdir():
+            if entry.is_symlink():
+                entry.unlink()
         instance_dir = self.tree / "build" / "px4_sitl_default" / "rootfs" / str(self.instance)
         instance_dir.mkdir(parents=True, exist_ok=True)
         kwargs["volumes"][str(work)] = {"bind": str(instance_dir), "mode": "rw"}
         # PX4 writes its ULog to ./log there, as <date>/<time>.ulg. The peer's folder mounts there in turn, so
         # it holds this run's ULog alone, beside the console. This process makes each mount point, so docker
         # makes none as root.
-        (work / "log").mkdir()
+        (work / "log").mkdir(exist_ok=True)
         kwargs["volumes"][str(self.dir)] = {"bind": str(instance_dir / "log"), "mode": "rw"}
         if self.serial:
             # Each serial link's device, and PX4's own hook for commands after its airframe and its network links,
