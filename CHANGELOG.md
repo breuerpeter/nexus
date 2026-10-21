@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.6.0...nexus-uav-v0.6.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* **peers:** a run keeps PX4's store across a restart unless asked to start clean ([#355](https://github.com/breuerpeter/nexus/issues/355)) ([9463732](https://github.com/breuerpeter/nexus/commit/9463732db422b6c26f07e5d90f463ba723bd5acc)), closes [#354](https://github.com/breuerpeter/nexus/issues/354)
+
 ## [0.6.0](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.5.0...nexus-uav-v0.6.0) (2026-10-20)
 
 
