@@ -59,6 +59,7 @@ def sim_argparser(description: str | None = None) -> argparse.ArgumentParser:
         "declared value, such as the scene's nexus:geodeticOrigin, selects a variant, or drops a declaration;\n"
         f"one that deactivates the PX4 SITL peer's scope flies an autopilot started elsewhere, which dials the HIL port {HIL_PORT}",
     )  # fmt: skip
+    p.add_argument("--clean", action="store_true", help="start the peers from nothing an earlier run stored")
     p.add_argument("--log", action="store_true", help="write the Rerun .rrd to disk")
     p.add_argument("--view", action="store_true", help="serve the live Rerun viewer on :9876")
     p.add_argument(

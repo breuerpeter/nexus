@@ -105,6 +105,7 @@ class Sim:
         layer: str | None = None,
         registry: Registry | None = None,
         run_dir: str | os.PathLike | None = None,
+        clean: bool = False,
     ):
         self._registry = registry  # the registry the build resolves each schema with, or None for the default
         self._launch = LaunchConfig()

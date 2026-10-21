@@ -631,14 +631,14 @@ def test_a_px4_runs_receipt_carries_no_substeps_determinism_or_sensors(tmp_path,
     """A PX4 run's receipt carries no `substeps`, no `determinism` and no `sensors`.
 
     Given a launch of the fixture vehicle in the fixture scene on the PX4 fake, when the run builds and a caller reads
-    its receipt as JSON, then `runtime` holds exactly `device`, `seed`, `dt`, `max_steps`, `rtf` and
-    `solver`, and the receipt has no `sensors` key.
+    its receipt as JSON, then `runtime` holds exactly `device`, `seed`, `dt`, `max_steps`, `rtf`, `solver` and
+    `clean`, and the receipt has no `sensors` key.
     """
     loop, receipt = _px4_run(tmp_path, "cpu")
     loop.close()
 
     assert (sorted(receipt["runtime"]), "sensors" in receipt) == (
-        ["device", "dt", "max_steps", "rtf", "seed", "solver"],
+        ["clean", "device", "dt", "max_steps", "rtf", "seed", "solver"],
         False,
     )
 

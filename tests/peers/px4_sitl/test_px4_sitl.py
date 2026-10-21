@@ -250,21 +250,23 @@ def test_start_fails_naming_the_serial_end_and_the_user_when_it_cannot_give_it(
     assert (pty in str(e.value), "4242" in str(e.value), commands) == (True, True, [["make", "px4_sitl"]]), str(e.value)
 
 
-def test_start_empties_the_instances_work_folder_of_what_an_earlier_run_left(daemon, tree, tmp_path):
-    """A start empties the instance's work folder, so PX4 boots with no parameter and no mission an earlier run
-    stored there, whether that run ended or died before its teardown: the peer finds one folder either way.
+def test_a_run_asked_to_start_clean_empties_the_store_even_after_a_run_killed_before_its_teardown(
+    daemon, tree, tmp_path
+):
+    """A run asked to start clean empties the store even after a run killed before its teardown.
 
-    Given the instance's work folder holding `parameters.bson` and `dataman`, when the peer starts, then the folder
-    holds only the empty `log` the run's folder mounts over.
+    Given the store of airframe `astro_max` on instance 0 holding the `parameters.bson` and `dataman` a run filled
+    and then died in with `SIGKILL`, when a peer of a run asked to start clean starts on that airframe and instance,
+    then the store holds only the empty `log` the run's folder mounts over when PX4 boots.
     """
-    work = tmp_path / "home" / ".cache" / "nexus" / "px4-work" / "0"
-    work.mkdir(parents=True)
-    (work / "parameters.bson").write_bytes(b"left by an earlier run")
-    (work / "dataman").write_bytes(b"left by an earlier run")
+    store = tmp_path / "home" / ".cache" / "nexus" / "px4_sitl" / "store" / "astro_max" / "0"
+    store.mkdir(parents=True)
+    (store / "parameters.bson").write_bytes(b"left by a killed run")
+    (store / "dataman").write_bytes(b"left by a killed run")
 
-    _peer(tree, tmp_path).start()
+    _peer(tree, tmp_path, clean=True).start()
 
-    assert sorted(p.name for p in work.iterdir()) == ["log"]
+    assert sorted(p.name for p in store.iterdir()) == ["log"]
 
 
 def test_start_builds_the_tree_before_it_launches(daemon, tree, tmp_path):

@@ -50,6 +50,8 @@ class Runtime(_Base):
     # Physics integrator: mujoco, with contact fidelity, is the SITL default; the
     # gradient-capable semi_implicit / featherstone serve the design-optimization path.
     solver: Literal["mujoco", "semi_implicit", "featherstone"] = "mujoco"
+    # Whether the run's peers start from nothing they stored, not from the store an earlier run left.
+    clean: bool = False
 
 
 class Output(_Base):
