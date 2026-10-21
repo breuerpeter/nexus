@@ -59,7 +59,7 @@ def main() -> int:
 
     try:
         nx.logger.info("[manual] Newton starting in-process (actuator from USD); serving :4560 …")
-        with nx.Sim(VEHICLE, scene=SCENE, device="cuda", log=True) as sim:
+        with nx.Sim(VEHICLE, scene=SCENE, device="cuda", log=True, clean=True) as sim:
             sim.start(timeout=args.timeout)  # drive setup as far as PX4 lockstep
             link = sim.ports["offboard"]  # the run owns the address of the link this script opens
             nx.logger.info(f"[manual] PX4 lockstep established: flying via MANUAL_CONTROL (:{link['port']})")

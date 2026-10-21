@@ -207,6 +207,18 @@ The run starts nothing and waits on instance 0's HIL port, 4560, which a stock `
 run's receipt records the layer's sha256 beside the vehicle's. The same kind of layer changes a
 declared value or selects a variant without re-authoring the hosted vehicle.
 
+**Parameters and missions across runs.** PX4 keeps what it stores, the parameters set from a ground
+station and the last mission it accepted, across runs, as a real vehicle keeps them across a reboot.
+Set a parameter in QGroundControl, stop the sim, start it again, and PX4 boots with it. PX4 keeps one
+store per airframe and instance, in `~/.cache/nexus/px4_sitl/store/<airframe>/<instance>/`. A
+vehicle on another airframe keeps its own. A run takes the lowest free instance, so a restart finds
+the store only on the instance it flew on, which another run on the machine can hold.
+
+To start from the values of the airframe alone, ask the run to start clean: `--clean`, or
+`Sim(clean=True)`. Every peer that keeps a store empties it first. `NEXUS_CLEAN=1` makes clean the
+default for every run in the shell. The test suite sets it, and the examples start clean, so no test
+or example flies on what an earlier run stored.
+
 **The PX4 tree.** The PX4 SITL peer pins the PX4-Autopilot commit it flies, in
 `nexus_uav/_src/peers/px4_sitl/pin.ref`, which ships in the package. The first managed run on
 a machine fetches that commit into `~/.cache/nexus/px4_sitl/<commit>/` and builds it there, minutes

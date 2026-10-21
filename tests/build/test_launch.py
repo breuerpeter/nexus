@@ -323,6 +323,21 @@ def test_a_px4_sitl_peer_with_no_airframe_authored_fails_the_build(tmp_path, dae
     assert ("/vehicle" in str(err.value), daemon) == (True, [])
 
 
+@pytest.mark.parametrize("airframe", ["../..", "/tmp/elsewhere", "a/b", "."])
+def test_a_px4_sitl_peer_whose_airframe_is_no_plain_name_fails_the_build(tmp_path, daemon, airframe):
+    """A PX4 SITL peer whose airframe is no plain name fails the build, so no store lies outside PX4's cache folder.
+
+    Given a vehicle USD whose PX4 SITL peer's schema authors the airframe `../..`, when a run builds, then it raises
+    before any peer starts, names the prim and the airframe; and once each with `/tmp/elsewhere`, `a/b` and `.`.
+    """
+    odd = PX4_SITL_SCOPED.replace('nexus:airframe = "foo"', f'nexus:airframe = "{airframe}"')
+
+    with pytest.raises(ValueError) as err:
+        _build(tmp_path, odd)
+
+    assert ("/vehicle" in str(err.value), repr(airframe) in str(err.value), daemon) == (True, True, [])
+
+
 # --- the controller's scope: a prim of its own, of type Scope, under the root -----------------------
 
 
@@ -631,14 +646,14 @@ def test_a_px4_runs_receipt_carries_no_substeps_determinism_or_sensors(tmp_path,
     """A PX4 run's receipt carries no `substeps`, no `determinism` and no `sensors`.
 
     Given a launch of the fixture vehicle in the fixture scene on the PX4 fake, when the run builds and a caller reads
-    its receipt as JSON, then `runtime` holds exactly `device`, `seed`, `dt`, `max_steps`, `rtf` and
-    `solver`, and the receipt has no `sensors` key.
+    its receipt as JSON, then `runtime` holds exactly `device`, `seed`, `dt`, `max_steps`, `rtf`, `solver` and
+    `clean`, and the receipt has no `sensors` key.
     """
     loop, receipt = _px4_run(tmp_path, "cpu")
     loop.close()
 
     assert (sorted(receipt["runtime"]), "sensors" in receipt) == (
-        ["device", "dt", "max_steps", "rtf", "seed", "solver"],
+        ["clean", "device", "dt", "max_steps", "rtf", "seed", "solver"],
         False,
     )
 

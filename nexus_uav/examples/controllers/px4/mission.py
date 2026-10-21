@@ -76,7 +76,7 @@ def main() -> int:
         # altitude is over mean sea level, the datum the flat scene's origin takes.
         nx.logger.info(f"[mission] {PLAN.name}: {len(plan.items)} items, home {lat:.6f},{lon:.6f}")
         layer = origin_layer(lat, lon, alt)
-        with nx.Sim(VEHICLE, scene=SCENE, layer=layer, device="cuda", log=True) as sim:
+        with nx.Sim(VEHICLE, scene=SCENE, layer=layer, device="cuda", log=True, clean=True) as sim:
             sim.start(timeout=args.timeout)  # drive setup as far as PX4 lockstep
             link = sim.ports["offboard"]  # the run owns the address of the link this script opens
             nx.logger.info(f"[mission] PX4 lockstep established: uploading the plan over :{link['port']}")

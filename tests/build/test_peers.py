@@ -433,3 +433,22 @@ def test_a_run_with_no_free_running_peer_keeps_any_factor_and_warns_of_nothing(d
         outcome = _built(path, registry, during=_steps_for(time, 2.5), rtf=rtf, dt=PACED_DT)
 
     assert (_pace_warnings(caplog), outcome["error"]) == ([], None)
+
+
+def test_a_peer_of_a_projects_own_reads_whether_the_run_starts_clean(daemon, tmp_path, monkeypatch):
+    """A peer of a project's own reads whether the run starts clean.
+
+    Given the fixture vehicle that declares the stand-in peer, outside the test suite's own default, when one run
+    builds asked to start clean and another builds with no choice, then the build gave the peer clean in the first
+    and kept in the second.
+    """
+    monkeypatch.delenv("NEXUS_CLEAN", raising=False)
+    path = sv.vehicle(tmp_path, root=sv.companion("hello"), px4=True)
+    peer = sv.radio()
+    registry = sv.components(NexusPx4SitlAPI=Px4Fake, StandInPeerAPI=peer)
+
+    for runtime in ({"device": "cpu", "clean": True}, {"device": "cpu"}):
+        launch = LaunchConfig.from_dict({"vehicle": path, "scene": sv.SCENE, "runtime": runtime})
+        L.build_from_launch(launch, preroll_timeout=10.0, components=registry).close()
+
+    assert [run.get("clean") for run in peer.built] == [True, False]

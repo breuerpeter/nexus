@@ -6,6 +6,7 @@ serialize to and deserialize from: one model, two front doors.
 
 from __future__ import annotations
 
+import os
 import pathlib
 from typing import Literal
 
@@ -50,6 +51,10 @@ class Runtime(_Base):
     # Physics integrator: mujoco, with contact fidelity, is the SITL default; the
     # gradient-capable semi_implicit / featherstone serve the design-optimization path.
     solver: Literal["mujoco", "semi_implicit", "featherstone"] = "mujoco"
+    # Whether the run's peers start from nothing an earlier run stored. A peer with a store, such as PX4's
+    # parameters and mission, keeps it across runs by default, as a real vehicle keeps its own across a
+    # reboot. $NEXUS_CLEAN=1 makes clean the default, as the test suite sets it.
+    clean: bool = Field(default_factory=lambda: os.environ.get("NEXUS_CLEAN") == "1")
 
 
 class Output(_Base):

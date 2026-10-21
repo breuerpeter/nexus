@@ -10,7 +10,8 @@ Kit render peer an RTX sensor requires, it starts once by the name the class req
 
 A component's schema attributes are its class's keyword arguments, and so are a peer's. What only the run
 knows reaches a peer as keywords beside them: its pin, the run's instance, the run's folder, the files the
-run reads, the asset cache and, for a peer with a serial line, the path of each of its ends. A component whose
+run reads, the asset cache, whether the run starts clean and, for a peer with a serial line, the path of each of
+its ends. A component whose
 class states ``needs_instance`` takes the instance too. The run claims one instance on this machine when it
 starts a declared peer, which every address its peers use counts from, and instance 0 when it starts none,
 for an autopilot started elsewhere.
@@ -185,6 +186,7 @@ def build_from_launch(
         "log_dir": logs,
         "files": run_files(usd, resolved.scene_usd_path),
         "cache_dir": cache_dir or default_cache(),
+        "clean": launch.runtime.clean,
     }
     resolved.tested_config.peers = {name: pin for name, pin in peer_pins.items() if pin is not None}
     resolved.tested_config.declarations = [_declaration(spec) for spec in [*specs, *declared]]
