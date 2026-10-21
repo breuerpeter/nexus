@@ -115,7 +115,8 @@ class Px4Sitl(ContainerPeer):
         **run: The run's other values, which the peer needs none of.
 
     Raises:
-        ValueError: The vehicle authors no airframe; raised as the build makes the peer, before any peer starts.
+        ValueError: The vehicle authors no airframe, or one that holds a path; raised as the build makes the peer,
+            before any peer starts.
     """
 
     name = NAME
@@ -136,6 +137,13 @@ class Px4Sitl(ContainerPeer):
         if not airframe:
             raise ValueError(
                 "NexusPx4SitlAPI authors no nexus:airframe; name the PX4 SITL airframe the peer boots, such as astro_max"
+            )
+        # The airframe names a folder of the store, so a path in it would move the store, and what a clean start
+        # empties, out of the peer's cache folder.
+        if "/" in airframe or airframe in (".", ".."):
+            raise ValueError(
+                f"NexusPx4SitlAPI authors the nexus:airframe {airframe!r}, which is no airframe's name; name the PX4 "
+                "SITL airframe the peer boots, such as astro_max"
             )
         super().__init__(instance=instance, log_dir=log_dir)
         self.pin = pin
