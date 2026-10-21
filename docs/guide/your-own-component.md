@@ -116,8 +116,10 @@ A vehicle declares a peer with a schema of its own, on a `Scope` of its own unde
 The registry maps the schema to the peer's class, as it maps a component's. The schema states no
 role: its class is a peer, and so the build sorts it from a component. Its attributes are
 the keyword arguments of the class, as `nexus:airframe` is the PX4 peer's. The run's values join
-them as keywords: `pin`, `instance`, `log_dir`, `files`, the USD files the run reads, and
-`cache_dir`. A peer a class requires, as an RTX camera requires `kit`, the registry maps by that
+them as keywords: `pin`, `instance`, `log_dir`, `files`, the USD files the run reads,
+`cache_dir`, and `clean`, whether the run starts clean. A peer that keeps a store across runs, as a
+companion computer keeps its disk, keeps it under `~/.cache/nexus/<name>/` and empties it first when
+`clean` is true. A peer a class requires, as an RTX camera requires `kit`, the registry maps by that
 name. The class states its `name`, the folder name its pin file takes, and `check_pin`, which fails
 a pin not in its form and returns the pin it checked. It states `clock`, how it keeps time: `stepped`,
 `on_request` or `free`, per [Peer](../design/concepts.md#peer). A run that declares a free-running
