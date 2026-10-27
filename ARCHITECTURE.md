@@ -8,7 +8,7 @@ The tree lags this file where the open issues say it does: until such an issue c
 - OpenUSD declares what a run builds: the vehicle, the scene and the run's override layer. A change to a run is a layer, a variant or an attribute, never a code path.
 - PX4 Software In The Loop (SITL) is the one first-class controller. It flies over the MAVLink Hardware In The Loop (HIL) lockstep link, which `pymavlink` speaks.
 - The RTX sensors render in the loop's process through `ovstage` and `ovrtx`, the extra `nexus-uav[rtx]`, pinned exactly and bumped with Isaac Lab's pins, through six calls and no other: `population.open_usd` or `add_usd_reference`, `write_attribute`, `advance_write_floor`, `attach_ovstage`, `step` and `map`, the calls Newton's `ViewerRTX` and Isaac Lab's `OVRTXRenderer` use. The Kit render peer and its image leave the framework; a scene that needs Kit lives in a plugin package outside it.
-- ovnewton replaces `add_usd` and the label binding once it supports Newton actuators, and a Newton RTX sensor replaces the camera class once one ships; neither is scheduled.
+- ovnewton's stage binding replaces the render stage's own pose write once nexus runs Newton 1.7 on the ovstage pin Isaac Lab uses; the model stays on Newton's importer, and a Newton RTX sensor replaces the camera class once one ships.
 - Rerun is the one recording sink. Docker runs every container peer through the `docker` SDK.
 - `uv` manages two projects: the core, and the Isaac Lab trainer `nexus-rl` with its own lock, so Isaac Lab never reaches the core.
 
