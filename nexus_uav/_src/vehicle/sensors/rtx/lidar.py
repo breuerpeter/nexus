@@ -1,8 +1,7 @@
 """The RTX lidar over the authored ``OmniLidar`` prim.
 
-The Kit peer renders it into a render product with the ``IsaacExtractRTXSensorPointCloud``
-annotator and returns the scan's points in the world frame; here on the host the sensor writes them to
-its signal ``lidar`` and logs them.
+The render stage renders it into a render product with a ``PointCloud`` render var and hands back the scan's
+points in the world frame; here on the host the sensor writes them to its signal ``lidar`` and logs them.
 """
 
 from __future__ import annotations
@@ -12,18 +11,18 @@ import numpy as np
 from nexus_uav._src.core.schema import PointCloud
 from nexus_uav._src.core.signals import Signal
 
-from .rtx_sensor import RtxMountedSensor
+from .sensor import RtxMountedSensor
 
 
 class RtxLidarSensor(RtxMountedSensor):
-    """RTX lidar over the authored ``OmniLidar`` prim: the peer's world-frame points -> the signal
+    """RTX lidar over the authored ``OmniLidar`` prim: the render stage's world-frame points -> the signal
     ``lidar``, a :class:`PointCloud`, and ``Points3D`` via ``Logger.log_points``, at the row named after the
     signal, ``sim/vehicle/sensors/<name>/lidar``, under an entity that carries no transform, since the
     points are in world coordinates.
 
-    Full-scan accumulation is renderer-native: ``omni:sensor:Core:accumulateOutputs``, with
-    ``tickRate == scanRateBaseHz`` baked at authoring; the scan advances on the
-    ``/ExternalSimulationTime`` clock the peer drives from the host's sim time.
+    The renderer completes a scan when its clock, the elapsed sim time each render step hands it, passes a period
+    of ``omni:sensor:frameRate``, which the render stage authors from ``rate``, and hands it over a period later: a
+    10 Hz scan that completes at 104 ms reaches the signal at the due tick at 204 ms, stamped with that tick's time.
 
     Args:
         model: Newton's model, whose body the ``OmniLidar`` prim sits under the sensor rides.
@@ -34,7 +33,7 @@ class RtxLidarSensor(RtxMountedSensor):
 
     KIND = "lidar"
     output = "points"
-    width = height = 128  # the render product the annotator reads; the scan pattern is the prim's own
+    width = height = 128  # the render product's size; the scan pattern is the prim's own
 
     def __init__(self, model, path: str, *, seed: int = 0, rate: float = 10.0):
         super().__init__(model, path, seed=seed, rate=rate, out=Signal("lidar", PointCloud))

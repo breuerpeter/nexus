@@ -15,10 +15,8 @@ pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
 import nexus_uav as nx
-from nexus_uav._src.peers.kit.fake import KitFake
-from nexus_uav._src.peers.kit.runner import KitPeerError
 from nexus_uav._src.peers.px4_sitl.fake import Px4Fake
-from tests.peers.kit.conftest import daemon  # noqa: F401
+from nexus_uav._src.vehicle.sensors.rtx.fake import RenderStageFake
 from tests.recording._flight import rows
 from tests.usd import sensor_vehicle as sv
 
@@ -166,22 +164,22 @@ def test_a_run_whose_px4_fails_to_start_raises_the_public_run_error_naming_the_p
     assert (_caught_as_run_error(error), named) == (True, (True, True)), error
 
 
-class _KitFailsToStart(KitFake):
-    """A Kit render peer whose container fails to start, as the Kit runner reports it."""
+class _RenderStageFailsToStart(RenderStageFake):
+    """A render stage whose renderer fails to start."""
 
     def start(self) -> None:
-        raise KitPeerError("starting the Kit container failed: no such image")
+        raise RuntimeError("the renderer found no device it can ray trace on")
 
 
-def test_a_run_whose_kit_render_peer_fails_to_start_raises_the_public_run_error(tmp_path, daemon):  # noqa: F811
-    """A run whose Kit render peer fails to start raises `nexus_uav.RunError`.
+def test_a_run_whose_render_stage_fails_to_start_raises_the_public_run_error(tmp_path):
+    """A run whose render stage fails to start raises `nexus_uav.RunError`.
 
-    Given the fixture vehicle with a camera and a Kit fake whose start fails, when the run starts under
+    Given the fixture vehicle with a camera and a render stage fake whose start fails, when the run starts under
     `except nexus_uav.RunError`, then the handler catches it.
     """
     camera = sv.prim("Cam", "NexusCameraAPI", kind="Camera")
     vehicle = sv.vehicle(tmp_path, camera)
-    registry = sv.components(kit=_KitFailsToStart)
+    registry = sv.components(ovrtx=_RenderStageFailsToStart)
 
     def start():
         with nx.Sim(vehicle, scene=sv.SCENE, device="cpu", registry=registry) as sim:

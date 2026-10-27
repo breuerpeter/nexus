@@ -26,10 +26,21 @@ from tests.usd import sensor_vehicle as sv
 # PX4's ports are the machine's, so the tests that bind or dial them run on one worker, one at a time.
 pytestmark = [pytest.mark.xdist_group("px4_ports"), pytest.mark.usefixtures("warp_cpu")]
 
-# A camera on the base body, which the Kit peer renders, small so a frame would cost little.
+# A camera on the base body, small so a frame costs little, for the tests that fly one.
 CAMERA = sv.prim(
     "Cam", "NexusCameraAPI", "int nexus:width = 8\nint nexus:height = 6\nfloat nexus:rate = 25", kind="Camera"
 )
+# A stand-in sensor on the base body whose class requires the Kit peer: no shipped class requires it any more, and
+# the Kit peer's pin resolves as every peer's does until the peer leaves.
+NEEDS_KIT = sv.prim("Own", "StandInSensorAPI")
+
+
+class _NeedsKit(sv.StandInSensor):
+    """A stand-in sensor whose class requires the Kit peer, so a run starts it."""
+
+    requires = ("kit",)
+
+
 FORK = "https://github.com/example/px4.git"  # the PX4 fork a pin names, which the stand-in repository answers for
 
 
@@ -169,6 +180,8 @@ def _run(
         {"vehicle": sv.vehicle(tmp_path, body, root=root, px4=px4), "scene": sv.SCENE, "runtime": {"device": "cpu"}}
     )
     registry = registry if registry is not None else Registry()
+    if "StandInSensorAPI" not in registry:
+        registry.add("StandInSensorAPI", _NeedsKit)
     for name, cls in (peers or {}).items():
         registry.add(sv.PEER_ROWS[name], cls)
     try:
@@ -234,10 +247,10 @@ def test_a_kit_run_with_no_project_pin_runs_the_shipped_image_and_records_it(dae
     """A Kit run with no project pin file and no variable runs the image of the Kit peer's shipped pin
     file, and the receipt records it.
 
-    Given the stand-in daemon and a vehicle with a camera, when the run starts Kit, then the daemon runs
+    Given the stand-in daemon and a vehicle with a sensor that requires Kit, when the run starts Kit, then the daemon runs
     `nvcr.io/nvidia/isaac-sim:6.0.1` and the receipt records it with the shipped file as its source.
     """
-    outcome = _run(tmp_path, CAMERA, px4=False)
+    outcome = _run(tmp_path, NEEDS_KIT, px4=False)
 
     assert ([r["image"] for r in daemon.started()], _pin(outcome, "kit")) == (
         ["nvcr.io/nvidia/isaac-sim:6.0.1"],
@@ -256,7 +269,7 @@ def test_a_projects_kit_pin_file_overrides_the_kit_image_and_the_receipt_names_i
     daemon.held = set()
     project = _project(tmp_path, monkeypatch, **{"nexus.kit.ref": "registry.example/kit:7\n"})
 
-    outcome = _run(tmp_path, CAMERA, px4=False)
+    outcome = _run(tmp_path, NEEDS_KIT, px4=False)
 
     assert (daemon.pulls, [r["image"] for r in daemon.started()], _pin(outcome, "kit")) == (
         ["registry.example/kit:7"],
@@ -314,7 +327,7 @@ def test_the_kit_variable_naming_a_local_image_runs_it_with_no_pull(daemon, tmp_
     daemon.held = {"nexus-kit:dev"}
     monkeypatch.setenv("NEXUS_KIT_REF", "nexus-kit:dev")
 
-    outcome = _run(tmp_path, CAMERA, px4=False)
+    outcome = _run(tmp_path, NEEDS_KIT, px4=False)
 
     assert (daemon.pulls, [r["image"] for r in daemon.started()], _pin(outcome, "kit")) == (
         [],
@@ -327,12 +340,12 @@ def test_a_pin_file_that_names_no_peer_fails_the_run_before_any_peer_starts(daem
     """A `nexus.<name>.ref` beside the catalog that names no peer fails the run before any peer starts,
     naming the file and the peer names it accepts.
 
-    Given a project catalog with `nexus.px4.ref` beside it and a vehicle whose camera needs Kit, when a
+    Given a project catalog with `nexus.px4.ref` beside it and a vehicle whose sensor needs Kit, when a
     run builds, then it raises naming `nexus.px4.ref`, `px4_sitl` and `kit`, and no container starts.
     """
     _project(tmp_path, monkeypatch, **{"nexus.px4.ref": "example/px4@" + "a" * 40 + "\n"})
 
-    outcome = _run(tmp_path, CAMERA, peers={"px4_sitl": Px4Fake})
+    outcome = _run(tmp_path, NEEDS_KIT, peers={"px4_sitl": Px4Fake})
 
     message = str(outcome["error"] or "")
     assert ([s in message for s in ("nexus.px4.ref", "px4_sitl", "kit")], daemon.runs) == ([True, True, True], [])
@@ -368,7 +381,7 @@ def test_a_pin_not_in_its_peers_form_fails_the_run_naming_the_source_and_the_for
 def test_a_run_that_starts_no_kit_peer_records_no_kit_pin(daemon, tmp_path):
     """A run that starts no Kit peer records no Kit pin.
 
-    Given a PX4 run on a vehicle with no camera or lidar, when it builds, then the receipt holds no Kit
+    Given a PX4 run on a vehicle with no sensor that needs Kit, when it builds, then the receipt holds no Kit
     pin.
     """
     outcome = _run(tmp_path, peers={"px4_sitl": Px4Fake})
@@ -407,7 +420,7 @@ def test_an_installed_packages_kit_pin_file_is_the_pin_the_kit_peer_runs(daemon,
         "acme_drones", {"nexus.catalog.yaml": EMPTY_CATALOG, "nexus.kit.ref": "registry.example/kit:8\n"}
     )
 
-    outcome = _run(tmp_path, CAMERA, px4=False)
+    outcome = _run(tmp_path, NEEDS_KIT, px4=False)
 
     assert (daemon.pulls, [r["image"] for r in daemon.started()], _pin(outcome, "kit")) == (
         ["registry.example/kit:8"],
@@ -425,7 +438,7 @@ def test_a_projects_kit_pin_file_overrides_an_installed_packages(daemon, tmp_pat
     install_package("acme_drones", {"nexus.catalog.yaml": EMPTY_CATALOG, "nexus.kit.ref": "registry.example/kit:8\n"})
     project = _project(tmp_path, monkeypatch, **{"nexus.kit.ref": "registry.example/kit:7\n"})
 
-    outcome = _run(tmp_path, CAMERA, px4=False)
+    outcome = _run(tmp_path, NEEDS_KIT, px4=False)
 
     assert ([r["image"] for r in daemon.started()], _pin(outcome, "kit")) == (
         ["registry.example/kit:7"],
@@ -442,7 +455,7 @@ def test_the_kit_variable_overrides_an_installed_packages_pin_file(daemon, tmp_p
     install_package("acme_drones", {"nexus.catalog.yaml": EMPTY_CATALOG, "nexus.kit.ref": "registry.example/kit:8\n"})
     monkeypatch.setenv("NEXUS_KIT_REF", "nexus-kit:dev")
 
-    outcome = _run(tmp_path, CAMERA, px4=False)
+    outcome = _run(tmp_path, NEEDS_KIT, px4=False)
 
     assert ([r["image"] for r in daemon.started()], _pin(outcome, "kit")) == (
         ["nexus-kit:dev"],
@@ -476,7 +489,7 @@ def test_an_installed_packages_pin_file_that_names_no_peer_fails_the_run(daemon,
     """
     package = install_package("acme_drones", {"nexus.catalog.yaml": EMPTY_CATALOG, "nexus.nosuch.ref": "x\n"})
 
-    outcome = _run(tmp_path, CAMERA, peers={"px4_sitl": Px4Fake})
+    outcome = _run(tmp_path, NEEDS_KIT, peers={"px4_sitl": Px4Fake})
 
     message = str(outcome["error"] or "")
     named = [s in message for s in (str(package / "nexus.nosuch.ref"), "nexus.px4_sitl.ref", "nexus.kit.ref")]

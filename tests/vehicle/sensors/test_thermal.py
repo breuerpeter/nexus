@@ -15,7 +15,7 @@ from nexus_uav._src.vehicle.sensors.lwir import (
     temperature_from_intensity,
 )
 
-# The shipped stops, mirrored from RtxThermalSensor in nexus_uav/_src/vehicle/sensors/rtx_thermal.py.
+# The shipped stops, mirrored from RtxThermalSensor in nexus_uav/_src/vehicle/sensors/rtx/thermal.py.
 DISPLAY = {
     "t_lo": 300.0,
     "t_hi": 340.0,

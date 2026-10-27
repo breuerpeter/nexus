@@ -453,23 +453,23 @@ def fly_recorded(
     scene: str = "empty",
     layer: str | None = None,
     ticks: int = FLIGHT_TICKS,
-    kit=None,
+    render=None,
     debug=False,
 ):
     """Fly ``vehicle`` on the Warp CPU backend with recording on, and return the path of its ``.rrd``.
 
     The run flies a :class:`StandInController` under a guidance that plans a two-waypoint mission, over
-    the passthrough estimator's estimate, with a ``Recorder`` attached and the Kit peer sent to its fake, or to ``kit``, in ``scene``, a catalog
+    the passthrough estimator's estimate, with a ``Recorder`` attached and the render stage sent to its fake, or to ``render``, in ``scene``, a catalog
     name or a path. ``layer`` is an override layer's text. The home folder is ``tmp`` for the run, so the recording lands there.
     """
     import nexus_uav as nx
     from nexus_uav._src.build.assembly import build_loop
-    from nexus_uav._src.build.launch import resolve_scenario
+    from nexus_uav._src.build.launch import required, resolve_scenario
     from nexus_uav._src.config import LaunchConfig
+    from nexus_uav._src.core.registry import Registry
     from nexus_uav._src.guidance import TrackingGuidance
-    from nexus_uav._src.peers.kit.fake import KitFake
-    from nexus_uav._src.rendering import rtx_renderer
     from nexus_uav._src.vehicle.estimators import GroundTruthEstimator
+    from nexus_uav._src.vehicle.sensors.rtx.fake import RenderStageFake
 
     spec = {"vehicle": vehicle, "scene": scene, "runtime": {"device": "cpu"}}
     if layer is not None:
@@ -480,7 +480,7 @@ def fly_recorded(
         patch.setenv("HOME", str(tmp))
         vehicle_usd, _, cfg = resolve_scenario(LaunchConfig.from_dict(spec))
         controller = StandInController()
-        renderer_factory = rtx_renderer(vehicle_usd, cfg, peer=kit or KitFake)
+        links, started = required(vehicle_usd, cfg, components=Registry({"ovrtx": render or RenderStageFake}))
         try:
             orch = build_loop(
                 "fixture",
@@ -490,12 +490,13 @@ def fly_recorded(
                 rerun=True,
                 viewer=False,
                 debug=debug,
-                renderer_factory=renderer_factory,
+                peers=started,
+                peer_links=links,
                 max_steps=ticks,
             )
         except BaseException:
-            if renderer_factory is not None:
-                renderer_factory.close()  # the loop never took the Kit peer over, so it stops here
+            for peer in started:
+                peer.stop()  # the loop never took them over, so they stop here
             raise
         orch.estimator = GroundTruthEstimator()  # the guidance reads the vehicle's position from its estimate
         guidance = TrackingGuidance(planner=StandInReference)

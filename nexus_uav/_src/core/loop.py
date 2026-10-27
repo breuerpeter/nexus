@@ -113,7 +113,6 @@ class Loop:
         commands: Iterable[Component] = (),
         forces: Iterable[Component] = (),
         actuator: Component | None = None,
-        renderer: object | None = None,
         links: Mapping[str, object] | None = None,
         peers: Iterable[Peer] = (),
         peer_inputs: Iterable[Component] = (),
@@ -162,12 +161,8 @@ class Loop:
             actuator: The old actuator stage: one device stage that writes the shared body forces from
                 the controls the controller writes. No shipped component fills it; ``None`` for a run on
                 command elements and force elements.
-            renderer: Optional render-lifecycle object, for example the Kit render peer's
-                :class:`~nexus_uav._src.rendering.KitRenderer`: the loop calls only
-                ``on_physics_ready()``/``close()``; the host-rate RTX camera *sensors* drive
-                rendering itself in a host stage.
-            links: The link of each peer the run holds, by the peer's name, such as the Kit render peer's
-                :class:`~nexus_uav._src.rendering.KitRenderer` under ``kit``: the loop hands a component
+            links: What the run made for the names a class requires, by name, such as the render stage the RTX
+                sensors require under ``ovrtx``, or a peer's link: the loop hands a component
                 the links of the peers its ``requires`` names when it connects it, and fails a component
                 that requires a peer with no link here. ``None`` holds no link.
             peers: The peers the build started for this run, for example the PX4 Software In The
@@ -218,7 +213,6 @@ class Loop:
         self.controller = controller
         self.estimator = estimator  # the loop reads it when it builds the ring, at the first step
         self.guidance = guidance  # the loop reads it when it builds the ring, at the first step
-        self.renderer = renderer
         self.links = dict(links or {})
         self.peers = list(peers)
         self.peer_inputs = list(peer_inputs)
@@ -452,8 +446,6 @@ class Loop:
             report_every_s=5.0 if deep else 0.0,
             trace_path=diagnostics.trace,
         )
-        if self.renderer is not None and hasattr(self.renderer, "set_profiler"):
-            self.renderer.set_profiler(prof)  # detail spans inside the renderer: render/grab
         return prof
 
     def stop(self) -> None:
@@ -472,8 +464,8 @@ class Loop:
         stages and partitions it, runs the start over the settled state at sim time zero, which records the
         first row, captures each device segment on CUDA, waits for a peer to dial in, then loops. Every
         controller advances one tick per ``next()``, but the first, which runs a peer's preroll ticks too.
-        Teardown, renderer,
-        controller and logs, runs in the ``finally``, whether the generator runs out, on run to
+        Teardown, logs, controller
+        and peers, runs in the ``finally``, whether the generator runs out, on run to
         completion, raises, on a peer lost, or closes early, via :meth:`close` on ``stop()`` mid-step.
         The live RTF lands in ``run_stats``. For the span of the run SIGTERM and SIGHUP end it as
         Ctrl-C does, so each reaches this teardown.
@@ -483,14 +475,10 @@ class Loop:
 
     def _run(self):
         try:
-            # Inside the try from the first line: the renderer's peer started at build, so a reset or a
-            # peer start that fails must still reach the `finally`, which removes its container, and
-            # from the connect on the controller owns a live peer too, the PX4 container it launches.
+            # Inside the try from the first line: the peers started at build, so a reset or a peer start that
+            # fails must still reach the `finally`, which stops them, and from the connect on the controller owns
+            # a live peer too, the PX4 container it launches.
             state = self.physics.reset()  # build + settle the vehicle at the NED origin
-            # Renderer warm-up hook, before the peer's lockstep starts: the Kit peer connects and warms
-            # its stage here, which takes seconds and would stall the lockstep.
-            if self.renderer is not None and hasattr(self.renderer, "on_physics_ready"):
-                self.renderer.on_physics_ready()
             record = Stage("record", "device", lambda tick: self._record_tick())
             if self.estimator is not None and id(self.estimator) not in self._paths:
                 # Handed over after construction, as a flight can do: the loop resolves its path here.
@@ -548,11 +536,7 @@ class Loop:
             self._attach(ring, tick, waiting)
             yield from self._loop(segments, graphs, tick, waiting)
         finally:
-            try:
-                if self.renderer is not None and hasattr(self.renderer, "close"):
-                    self.renderer.close()  # take the last frame, then stop the Kit peer
-            finally:
-                self._teardown()  # whatever the renderer's close did: a stop that lands in it, or an error
+            self._teardown()
 
     def _teardown(self) -> None:
         """The recording first: write the last block of every history and close the file, with a stop
@@ -881,8 +865,8 @@ class Loop:
 
     def close(self) -> None:
         """Tear down the run, ``Sim.stop()``. A partially stepped run closes its tick generator, running
-        its ``finally``, RTF stamp + renderer/logs/controller/peers teardown. A run that never stepped
-        closes the renderer, closes the logs, then stops the peers, which started at build. Idempotent:
+        its ``finally``, RTF stamp + logs/controller/peers teardown. A run that never stepped
+        closes the logs, then stops the peers, which started at build. Idempotent:
         a no-op once the run has finished, ``run()`` completed / ``step()`` returned ``False``, or closed.
         """
         if self._ticks_iter is not None:
@@ -891,11 +875,7 @@ class Loop:
         elif not self._stepped:
             self._stepped = True  # torn down: a later close() is a no-op
             try:
-                if self.renderer is not None and hasattr(self.renderer, "close"):
-                    self.renderer.close()
+                with hold_interrupts():
+                    self._close_logs()
             finally:
-                try:
-                    with hold_interrupts():
-                        self._close_logs()
-                finally:
-                    self._stop_peers()
+                self._stop_peers()

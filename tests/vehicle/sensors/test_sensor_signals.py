@@ -3,9 +3,8 @@ the time of its sample, and holds no sensor.
 
 Real builds of the fixture vehicle in ``tests/usd/sensor_vehicle.py``, with the sensor prims a test adds and a
 stand-in estimator that the vehicle declares on a scope of its own and whose host stage keeps what each signal
-it reads holds. The Kit peer maps to its fake, and the stand-in docker daemon keeps any container a run
-would start from reaching a real one. Each test scopes the device it uses, so the default device is the
-same after it. Skipped without newton or pxr.
+it reads holds. The render stage maps to its fake. Each test scopes the device it uses, so the default device is
+the same after it. Skipped without newton or pxr.
 """
 
 import numpy as np
@@ -18,8 +17,7 @@ import warp as wp
 
 from nexus_uav._src.core.schema import BaroSample, GpsSample, Image, ImuSample, MagSample, PointCloud
 from nexus_uav._src.core.signals import Signal
-from nexus_uav._src.peers.kit.fake import KitFake
-from tests.peers.kit.conftest import daemon  # noqa: F401
+from nexus_uav._src.vehicle.sensors.rtx.fake import RenderStageFake
 from tests.usd import sensor_vehicle as sv
 
 DEVICES = ["cpu", pytest.param("cuda:0", marks=pytest.mark.gpu)]
@@ -129,21 +127,20 @@ def _firsts(kept: list, column: int) -> list[tuple[float, object]]:
     return firsts
 
 
-@pytest.mark.usefixtures("warp_cpu", "daemon")
+@pytest.mark.usefixtures("warp_cpu")
 def test_each_frame_of_a_camera_and_a_thermal_camera_and_each_lidar_scan_reaches_its_reader_as_a_signal(tmp_path):
-    """Each frame of a camera and of a thermal camera, and each scan of a lidar as the Kit peer sends it, reaches its reader as a signal, with the sim time the frame or scan shows.
+    """Each frame of a camera and of a thermal camera, and each scan of a lidar as the render stage hands it, reaches its reader as a signal, with the sim time the frame or scan shows.
 
-    Given the fixture vehicle with a camera, a thermal camera and a lidar at 25 Hz each, the Kit peer mapped
+    Given the fixture vehicle with a camera, a thermal camera and a lidar at 25 Hz each, the render stage sent
     to its fake scanning the one point `(1, 2, 3)`, and a stand-in estimator whose host stage reads the three
-    sensors' signals, when the run steps 1 s of sim time, then the estimator reads 23 frames of each camera,
-    every one the run asked for but the two still in flight when it ends, give or take one, each of its
-    camera's width and height, and 23 scans that hold `(1, 2, 3)`, give or take one, each with the sim time it
-    shows, no later than the tick that hands it over.
+    sensors' signals, when the run steps 1 s of sim time, then the estimator reads 25 frames of each camera,
+    every one the run asked for, each of its camera's width and height, and 25 scans that hold `(1, 2, 3)`, each
+    on the tick it shows.
     """
     reader = sv.estimator(Signal("camera", Image), Signal("thermal_camera", Image), Signal("lidar", PointCloud))
     loop = sv.build(
         sv.vehicle(tmp_path, RTX, estimator=""),
-        peers={"kit": KitFake.configured(points=[POINT])},
+        peers={"ovrtx": RenderStageFake.configured(points=[POINT])},
         components=sv.components(StandInEstimatorAPI=reader),
     )
     sv.steps(loop, 250)  # 1 s of 0.004 s ticks
@@ -152,16 +149,16 @@ def test_each_frame_of_a_camera_and_a_thermal_camera_and_each_lidar_scan_reaches
     read = [
         *(
             (
-                22 <= len(frames) <= 24,
+                len(frames) == 25,
                 all(frame.pixels.shape[:2] == (HEIGHT, WIDTH) for _, frame in frames),
-                all(frame.time <= t for t, frame in frames),
+                all(frame.time == t for t, frame in frames),
             )
             for frames in cameras
         ),
         (
-            22 <= len(scans) <= 24,
+            len(scans) == 25,
             all(_close(scan.points, [POINT], 1e-6) for _, scan in scans),
-            all(scan.time <= t for t, scan in scans),
+            all(scan.time == t for t, scan in scans),
         ),
     ]
 

@@ -26,8 +26,8 @@ import nexus_uav._src.core.loop as loop_mod
 from nexus_uav._src.config import LaunchConfig
 from nexus_uav._src.core.interfaces import Stage
 from nexus_uav._src.core.registry import Registry
-from nexus_uav._src.peers.kit.fake import KitFake
 from nexus_uav._src.peers.px4_sitl.fake import Px4Fake
+from nexus_uav._src.vehicle.sensors.rtx.fake import RenderStageFake
 from tests.peers import test_pins as pins
 from tests.usd import sensor_vehicle as sv
 
@@ -133,11 +133,11 @@ def test_a_test_sends_each_shipped_peer_to_its_fake_through_the_registry_alone(d
     """A test sends each shipped peer to its fake through the registry alone.
 
     Given the fixture vehicle with a camera that declares the PX4 SITL peer, and a `Registry` that maps the PX4
-    SITL peer's schema to `Px4Fake` and `kit` to `KitFake`, when the run steps 5 ticks, then it flies all 5
+    SITL peer's schema to `Px4Fake` and `ovrtx` to `RenderStageFake`, when the run steps 5 ticks, then it flies all 5
     against both fakes and the stand-in docker daemon ran no container.
     """
     path = sv.vehicle(tmp_path, pins.CAMERA, px4=True)
-    registry = Registry({"NexusPx4SitlAPI": Px4Fake, "kit": KitFake})
+    registry = Registry({"NexusPx4SitlAPI": Px4Fake, "ovrtx": RenderStageFake})
 
     outcome = _built(path, registry, during=_steps(5))
 
@@ -423,11 +423,11 @@ def test_a_run_with_no_free_running_peer_keeps_any_factor_and_warns_of_nothing(d
     """A run with no free-running peer keeps any factor and warns of nothing.
 
     Given the fixture vehicle with a camera that declares the PX4 SITL peer, so the run starts the stepped PX4 peer
-    and the on-request Kit peer, each on its fake, when the run builds at the default real-time factor and at 1 and
+    and the on-request render stage, each on its fake, when the run builds at the default real-time factor and at 1 and
     steps past two live readings, then neither raises and neither logs a warning about its real-time factor.
     """
     path = sv.vehicle(tmp_path, pins.CAMERA, px4=True)
-    registry = Registry({"NexusPx4SitlAPI": Px4Fake, "kit": KitFake})
+    registry = Registry({"NexusPx4SitlAPI": Px4Fake, "ovrtx": RenderStageFake})
 
     with caplog.at_level(logging.WARNING, logger="nexus"):
         outcome = _built(path, registry, during=_steps_for(time, 2.5), rtf=rtf, dt=PACED_DT)

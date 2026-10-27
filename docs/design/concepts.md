@@ -181,8 +181,7 @@ before any peer starts, and warns once when its live factor falls below 0.95.
 ### Link
 
 The defined protocol between a component and a peer, or between two peers. The PX4 controller and
-PX4 SITL share the Hardware In The Loop (HIL) link, and the RTX sensors and the Kit render peer the
-render link. The offboard link leaves the run for a script. A serial link joins two peers as a serial
+PX4 SITL share the Hardware In The Loop (HIL) link. The offboard link leaves the run for a script. A serial link joins two peers as a serial
 line joins a companion computer to the flight controller. The line is wiring on the vehicle, so the
 declared peer's prim declares it, as a component's prim declares its inputs. The relationship
 `nexus:serial:<line>` targets the prim of the peer at the other end. The run makes each link, two
@@ -194,6 +193,15 @@ declares the input as a relationship `nexus:inputs:<signal>`. The vehicle target
 whose components write it. The run makes the link's loop end: one host stage per wired peer, in the
 `link` role after every writer of the tick. That stage hands the peer each writer's value through
 its `take`.
+
+### Render stage
+
+The stage and the renderer a run draws its RTX sensors with, in the loop's process. An ovstage stage
+holds the run's scene and vehicle files, and an ovrtx renderer draws it. It runs in no process of its
+own, so it's no peer. The RTX sensors' class requires it by the name `ovrtx`. The build makes it once
+per run, as it makes a required peer, and the loop hands it to each sensor at `connect`. At a tick where
+a sensor is due, it poses the model's bodies, steps the renderer once, and hands each due sensor its
+output.
 
 ### Port map
 

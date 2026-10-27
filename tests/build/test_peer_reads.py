@@ -6,7 +6,7 @@ cable.
 
 The docker daemon and the network are the system boundaries: the stand-in daemon of the pin tests records any
 container a run starts, and every fetch fails at once on a cut network. Real builds on the Warp CPU backend of
-the fixture vehicle in ``tests/usd/sensor_vehicle.py``, through ``Sim``, with the Kit peer sent to its fake.
+the fixture vehicle in ``tests/usd/sensor_vehicle.py``, through ``Sim``, with the render stage sent to its fake.
 Skipped without newton or pxr.
 """
 
@@ -18,8 +18,8 @@ pytest.importorskip("pxr")
 from typing import ClassVar
 
 import nexus_uav as nx
-from nexus_uav._src.peers.kit.fake import KitFake
 from nexus_uav._src.peers.px4_sitl.fake import Px4Fake
+from nexus_uav._src.vehicle.sensors.rtx.fake import RenderStageFake
 from tests.peers import test_pins as pins
 from tests.usd import sensor_vehicle as sv
 
@@ -91,21 +91,21 @@ def _written(kept: list, column: int) -> list[float]:
 def test_every_frame_the_camera_writes_reaches_the_peers_link_in_order_with_the_sim_time_it_shows(daemon, tmp_path):
     """Every frame the camera writes reaches the peer's link, in order, with the sim time it shows.
 
-    Given the fixture vehicle with a camera on the Kit fake and a stand-in peer on its `Companion` scope whose
-    `nexus:inputs:camera` targets the camera's prim, when the run steps 1 s of sim time at 25 Hz, then the stand-in
-    took the frames the camera wrote, 23 give or take one, each once, each at the camera's width and height with
-    the sim time it shows, in the order written. A stand-in estimator reading `camera` says what the camera wrote.
+    Given the fixture vehicle with a camera on the render stage's fake and a stand-in peer on its `Companion` scope
+    whose `nexus:inputs:camera` targets the camera's prim, when the run steps 1 s of sim time at 25 Hz, then the
+    stand-in took the 25 frames the camera wrote, each once, each at the camera's width and height with the sim
+    time it shows, in the order written. A stand-in estimator reading `camera` says what the camera wrote.
     """
     peer = _companion()
     reader = sv.estimator(nx.Signal("camera", nx.Image))
     path = sv.vehicle(tmp_path, pins.CAMERA, root=sv.companion(inputs={"camera": CAM}), estimator="")
-    registry = sv.components(StandInPeerAPI=peer, StandInEstimatorAPI=reader, kit=KitFake)
+    registry = sv.components(StandInPeerAPI=peer, StandInEstimatorAPI=reader, ovrtx=RenderStageFake)
 
     _fly(path, registry, tmp_path / "run")
 
     frames = _took(peer.took, "cam")
     seen = (
-        22 <= len(frames) <= 24,
+        len(frames) == 25,
         all(frame.pixels.shape[:2] == (6, 8) for frame in frames),
         [frame.time for frame in frames] == _written(reader.kept, 1),
     )
@@ -115,22 +115,22 @@ def test_every_frame_the_camera_writes_reaches_the_peers_link_in_order_with_the_
 def test_each_of_two_cameras_feeds_the_peer_told_apart_by_its_sensors_name(daemon, tmp_path):
     """Each of two cameras feeds the peer, told apart by its sensor's name.
 
-    Given the fixture vehicle with two cameras, `Cam` at 8 by 6 pixels and `Cam2` at 16 by 12, on the Kit fake and
-    a stand-in peer whose `nexus:inputs:camera` targets both, when the run steps 1 s, then the stand-in took each
-    camera's frames under that camera's name, `cam` and `cam2`, 23 give or take one each, each once, and neither
+    Given the fixture vehicle with two cameras, `Cam` at 8 by 6 pixels and `Cam2` at 16 by 12, on the render stage's
+    fake and a stand-in peer whose `nexus:inputs:camera` targets both, when the run steps 1 s, then the stand-in took
+    each camera's frames under that camera's name, `cam` and `cam2`, 25 each, each once, and neither
     camera's frames under the other's: every frame under `cam` is 8 by 6 and every frame under `cam2` 16 by 12.
     """
     peer = _companion()
     path = sv.vehicle(tmp_path, pins.CAMERA + CAMERA_2, root=sv.companion(inputs={"camera": [CAM, CAM_2]}))
-    registry = sv.components(StandInPeerAPI=peer, kit=KitFake)
+    registry = sv.components(StandInPeerAPI=peer, ovrtx=RenderStageFake)
 
     _fly(path, registry, tmp_path / "run")
 
     cam, cam2 = _took(peer.took, "cam"), _took(peer.took, "cam2")
     seen = (
         {writer for _, writer, _ in peer.took},
-        22 <= len(cam) <= 24,
-        22 <= len(cam2) <= 24,
+        len(cam) == 25,
+        len(cam2) == 25,
         all(frame.pixels.shape[:2] == (6, 8) for frame in cam),
         all(frame.pixels.shape[:2] == (12, 16) for frame in cam2),
     )
@@ -159,31 +159,31 @@ def test_a_peer_wired_to_a_signal_a_device_stage_writes_reads_it_each_tick(daemo
 def test_a_vehicle_whose_declared_peers_wire_no_input_flies_as_today(daemon, tmp_path):
     """A vehicle whose declared peers wire no input flies as today.
 
-    Given the fixture vehicle with a camera on the Kit fake and the PX4 Software In The Loop (SITL) peer on its
-    fake, which wires no input, and a stand-in estimator reading `camera`, when the run steps 1 s, then the
-    camera's frames reach their reader, 23 give or take one, each at the camera's width and height, as at 0.5.0.
+    Given the fixture vehicle with a camera on the render stage's fake and the PX4 Software In The Loop (SITL) peer
+    on its fake, which wires no input, and a stand-in estimator reading `camera`, when the run steps 1 s, then the
+    camera's 25 frames reach their reader, each at the camera's width and height.
     """
     reader = sv.estimator(nx.Signal("camera", nx.Image))
     path = sv.vehicle(tmp_path, pins.CAMERA, px4=True, estimator="")
-    registry = sv.components(NexusPx4SitlAPI=Px4Fake, StandInEstimatorAPI=reader, kit=KitFake)
+    registry = sv.components(NexusPx4SitlAPI=Px4Fake, StandInEstimatorAPI=reader, ovrtx=RenderStageFake)
 
     ran = _fly(path, registry, tmp_path / "run")
 
     frames = _written(reader.kept, 1)
-    seen = (ran, 22 <= len(frames) <= 24, all(f.pixels.shape[:2] == (6, 8) for _, f in reader.kept if f is not None))
+    seen = (ran, len(frames) == 25, all(f.pixels.shape[:2] == (6, 8) for _, f in reader.kept if f is not None))
     assert seen == (TICKS, True, True), len(frames)
 
 
 def test_a_frame_the_link_cant_take_fails_the_run_and_the_error_names_the_peer(daemon, tmp_path):
     """A frame the link can't take fails the run, and the error names the peer.
 
-    Given the fixture vehicle with a camera on the Kit fake and a stand-in peer wired to it whose end raises
+    Given the fixture vehicle with a camera on the render stage's fake and a stand-in peer wired to it whose end raises
     `wire closed` on its first frame, when the run steps, then `Sim` raises a `RunError` whose message names the
     stand-in, `companion`, and the run's peers stopped.
     """
     peer = _companion(refuse=OSError("wire closed"))
     path = sv.vehicle(tmp_path, pins.CAMERA, root=sv.companion(inputs={"camera": CAM}))
-    registry = sv.components(StandInPeerAPI=peer, kit=KitFake)
+    registry = sv.components(StandInPeerAPI=peer, ovrtx=RenderStageFake)
 
     with pytest.raises(nx.RunError) as raised:
         _fly(path, registry, tmp_path / "run")

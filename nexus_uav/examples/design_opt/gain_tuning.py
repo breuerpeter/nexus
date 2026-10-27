@@ -321,7 +321,6 @@ def main():
             from nexus_uav._src.build.launch import resolve_scenario
             from nexus_uav._src.config import LaunchConfig
             from nexus_uav._src.guidance import MissionGuidance
-            from nexus_uav._src.rendering import rtx_renderer
             from nexus_uav.examples.controllers.pid.assembly import build_pid_loop
 
             launch = LaunchConfig().set_vehicle("astro_max_base").set_scene("empty")
@@ -334,7 +333,6 @@ def main():
                 moment_scale=MS,
                 max_steps=2750,
                 rerun=True,
-                renderer_factory=rtx_renderer(vehicle_usd_2, cfg),  # the Kit peer, when the vehicle authors RTX sensors
             )
             guidance = MissionGuidance(reached_m=0.15, final_hold_s=3.0)
             with nx.Sim._from_loop(orch, guidance=guidance) as sim:

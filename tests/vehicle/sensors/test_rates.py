@@ -23,7 +23,7 @@ import warp as wp
 
 from nexus_uav._src.core.schema import BaroSample, GpsSample, Image, ImuSample, MagSample, PointCloud
 from nexus_uav._src.core.signals import Signal
-from nexus_uav._src.peers.kit.fake import KitFake
+from nexus_uav._src.vehicle.sensors.rtx.fake import RenderStageFake
 from tests.usd import sensor_vehicle as sv
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")
@@ -34,7 +34,7 @@ SAMPLE = {"imu": ImuSample, "mag": MagSample, "baro": BaroSample, "gps": GpsSamp
 RTX = {"camera": ("NexusCameraAPI", Image, "Camera"), "lidar": ("NexusLidarAPI", PointCloud, "OmniLidar")}
 # The peer mapping of a run with an RTX sensor: the Kit peer goes to its fake, which starts no container, and
 # whose every lidar scan holds one point.
-KIT = {"kit": KitFake.configured(points=[(1.0, 2.0, 3.0)])}
+KIT = {"ovrtx": RenderStageFake.configured(points=[(1.0, 2.0, 3.0)])}
 TICK_HZ = 250
 # Where a falling run starts: 10 m over the ground, level, so the vehicle falls 4.9 m in 1 s and stays in the air.
 FALL_FROM = (0.0, 0.0, 10.0)

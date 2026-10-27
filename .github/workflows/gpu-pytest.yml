@@ -5,7 +5,8 @@ name: gpu-pytest
 # peer's own box in gpu-peers. `--require gpu` fails a `gpu` test that skips, so a lost device, or a
 # GPU model with no recorded trajectory, reds the leg instead of passing it. The leg needs no PX4
 # tree and no px4-sitl image, so it caches neither. The tests run in one process, `-n 0`: no run has
-# checked the CUDA tests on parallel workers. The 25 slowest tests print at the end.
+# checked the CUDA tests on parallel workers. The 25 slowest tests print at the end. The `rtx` extra brings the
+# renderer the RTX sensors' tests render with.
 # Advisory (not a required check). Offered on EVERY PR; runs only once the `gpu` label is applied —
 # the label IS the GPU-spend approval. A labeled fork PR flies through pull_request_target, each
 # run approved by a maintainer on the external-pr-approval environment; main pushes fly. The gate
@@ -40,7 +41,7 @@ jobs:
     with:
       cache-scope: pytest
       command: >-
-        uv run --locked --extra policy pytest -m gpu --require gpu -n 0 --cov=nexus_uav --cov-report=xml -q --durations=25
+        uv run --locked --extra policy --extra rtx pytest -m gpu --require gpu -n 0 --cov=nexus_uav --cov-report=xml -q --durations=25
       coverage-flags: gpu
     secrets: inherit
 
