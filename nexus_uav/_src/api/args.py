@@ -64,11 +64,6 @@ def sim_argparser(description: str | None = None) -> argparse.ArgumentParser:
         help="start every peer from nothing an earlier run stored, such as PX4's parameters and mission; without it\n"
         "PX4 boots with what the last run on its airframe and instance stored, unless $NEXUS_CLEAN is 1",
     )  # fmt: skip
-    p.add_argument(
-        "--pipelined-render", action="store_true",
-        help="pipeline the RTX sensors' render: a due tick's frame comes back at the next due tick, stamped with\n"
-        "the tick it shows; without it each frame renders inside the tick that asked for it",
-    )  # fmt: skip
     p.add_argument("--log", action="store_true", help="write the Rerun .rrd to disk")
     p.add_argument("--view", action="store_true", help="serve the live Rerun viewer on :9876")
     p.add_argument(

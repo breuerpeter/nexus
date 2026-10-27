@@ -410,7 +410,6 @@ def build(
     device: str = "cpu",
     fall_from=None,
     peers: dict | None = None,
-    runtime: dict | None = None,
     **kw,
 ):
     """Build a run of the vehicle at `vehicle_path` on `device`, `cpu` or `cuda`, flown by the stand-in controller.
@@ -419,12 +418,12 @@ def build(
     in free flight, where it falls, in place of resting on the ground. `peers` maps a shipped peer's name to the
     class a test sends it to, its fake, which joins the registry as a row: the PX4 SITL peer's under its schema,
     the Kit peer's under its name. The rest goes to the build: `components` replaces the registry of
-    :func:`components`. `runtime` holds more of the launch's runtime values, such as `{"pipelined_render": True}`.
+    :func:`components`.
     """
     import nexus_uav._src.build.launch as launch_mod
 
     launch = LaunchConfig.from_dict(
-        {"vehicle": vehicle_path, "scene": scene, "runtime": {"device": device, "seed": seed, **(runtime or {})}}
+        {"vehicle": vehicle_path, "scene": scene, "runtime": {"device": device, "seed": seed}}
     )
     if fall_from is not None:
         _, _, cfg = launch_mod.resolve_scenario(launch, catalog=catalog)

@@ -42,15 +42,15 @@ LIDAR = (
 )
 
 
-def _fly(vehicle, signal, ticks, *, fall_from=None, **runtime):
+def _fly(vehicle, signal, ticks, *, fall_from=None):
     """Fly the fixture vehicle at `vehicle` for `ticks` ticks of 4 ms. Return each new value of `signal`, in order,
     with the sim time of the tick it arrived on, then the value it holds after the run closes, if new, with the time
     of the last tick; a value is new when its stamp is. Return beside them the error that ended a run its build
     refused, which renders nothing, or "".
     """
     try:
-        loop = sv.build(vehicle, scene=SCENE, device="cuda", fall_from=fall_from, runtime=runtime)
-    except (RunError, ValueError) as exc:  # a launch that refuses a runtime value raises ValueError
+        loop = sv.build(vehicle, scene=SCENE, device="cuda", fall_from=fall_from)
+    except RunError as exc:
         return [], str(exc)
     got, seen, now = [], set(), 0.0
     for _ in range(ticks):
@@ -101,11 +101,11 @@ def test_a_run_of_a_camera_vehicle_renders_its_frames_in_process_at_the_declared
     assert sizes == [((HEIGHT, WIDTH, 3), True)] * 25, error
 
 
-def test_by_default_a_frame_shows_the_tick_that_asked_for_it(tmp_path):
-    """By default a frame shows the tick that asked for it, stamped with that tick's time.
+def test_a_frame_shows_the_tick_that_asked_for_it(tmp_path):
+    """A frame shows the tick that asked for it, stamped with that tick's time.
 
-    Given a camera at 25 Hz looking down from the fixture vehicle as it falls from 2 m, when the run renders with
-    the default runtime, then every frame reaches the signal on the tick its stamp names, and its sixth frame, at
+    Given a camera at 25 Hz looking down from the fixture vehicle as it falls from 2 m, when the run renders, then
+    every frame reaches the signal on the tick its stamp names, and its sixth frame, at
     0.204 s, matches within 3 levels a frame rendered with the vehicle starting at the height it fell to by then.
     """
     vehicle = sv.vehicle(tmp_path, CAMERA)
@@ -119,30 +119,6 @@ def test_by_default_a_frame_shows_the_tick_that_asked_for_it(tmp_path):
         matches = bool(still) and _difference(frame, still[0][1]) <= 3.0
 
     assert (on_time, matches) == (True, True), error
-
-
-def test_a_pipelined_run_gets_each_frame_one_due_tick_later_stamped_with_the_tick_it_shows(tmp_path):
-    """With `pipelined_render` on, a due tick's frame arrives at the next due tick, stamped with the tick it shows,
-    and the last frame reaches the signal at close.
-
-    Given a camera at 25 Hz looking down from the fixture vehicle as it falls from 2 m, when the same 0.4 s flies
-    once synchronous and once pipelined, then the two signals hold the same stamps, the pipelined run's last frame
-    included, each pipelined frame arrives one due tick, 40 ms, after its stamp, and each pair of frames matches
-    within 3 levels.
-    """
-    vehicle = sv.vehicle(tmp_path, CAMERA)
-    synchronous, error = _fly(vehicle, "vehicle/sensors/cam/camera", 100, fall_from=(0.0, 0.0, 2.0))
-    pipelined, _ = _fly(vehicle, "vehicle/sensors/cam/camera", 100, fall_from=(0.0, 0.0, 2.0), pipelined_render=True)
-    stamps = [frame.time for _, frame in pipelined]
-    late = {round(t - frame.time, 6) for t, frame in pipelined[:-1]}
-    pairs = list(zip(synchronous, pipelined, strict=True)) if len(synchronous) == len(pipelined) else []
-    matches = bool(pairs) and max(_difference(a, b) for (_, a), (_, b) in pairs) <= 3.0
-
-    assert (bool(stamps) and stamps == [f.time for _, f in synchronous], late == {0.04}, matches) == (
-        True,
-        True,
-        True,
-    ), error
 
 
 def test_a_thermal_cameras_frames_reach_its_signal_at_its_declared_rate(tmp_path):
