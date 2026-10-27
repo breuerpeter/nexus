@@ -121,6 +121,21 @@ def cut_network(monkeypatch):
 _NO_CUDA = "no CUDA device"
 
 
+@pytest.fixture
+def no_docker(monkeypatch):
+    """A docker daemon a run must not ask for: the docker client fails the test with an assertion error that says
+    so. Every module that holds the client's name gets the stand-in.
+    """
+    import nexus_uav._src.peers.containers as containers
+    import nexus_uav._src.peers.kit.runner as kit
+
+    def client():
+        raise AssertionError("the run asked the docker daemon for a container")
+
+    monkeypatch.setattr(containers, "client", client)
+    monkeypatch.setattr(kit, "client", client)
+
+
 def pytest_addoption(parser):
     """Add `--require MARKER`, repeatable: fail a test carrying MARKER that skips, so a lost device reds the GPU
     leg and a missing peer tree the peer's leg.

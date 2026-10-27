@@ -79,6 +79,9 @@ class Sim:
             as a real vehicle does across a reboot: PX4 boots with the parameters and the mission an earlier
             run on the same airframe and instance stored. ``True`` empties each store first; ``None`` takes
             ``$NEXUS_CLEAN``, where ``1`` means clean, and else keeps the store.
+        pipelined_render: Pipeline the RTX sensors' render: a due tick's frame comes back at the next due tick,
+            stamped with the tick it shows, and the loop flies on meanwhile. ``False``, the default, renders
+            each frame inside the tick that asked for it.
 
     Raises:
         FileExistsError: On entry, ``run_dir`` holds files already; raised before any peer starts.
@@ -110,6 +113,7 @@ class Sim:
         registry: Registry | None = None,
         run_dir: str | os.PathLike | None = None,
         clean: bool | None = None,
+        pipelined_render: bool = False,
     ):
         self._registry = registry  # the registry the build resolves each schema with, or None for the default
         self._launch = LaunchConfig()
