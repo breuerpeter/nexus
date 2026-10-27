@@ -11,8 +11,8 @@ waypoints, lives in the script, and each records its flight ``.rrd``. Some need 
 for example ``--extra acados`` for ``acados_nmpc`` and ``--extra policy`` for ``goto_policy``, or
 take an optional flag, such as ``goto_policy --policy`` and ``px4_sitl --timeout``; the shared
 diagnostics flags ``--profile``, ``--trace``, and ``--benchmark`` work on every example. See each
-example's module docstring. A vehicle that authors RTX sensors renders them in the Kit peer
-container, which the example starts on its own.
+example's module docstring. A vehicle that authors RTX sensors renders them in the example's own
+process, through the render stage the example makes.
 """
 
 from __future__ import annotations

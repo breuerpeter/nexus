@@ -223,7 +223,7 @@ class Sim:
                 # The loop builds its ring at the first step, so handing it over here is in time.
                 self._orch.guidance = self._guidance
         else:
-            # A vehicle that authors RTX sensors starts the Kit render peer here, from the host.
+            # A vehicle that authors RTX sensors makes its render stage here, in this process.
             self._orch = build_from_launch(
                 self._launch, cache_dir=self._cache_dir, components=self._registry, run_dir=self._run_dir
             )
@@ -261,8 +261,7 @@ class Sim:
     def start(self, timeout: float | None = None) -> None:
         """Drive the run's setup, returning once the first control tick has completed.
 
-        One step: the loop's first ``step()`` runs physics reset, the wait for the Kit
-        render peer to boot and warm its stage when the vehicle renders, the start, which records the
+        One step: the loop's first ``step()`` runs physics reset, the start, which records the
         row at sim time zero, and the graph capture, ``controller.connect()``, which binds the HIL port
         PX4 dials, the wait for the peer to dial in, and the preroll ticks while it boots, then flies one tick.
         So for a PX4 sim this is the "lockstep is up" verb, and it returns with a row recorded for every
@@ -274,7 +273,7 @@ class Sim:
         Args:
             timeout: Override the assembly's ``preroll_timeout``: seconds to wait for the peer
                 to establish lockstep, 30 s by default. ``None`` keeps it. This is where the
-                unbounded time is: physics reset and the Kit peer's start have bounds of their own.
+                unbounded time is: physics reset and the render stage's start have bounds of their own.
 
         Raises:
             RuntimeError: Called outside the ``Sim`` context manager, or the run ended during
