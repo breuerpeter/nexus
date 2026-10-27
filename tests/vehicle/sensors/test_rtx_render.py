@@ -138,10 +138,11 @@ def test_a_lidar_scans_once_per_period_of_its_rate_in_the_world_frame_with_no_fr
     `omni:sensor:frameRate`. Its points are in the world frame, as today.
 
     Given a lidar at 10 Hz 2 m over the fixture vehicle's base body, resting on flat ground, whose prim authors no
-    frame rate, when the run flies 1 s, 250 ticks of 4 ms, then the signal holds 10 scans, none empty, and every
-    point's height is within 5 cm of the ground's, 0 m.
+    frame rate, when the run flies 1.12 s, 280 ticks of 4 ms, then the signal holds 10 scans, none empty, and every
+    point's height is within 5 cm of the ground's, 0 m. The renderer hands each scan over a period after it completes:
+    the scan the lidar starts at 4 ms completes at 104 ms and reaches the signal at 204 ms, and one a period after.
     """
-    scans, error = _fly(sv.vehicle(tmp_path, LIDAR), "vehicle/sensors/scan/lidar", 250)
+    scans, error = _fly(sv.vehicle(tmp_path, LIDAR), "vehicle/sensors/scan/lidar", 280)
     held = [(len(scan.points) > 0, bool(np.all(np.abs(scan.points[:, 2]) < 0.05))) for _, scan in scans]
 
     assert held == [(True, True)] * 10, error
