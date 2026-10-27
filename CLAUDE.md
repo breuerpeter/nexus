@@ -118,3 +118,6 @@ With release-please enabled, commit types drive the version bump:
 - `fix` → patch: 0.1.0 → 0.1.1
 - `feat!` or a `BREAKING CHANGE:` footer → **minor while the version is below 1.0.0**, so 0.1.0 → 0.2.0, and major after that. The release-please config sets `bump-minor-pre-major`, so a breaking change can't cut 1.0.0 by accident. Reaching 1.0.0 is a deliberate act.
 - `chore`, `docs`, `ci`, `refactor`, `test`, `build`, `style` → changelog only, no bump
+
+## References
+- `ARCHITECTURE.md`: the target architecture of the codebase as a whole. Read it before you plan a change.
