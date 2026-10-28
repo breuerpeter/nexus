@@ -15,6 +15,12 @@ class "NexusImuAPI" (
         Range: [0, inf)
         Units: meters per second squared"""
     )
+    float nexus:accRange = 16 (
+        doc = """The accelerometer's full-scale range, the most each axis reads either way.
+
+        Range: (0, inf)
+        Units: standard gravity, 9.80665 meters per second squared"""
+    )
     float nexus:gyroNoise = 0.02 (
         doc = """Standard deviation of the white noise on each gyroscope axis, per sample.
 

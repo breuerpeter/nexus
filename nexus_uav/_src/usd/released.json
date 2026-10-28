@@ -58,6 +58,11 @@
       "type": "float",
       "units": "meters per second squared"
     },
+    "nexus:accRange": {
+      "fallback": "16",
+      "type": "float",
+      "units": "standard gravity, 9.80665 meters per second squared"
+    },
     "nexus:gyroNoise": {
       "fallback": "0.02",
       "type": "float",

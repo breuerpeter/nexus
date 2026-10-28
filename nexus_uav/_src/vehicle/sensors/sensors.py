@@ -339,6 +339,7 @@ class ImuSensor(DeviceSensor):
         site: The label of the sensor's site: the path of the prim that declares it.
         seed: The sensor's noise seed, which the builder derives from the run's seed and the prim.
         acc_noise: Standard deviation of the accelerometer's white noise, m/s^2.
+        acc_range: The accelerometer's full-scale range, in standard gravity, 9.80665 m/s^2.
         gyro_noise: Standard deviation of the gyroscope's white noise, rad/s.
         rate: How often the sensor gives a new sample, hertz: 0 gives one every tick, as does a rate faster
             than the tick rate.
@@ -350,7 +351,15 @@ class ImuSensor(DeviceSensor):
     name = "imu"  # the instance name, which the builder sets from the prim for a declared sensor
 
     def __init__(
-        self, model, site: str, *, seed: int = 0, acc_noise: float = 0.02, gyro_noise: float = 0.02, rate: float = 0.0
+        self,
+        model,
+        site: str,
+        *,
+        seed: int = 0,
+        acc_noise: float = 0.02,
+        acc_range: float = 16.0,
+        gyro_noise: float = 0.02,
+        rate: float = 0.0,
     ):
         super().__init__("imu", ImuSample, model, site, rate)
         self.seed = int(seed)
