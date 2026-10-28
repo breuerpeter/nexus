@@ -17,6 +17,7 @@ a run with no RTX sensor loads neither.
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -32,6 +33,8 @@ RENDER_MODE = "RealTimePathTracing"
 LIDAR_SCHEMA = "NexusLidarAPI"  # the schema that declares a lidar, on an `OmniLidar` prim
 SCAN_SCHEMA = "OmniSensorGenericLidarCoreAPI"  # what the renderer needs on that prim to scan it
 EXTRA = "nexus-uav[rtx]"
+# Where the driver's shader cache lasts across runs and environments: compiling it takes about five minutes.
+DRIVER_CACHE = Path("~/.cache/nexus") / NAME / "nv_shadercache"
 # The render vars each output reads, by the name a sensor's `output` gives.
 _VARS = {
     "color": (("LdrColor", "LdrColor"),),
@@ -70,6 +73,33 @@ def applied(prim) -> list[str]:
     """The API schemas `prim` applies, by name, those this process holds no definition of included."""
     ops = prim.GetMetadata("apiSchemas")
     return list(ops.GetAddedOrExplicitItems()) if ops is not None else []
+
+
+def keep_driver_cache(install: Path, keep: Path) -> None:
+    """Link the driver's shader cache in ovrtx's install folder `install` to `keep`, which outlasts the environment.
+
+    ovrtx sets no other path for the cache: it always writes to ``bin/cache/nv_shadercache`` under its install
+    folder. A cache already there moves to `keep` when `keep` doesn't exist yet; otherwise this deletes it. A link
+    that fails, as in an install folder the run can't write, leaves the cache where ovrtx keeps it.
+    """
+    link = install / "bin" / "cache" / "nv_shadercache"
+    spare = link.with_name(f".{link.name}.{os.getpid()}")
+    try:
+        if link.is_dir() and not link.is_symlink():
+            if keep.exists():
+                shutil.rmtree(link)
+            else:
+                keep.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(link, keep)
+        keep.mkdir(parents=True, exist_ok=True)  # a link to a folder since deleted would leave the driver none
+        if link.is_symlink() and link.resolve() == keep.resolve():
+            return
+        link.parent.mkdir(parents=True, exist_ok=True)
+        spare.symlink_to(keep, target_is_directory=True)
+        os.replace(spare, link)  # one rename, so a run beside this one opens the old link or the new one
+    except OSError as exc:
+        spare.unlink(missing_ok=True)
+        logger.warning(f"the driver's shader cache stays in {link}: {exc}")
 
 
 def _product(scope: str, sensor: str, output: str, width: int, height: int) -> str:
@@ -161,7 +191,8 @@ class RenderStage:
 
     # -- the lifecycle the build and the loop drive ---------------------------------------------
     def start(self) -> None:
-        """Open the vehicle, check every lidar can scan, create the stage and the renderer, and populate the files.
+        """Open the vehicle, check every lidar can scan, keep the driver's shader cache under ``~/.cache/nexus/ovrtx``,
+        create the stage and the renderer, and populate the files.
 
         Raises:
             ValueError: A lidar's prim lacks the schema the renderer scans with; the message names the prim and the
@@ -187,6 +218,7 @@ class RenderStage:
         from ovstage import population
 
         self._ovrtx, self._ovstage = ovrtx, ovstage
+        keep_driver_cache(Path(ovrtx.__file__).parent, DRIVER_CACHE.expanduser())
         ovrtx.register_schema_paths()
         self._stage = ovstage.Stage(
             f"nexus.{os.getpid()}",

@@ -6,7 +6,9 @@ name: gpu-pytest
 # GPU model with no recorded trajectory, reds the leg instead of passing it. The leg needs no PX4
 # tree and no px4-sitl image, so it caches neither. The tests run in one process, `-n 0`: no run has
 # checked the CUDA tests on parallel workers. The 25 slowest tests print at the end. The `rtx` extra brings the
-# renderer the RTX sensors' tests render with.
+# renderer the RTX sensors' tests render with, and the leg caches the driver's shader cache the render stage keeps
+# under ~/.cache/nexus/ovrtx: with none, the first render test compiles the shaders for about five minutes. The
+# pin of ovrtx in pyproject.toml keys the entry.
 # Advisory (not a required check). Offered on EVERY PR; runs only once the `gpu` label is applied —
 # the label IS the GPU-spend approval. A labeled fork PR flies through pull_request_target, each
 # run approved by a maintainer on the external-pr-approval environment; main pushes fly. The gate
@@ -40,6 +42,9 @@ jobs:
     uses: ./.github/workflows/gpu-runner.yml
     with:
       cache-scope: pytest
+      cache-path: ~/.cache/nexus/ovrtx
+      cache-name: ovrtx
+      cache-files: pyproject.toml
       command: >-
         uv run --locked --extra policy --extra rtx pytest -m gpu --require gpu -n 0 --cov=nexus_uav --cov-report=xml -q --durations=25
       coverage-flags: gpu

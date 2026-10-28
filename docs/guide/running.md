@@ -70,8 +70,9 @@ frame, so a frame shows the tick that asked for it. A vehicle with no such prim 
 - The renderer ships as the extra `nexus-uav[rtx]`: run `uv sync --extra rtx` in this repo, or install
   `nexus-uav[rtx]` with pip. It needs an NVIDIA GPU with RTX. A vehicle with an RTX sensor in an
   environment without the extra fails at its build, and the message names the extra.
-- The first run on a machine compiles the shaders, about half a minute, and later runs reuse them.
-  The console of ovrtx goes to `ovrtx/console.log` in the run's folder, next to the run's recording.
+- The first run on a machine compiles the shaders, about five minutes, and later runs reuse them from
+  `~/.cache/nexus/ovrtx/`, which outlasts the environment. The console of ovrtx goes to
+  `ovrtx/console.log` in the run's folder, next to the run's recording.
 - A lidar's prim applies `OmniSensorGenericLidarCoreAPI` beside its sensor schema, or the build fails
   and names the prim. The render stage sets the scan rate from the sensor's rate. Each scan reaches the
   lidar a period after it completes: a 10 Hz scan that completes at 104 ms arrives at 204 ms.
