@@ -336,9 +336,6 @@ class ImuSensor(DeviceSensor):
     PX4's estimator integrates delta velocity over each sample interval, and the interval's mean is that
     integral over its length. Newton's ``SensorIMU`` reads the solver's acceleration at the tick's end instead.
 
-    Each accelerometer axis saturates at the full-scale range, as a real part does: a ground strike past it
-    reads the range's edge with the strike's sign.
-
     The sensor reports no attitude: the vehicle's true state isn't a sensor reading.
 
     Args:
