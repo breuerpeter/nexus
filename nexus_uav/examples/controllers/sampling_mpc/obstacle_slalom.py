@@ -34,7 +34,6 @@ import nexus_uav as nx
 from nexus_uav._src.build.launch import resolve_scenario
 from nexus_uav._src.config import LaunchConfig
 from nexus_uav._src.guidance import MissionGuidance
-from nexus_uav._src.rendering import rtx_renderer
 from nexus_uav.examples._lib import dump_run
 from nexus_uav.examples.controllers.sampling_mpc.assembly import build_sampling_mpc_loop
 
@@ -58,7 +57,6 @@ def main() -> None:
         vehicle_usd=vehicle_usd,
         max_steps=MAX_STEPS,
         rerun=True,  # the .rrd is the demo's artifact
-        renderer_factory=rtx_renderer(vehicle_usd, cfg),  # the Kit peer, when the vehicle authors RTX sensors
     )
     # reached_m=0.5 matches the demo's leg spacing: the guidance advances to the next waypoint this close;
     # final_hold_s lets the stochastic MPC settle on the final waypoint before the guidance ends the run.

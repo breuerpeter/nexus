@@ -11,9 +11,9 @@ inference in a host stage; everything else captures, the captured-host-exchange 
 from __future__ import annotations
 
 from nexus_uav._src.build.assembly import resolve_device
+from nexus_uav._src.build.launch import required_sensors
 from nexus_uav._src.core import Clock, Loop, logger
 from nexus_uav._src.physics import NewtonPhysics
-from nexus_uav._src.rendering import PEER
 from nexus_uav._src.vehicle.estimators import GroundTruthEstimator
 
 # The RL task's step [s]: the policy acts at 50 Hz, as it trained, and the rate loop and mixer every tick.
@@ -37,7 +37,6 @@ def build_policy_loop(
     debug: bool = False,
     sink=None,
     vehicle_usd=None,
-    renderer_factory=None,
 ) -> Loop:
     """Assemble the core Loop with a trained-policy Controller in place of PX4.
 
@@ -101,8 +100,9 @@ def build_policy_loop(
         ctbr_params=ctbr_params,
         policy_period=max(1, round(POLICY_DT / dt)),
     )
-    # Rendering enters here alone, as in the core assembly: an optional renderer + its host-rate sensors.
-    renderer, sensors = renderer_factory(physics, vehicle_usd, cfg) if renderer_factory else (None, [])
+    # The sensors whose class requires something by name, such as the RTX sensors, and what they require, such
+    # as the render stage, which the loop hands each at connect and stops with the run.
+    sensors, required, started = required_sensors(physics, vehicle_usd, cfg)
 
     # Optional Rerun recording of the rollout: viewer → serve live on :9876; not viewer → write the
     # full .rrd, to record_to_rrd, else a timestamped default.
@@ -128,8 +128,8 @@ def build_policy_loop(
         # sensor, no per-tick torch in the graph.
         estimator=GroundTruthEstimator(),
         controller=controller,
-        renderer=renderer,
-        links={} if renderer is None else {PEER: renderer},  # each RTX sensor takes the Kit link at connect
+        links=required,  # each RTX sensor takes the render stage at connect
+        peers=started,
         logger=sink,
         max_steps=max_steps,
         physics_substeps=physics_substeps,

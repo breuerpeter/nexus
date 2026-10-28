@@ -1,0 +1,48 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    doc = "The scene the render tests fly in: a gray ground with a red square at the origin, under a sun and a sky. No prim applies a physics schema, so the scene renders and adds nothing to the model, whose ground is the builder's plane at z = 0."
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "World"
+{
+    def PhysicsScene "PhysicsScene" (
+        prepend apiSchemas = ["NexusSceneAPI"]
+    )
+    {
+        double3 nexus:geodeticOrigin = (47.747944, -122.163917, 5.02)
+    }
+
+    def Cube "Ground"
+    {
+        double size = 1
+        color3f[] primvars:displayColor = [(0.5, 0.5, 0.5)]
+        double3 xformOp:translate = (0, 0, -0.005)
+        float3 xformOp:scale = (40, 40, 0.01)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+    }
+
+    def Cube "Square"
+    {
+        double size = 1
+        color3f[] primvars:displayColor = [(0.8, 0.05, 0.05)]
+        double3 xformOp:translate = (0, 0, 0.001)
+        float3 xformOp:scale = (0.3, 0.3, 0.002)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+    }
+
+    def DistantLight "Sun"
+    {
+        float inputs:intensity = 3000
+        float xformOp:rotateX = 20
+        uniform token[] xformOpOrder = ["xformOp:rotateX"]
+    }
+
+    def DomeLight "Sky"
+    {
+        color3f inputs:color = (0.45, 0.6, 1)
+        float inputs:intensity = 1000
+    }
+}

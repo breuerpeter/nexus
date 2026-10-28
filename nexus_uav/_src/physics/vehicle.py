@@ -177,7 +177,7 @@ class VehicleUsd:
 
     def spawn_pose(self):
         """The resolved start pose, position and attitude: *the* one source of the placement. :meth:`build`
-        consumes it, and the Kit render peer places the vehicle's render root with it. The default
+        consumes it. The default
         attitude is the FRD flip; the default position is support-height placement, :meth:`_ground_spawn`.
         """
         usd_path = self.cfg.get("usd_path")

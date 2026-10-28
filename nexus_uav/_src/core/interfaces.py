@@ -75,9 +75,9 @@ class Component:
         name: The instance name, which ends the component's path, ``vehicle/sensors/<name>``, and keys its
             recorded histories. The builder sets it for a declared component from its prim; ``None`` reads
             as the class's name.
-        requires: The names of the peers the class needs, such as ``("kit",)`` for an RTX sensor: the builder
-            starts each once, whatever the number of components that require it, and the loop hands the
-            component each one's link at :meth:`connect`.
+        requires: The names of what the class needs, a peer or the render stage, such as ``("ovrtx",)`` for an
+            RTX sensor: the builder makes and starts each once, whatever the number of components that require
+            it, and the loop hands the component each at :meth:`connect`.
         needs_instance: Whether the class takes the run's instance, the number the run's peers number their
             ports from, as the keyword ``instance``: ``True`` for a controller whose peer it talks to numbers its
             links so. The builder passes it beside the schema's attributes.

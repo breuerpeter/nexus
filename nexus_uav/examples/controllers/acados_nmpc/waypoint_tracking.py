@@ -53,7 +53,6 @@ import nexus_uav as nx
 from nexus_uav._src.build.launch import resolve_scenario
 from nexus_uav._src.config import LaunchConfig
 from nexus_uav._src.guidance import TrackingGuidance
-from nexus_uav._src.rendering import rtx_renderer
 from nexus_uav.examples._lib import dump_run
 from nexus_uav.examples._lib.min_snap import MinSnapReference
 from nexus_uav.examples.controllers.acados_nmpc.assembly import build_acados_loop
@@ -89,7 +88,6 @@ def main() -> None:
         vehicle_usd=vehicle_usd,
         max_steps=MAX_STEPS,
         rerun=True,  # the .rrd is the demo's artifact
-        renderer_factory=rtx_renderer(vehicle_usd, cfg),  # the Kit peer, when the vehicle authors RTX sensors
     )
     # The guidance owns the planner. MinSnapReference, the polynomial planner, is a smooth min-snap path
     # plus a smooth yaw polynomial, so nose-first flight tracks cleanly; swap in the ruckig

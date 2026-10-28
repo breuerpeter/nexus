@@ -36,7 +36,6 @@ import numpy as np
 import nexus_uav as nx
 from nexus_uav._src.build.launch import resolve_scenario
 from nexus_uav._src.config import LaunchConfig
-from nexus_uav._src.rendering import rtx_renderer
 from nexus_uav.examples._lib import dump_run
 from nexus_uav.examples.controllers.policy.assembly import build_policy_loop
 from nexus_uav.examples.controllers.policy.goto.geofence import GeofenceGuidance
@@ -98,7 +97,6 @@ def main() -> None:
         vehicle_usd=vehicle_usd,
         max_steps=MAX_STEPS,
         rerun=True,  # the .rrd is the demo's artifact
-        renderer_factory=rtx_renderer(vehicle_usd, cfg),  # the Kit peer, when the vehicle authors RTX sensors
     )
     guidance = GeofenceGuidance(bounds=FENCE)
     with nx.Sim._from_loop(orch, guidance=guidance) as sim:

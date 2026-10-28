@@ -1,6 +1,6 @@
 """The RTX thermal camera: the Long Wave Infrared (LWIR) feed over a camera prim that applies the thermal camera schema.
 
-The Kit peer renders the same kind of render product as the electro-optical camera and returns its
+The render stage renders the same kind of render product as the electro-optical camera and hands back its
 radiance and depth; here on the host the radiance turns into kelvin, then into the operator's 8-bit
 image, through the one invertible band law in :mod:`nexus_uav._src.vehicle.sensors.lwir`, which the
 sensor writes to its signal ``thermal_camera`` and logs.
@@ -14,11 +14,11 @@ from nexus_uav._src.core import logger
 from nexus_uav._src.core.schema import Image
 from nexus_uav._src.core.signals import Signal
 
-from .rtx_sensor import RtxMountedSensor
+from .sensor import RtxMountedSensor
 
 
 class RtxThermalSensor(RtxMountedSensor):
-    """RTX thermal sensor, Long Wave Infrared (LWIR): the peer's radiance, the ``PtSelfIllumination``
+    """RTX thermal sensor, Long Wave Infrared (LWIR): the render stage's radiance, the ``PtSelfIllumination``
     Arbitrary Output Variable (AOV) on the authored camera prim, -> an 8-bit white-hot image, which goes
     to the signal ``thermal_camera``, an :class:`Image`, and to ``Logger.log_image`` at the row named after
     the signal, ``sim/vehicle/sensors/<name>/thermal_camera``.
@@ -141,7 +141,7 @@ class RtxThermalSensor(RtxMountedSensor):
         wherever the scene authors no emission, so the display synthesizes the ambient floor
         rather than measuring it. Per-material ambient IR is #67.
         """
-        from .lwir import lwir_display, temperature_from_intensity
+        from ..lwir import lwir_display, temperature_from_intensity
 
         intensity = rad * (1.0 / self.RADIANCE_PER_INTENSITY)  # authored emissive_intensity units
         intensity[sky] = 0.0

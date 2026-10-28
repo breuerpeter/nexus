@@ -2,10 +2,10 @@
 
 import pytest
 
+from nexus_uav._src.core.errors import RunError
 from nexus_uav._src.core.interfaces import Component, Stage
 from nexus_uav._src.core.loop import Loop
 from nexus_uav._src.core.schema import SimTime
-from nexus_uav._src.peers.kit.runner import KitPeerError
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")  # Python stand-ins run stage by stage, never as a graph
 
@@ -121,67 +121,45 @@ def test_a_controller_that_raises_on_close_still_finalizes_the_recording():
     assert closed_logs == [True], "the recording teardown was skipped by the controller failure"
 
 
-class _Renderer:
-    """A renderer that owns a peer, as the Kit render peer does: close() is what stops it."""
-
-    def __init__(self):
-        self.closed = False
-
-    def on_physics_ready(self):
-        pass
-
-    def close(self):
-        self.closed = True
-
-
-def test_a_physics_reset_that_fails_still_closes_the_renderer():
-    """The renderer's peer starts at build, before the run: a reset that raises, a Warp kernel that
-    fails to compile, must not leave that container running.
+def test_a_physics_reset_that_fails_still_stops_the_peers():
+    """The peers start at build, before the run: a reset that raises, a Warp kernel that fails to compile, must
+    not leave one running, the render stage or a container.
     """
 
     def boom():
         raise RuntimeError("CUDA kernel build failed")
 
-    orch = _orch(renderer=_Renderer())
+    peer = _Peer()
+    orch = _orch(peers=[peer])
     orch.physics.reset = boom
 
     with pytest.raises(RuntimeError, match="CUDA kernel build failed"):
         orch.run()
 
-    assert orch.renderer.closed
-
-
-def test_closing_a_run_that_never_stepped_closes_the_renderer():
-    """A caller that builds a run and leaves without stepping it, a `Sim` entered and exited, still
-    stops the renderer's peer, which started at build.
-    """
-    orch = _orch(renderer=_Renderer())
-
-    orch.close()
-
-    assert orch.renderer.closed
+    assert peer.stopped == 1
 
 
 class _DyingSensor(Component):
-    """A sensor whose work is a host stage and whose peer dies mid-flight, as an RTX sensor's Kit peer can."""
+    """A sensor whose work is a host stage and whose renderer fails mid-flight, as an RTX sensor's can."""
 
     host_rate = True
 
     def sample(self, state, t):
-        raise KitPeerError("the Kit render peer died while this run waited for a frame")
+        raise RunError("the render stage failed while this run rendered a frame")
 
     def stages(self):
         return [Stage("sample", "host", lambda tick: self.sample(tick.state, tick.t))]
 
 
-def test_a_kit_peer_that_dies_mid_flight_ends_the_run_with_its_error():
+def test_a_sensor_whose_renderer_fails_mid_flight_ends_the_run_with_its_error_after_the_teardown():
     """Not the autopilot's disconnect, which ends a run normally: the error surfaces after the teardown."""
-    orch = _orch(sensors=[_DyingSensor()], renderer=_Renderer())
+    peer = _Peer()
+    orch = _orch(sensors=[_DyingSensor()], peers=[peer])
 
-    with pytest.raises(KitPeerError, match="Kit render peer"):
+    with pytest.raises(RunError, match="render stage"):
         orch.run()
 
-    assert orch.renderer.closed and orch.controller.closed
+    assert (peer.stopped, orch.controller.closed) == (1, True)
 
 
 class _Peer:

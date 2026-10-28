@@ -72,3 +72,22 @@ forbidden_modules =
     usdrt
     isaacsim
     carb
+
+; The render stage talks to the renderer through six calls and no other, so it is the one module that imports
+; ovrtx and ovstage, the extra nexus-uav[rtx]. It imports them in its start, which this contract can't tell from a
+; module-level import; tests/build/test_rtx_build.py proves a run with no RTX sensor loads neither.
+[importlinter:contract:ovrtx-only-in-the-render-stage]
+name = only the render stage imports ovrtx and ovstage
+type = forbidden
+; module by module, as the PX4 contract checks
+as_packages = False
+; a failure names the one import to remove, not every chain that runs through it
+allow_indirect_imports = True
+source_modules =
+    nexus_uav.**
+forbidden_modules =
+    ovrtx
+    ovstage
+ignore_imports =
+    nexus_uav._src.vehicle.sensors.rtx.stage -> ovrtx
+    nexus_uav._src.vehicle.sensors.rtx.stage -> ovstage

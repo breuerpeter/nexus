@@ -138,7 +138,7 @@ class PointCloud:
     time: float
     """The sim time the scan shows, seconds."""
     points: np.ndarray
-    """The points, ``(n, 3)``, in the frame the Kit peer sends: world axes."""
+    """The points, ``(n, 3)``, in the frame the render stage hands them: world axes."""
 
 
 # --- Setpoint: the guidance→controller command vocabulary ----------------

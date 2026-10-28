@@ -93,7 +93,7 @@ class "NexusGpsAPI" (
 }
 
 class "NexusCameraAPI" (
-    doc = "A color camera on a `Camera` prim, which gives its optics and its mount. The Kit render peer renders it, and no vehicle names that peer: the camera's class requires it."
+    doc = "A color camera on a `Camera` prim, which gives its optics and its mount. The run's render stage renders it, and no vehicle names that stage: the camera's class requires it."
     prepend apiSchemas = ["NexusSensorRoleAPI"]
 )
 {
@@ -118,7 +118,7 @@ class "NexusCameraAPI" (
 }
 
 class "NexusThermalCameraAPI" (
-    doc = "A Long Wave Infrared (LWIR) camera on a `Camera` prim, which gives its optics and its mount. The Kit render peer renders it at half the declared size on each side, and the camera's class requires that peer."
+    doc = "A Long Wave Infrared (LWIR) camera on a `Camera` prim, which gives its optics and its mount. The run's render stage renders it, and the camera's class requires that stage."
     prepend apiSchemas = ["NexusSensorRoleAPI"]
 )
 {
@@ -143,7 +143,7 @@ class "NexusThermalCameraAPI" (
 }
 
 class "NexusLidarAPI" (
-    doc = "A lidar on an `OmniLidar` prim, which gives its scan pattern and its mount. The Kit render peer renders it, and the lidar's class requires that peer."
+    doc = "A lidar on an `OmniLidar` prim, which gives its scan pattern and its mount. The run's render stage renders it, and the lidar's class requires that stage. The prim applies `OmniSensorGenericLidarCoreAPI` too, which the renderer scans with."
     prepend apiSchemas = ["NexusSensorRoleAPI"]
 )
 {

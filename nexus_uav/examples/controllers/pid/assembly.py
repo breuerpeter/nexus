@@ -17,9 +17,9 @@ this assembly from here, because examples ship in the wheel.
 from __future__ import annotations
 
 from nexus_uav._src.build.assembly import resolve_device
+from nexus_uav._src.build.launch import required_sensors
 from nexus_uav._src.core import Clock, Loop, logger
 from nexus_uav._src.physics import NewtonPhysics
-from nexus_uav._src.rendering import PEER
 from nexus_uav._src.vehicle.estimators import GroundTruthEstimator
 
 
@@ -39,14 +39,16 @@ def build_pid_loop(
     record_to_rrd: str | None = None,
     debug: bool = False,
     vehicle_usd=None,
-    renderer_factory=None,
+    components=None,
 ) -> Loop:
     """Assemble the core Loop with the :class:`PidController`.
 
     The control law's gains are the differentiable design parameters tuned offline by the
     design-optimization example, on the articulated plant this run flies: the vehicle's Newton motors spin
     its rotor joints, and its propellers turn each rotor's speed into its force. The flight starts where the
-    caller places it, in free flight with the rotors at hover speed, as the tuning rollout starts.
+    caller places it, in free flight with the rotors at hover speed, as the tuning rollout starts. `components` is
+    the registry that resolves the vehicle's RTX sensors and what they require, ``None`` for the install's, so a
+    test sends the render stage to its fake.
     """
     import numpy as np
 
@@ -92,8 +94,9 @@ def build_pid_loop(
     # whole tick is one graph / tape-able. Its kernel reads the controller's setpoint, the goal a guidance
     # writes, until the observation moves into PID's stage.
     sensors = [WarpObservationSensor(goal_w=goal_w, body_index=physics.base_index, setpoint=controller.setpoint)]
-    # Rendering enters here alone, as in the core assembly: an optional renderer plus its host-rate sensors.
-    renderer, extra_sensors = renderer_factory(physics, vehicle_usd, cfg) if renderer_factory else (None, [])
+    # The sensors whose class requires something by name, such as the RTX sensors, and what they require, such
+    # as the render stage, which the loop hands each at connect and stops with the run.
+    extra_sensors, required, started = required_sensors(physics, vehicle_usd, cfg, components=components)
     sensors += extra_sensors
     if sink is None and rerun:  # central Rerun recording, §10: the .rrd of a standard PID run
         from nexus_uav._src.logging import build_logger
@@ -115,8 +118,8 @@ def build_pid_loop(
         sensors=sensors,
         estimator=GroundTruthEstimator(),  # the guidance reads its estimate
         controller=controller,
-        renderer=renderer,
-        links={} if renderer is None else {PEER: renderer},  # each RTX sensor takes the Kit link at connect
+        links=required,  # each RTX sensor takes the render stage at connect
+        peers=started,
         logger=sink,
         max_steps=max_steps,
         physics_substeps=physics_substeps,

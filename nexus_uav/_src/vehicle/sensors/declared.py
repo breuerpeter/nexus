@@ -6,9 +6,9 @@ mount. The registry maps the prim's schema to a class, and the class takes the m
 the label of the site Newton loaded the prim as, then the sensor's noise seed and the schema's attributes
 as keyword arguments. The class reads its body and its mount from the model, so the builder places nothing.
 
-A class states the peers it requires in a ``requires`` tuple, such as ``("kit",)`` on the RTX sensors.
-The build starts each required peer once, and the loop hands the class the peer's link at ``connect``.
-No vehicle names such a peer.
+A class states what it requires in a ``requires`` tuple, a peer or the render stage, such as ``("ovrtx",)``
+on the RTX sensors. The build makes each once, and the loop hands it to the class at ``connect``. No
+vehicle names it.
 """
 
 from __future__ import annotations

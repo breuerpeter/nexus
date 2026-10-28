@@ -12,9 +12,9 @@ host stage; everything else captures, the captured-host-exchange strategy.
 from __future__ import annotations
 
 from nexus_uav._src.build.assembly import resolve_device
+from nexus_uav._src.build.launch import required_sensors
 from nexus_uav._src.core import Clock, Loop, logger
 from nexus_uav._src.physics import NewtonPhysics
-from nexus_uav._src.rendering import PEER
 from nexus_uav._src.vehicle.estimators import GroundTruthEstimator
 
 
@@ -31,7 +31,6 @@ def build_sampling_mpc_loop(
     debug: bool = False,
     sink=None,
     vehicle_usd=None,
-    renderer_factory=None,
 ) -> Loop:
     """Assemble the core Loop with the sampling + gradient diffsim Model Predictive Control (MPC).
 
@@ -89,8 +88,9 @@ def build_sampling_mpc_loop(
                 "goal_w": goal_w, "spawn": spawn, "num_rollouts": num_rollouts, "max_steps": max_steps,
             }},
         )  # fmt: skip
-    # Rendering enters here alone, as in the core assembly: an optional renderer + its host-rate sensors.
-    renderer, extra_sensors = renderer_factory(physics, vehicle_usd, cfg) if renderer_factory else (None, [])
+    # The sensors whose class requires something by name, such as the RTX sensors, and what they require, such
+    # as the render stage, which the loop hands each at connect and stops with the run.
+    extra_sensors, required, started = required_sensors(physics, vehicle_usd, cfg)
     return Loop(
         clock=Clock(dt),
         physics=physics,
@@ -99,8 +99,8 @@ def build_sampling_mpc_loop(
         sensors=extra_sensors,
         estimator=GroundTruthEstimator(),
         controller=controller,
-        renderer=renderer,
-        links={} if renderer is None else {PEER: renderer},  # each RTX sensor takes the Kit link at connect
+        links=required,  # each RTX sensor takes the render stage at connect
+        peers=started,
         logger=sink,
         max_steps=max_steps,
         physics_substeps=1,

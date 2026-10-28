@@ -417,7 +417,7 @@ def build(
     `catalog` is the catalog, for a scene of the test's own. `fall_from`, a position, places the vehicle there
     in free flight, where it falls, in place of resting on the ground. `peers` maps a shipped peer's name to the
     class a test sends it to, its fake, which joins the registry as a row: the PX4 SITL peer's under its schema,
-    the Kit peer's under its name. The rest goes to the build: `components` replaces the registry of
+    the render stage's under its name. The rest goes to the build: `components` replaces the registry of
     :func:`components`.
     """
     import nexus_uav._src.build.launch as launch_mod
@@ -437,8 +437,8 @@ def build(
 
 
 # The row of the registry each shipped peer answers: the PX4 SITL peer's schema, which a vehicle declares it with, and
-# the Kit peer's name, which an RTX sensor's class requires it by.
-PEER_ROWS = {"px4_sitl": "NexusPx4SitlAPI", "kit": "kit"}
+# the render stage's name, which an RTX sensor's class requires it by.
+PEER_ROWS = {"px4_sitl": "NexusPx4SitlAPI", "ovrtx": "ovrtx"}
 
 
 def steps(loop, ticks: int) -> int:

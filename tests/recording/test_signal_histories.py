@@ -386,10 +386,10 @@ def test_a_signal_with_no_fixed_width_keeps_no_history_and_its_component_logs_it
     `sim/vehicle/sensors/lidar/lidar`. A history shows in the `.rrd` as a series under its writer's path, so none
     sits under the camera's, the lidar's or the guidance's.
     """
-    from nexus_uav._src.peers.kit.fake import KitFake
+    from nexus_uav._src.vehicle.sensors.rtx.fake import RenderStageFake
 
-    kit = KitFake.configured(points=[POINT])
-    rrd = fly_recorded(tmp_path, sv.vehicle(tmp_path, FPVCAM + LIDAR), scene=sv.SCENE, ticks=30, kit=kit)
+    kit = RenderStageFake.configured(points=[POINT])
+    rrd = fly_recorded(tmp_path, sv.vehicle(tmp_path, FPVCAM + LIDAR), scene=sv.SCENE, ticks=30, render=kit)
     rows = rrd_rows(rrd)
     no_history = ("/sim/vehicle/sensors/fpvcam", "/sim/vehicle/sensors/lidar", "/sim/guidance/setpoint")
     framed = sorted({e for e, _, c in rows if "EncodedImage:blob" in c})

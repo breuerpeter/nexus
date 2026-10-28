@@ -778,7 +778,7 @@ def test_a_vehicle_that_declares_the_px4_sitl_peer_starts_it(daemon, monkeypatch
     over the HIL link as the run steps.
     """
     from nexus_uav._src.config.catalog import load_catalog
-    from nexus_uav._src.peers.kit.fake import KitFake
+    from nexus_uav._src.vehicle.sensors.rtx.fake import RenderStageFake
 
     monkeypatch.delenv("NEXUS_ASSET_CACHE")  # the shipped vehicles come from the checkout's own cache
     monkeypatch.chdir(tmp_path)  # no project catalog: only the bundled one
@@ -794,7 +794,7 @@ def test_a_vehicle_that_declares_the_px4_sitl_peer_starts_it(daemon, monkeypatch
     flown = {}
     for name, launch in launches.items():
         loop = launch_mod.build_from_launch(
-            launch, preroll_timeout=10.0, components=Registry({"NexusPx4SitlAPI": Px4Fake, "kit": KitFake})
+            launch, preroll_timeout=10.0, components=Registry({"NexusPx4SitlAPI": Px4Fake, "ovrtx": RenderStageFake})
         )
         _step(loop, 10)
         fakes = [p for p in loop.peers if isinstance(p, Px4Fake)]

@@ -1,6 +1,6 @@
 """The RTX camera: the electro-optical (EO) feed over a ``Camera`` prim the vehicle USD authored.
 
-The Kit peer renders it into one render product with an ``LdrColor`` annotator; here on the host the
+The render stage renders it into one render product with an ``LdrColor`` render var; here on the host the
 sensor writes the frame to its signal ``camera`` and logs it as the First Person View image.
 """
 
@@ -10,11 +10,11 @@ from nexus_uav._src.core import logger
 from nexus_uav._src.core.schema import Image
 from nexus_uav._src.core.signals import Signal
 
-from .rtx_sensor import RtxMountedSensor
+from .sensor import RtxMountedSensor
 
 
 class RtxCameraSensor(RtxMountedSensor):
-    """RTX camera sensor: the peer's color output -> the signal ``camera``, an :class:`Image`, and
+    """RTX camera sensor: the render stage's color output -> the signal ``camera``, an :class:`Image`, and
     ``Logger.log_image`` at the row named after the signal, ``sim/vehicle/sensors/<name>/camera``, under
     the frustum at the sensor's own entity.
 

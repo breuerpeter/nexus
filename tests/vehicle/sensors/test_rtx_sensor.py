@@ -1,6 +1,6 @@
-"""An RTX sensor writes each frame or scan the Kit peer hands it to its output signal, stamped with the sim time
-it shows. Each sensor here sits on a prim of an in-memory stage, which a stand-in Kit link holds, and takes its
-frames by hand, so no peer runs. Skipped without pxr.
+"""An RTX sensor writes each frame or scan the render stage hands it to its output signal, stamped with the sim time
+it shows. Each sensor here sits on a prim of an in-memory stage, which a stand-in render stage holds, and takes its
+frames by hand, so nothing renders. Skipped without pxr.
 """
 
 from types import SimpleNamespace
@@ -10,9 +10,9 @@ import pytest
 
 pytest.importorskip("pxr")
 
-from nexus_uav._src.vehicle.sensors.rtx_camera import RtxCameraSensor
-from nexus_uav._src.vehicle.sensors.rtx_lidar import RtxLidarSensor
-from nexus_uav._src.vehicle.sensors.rtx_thermal import RtxThermalSensor
+from nexus_uav._src.vehicle.sensors.rtx.camera import RtxCameraSensor
+from nexus_uav._src.vehicle.sensors.rtx.lidar import RtxLidarSensor
+from nexus_uav._src.vehicle.sensors.rtx.thermal import RtxThermalSensor
 from tests.usd import sensor_vehicle as sv
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")
@@ -22,8 +22,8 @@ WIDTH, HEIGHT = 8, 6
 
 @pytest.fixture
 def mounted():
-    """A one-body model and the Kit link's stand-in, whose stage holds the camera prim `/vehicle/body/Cam` under the
-    body, both living for the test: ``cls(model, path)``, connected to the link.
+    """A one-body model and the render stage's stand-in, whose vehicle stage holds the camera prim
+    `/vehicle/body/Cam` under the body, both living for the test: ``cls(model, path)``, connected to the stand-in.
     """
     from pxr import Usd, UsdGeom
 
@@ -34,7 +34,7 @@ def mounted():
 
     def build(cls, **kwargs):
         sensor = cls(model, "/vehicle/body/Cam", **kwargs)
-        sensor.connect({"kit": SimpleNamespace(stage=stage)})
+        sensor.connect({"ovrtx": SimpleNamespace(vehicle_stage=stage, add=lambda sensor: None)})
         return sensor
 
     yield build
@@ -67,7 +67,7 @@ def mounted():
 def test_an_rtx_sensor_writes_each_frame_to_its_signal_with_the_sim_time_it_shows(mounted, sensor, arrays, content):
     """An RTX sensor writes each frame or scan to its output signal, with the sim time it shows.
 
-    Given a camera, a thermal camera or a lidar, wired alone, when the render link hands it a frame that shows
+    Given a camera, a thermal camera or a lidar, wired alone, when the render stage hands it a frame that shows
     sim time 0.5 s, then its output signal holds that frame, stamped 0.5 s: the camera's pixels, the thermal
     camera's 8-bit image at the frame's size, or the lidar's points.
     """

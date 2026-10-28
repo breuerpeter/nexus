@@ -2,7 +2,7 @@
 
 ``run`` builds a :class:`~nexus_uav._src.api.sim.Sim` from the shared ``sim_argparser`` flags and
 drives it to completion. A vehicle whose Universal Scene Description (USD) file declares RTX sensors
-renders them in the Kit render peer, a container the run starts from this host.
+renders them in the run's own process, through its render stage.
 """
 
 from __future__ import annotations

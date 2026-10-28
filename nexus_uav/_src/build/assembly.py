@@ -10,11 +10,8 @@ builds the controller the vehicle USD declares, and the example controllers self
 scripts in ``nexus_uav/examples/controllers/*/assembly.py``, reusing the helpers here,
 ``build_scenario`` / ``resolve_device``.
 
-Rendering enters through one argument, injected per build: ``renderer_factory``, from
-:func:`~nexus_uav._src.rendering.rtx_renderer`, or ``None``, which renders nothing. After the physics
-build, since the render poses the stage prims from the model's bodies, its ``link`` gives the render
-link, the sensors build in one pass, its ``finish`` hands the link the RTX sensors, and the loop hands
-each of them the link at ``connect``, under the name of the peer their class requires.
+What a class requires by name, a peer's link or the render stage the RTX sensors require, enters through
+``peer_links``: the loop hands each component what its class requires at ``connect``.
 """
 
 from __future__ import annotations
@@ -30,7 +27,6 @@ from nexus_uav._src.core.components import resolve_components, run_keywords, sib
 from nexus_uav._src.core.peer_inputs import PeerInputs
 from nexus_uav._src.physics import NewtonPhysics
 from nexus_uav._src.recording import Recorder
-from nexus_uav._src.vehicle.sensors.rtx_sensor import PEER
 
 
 @dataclass(slots=True)
@@ -228,7 +224,6 @@ def build_loop(
     rerun: bool = False,
     viewer: bool = True,
     debug: bool = False,
-    renderer_factory=None,
     peers=(),
     peer_links=None,
     peer_inputs=None,
@@ -244,12 +239,10 @@ def build_loop(
     """The core loop: the one ``NewtonPhysics`` + the one shared assembly around the
     caller-supplied ``controller``, ``estimator`` and ``guidance``, ``None`` for none.
 
-    ``renderer_factory`` is the one way rendering enters, from :func:`~nexus_uav._src.rendering.rtx_renderer`:
-    used after the physics build, since the render poses stage prims from the model's bodies;
-    ``None`` renders nothing. ``components`` resolves each sensor's schema to its class.
-    ``peers`` are the processes the build started for this run, which the loop stops when the run ends.
-    ``peer_links`` holds the link of each peer a class requires, by the peer's name, beside the Kit peer's, which
-    the renderer gives.
+    ``components`` resolves each sensor's schema to its class.
+    ``peers`` are what the build started for this run, which the loop stops when the run ends.
+    ``peer_links`` holds what the run made for each name a class requires, by the name: a peer's link, or the
+    render stage the RTX sensors require.
     ``peer_inputs`` maps the prim of each declared peer to the peer: for each input the vehicle wires on that
     prim, the loop end of the link is a component in the ``link`` role, which hands the peer each writer's value.
     ``connections`` are the vehicle's, by prim: for a reader's prim, each signal it reads and the prims
@@ -274,15 +267,11 @@ def build_loop(
     if vehicle_usd is None:
         raise ValueError(f"vehicle_usd is required for {vehicle!r} (resolve it with resolve_vehicle_usd)")
     physics = NewtonPhysics(vehicle_usd=vehicle_usd, cfg=cfg)
-    renderer = renderer_factory.link(physics, vehicle_usd) if renderer_factory else None
     a = assemble(
         physics, vehicle_usd, cfg,
         controller=controller, rerun=rerun, viewer=viewer, debug=debug, components=components, settings=settings,
         record_to_rrd=record_to_rrd, instance=instance,
     )  # fmt: skip
-    if renderer_factory:
-        rtx = [s for s in a.sensors if s.requires]
-        renderer_factory.finish(renderer, rtx, vehicle_usd, cfg, physics.model)
     by_prim = {**a.prims, **(prims or {})}
     ends = _link_ends(peer_inputs or {}, connections or {}, by_prim)
     by_prim.update(ends)
@@ -317,8 +306,7 @@ def build_loop(
         guidance=guidance,
         logger=a.logger,
         recorder=Recorder(),
-        renderer=renderer,
-        links={**(peer_links or {}), **({} if renderer is None else {PEER: renderer})},
+        links=dict(peer_links or {}),
         peers=peers,
         peer_inputs=list(ends.values()),
         connections=links,

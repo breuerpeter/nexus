@@ -57,6 +57,10 @@ acados   = ["casadi>=3.6,<=3.8.1", "ruckig>=0.14", "matplotlib", "Deprecated"]
 # A package whose catalog lists such assets depends on `nexus-uav[s3]`. 1.28 is the first boto3 that
 # reads `AWS_ENDPOINT_URL`.
 s3       = ["boto3>=1.28"]
+# The RTX sensors' renderer, in the loop's process: ovrtx renders the stage ovstage holds. Pinned exactly and
+# bumped with Isaac Lab's pins, since each minor release breaks the API. Both are NVIDIA-licensed, so the core
+# leaves them out and runs without them.
+rtx      = ["ovrtx==0.5.1.385782", "ovstage==0.2.1.385922"]
 # Isaac Lab RL training is NOT an extra of the core — it lives in the separate `nexus-rl` uv
 # project (own venv), so the heavy, prerelease-pinned Isaac Lab stack stays out of this environment.
 all      = ["nexus-uav[policy,examples]"]
@@ -71,15 +75,16 @@ NexusImuAPI = "nexus_uav._src.vehicle.sensors:ImuSensor"
 NexusMagAPI = "nexus_uav._src.vehicle.sensors:MagSensor"
 NexusBaroAPI = "nexus_uav._src.vehicle.sensors:BaroSensor"
 NexusGpsAPI = "nexus_uav._src.vehicle.sensors:GpsSensor"
-NexusCameraAPI = "nexus_uav._src.vehicle.sensors.rtx_camera:RtxCameraSensor"
-NexusThermalCameraAPI = "nexus_uav._src.vehicle.sensors.rtx_thermal:RtxThermalSensor"
-NexusLidarAPI = "nexus_uav._src.vehicle.sensors.rtx_lidar:RtxLidarSensor"
+NexusCameraAPI = "nexus_uav._src.vehicle.sensors.rtx.camera:RtxCameraSensor"
+NexusThermalCameraAPI = "nexus_uav._src.vehicle.sensors.rtx.thermal:RtxThermalSensor"
+NexusLidarAPI = "nexus_uav._src.vehicle.sensors.rtx.lidar:RtxLidarSensor"
 NexusPropellerAPI = "nexus_uav._src.vehicle.forces.propellers:Propeller"
 NexusEscAPI = "nexus_uav._src.vehicle.commands.esc:Esc"
 NexusPx4API_1 = "nexus_uav._src.vehicle.controllers.px4:Px4MavlinkController"
 # The peers: a declared one by its schema, a required one by the name a class requires it by.
 NexusPx4SitlAPI = "nexus_uav._src.peers.px4_sitl.runner:Px4Sitl"
 kit = "nexus_uav._src.peers.kit.runner:KitPeer"
+ovrtx = "nexus_uav._src.vehicle.sensors.rtx.stage:RenderStage"
 
 [project.urls]
 Homepage = "https://github.com/breuerpeter/nexus"
@@ -107,11 +112,13 @@ source-exclude = ["**/CLAUDE.md"]
 
 [tool.uv.sources]
 warp-lang = { index = "nvidia" }
+ovrtx = { index = "nvidia" }
+ovstage = { index = "nvidia" }
 
 [[tool.uv.index]]
 name = "nvidia"
 url = "https://pypi.nvidia.com/"
-explicit = true  # only the warp-lang source references it (isaaclab's transitive deps are gone)
+explicit = true  # only the warp-lang, ovrtx and ovstage sources reference it
 
 [dependency-groups]
 # CI evaluation harness only (scripts/ci/evaluate_examples.py): evo is GPLv3 + heavy (matplotlib,

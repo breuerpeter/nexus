@@ -26,12 +26,12 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
   `nexus_uav.px4`, an import-linter contract in `.importlinter`. Its `ignore_imports` lists the one
   import that remains, in the argument parser. A script that commands PX4 names it.
   It imports the offboard client from `nexus_uav.px4` and reads the link's address from `sim.ports`.
-- **RTX sensors render in the Kit render peer**, a container the run starts on the host when the
-  vehicle's Universal Scene Description (USD) file declares a sensor whose class requires it: a camera
-  or lidar schema on a `Camera` or `OmniLidar` prim. Kit is a required peer, so no vehicle names it,
-  and `docs/design/conventions.md` states the rule. The loop
-  never runs inside Kit, and no module imports Kit, an import-linter contract. Read
-  `nexus_uav/_src/peers/kit/CLAUDE.md` before changing the peer, its program, or the render link.
+- **RTX sensors render in the loop's process** through ovrtx and ovstage, the extra `nexus-uav[rtx]`. A
+  camera or lidar schema on a `Camera` or `OmniLidar` prim declares one. Its class requires the render
+  stage, `nexus_uav/_src/vehicle/sensors/rtx/stage.py`, by the name `ovrtx`. The build makes it once per run,
+  as a required peer, and the loop hands it to each sensor at `connect`. No module imports ovrtx at its own
+  import, so the core runs without the extra. The Kit render peer stays, required by no class, until #362
+  removes it. Read `nexus_uav/_src/peers/kit/CLAUDE.md` before changing it.
 - **Each peer lives in one folder**, `nexus_uav/_src/peers/<name>/`, with its runner, its pin, its
   image or program and its link's definition. The docstring of `nexus_uav/_src/peers/__init__.py`
   states the layout. Read it before adding a peer or a file to one.

@@ -5,13 +5,13 @@ Description (USD) file in a :class:`VehicleUsd`, threads the resolved scene, its
 scenario cfg, and builds the run from the vehicle's declarations. The registry maps each applied schema to its
 class, so the builder names no component and no peer: it builds the controller, the estimator and the guidance
 by the role their schemas state, the sensors and the command and force elements in the assembly, and each
-peer the vehicle declares, a schema whose class is a peer. A peer a component's class requires, such as the
-Kit render peer an RTX sensor requires, it starts once by the name the class requires it by.
+peer the vehicle declares, a schema whose class is a peer. What a component's class requires by name, such as
+the render stage an RTX sensor requires, it makes and starts once, by that name.
 
 A component's schema attributes are its class's keyword arguments, and so are a peer's. What only the run
 knows reaches a peer as keywords beside them: its pin, the run's instance, the run's folder, the files the
-run reads, the asset cache, whether the run starts clean and, for a peer with a serial line, the path of each of
-its ends. A component whose
+run reads, the vehicle's and the scene's root files by role and the scene's start, the asset cache, whether the
+run starts clean and, for a peer with a serial line, the path of each of its ends. A component whose
 class states ``needs_instance`` takes the instance too. The run claims one instance on this machine when it
 starts a declared peer, which every address its peers use counts from, and instance 0 when it starts none,
 for an autopilot started elsewhere.
@@ -26,8 +26,8 @@ end.
 
 Before any peer starts, the build resolves and checks the pin of each peer it starts, through
 :mod:`nexus_uav._src.peers.pins` and the peer's own ``check_pin``, and the receipt records each started
-peer's pin and each declaration with the class it resolved to. The required peers start first, so Kit boots
-while the declared peers, PX4 among them, build and the physics compiles.
+peer's pin and each declaration with the class it resolved to. What a class requires starts first, so the render
+stage populates while the declared peers, PX4 among them, build and the physics compiles.
 """
 
 from __future__ import annotations
@@ -47,8 +47,6 @@ from nexus_uav._src.peers import CLOCKS, instance, pins
 from nexus_uav._src.peers.files import run_files
 from nexus_uav._src.peers.serial import SerialLink
 from nexus_uav._src.physics import VehicleUsd
-from nexus_uav._src.rendering import PEER as KIT
-from nexus_uav._src.rendering import RtxRendererFactory
 from nexus_uav._src.usd import peer_names
 from nexus_uav._src.usd.reader import read_connections, read_serial_lines
 
@@ -98,8 +96,7 @@ def _thread_scene(cfg: dict, resolved: ResolvedLaunch) -> None:
     importer reads the geodetic origin the scene's ``PhysicsScene`` prim authors into the model,
     which anchors *both* the render world and the sensors: the scene is the single source of the
     "where on Earth" answer, so the Ground Control Station (GCS) minimap and the camera feed agree.
-    When the vehicle renders, the Kit peer opens the same file as its render stage and finds by its
-    content whether it needs live machinery, for example the cesium globe.
+    When the vehicle renders, the render stage opens the same file, shifted by the same start.
     """
     cfg["scene_usd_path"] = resolved.scene_usd_path
     cfg["scene_start"] = resolved.tested_config.scene_start
@@ -149,7 +146,7 @@ def build_from_launch(
             its form; raised before any peer starts.
         FileNotFoundError: The launch names an override layer with no file behind it.
         FileExistsError: ``run_dir`` holds files already; raised before any peer starts.
-        RunError: A peer couldn't start, the Kit peer for RTX sensors or the PX4 peer among them; the
+        RunError: A peer couldn't start, the render stage for RTX sensors or the PX4 peer among them; the
             message names the peer and its error.
     """
     vehicle_usd, resolved = resolve_vehicle_usd(launch, catalog, cache_dir=cache_dir)
@@ -185,6 +182,10 @@ def build_from_launch(
         "instance": claim.instance if claim is not None else 0,
         "log_dir": logs,
         "files": run_files(usd, resolved.scene_usd_path),
+        # The two root files by role, and where the scene sits, for what draws the run: the render stage.
+        "vehicle_file": usd,
+        "scene_file": resolved.scene_usd_path,
+        "scene_start": resolved.tested_config.scene_start,
         "cache_dir": cache_dir or default_cache(),
         "clean": launch.runtime.clean,
     }
@@ -198,10 +199,10 @@ def build_from_launch(
         # The build makes each peer before any starts, so a peer that fails its own check fails the run first.
         made = [_peer(spec.cls, spec.kwargs, peer_pins[spec.cls.name], run, spec.prim, ends) for spec in declared]
         needed = {name: _peer(cls, {}, peer_pins[cls.name], run, None, ends) for name, cls in required.items()}
-        # The required peers start first: Kit boots while the declared peers build and the physics compiles.
+        # What a class requires starts first: the render stage populates while the declared peers build and the
+        # physics compiles.
         for peer in needed.values():
             _start(peer, started)
-        renderer_factory = RtxRendererFactory(needed[KIT], log_dir=logs, components=registry) if KIT in needed else None
         built = {role: _component(spec, run["instance"]) for role, spec in roles.items() if spec is not None}
         # A declared peer starts here, before the assembly: PX4's start builds PX4 incrementally, which must
         # stay outside the sim's preroll window, GH #39, and PX4 boots while the physics compiles.
@@ -219,14 +220,13 @@ def build_from_launch(
             # The serial links close with the peers, and the run's instance stays held until the loop has stopped
             # every peer.
             peers=[*started, *links, *([claim] if claim is not None else [])],
-            peer_links={name: peer for name, peer in needed.items() if name != KIT},
+            peer_links=needed,
             peer_inputs={spec.prim: peer for spec, peer in zip(declared, made, strict=True)},
             connections=read_connections(usd),
             prims={roles[role].prim: component for role, component in built.items()},
             rerun=launch.output.log or launch.output.view,
             viewer=launch.output.view,
             debug=launch.output.debug,
-            renderer_factory=renderer_factory,
             preroll_timeout=preroll_timeout,
             max_steps=launch.runtime.max_steps,
             # The viewer's Settings tab shows the tested-config receipt, "every input that affects the
@@ -242,6 +242,82 @@ def build_from_launch(
         if claim is not None:
             claim.stop()
         raise
+
+
+def required(vehicle_usd, cfg: dict, *, components: Registry | None = None) -> tuple[dict, list]:
+    """What the vehicle's sensors require by name, made and started once as :func:`build_from_launch` does, such
+    as the render stage the RTX sensors require, for an assembly that builds its own loop.
+
+    The assembly hands the loop the first value as its ``links`` and the second among its ``peers``, which the
+    loop stops when the run ends. The examples build through the one builder once #35 lands, and this goes.
+
+    Args:
+        vehicle_usd: The vehicle's ``VehicleUsd``, whose file declares the sensors.
+        cfg: The scenario config, carrying the resolved scene and its start.
+        components: The registry that resolves the vehicle's schemas and the names a class requires; ``None`` takes
+            the install's.
+
+    Returns:
+        What the sensors require, by name, and what the run started, to stop with it; both empty for a vehicle
+        whose sensors require nothing.
+
+    Raises:
+        RunError: What a class requires couldn't start; the message names it and its error.
+    """
+    from nexus_uav._src.config.catalog import catalog_sources
+    from nexus_uav._src.vehicle.sensors.declared import sensor_specs
+
+    registry = components if components is not None else Registry()
+    usd = vehicle_usd.cfg["usd_path"]
+    specs = [spec for spec in sensor_specs(usd, registry) if spec.cls.requires]
+    if not specs:
+        return {}, []
+    sources = catalog_sources()
+    run = {
+        "instance": 0,
+        "log_dir": run_folder(),
+        "files": run_files(usd, cfg.get("scene_usd_path")),
+        "vehicle_file": usd,
+        "scene_file": cfg.get("scene_usd_path"),
+        "scene_start": cfg.get("scene_start"),
+        "cache_dir": default_cache(),
+        "clean": False,
+    }
+    started: list = []
+    needed = {}
+    try:
+        for name, cls in _required(specs, registry).items():
+            pin = pins.resolve(cls.name, sources)
+            needed[name] = _peer(cls, {}, cls.check_pin(pin) if pin is not None else None, run, None, {})
+            _start(needed[name], started)
+    except BaseException:
+        for peer in started:
+            peer.stop()
+        raise
+    return needed, started
+
+
+def required_sensors(physics, vehicle_usd, cfg: dict, *, components: Registry | None = None) -> tuple[list, dict, list]:
+    """The sensors the vehicle declares whose class requires something by name, built over `physics`'s model, and
+    what they require, made and started by :func:`required`, for an example assembly that builds its own sensors.
+
+    Returns:
+        The sensors, then what :func:`required` returns.
+
+    Raises:
+        RunError: What a class requires couldn't start; the message names it and its error.
+    """
+    from nexus_uav._src.core import SeedTree
+    from nexus_uav._src.vehicle.sensors.declared import build_sensors, sensor_specs
+
+    registry = components if components is not None else Registry()
+    usd = vehicle_usd.cfg["usd_path"]
+    specs = [spec for spec in sensor_specs(usd, registry) if spec.cls.requires]
+    if not specs:
+        return [], {}, []
+    sensors = build_sensors(specs, usd_path=usd, model=physics.model, seedtree=SeedTree(cfg.get("seed", 42)))
+    needed, started = required(vehicle_usd, cfg, components=registry)
+    return sensors, needed, started
 
 
 def _required(specs: list[ComponentSpec], registry: Registry) -> dict[str, type]:
@@ -331,7 +407,7 @@ def _start(peer, started: list) -> None:
 
     Raises:
         RunError: The peer couldn't start, such as PX4 with no tree or no docker daemon; the message names the
-            peer and its error, which it chains. A peer's own ``RunError``, the Kit peer's, passes through unchanged.
+            peer and its error, which it chains. A peer's own ``RunError`` passes through unchanged.
     """
     try:
         peer.start()
