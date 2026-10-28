@@ -39,6 +39,8 @@ from nexus_uav._src.core.signals import Signal
 
 from .rate import checked_rate, due
 
+STANDARD_GRAVITY = 9.80665  # m/s^2: the g a datasheet states an accelerometer's range in, not the world's gravity
+
 
 def site_index(model, site: str) -> int:
     """The index of the site of `model` labelled `site`, the path of the prim Newton loaded it from.
@@ -162,6 +164,7 @@ def imu_kernel(
     seed: int,
     sigma_acc: float,
     sigma_gyro: float,
+    acc_limit: float,  # the accelerometer's full-scale range, m/s^2: each axis reads at most this either way
     prev_lin: wp.array(dtype=wp.vec3),
     prev_ang: wp.array(dtype=wp.vec3),
     prev_t: wp.array(dtype=wp.float64),  # the sim time of the last sample
@@ -203,10 +206,11 @@ def imu_kernel(
     gyro_s = wp.quat_rotate_inv(q_sensor, vang)
     s = ImuSample()
     s.time = time[0]
+    # A real part clips its noisy output, so each axis saturates after the noise.
     s.accel = wp.vec3(
-        acc_s[0] + _noise(seed, st, 0, sigma_acc),
-        acc_s[1] + _noise(seed, st, 1, sigma_acc),
-        acc_s[2] + _noise(seed, st, 2, sigma_acc),
+        wp.clamp(acc_s[0] + _noise(seed, st, 0, sigma_acc), -acc_limit, acc_limit),
+        wp.clamp(acc_s[1] + _noise(seed, st, 1, sigma_acc), -acc_limit, acc_limit),
+        wp.clamp(acc_s[2] + _noise(seed, st, 2, sigma_acc), -acc_limit, acc_limit),
     )
     s.gyro = wp.vec3(
         gyro_s[0] + _noise(seed, st, 3, sigma_gyro),
@@ -332,6 +336,9 @@ class ImuSensor(DeviceSensor):
     PX4's estimator integrates delta velocity over each sample interval, and the interval's mean is that
     integral over its length. Newton's ``SensorIMU`` reads the solver's acceleration at the tick's end instead.
 
+    Each accelerometer axis saturates at the full-scale range, as a real part does: a ground strike past it
+    reads the range's edge with the strike's sign.
+
     The sensor reports no attitude: the vehicle's true state isn't a sensor reading.
 
     Args:
@@ -339,13 +346,15 @@ class ImuSensor(DeviceSensor):
         site: The label of the sensor's site: the path of the prim that declares it.
         seed: The sensor's noise seed, which the builder derives from the run's seed and the prim.
         acc_noise: Standard deviation of the accelerometer's white noise, m/s^2.
-        acc_range: The accelerometer's full-scale range, in standard gravity, 9.80665 m/s^2.
+        acc_range: The accelerometer's full-scale range, in standard gravity, 9.80665 m/s^2: each axis reads
+            at most this either way.
         gyro_noise: Standard deviation of the gyroscope's white noise, rad/s.
         rate: How often the sensor gives a new sample, hertz: 0 gives one every tick, as does a rate faster
             than the tick rate.
 
     Raises:
-        ValueError: The model has no site of that label, or the rate is negative; the message names the site.
+        ValueError: The model has no site of that label, the rate is negative, or the range is zero or less;
+            the message names the site.
     """
 
     name = "imu"  # the instance name, which the builder sets from the prim for a declared sensor
@@ -362,9 +371,13 @@ class ImuSensor(DeviceSensor):
         rate: float = 0.0,
     ):
         super().__init__("imu", ImuSample, model, site, rate)
+        if acc_range <= 0:
+            raise ValueError(f"{site}: the accelerometer's range is {acc_range} g; author a range above 0")
         self.seed = int(seed)
         self.acc_noise = float(acc_noise)
+        self.acc_range = float(acc_range)
         self.gyro_noise = float(gyro_noise)
+        self._acc_limit = self.acc_range * STANDARD_GRAVITY  # the range in m/s^2, which the kernel clamps to
         self._prev_lin = wp.zeros(1, dtype=wp.vec3)
         self._prev_ang = wp.zeros(1, dtype=wp.vec3)
         self._prev_t = wp.zeros(1, dtype=wp.float64)  # the sim time of the last sample
@@ -390,6 +403,7 @@ class ImuSensor(DeviceSensor):
                 self.seed,
                 self.acc_noise,
                 self.gyro_noise,
+                self._acc_limit,
                 self._prev_lin,
                 self._prev_ang,
                 self._prev_t,
