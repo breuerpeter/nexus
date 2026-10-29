@@ -110,7 +110,9 @@ same loop:
   **blocks** for the returned actuator commands. `HIL_SENSOR` goes out every tick and marks a sensor's
   fields updated, in `fields_updated`, only on a tick that brings a new sample of it, as PX4's Gazebo
   Classic bridge does. `HIL_GPS` goes out with each new sample of the Global Positioning System (GPS)
-  receiver. So PX4 receives each sensor at the rate its schema declares. Of two sensors of one kind, a
+  receiver. So PX4 receives each sensor at the rate its schema declares. Each accelerometer axis goes out
+  inside the ±16 g that PX4's SITL holds. A reading at the full-scale range of the accelerometer reaches PX4
+  with its sign, and PX4 flags it as clipped. Of two sensors of one kind, a
   connection on its prim, such as `nexus:inputs:imu`, picks the one PX4 receives. Its work is two
   **host stages**, `truth` and `exchange`, outside graph capture and not differentiable, and a lost
   connection fails the run with `RunError`.
