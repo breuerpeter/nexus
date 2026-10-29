@@ -43,17 +43,25 @@ def test_the_plugin_ships_in_the_wheel_and_import_nexus_registers_it(tmp_path):
         text=True,
     )
     assert r.returncode == 0, r.stderr
-    assert r.stdout.strip() == "['nexus:accNoise', 'nexus:gyroNoise', 'nexus:rate'] [0.02, 0.02, 0.0]"
+    assert (
+        r.stdout.strip()
+        == "['nexus:accNoise', 'nexus:accRange', 'nexus:gyroNoise', 'nexus:rate'] [0.02, 16.0, 0.02, 0.0]"
+    )
 
 
-def test_the_imu_schema_defines_its_two_noise_attributes_and_the_rate():
-    """The Inertial Measurement Unit (IMU) schema defines `nexus:accNoise`, `nexus:gyroNoise` and the shared `nexus:rate`."""
+def test_the_imu_schema_defines_its_two_noise_attributes_its_range_and_the_rate():
+    """The Inertial Measurement Unit (IMU) schema defines `nexus:accNoise`, `nexus:accRange`, `nexus:gyroNoise` and the shared `nexus:rate`."""
     from pxr import Usd
 
     import nexus_uav  # noqa: F401  # registers the plugin
 
     definition = Usd.SchemaRegistry().FindAppliedAPIPrimDefinition("NexusImuAPI")
-    assert sorted(definition.GetPropertyNames()) == ["nexus:accNoise", "nexus:gyroNoise", "nexus:rate"]
+    assert sorted(definition.GetPropertyNames()) == [
+        "nexus:accNoise",
+        "nexus:accRange",
+        "nexus:gyroNoise",
+        "nexus:rate",
+    ]
 
 
 def test_every_sensor_schema_shares_one_rate_attribute():

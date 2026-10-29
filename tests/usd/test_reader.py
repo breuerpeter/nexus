@@ -37,7 +37,7 @@ def test_the_reader_names_each_schema_attribute_in_snake_case_without_its_namesp
     from nexus_uav._src.usd.reader import read_declarations
 
     kwargs = {prim: kwargs for prim, _, kwargs in read_declarations(FIXTURE)}[IMU]
-    assert sorted(kwargs) == ["acc_noise", "gyro_noise", "rate"]
+    assert sorted(kwargs) == ["acc_noise", "acc_range", "gyro_noise", "rate"]
 
 
 def test_the_reader_fails_on_an_asset_path_that_resolves_to_no_file_and_names_the_prim(tmp_path):

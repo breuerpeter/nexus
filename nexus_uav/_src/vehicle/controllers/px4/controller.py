@@ -60,6 +60,13 @@ _IMU_FIELDS = 0x003F
 _MAG_FIELDS = 0x01C0
 _BARO_FIELDS = 0x1E00
 
+# The accelerations PX4's SITL can hold, m/s^2. It stores each accel sample of the first accelerometer as an
+# int16 count of g/2048 in standard gravity, src/modules/simulation/simulator_mavlink/SimulatorMavlink.cpp:207-224,
+# so -32768 counts is -16 g and the top, 32767 counts, one count under +16 g. A value past either end wraps to the
+# other side, so HIL_SENSOR sends each axis inside them, and PX4 flags a sample at either end as clipped.
+_PX4_ACCEL_MIN = -16 * 9.80665
+_PX4_ACCEL_MAX = 16 * 9.80665 * 32767 / 32768
+
 
 def _listener(port: int) -> int | None:
     """The process that listens on TCP `port` on this machine, from Linux's `/proc`; `None` when it finds none."""
@@ -233,7 +240,7 @@ class Px4MavlinkController(Component):
         # Classic bridge does: PX4 publishes a sensor only on a message that marks its fields, so at its rate.
         self.proto.hil_sensor_send(
             time_usec,
-            *acc,
+            *(min(max(a, _PX4_ACCEL_MIN), _PX4_ACCEL_MAX) for a in acc),
             *gyro,
             *field,
             float(baro.pressure),

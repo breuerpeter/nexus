@@ -78,6 +78,21 @@ def test_imu_accel_finite_diff_parity():
     np.testing.assert_allclose(sample.accel, ref, atol=1e-4)
 
 
+def test_an_imu_with_no_declared_range_reads_16_g_past_either_edge_and_its_other_axes_as_before():
+    """An Inertial Measurement Unit (IMU) axis past either edge of its range reads that edge, ±16 g in standard gravity, ±156.906 m/s², when its prim declares no range, and its other axes read what they read today.
+
+    Given an IMU with no declared range on a level body whose x velocity drops and z velocity rises 2.2 m/s
+    between two 4 ms samples, when it samples, then x reads −16 × 9.80665 m/s², z reads +16 × 9.80665 m/s²,
+    and y reads 0, as an IMU with no range reads it.
+    """
+    s = sv.wired(ImuSensor(*_on(), seed=_SEED, acc_noise=0.0, gyro_noise=0.0))
+    level, still = (0.0, 0.0, 0.0, 1.0), (0.0, 0.0, 0.0)
+    _sample(s, _WarpView((0, 0, 1), level, still, still))  # first: seeds the earlier velocity
+    sample = _sample(s, _WarpView((0, 0, 1), level, (-2.2, 0.0, 2.2), still), SimTime(4_000_000, 1))
+
+    np.testing.assert_allclose(sample.accel, [-156.9064, 0.0, 156.9064], atol=1e-3)
+
+
 def test_mag_parity():
     view = _WarpView((0, 0, 1), _Q, (0, 0, 0), (0, 0, 0))
     sample = _sample(sv.wired(MagSensor(*_on(), seed=_SEED, offset=(0.01, -0.02, 0.0), noise=(0.0, 0.0, 0.0))), view)

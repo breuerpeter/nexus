@@ -16,8 +16,10 @@ import pytest
 pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
+import warp as wp
+
 from nexus_uav._src.core.registry import Registry
-from nexus_uav._src.core.schema import BaroSample, GpsSample, ImuSample, MagSample
+from nexus_uav._src.core.schema import BaroSample, GpsSample, ImuSample, MagSample, SimTime
 from nexus_uav._src.core.signals import Signal
 from nexus_uav._src.peers.px4_sitl.fake import Px4Fake
 from tests.usd import sensor_vehicle as sv
@@ -232,6 +234,53 @@ def test_an_imu_prim_whose_transform_scales_fails_the_build_and_names_the_prim(t
 
     with pytest.raises(ValueError) as err:
         sv.build(sv.vehicle(tmp_path, scaled)).close()
+
+    assert f"{sv.BODY}/Imu0" in str(err.value)
+
+
+class _Moving:
+    """Every body of a model of `bodies` bodies level, 1 m up, at the linear velocity `velocity`: the state a built
+    sensor samples by hand.
+    """
+
+    def __init__(self, bodies: int, velocity):
+        self.body_q = wp.array(np.tile([0, 0, 1, 0, 0, 0, 1], (bodies, 1)).astype(np.float32), dtype=wp.transform)
+        self.body_qd = wp.array(np.tile([*velocity, 0, 0, 0], (bodies, 1)).astype(np.float32), dtype=wp.spatial_vector)
+
+
+def test_an_imu_prim_that_declares_a_full_scale_range_saturates_at_that_range(tmp_path):
+    """An Inertial Measurement Unit (IMU) prim that declares a full-scale range saturates at ± that range.
+
+    Given the fixture with an IMU prim that declares 8 g and no noise, when the built IMU samples a level body
+    whose x velocity drops and z velocity rises 2.2 m/s over 4 ms, then x reads −8 × 9.80665 m/s² and z reads
+    +8 × 9.80665 m/s².
+    """
+    ranged = sv.prim(
+        "Imu0", "NexusImuAPI", "float nexus:accNoise = 0\nfloat nexus:gyroNoise = 0\nfloat nexus:accRange = 8"
+    )
+    loop = sv.build(sv.vehicle(tmp_path, ranged))
+    (imu,) = loop.sensors
+    bodies = loop.physics.model.body_count
+    sv.wired(imu)  # its signals wired as a run wires them, to sample it outside the run
+    imu.sample_wp(_Moving(bodies, (0.0, 0.0, 0.0)), SimTime(0, 0))  # first: seeds the earlier velocity
+    imu.time.write([0.004])
+    imu.sample_wp(_Moving(bodies, (-2.2, 0.0, 2.2)), SimTime(4_000_000, 1))
+    accel = np.asarray(imu.out.read().accel)
+    loop.close()
+
+    assert accel[[0, 2]] == pytest.approx([-78.4532, 78.4532], abs=1e-3)
+
+
+def test_an_imu_prim_that_declares_a_range_of_zero_or_less_fails_the_build_and_names_the_prim(tmp_path):
+    """An Inertial Measurement Unit (IMU) prim that declares a range of zero or less fails the build, and the message names the prim.
+
+    Given the fixture with an IMU prim that declares a range of 0, when built, then the build fails naming the
+    prim path.
+    """
+    zero = sv.prim("Imu0", "NexusImuAPI", "float nexus:accRange = 0")
+
+    with pytest.raises(ValueError) as err:
+        sv.build(sv.vehicle(tmp_path, zero)).close()
 
     assert f"{sv.BODY}/Imu0" in str(err.value)
 

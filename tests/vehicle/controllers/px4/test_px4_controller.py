@@ -11,7 +11,7 @@ import warp as wp
 
 from nexus_uav._src.core.clock import DeviceClock
 from nexus_uav._src.core.interfaces import Component, Stage
-from nexus_uav._src.core.schema import PoseTwist, SimTime
+from nexus_uav._src.core.schema import ImuSample, PoseTwist, SimTime
 from nexus_uav._src.core.signals import Signal, wire
 from nexus_uav._src.core.stages import Bound
 from nexus_uav._src.vehicle.controllers.px4 import controller as ctrl
@@ -153,6 +153,33 @@ def test_hil_gps_and_the_true_state_go_out_with_each_new_gps_sample_and_on_no_ot
 
     stamps = [[args[0] for args in link.sent[kind]] for kind in ("HIL_GPS", "HIL_STATE_QUATERNION")]
     assert stamps == [[0, 8000], [0, 8000]]
+
+
+class _Readings(Component):
+    """A stand-in Inertial Measurement Unit (IMU): its sample on tick k reads the k-th of `xs` on its x axis, m/s²."""
+
+    def __init__(self, xs):
+        self.xs = xs
+        self.out = Signal("imu", ImuSample, shape=(1,))
+
+    def stages(self):
+        return [Stage("sample", "device", lambda tick: None, writes=(self.out,))]
+
+    def sample_wp(self, state, t):
+        self.out.write([(t.sim_time, (self.xs[t.step_index], 0.0, 0.0), (0.0, 0.0, 0.0))])
+
+
+def test_hil_sensor_carries_each_accel_axis_inside_px4s_16_g_fifo(link, warp_cpu):
+    """The PX4 controller sends each accel axis inside the ±16 g that PX4's simulated accelerometer holds: a reading at or past +16 g goes out as 16 × 9.80665 × 32767/32768 m/s², one at or past −16 g as −16 × 9.80665 m/s².
+
+    Given IMU readings on x of +16 g, +24 g, −24 g and +3 g, in standard gravity, when the controller exchanges
+    on four ticks, then `HIL_SENSOR`'s `xacc` carries the top edge twice, the bottom edge, and the +3 g reading
+    unchanged.
+    """
+    _exchange(_Readings([156.9064, 235.3596, -235.3596, 29.41995]), ticks=4)
+
+    xacc = [args[1] for args in link.sent["HIL_SENSOR"]]
+    assert xacc == pytest.approx([156.90161, 156.90161, -156.9064, 29.41995], abs=1e-3)
 
 
 def test_connect_listens_on_the_runs_hil_port(bind):
