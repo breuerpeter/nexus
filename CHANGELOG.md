@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.0](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.6.1...nexus-uav-v0.7.0) (2026-10-29)
+
+
+### Features
+
+* **rtx:** the RTX sensors render in process over ovrtx ([#367](https://github.com/breuerpeter/nexus/issues/367)) ([557af01](https://github.com/breuerpeter/nexus/commit/557af0162a566237ee5b107b89104baa9dc810c4)), closes [#361](https://github.com/breuerpeter/nexus/issues/361)
+
+
+### Bug Fixes
+
+* **sensors:** the IMU saturates at its range, and PX4 sees it clipped ([#373](https://github.com/breuerpeter/nexus/issues/373)) ([4a0aef8](https://github.com/breuerpeter/nexus/commit/4a0aef8790689dce5cf7a31004b168d4bd3d4736)), closes [#370](https://github.com/breuerpeter/nexus/issues/370)
+
 ## [0.6.1](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.6.0...nexus-uav-v0.6.1) (2026-10-21)
 
 
