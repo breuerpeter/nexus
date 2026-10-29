@@ -34,7 +34,6 @@ The tree lags this file where the open issues say it does: until such an issue c
 - The vehicle's USD declares each peer with a counterpart on the real vehicle. A component's class requires, by name, what the build makes once per run and hands it at `connect`: a peer with no counterpart, or an in-process service such as the render stage. Every peer ships a fake that speaks its links.
 - The render stage takes poses from `body_q` on the device through DLPack, one write per frame, and hands frames back on the device; no host copy sits on the loop's path.
 - The run owns every address. The builder builds a link's end inside the run, and an end outside the run reads `sim.ports`.
-- A sensor models its real part, so an accelerometer saturates at the full-scale range its prim declares, in standard gravity. A link's end fits each value into what its peer can hold. The PX4 controller sends each accelerometer axis inside the ±16 g that PX4's SITL holds, so a saturated reading keeps its sign.
 - A wire on the vehicle is a USD relationship: `nexus:inputs:<signal>` for a signal, `nexus:serial:<line>` for a serial line.
 - The clock, the physics, the Recorder and the Logger take settings, and nothing declares them.
 - The Recorder keeps a history of every device signal of row width; a frame stays on the device with no history, and the Logger copies it to the host at its own cadence. A script reads `sim[path]` and `sim.read(path)`, and `Sim` has no accessor for a role.
