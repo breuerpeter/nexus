@@ -481,6 +481,34 @@ class _StandInPropeller(Component):
         type(self).ticks[self.path] = type(self).ticks.get(self.path, 0) + 1
 
 
+class _ReadingPropeller(_StandInPropeller):
+    """A stand-in propeller that names the ESC's schema in `siblings`, so it would take the ESC's attributes."""
+
+    siblings: ClassVar[dict[str, str]] = {"esc": "NexusEscAPI"}
+
+    def __init__(self, model, path, *, esc: dict, **kwargs):
+        super().__init__(model, path, **kwargs)
+
+
+def test_a_component_class_that_names_another_schema_in_siblings_fails_the_build_and_names_the_rule(tmp_path):
+    """A declared component class that names another schema in `siblings`, other than the shipped ESC, fails the
+    build before any peer starts, and the message names the prim, the schema it reads and the rule.
+
+    Given the fixture vehicle, whose rotor bodies apply `NexusPropellerAPI` and `NexusEscAPI`, and a registry that
+    maps the propeller's schema to a stand-in that declares `siblings = {"esc": "NexusEscAPI"}`, when the run
+    builds, then it fails with a message naming the rotor's prim, `NexusEscAPI` and that a component reads only
+    its own schema's attributes.
+    """
+    path = sv.vehicle(tmp_path, ROTOR_COMMANDS)
+    registry = sv.components(NexusPropellerAPI=_ReadingPropeller, NexusEscAPI=_StandInEsc)
+
+    with pytest.raises(ValueError) as e:
+        sv.build(path, components=registry)
+
+    named = [s in str(e.value) for s in ("/vehicle/body/rotor_1", "NexusEscAPI", "only its own schema's attributes")]
+    assert named == [True] * 3, str(e.value)
+
+
 # Each rotor body of the fixture vehicle declares its command, on the controls channel of its number.
 ROTOR_COMMANDS = "".join(
     f'        over "rotor_{i}" (\n            prepend apiSchemas = ["NexusEscAPI"]\n        )\n'
