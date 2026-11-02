@@ -92,5 +92,6 @@ Jarod
 HEAD
 ESC
 ESCs
+ovnewton
 ovrtx
 ovstage

@@ -8,7 +8,7 @@ The shape of the tree today, one line per fact, and under `## Planned` each chan
 - OpenUSD declares what a run builds: the vehicle, the scene and the run's override layer. A change to a run is a layer, a variant or an attribute, never a code path.
 - PX4 Software In The Loop (SITL) is the one first-class controller. It flies over the MAVLink Hardware In The Loop (HIL) lockstep link, which `pymavlink` speaks.
 - The RTX sensors render in the loop's process through `ovstage` and `ovrtx`, the extra `nexus-uav[rtx]`, pinned exactly and bumped with Isaac Lab's pins. The render stage reaches them through six calls and no other, the calls Newton's `ViewerRTX` and Isaac Lab's `OVRTXRenderer` use: `population.open_usd` or `add_usd_reference`, `write_attribute`, `advance_write_floor`, `attach_ovstage`, `step` and `map`.
-- The render stage's pose write is the one place ovnewton's stage binding takes over, once nexus runs Newton 1.7 on the ovstage pin Isaac Lab uses; the model stays on Newton's importer, and a Newton RTX sensor takes the camera class's place once one ships.
+- The render stage's pose write is the one place the stage binding of ovnewton takes over, once nexus runs Newton 1.7 on the ovstage pin Isaac Lab uses. The model stays on Newton's importer, and a Newton RTX sensor takes the camera class's place once one ships.
 - `uv` manages two projects: the core, and the Isaac Lab trainer `nexus-rl` with its own lock, so Isaac Lab never reaches the core. Rerun is the one recording sink, and Docker runs every container peer through the `docker` SDK.
 
 ## Layout of `nexus_uav/_src/`
@@ -19,7 +19,7 @@ The shape of the tree today, one line per fact, and under `## Planned` each chan
 - `vehicle/sensors/`, `estimators/`, `commands/`, `forces/` and `controllers/`: the shipped components, one folder per role. `controllers/px4/` holds the one shipped controller.
 - `vehicle/sensors/rtx/` holds the RTX sensors and the one render stage they require, which the build makes once per run by the name `ovrtx` and hands each sensor at `connect`.
 - `guidance/`: the shipped guidance components. `scene/`: the world values the scene's `PhysicsScene` authors or the build derives.
-- `peers/`: the peer contract at the top, then one folder per peer, `peers/<name>/`, with its runner, `pin.ref`, `image/` or `peer-src/` and its fake. A link's host end sits with the component that speaks it; the offboard client, which no component speaks, sits in the PX4 peer's folder.
+- `peers/`: the peer contract at the top, then one folder per peer, `peers/<name>/`, with its runner, `pin.ref`, `image/` or `peer-src/` and its fake. A link's host end sits with the component that speaks it. The offboard client, which no component speaks, sits in the PX4 peer's folder.
 - `recording/`: the Recorder. `logging/`: the Logger. `config/`: the catalog, the typed `LaunchConfig` and the receipt. `assets/`: the content-addressed resolver.
 - `api/`: `Sim`, the one public entry. `cli/`: the `nexus` command. `nexus_uav/__init__.py` re-exports the public names lazily, and `nexus_uav.px4` is the one public namespace that names PX4.
 - `.importlinter` holds the layers, keeps the examples out of the core, keeps PX4 out of every generic part, keeps Kit out of every tier, and keeps `ovrtx` and `ovstage` in the render stage.
