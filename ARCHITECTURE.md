@@ -28,6 +28,7 @@ The shape of the tree today, one line per fact, and under `## Planned` each chan
 - Every role has one contract: a component subclasses `Component` and states its stages, each with the signals it reads and writes.
 - The roles run in one fixed order each tick: sensor, estimator, guidance, controller, link. Command and force elements run once per physics substep.
 - An applied API schema on a prim declares a component. Its `nexus:` attributes are the class's keyword arguments.
+- A component reads only the attributes of its own schema, and takes what it needs from another component as a signal. The build fails a class that reads a schema beside its own, and `SIBLINGS_EXEMPT` in `core/components.py` names the one exception, the ESC.
 - The registry maps each schema, and each name a class requires, to its class. A project registers through the `nexus.registry` entry-point group, and a test passes `Sim(registry=...)`.
 - The vehicle's USD declares each peer with a counterpart on the real vehicle. A component's class requires, by name, what the build makes once per run and hands it at `connect`: a peer with no counterpart, or an in-process service such as the render stage. Every peer ships a fake that speaks its links.
 - The render stage takes poses from `body_q` on the device through DLPack, one write per frame.
@@ -48,6 +49,7 @@ The shape of the tree today, one line per fact, and under `## Planned` each chan
 - release-please cuts releases from conventional commits. mkdocs-material builds the docs at the repo root, `mkdocstrings` renders the API reference from Google-style docstrings, and the Concepts page defines each term once.
 
 ## Planned
+- The ESC reads nothing from its propeller or its motor. It emits a terminal voltage from its own duty map, and Newton's DC motor turns that voltage into torque. The drag feedforward goes, with `siblings` and `motor_speed`, so `SIBLINGS_EXEMPT` empties.
 - The Kit render peer, `peers/kit/`, the render link's host end, `rendering/`, the Kit-served sensor classes, the `cesium` scene's catalog entry and the Kit-only asset scripts move to a plugin project in this repo, `nexus-kit/`, a second `uv` project that registers through `nexus.registry`; the core keeps no Kit line.
 - The render stage hands frames back on the device, and no host copy sits on the loop's path. A frame is a device signal the Recorder keeps no history of, and the Logger copies it to the host at its own cadence.
 - The example controllers register through the registry as a project's do and fly through the one builder; no example assembles its own loop.
