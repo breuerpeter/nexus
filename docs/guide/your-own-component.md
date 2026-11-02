@@ -56,8 +56,11 @@ class HoverController(Component):
         self.controls.write(np.full((1, 4), self.throttle, dtype=np.float32))
 ```
 
-The keyword arguments are the attributes of the schema, `nexus:throttle` here. The `controls` signal
-of a controller is as wide as its actuators, and the command elements read the leading part of it.
+The keyword arguments are the attributes of the schema, `nexus:throttle` here. A component reads
+only the attributes of its own schema. What it needs from another component arrives at run time as a
+signal, the way the controller's `controls` reach the ESCs. No component takes a value from a schema
+applied beside it, and the build fails a class that tries. The `controls` signal of a controller is as
+wide as its actuators, and the command elements read the leading part of it.
 
 The contract has eight more members. `connect` opens what the component needs for the run, a port or
 a model, and takes the link of each peer the class requires, keyed by the peer's name. `close`
