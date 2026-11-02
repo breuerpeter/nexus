@@ -47,7 +47,7 @@ The shape of the tree today, one line per fact, and under `## Planned` each chan
 - release-please cuts releases from conventional commits. mkdocs-material builds the docs at the repo root, `mkdocstrings` renders the API reference from Google-style docstrings, and the Concepts page defines each term once.
 
 ## Planned
-- The Kit render peer, `peers/kit/`, and the render link's host end, `rendering/`, leave the framework with the peer's image and fake; a scene that needs Kit lives in a plugin package outside it.
+- The Kit render peer, `peers/kit/`, the render link's host end, `rendering/`, the Kit-served sensor classes, the `cesium` scene's catalog entry and the Kit-only asset scripts move to a plugin project in this repo, `nexus-kit/`, a second `uv` project that registers through `nexus.registry`; the core keeps no Kit line.
 - ovnewton's stage binding replaces the render stage's own pose write once nexus runs Newton 1.7 on the ovstage pin Isaac Lab uses; the model stays on Newton's importer, and a Newton RTX sensor replaces the camera class once one ships.
 - The render stage hands frames back on the device, and no host copy sits on the loop's path. A frame is a device signal the Recorder keeps no history of, and the Logger copies it to the host at its own cadence.
 - The example controllers register through the registry as a project's do and fly through the one builder; no example assembles its own loop.
