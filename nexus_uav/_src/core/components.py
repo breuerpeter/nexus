@@ -46,6 +46,9 @@ def run_keywords(cls: type, instance: int) -> dict:
     return {"instance": instance} if getattr(cls, "needs_instance", False) else {}
 
 
+SIBLINGS_EXEMPT: tuple[str, ...] = ()
+
+
 def sibling_keywords(spec: ComponentSpec, specs: list[ComponentSpec]) -> dict:
     """The attributes of each schema `spec`'s class names in ``siblings``, a keyword to a schema applied on the
     same prim, as that keyword: a rotor's ESC takes its propeller's values as ``propeller``.
