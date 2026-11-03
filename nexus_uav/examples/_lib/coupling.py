@@ -23,6 +23,7 @@ from __future__ import annotations
 import warp as wp
 
 from nexus_uav._src.vehicle.forces.propellers import propeller_force
+from nexus_uav.examples._lib.mixer import speed_of_command
 from nexus_uav.examples._lib.motor import lag_step
 
 
@@ -37,6 +38,7 @@ def _summed_wrench(
     cmd: wp.array2d(dtype=float),  # (·, nr) normalized per-rotor command u
     kf: wp.array(dtype=float),  # (nr,) each rotor's thrust = kf·Ω², with Ω in rad/s
     omega_max_motor: wp.array(dtype=float),  # (nr,) each rotor's speed saturation [rad/s]
+    lines: wp.array(dtype=wp.vec3),  # (nr,) each rotor's command line, u = a·Ω + b·Ω² − c
     alpha: float,  # first-order motor lag at this path's control step
     rotor_inertia: float,  # each rotor's spin inertia [kg·m²]
     step_dt: float,  # the step Ω changes over [s]
@@ -48,7 +50,8 @@ def _summed_wrench(
     omega_next: wp.array2d(dtype=float),  # (·, nr) motor-speed state, output
 ) -> wp.spatial_vector:
     """The motor + propeller + coupling: per-rotor command → motor lag → propeller, with airflow, →
-    forward ``B`` plus each rotor's speed-change reaction → world wrench. ``Ω_cmd = clamp(u, 0, 1)·Ω_max``.
+    forward ``B`` plus each rotor's speed-change reaction → world wrench. ``Ω_cmd`` is the steady speed the
+    clamped command holds, along the rotor's command line.
     Reads ``omega_prev[n]`` and writes the updated speeds into ``omega_next[n]``, distinct per-step arrays for
     a clean differentiable recurrence.
     """
@@ -68,7 +71,7 @@ def _summed_wrench(
     force_w = wp.vec3(0.0, 0.0, 0.0)
     torque_w = wp.vec3(0.0, 0.0, 0.0)
     for i in range(nr):
-        omega_cmd = wp.clamp(cmd[n, i], 0.0, 1.0) * omega_max_motor[i]  # u → rotor-speed target, saturated
+        omega_cmd = speed_of_command(wp.clamp(cmd[n, i], 0.0, 1.0), lines[i])  # u → the steady speed it holds
         om = lag_step(omega_prev[n, i], omega_cmd, alpha, omega_max_motor[i])  # the motor lag
         omega_next[n, i] = om
         r = offsets[i]
@@ -105,6 +108,7 @@ def rigid_body_wrench_world(
     B: wp.array2d(dtype=float),  # (4, nr) forward allocation
     kf: wp.array(dtype=float),  # (nr,) each rotor's thrust map
     omega_max_motor: wp.array(dtype=float),  # (nr,) each rotor's speed saturation [rad/s]
+    lines: wp.array(dtype=wp.vec3),  # (nr,) each rotor's command line, u = a·Ω + b·Ω² − c
     alpha: float,
     rotor_inertia: float,
     step_dt: float,
@@ -123,5 +127,5 @@ def rigid_body_wrench_world(
     bidx = base + n
     out_body_f[bidx] = _summed_wrench(
         wp.transform_get_rotation(body_q[bidx]), body_qd[bidx], offsets, spins, thrust_sign, B, cmd, kf,
-        omega_max_motor, alpha, rotor_inertia, step_dt, aero_h, aero_hforce, nr, n, omega_prev, omega_next,
+        omega_max_motor, lines, alpha, rotor_inertia, step_dt, aero_h, aero_hforce, nr, n, omega_prev, omega_next,
     )  # fmt: skip

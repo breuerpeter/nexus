@@ -9,8 +9,6 @@ with ``usd-core``; it's host-side and unit-tested, with no Kit dependency. The p
 
 from __future__ import annotations
 
-import math
-
 # --- FPV camera mount math: the single source of truth for the authored FpvCam -----------
 # This module bakes the FPV camera into the vehicle USD as a body-child once; the Kit render peer
 # just creates a render product on that authored prim, with no in-code camera. The mount/intrinsics
@@ -184,27 +182,29 @@ def _open_stage(path):
     return stage
 
 
-# The values the converter authors, by their key in ``params``: the propeller's on each rotor body, as
-# ``NexusPropellerAPI`` attributes, beside the ESC's channel, ``NexusEscAPI``. The run reads them back in
-# physics/vehicle.rotors.
+# The values the converter authors, by their key in ``params``: the propeller's, the ESC's and the motor's on
+# each rotor body, as the attributes of ``NexusPropellerAPI``, ``NexusEscAPI`` and ``NexusMotorAPI``, beside the
+# ESC's channel. The run reads them back in physics/vehicle.rotors.
 _PROPELLER_ATTRS = {"nexus:ct": "ct", "nexus:cd": "cd", "nexus:aeroH": "aero_h", "nexus:aeroHforce": "aero_hforce"}
+_ESC_ATTRS = {"nexus:idleDuty": "idle_duty", "nexus:maxDuty": "max_duty", "nexus:busVoltage": "bus_voltage"}
+_MOTOR_ATTRS = {"nexus:kv": "kv", "nexus:resistance": "resistance", "nexus:currentLimit": "current_limit"}
+_ROTOR_ATTRS = {"NexusPropellerAPI": _PROPELLER_ATTRS, "NexusEscAPI": _ESC_ATTRS, "NexusMotorAPI": _MOTOR_ATTRS}
 # Where a source declares its rotors' values before conversion: on each rotor joint, and on the
 # ``NewtonActuator`` prim that drives it in an as-built USD. A joint or a prim with these is a rotor's.
 _JOINT_PREFIXES = ("propeller:",)
-# The namespaces the converter removes: the propeller schema replaces ``propeller:*``, and the motor's values
-# are Newton's own, on its ``NewtonActuator`` prim, so ``motor:*`` holds nothing the run reads.
+# The namespaces the converter removes: the propeller schema replaces ``propeller:*``, and the motor schema
+# ``motor:*``, which named a lag the run never read.
 _RETIRED = ("propeller", "motor")
 _AS_BUILT_PREFIX = "freefly:actuator:"
-_RPM_PER_RADS = 60.0 / (2.0 * math.pi)  # rad/s -> rpm
 
 
 def author_rotor_params(usdz, out, *, params=None, rotors=None) -> str:
-    """Re-author the vehicle USD so each rotor declares its propeller and its ESC where the run reads them: the
-    ``NexusPropellerAPI`` schema and its values, and the ``NexusEscAPI`` schema with the rotor's controls channel,
-    its position in the rotor order, on the rotor's rigid body, the child body of the rotor's joint. Each
-    ``NewtonActuator`` prim stays untouched, with Newton's schemas alone, and the older ``propeller:*`` and
-    ``motor:*`` attributes go. ``pxr``-only: runs host-side. Everything else survives: geometry, joints, the
-    authored ``FpvCam``.
+    """Re-author the vehicle USD so each rotor declares its three parts where the run reads them: the
+    ``NexusPropellerAPI``, ``NexusEscAPI`` and ``NexusMotorAPI`` schemas and their values, and the ESC's controls
+    channel, the rotor's position in the rotor order, on the rotor's rigid body, the child body of the rotor's
+    joint. The ``NewtonActuator`` prim that drove a rotor's joint goes, since the motor drives it; one on another
+    joint, a servo's, stays with Newton's schemas alone. The older ``propeller:*`` and ``motor:*`` attributes go.
+    ``pxr``-only: runs host-side. Everything else survives: geometry, joints, the authored ``FpvCam``.
 
     ``rotors`` names the rotor joints by prim path. If omitted, the rotors are the joints the source itself
     declares as such: the revolute joints whose child body applies ``NexusPropellerAPI``, as a vehicle converted
@@ -212,17 +212,17 @@ def author_rotor_params(usdz, out, *, params=None, rotors=None) -> str:
     prim authors ``freefly:actuator:*``, as an as-built USD does. A joint Newton drives for another purpose,
     such as a gimbal servo, is no rotor.
 
-    ``params`` is a ``{ct, cd, aero_h, aero_hforce}`` dict that overrides the values each of the source's
-    rotors declares; a value neither gives is an error. Each rotor keeps its own values. The rotor speed at
-    full command isn't authored: the run reads it from each motor's ``newton:velocityLimit``. A ``rpm_max``
-    that ``params`` or the source gives must agree with it, or the conversion would change the top speed.
+    ``params`` is a dict of the propeller's ``ct``, ``cd``, ``aero_h`` and ``aero_hforce``, the ESC's
+    ``idle_duty``, ``max_duty`` and ``bus_voltage`` and the motor's ``kv``, ``resistance`` and ``current_limit``,
+    which overrides the values each of the source's rotors declares; a value neither gives is an error. Each rotor
+    keeps its own values.
 
     Returns:
         The output path.
 
     Raises:
-        ValueError: The source declares no rotor and ``rotors`` names none, a rotor joint has no child body, a
-            value is missing, or ``rpm_max`` and a motor's no-load speed differ.
+        ValueError: The source declares no rotor and ``rotors`` names none, a rotor joint has no child body, or
+            a value is missing.
     """
     from pxr import Sdf
 
@@ -263,36 +263,28 @@ def author_rotor_params(usdz, out, *, params=None, rotors=None) -> str:
         }
         for j in joints
     ]
+    needed = [key for attrs in _ROTOR_ATTRS.values() for key in attrs.values()]
     for joint, values in zip(joints, per_rotor, strict=True):
-        missing = [k for k in _PROPELLER_ATTRS.values() if k not in values]
+        missing = [k for k in needed if k not in values]
         if missing:
             raise ValueError(
                 f"{joint.GetPath()}: no value for {missing}: neither params nor the source's rotor gives one "
                 f"(have {sorted(values)})"
             )
-        if "rpm_max" in values:
-            motor = motors.get(joint.GetPath())
-            if motor is None:
-                raise ValueError(
-                    f"{joint.GetPath()}: no NewtonActuator prim drives the rotor joint, so rpm_max has no motor"
-                )
-            limit = motor.GetAttribute("newton:velocityLimit").Get()
-            if limit is None or not math.isclose(limit * _RPM_PER_RADS, values["rpm_max"], rel_tol=1e-6):
-                raise ValueError(
-                    f"{motor.GetPath()}: rpm_max is {values['rpm_max']:g}, and the motor's newton:velocityLimit is "
-                    f"{limit} rad/s; the run reads the motor's, so make them agree"
-                )
 
     for prim in prims:
         for namespace in _RETIRED:
             for prop in prim.GetAuthoredPropertiesInNamespace(namespace):
                 prim.RemoveProperty(prop.GetName())
+    for joint in joints:  # the rotor's motor drives its joint, so the actuator prim that drove it goes
+        if (motor := motors.get(joint.GetPath())) is not None:
+            stage.RemovePrim(motor.GetPath())
     for channel, (body, values) in enumerate(zip(bodies, per_rotor, strict=True)):
-        body.AddAppliedSchema("NexusPropellerAPI")
-        for attr_name, key in _PROPELLER_ATTRS.items():
-            body.CreateAttribute(attr_name, Sdf.ValueTypeNames.Float).Set(float(values[key]))
-        body.AddAppliedSchema("NexusEscAPI")  # the rotor's ESC reads the channel of its position in the rotor order
-        body.CreateAttribute("nexus:channel", Sdf.ValueTypeNames.Int).Set(channel)
+        for schema, attrs in _ROTOR_ATTRS.items():
+            body.AddAppliedSchema(schema)
+            for attr_name, key in attrs.items():
+                body.CreateAttribute(attr_name, Sdf.ValueTypeNames.Float).Set(float(values[key]))
+        body.CreateAttribute("nexus:channel", Sdf.ValueTypeNames.Int).Set(channel)  # the rotor's position
 
     out = str(out)
     if out.endswith(".usdz"):

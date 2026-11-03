@@ -193,7 +193,7 @@ class "NexusPropellerAPI" (
 }
 
 class "NexusEscAPI" (
-    doc = "An Electronic Speed Controller (ESC) on its rotor's rigid body, beside the rotor's propeller: it turns one entry of the controller's controls into the speed target and the drag feedforward of the Newton motor that drives the rotor's joint."
+    doc = "An Electronic Speed Controller (ESC) on its rotor's rigid body, beside the rotor's motor and propeller: it turns one entry of the controller's controls into the terminal voltage its duty map switches onto the motor, from the bus voltage a battery writes or its own constant."
     prepend apiSchemas = ["NexusCommandRoleAPI"]
 )
 {
@@ -202,6 +202,52 @@ class "NexusEscAPI" (
 
         Range: [0, inf)
         Units: none"""
+    )
+    float nexus:idleDuty = 0 (
+        doc = """The duty at command 0, the fraction of the bus the drive switches on at idle, what a flight controller calls the motor idle. At 0 the rotor stops at command 0.
+
+        Range: [0, 1]
+        Units: none"""
+    )
+    float nexus:maxDuty = 1 (
+        doc = """The duty at command 1, the fraction of the bus the drive switches on at full command. Below 1 the drive holds back the top, the output limit.
+
+        Range: [0, 1]
+        Units: none"""
+    )
+    float nexus:busVoltage = 0 (
+        doc = """The volts on the ESC's bus when no component writes the `bus_voltage` signal, the battery's in flight: the duty map's full scale. The build fails a value that is not positive.
+
+        Range: (0, inf)
+        Units: V"""
+    )
+}
+
+class "NexusMotorAPI" (
+    doc = "A brushless motor on its rotor's rigid body, beside the rotor's ESC and propeller, as its sheet states it: it turns the ESC's terminal voltage into torque on the rotor's joint as a first-order DC motor, and emits the current it draws. Its input `voltage` is the ESC's on its own prim unless the connection names another."
+    prepend apiSchemas = ["NexusActuatorRoleAPI"]
+)
+{
+    float nexus:kv = 0 (
+        doc = """The motor's velocity constant, KV: its no-load speed per volt. The back-EMF constant Ke in V·s/rad and the torque constant Kt in N·m/A are both 60 / (2π·kv). The build fails a value that is not positive.
+
+        Range: (0, inf)
+        Units: rpm/V"""
+    )
+    float nexus:resistance = 0 (
+        doc = """The winding resistance, line to line, what a meter across two leads reads: twice the phase resistance of a wye winding. The build fails a value that is not positive.
+
+        Range: (0, inf)
+        Units: Ω"""
+    )
+    float nexus:currentLimit = 0 (
+        doc = """The continuous current the drive train allows, the motor's or the ESC's, whichever is lower: the torque is capped at Kt times this. The build fails a value that is not positive.
+
+        Range: (0, inf)
+        Units: A"""
+    )
+    rel nexus:inputs:voltage (
+        doc = "The prim whose ESC writes the terminal voltage this motor takes. Unauthored, the ESC on the motor's own prim."
     )
 }
 
@@ -286,6 +332,12 @@ class "NexusControllerRoleAPI" (
 
 class "NexusGuidanceRoleAPI" (
     doc = "The guidance role, which a guidance's schema includes as a built-in. A guidance sits on a `Scope` of its own whose parent is the vehicle's root prim, named `Guidance` by convention, and writes the setpoint before the controller in the tick. A vehicle declares one guidance at most."
+)
+{
+}
+
+class "NexusActuatorRoleAPI" (
+    doc = "The actuator's role, which the schema of a part that turns a signal into torque on a joint includes as a built-in, as a rotor's motor does: it runs after the command elements and before the force elements each substep."
 )
 {
 }

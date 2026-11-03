@@ -6,8 +6,10 @@ per-consumer copy.
 * :func:`rotor_of`: find one rotor in a finalized model by its rigid body's prim path: the Degrees Of
   Freedom (DOF) and coord index of its revolute joint, its body and the joint's parent body, so a declared
   ESC or propeller finds its rotor from its own prim, with no list of joints.
-* :func:`motor_speed`: the no-load speed of the Newton motor that drives a DOF, the rotor speed at full command,
-  and :func:`rotor_speeds`, the same for each rotor a vehicle declares: the model is the one source of it.
+* :func:`rotor_speeds`: each declared rotor's loaded speed at full command, where its motor's torque at the
+  voltage its ESC switches at command 1 meets its propeller's drag, and :func:`command_lines`, each rotor's
+  steady map from its speed to the command that holds it, ``u = a·Ω + b·Ω² − c``: the declaration is the one
+  source of both, and a model-based controller inverts the plant through them.
 * :func:`find_rotor_joints`: find the joints the vehicle declares its rotors on in a finalized model,
   returning the DOF and coord indices, the rotor child bodies and the shared airframe
   parent, so the rotor indexing comes from the declaration and the model rather than an assumption, and
@@ -53,40 +55,53 @@ def rotor_of(model, body: str) -> tuple[int, int, int, int]:
     )
 
 
-def motor_speed(model, dof: int, body: str) -> float:
-    """The no-load speed [rad/s] of the Newton motor that drives `dof`, its DC motor clamp's velocity limit, the
-    rotor speed at full command. `body` names the rotor in the error.
-
-    Raises:
-        ValueError: No Newton motor drives the DOF, or its motor has no finite velocity limit; the message
-            names the prim.
+def loaded_speed(voltage: float, ke: float, resistance: float, cd: float, ct: float) -> float:
+    """The speed [rad/s] a rotor settles at under the terminal voltage `voltage` [V]: the positive root of
+    ``kd·(V/Ke − Ω) = cd·kf·Ω²``, the motor's torque, ``kd = Ke²/R``, against the propeller's drag,
+    ``kf = ct·RPM_PER_RADS²``, with `ke` [V·s/rad] and `resistance` [Ω] the motor's and `cd` and `ct` the propeller's.
     """
-    for motor in model.actuators or []:
-        indices = motor.indices.numpy().tolist()
-        if dof not in indices:
-            continue
-        k = indices.index(dof)
-        for clamp in motor.clamping:
-            limit = getattr(clamp, "velocity_limit", None)
-            if limit is not None:
-                speed = float(limit.numpy()[k])
-                if math.isfinite(speed):
-                    return speed
-        raise ValueError(
-            f"{body}: the Newton motor on its joint has no finite velocity limit, the rotor speed at full command; "
-            "author the motor's no-load speed as newton:velocityLimit"
-        )
-    raise ValueError(f"{body}: no NewtonActuator prim drives its joint, so it has no motor")
+    kd = ke * ke / resistance
+    a, b, c = cd * ct * RPM_PER_RADS**2, kd, -kd * voltage / ke
+    if a == 0.0:
+        return voltage / ke  # no drag: the no-load speed
+    return (-b + math.sqrt(b * b - 4.0 * a * c)) / (2.0 * a)
 
 
-def rotor_speeds(model, rotors) -> np.ndarray:
-    """Each rotor's speed at full command [rpm], its motor's no-load speed from the model, in the order of
-    `rotors`, the rotors the vehicle declares, each with its rigid body's prim path as ``body``.
-
-    Raises:
-        ValueError: As :func:`rotor_of` and :func:`motor_speed` state; the message names the prim.
+def rotor_speeds(rotors) -> np.ndarray:
+    """Each rotor's loaded speed at full command [rpm], in the order of `rotors`, the rotors the vehicle declares,
+    each with its ESC's, its motor's and its propeller's values: the speed where the motor's torque at the voltage
+    the ESC switches at command 1 meets the propeller's drag, :func:`loaded_speed`.
     """
-    return np.array([motor_speed(model, rotor_of(model, r.body)[0], r.body) * RPM_PER_RADS for r in rotors])
+    return np.array(
+        [
+            loaded_speed(
+                r.esc["max_duty"] * r.esc["bus_voltage"],
+                RPM_PER_RADS / r.motor["kv"],
+                r.motor["resistance"],
+                r.propeller["cd"],
+                r.propeller["ct"],
+            )
+            * RPM_PER_RADS
+            for r in rotors
+        ]
+    )
+
+
+def command_lines(rotors) -> np.ndarray:
+    """Each rotor's command line, ``(nr, 3)``: the ``a``, ``b`` and ``c`` of ``u = a·Ω + b·Ω² − c``, the command
+    that holds the rotor at the steady speed ``Ω`` [rad/s], in the order of `rotors`. From the motor's torque
+    against the propeller's drag, ``kd·(V/Ke − Ω) = cd·kf·Ω²``, and the ESC's duty map, ``V = (idle + (max −
+    idle)·u)·bus``: ``a = Ke / (bus·(max − idle))``, ``b = a·cd·kf/kd`` and ``c = idle / (max − idle)``. The
+    inverse, the steady speed a command holds, is the positive root of ``b·Ω² + a·Ω − (u + c) = 0``.
+    """
+    lines = []
+    for r in rotors:
+        ke = RPM_PER_RADS / r.motor["kv"]
+        kd = ke * ke / r.motor["resistance"]
+        span = r.esc["max_duty"] - r.esc["idle_duty"]
+        a = ke / (r.esc["bus_voltage"] * span)
+        lines.append((a, a * r.propeller["cd"] * r.propeller["ct"] * RPM_PER_RADS**2 / kd, r.esc["idle_duty"] / span))
+    return np.array(lines, dtype=np.float64)
 
 
 def find_rotor_joints(model, joints) -> tuple[list[int], list[int], list[int], int]:

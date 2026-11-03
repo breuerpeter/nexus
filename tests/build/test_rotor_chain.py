@@ -1,5 +1,5 @@
-"""The rotor chain splits into a command element, a force element and physics stepping Newton's actuators, and
-the shipped vehicle flies as before. Controls that a reader can't take stop the run before any stage runs.
+"""The rotor chain splits into a command element, an actuator and a force element per rotor, physics runs the
+solver alone, and the shipped vehicle flies as before. Controls that a reader can't take stop the run before any stage runs.
 
 Real builds on the Warp CPU backend: the fixture quad of ``tests/vehicle/quad.py`` around a stand-in
 controller, with stand-in command elements and force elements beside the rotors' where a test needs them,
@@ -36,8 +36,6 @@ pytestmark = pytest.mark.usefixtures("warp_cpu")
 # change to the rotor chain shows against it. Never re-record it after the change.
 MAIN_TRAJECTORY = Path(__file__).with_name("rotor_chain_main.npz")
 STREAM_TICKS = 200
-SERVO_RAD = 0.5  # the angle the servo tests use [rad]
-SETTLED = 0.02  # how close to its target the servo's joint sits after the flight [rad]
 
 
 def stream(step: int) -> np.ndarray:
@@ -90,36 +88,6 @@ class _Silent(Component):
 
 
 @wp.kernel
-def _servo_target(cmd: wp.array2d(dtype=float), channel: int, scale: float, index: int, target: wp.array(dtype=float)):
-    target[index] = cmd[0, channel] * scale
-
-
-class _ServoCommand(Component):
-    """A command element beside the rotors': it writes the servo's position target from one channel of the
-    controller's command, `scale` radians per unit.
-    """
-
-    def __init__(self, physics, joint: str, channel: int, scale: float):
-        model, self.control = physics.model, physics.control
-        j = list(model.joint_label).index(joint)
-        coord = self.control.joint_target_q.shape[0] == model.joint_coord_count
-        self.index = int((model.joint_q_start if coord else model.joint_qd_start).numpy()[j])
-        self.channel, self.scale = channel, scale
-        self.controls = Signal("controls", wp.float32, shape=(1, channel + 1))
-
-    def stages(self):
-        return [Stage("servo", "device", self._write, reads=(self.controls,))]
-
-    def _write(self, tick):
-        wp.launch(
-            _servo_target,
-            dim=1,
-            inputs=(self.controls.buffer, self.channel, self.scale, self.index),
-            outputs=(self.control.joint_target_q,),
-        )
-
-
-@wp.kernel
 def _add_lift(bodies: wp.array(dtype=wp.int32), fz: float, body_f: wp.array(dtype=wp.spatial_vector)):
     wp.atomic_add(body_f, bodies[wp.tid()], wp.spatial_vector(0.0, 0.0, fz, 0.0, 0.0, 0.0))
 
@@ -148,16 +116,6 @@ def _bodies(physics, name: str) -> list[int]:
     return [i for i, label in enumerate(physics.model.body_label) if label.endswith(name)]
 
 
-def _turn_joint(physics, joint: str, angle: float) -> None:
-    """Turn `joint` to `angle` [rad] on the built state, before the run starts. Newton's importer reads a
-    joint's authored state only through its PhysX resolver, which the build doesn't use.
-    """
-    model, state = physics.model, physics.current_state
-    q = state.joint_q.numpy()
-    q[int(model.joint_q_start.numpy()[list(model.joint_label).index(joint)])] = angle
-    state.joint_q.assign(q)
-
-
 def _rotor_bodies(physics) -> list[int]:
     """The indices of the quad's four rotor bodies."""
     return [i for i, label in enumerate(physics.model.body_label) if "/rotor_" in label]
@@ -177,6 +135,7 @@ def _loop(path, controller, *, commands=(), forces=()):
         clock=a.clock,
         physics=a.physics,
         commands=[*a.commands, *(make(physics) for make in commands)],
+        actuators=a.actuators,
         forces=[*a.forces, *(make(physics) for make in forces)],
         sensors=a.sensors,
         controller=a.controller,
@@ -236,8 +195,8 @@ def test_a_controller_whose_controls_are_narrower_than_a_reader_needs_fails_the_
     runs, and the error names both components and both widths.
 
     Given the fixture quad with four rotors and a controller whose controls hold three values, when the run
-    starts, then it fails before any stage runs, and the error names the controller, the rotors' command
-    element, 3 and 4. No stage ran, so the recording holds no history.
+    starts, then it fails before any stage runs, and the error names the controller, the command element of the
+    rotor on channel 3 by its instance name, 3 and 4. No stage ran, so the recording holds no history.
     """
     path = quad.author(tmp_path / "quad.usda")
     orch = quad.build(path, quad.FLIGHT_STEPS, _Narrow())
@@ -245,7 +204,7 @@ def test_a_controller_whose_controls_are_narrower_than_a_reader_needs_fails_the_
         with pytest.raises(ValueError) as e:
             sim.run()
         histories = len(sim)
-    named = all(re.search(rf"\b{word}\b", str(e.value)) for word in ("_Narrow", "Esc", "3", "4"))
+    named = all(re.search(rf"\b{word}\b", str(e.value)) for word in ("_Narrow", "rotor_3", "3", "4"))
     assert (named, histories) == (True, 0)
 
 
@@ -254,7 +213,7 @@ def test_an_input_no_component_writes_fails_the_run_naming_the_reader_and_the_si
     stage runs, and the error names the reader and the signal.
 
     Given the fixture quad and a controller that writes no controls, when the run starts, then it fails before
-    any stage runs, and the error names the rotors' command element and the controls. No stage ran, so the
+    any stage runs, and the error names rotor 0's command element by its instance name and the controls. No stage ran, so the
     recording holds no history.
     """
     orch = quad.build(quad.author(tmp_path / "quad.usda"), quad.FLIGHT_STEPS, _Silent())
@@ -262,44 +221,19 @@ def test_an_input_no_component_writes_fails_the_run_naming_the_reader_and_the_si
         with pytest.raises(ValueError) as e:
             sim.run()
         histories = len(sim)
-    named = all(word in str(e.value) for word in ("Esc", "controls"))
+    named = all(word in str(e.value) for word in ("rotor_0", "controls"))
     assert (named, histories) == (True, 0)
 
 
-def test_a_rotor_whose_joint_no_newton_actuator_drives_fails_the_build_naming_the_rotor(tmp_path):
-    """A rotor whose joint no Newton actuator drives fails the build, and the error names the rotor.
+def test_any_newton_actuator_prim_in_the_vehicles_file_fails_the_build_and_names_the_prim(tmp_path):
+    """Any `NewtonActuator` prim in the vehicle's file fails the build, naming the prim, since a nexus actuator
+    component is the one way to drive a joint.
 
-    Given a fixture quad with the `NewtonActuator` prim of one rotor removed, when the run builds, then it
-    fails and the error names that rotor's prim.
+    Given a fixture quad with a fifth revolute joint and a `NewtonActuator` position servo prim on it, when the run
+    builds, then it fails and the error names that prim.
     """
-    assert f"{quad.ROOT}/rotor_0" in quad.build_error(quad.author(tmp_path / "quad.usda", no_motor=0))
-
-
-def test_a_newton_actuator_on_a_joint_that_is_no_rotor_still_drives_its_joint(tmp_path):
-    """A Newton actuator on a joint that's no rotor still drives its joint.
-
-    Given a fixture quad with a fifth revolute joint, a `NewtonActuator` position servo on it and the joint
-    set 0.5 rad off the servo's target, when the run flies 125 ticks, then the joint sits at the target.
-    """
-    orch = quad.build(quad.author(tmp_path / "quad.usda", servo=True), quad.FLIGHT_STEPS, quad.Commands([0.0] * 4))
-    _turn_joint(orch.physics, quad.GIMBAL_JOINT, SERVO_RAD)
-    with wp.ScopedDevice("cpu"), Sim._from_loop(orch) as sim:
-        sim.run()
-        angles = sim["vehicle/joints/gimbal_joint"].history()["q"][:, 0].tolist()
-    assert (round(angles[0], 1), abs(angles[-1]) < SETTLED) == (SERVO_RAD, True)
-
-
-def test_a_command_element_beside_the_rotors_sets_the_target_of_the_actuator_it_commands(tmp_path):
-    """A command element beside the rotors' sets the target of the actuator it commands.
-
-    Given that fixture and a stand-in command element that writes the servo's target from the fifth value of
-    the controller's command, when the controller sends 0.5 there at full throttle, then the joint settles
-    at the angle the stand-in maps 0.5 to, and the vehicle still climbs.
-    """
-    path = quad.author(tmp_path / "quad.usda", servo=True)
-    servo = lambda physics: _ServoCommand(physics, quad.GIMBAL_JOINT, channel=4, scale=1.0)  # noqa: E731
-    climb, angle = _flown(_loop(path, quad.Commands([1.0, 1.0, 1.0, 1.0, SERVO_RAD]), commands=[servo]))
-    assert (abs(angle - SERVO_RAD) < SETTLED, climb > 0.5) == (True, True)
+    message = quad.build_error(quad.author(tmp_path / "quad.usda", servo=True))
+    assert f"{quad.ROOT}/gimbal_motor" in message, message
 
 
 def test_a_force_element_beside_the_propellers_adds_its_wrench_to_the_body_it_acts_on(tmp_path):

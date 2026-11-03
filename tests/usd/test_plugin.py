@@ -98,13 +98,17 @@ def test_the_conformance_fixture_applies_every_component_and_peer_schema_the_plu
     from nexus_uav._src.usd import schema_names
 
     stage = Usd.Stage.Open(str(FIXTURE))
-    roles = {f"Nexus{name}RoleAPI" for name in ("Sensor", "Estimator", "Guidance", "Controller", "Command", "Force")}
+    roles = {
+        f"Nexus{name}RoleAPI"
+        for name in ("Sensor", "Estimator", "Guidance", "Controller", "Command", "Actuator", "Force")
+    }
     built_ins = roles | {"NewtonSiteAPI"}
     applied = {name for prim in stage.Traverse() for name in prim.GetAppliedSchemas()} - built_ins
     sensors = {f"Nexus{name}API" for name in ("Imu", "Mag", "Baro", "Gps", "Camera", "ThermalCamera", "Lidar")}
     # The scene schema sits on a scene's PhysicsScene, never on a vehicle such as the fixture.
     components = set(schema_names()) - roles - {"NexusSceneAPI"}
-    assert applied == components == sensors | {"NexusPropellerAPI", "NexusEscAPI", "NexusPx4API_1", "NexusPx4SitlAPI"}
+    rotor = {"NexusPropellerAPI", "NexusEscAPI", "NexusMotorAPI"}
+    assert applied == components == sensors | rotor | {"NexusPx4API_1", "NexusPx4SitlAPI"}
 
 
 def test_the_script_beside_the_fixture_reproduces_it(tmp_path):

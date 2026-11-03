@@ -75,7 +75,7 @@ def flight_paths(tmp_path_factory, rrd_entities):
         orch = Loop(
             clock=Clock(DT),
             physics=NewtonPhysics(model=model, cfg=cfg),
-            actuator=_Actuator(),
+            actuators=[_Actuator()],
             sensors=[],
             controller=_Controller(),
             logger=Logger(model, serve=False, record_to_rrd=rrd),

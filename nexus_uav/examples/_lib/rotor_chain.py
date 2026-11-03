@@ -12,10 +12,10 @@ from __future__ import annotations
 import numpy as np
 import warp as wp
 
-from nexus_uav._src.physics.motors import Motors
+from nexus_uav._src.vehicle.actuators import Motors
 from nexus_uav._src.vehicle.commands import Escs
 from nexus_uav._src.vehicle.forces import Propellers
-from nexus_uav._src.vehicle.rotors import RPM_PER_RADS, motor_speed
+from nexus_uav._src.vehicle.rotors import command_lines, rotor_speeds
 
 __all__ = ["RotorChain", "vehicle_rotors"]
 
@@ -66,8 +66,9 @@ class RotorChain:
         model: The finalized model, one copy of the vehicle per environment, with each copy's Newton motors on
             ``model.actuators``.
         rotors: The rotors the vehicle's USD file declares, in channel order,
-            :func:`~nexus_uav.examples._lib.single_body.rotors`: each with its joint, its channel and its
-            propeller's values. Each motor's no-load speed comes from the model, in ``rpm_max``.
+            :func:`~nexus_uav.examples._lib.single_body.rotors`: each with its joint, its channel and its ESC's,
+            its motor's and its propeller's values. Each rotor's loaded speed at full command is in ``rpm_max``,
+            and its command line, the command that holds a speed, in ``command_lines``.
     """
 
     def __init__(self, model, rotors):
@@ -76,19 +77,22 @@ class RotorChain:
         self.rotor_dofs, self.rotor_bodies, self.rotor_bases = dofs, bodies, bases  # each (copies, nr)
         self.bases = wp.array(bases[:, 0], dtype=wp.int32, device=model.device)  # each copy's airframe body
         values = {key: [rotor.propeller[key] for rotor in rotors] for key in ("ct", "cd", "aero_h", "aero_hforce")}
-        # Each rotor's speed at full command [rpm], its motor's no-load speed, from the first copy's motors.
-        self.rpm_max = np.array(
-            [
-                motor_speed(model, int(dof), rotor.body) * RPM_PER_RADS
-                for dof, rotor in zip(dofs[0], rotors, strict=True)
-            ]
-        )
+        self.rpm_max = rotor_speeds(rotors)  # each rotor's loaded speed at full command [rpm]
+        self.command_lines = command_lines(rotors)  # (nr, 3) each rotor's u = a·Ω + b·Ω² − c
         self.command = Escs(
-            rotor_vel_dofs=wp.array(dofs, dtype=wp.int32, device=model.device),
             channels=[rotor.channel for rotor in rotors],
-            ct=values["ct"],
-            cd=values["cd"],
-            rpm_max=self.rpm_max,
+            idle_duty=[rotor.esc["idle_duty"] for rotor in rotors],
+            max_duty=[rotor.esc["max_duty"] for rotor in rotors],
+            device=model.device,
+        )
+        # Each copy's bus, the ESCs' own, since no battery writes one; each rotor's voltage and current.
+        bus = np.tile([rotor.esc["bus_voltage"] for rotor in rotors], (self.copies, 1))
+        self.bus = wp.array(bus.astype(np.float32), dtype=float, device=model.device)
+        self.voltage = wp.zeros((self.copies, self.nr), dtype=float, device=model.device)
+        self.current = wp.zeros((self.copies, self.nr), dtype=float, device=model.device)
+        self.motors = Motors(
+            rotor_vel_dofs=wp.array(dofs, dtype=wp.int32, device=model.device),
+            **{key: [rotor.motor[key] for rotor in rotors] for key in ("kv", "resistance", "current_limit")},
         )
         self.propellers = Propellers(
             rotor_vel_dofs=wp.array(dofs.ravel(), dtype=wp.int32, device=model.device),
@@ -96,19 +100,13 @@ class RotorChain:
             rotor_bases=wp.array(bases.ravel(), dtype=wp.int32, device=model.device),
             **{key: np.tile(value, self.copies) for key, value in values.items()},  # each copy's rotors, in order
         )
-        self.motors = Motors(model)
 
     def step(self, state, control, cmd: wp.array, dt: float) -> None:
-        """Run the rotor chain before a solver step of ``dt``: each rotor's speed target and drag feedforward
-        from ``cmd``, one row of normalized commands per copy, each propeller's force from its rotor's speed in
-        ``state``, then each motor's torque into ``control.joint_f``.
+        """Run the rotor chain before a solver step of ``dt``: each rotor's terminal voltage from ``cmd``, one row
+        of normalized commands per copy, each motor's torque into ``control.joint_f``, zeroed first, then each
+        propeller's force from its rotor's speed in ``state``. The motors keep no state, so a reset resets nothing.
         """
-        self.command.write(cmd, control)
+        control.joint_f.zero_()
+        self.command.write(cmd, self.bus, self.voltage)
+        self.motors.step(self.voltage, state, control, dt, self.current)
         self.propellers.add(state)
-        self.motors.step(state, control, dt)
-
-    def reset(self, dofs: wp.array | None = None) -> None:
-        """Zero the state of the motors that drive ``dofs``, a mask over the model's degrees of freedom, or of
-        every motor when ``dofs`` is ``None``.
-        """
-        self.motors.reset(dofs)

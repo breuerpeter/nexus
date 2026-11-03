@@ -291,8 +291,9 @@ def test_a_historys_key_is_its_writers_path_then_the_signals_name_and_the_clock_
 
     Given the run of the preceding row, its estimator a stand-in that writes a second device signal `wind` beside
     its estimate, when it steps, then the keys are `vehicle/sensors/imu/imu`, `vehicle/estimators/<name>/estimate`,
-    `vehicle/estimators/<name>/wind` and `vehicle/controllers/standin/controls`, no history holds the clock's
-    `time`, and `sim["vehicle/sensors/imu/imu"]` resolves the IMU's history.
+    `vehicle/estimators/<name>/wind`, `vehicle/controllers/standin/controls` and each rotor's
+    `vehicle/commands/<rotor>/voltage` and `current`, no history holds the clock's `time`, and
+    `sim["vehicle/sensors/imu/imu"]` resolves the IMU's history.
     """
     loop = _build(tmp_path, IMU, controller=_TickWriter, estimator=_Windy())
     with _flown(loop, 1) as sim:
@@ -300,8 +301,12 @@ def test_a_historys_key_is_its_writers_path_then_the_signals_name_and_the_clock_
         keys = sorted(k for k in histories if not k.startswith(("vehicle/body/", "vehicle/joints/")))
         resolved = sim["vehicle/sensors/imu/imu"] is histories.get("vehicle/sensors/imu/imu")
 
+    currents = [f"vehicle/actuators/rotor_{i}/current" for i in (1, 2, 3, 4)]
+    voltages = [f"vehicle/commands/rotor_{i}/voltage" for i in (1, 2, 3, 4)]
     assert (keys, resolved) == (
         [
+            *currents,
+            *voltages,
             "vehicle/controllers/standin/controls",
             "vehicle/estimators/truth/estimate",
             "vehicle/estimators/truth/wind",

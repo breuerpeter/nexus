@@ -432,7 +432,7 @@ def test_a_base_may_itself_be_a_composed_entry(tmp_path):
 
 BUNDLED_ASTRO_BASE = (
     "https://d2837jz4fvtxko.cloudfront.net/public/assets/usd/vehicles/"
-    "astro_max_base-f3590c8710e2d3dbe19a9b9fb9fae9b927001d91683616684a0cce93eec28e44.usdz"
+    "astro_max_base-17a4e6f233c7541748c8cf09770f9a027f74039be3ba81b2709dce34fce3de11.usdz"
 )
 
 PROJECT_OVER_BUNDLED = """\

@@ -73,11 +73,15 @@ def Xform "Vehicle"
     }
 
     def Xform "rotor" (
-        prepend apiSchemas = ["NexusPropellerAPI", "NexusEscAPI"]
+        prepend apiSchemas = ["NexusPropellerAPI", "NexusEscAPI", "NexusMotorAPI"]
     )
     {
+        float nexus:busVoltage = 25.2
         int nexus:channel = 0
         float nexus:ct = 0.000003463
+        float nexus:currentLimit = 126
+        float nexus:kv = 151
+        float nexus:resistance = 0.16
     }
 }
 

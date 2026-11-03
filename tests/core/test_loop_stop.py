@@ -81,7 +81,7 @@ def _orch(sensors=(), **kw):
     return Loop(
         clock=_Clock(),
         physics=_Physics(),
-        actuator=_Actuator(),
+        actuators=[_Actuator()],
         sensors=list(sensors),
         controller=_Controller(),
         **kw,

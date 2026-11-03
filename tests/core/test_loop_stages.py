@@ -249,7 +249,7 @@ def _orch(controller, *, sensors=(), physics=None, **kw):
     return Loop(
         clock=_Clock(),
         physics=physics or _Physics(),
-        actuator=_Actuator(),
+        actuators=[_Actuator()],
         sensors=[_GraphSensor(), *sensors],
         controller=controller,
         **kw,

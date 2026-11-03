@@ -35,7 +35,7 @@ def build_acados_loop(
     import newton
     import numpy as np
 
-    from nexus_uav._src.vehicle.rotors import rotor_of, rotor_speeds
+    from nexus_uav._src.vehicle.rotors import rotor_of
     from nexus_uav.examples.controllers.acados_nmpc.controller import AcadosNMPCController
 
     logger.info(f"device: {resolve_device(cfg)}")
@@ -56,7 +56,7 @@ def build_acados_loop(
     # The core rotor chain, the same one PX4 flies: each rotor's ESC, the USD-authored newton.actuators rotor
     # motors physics steps, and each propeller's airflow-aware force element from the solver-integrated Ω. Real
     # motor lag, spinning props.
-    commands, forces = elements(physics, vehicle_usd)
+    commands, actuators, forces = elements(physics, vehicle_usd)
 
     # NMPC rigid-body params, read from the real model in the NMPC's upright frame. Spawned at FRD, the NMPC
     # frame coincides with world, q_nmpc = identity, so the body-frame moment arms = the world-frame rotor
@@ -75,7 +75,7 @@ def build_acados_loop(
     logger.info(f"acados-loop: mass={mass:.4f} kg")
     controller = AcadosNMPCController(
         mass=mass, inertia=base_inertia, rotor_offsets=rotor_offsets, turning_dirs=turning_dirs,
-        ct=[rotor.propeller["ct"] for rotor in rotors], rpm_max=rotor_speeds(physics.model, rotors), dt=dt,
+        rotors=rotors, dt=dt,
     )  # fmt: skip
 
     if sink is None and rerun:
@@ -93,6 +93,7 @@ def build_acados_loop(
         clock=Clock(dt),
         physics=physics,
         commands=commands,
+        actuators=actuators,
         forces=forces,
         sensors=extra_sensors,
         estimator=GroundTruthEstimator(),

@@ -1,4 +1,5 @@
 {
+  "NexusActuatorRoleAPI": {},
   "NexusBaroAPI": {
     "nexus:noise": {
       "fallback": "0.02",
@@ -31,9 +32,24 @@
   "NexusCommandRoleAPI": {},
   "NexusControllerRoleAPI": {},
   "NexusEscAPI": {
+    "nexus:busVoltage": {
+      "fallback": "0",
+      "type": "float",
+      "units": "V"
+    },
     "nexus:channel": {
       "fallback": "0",
       "type": "int",
+      "units": "none"
+    },
+    "nexus:idleDuty": {
+      "fallback": "0",
+      "type": "float",
+      "units": "none"
+    },
+    "nexus:maxDuty": {
+      "fallback": "1",
+      "type": "float",
       "units": "none"
     }
   },
@@ -96,6 +112,28 @@
       "fallback": "0",
       "type": "float",
       "units": "hertz"
+    }
+  },
+  "NexusMotorAPI": {
+    "nexus:currentLimit": {
+      "fallback": "0",
+      "type": "float",
+      "units": "A"
+    },
+    "nexus:inputs:voltage": {
+      "fallback": null,
+      "type": "relationship",
+      "units": ""
+    },
+    "nexus:kv": {
+      "fallback": "0",
+      "type": "float",
+      "units": "rpm/V"
+    },
+    "nexus:resistance": {
+      "fallback": "0",
+      "type": "float",
+      "units": "\u03a9"
     }
   },
   "NexusPropellerAPI": {

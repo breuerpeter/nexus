@@ -49,7 +49,6 @@ from nexus_uav._src.vehicle.rotors import RPM_PER_RADS, find_rotor_joints, rotor
 from ..scene import world
 from ..scene.ingest import add_scene  # ingestion only: the handlers are the renderer's side
 from ..scene.world import GRAVITY
-from .motors import Motors
 from .outputs import Outputs
 from .vehicle import NoRotor
 
@@ -120,8 +119,6 @@ class NewtonPhysics:
         self.control = self.model.control() if self.articulated else None
         # The plant's outputs, a PoseTwist per body and a struct per joint, which the state stage writes.
         self.outputs = Outputs(self.model, self.state0)
-        # Every Newton motor the vehicle declares, rotor motor or not, stepped before the solver.
-        self.motors = Motors(self.model)
         self.contacts = self.model.collide(self.state0) if self.contacts_on else None
         self.base_index = self._find_base()
         # The base body's label, the leaf of its model label when unique: Sim's default vehicle entity,
@@ -179,20 +176,22 @@ class NewtonPhysics:
             return 0  # single body, no rotor joints: body 0 is the base body
 
     def clear_forces(self, state) -> None:
+        """Zero the forces the substep's elements accumulate: the bodies' wrenches in ``state`` and the joints'
+        efforts in the control, which the actuators, the rotors' motors, add their torque into.
+        """
         state.clear_forces()
+        if self.control is not None:
+            self.control.joint_f.zero_()
 
     def step(self, state, dt):
-        """Step the vehicle's motors into ``control.joint_f``, then the solver, which consumes ``joint_f`` and
-        the force elements' ``body_f`` in one solve.
-        """
-        self.motors.step(state, self.control, dt)
+        """Step the solver, which consumes the actuators' ``joint_f`` and the force elements' ``body_f`` in one solve."""
         contacts = self.model.collide(state) if self.contacts_on else None
         self.solver.step(state, self.state1, self.control, contacts, dt)
         state.assign(self.state1)
         return state
 
     def stages(self) -> list[Stage]:
-        """The ``clear``, ``step`` and ``state`` device stages: the loop runs the command and force stages
+        """The ``clear``, ``step`` and ``state`` device stages: the loop runs the command, actuator and force stages
         between ``clear`` and ``step`` once per substep, and ``state`` once per tick after the last substep,
         which writes the plant's outputs, one signal per body and per joint, from the stepped state.
         """

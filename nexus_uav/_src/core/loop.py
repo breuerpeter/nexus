@@ -3,7 +3,7 @@
 A tick is an ordered ring of stages, per docs/design/execution.md. Every component states its
 per-tick work as a list of ``Stage``: a device stage joins a CUDA graph, a host stage runs between
 graph replays. The loop lays the stages out in the canonical order, clock -> [clear -> the command elements
--> the force elements -> step] per physics substep -> state -> sensors -> estimator -> guidance ->
+-> the actuators -> the force elements -> step] per physics substep -> state -> sensors -> estimator -> guidance ->
 controller -> record, and cuts the ring at its host stages, so each maximal run of device stages becomes
 one CUDA graph, the Real Time Factor (RTF) lever, and the host stages run between replays. The physics
 step opens a tick, so every row the tick records describes the state at the tick's time. One partition
@@ -17,6 +17,7 @@ layered over the same component semantics.
 from __future__ import annotations
 
 import time
+import typing
 from typing import TYPE_CHECKING
 
 import warp as wp
@@ -112,7 +113,7 @@ class Loop:
         guidance: Component | None = None,
         commands: Iterable[Component] = (),
         forces: Iterable[Component] = (),
-        actuator: Component | None = None,
+        actuators: Iterable[Component] = (),
         links: Mapping[str, object] | None = None,
         peers: Iterable[Peer] = (),
         peer_inputs: Iterable[Component] = (),
@@ -154,13 +155,12 @@ class Loop:
                 setpoint on the tick the guidance writes it. Its stage marks the tick done when its
                 mission is over, which ends the run. A flight can also set the ``guidance`` attribute
                 before the first step. ``None`` for PX4, which flies its own missions.
-            commands: The command elements: each turns the controls the controller writes into Newton's
-                control inputs, the rotors' speed targets and feedforward, in its device stages.
+            commands: The command elements: each turns the controls the controller writes into a signal
+                the chain takes on, the rotors' ESCs' terminal voltage, in its device stages.
+            actuators: The actuators: each turns a signal into torque on a joint, the rotors' motors into
+                ``control.joint_f``, in its device stages, after the command elements.
             forces: The force elements: each adds its body wrenches to the shared ``state.body_f``
                 from the current state, the propellers' thrust and drag, in its device stages.
-            actuator: The old actuator stage: one device stage that writes the shared body forces from
-                the controls the controller writes. No shipped component fills it; ``None`` for a run on
-                command elements and force elements.
             links: What the run made for the names a class requires, by name, such as the render stage the RTX
                 sensors require under ``ovrtx``, or a peer's link: the loop hands a component
                 the links of the peers its ``requires`` names when it connects it, and fails a component
@@ -207,8 +207,8 @@ class Loop:
         self.clock = clock
         self.physics = physics
         self.commands = list(commands)
+        self.actuators = list(actuators)
         self.forces = list(forces)
-        self.actuator = actuator
         self.sensors = list(sensors)
         self.controller = controller
         self.estimator = estimator  # the loop reads it when it builds the ring, at the first step
@@ -228,8 +228,8 @@ class Loop:
         wired = [
             (physics, "vehicle"),
             *((c, f"vehicle/commands/{_instance(c)}") for c in self.commands),
+            *((a, f"vehicle/actuators/{_instance(a)}") for a in self.actuators),
             *((f, f"vehicle/forces/{_instance(f)}") for f in self.forces),
-            *([(actuator, f"vehicle/actuators/{_instance(actuator)}")] if actuator is not None else []),
             *([(estimator, f"vehicle/estimators/{_instance(estimator)}")] if estimator is not None else []),
             (controller, f"vehicle/controllers/{_instance(controller)}"),
             *(
@@ -324,20 +324,36 @@ class Loop:
                     self.recorder.tap(path, signal, source=type(bound.component).__name__)
 
     def _default_links(self, ring: list[Bound]) -> list[tuple]:
-        """A link for each input of the vehicle's pose type that no component writes and no connection names:
-        the plant's base body output, ``body/<label>``. So a component that reads the vehicle's pose, the
-        passthrough estimator or PX4's ground truth, needs no connection on its prim, and a run that hands its
-        estimator over with no prim, as the examples do, reads the base body.
+        """The links a reader with no connection takes by default: for an input of the vehicle's pose type that
+        no component writes, the plant's base body output, ``body/<label>``, so a component that reads the
+        vehicle's pose, the passthrough estimator or PX4's ground truth, needs no connection on its prim, and a
+        run that hands its estimator over with no prim, as the examples do, reads the base body; and for an input
+        of one value that a component on the reader's own path writes, that writer, so a rotor's motor reads the
+        voltage of the ESC on its body and the file authors nothing. A connection on the reader's prim overrides
+        either.
         """
         writes, reads = _declared(ring)
         named = {(id(reader), name) for reader, name, *_ in self.connections}
-        return [
+        links = [
             (bound.component, name, self.physics, f"body/{self.physics.base_body}")
             for name, readers in reads.items()
             if name not in writes
             for bound, signal in readers
             if signal.type is PoseTwist and (id(bound.component), name) not in named
         ]
+        for name, readers in reads.items():
+            for bound, signal in readers:
+                if (id(bound.component), name) in named or typing.get_origin(signal.type) is list:
+                    continue
+                own = _instance(bound.component)  # the leaf of the reader's prim, which the builder names it by
+                beside = [
+                    w.component
+                    for w, _ in writes.get(name, [])
+                    if w.component is not bound.component and _instance(w.component) == own
+                ]
+                if beside:
+                    links.append((bound.component, name, beside[0], name))
+        return links
 
     def _record_tick(self) -> None:
         """The record stage: the Recorder snapshots every tapped signal into its history, stamped with the
@@ -612,14 +628,14 @@ class Loop:
             "controller": one(self.controller),
             "link": list(self.peer_inputs),
             "command": list(self.commands),
+            "actuator": list(self.actuators),
             "force": list(self.forces),
-            "actuator": one(self.actuator),
         }
 
     def components(self) -> list:
         """Every component of the run, in ring order: the sensors, the estimator, the guidance, the controller,
-        the loop end of each declared peer's inputs, the command elements, the force elements and the old
-        actuator stage.
+        the loop end of each declared peer's inputs, the command elements, the actuators and the force
+        elements.
         """
         roles = self.roles()
         return [c for role in (*TICK_ROLES, *SUBSTEP_ROLES) for c in roles[role]]

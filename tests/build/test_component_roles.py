@@ -231,20 +231,30 @@ def _commanding(values) -> type:
 
 
 @wp.kernel
-def _target(controls: wp.array2d(dtype=float), channel: int, scale: float, index: int, out: wp.array(dtype=float)):
-    out[index] = controls[0, channel] * scale
+def _servo_torque(
+    controls: wp.array2d(dtype=float),
+    channel: int,
+    scale: float,
+    q: int,
+    qd: int,
+    joint_q: wp.array(dtype=float),
+    joint_qd: wp.array(dtype=float),
+    joint_f: wp.array(dtype=float),
+):
+    """A position servo's torque, critically damped at the 4 ms tick for the gimbal body's 1e-4 kg·m²."""
+    target = controls[0, channel] * scale
+    wp.atomic_add(joint_f, qd, 0.5 * (target - joint_q[q]) - 0.01 * joint_qd[qd])
 
 
 class _DeclaredServo(Component):
-    """A command element its joint's prim declares: it writes the joint's target from one controls value, `scale`
-    radians per unit.
+    """An actuator its joint's prim declares: it holds the joint at the angle one controls value commands, `scale`
+    radians per unit, with a torque of its own into the joint's effort.
     """
 
     def __init__(self, model, path, *, channel: int = 0, scale: float = 1.0):
         j = list(model.joint_label).index(path)
         self.q = int(model.joint_q_start.numpy()[j])
         self.qd = int(model.joint_qd_start.numpy()[j])
-        self.coords = model.joint_coord_count
         self.channel, self.scale = int(channel), float(scale)
         self.controls = Signal("controls", wp.float32, shape=(1, self.channel + 1))
 
@@ -252,9 +262,20 @@ class _DeclaredServo(Component):
         return [Stage("servo", "device", self._write, reads=(self.controls,))]
 
     def _write(self, tick):
-        target = tick.control.joint_target_q
-        index = self.q if target.shape[0] == self.coords else self.qd
-        wp.launch(_target, dim=1, inputs=(self.controls.buffer, self.channel, self.scale, index), outputs=(target,))
+        wp.launch(
+            _servo_torque,
+            dim=1,
+            inputs=(
+                self.controls.buffer,
+                self.channel,
+                self.scale,
+                self.q,
+                self.qd,
+                tick.state.joint_q,
+                tick.state.joint_qd,
+            ),
+            outputs=(tick.control.joint_f,),
+        )
 
 
 @wp.kernel
@@ -371,16 +392,16 @@ def test_a_guidance_the_vehicle_declares_builds_in_its_role_and_runs_before_the_
     assert reader.seen[-3:] == [(1.0, 2.0, 3.0)] * 3, outcome["error"]
 
 
-def test_a_command_element_the_vehicle_declares_builds_through_the_registry(tmp_path):
-    """A command element the vehicle declares builds through the registry.
+def test_an_actuator_the_vehicle_declares_builds_through_the_registry(tmp_path):
+    """An actuator the vehicle declares builds through the registry, in the actuator's place in the substep.
 
-    Given the fixture quad whose gimbal joint's prim applies the stand-in command schema `StandInServoAPI` on the
-    fifth controls value at 1 rad per unit, mapped in the `Registry` to a servo command element, when the run
+    Given the fixture quad whose gimbal joint's prim applies the stand-in actuator schema `StandInServoAPI` on the
+    fifth controls value at 1 rad per unit, mapped in the `Registry` to a servo that holds its joint, when the run
     flies 125 ticks with 0.5 on that value, then the joint settles at 0.5 rad.
     """
     servo = {"nexus:channel": (Sdf.ValueTypeNames.Int, 4), "nexus:scale": (Sdf.ValueTypeNames.Float, 1.0)}
     path = _declare(
-        quad.author(tmp_path / "quad.usda", servo=True), applied={quad.GIMBAL_JOINT: ("StandInServoAPI", servo)}
+        quad.author(tmp_path / "quad.usda", gimbal=True), applied={quad.GIMBAL_JOINT: ("StandInServoAPI", servo)}
     )
     registry = Registry({"NexusPx4API_1": _commanding((*FULL, 0.5)), "StandInServoAPI": _DeclaredServo})
 
@@ -453,12 +474,30 @@ class _StandInEsc(Component):
 
     ticks: ClassVar[dict] = {}
 
-    def __init__(self, model, path, *, channel: int = 0):
+    def __init__(self, model, path, *, channel: int = 0, **_duty_map):
         self.path = path
         self.controls = Signal("controls", wp.float32, shape=(1, int(channel) + 1))
 
     def stages(self):
         return [Stage("esc", "device", self._run, reads=(self.controls,))]
+
+    def _run(self, tick):
+        type(self).ticks[self.path] = type(self).ticks.get(self.path, 0) + 1
+
+
+class _StandInMotor(Component):
+    """A command element a rotor's body declares, `NexusMotorAPI`: its device stage reads the voltage its ESC
+    writes and writes nothing; the class counts in `ticks` how often each instance's stage ran, by its prim.
+    """
+
+    ticks: ClassVar[dict] = {}
+
+    def __init__(self, model, path, *, kv: float = 0.0, resistance: float = 0.0, current_limit: float = 0.0):
+        self.path = path
+        self.voltage = Signal("voltage", wp.float32, shape=(1,), default=[0.0])
+
+    def stages(self):
+        return [Stage("motor", "device", self._run, reads=(self.voltage,))]
 
     def _run(self, tick):
         type(self).ticks[self.path] = type(self).ticks.get(self.path, 0) + 1
@@ -524,7 +563,7 @@ def test_every_class_a_run_flies_comes_from_the_registry_and_the_builder_names_n
     """Every class a run flies comes from the registry, and the builder names none.
 
     Given a registry that maps every schema the fixture vehicle applies, each sensor's, the propeller's, the
-    rotor's command's, the controller's, the estimator's, the guidance's and the PX4 SITL peer's, to a stand-in,
+    ESC's, the motor's, the controller's, the estimator's, the guidance's and the PX4 SITL peer's, to a stand-in,
     when `Sim(registry=...)` steps 5 ticks, then the receipt names the stand-in for every declaration and each
     tick's stages are the stand-ins' alone.
     """
@@ -534,12 +573,14 @@ def test_every_class_a_run_flies_comes_from_the_registry_and_the_builder_names_n
     guidance = sv.prim("Guidance", "StandInGuidanceAPI", "float3 nexus:setpoint = (1, 2, 3)", kind="Scope")
     path = sv.vehicle(tmp_path, sensor + ROTOR_COMMANDS, root=ESTIMATOR + guidance, px4=True)
     esc = type("Esc", (_StandInEsc,), {"ticks": {}})
+    motor = type("Motor", (_StandInMotor,), {"ticks": {}})
     propeller = type("Propeller", (_StandInPropeller,), {"ticks": {}})
     registry = Registry(
         {
             "NexusPx4API_1": _setpoint_reader(),
             "NexusPropellerAPI": propeller,
             "NexusEscAPI": esc,
+            "NexusMotorAPI": motor,
             "StandInSensorAPI": _ConnectingSensor,
             "StandInEstimatorAPI": StandInEstimator,
             "StandInGuidanceAPI": _FixedGuidance,
@@ -568,16 +609,17 @@ def test_every_class_a_run_flies_comes_from_the_registry_and_the_builder_names_n
         ("/vehicle/Px4Sitl", "NexusPx4SitlAPI"): "KeepingFake",
         **{(prim, "NexusPropellerAPI"): "Propeller" for prim in rotors},
         **{(prim, "NexusEscAPI"): "Esc" for prim in rotors},
+        **{(prim, "NexusMotorAPI"): "Motor" for prim in rotors},
     }
     stages = {
         name
         for part in plan.removeprefix("stage plan: ").split(") ")
         for name in part.split("(")[-1].rstrip(")").split(" -> ")
     }
-    ran = (esc.ticks, propeller.ticks)
+    ran = (esc.ticks, motor.ticks, propeller.ticks)
     assert (resolved, stages - RUN_STAGES, ran, ticks) == (
         expected,
-        {"stand_in", "estimate", "guide", "exchange", "esc", "propeller"},
-        (dict.fromkeys(rotors, 5), dict.fromkeys(rotors, 5)),
+        {"stand_in", "estimate", "guide", "exchange", "esc", "motor", "propeller"},
+        (dict.fromkeys(rotors, 5), dict.fromkeys(rotors, 5), dict.fromkeys(rotors, 5)),
         5,
     )

@@ -23,6 +23,7 @@ import numpy as np
 import warp as wp
 
 import nexus_uav as nx
+from nexus_uav._src.vehicle.rotors import command_lines
 from nexus_uav.examples._lib import RunClock, dump_stats
 from nexus_uav.examples._lib.articulated import ArticulatedRollout, CapturedGradient
 
@@ -84,9 +85,9 @@ def recover_mass(
 
     rotors = vehicle_usd.rotors()  # in channel order, each with its own thrust map
     kf = np.array([rotor.propeller["ct"] for rotor in rotors]) * RPM_PER_RADS**2
-    omega_max = rollout.rpm_max / RPM_PER_RADS  # each rotor's speed at full command [rad/s], from its motor
     speed = np.sqrt(LIFT * rollout.mass * GRAVITY / len(rotors) / kf)  # rad/s, each rotor's
-    command = wp.array([(speed / omega_max).tolist()], dtype=float)
+    a, b, c = command_lines(rotors).T  # each rotor's command line: the command that holds a speed
+    command = wp.array([(a * speed + b * speed**2 - c).tolist()], dtype=float)
 
     def forward(mass: wp.array, cost: wp.array | None = None, ref: wp.array | None = None, record=None):
         wp.launch(set_airframe_mass, dim=1, inputs=(mass, base), outputs=(model.body_mass, model.body_inv_mass))

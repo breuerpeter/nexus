@@ -245,8 +245,7 @@ class SamplingMPCController(Component):
         mass,
         rotor_offsets,
         turning_dirs,
-        ct,
-        rpm_max,
+        rotors,  # the rotors the vehicle declares, in the layout's order, each with its own values
         goal_w=(0.0, 0.0, 1.0),  # initial target; the guidance advances it, through the setpoint
         dt,
         num_rollouts=16,
@@ -259,7 +258,6 @@ class SamplingMPCController(Component):
         lr=0.03,
         noise_scale=0.10,
         collision_margin=0.6,
-        reaction_k=0.05,
         motor_tau,  # required: the rotors' speed time constant [s], from the vehicle's motors, motor_time_constant
         rotor_inertia,  # required: the rotors' spin inertia [kg·m²], from the vehicle's rotors, rotor_spin_inertia
     ):
@@ -298,23 +296,26 @@ class SamplingMPCController(Component):
         self.model = batch_model
         self.solver = newton.solvers.SolverSemiImplicit(batch_model)
         # Airframe mixer from the rotor layout, the planner's single-body model of the vehicle's rotors, each with
-        # its own thrust map. κ = reaction_k is the yaw allocation, each rotor's cd.
-        mixer = build_rotor_mixer_from_layout(rotor_offsets, turning_dirs, ct=ct, cd=reaction_k, rpm_max=rpm_max)
+        # its own thrust map and command line. κ is the yaw allocation, each rotor's cd.
+        mixer = build_rotor_mixer_from_layout(rotor_offsets, turning_dirs, rotors=rotors)
         self.B_wp = wp.array(mixer.B.astype(np.float32), dtype=float)  # (4, nr) forward allocation
         self._offsets_wp = wp.array(mixer.rotor_offsets.astype(np.float32), dtype=wp.vec3)  # (nr,) base-frame offsets
         self._spins_wp = wp.array(np.asarray(mixer.spins, dtype=np.float32), dtype=float)  # (nr,) spin signs
         self.rotor_inertia = float(rotor_inertia)
         self.thrust_sign = -1.0  # FRD-authored USD: thrust along −body-z, rotors spawned up
-        # Each rotor's hover command, its share of the weight through its own thrust map, in channel order.
-        self.hover = np.sqrt(mass * GRAVITY / self.n_rotors / np.asarray(ct, dtype=np.float64)) / np.asarray(rpm_max)
+        # Each rotor's hover speed and the command that holds it, its share of the weight through its own thrust
+        # map and command line, in channel order.
+        omega_hover = np.sqrt(mass * GRAVITY / self.n_rotors / mixer.kf)  # (nr,) rad/s
+        a, b, c = mixer.lines.T
+        self.hover = a * omega_hover + b * omega_hover**2 - c
         # Per-rotor motor lag: the sampled per-rotor command sets a rotor-speed target; Ω relaxes toward it
         # with time constant tau, and thrust = kf·Ω² re-mixes through forward B. Stable filter ⇒ the BPTT
         # stays bounded. alpha uses the plan step, plan_dt. Ω starts each plan from each rotor's hover speed.
         self.kf = wp.array(mixer.kf.astype(np.float32), dtype=float)
         self.omega_max_motor = wp.array(mixer.omega_max_motor.astype(np.float32), dtype=float)
+        self.lines = wp.array(mixer.lines.astype(np.float32), dtype=wp.vec3)
         self.motor_alpha = motor_alpha(motor_tau, self.plan_dt)
-        omega_hover = (self.hover * mixer.omega_max_motor).astype(np.float32)  # (nr,) rad/s
-        self._omega_hover = wp.array(np.tile(omega_hover, (self.num_rollouts, 1)), dtype=float)  # (rollouts, nr)
+        self._omega_hover = wp.array(np.tile(omega_hover.astype(np.float32), (self.num_rollouts, 1)), dtype=float)
 
         lo_hi = np.array([[0.05, 1.0]] * self.control_dim, dtype=np.float32)
         self.control_limits = wp.array(lo_hi, dtype=float)
@@ -414,6 +415,7 @@ class SamplingMPCController(Component):
                     self.B_wp,
                     self.kf,
                     self.omega_max_motor,
+                    self.lines,
                     self.motor_alpha,
                     self.rotor_inertia,
                     self.plan_dt,  # Ω changes over one plan step

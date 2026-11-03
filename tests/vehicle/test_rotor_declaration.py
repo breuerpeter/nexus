@@ -1,11 +1,12 @@
-"""Each rotor declares its propeller on its rigid body, beside Newton's motor, and the run finds its
-rotors by that declaration.
+"""Each rotor declares its ESC, its motor and its propeller on its rigid body, and the run finds its rotors by
+that declaration.
 
-Real builds on the Warp CPU backend: a quad authored per test, four rotor bodies on revolute joints
-under one airframe, each body carrying the nexus propeller schema and each joint driven by a
-``NewtonActuator`` prim with Newton's velocity servo and DC motor clamp, and a stand-in controller that
-commands full throttle, from ``tests/vehicle/quad.py``. Skipped without newton or pxr.
+Real builds on the Warp CPU backend: a quad authored per test, four rotor bodies on revolute joints under one
+airframe, each body carrying the three rotor schemas, and a stand-in controller that commands full throttle, from
+``tests/vehicle/quad.py``. Skipped without newton or pxr.
 """
+
+import math
 
 import pytest
 
@@ -13,11 +14,14 @@ pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
 import newton
+import numpy as np
 import warp as wp
 
+from nexus_uav._src.api.sim import Sim
 from nexus_uav._src.physics.vehicle import Rotor, VehicleUsd, rotors
 from nexus_uav._src.vehicle.rotors import find_rotor_joints
-from tests.vehicle.quad import FLIGHT_STEPS, LIFT_CT, ROOT, WEAK_CT
+from tests.vehicle import quad
+from tests.vehicle.quad import ESC, FLIGHT_STEPS, LIFT_CT, MOTOR, PROPELLER, ROOT, WEAK_CT
 from tests.vehicle.quad import author as _author
 from tests.vehicle.quad import build as _build
 from tests.vehicle.quad import build_error as _build_error
@@ -127,28 +131,12 @@ def test_a_vehicle_that_still_authors_propeller_joint_attributes_fails_the_build
     assert f"{ROOT}/rotor_0_joint" in message and "propeller:ct" in message
 
 
-def test_newton_still_builds_each_rotors_motor_from_its_actuator_prim(tmp_path):
-    """Newton still builds each rotor's motor from its `NewtonActuator` prim.
-
-    Given the fixture, when built, then `model.actuators` holds, per rotor, one
-    Proportional Integral Derivative (PID) controlled, DC-clamped motor.
-    """
-    with wp.ScopedDevice("cpu"):
-        model = _build(_author(tmp_path / "quad.usda")).physics.model
-    motors = [
-        (type(a.controller).__name__, tuple(type(c).__name__ for c in a.clamping))
-        for a in model.actuators
-        for _ in range(a.num_actuators)
-    ]
-    assert motors == [("ControllerPID", ("ClampingDCMotor",))] * 4
-
-
 def test_the_rotor_reader_returns_each_rotor_with_its_own_values_in_channel_order(tmp_path):
     """The rotor reader returns each rotor with its own values, in channel order.
 
     Given the fixture with its ESCs on channels 3, 2, 1 and 0 and rotor 2's `ct` twice the others', when read,
     then the rotors come in channel order, rotor 3 first, each with its body, its joint, the airframe, its
-    channel and its own propeller values.
+    channel and its own ESC, motor and propeller values.
     """
     read = rotors(_author(tmp_path / "quad.usda", odd_ct=2 * LIFT_CT, channels=(3, 2, 1, 0)))
     expected = [
@@ -157,6 +145,8 @@ def test_the_rotor_reader_returns_each_rotor_with_its_own_values_in_channel_orde
             joint=f"{ROOT}/rotor_{i}_joint",
             parent=f"{ROOT}/body",
             channel=3 - i,
+            esc={"idle_duty": 0.1, "max_duty": 1.0, "bus_voltage": 24.0},
+            motor={"kv": 160.0, "resistance": 0.28, "current_limit": 130.0},
             propeller={"ct": 2 * LIFT_CT if i == 2 else LIFT_CT, "cd": 0.05, "aero_h": 0.0, "aero_hforce": 0.0},
         )
         for i in (3, 2, 1, 0)
@@ -164,7 +154,10 @@ def test_the_rotor_reader_returns_each_rotor_with_its_own_values_in_channel_orde
     assert [(r.body, r.joint, r.parent, r.channel) for r in read] == [
         (r.body, r.joint, r.parent, r.channel) for r in expected
     ]
-    assert [r.propeller for r in read] == [pytest.approx(r.propeller, rel=1e-5) for r in expected]
+    assert [(r.esc, r.motor, r.propeller) for r in read] == [
+        (pytest.approx(r.esc, rel=1e-5), pytest.approx(r.motor, rel=1e-5), pytest.approx(r.propeller, rel=1e-5))
+        for r in expected
+    ]
 
 
 def test_a_rotor_that_declares_a_propeller_and_no_esc_fails_the_build_and_names_the_prim(tmp_path):
@@ -190,3 +183,160 @@ def test_find_rotor_joints_returns_the_declared_joints_and_no_other(tmp_path):
     _vel, _pos, bodies, base = find_rotor_joints(model, [f"{ROOT}/rotor_{i}_joint" for i in range(4)])
     labels = list(model.body_label)
     assert ([labels[b] for b in bodies], labels[base]) == ([f"{ROOT}/rotor_{i}" for i in range(4)], f"{ROOT}/body")
+
+
+# The rotor chain of the fixture quad with `motor="nexus"`, #386: the ESC's duty map times its bus is the
+# terminal voltage, and the motor's torque is the first-order DC motor's, `kd·(V/Ke − Ω)` with `kd = Ke²/R`.
+RPM_PER_RADS = 60.0 / (2.0 * math.pi)
+SETTLED = 0.01  # how far off the loaded speed, the voltage and the current a settled rotor can read, as a fraction
+
+
+def _ke() -> float:
+    """The fixture motor's back electromotive force constant [V·s/rad], from its `kv` [rpm/V]; `Kt` [N·m/A] is the same number."""
+    return 60.0 / (2.0 * math.pi * MOTOR["nexus:kv"])
+
+
+def _voltage(command: float) -> float:
+    """The fixture ESC's terminal voltage under `command` [V]: its duty map times its bus."""
+    duty = ESC["nexus:idleDuty"] + (ESC["nexus:maxDuty"] - ESC["nexus:idleDuty"]) * command
+    return duty * ESC["nexus:busVoltage"]
+
+
+def _loaded_speed(command: float) -> float:
+    """The speed a fixture rotor settles at under `command` [rad/s]: the positive root of
+    `kd·(V/Ke − Ω) = cd·kf·Ω²`, the motor's torque against the propeller's drag, with `kf = ct·RPM_PER_RADS²`.
+    """
+    ke = _ke()
+    kd = ke * ke / MOTOR["nexus:resistance"]
+    a = PROPELLER["nexus:cd"] * LIFT_CT * RPM_PER_RADS**2
+    b, c = kd, -kd * _voltage(command) / ke
+    return (-b + math.sqrt(b * b - 4.0 * a * c)) / (2.0 * a)
+
+
+def _settled_rotor(path, command: float) -> tuple[dict | None, str | None]:
+    """Rotor 0's recorded speed [rad/s], its ESC's voltage [V] and its motor's current [A] at the end of a flight of
+    the vehicle at `path` at `command` on every rotor, and the error message when the build fails instead.
+    """
+    try:
+        with (
+            wp.ScopedDevice("cpu"),
+            Sim._from_loop(quad.build(path, FLIGHT_STEPS, quad.Commands([command] * 4))) as sim,
+        ):
+            sim.run()
+            return {
+                "speed": float(sim["vehicle/joints/rotor_0_joint"].history()[-1]["qd"][0]),
+                "voltage": float(sim["vehicle/commands/rotor_0/voltage"].history()[-1]["voltage"]),
+                "current": float(sim["vehicle/actuators/rotor_0/current"].history()[-1]["current"]),
+            }, None
+    except ValueError as exc:
+        return None, str(exc)
+
+
+def _within(value: float | None, expected: float) -> bool:
+    return value is not None and abs(value - expected) <= SETTLED * abs(expected)
+
+
+@pytest.mark.parametrize("command", [0.0, 1.0])
+def test_a_rotor_settles_at_the_loaded_speed_its_escs_duty_map_and_its_motors_constants_give(tmp_path, command):
+    """A rotor at command 0 settles at its idle speed, the loaded speed the duty map's `idleDuty` gives, and at
+    command 1 at the loaded speed where `kd·(V/Ke − Ω)` meets `cd·kf·Ω²`, with no feedforward holding it up.
+
+    Given the fixture quad with its ESCs' duty map, bus and its motors' constants, when a stand-in controller
+    holds `command` on every rotor for 125 ticks, then rotor 0's speed is within 1 % of that root.
+    """
+    rotor, error = _settled_rotor(_author(tmp_path / "quad.usda", motor="nexus"), command)
+    speed = None if rotor is None else rotor["speed"]
+    assert _within(speed, _loaded_speed(command)), (speed, _loaded_speed(command), error)
+
+
+def test_each_escs_voltage_and_each_motors_current_are_in_the_recording_under_the_rotors_path(tmp_path):
+    """Each ESC's voltage, `d(u)·busVoltage`, and each motor's current, its applied torque over `Kt`, are in the
+    recording under the rotor's path in its role's folder.
+
+    Given that quad at full command for 125 ticks, when a test reads the recording, then rotor 0's `voltage` is its
+    bus, and its `current` is the propeller's drag torque at the loaded speed over `Kt`, each within 1 %.
+    """
+    rotor, error = _settled_rotor(_author(tmp_path / "quad.usda", motor="nexus"), 1.0)
+    speed = _loaded_speed(1.0)
+    current = PROPELLER["nexus:cd"] * LIFT_CT * RPM_PER_RADS**2 * speed * speed / _ke()
+    read = (None, None) if rotor is None else (rotor["voltage"], rotor["current"])
+    assert (_within(read[0], _voltage(1.0)), _within(read[1], current)) == (True, True), (read, error)
+
+
+def test_a_rotor_body_that_applies_two_of_the_three_rotor_schemas_fails_the_build_and_names_the_missing_one(tmp_path):
+    """A rotor body that applies two of the ESC's, the motor's and the propeller's schemas without the third fails
+    the build, naming the prim and the missing schema.
+
+    Given the fixture quad with the motor's schema left off rotor 1, when built, then the build fails naming
+    rotor 1 and `NexusMotorAPI`.
+    """
+    message = _build_error(_author(tmp_path / "quad.usda", motor="nexus", no_motor_schema=1))
+    assert f"{ROOT}/rotor_1" in message and "NexusMotorAPI" in message, message
+
+
+@pytest.mark.parametrize("attribute", [*sorted(MOTOR), "nexus:busVoltage"])
+def test_a_motor_constant_or_a_bus_voltage_that_is_not_positive_fails_the_build_and_names_the_attribute(
+    tmp_path, attribute
+):
+    """A motor whose `nexus:kv`, `nexus:resistance` or `nexus:currentLimit`, or an ESC whose `nexus:busVoltage`, is
+    not positive fails the build, naming the prim and the attribute.
+
+    Given the fixture quad with rotor 1's `attribute` authored 0, when built, then the build fails naming rotor 1
+    and the attribute.
+    """
+    message = _build_error(_author(tmp_path / "quad.usda", motor="nexus", zero=(1, attribute)))
+    assert f"{ROOT}/rotor_1" in message and attribute in message, message
+
+
+def test_a_newton_actuator_prim_on_a_rotors_joint_fails_the_build_and_names_the_prim(tmp_path):
+    """A `NewtonActuator` prim on a rotor's joint fails the build, naming the prim, since the motor is nexus's.
+
+    Given the fixture quad with its motors declared on the rotor bodies and a `NewtonActuator` prim kept on
+    rotor 2's joint, when built, then the build fails naming that prim.
+    """
+    message = _build_error(_author(tmp_path / "quad.usda", motor="nexus", newton_motor=2))
+    assert f"{ROOT}/rotor_2_motor" in message, message
+
+
+def test_a_rotor_whose_body_lists_the_motors_schema_first_flies_the_same_trajectory(tmp_path):
+    """A rotor whose body lists the motor's schema before the ESC's flies the same trajectory as one that lists
+    the ESC's first, since the motor runs after the command elements as an actuator.
+
+    Given the fixture quad authored both ways, when each flies 125 ticks at full command, then the recorded
+    positions are equal.
+    """
+    usual = _author(tmp_path / "usual.usda")
+    reversed_order = _author(tmp_path / "reversed.usda", motor_first=True)
+    with wp.ScopedDevice("cpu"):
+        flights = [_fly(_build(path, FLIGHT_STEPS)) for path in (usual, reversed_order)]
+    assert np.array_equal(flights[0], flights[1])
+
+
+@pytest.mark.parametrize(
+    ("bad", "attribute"),
+    [
+        ({"nexus:idleDuty": -0.1}, "nexus:idleDuty"),
+        ({"nexus:idleDuty": 1.0, "nexus:maxDuty": 1.0}, "nexus:idleDuty"),
+        ({"nexus:maxDuty": 1.5}, "nexus:maxDuty"),
+    ],
+    ids=["idle below 0", "idle at max", "max above 1"],
+)
+def test_an_esc_whose_duty_map_is_outside_its_range_fails_the_build_and_names_the_attribute(tmp_path, bad, attribute):
+    """An ESC whose duty map is outside `0 ≤ idleDuty < maxDuty ≤ 1` fails the build, naming the prim and the
+    attribute.
+
+    Given the fixture quad with every ESC's `bad` values, when built, then the build fails naming rotor 0 and the
+    attribute.
+    """
+    message = _build_error(_author(tmp_path / "quad.usda", esc=bad))
+    assert f"{ROOT}/rotor_0" in message and attribute in message, message
+
+
+def test_an_esc_whose_channel_is_below_0_fails_the_build_and_names_the_attribute(tmp_path):
+    """An ESC whose channel is below 0 fails the build, naming the prim and the attribute.
+
+    Given the fixture quad with rotor 1's ESC on channel -1, when built, then the build fails naming rotor 1 and
+    `nexus:channel`.
+    """
+    message = _build_error(_author(tmp_path / "quad.usda", channels=(0, -1, 2, 3)))
+    assert f"{ROOT}/rotor_1" in message and "nexus:channel" in message, message

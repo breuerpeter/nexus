@@ -1,9 +1,10 @@
 """The fixture quad the tests of the rotor chain share, and the helpers that fly it.
 
 A quad authored per test: four rotor bodies on revolute joints under one airframe, each body carrying the
-nexus propeller schema and each joint driven by a ``NewtonActuator`` prim with Newton's velocity servo and
-DC motor clamp. The motor's no-load speed, 398 rad/s, is the rotor speed at full command. A test flies it
-on the Warp CPU backend around a stand-in controller that sends one fixed command every tick.
+propeller's schema, the ESC's with its duty map and bus and the motor's with its constants, so a rotor's no-load
+speed at full command is ``busVoltage·maxDuty / Ke``, 402 rad/s. With ``motor="newton"`` a ``NewtonActuator``
+prim with Newton's velocity servo and DC motor clamp drives each joint instead, the shape the run refuses. A
+test flies it on the Warp CPU backend around a stand-in controller that sends one fixed command every tick.
 """
 
 import math
@@ -24,6 +25,11 @@ LIFT_CT = 4e-7  # N/rpm²: four rotors at full command make about twice the 1.08
 WEAK_CT = 1e-7  # N/rpm²: four rotors at full command make about half its weight
 FLIGHT_STEPS = 125  # 0.5 s at the default 4 ms tick
 PROPELLER = {"nexus:cd": 0.05, "nexus:aeroH": 0.0, "nexus:aeroHforce": 0.0}
+# The ESC's duty map and bus, and the motor's constants, as the sheets give them: the no-load speed at full
+# command is then 402 rad/s, and the torque falls with speed at kd = Ke²/R = 0.0127 N·m·s, so a rotor of 1e-4
+# kg·m² lags by 8 ms, two ticks, which the solver's explicit step holds without overshoot.
+ESC = {"nexus:idleDuty": 0.1, "nexus:maxDuty": 1.0, "nexus:busVoltage": 24.0}
+MOTOR = {"nexus:kv": 160.0, "nexus:resistance": 0.28, "nexus:currentLimit": 130.0}
 GIMBAL_JOINT = f"{ROOT}/gimbal_joint"  # the fifth revolute joint, with `gimbal` or `servo`
 
 
@@ -38,10 +44,15 @@ def author(
     gimbal=False,
     reparent=False,
     servo=False,
-    no_motor=None,
     channels=(0, 1, 2, 3),
+    motor="nexus",
+    no_motor_schema=None,
+    newton_motor=None,
+    zero=None,
+    motor_first=False,
+    esc=None,
 ):
-    """A quad whose rotor bodies each declare the propeller schema, with Newton's motor on each rotor joint.
+    """A quad whose rotor bodies each declare the propeller's, the ESC's and the motor's schema.
 
     Args:
         path: Where to write the vehicle.
@@ -52,10 +63,17 @@ def author(
         pod: Add a fifth body on a fixed joint that applies the propeller schema.
         gimbal: Add a fifth body on a revolute joint that applies no propeller schema.
         reparent: Hang rotor 3's joint off rotor 0's body instead of the airframe.
-        servo: Add the gimbal joint and a `NewtonActuator` position servo on it, with its target at 0.
-        no_motor: The index of a rotor whose joint gets no `NewtonActuator` prim.
+        servo: Add the gimbal joint and a `NewtonActuator` position servo prim on it, the one way Newton drives a
+            joint, which the build refuses.
         channels: The controls channel each rotor's ESC declares, `NexusEscAPI` on the rotor's body, in
             rotor order; `None` declares no ESC.
+        motor: `"nexus"` declares the motor with `NexusMotorAPI` on the rotor's body, its ESC's duty map and bus
+            beside it, and no actuator prim; `"newton"` drives each rotor joint with a `NewtonActuator` prim.
+        no_motor_schema: With `motor="nexus"`, the index of a rotor whose body applies no `NexusMotorAPI`.
+        newton_motor: With `motor="nexus"`, the index of a rotor whose joint keeps a `NewtonActuator` prim too.
+        zero: With `motor="nexus"`, `(index, attribute)`: the rotor whose ESC's or motor's attribute the fixture authors as 0.
+        motor_first: Apply the motor's schema before the ESC's on each rotor body, the reverse of the usual order.
+        esc: Values of the ESC's attributes that replace the fixture's on every rotor, by attribute name.
     """
     stage = Usd.Stage.CreateNew(str(path))
     UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
@@ -109,20 +127,32 @@ def author(
         joint = revolute(f"rotor_{i}_joint", parent, rotor.GetPath(), offset, flipped)
         if legacy_attr and i == 0:
             joint.CreateAttribute("propeller:ct", Sdf.ValueTypeNames.Float, custom=True).Set(ct)
-        if i != no_motor:
-            motor = stage.DefinePrim(f"{ROOT}/rotor_{i}_motor", "NewtonActuator")
-            motor.CreateRelationship("newton:targets").SetTargets([joint.GetPath()])
-            motor.ApplyAPI("NewtonPIDControlAPI")
-            motor.ApplyAPI("NewtonDCMotorClampingAPI")
-            motor.GetAttribute("newton:kd").Set(0.025)
-            motor.GetAttribute("newton:saturationEffort").Set(8.0)
-            motor.GetAttribute("newton:maxMotorEffort").Set(8.0)
-            motor.GetAttribute("newton:velocityLimit").Set(398.0)
+        if motor == "newton" or i == newton_motor:
+            prim = stage.DefinePrim(f"{ROOT}/rotor_{i}_motor", "NewtonActuator")
+            prim.CreateRelationship("newton:targets").SetTargets([joint.GetPath()])
+            prim.ApplyAPI("NewtonPIDControlAPI")
+            prim.ApplyAPI("NewtonDCMotorClampingAPI")
+            prim.GetAttribute("newton:kd").Set(0.025)
+            prim.GetAttribute("newton:saturationEffort").Set(8.0)
+            prim.GetAttribute("newton:maxMotorEffort").Set(8.0)
+            prim.GetAttribute("newton:velocityLimit").Set(398.0)
         if propeller:
             apply_propeller(rotor.GetPrim(), odd_ct if odd_ct is not None and i == 2 else ct)
+        if motor == "nexus" and motor_first and i != no_motor_schema:
+            rotor.GetPrim().AddAppliedSchema("NexusMotorAPI")
         if channels is not None:
             rotor.GetPrim().AddAppliedSchema("NexusEscAPI")
             rotor.GetPrim().CreateAttribute("nexus:channel", Sdf.ValueTypeNames.Int).Set(int(channels[i]))
+        if motor == "nexus":
+            values = {**ESC, **(esc or {})} if channels is not None else {}
+            if i != no_motor_schema:
+                if not motor_first:
+                    rotor.GetPrim().AddAppliedSchema("NexusMotorAPI")
+                values.update(MOTOR)
+            if zero is not None and zero[0] == i:
+                values[zero[1]] = 0.0
+            for name, value in values.items():
+                rotor.GetPrim().CreateAttribute(name, Sdf.ValueTypeNames.Float).Set(value)
     if gimbal or servo:
         offset = (0.0, 0.0, 0.12)
         mount = child_body("gimbal", offset)

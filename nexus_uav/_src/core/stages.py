@@ -27,7 +27,7 @@ class Bound:
 
     stage: Stage
     component: object
-    role: str  # clock, sensor, estimator, guidance, controller, physics, command, force, actuator or record
+    role: str  # clock, sensor, estimator, guidance, controller, physics, command, actuator, force or record
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,10 +57,10 @@ def stages_of(component, role: str) -> list[Bound]:
     return bound
 
 
-# The roles whose stages run once per physics substep, between ``clear`` and ``step``, in this order: the old
-# actuator stage, which no shipped component fills, runs with the force stages, since it writes the body
-# forces too.
-SUBSTEP_ROLES = ("command", "force", "actuator")
+# The roles whose stages run once per physics substep, between ``clear`` and ``step``, in this order, the
+# direction the hardware runs: the ESC writes the voltage, the motor turns it into torque on the joint, the
+# propeller turns the rotor's speed into force on the body.
+SUBSTEP_ROLES = ("command", "actuator", "force")
 # The roles whose stages run once per tick over the state the step left, in this order. The link role is last:
 # the loop end of each declared peer's inputs, which reads what every writer of the tick wrote.
 TICK_ROLES = ("sensor", "estimator", "guidance", "controller", "link")
