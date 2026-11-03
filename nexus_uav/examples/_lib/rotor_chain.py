@@ -1,10 +1,10 @@
 """The rotor chain of many copies of one vehicle in one model: the plant the RL task trains on.
 
-A run's loop steps the rotor chain around each solver step: each rotor's ESC sets its Newton motor's speed
-target and drag feedforward, each propeller adds its rotor's thrust and drag to its body, and physics steps the
-Newton motors into the rotor joints' torque. :class:`RotorChain` runs the same core parts in the same order for a
-model that holds one copy of the vehicle per environment, as the RL task's model does, so training flies the
-plant every run flies, each rotor with its own values.
+A run's loop steps the rotor chain around each solver step: each rotor's ESC writes its terminal voltage, each
+motor turns it into the torque on its rotor's joint, each propeller adds its rotor's thrust and drag to its body,
+and physics steps the model's own Newton actuators, a servo's. :class:`RotorChain` runs the same core parts in the
+same order for a model that holds one copy of the vehicle per environment, as the RL task's model does, so
+training flies the plant every run flies, each rotor with its own values.
 """
 
 from __future__ import annotations
