@@ -43,8 +43,9 @@ def client():
     global _client
     if _client is not None:
         return _client
-    import docker
     from docker.errors import DockerException
+
+    import docker
 
     try:
         _client = docker.from_env()
@@ -126,18 +127,31 @@ def run_container(
     return container
 
 
-def stop_container(name: str) -> None:
-    """Force-remove the container called ``name``. Idempotent: a container that isn't there counts as success.
+def stop_container(name: str, grace: float | None = None) -> None:
+    """Remove the container called ``name``. Idempotent: a container that isn't there counts as success.
 
     Force-removal is the whole teardown: the container is a child of the daemon, not of this
-    process, so there is no client to signal.
+    process, so there is no client to signal. With ``grace``, the daemon asks the process to stop
+    first and gives it that many seconds, so one that closes its files on the way out, PX4 and its
+    flight log, gets to.
+
+    Args:
+        name: The container's name.
+        grace: Seconds the process gets to stop on its own before the removal, or ``None`` to remove it
+            at once.
     """
-    from docker.errors import NotFound
+    from docker.errors import APIError, NotFound
 
     try:
-        client().containers.get(name).remove(force=True)
-    except NotFound:
+        container = client().containers.get(name)
+        if grace is not None:
+            container.stop(timeout=int(grace))
+        container.remove(force=True)
+    except NotFound:  # not there, or it removed itself on exit
         pass
+    except APIError as exc:
+        if exc.status_code != 409:  # 409: the daemon is removing it itself, a container that removes itself on exit
+            raise
 
 
 def _build_files(root: Path) -> list[Path]:
@@ -227,6 +241,9 @@ class ContainerPeer(Peer):
 
     name: str = ""
     """The peer's kind: the value of its label, the stem of its container's name and the name of its folder."""
+    stop_grace: float | None = None
+    """Seconds the process gets to stop on its own at ``stop`` before the removal, for one that closes its files
+    on the way out; ``None`` removes it at once."""
 
     def __init__(self, *, instance: int, log_dir: str | os.PathLike) -> None:
         self.instance = instance
@@ -255,10 +272,10 @@ class ContainerPeer(Peer):
         self._container = run_container(name=self.container, log_path=str(self.log_path), labels=labels, **options)
 
     def stop(self) -> None:
-        """Remove the container this peer started, running or exited. Idempotent."""
+        """Remove the container this peer started, running or exited, after ``stop_grace``. Idempotent."""
         if self._container is None:
             return
-        stop_container(self.container)
+        stop_container(self.container, grace=self.stop_grace)
         self._container = None
 
     def alive(self) -> bool:

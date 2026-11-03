@@ -219,7 +219,8 @@ Observability is cross-cutting, split into a **write** side and a **read** side:
   inspect the whole history in the viewer's debug tabs.
 
 Each PX4 run also produces PX4's native `.ulg` flight log in the run's folder beside the `.rrd`, both
-surfaced as run artifacts.
+surfaced as run artifacts. At teardown the PX4 peer appends the flight log to the `.rrd`, under
+`px4_sitl/logs`.
 
 ## Configuration and vehicles
 

@@ -197,6 +197,56 @@ def test_closing_a_run_that_never_stepped_stops_its_peers():
     assert peer.stopped == 1
 
 
+def test_a_peer_records_into_the_recording_once_it_has_stopped():
+    """A peer that keeps rows of its own, PX4's flight log, appends them to the recording after the
+    recording closed and the peer stopped, so its files are whole, under the recording's ids, timeline
+    and where the vehicle started. The loop skips a peer without ``record``, and a served recording,
+    no file, records none.
+    """
+    events = []
+
+    class _Recording(_Peer):
+        def stop(self):
+            events.append("stop")
+
+        def record(self, rrd, *, application_id, recording_id, timeline, origin):
+            events.append(("record", rrd, application_id, recording_id, timeline, origin))
+
+    class _Logger:
+        rrd_path = "run.rrd"
+        application_id = "nexus"
+        recording_id = "nexus"
+        timeline = "time"
+        origin = (0.0, 0.0, 0.25)
+
+        def scoped(self, path):
+            return None
+
+        def write(self, histories, written):
+            pass
+
+        def set_time(self, t):
+            pass
+
+        def log_rtf(self, rtf):
+            pass
+
+        def log_profile(self, stats):
+            pass
+
+        def close(self):
+            events.append("close")
+
+    _orch(max_steps=1, peers=[_Peer(), _Recording()], logger=_Logger()).run()
+    assert events == ["close", "stop", ("record", "run.rrd", "nexus", "nexus", "time", (0.0, 0.0, 0.25))]
+
+    events.clear()
+    served = _Logger()
+    served.rrd_path = None
+    _orch(max_steps=1, peers=[_Recording()], logger=served).run()
+    assert events == ["close", "stop"]
+
+
 def test_a_peer_whose_stop_fails_does_not_cost_the_recording():
     """A docker daemon that went away must not skip `_close_logs`, which flushes the recording."""
     closed_logs = []

@@ -568,6 +568,7 @@ class Loop:
                 self._close_components()
             finally:
                 self._stop_peers()
+                self._record_peers()
 
     def _peer_report(self) -> str:
         """What each peer the run started says about itself, as a clause to end an error with: the files it leaves,
@@ -707,6 +708,30 @@ class Loop:
                 peer.stop()
             except Exception as exc:
                 logger.warning(f"stopping a peer failed ({exc})")
+
+    def _record_peers(self) -> None:
+        """After the peers stopped, let each that keeps rows of its own append them to the recording:
+        PX4's peer adds its flight log, which is whole once PX4 has stopped. ``record`` is optional on
+        a peer, and a served recording has no file to append to. A peer whose rows fail must not cost
+        the rest: the recording is already whole.
+        """
+        rrd = self.logger.rrd_path if self.logger is not None else None
+        if rrd is None:
+            return
+        for peer in self.peers:
+            record = getattr(peer, "record", None)
+            if record is None:
+                continue
+            try:
+                record(
+                    rrd,
+                    application_id=self.logger.application_id,
+                    recording_id=self.logger.recording_id,
+                    timeline=self.logger.timeline,
+                    origin=self.logger.origin,
+                )
+            except Exception as exc:
+                logger.warning(f"adding a peer's rows to the recording failed ({exc})")
 
     def _attach(self, ring, tick, waiting: list) -> None:
         """Hold the sim clock until every component in ``waiting`` has attached, running each one's host stages
@@ -882,7 +907,7 @@ class Loop:
     def close(self) -> None:
         """Tear down the run, ``Sim.stop()``. A partially stepped run closes its tick generator, running
         its ``finally``, RTF stamp + logs/controller/peers teardown. A run that never stepped
-        closes the logs, then stops the peers, which started at build. Idempotent:
+        closes the logs, then stops the peers, which started at build, and lets them record. Idempotent:
         a no-op once the run has finished, ``run()`` completed / ``step()`` returned ``False``, or closed.
         """
         if self._ticks_iter is not None:
@@ -895,3 +920,4 @@ class Loop:
                     self._close_logs()
             finally:
                 self._stop_peers()
+                self._record_peers()
