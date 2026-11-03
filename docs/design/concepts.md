@@ -160,11 +160,12 @@ Recorder, and the Logger are: the framework's own, configured by settings, never
 
 ### Actuator
 
-Newton's actuator. It reads its joint's state and the targets a command element writes, and adds the
-joint's torque. A rotor's motor, a command element, builds one in code from the constants of its own
-schema and steps it in its stage. A `NewtonActuator` prim the vehicle's USD authors on another joint,
-a servo's, [physics](#physics) steps before its solver. The word names Newton's actuator alone, so the
-controls carry one command per actuator.
+A [role](#role): the component that turns a signal into torque on a joint, a rotor's motor. Its stage
+runs each substep after the command elements and before the force elements, the direction the hardware
+runs. It adds its torque into the joint efforts, which [physics](#physics) zeroes when the substep
+starts. The shipped one builds Newton's actuator in code from the constants of its own schema. A nexus actuator is
+the one way to drive a joint: the build fails a `NewtonActuator` prim. The controls carry one command
+per actuator.
 
 ### Peer
 

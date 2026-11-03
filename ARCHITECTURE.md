@@ -15,8 +15,8 @@ The shape of the tree today, one line per fact, and under `## Planned` each chan
 - `core/`: the loop, the `Component` contract, stages, signals and their value types, the clock, the registry, and the errors.
 - `usd/`: the schema plugin, which holds no code, and its reader. A schema changes only by a new versioned name, and the reader fails an unknown one.
 - `build/`: the one builder. It resolves the launch, fetches the assets, builds the Newton model, builds each component and peer through the registry, wires the signals, and hands the loop its parts.
-- `physics/`: the fixed physics part. Each substep it zeroes the joint efforts, which the rotors' motors add their torque into, steps the model's own Newton actuators, a servo's, then the solver.
-- `vehicle/sensors/`, `estimators/`, `commands/`, `forces/` and `controllers/`: the shipped components, one folder per role. `controllers/px4/` holds the one shipped controller.
+- `physics/`: the fixed physics part. Each substep it zeroes the joint efforts, which the actuators add their torque into, then runs the solver.
+- `vehicle/sensors/`, `estimators/`, `commands/`, `actuators/`, `forces/` and `controllers/`: the shipped components, one folder per role. `controllers/px4/` holds the one shipped controller.
 - `vehicle/sensors/rtx/` holds the RTX sensors and the one render stage they require, which the build makes once per run by the name `ovrtx` and hands each sensor at `connect`.
 - `guidance/`: the shipped guidance components. `scene/`: the world values the scene's `PhysicsScene` authors or the build derives.
 - `peers/`: the peer contract at the top, then one folder per peer, `peers/<name>/`, with its runner, `pin.ref`, `image/` or `peer-src/` and its fake. A link's host end sits with the component that speaks it. The offboard client, which no component speaks, sits in the PX4 peer's folder.
@@ -26,10 +26,10 @@ The shape of the tree today, one line per fact, and under `## Planned` each chan
 
 ## Contracts
 - Every role has one contract: a component subclasses `Component` and states its stages, each with the signals it reads and writes.
-- The roles run in one fixed order each tick: sensor, estimator, guidance, controller, link. Command and force elements run once per physics substep.
+- The roles run in one fixed order each tick: sensor, estimator, guidance, controller, link. Command elements, actuators and force elements run once per physics substep, in that order, the direction the hardware runs.
 - An applied API schema on a prim declares a component. Its `nexus:` attributes are the class's keyword arguments.
 - A component reads only the attributes of its own schema, and takes what it needs from another component as a signal. The build fails a class that reads a schema beside its own. `SIBLINGS_EXEMPT` in `core/components.py`, where an exception would stand, is empty.
-- A rotor is three components on its rigid body, each from its own schema. The ESC turns its command into a terminal voltage from its duty map and bus. The motor turns that voltage into torque through Newton's actuator, built in code from the sheet's constants. The propeller turns speed into thrust. No `NewtonActuator` prim drives a rotor's joint, and the rotor speed droops under load as a real drive's does.
+- A rotor is three components on its rigid body, each from its own schema. The ESC turns its command into a terminal voltage from its duty map and bus. The motor, an actuator, turns that voltage into torque through Newton's actuator, built in code from the sheet's constants. The propeller turns speed into thrust. A nexus actuator is the one way to drive a joint: the build fails a `NewtonActuator` prim. The rotor speed droops under load as a real drive's does.
 - The registry maps each schema, and each name a class requires, to its class. A project registers through the `nexus.registry` entry-point group, and a test passes `Sim(registry=...)`.
 - The vehicle's USD declares each peer with a counterpart on the real vehicle. A component's class requires, by name, what the build makes once per run and hands it at `connect`: a peer with no counterpart, or an in-process service such as the render stage. Every peer ships a fake that speaks its links.
 - The render stage takes poses from `body_q` on the device through DLPack, one write per frame.

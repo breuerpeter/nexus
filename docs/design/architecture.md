@@ -21,9 +21,9 @@ t = clock.advance()
 [estimator stages]                        # the estimate: the base body's pose and twist; none on PX4
 [guidance stage]                          # the setpoint, from the mission and the estimate; none on PX4
 [controller stages]                       # PX4: truth + exchange host stages; PID: one device stage
-[clear → command elements → force elements → step] × substeps
-                                          # command buffer → Newton's control inputs; state → per-body
-                                          # forces; step: Newton's actuators, then the solver
+[clear → command elements → actuators → force elements → step] × substeps
+                                          # controls → the ESCs' voltage → the motors' joint torque; state →
+                                          # per-body forces; step: the solver
 [state]                                   # the plant's outputs: a PoseTwist per body, a struct per joint
 [record]                                  # the recorder's device taps
 ```
@@ -164,13 +164,15 @@ class, and no part reads the attributes of another.
   `nexus:channel`, and writes the terminal voltage its duty map switches onto the motor. The map runs
   from `nexus:idleDuty` at command 0 to `nexus:maxDuty` at command 1, times the `bus_voltage` signal.
   Until a battery writes that signal, the ESC's own `nexus:busVoltage` stands in.
-- The motor is a **command element** the `NexusMotorAPI` schema declares, from the sheet's constants,
+- The motor is an **actuator**, a [role](concepts.md#role) of its own between the command elements and the
+  force elements, the `NexusMotorAPI` schema declares, from the sheet's constants,
   `nexus:kv`, `nexus:resistance` and `nexus:currentLimit`. It reads the `voltage` of the ESC on its own
   body, with nothing authored, and builds Newton's actuator in code. That actuator is a first-order DC
-  motor: its torque on the real rotor joint is `(Kt/R)·(V − Ke·Ω)`, capped at the current limit. Physics
-  zeroes the joint efforts each substep and steps the model's own actuators, a servo's, before its
-  solver. So the rotor speed is a solver-integrated state with physical lag, and it droops under load as
-  a real drive's does. The motor emits the `current` it draws, for a battery to sum.
+  motor: its torque on the real rotor joint is `(Kt/R)·(V − Ke·Ω)`, capped at the current limit, added
+  into the joint efforts physics zeroes each substep. So the rotor speed is a solver-integrated state with
+  physical lag, and it droops under load as a real drive's does. The motor emits the `current` it draws,
+  for a battery to sum. A nexus actuator is the one way to drive a joint: the build fails a
+  `NewtonActuator` prim.
 - The rotor's propeller, a **[force element](concepts.md#role)** the `NexusPropellerAPI` schema
   declares, is the airflow-aware closed form that turns rotor speed and inflow into thrust and
   in-plane force on the rotor body.
