@@ -1,7 +1,7 @@
-"""``scripts/assets/convert.py`` authors the ESC's, the motor's and the propeller's schemas on each rotor's rigid
-body and removes the ``NewtonActuator`` prim that drove its joint, so the converted vehicle declares its rotors
-the way the run reads them. A rotor is a joint the source declares as one, or one the caller names: a joint
-Newton drives for another purpose, such as a gimbal servo, is none, and its actuator prim stays.
+"""``scripts/assets/convert.py`` authors the propeller schema on each rotor's rigid body and leaves each
+``NewtonActuator`` prim with Newton's schemas alone, so the converted vehicle declares its rotors the
+way the run reads them. A rotor is a joint the source declares as one, or one the caller names: a
+joint Newton drives for another purpose, such as a gimbal servo, is none.
 """
 
 import importlib.util

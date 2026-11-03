@@ -15,7 +15,7 @@ The shape of the tree today, one line per fact, and under `## Planned` each chan
 - `core/`: the loop, the `Component` contract, stages, signals and their value types, the clock, the registry, and the errors.
 - `usd/`: the schema plugin, which holds no code, and its reader. A schema changes only by a new versioned name, and the reader fails an unknown one.
 - `build/`: the one builder. It resolves the launch, fetches the assets, builds the Newton model, builds each component and peer through the registry, wires the signals, and hands the loop its parts.
-- `physics/`: the fixed physics part. Each substep it zeroes the joint efforts, which the rotors' motors add their torque into, steps the model's own Newton actuators, a servo's, then the solver.
+- `physics/`: the fixed physics part. It steps every Newton actuator, then the solver.
 - `vehicle/sensors/`, `estimators/`, `commands/`, `forces/` and `controllers/`: the shipped components, one folder per role. `controllers/px4/` holds the one shipped controller.
 - `vehicle/sensors/rtx/` holds the RTX sensors and the one render stage they require, which the build makes once per run by the name `ovrtx` and hands each sensor at `connect`.
 - `guidance/`: the shipped guidance components. `scene/`: the world values the scene's `PhysicsScene` authors or the build derives.
@@ -28,13 +28,12 @@ The shape of the tree today, one line per fact, and under `## Planned` each chan
 - Every role has one contract: a component subclasses `Component` and states its stages, each with the signals it reads and writes.
 - The roles run in one fixed order each tick: sensor, estimator, guidance, controller, link. Command and force elements run once per physics substep.
 - An applied API schema on a prim declares a component. Its `nexus:` attributes are the class's keyword arguments.
-- A component reads only the attributes of its own schema, and takes what it needs from another component as a signal. The build fails a class that reads a schema beside its own. `SIBLINGS_EXEMPT` in `core/components.py`, where an exception would stand, is empty.
-- A rotor is three components on its rigid body, each from its own schema. The ESC turns its command into a terminal voltage from its duty map and bus. The motor turns that voltage into torque through Newton's actuator, built in code from the sheet's constants. The propeller turns speed into thrust. No `NewtonActuator` prim drives a rotor's joint, and the rotor speed droops under load as a real drive's does.
+- A component reads only the attributes of its own schema, and takes what it needs from another component as a signal. The build fails a class that reads a schema beside its own, and `SIBLINGS_EXEMPT` in `core/components.py` names the one exception, the ESC.
 - The registry maps each schema, and each name a class requires, to its class. A project registers through the `nexus.registry` entry-point group, and a test passes `Sim(registry=...)`.
 - The vehicle's USD declares each peer with a counterpart on the real vehicle. A component's class requires, by name, what the build makes once per run and hands it at `connect`: a peer with no counterpart, or an in-process service such as the render stage. Every peer ships a fake that speaks its links.
 - The render stage takes poses from `body_q` on the device through DLPack, one write per frame.
 - The run owns every address. The builder builds a link's end inside the run, and an end outside the run reads `sim.ports`.
-- A wire on the vehicle is a USD relationship: `nexus:inputs:<signal>` for a signal, `nexus:serial:<line>` for a serial line. An input the file leaves empty takes the writer of its signal on the reader's own prim, else the vehicle's one writer. So a rotor's motor reads its own ESC with nothing authored.
+- A wire on the vehicle is a USD relationship: `nexus:inputs:<signal>` for a signal, `nexus:serial:<line>` for a serial line.
 - The clock, the physics, the Recorder and the Logger take settings, and nothing declares them. The Recorder keeps a history of every device signal, and the Logger writes the histories in blocks. A script reads `sim[path]` and `sim.read(path)`, and `Sim` has no accessor for a role.
 - The receipt hashes the vehicle, the scene, each layer and the override layer, and names each peer's pin and the class each declaration resolved to.
 - A second renderer, such as Newton's tiled camera, is a second class for the same camera schema: one more entry in the registry. A bridge to a message bus, such as Robot Operating System (ROS) 2, is a peer the vehicle declares and wires with `nexus:inputs`, never a change to the loop.
@@ -50,6 +49,7 @@ The shape of the tree today, one line per fact, and under `## Planned` each chan
 - release-please cuts releases from conventional commits. mkdocs-material builds the docs at the repo root, `mkdocstrings` renders the API reference from Google-style docstrings, and the Concepts page defines each term once.
 
 ## Planned
+- The ESC reads nothing from its propeller or its motor. It emits a terminal voltage from its own duty map, and Newton's DC motor turns that voltage into torque. The drag feedforward goes, with `siblings` and `motor_speed`, so `SIBLINGS_EXEMPT` empties.
 - The Kit render peer, `peers/kit/`, the render link's host end, `rendering/`, the Kit-served sensor classes, the `cesium` scene's catalog entry and the Kit-only asset scripts move to a plugin project in this repo, `nexus-kit/`, a second `uv` project that registers through `nexus.registry`; the core keeps no Kit line.
 - The render stage hands frames back on the device, and no host copy sits on the loop's path. A frame is a device signal the Recorder keeps no history of, and the Logger copies it to the host at its own cadence.
 - The example controllers register through the registry as a project's do and fly through the one builder; no example assembles its own loop.

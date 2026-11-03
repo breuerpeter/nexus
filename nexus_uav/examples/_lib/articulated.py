@@ -1,17 +1,17 @@
 """The articulated plant as a differentiable rollout: the vehicle every run flies, recorded on a tape.
 
 :class:`ArticulatedRollout` builds the vehicle from its Universal Scene Description (USD) file as physics does:
-its rotor joints turn under the core's motors, the core's ESCs write each motor's terminal voltage, and the
-core's propellers turn each rotor's speed into its force. So a gradient example tunes the plant PX4 flies, not a
-stand-in. Three things make the rollout differentiable:
+its rotor joints turn under the Newton motors the file authors, the core's ESCs write each motor's
+speed target, and the core's propellers turn each rotor's speed into its force. So a gradient example tunes the
+plant PX4 flies, not a stand-in. Three things make the rollout differentiable:
 
 * ``SolverSemiImplicit``, the solver whose step has an adjoint, at :data:`SUBSTEPS` steps per control tick, with
   its joint springs at :data:`JOINT_KE` and :data:`JOINT_KD`: at its defaults the stiff springs go NaN on the light
   rotors at any step that a run can afford.
-* One state, one control, one voltage and one set of motors per solver step. A tape replays each step backward
-  from the arrays that step wrote, so no step can overwrite another's. A motor's Newton actuator writes its torque
-  into scratch buffers it owns, so the rollout builds the rotors' motors once per step, the way it keeps a state
-  per step.
+* One state, one control and one Newton motor per solver step. A tape replays each step backward from the arrays
+  that step wrote, so no step can overwrite another's. A Newton motor writes its torque into scratch buffers it owns,
+  and its Proportional Integral Derivative (PID) controller keeps one more, so :func:`per_step_motors` builds a
+  fresh motor per step through Newton's public constructors, the way a rollout keeps a state per step.
 * :class:`CapturedGradient`, which replays the whole forward and backward pass from one CUDA graph: tens of
   thousands of small launches cost seconds as a graph and minutes from Python.
 """

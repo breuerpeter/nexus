@@ -58,14 +58,9 @@ class HoverController(Component):
 
 The keyword arguments are the attributes of the schema, `nexus:throttle` here. A component reads
 only the attributes of its own schema. What it needs from another component arrives at run time as a
-signal, the way the controller's `controls` reach the ESCs and each ESC's `voltage` reaches the motor on
-its body. No component takes a value from a schema applied beside it, and the build fails a class that
-tries. A signal one component writes reaches every reader by its name. A signal more than one
-component writes, as four ESCs write `voltage`, reaches a reader through the relationship its schema
-declares, `nexus:inputs:<signal>`. When the file leaves that relationship empty, the input takes the
-writer on the reader's own prim. So a rotor's motor finds its ESC with nothing in the file, and the
-vehicle authors the relationship only where the pairing isn't the prim. The `controls` signal of a controller is as wide as its actuators,
-and the command elements read the leading part of it.
+signal, the way the controller's `controls` reach the ESCs. No component takes a value from a schema
+applied beside it, and the build fails a class that tries. The `controls` signal of a controller is as
+wide as its actuators, and the command elements read the leading part of it.
 
 The contract has eight more members. `connect` opens what the component needs for the run, a port or
 a model, and takes the link of each peer the class requires, keyed by the peer's name. `close`

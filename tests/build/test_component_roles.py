@@ -542,7 +542,7 @@ def test_every_class_a_run_flies_comes_from_the_registry_and_the_builder_names_n
     """Every class a run flies comes from the registry, and the builder names none.
 
     Given a registry that maps every schema the fixture vehicle applies, each sensor's, the propeller's, the
-    ESC's, the motor's, the controller's, the estimator's, the guidance's and the PX4 SITL peer's, to a stand-in,
+    rotor's command's, the controller's, the estimator's, the guidance's and the PX4 SITL peer's, to a stand-in,
     when `Sim(registry=...)` steps 5 ticks, then the receipt names the stand-in for every declaration and each
     tick's stages are the stand-ins' alone.
     """

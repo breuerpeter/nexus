@@ -1,8 +1,8 @@
 """The **MotorModel** a planner keeps: a single motor's first-order rotor-speed lag.
 
-The plant's motors are the rotors' components, first-order DC motors over Newton's actuator, which their stages
-step. A model-based controller that plans on a lumped single body, the sampling Model Predictive Control (MPC)
-planner, keeps this lag as its own model of them: each control step a motor's speed ``Ω`` relaxes toward the commanded speed by ``α = 1 − e^{−Δt/τ}`` and
+The plant's motors are Newton's, on the rotor joints, which physics steps. A model-based controller that plans on
+a lumped single body, the sampling Model Predictive Control (MPC) planner, keeps this lag as its own model of
+them: each control step a motor's speed ``Ω`` relaxes toward the commanded speed by ``α = 1 − e^{−Δt/τ}`` and
 saturates at ``[0, Ω_max]``; thrust is then the propeller's ``kf·Ω²``.
 
 **``τ`` comes from the vehicle's motors and propellers**, :func:`motor_time_constant`, never from a constant of the

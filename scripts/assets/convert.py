@@ -212,17 +212,17 @@ def author_rotor_params(usdz, out, *, params=None, rotors=None) -> str:
     prim authors ``freefly:actuator:*``, as an as-built USD does. A joint Newton drives for another purpose,
     such as a gimbal servo, is no rotor.
 
-    ``params`` is a dict of the propeller's ``ct``, ``cd``, ``aero_h`` and ``aero_hforce``, the ESC's
-    ``idle_duty``, ``max_duty`` and ``bus_voltage`` and the motor's ``kv``, ``resistance`` and ``current_limit``,
-    which overrides the values each of the source's rotors declares; a value neither gives is an error. Each rotor
-    keeps its own values.
+    ``params`` is a ``{ct, cd, aero_h, aero_hforce}`` dict that overrides the values each of the source's
+    rotors declares; a value neither gives is an error. Each rotor keeps its own values. The rotor speed at
+    full command isn't authored: the run reads it from each motor's ``newton:velocityLimit``. A ``rpm_max``
+    that ``params`` or the source gives must agree with it, or the conversion would change the top speed.
 
     Returns:
         The output path.
 
     Raises:
-        ValueError: The source declares no rotor and ``rotors`` names none, a rotor joint has no child body, or
-            a value is missing.
+        ValueError: The source declares no rotor and ``rotors`` names none, a rotor joint has no child body, a
+            value is missing, or ``rpm_max`` and a motor's no-load speed differ.
     """
     from pxr import Sdf
 
