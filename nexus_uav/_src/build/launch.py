@@ -4,7 +4,7 @@ Resolves the launch against the catalog, sha-verifying every asset, wraps the ve
 Description (USD) file in a :class:`VehicleUsd`, threads the resolved scene, its USD plus start, into the
 scenario cfg, and builds the run from the vehicle's declarations. The registry maps each applied schema to its
 class, so the builder names no component and no peer: it builds the controller, the estimator and the guidance
-by the role their schemas state, the sensors and the command and force elements in the assembly, and each
+by the role their schemas state, the sensors, the command elements, the actuators and the force elements in the assembly, and each
 peer the vehicle declares, a schema whose class is a peer. What a component's class requires by name, such as
 the render stage an RTX sensor requires, it makes and starts once, by that name.
 

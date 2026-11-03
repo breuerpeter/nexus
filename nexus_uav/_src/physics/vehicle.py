@@ -140,9 +140,9 @@ class VehicleUsd:
 
     USD support needs ``usd-core`` to parse and ``newton-usd-schemas`` for the schema resolvers: newton's
     ``importers`` deps *minus* the open3d remesh and convex-decomp stack the lean runtime skips, see the
-    pyproject. Each rotor declares its ESC and its propeller with the ``NexusEscAPI`` and ``NexusPropellerAPI``
-    schemas on its rigid body, which :func:`rotors` reads at build time, beside the ``NewtonActuator`` prim that
-    declares its motor, which Newton's importer parses onto the model.
+    pyproject. Each rotor declares its ESC, its motor and its propeller with the ``NexusEscAPI``,
+    ``NexusMotorAPI`` and ``NexusPropellerAPI`` schemas on its rigid body, which :func:`rotors` reads at build
+    time; the registry builds each as a component.
 
     Start pose: ``cfg['spawn_pos']``; the default is support-height placement, where the lowest point
     of the USD bounds, in the start attitude, lands 1 cm off the ground, so no more 2 m settle drop.

@@ -131,8 +131,8 @@ def collapse_to_single_body(
     b.add_ground_plane()
     for _ in range(int(count)):  # count copies of the catalog vehicle USD
         vehicle_usd.build(b)
-    # Drop the USD-authored NewtonActuator entries, the plant's rotor motors: the collapse destroys the
-    # rotor joints they target, and the planner's coupling models the motors instead.
+    # Drop any NewtonActuator entry the USD authors, a servo's: the collapse destroys the joints they target, and
+    # the planner's coupling models the rotors' motors itself.
     b.actuator_entries.clear()
     _fix_rotor_joints(b)
     b.collapse_fixed_joints()  # merge each vehicle's rotors into its airframe → count single bodies

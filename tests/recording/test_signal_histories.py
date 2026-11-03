@@ -291,8 +291,9 @@ def test_a_historys_key_is_its_writers_path_then_the_signals_name_and_the_clock_
 
     Given the run of the preceding row, its estimator a stand-in that writes a second device signal `wind` beside
     its estimate, when it steps, then the keys are `vehicle/sensors/imu/imu`, `vehicle/estimators/<name>/estimate`,
-    `vehicle/estimators/<name>/wind` and `vehicle/controllers/standin/controls`, no history holds the clock's
-    `time`, and `sim["vehicle/sensors/imu/imu"]` resolves the IMU's history.
+    `vehicle/estimators/<name>/wind`, `vehicle/controllers/standin/controls` and each rotor's
+    `vehicle/commands/<rotor>/voltage` and `current`, no history holds the clock's `time`, and
+    `sim["vehicle/sensors/imu/imu"]` resolves the IMU's history.
     """
     loop = _build(tmp_path, IMU, controller=_TickWriter, estimator=_Windy())
     with _flown(loop, 1) as sim:

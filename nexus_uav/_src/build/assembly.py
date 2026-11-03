@@ -105,7 +105,7 @@ def assemble(
 
     dt = cfg["physics"]["dt"]
     rtf = cfg["physics"].get("rtf", 0)
-    # Every command and force element the vehicle declares, each rotor's ESC and propeller among them, from the
+    # Every command element, actuator and force element the vehicle declares, each rotor's three parts among them, from the
     # vehicle USD's declarations, the single, hash-pinned source, not cfg.
     usd_path = vehicle_usd.cfg["usd_path"]
     built = declared_elements(physics, usd_path, components, instance)

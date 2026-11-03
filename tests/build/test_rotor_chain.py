@@ -1,5 +1,5 @@
-"""The rotor chain splits into a command element, a force element and physics stepping Newton's actuators, and
-the shipped vehicle flies as before. Controls that a reader can't take stop the run before any stage runs.
+"""The rotor chain splits into a command element, an actuator and a force element per rotor, physics runs the
+solver alone, and the shipped vehicle flies as before. Controls that a reader can't take stop the run before any stage runs.
 
 Real builds on the Warp CPU backend: the fixture quad of ``tests/vehicle/quad.py`` around a stand-in
 controller, with stand-in command elements and force elements beside the rotors' where a test needs them,
@@ -195,8 +195,8 @@ def test_a_controller_whose_controls_are_narrower_than_a_reader_needs_fails_the_
     runs, and the error names both components and both widths.
 
     Given the fixture quad with four rotors and a controller whose controls hold three values, when the run
-    starts, then it fails before any stage runs, and the error names the controller, the rotors' command
-    element, 3 and 4. No stage ran, so the recording holds no history.
+    starts, then it fails before any stage runs, and the error names the controller, the command element of the
+    rotor on channel 3 by its instance name, 3 and 4. No stage ran, so the recording holds no history.
     """
     path = quad.author(tmp_path / "quad.usda")
     orch = quad.build(path, quad.FLIGHT_STEPS, _Narrow())
@@ -213,7 +213,7 @@ def test_an_input_no_component_writes_fails_the_run_naming_the_reader_and_the_si
     stage runs, and the error names the reader and the signal.
 
     Given the fixture quad and a controller that writes no controls, when the run starts, then it fails before
-    any stage runs, and the error names the rotors' command element and the controls. No stage ran, so the
+    any stage runs, and the error names rotor 0's command element by its instance name and the controls. No stage ran, so the
     recording holds no history.
     """
     orch = quad.build(quad.author(tmp_path / "quad.usda"), quad.FLIGHT_STEPS, _Silent())

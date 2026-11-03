@@ -81,7 +81,8 @@ class GoToEnv(QuadcopterNewtonEnv):
     """The GoTo task on the articulated vehicle: CTBR action → inner rate loop → ``B⁻¹`` → each rotor's command →
     the rotor chain, before each solver step. Reuses the base env's CTBR params, obs including the last action,
     reward, NaN-robustness and start-state randomization. The env reads the rotors and each one's values, its
-    channel, ct, cd and rpm_max, from the vehicle's USD file, so it carries no per-vehicle constants.
+    channel, ct, cd, its ESC's duty map and its motor's constants, from the vehicle's USD file, so it carries no
+    per-vehicle constants.
     """
 
     def __init__(self, cfg, render_mode=None, **kwargs):

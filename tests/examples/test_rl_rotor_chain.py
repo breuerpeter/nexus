@@ -88,7 +88,7 @@ def test_each_copy_flies_its_rotor_chain_as_the_core_flies_the_vehicle_alone(tmp
 
     Given two copies of the quad 3 m apart, every rotor at 300 rad/s, each copy under its own commands, when the
     rotor chain steps them once, then each copy's rotor torques and rotor body wrenches equal those the core's
-    command element, propellers and motors give the vehicle alone under its commands.
+    ESCs, motors and propellers give the vehicle alone under its commands.
     """
     path = tmp_path / "quad.usda"
     quad.author(path)

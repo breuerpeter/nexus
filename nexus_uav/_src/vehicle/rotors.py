@@ -6,8 +6,10 @@ per-consumer copy.
 * :func:`rotor_of`: find one rotor in a finalized model by its rigid body's prim path: the Degrees Of
   Freedom (DOF) and coord index of its revolute joint, its body and the joint's parent body, so a declared
   ESC or propeller finds its rotor from its own prim, with no list of joints.
-* :func:`motor_speed`: the no-load speed of the Newton motor that drives a DOF, the rotor speed at full command,
-  and :func:`rotor_speeds`, the same for each rotor a vehicle declares: the model is the one source of it.
+* :func:`rotor_speeds`: each declared rotor's loaded speed at full command, where its motor's torque at the
+  voltage its ESC switches at command 1 meets its propeller's drag, and :func:`command_lines`, each rotor's
+  steady map from its speed to the command that holds it, ``u = a·Ω + b·Ω² − c``: the declaration is the one
+  source of both, and a model-based controller inverts the plant through them.
 * :func:`find_rotor_joints`: find the joints the vehicle declares its rotors on in a finalized model,
   returning the DOF and coord indices, the rotor child bodies and the shared airframe
   parent, so the rotor indexing comes from the declaration and the model rather than an assumption, and

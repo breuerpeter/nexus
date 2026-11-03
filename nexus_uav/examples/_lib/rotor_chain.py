@@ -66,8 +66,9 @@ class RotorChain:
         model: The finalized model, one copy of the vehicle per environment, with each copy's Newton motors on
             ``model.actuators``.
         rotors: The rotors the vehicle's USD file declares, in channel order,
-            :func:`~nexus_uav.examples._lib.single_body.rotors`: each with its joint, its channel and its
-            propeller's values. Each motor's no-load speed comes from the model, in ``rpm_max``.
+            :func:`~nexus_uav.examples._lib.single_body.rotors`: each with its joint, its channel and its ESC's,
+            its motor's and its propeller's values. Each rotor's loaded speed at full command is in ``rpm_max``,
+            and its command line, the command that holds a speed, in ``command_lines``.
     """
 
     def __init__(self, model, rotors):
