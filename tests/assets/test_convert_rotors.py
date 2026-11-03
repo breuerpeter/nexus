@@ -132,3 +132,63 @@ def test_the_converter_fails_when_the_declared_top_speed_and_the_motors_no_load_
     with pytest.raises(ValueError) as e:
         convert.author_rotor_params(source, tmp_path / "out.usda", params=PARAMS)
     assert all(text in str(e.value) for text in ("/Vehicle/rotor_0_motor", "3800", "300"))
+
+
+# The ESC's duty map and bus and the motor's constants the converter authors beside the propeller's values, #386.
+ROTOR_PARAMS = {
+    **PARAMS,
+    "idle_duty": 0.1,
+    "max_duty": 1.0,
+    "bus_voltage": 24.0,
+    "kv": 160.0,
+    "resistance": 0.14,
+    "current_limit": 130.0,
+}
+ROTOR_ATTRS = {
+    "NexusEscAPI": {"nexus:idleDuty": 0.1, "nexus:maxDuty": 1.0, "nexus:busVoltage": 24.0},
+    "NexusMotorAPI": {"nexus:kv": 160.0, "nexus:resistance": 0.14, "nexus:currentLimit": 130.0},
+    "NexusPropellerAPI": {"nexus:ct": 3.463e-6, "nexus:cd": 0.05, "nexus:aeroH": 0.0, "nexus:aeroHforce": 0.0},
+}
+
+
+def _rotor_declarations(path) -> dict:
+    """Each rotor body's authored values under the three rotor schemas, by body, and the joints the vehicle's
+    `NewtonActuator` prims target.
+    """
+    stage = Usd.Stage.Open(str(path))
+    prims = list(stage.Traverse())
+    bodies = {}
+    for prim in prims:
+        if str(prim.GetPath()) not in ("/Vehicle/rotor_0", "/Vehicle/rotor_1"):
+            continue
+        schemas = _authored_schemas(prim)
+        bodies[str(prim.GetPath())] = {
+            schema: {name: round(prim.GetAttribute(name).Get(), 9) for name in attrs if prim.HasAttribute(name)}
+            for schema, attrs in ROTOR_ATTRS.items()
+            if schema in schemas
+        }
+    driven = sorted(
+        str(target)
+        for prim in prims
+        if prim.GetTypeName() == "NewtonActuator"
+        for target in prim.GetRelationship("newton:targets").GetTargets()
+    )
+    return {"bodies": bodies, "driven": driven}
+
+
+def test_the_converter_authors_each_rotors_three_parts_and_keeps_no_actuator_prim_on_a_rotor_joint(tmp_path):
+    """The converter's output declares each rotor's ESC, motor and propeller from the values the caller gives
+    and keeps no `NewtonActuator` prim on a rotor joint.
+
+    Given `scripts/assets/convert.py` run on a source vehicle with the ESC's, the motor's and the propeller's
+    values, when it finishes, then each rotor body applies the three schemas with those values, and the only
+    `NewtonActuator` prim left drives the gimbal.
+    """
+    source = _source_vehicle(tmp_path / "source.usda")
+    out = convert.author_rotor_params(source, tmp_path / "out.usda", params=ROTOR_PARAMS)
+
+    expected = {name: {k: round(v, 9) for k, v in attrs.items()} for name, attrs in ROTOR_ATTRS.items()}
+    assert _rotor_declarations(out) == {
+        "bodies": {"/Vehicle/rotor_0": expected, "/Vehicle/rotor_1": expected},
+        "driven": ["/Vehicle/gimbal_joint"],
+    }

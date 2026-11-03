@@ -163,6 +163,22 @@ class "StandInLiftAPI" (
     )
 }
 
+class "StandInTapAPI" (
+    doc = "A stand-in force element on a prim that also holds a writer of `voltage`: it reads that signal, from the writer on its own prim unless its connection names another prim's."
+    prepend apiSchemas = ["NexusForceRoleAPI"]
+)
+{
+    float nexus:gain = 1 (
+        doc = """A factor the stand-in keeps and does not use.
+
+        Range: (-inf, inf)
+        Units: dimensionless"""
+    )
+    rel nexus:inputs:voltage (
+        doc = "The prim whose component writes the voltage the stand-in reads; unauthored, the writer on its own prim."
+    )
+}
+
 class "StandInPeerAPI" (
     doc = "A stand-in peer a vehicle declares on a scope of its own: one word it starts with."
 )

@@ -9,14 +9,17 @@ Skipped without newton or pxr.
 """
 
 import re
+from typing import ClassVar
 
 import numpy as np
 import pytest
+import warp as wp
 
 pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
 import nexus_uav as nx
+from nexus_uav._src.core.interfaces import Component, Stage
 from nexus_uav._src.core.schema import ImuSample, MagSample
 from nexus_uav._src.core.signals import Signal
 from nexus_uav._src.vehicle.estimators import GroundTruthEstimator
@@ -251,3 +254,69 @@ def test_a_connection_of_a_bodys_pose_to_a_prim_that_is_no_body_and_declares_no_
     named = [f"{sv.ROOT}/Estimator" in message, re.search(r"\bpose\b", message) is not None, NOWHERE in message]
 
     assert named == [True, True, True], message
+
+
+# A writer of `voltage` and a reader of it on each of the fixture vehicle's four rotor bodies, #386: the reader
+# on rotor 4 connects its input to rotor 1's prim, the other three author no connection.
+ROTORS = [f"{sv.BODY}/rotor_{i}" for i in (1, 2, 3, 4)]
+TAPS = "".join(
+    f'        over "rotor_{i}" (\n            prepend apiSchemas = ["NexusEscAPI", "StandInTapAPI"]\n        )\n'
+    f"        {{\n            int nexus:channel = {i - 1}\n"
+    + (f"            {_connection('voltage', ROTORS[0])}\n" if i == 4 else "")
+    + "        }\n"
+    for i in (1, 2, 3, 4)
+)
+
+
+class _Writer(Component):
+    """A command element a rotor body declares, `NexusEscAPI`: its device stage writes its channel plus one to
+    the signal `voltage`, so its value names each rotor's writer.
+    """
+
+    def __init__(self, model, path, *, channel: int = 0):
+        self.value = float(channel + 1)
+        self.voltage = Signal("voltage", wp.float32, shape=(1,))
+
+    def stages(self):
+        return [Stage("write", "device", lambda tick: self.voltage.buffer.fill_(self.value), writes=(self.voltage,))]
+
+
+class _Tap(Component):
+    """A force element a rotor body declares, `StandInTapAPI`: its host stage keeps the `voltage` it reads, by its
+    prim, in the class's `seen`.
+    """
+
+    seen: ClassVar[dict] = {}
+
+    def __init__(self, model, path, *, gain: float = 1.0):
+        self.path = path
+        self.voltage = Signal("voltage", wp.float32, shape=(1,))
+
+    def stages(self):
+        return [Stage("tap", "host", self._tap, reads=(self.voltage,))]
+
+    def _tap(self, tick):
+        type(self).seen[self.path] = float(self.voltage.read())
+        return True
+
+
+def test_an_unauthored_input_takes_the_writer_on_its_own_prim_and_a_connection_the_writer_on_the_prim_it_names(
+    tmp_path,
+):
+    """An input a schema declares and the file leaves unauthored takes the writer of that signal on the reader's
+    own prim, else the vehicle's one writer; a connection to a prim with more than one component takes the one
+    that writes the signal.
+
+    Given the fixture vehicle with a writer of `voltage` and a reader of it on each of its four rotor bodies,
+    each writer writing its rotor's number, the readers on rotors 1 to 3 authoring no connection and the one on
+    rotor 4 connecting its input to rotor 1's prim, which also holds a propeller, when the run steps one tick,
+    then rotors 1 to 3 read their own writer's number and rotor 4 reads rotor 1's.
+    """
+    tap = type("Tap", (_Tap,), {"seen": {}})
+    path = sv.vehicle(tmp_path, TAPS)
+    try:
+        sv.steps(sv.build(path, components=sv.components(NexusEscAPI=_Writer, StandInTapAPI=tap)), 1)
+        error = None
+    except ValueError as exc:
+        error = str(exc)
+    assert tap.seen == {ROTORS[0]: 1.0, ROTORS[1]: 2.0, ROTORS[2]: 3.0, ROTORS[3]: 1.0}, error
