@@ -3,7 +3,7 @@
 A tick is an ordered ring of stages, per docs/design/execution.md. Every component states its
 per-tick work as a list of ``Stage``: a device stage joins a CUDA graph, a host stage runs between
 graph replays. The loop lays the stages out in the canonical order, clock -> [clear -> the command elements
--> the force elements -> step] per physics substep -> state -> sensors -> estimator -> guidance ->
+-> the actuators -> the force elements -> step] per physics substep -> state -> sensors -> estimator -> guidance ->
 controller -> record, and cuts the ring at its host stages, so each maximal run of device stages becomes
 one CUDA graph, the Real Time Factor (RTF) lever, and the host stages run between replays. The physics
 step opens a tick, so every row the tick records describes the state at the tick's time. One partition
@@ -155,13 +155,12 @@ class Loop:
                 setpoint on the tick the guidance writes it. Its stage marks the tick done when its
                 mission is over, which ends the run. A flight can also set the ``guidance`` attribute
                 before the first step. ``None`` for PX4, which flies its own missions.
-            commands: The command elements: each turns the controls the controller writes into Newton's
-                control inputs, the rotors' speed targets and feedforward, in its device stages.
+            commands: The command elements: each turns the controls the controller writes into a signal
+                the chain takes on, the rotors' ESCs' terminal voltage, in its device stages.
+            actuators: The actuators: each turns a signal into torque on a joint, the rotors' motors into
+                ``control.joint_f``, in its device stages, after the command elements.
             forces: The force elements: each adds its body wrenches to the shared ``state.body_f``
                 from the current state, the propellers' thrust and drag, in its device stages.
-            actuator: The old actuator stage: one device stage that writes the shared body forces from
-                the controls the controller writes. No shipped component fills it; ``None`` for a run on
-                command elements and force elements.
             links: What the run made for the names a class requires, by name, such as the render stage the RTX
                 sensors require under ``ovrtx``, or a peer's link: the loop hands a component
                 the links of the peers its ``requires`` names when it connects it, and fails a component
