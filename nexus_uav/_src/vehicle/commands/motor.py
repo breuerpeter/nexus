@@ -6,8 +6,8 @@ resistance line to line. Newton's actuator holds that law: a ``ControllerPD`` wi
 target ``V/Ke`` makes ``kd·(V/Ke − Ω)``, the same torque, and a ``ClampingMaxEffort`` at ``Kt·currentLimit`` caps
 it at the drive train's continuous current. The motor builds that actuator in code from its own attributes, so
 the vehicle's file declares no ``NewtonActuator`` prim on a rotor's joint, and the physics ``clear`` stage zeroes
-``joint_f`` so every actuator of the model accumulates into it. The ESC's duty bounds the voltage, so no
-saturation line is needed. The rotor speed is then a solver-integrated joint state that droops under the
+``joint_f`` so every actuator of the model accumulates into it. The ESC's duty bounds the voltage, so the
+motor needs no saturation line. The rotor speed is then a solver-integrated joint state that droops under the
 propeller's load as a real drive's does, with no feedforward holding it up.
 
 Each rotor's rigid body declares its motor with the ``NexusMotorAPI`` schema, beside its ESC's and its propeller's,
@@ -19,8 +19,6 @@ and the gradient rollout step them.
 """
 
 from __future__ import annotations
-
-import math
 
 import numpy as np
 import warp as wp
@@ -40,14 +38,14 @@ def motor_constant(kv: float) -> float:
 
 
 def check_constants(path: str, **values: float) -> None:
-    """Fail a motor constant that is not positive.
+    """Fail a motor constant that isn't positive.
 
     Args:
         path: The prim the error names.
         **values: ``kv``, ``resistance`` and ``current_limit``.
 
     Raises:
-        ValueError: A value is not positive; the message names the prim and the attribute.
+        ValueError: A value isn't positive; the message names the prim and the attribute.
     """
     for keyword, attribute in _ATTRIBUTES.items():
         if not values[keyword] > 0.0:
@@ -71,7 +69,9 @@ def _targets(
 
 @wp.kernel
 def _current(
-    joint_f: wp.array(dtype=float),  # the control's joint efforts, the actuator's torque at the rotor's DOF
+    joint_f: wp.array(
+        dtype=float
+    ),  # the control's joint efforts, the actuator's torque at the rotor's degree of freedom
     ke: wp.array(dtype=float),  # (nr,) each motor's Kt [N·m/A], the same number as Ke
     rotor_vel_dofs: wp.array2d(dtype=wp.int32),  # (vehicles, nr)
     current: wp.array2d(dtype=float),  # (vehicles, nr) out: each motor's current [A]
@@ -90,7 +90,7 @@ class Motors:
         kv: ``(nr,)`` each motor's velocity constant [rpm/V].
         resistance: ``(nr,)`` each motor's winding resistance, line to line [Ω].
         current_limit: ``(nr,)`` each drive train's continuous current [A].
-        requires_grad: Allocate the actuator's buffers with gradient support, for a recorded rollout.
+        requires_grad: Give the actuator's buffers gradient support, for a recorded rollout.
     """
 
     def __init__(self, *, rotor_vel_dofs: wp.array, kv, resistance, current_limit, requires_grad: bool = False):
@@ -143,7 +143,7 @@ class Motor(Component):
         current_limit: The continuous current [A], ``nexus:currentLimit``.
 
     Raises:
-        ValueError: A constant is not positive, or no revolute joint has the body as its child; the message names
+        ValueError: A constant isn't positive, or no revolute joint has the body as its child; the message names
             the prim.
     """
 
@@ -151,24 +151,22 @@ class Motor(Component):
         check_constants(path, kv=kv, resistance=resistance, current_limit=current_limit)
         dof, _coord, _body, _base = rotor_of(model, path)
         self._motors = Motors(
-            rotor_vel_dofs=wp.array([[dof]], dtype=wp.int32), kv=[kv], resistance=[resistance], current_limit=[current_limit]
-        )  # fmt: skip
+            rotor_vel_dofs=wp.array([[dof]], dtype=wp.int32),
+            kv=[kv],
+            resistance=[resistance],
+            current_limit=[current_limit],
+        )
         self.voltage = Signal("voltage", wp.float32, shape=(1,))
         self.current = Signal("current", wp.float32, shape=(1,))
 
+    def _step(self, tick) -> None:
+        """The stage's work: the voltage's buffer and the current's, each one value, as one vehicle's one rotor."""
+        voltage, current = self.voltage.buffer.reshape((1, 1)), self.current.buffer.reshape((1, 1))
+        self._motors.step(voltage, tick.state, tick.control, tick.dt, current)
+
     def stages(self) -> list[Stage]:
         """One device stage, ``motor``, reading the voltage and writing the current."""
-        return [
-            Stage(
-                "motor",
-                "device",
-                lambda tick: self._motors.step(
-                    self.voltage.buffer.reshape((1, 1)), tick.state, tick.control, tick.dt, self.current.buffer.reshape((1, 1))
-                ),  # fmt: skip
-                reads=(self.voltage,),
-                writes=(self.current,),
-            )
-        ]
+        return [Stage("motor", "device", self._step, reads=(self.voltage,), writes=(self.current,))]
 
 
 __all__ = ["Motor", "Motors", "check_constants", "motor_constant"]

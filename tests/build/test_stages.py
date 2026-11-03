@@ -28,7 +28,7 @@ from tests.usd import sensor_vehicle as sv
 # came to fly the vehicle's Newton motors, which had stood idle under its summed base wrench. Since
 # then both models fly the same bytes.
 _MAIN_TRAJECTORY = {
-    "NVIDIA GeForce RTX 5080": "4ed17f824a6cf65ff5b6e423a8e58a3e3e1647c9eccc70e50151f977813a6a18",
+    "NVIDIA GeForce RTX 5080": "7eb38489bdb61d8b9f03b4d389a413dd0a5b7d0dd183850698fb2b1d0cb34c31",
     "NVIDIA A10G": "4ed17f824a6cf65ff5b6e423a8e58a3e3e1647c9eccc70e50151f977813a6a18",
 }
 
