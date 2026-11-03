@@ -206,7 +206,7 @@ def _loop(controller, **kw):
     return Loop(
         clock=_Clock(),
         physics=_Physics(),
-        actuator=_Actuator(),
+        actuators=[_Actuator()],
         sensors=[],
         controller=controller,
         exchange_timeout=0.5,
@@ -657,7 +657,7 @@ def test_the_controller_gets_the_fake_px4s_hover_command_every_tick(daemon, cata
         return Loop(
             clock=_Clock(),
             physics=_Physics(),
-            actuator=commands,
+            actuators=[commands],
             sensors=[],
             controller=kw["controller"],
             exchange_timeout=0.5,

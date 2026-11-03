@@ -1,8 +1,8 @@
 """The ring of stages one control tick runs, and its partition into captured segments.
 
 A tick is an ordered ring of stages, per docs/design/execution.md. :func:`build_ring` lays every
-component's stages out in the canonical order: the clock, ``clear`` -> the command elements -> the force
-elements -> ``step`` per physics substep, ``state``, then the sensors, the estimator, the guidance and the
+component's stages out in the canonical order: the clock, ``clear`` -> the command elements -> the actuators
+-> the force elements -> ``step`` per physics substep, ``state``, then the sensors, the estimator, the guidance and the
 controller over the state the step left, then the loop end of each declared peer's inputs, then record. So the
 physics step opens a tick, as a fixed-step
 simulator's does, and every row the tick records describes the state at the tick's time. :func:`partition`
@@ -27,7 +27,7 @@ class Bound:
 
     stage: Stage
     component: object
-    role: str  # clock, sensor, estimator, guidance, controller, physics, command, force, actuator or record
+    role: str  # clock, sensor, estimator, guidance, controller, physics, command, actuator, force or record
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,10 +57,10 @@ def stages_of(component, role: str) -> list[Bound]:
     return bound
 
 
-# The roles whose stages run once per physics substep, between ``clear`` and ``step``, in this order: the old
-# actuator stage, which no shipped component fills, runs with the force stages, since it writes the body
-# forces too.
-SUBSTEP_ROLES = ("command", "force", "actuator")
+# The roles whose stages run once per physics substep, between ``clear`` and ``step``, in this order, the
+# direction the hardware runs: the ESC writes the voltage, the motor turns it into torque on the joint, the
+# propeller turns the rotor's speed into force on the body.
+SUBSTEP_ROLES = ("command", "actuator", "force")
 # The roles whose stages run once per tick over the state the step left, in this order. The link role is last:
 # the loop end of each declared peer's inputs, which reads what every writer of the tick wrote.
 TICK_ROLES = ("sensor", "estimator", "guidance", "controller", "link")

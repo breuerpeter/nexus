@@ -300,10 +300,12 @@ def test_a_historys_key_is_its_writers_path_then_the_signals_name_and_the_clock_
         keys = sorted(k for k in histories if not k.startswith(("vehicle/body/", "vehicle/joints/")))
         resolved = sim["vehicle/sensors/imu/imu"] is histories.get("vehicle/sensors/imu/imu")
 
-    rotors = [f"vehicle/commands/rotor_{i}/{signal}" for i in (1, 2, 3, 4) for signal in ("current", "voltage")]
+    currents = [f"vehicle/actuators/rotor_{i}/current" for i in (1, 2, 3, 4)]
+    voltages = [f"vehicle/commands/rotor_{i}/voltage" for i in (1, 2, 3, 4)]
     assert (keys, resolved) == (
         [
-            *rotors,
+            *currents,
+            *voltages,
             "vehicle/controllers/standin/controls",
             "vehicle/estimators/truth/estimate",
             "vehicle/estimators/truth/wind",

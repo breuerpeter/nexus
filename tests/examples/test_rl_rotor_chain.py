@@ -16,7 +16,8 @@ import warp as wp
 
 from nexus_uav._src.physics.vehicle import VehicleUsd
 from nexus_uav._src.scene.world import GRAVITY
-from nexus_uav._src.vehicle.commands import Escs, Motors
+from nexus_uav._src.vehicle.actuators import Motors
+from nexus_uav._src.vehicle.commands import Escs
 from nexus_uav._src.vehicle.forces import Propellers
 from nexus_uav._src.vehicle.rotors import rotor_of
 from nexus_uav.examples._lib.rotor_chain import RotorChain, vehicle_rotors

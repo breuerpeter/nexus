@@ -70,7 +70,7 @@ def build_pid_loop(
     # The airframe mixer built from the model rotor geometry at its start pose and each rotor's thrust map, from
     # the vehicle USD, hash-pinned and not in cfg.
     mixer = build_rotor_mixer_from_model(physics.model, vehicle_usd.rotors(), physics.state0.body_q.numpy())
-    commands, forces = elements(physics, vehicle_usd)  # each rotor's ESC and propeller, the chain PX4 flies
+    commands, actuators, forces = elements(physics, vehicle_usd)  # each rotor's ESC and propeller, the chain PX4 flies
     if thrust_to_weight is None:
         # The action scale = the plant's true thrust-to-weight, from the USD-authored thrust map, not a
         # declared constant: action = +1 means the plant's real max thrust. DEFAULT_GAINS' altitude
@@ -114,6 +114,7 @@ def build_pid_loop(
         clock=Clock(dt, rtf=rtf),
         physics=physics,
         commands=commands,
+        actuators=actuators,
         forces=forces,
         sensors=sensors,
         estimator=GroundTruthEstimator(),  # the guidance reads its estimate

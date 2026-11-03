@@ -25,7 +25,8 @@ import warp as wp
 
 from nexus_uav._src.physics.vehicle import VehicleUsd
 from nexus_uav._src.scene.world import GRAVITY
-from nexus_uav._src.vehicle.commands import Escs, Motors
+from nexus_uav._src.vehicle.actuators import Motors
+from nexus_uav._src.vehicle.commands import Escs
 from nexus_uav._src.vehicle.forces import Propellers
 from nexus_uav._src.vehicle.rotors import RPM_PER_RADS, rotor_of, rotor_speeds
 
@@ -56,11 +57,6 @@ class ArticulatedRollout:
         self.solver = newton.solvers.SolverSemiImplicit(model, joint_attach_ke=JOINT_KE, joint_attach_kd=JOINT_KD)
         self.states = [model.state(requires_grad=requires_grad) for _ in range(self.steps + 1)]
         self.controls = [model.control(requires_grad=requires_grad) for _ in range(self.steps)]
-        if model.actuators:
-            raise ValueError(
-                "a gradient rollout steps the rotors' motors alone, and this model holds a Newton actuator"
-            )
-
         rotors = vehicle_usd.rotors()  # in channel order, so a command's entries are the rotors'
         found = [rotor_of(model, rotor.body) for rotor in rotors]  # each rotor's dof, coord, body and airframe
         self.rotor_dofs = [dof for dof, _coord, _body, _base in found]

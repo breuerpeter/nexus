@@ -45,24 +45,23 @@ def rotors(usd_path: str | Path) -> list[Rotor]:
     """Read the rotors the vehicle's Universal Scene Description (USD) file declares, in channel order.
 
     A rotor is a rigid body that applies ``NexusEscAPI``, ``NexusMotorAPI`` and ``NexusPropellerAPI``. Its joint
-    is the revolute joint that has it as child body, which its motor drives, so no ``NewtonActuator`` prim targets
-    it. Each rotor flies its own values.
+    is the revolute joint that has it as child body, which its motor drives. A nexus actuator is the one way to
+    drive a joint, so the file holds no ``NewtonActuator`` prim. Each rotor flies its own values.
 
     Returns:
         One :class:`Rotor` per rotor, ordered by channel.
 
     Raises:
         NoRotor: The vehicle declares no rotor; the message names the vehicle's root prim.
-        ValueError: A rotor's schema sits on a prim that isn't the child body of a revolute joint; a body applies
-            one or two of the three schemas without the rest; a ``NewtonActuator`` prim targets a rotor's joint;
-            two ESCs declare one channel; the rotors don't share one parent body; or a prim still authors a
+        ValueError: The file holds a ``NewtonActuator`` prim; a rotor's schema sits on a prim that isn't the child
+            body of a revolute joint; a body applies one or two of the three schemas without the rest; two ESCs
+            declare one channel; the rotors don't share one parent body; or a prim still authors a
             ``propeller:*`` attribute, which the schema replaces. The message names the prim.
     """
     from pxr import Usd
 
     stage = Usd.Stage.Open(str(usd_path), Usd.Stage.LoadAll)
     joint_of = {}  # a child body's revolute joint
-    driven: dict[str, str] = {}  # the NewtonActuator prim that targets each joint, by the joint's path
     for prim in stage.Traverse(Usd.TraverseInstanceProxies()):
         if legacy := [prop.GetName() for prop in prim.GetAuthoredPropertiesInNamespace("propeller")]:
             raise ValueError(
@@ -73,8 +72,10 @@ def rotors(usd_path: str | Path) -> list[Rotor]:
             for body in prim.GetRelationship("physics:body1").GetTargets():
                 joint_of[str(body)] = prim
         if prim.GetTypeName() == "NewtonActuator":
-            for joint in prim.GetRelationship("newton:targets").GetTargets():
-                driven[str(joint)] = str(prim.GetPath())
+            raise ValueError(
+                f"{prim.GetPath()}: a NewtonActuator prim drives no joint here; declare the actuator as a component, "
+                f"as {MOTOR_SCHEMA} declares a rotor's motor"
+            )
 
     declared: dict[str, dict[str, dict]] = {}  # each body's declarations, by schema
     for body, schema, kwargs in read_declarations(usd_path):
@@ -93,11 +94,6 @@ def rotors(usd_path: str | Path) -> list[Rotor]:
             raise ValueError(
                 f"{body}: {', '.join(ROTOR_SCHEMAS)} sit on a prim that isn't the child body of a revolute joint; "
                 "apply them to a rotor's rigid body"
-            )
-        if actuator := driven.get(str(joint.GetPath())):
-            raise ValueError(
-                f"{actuator}: a NewtonActuator prim targets the rotor joint {joint.GetPath()}, which the motor on "
-                f"{body} drives; a rotor's joint takes no NewtonActuator prim"
             )
         parent = next(iter(joint.GetRelationship("physics:body0").GetTargets()), None)
         found.append(

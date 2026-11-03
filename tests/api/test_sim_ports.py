@@ -87,7 +87,7 @@ def assembly(monkeypatch, tmp_path):
         return Loop(
             clock=_Clock(),
             physics=_Physics(),
-            actuator=_Actuator(),
+            actuators=[_Actuator()],
             sensors=[],
             controller=kw["controller"],
             exchange_timeout=0.5,

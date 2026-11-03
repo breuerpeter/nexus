@@ -115,7 +115,7 @@ def test_the_loop_runs_a_tick_on_contracts_that_take_no_env():
     orch = Loop(
         clock=_Clock(),
         physics=_Physics(),
-        actuator=_Actuator(),
+        actuators=[_Actuator()],
         sensors=[_Sensor()],
         controller=controller,
         max_steps=2,

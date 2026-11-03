@@ -107,7 +107,7 @@ def build(
     orch = Loop(
         clock=Clock(DT),
         physics=NewtonPhysics(model=model, cfg=cfg),
-        actuator=Actuator(),
+        actuators=[Actuator()],
         sensors=[],
         controller=controller or Controller(),
         logger=Logger(model, serve=False, record_to_rrd=rrd),

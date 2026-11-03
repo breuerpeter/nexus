@@ -11,7 +11,8 @@ motor needs no saturation line. The rotor speed is then a solver-integrated join
 propeller's load as a real drive's does, with no feedforward holding it up.
 
 Each rotor's rigid body declares its motor with the ``NexusMotorAPI`` schema, beside its ESC's and its propeller's,
-and the registry builds it as :class:`Motor`, a command element with one device stage, ``motor``: it reads the
+and the registry builds it as :class:`Motor`, an actuator with one device stage, ``motor``, which runs after the
+command elements each substep whatever order the body lists the schemas in: it reads the
 ``voltage`` its ESC writes, the one on its own prim unless the schema's connection names another, writes the
 actuator's target and its torque, and emits the ``current`` the motor draws, the applied torque over ``Kt``, for a
 battery to sum. :class:`Motors` runs the same actuator over the rotors of many vehicles at once, as the RL task

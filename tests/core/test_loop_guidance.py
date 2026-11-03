@@ -221,7 +221,7 @@ def _orch(controller, physics, **kw):
     return Loop(
         clock=_Clock(),
         physics=physics,
-        actuator=_Actuator(),
+        actuators=[_Actuator()],
         sensors=[_Sensor()],
         estimator=_Estimator(),
         controller=controller,
@@ -381,7 +381,7 @@ def test_a_run_whose_controller_reads_no_setpoint_refuses_a_guidance_that_anothe
         orch = Loop(
             clock=_Clock(),
             physics=_Physics([(0.0, 0.0, 0.0)]),
-            actuator=_Actuator(),
+            actuators=[_Actuator()],
             sensors=[_SetpointSensor()],
             estimator=_Estimator(),
             controller=_NoSetpointController(),

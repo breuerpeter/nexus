@@ -5,8 +5,8 @@ controller's normalized command ``u`` on its channel and writes the terminal vol
 ``d(u) = idleDuty + (maxDuty − idleDuty)·clamp(u, 0, 1)`` is the duty map its own attributes state: ``idleDuty``
 is the idle a real drive spins at under command 0, and ``maxDuty`` below 1 holds back the top. ``V_bus`` is the
 ``bus_voltage`` signal, a battery's in flight, and the ESC's own ``busVoltage`` until a component writes it. The
-rotor's motor, :class:`~nexus_uav._src.vehicle.commands.motor.Motor` on the same body, turns the voltage into
-torque, so the ESC reads nothing of its propeller's or its motor's.
+rotor's motor, :class:`~nexus_uav._src.vehicle.actuators.motor.Motor` on the same body, turns the voltage into
+torque in the actuator stage after it, so the ESC reads nothing of its propeller's or its motor's.
 
 Each rotor's rigid body declares its ESC with the ``NexusEscAPI`` schema, beside its motor's and its propeller's,
 and the registry builds it as :class:`Esc`, a command element with one device stage, ``esc``, so a captured graph
@@ -80,12 +80,22 @@ class Esc(Component):
         bus_voltage: The bus voltage [V] until a component writes the ``bus_voltage`` signal, ``nexus:busVoltage``.
 
     Raises:
-        ValueError: ``bus_voltage`` isn't positive; the message names the prim and the attribute.
+        ValueError: ``channel`` is below 0, the duty map is outside ``0 <= idle_duty < max_duty <= 1``, or
+            ``bus_voltage`` isn't positive; the message names the prim and the attribute.
     """
 
     def __init__(
         self, model, path: str, *, channel: int = 0, idle_duty: float = 0.0, max_duty: float = 1.0, bus_voltage: float = 0.0
     ):  # fmt: skip
+        if int(channel) < 0:
+            raise ValueError(
+                f"{path}: nexus:channel is {channel}, and an ESC reads an entry of the controls, 0 or above"
+            )
+        if not 0.0 <= idle_duty < max_duty <= 1.0:
+            raise ValueError(
+                f"{path}: nexus:idleDuty is {idle_duty:g} and nexus:maxDuty {max_duty:g}, and a duty map runs from an "
+                "idle at or above 0 to a max above it, at or below 1"
+            )
         if not bus_voltage > 0.0:
             raise ValueError(f"{path}: nexus:busVoltage is {bus_voltage:g}, and the ESC's bus must be positive")
         self.channel = int(channel)

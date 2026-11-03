@@ -148,8 +148,8 @@ class Physics(Protocol):
     def clear_forces(self, state: newton.State) -> None: ...
     def step(self, state: newton.State, dt: float) -> newton.State: ...
     def stages(self) -> list[Stage]:
-        """The ``clear``, ``step`` and ``state`` stages; the loop runs ``clear``, the command elements, the force
-        elements and ``step`` once per physics substep, ``step`` steps Newton's actuators before the solver, and
+        """The ``clear``, ``step`` and ``state`` stages; the loop runs ``clear``, the command elements, the
+        actuators, the force elements and ``step`` once per physics substep, ``step`` runs the solver, and
         ``state`` runs once per tick after the last substep and writes the plant's outputs, one signal per body,
         ``body/<label>``, and per joint, ``joints/<label>``, from the stepped state; the start runs it once
         over the settled state.

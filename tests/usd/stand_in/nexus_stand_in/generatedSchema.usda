@@ -132,8 +132,8 @@ class "StandInGuidanceAPI" (
 }
 
 class "StandInServoAPI" (
-    doc = "A stand-in command element on the joint it drives: the controls value it reads and the angle per unit."
-    prepend apiSchemas = ["NexusCommandRoleAPI"]
+    doc = "A stand-in actuator on the joint it drives: the controls value it reads and the angle per unit, which it holds the joint at with a torque of its own."
+    prepend apiSchemas = ["NexusActuatorRoleAPI"]
 )
 {
     int nexus:channel = 0 (

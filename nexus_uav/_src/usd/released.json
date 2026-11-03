@@ -1,4 +1,5 @@
 {
+  "NexusActuatorRoleAPI": {},
   "NexusBaroAPI": {
     "nexus:noise": {
       "fallback": "0.02",

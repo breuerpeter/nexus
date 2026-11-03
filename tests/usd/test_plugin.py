@@ -98,7 +98,10 @@ def test_the_conformance_fixture_applies_every_component_and_peer_schema_the_plu
     from nexus_uav._src.usd import schema_names
 
     stage = Usd.Stage.Open(str(FIXTURE))
-    roles = {f"Nexus{name}RoleAPI" for name in ("Sensor", "Estimator", "Guidance", "Controller", "Command", "Force")}
+    roles = {
+        f"Nexus{name}RoleAPI"
+        for name in ("Sensor", "Estimator", "Guidance", "Controller", "Command", "Actuator", "Force")
+    }
     built_ins = roles | {"NewtonSiteAPI"}
     applied = {name for prim in stage.Traverse() for name in prim.GetAppliedSchemas()} - built_ins
     sensors = {f"Nexus{name}API" for name in ("Imu", "Mag", "Baro", "Gps", "Camera", "ThermalCamera", "Lidar")}

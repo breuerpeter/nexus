@@ -49,6 +49,8 @@ def author(
     no_motor_schema=None,
     newton_motor=None,
     zero=None,
+    motor_first=False,
+    esc=None,
 ):
     """A quad whose rotor bodies each declare the propeller's, the ESC's and the motor's schema.
 
@@ -61,7 +63,8 @@ def author(
         pod: Add a fifth body on a fixed joint that applies the propeller schema.
         gimbal: Add a fifth body on a revolute joint that applies no propeller schema.
         reparent: Hang rotor 3's joint off rotor 0's body instead of the airframe.
-        servo: Add the gimbal joint and a `NewtonActuator` position servo on it, with its target at 0.
+        servo: Add the gimbal joint and a `NewtonActuator` position servo prim on it, the one way Newton drives a
+            joint, which the build refuses.
         channels: The controls channel each rotor's ESC declares, `NexusEscAPI` on the rotor's body, in
             rotor order; `None` declares no ESC.
         motor: `"nexus"` declares the motor with `NexusMotorAPI` on the rotor's body, its ESC's duty map and bus
@@ -69,6 +72,8 @@ def author(
         no_motor_schema: With `motor="nexus"`, the index of a rotor whose body applies no `NexusMotorAPI`.
         newton_motor: With `motor="nexus"`, the index of a rotor whose joint keeps a `NewtonActuator` prim too.
         zero: With `motor="nexus"`, `(index, attribute)`: the rotor whose ESC's or motor's attribute the fixture authors as 0.
+        motor_first: Apply the motor's schema before the ESC's on each rotor body, the reverse of the usual order.
+        esc: Values of the ESC's attributes that replace the fixture's on every rotor, by attribute name.
     """
     stage = Usd.Stage.CreateNew(str(path))
     UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
@@ -133,13 +138,16 @@ def author(
             prim.GetAttribute("newton:velocityLimit").Set(398.0)
         if propeller:
             apply_propeller(rotor.GetPrim(), odd_ct if odd_ct is not None and i == 2 else ct)
+        if motor == "nexus" and motor_first and i != no_motor_schema:
+            rotor.GetPrim().AddAppliedSchema("NexusMotorAPI")
         if channels is not None:
             rotor.GetPrim().AddAppliedSchema("NexusEscAPI")
             rotor.GetPrim().CreateAttribute("nexus:channel", Sdf.ValueTypeNames.Int).Set(int(channels[i]))
         if motor == "nexus":
-            values = dict(ESC) if channels is not None else {}
+            values = {**ESC, **(esc or {})} if channels is not None else {}
             if i != no_motor_schema:
-                rotor.GetPrim().AddAppliedSchema("NexusMotorAPI")
+                if not motor_first:
+                    rotor.GetPrim().AddAppliedSchema("NexusMotorAPI")
                 values.update(MOTOR)
             if zero is not None and zero[0] == i:
                 values[zero[1]] = 0.0

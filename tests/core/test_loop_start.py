@@ -160,7 +160,7 @@ def _loop(journal, controller, *, guided: bool = True, recorder=None) -> tuple[L
     loop = Loop(
         clock=clock,
         physics=_Physics(),
-        actuator=_Actuator(),
+        actuators=[_Actuator()],
         sensors=[_Sensor(journal)],
         estimator=_Estimator(journal),
         guidance=_Guidance(journal) if guided else None,

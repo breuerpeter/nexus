@@ -95,7 +95,7 @@ def test_a_peer_that_dials_in_late_gets_its_first_stamp_near_zero():
     orch = Loop(
         clock=_Clock(),
         physics=_Physics(),
-        actuator=_Actuator(),
+        actuators=[_Actuator()],
         sensors=[],
         controller=controller,
     )

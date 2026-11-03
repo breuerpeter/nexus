@@ -56,7 +56,12 @@ class _Component(Component):
 def _loop(logger, *, sensors=()):
     physics, actuator, controller = _Component(), _Component("rotors"), _Component("pid")
     loop = Loop(
-        clock=_Clock(), physics=physics, actuator=actuator, sensors=list(sensors), controller=controller, logger=logger
+        clock=_Clock(),
+        physics=physics,
+        actuators=[actuator],
+        sensors=list(sensors),
+        controller=controller,
+        logger=logger,
     )
     return loop, physics, actuator, controller
 

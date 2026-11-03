@@ -36,6 +36,7 @@ class Assembly:
     clock: Any
     physics: Any
     commands: list  # the command elements the vehicle declares, each rotor's ESC among them
+    actuators: list  # the actuators the vehicle declares, each rotor's motor among them
     forces: list  # the force elements the vehicle declares, each rotor's propeller among them
     sensors: list
     controller: Any
@@ -43,8 +44,13 @@ class Assembly:
     prims: dict  # the declared components on each prim, by the prim's path, for the vehicle's connections
 
 
+# The roles the vehicle declares per part, in the order their stages run each substep: the chain's direction.
+ELEMENT_ROLES = ("command", "actuator", "force")
+
+
 def declared_elements(physics, usd_path, components, instance: int) -> list[tuple]:
-    """Every command element and force element the vehicle declares, built through the registry as a sensor is:
+    """Every command element, actuator and force element the vehicle declares, built through the registry as a
+    sensor is:
     the model and its prim's path, then the schema's attributes and the run's values its class states it needs.
     Returns each spec with its component, in the order of the prims.
 
@@ -52,7 +58,7 @@ def declared_elements(physics, usd_path, components, instance: int) -> list[tupl
         ValueError: A class names another schema in ``siblings``, since a component reads only its own schema's
             attributes; the message names the prim and both schemas.
     """
-    elements = [spec for spec in resolve_components(usd_path, components) if spec.role in ("command", "force")]
+    elements = [spec for spec in resolve_components(usd_path, components) if spec.role in ELEMENT_ROLES]
     built = []
     for spec in elements:
         check_siblings(spec)
@@ -64,15 +70,13 @@ def declared_elements(physics, usd_path, components, instance: int) -> list[tupl
     return built
 
 
-def elements(physics, vehicle_usd, components=None, instance: int = 0) -> tuple[list, list]:
-    """The command elements and the force elements the vehicle declares, each rotor's ESC and propeller among them,
-    as the two lists a loop takes: what an example's own assembly builds beside its controller.
+def elements(physics, vehicle_usd, components=None, instance: int = 0) -> tuple[list, list, list]:
+    """The command elements, the actuators and the force elements the vehicle declares, each rotor's ESC, motor
+    and propeller among them, as the three lists a loop takes: what an example's own assembly builds beside its
+    controller.
     """
     built = declared_elements(physics, vehicle_usd.cfg["usd_path"], components, instance)
-    return (
-        [component for spec, component in built if spec.role == "command"],
-        [component for spec, component in built if spec.role == "force"],
-    )
+    return tuple([component for spec, component in built if spec.role == role] for role in ELEMENT_ROLES)
 
 
 def assemble(
@@ -105,8 +109,9 @@ def assemble(
     # vehicle USD's declarations, the single, hash-pinned source, not cfg.
     usd_path = vehicle_usd.cfg["usd_path"]
     built = declared_elements(physics, usd_path, components, instance)
-    commands = [component for spec, component in built if spec.role == "command"]
-    forces = [component for spec, component in built if spec.role == "force"]
+    commands, actuators, forces = (
+        [component for spec, component in built if spec.role == role] for role in ELEMENT_ROLES
+    )
 
     seedtree = SeedTree(cfg.get("seed", 42))  # the run's builder threads runtime.seed; string-name path keeps 42
     # The sensors come from the schemas the vehicle USD applies, the single, hash-pinned source, the
@@ -136,6 +141,7 @@ def assemble(
         clock=Clock(dt, rtf=rtf),
         physics=physics,
         commands=commands,
+        actuators=actuators,
         forces=forces,
         sensors=sensors,
         controller=controller,
@@ -321,6 +327,7 @@ def build_loop(
         clock=a.clock,
         physics=a.physics,
         commands=a.commands,
+        actuators=a.actuators,
         forces=a.forces,
         sensors=a.sensors,
         controller=a.controller,

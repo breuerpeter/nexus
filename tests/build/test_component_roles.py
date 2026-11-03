@@ -231,20 +231,30 @@ def _commanding(values) -> type:
 
 
 @wp.kernel
-def _target(controls: wp.array2d(dtype=float), channel: int, scale: float, index: int, out: wp.array(dtype=float)):
-    out[index] = controls[0, channel] * scale
+def _servo_torque(
+    controls: wp.array2d(dtype=float),
+    channel: int,
+    scale: float,
+    q: int,
+    qd: int,
+    joint_q: wp.array(dtype=float),
+    joint_qd: wp.array(dtype=float),
+    joint_f: wp.array(dtype=float),
+):
+    """A position servo's torque, critically damped at the 4 ms tick for the gimbal body's 1e-4 kg·m²."""
+    target = controls[0, channel] * scale
+    wp.atomic_add(joint_f, qd, 0.5 * (target - joint_q[q]) - 0.01 * joint_qd[qd])
 
 
 class _DeclaredServo(Component):
-    """A command element its joint's prim declares: it writes the joint's target from one controls value, `scale`
-    radians per unit.
+    """An actuator its joint's prim declares: it holds the joint at the angle one controls value commands, `scale`
+    radians per unit, with a torque of its own into the joint's effort.
     """
 
     def __init__(self, model, path, *, channel: int = 0, scale: float = 1.0):
         j = list(model.joint_label).index(path)
         self.q = int(model.joint_q_start.numpy()[j])
         self.qd = int(model.joint_qd_start.numpy()[j])
-        self.coords = model.joint_coord_count
         self.channel, self.scale = int(channel), float(scale)
         self.controls = Signal("controls", wp.float32, shape=(1, self.channel + 1))
 
@@ -252,9 +262,20 @@ class _DeclaredServo(Component):
         return [Stage("servo", "device", self._write, reads=(self.controls,))]
 
     def _write(self, tick):
-        target = tick.control.joint_target_q
-        index = self.q if target.shape[0] == self.coords else self.qd
-        wp.launch(_target, dim=1, inputs=(self.controls.buffer, self.channel, self.scale, index), outputs=(target,))
+        wp.launch(
+            _servo_torque,
+            dim=1,
+            inputs=(
+                self.controls.buffer,
+                self.channel,
+                self.scale,
+                self.q,
+                self.qd,
+                tick.state.joint_q,
+                tick.state.joint_qd,
+            ),
+            outputs=(tick.control.joint_f,),
+        )
 
 
 @wp.kernel
@@ -371,16 +392,16 @@ def test_a_guidance_the_vehicle_declares_builds_in_its_role_and_runs_before_the_
     assert reader.seen[-3:] == [(1.0, 2.0, 3.0)] * 3, outcome["error"]
 
 
-def test_a_command_element_the_vehicle_declares_builds_through_the_registry(tmp_path):
-    """A command element the vehicle declares builds through the registry.
+def test_an_actuator_the_vehicle_declares_builds_through_the_registry(tmp_path):
+    """An actuator the vehicle declares builds through the registry, in the actuator's place in the substep.
 
-    Given the fixture quad whose gimbal joint's prim applies the stand-in command schema `StandInServoAPI` on the
-    fifth controls value at 1 rad per unit, mapped in the `Registry` to a servo command element, when the run
+    Given the fixture quad whose gimbal joint's prim applies the stand-in actuator schema `StandInServoAPI` on the
+    fifth controls value at 1 rad per unit, mapped in the `Registry` to a servo that holds its joint, when the run
     flies 125 ticks with 0.5 on that value, then the joint settles at 0.5 rad.
     """
     servo = {"nexus:channel": (Sdf.ValueTypeNames.Int, 4), "nexus:scale": (Sdf.ValueTypeNames.Float, 1.0)}
     path = _declare(
-        quad.author(tmp_path / "quad.usda", servo=True), applied={quad.GIMBAL_JOINT: ("StandInServoAPI", servo)}
+        quad.author(tmp_path / "quad.usda", gimbal=True), applied={quad.GIMBAL_JOINT: ("StandInServoAPI", servo)}
     )
     registry = Registry({"NexusPx4API_1": _commanding((*FULL, 0.5)), "StandInServoAPI": _DeclaredServo})
 

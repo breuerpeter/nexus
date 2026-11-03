@@ -30,6 +30,7 @@ ROLES = {
     "NexusGuidanceRoleAPI": "guidance",
     "NexusControllerRoleAPI": "controller",
     "NexusCommandRoleAPI": "command",
+    "NexusActuatorRoleAPI": "actuator",
     "NexusForceRoleAPI": "force",
 }
 

@@ -1,10 +1,10 @@
 """The rotor chain of many copies of one vehicle in one model: the plant the RL task trains on.
 
-A run's loop steps the rotor chain around each solver step: each rotor's ESC sets its Newton motor's speed
-target and drag feedforward, each propeller adds its rotor's thrust and drag to its body, and physics steps the
-Newton motors into the rotor joints' torque. :class:`RotorChain` runs the same core parts in the same order for a
-model that holds one copy of the vehicle per environment, as the RL task's model does, so training flies the
-plant every run flies, each rotor with its own values.
+A run's loop steps the rotor chain around each solver step: each rotor's ESC writes its terminal voltage, each
+motor turns it into the torque on its rotor's joint, and each propeller adds its rotor's thrust and drag to its
+body. :class:`RotorChain` runs the same core parts in the same order for a model that holds one copy of the vehicle
+per environment, as the RL task's model does, so training flies the plant every run flies, each rotor with its
+own values.
 """
 
 from __future__ import annotations
@@ -12,8 +12,8 @@ from __future__ import annotations
 import numpy as np
 import warp as wp
 
-from nexus_uav._src.physics.actuators import Actuators
-from nexus_uav._src.vehicle.commands import Escs, Motors
+from nexus_uav._src.vehicle.actuators import Motors
+from nexus_uav._src.vehicle.commands import Escs
 from nexus_uav._src.vehicle.forces import Propellers
 from nexus_uav._src.vehicle.rotors import command_lines, rotor_speeds
 
@@ -59,12 +59,11 @@ def vehicle_rotors(model, joints) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
 
 class RotorChain:
-    """The rotor chain of every copy of one vehicle in a model: the core's ESCs, propellers and Newton motors,
-    stepped in the order a run steps them, each rotor with its own values.
+    """The rotor chain of every copy of one vehicle in a model: the core's ESCs, motors and propellers, stepped in
+    the order a run steps them, each rotor with its own values.
 
     Args:
-        model: The finalized model, one copy of the vehicle per environment, with each copy's Newton motors on
-            ``model.actuators``.
+        model: The finalized model, one copy of the vehicle per environment.
         rotors: The rotors the vehicle's USD file declares, in channel order,
             :func:`~nexus_uav.examples._lib.single_body.rotors`: each with its joint, its channel and its
             propeller's values. Each motor's no-load speed comes from the model, in ``rpm_max``.
@@ -99,21 +98,13 @@ class RotorChain:
             rotor_bases=wp.array(bases.ravel(), dtype=wp.int32, device=model.device),
             **{key: np.tile(value, self.copies) for key, value in values.items()},  # each copy's rotors, in order
         )
-        self.actuators = Actuators(model)
 
     def step(self, state, control, cmd: wp.array, dt: float) -> None:
         """Run the rotor chain before a solver step of ``dt``: each rotor's terminal voltage from ``cmd``, one row
-        of normalized commands per copy, each motor's torque into ``control.joint_f``, zeroed first, each
-        propeller's force from its rotor's speed in ``state``, then the model's own actuators' torque.
+        of normalized commands per copy, each motor's torque into ``control.joint_f``, zeroed first, then each
+        propeller's force from its rotor's speed in ``state``. The motors keep no state, so a reset resets nothing.
         """
         control.joint_f.zero_()
         self.command.write(cmd, self.bus, self.voltage)
         self.motors.step(self.voltage, state, control, dt, self.current)
         self.propellers.add(state)
-        self.actuators.step(state, control, dt)
-
-    def reset(self, dofs: wp.array | None = None) -> None:
-        """Zero the state of the model's actuators that drive ``dofs``, a mask over the model's degrees of freedom,
-        or of every one when ``dofs`` is ``None``; the rotors' motors keep no state.
-        """
-        self.actuators.reset(dofs)

@@ -21,7 +21,8 @@ from nexus_uav._src.config import LaunchConfig
 from nexus_uav._src.core.schema import SimTime
 from nexus_uav._src.core.signals import wire
 from nexus_uav._src.core.stages import Bound
-from nexus_uav._src.vehicle.commands import Escs, Motors
+from nexus_uav._src.vehicle.actuators import Motors
+from nexus_uav._src.vehicle.commands import Escs
 from nexus_uav._src.vehicle.rotors import rotor_of
 from nexus_uav.examples._lib import build_rotor_mixer_from_model
 from nexus_uav.examples._lib.observation import WarpObservationSensor

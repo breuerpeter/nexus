@@ -110,7 +110,6 @@ class GoToEnv(QuadcopterNewtonEnv):
         self._quat = wp.zeros(n, dtype=wp.quat, device=self.device)
         self._omega_w = wp.zeros(n, dtype=wp.vec3, device=self.device)
         self._cmd = wp.zeros((n, self._nr), dtype=float, device=self.device)  # each rotor's command, mixer → chain
-        self._dofs_per_env = model.joint_dof_count // n  # each env's degrees of freedom, contiguous
         NewtonManager.register_post_actuator_callback(self._step_rotors)
 
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
@@ -166,9 +165,6 @@ class GoToEnv(QuadcopterNewtonEnv):
         return {"policy": obs}
 
     def _reset_idx(self, env_ids) -> None:
-        super()._reset_idx(env_ids)  # base: stock reset, rotors at rest, + start-state randomization
-        if env_ids is None or len(env_ids) == self.num_envs:
-            env_ids = wp.to_torch(self._robot._ALL_INDICES)
-        dofs = torch.zeros((self.num_envs, self._dofs_per_env), dtype=torch.bool, device=self.device)
-        dofs[env_ids] = True
-        self._chain.reset(wp.from_torch(dofs.view(-1), dtype=wp.bool))  # the reset envs' motors start afresh
+        super()._reset_idx(
+            env_ids
+        )  # base: stock reset, rotors at rest, + start-state randomization; the motors keep no state

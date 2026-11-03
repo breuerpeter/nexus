@@ -14,6 +14,7 @@ pytest.importorskip("newton")
 pytest.importorskip("pxr")
 
 import newton
+import numpy as np
 import warp as wp
 
 from nexus_uav._src.api.sim import Sim
@@ -213,8 +214,8 @@ def _loaded_speed(command: float) -> float:
 
 
 def _settled_rotor(path, command: float) -> tuple[dict | None, str | None]:
-    """Rotor 0's recorded speed [rad/s], voltage [V] and current [A] at the end of a flight of the vehicle at
-    `path` at `command` on every rotor, and the error message when the build fails instead.
+    """Rotor 0's recorded speed [rad/s], its ESC's voltage [V] and its motor's current [A] at the end of a flight of
+    the vehicle at `path` at `command` on every rotor, and the error message when the build fails instead.
     """
     try:
         with (
@@ -225,7 +226,7 @@ def _settled_rotor(path, command: float) -> tuple[dict | None, str | None]:
             return {
                 "speed": float(sim["vehicle/joints/rotor_0_joint"].history()[-1]["qd"][0]),
                 "voltage": float(sim["vehicle/commands/rotor_0/voltage"].history()[-1]["voltage"]),
-                "current": float(sim["vehicle/commands/rotor_0/current"].history()[-1]["current"]),
+                "current": float(sim["vehicle/actuators/rotor_0/current"].history()[-1]["current"]),
             }, None
     except ValueError as exc:
         return None, str(exc)
@@ -250,7 +251,7 @@ def test_a_rotor_settles_at_the_loaded_speed_its_escs_duty_map_and_its_motors_co
 
 def test_each_escs_voltage_and_each_motors_current_are_in_the_recording_under_the_rotors_path(tmp_path):
     """Each ESC's voltage, `d(u)·busVoltage`, and each motor's current, its applied torque over `Kt`, are in the
-    recording under the rotor's path.
+    recording under the rotor's path in its role's folder.
 
     Given that quad at full command for 125 ticks, when a test reads the recording, then rotor 0's `voltage` is its
     bus, and its `current` is the propeller's drag torque at the loaded speed over `Kt`, each within 1 %.
@@ -295,3 +296,47 @@ def test_a_newton_actuator_prim_on_a_rotors_joint_fails_the_build_and_names_the_
     """
     message = _build_error(_author(tmp_path / "quad.usda", motor="nexus", newton_motor=2))
     assert f"{ROOT}/rotor_2_motor" in message, message
+
+
+def test_a_rotor_whose_body_lists_the_motors_schema_first_flies_the_same_trajectory(tmp_path):
+    """A rotor whose body lists the motor's schema before the ESC's flies the same trajectory as one that lists
+    the ESC's first, since the motor runs after the command elements as an actuator.
+
+    Given the fixture quad authored both ways, when each flies 125 ticks at full command, then the recorded
+    positions are equal.
+    """
+    usual = _author(tmp_path / "usual.usda")
+    reversed_order = _author(tmp_path / "reversed.usda", motor_first=True)
+    with wp.ScopedDevice("cpu"):
+        flights = [_fly(_build(path, FLIGHT_STEPS)) for path in (usual, reversed_order)]
+    assert np.array_equal(flights[0], flights[1])
+
+
+@pytest.mark.parametrize(
+    ("bad", "attribute"),
+    [
+        ({"nexus:idleDuty": -0.1}, "nexus:idleDuty"),
+        ({"nexus:idleDuty": 1.0, "nexus:maxDuty": 1.0}, "nexus:idleDuty"),
+        ({"nexus:maxDuty": 1.5}, "nexus:maxDuty"),
+    ],
+    ids=["idle below 0", "idle at max", "max above 1"],
+)
+def test_an_esc_whose_duty_map_is_outside_its_range_fails_the_build_and_names_the_attribute(tmp_path, bad, attribute):
+    """An ESC whose duty map is outside `0 ≤ idleDuty < maxDuty ≤ 1` fails the build, naming the prim and the
+    attribute.
+
+    Given the fixture quad with every ESC's `bad` values, when built, then the build fails naming rotor 0 and the
+    attribute.
+    """
+    message = _build_error(_author(tmp_path / "quad.usda", esc=bad))
+    assert f"{ROOT}/rotor_0" in message and attribute in message, message
+
+
+def test_an_esc_whose_channel_is_below_0_fails_the_build_and_names_the_attribute(tmp_path):
+    """An ESC whose channel is below 0 fails the build, naming the prim and the attribute.
+
+    Given the fixture quad with rotor 1's ESC on channel -1, when built, then the build fails naming rotor 1 and
+    `nexus:channel`.
+    """
+    message = _build_error(_author(tmp_path / "quad.usda", channels=(0, -1, 2, 3)))
+    assert f"{ROOT}/rotor_1" in message and "nexus:channel" in message, message

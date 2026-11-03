@@ -225,7 +225,7 @@ class "NexusEscAPI" (
 
 class "NexusMotorAPI" (
     doc = "A brushless motor on its rotor's rigid body, beside the rotor's ESC and propeller, as its sheet states it: it turns the ESC's terminal voltage into torque on the rotor's joint as a first-order DC motor, and emits the current it draws. Its input `voltage` is the ESC's on its own prim unless the connection names another."
-    prepend apiSchemas = ["NexusCommandRoleAPI"]
+    prepend apiSchemas = ["NexusActuatorRoleAPI"]
 )
 {
     float nexus:kv = 0 (
@@ -332,6 +332,12 @@ class "NexusControllerRoleAPI" (
 
 class "NexusGuidanceRoleAPI" (
     doc = "The guidance role, which a guidance's schema includes as a built-in. A guidance sits on a `Scope` of its own whose parent is the vehicle's root prim, named `Guidance` by convention, and writes the setpoint before the controller in the tick. A vehicle declares one guidance at most."
+)
+{
+}
+
+class "NexusActuatorRoleAPI" (
+    doc = "The actuator's role, which the schema of a part that turns a signal into torque on a joint includes as a built-in, as a rotor's motor does: it runs after the command elements and before the force elements each substep."
 )
 {
 }

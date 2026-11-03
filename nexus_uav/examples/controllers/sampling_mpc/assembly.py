@@ -54,7 +54,7 @@ def build_sampling_mpc_loop(
     # hover speed, through the rotor chain PX4 flies.
     physics_cfg = {**cfg["physics"], "spawn": {"pos": tuple(spawn), "attitude": "native", "prespin": "hover"}}
     physics = NewtonPhysics(vehicle_usd=vehicle_usd, cfg={**cfg, "physics": physics_cfg})
-    commands, forces = elements(physics, vehicle_usd)  # each rotor's ESC and propeller, the chain PX4 flies
+    commands, actuators, forces = elements(physics, vehicle_usd)  # each rotor's ESC and propeller, the chain PX4 flies
     # The planner's own model: the vehicle collapsed to a single body, num_rollouts of them for the batched
     # differentiable rollout. The collapse loads the scene USD exactly as the full build path does; its
     # authored semantics ride with it: the slalom pillars ship ``physics:collisionEnabled = false``, so
@@ -93,6 +93,7 @@ def build_sampling_mpc_loop(
         clock=Clock(dt),
         physics=physics,
         commands=commands,
+        actuators=actuators,
         forces=forces,
         sensors=extra_sensors,
         estimator=GroundTruthEstimator(),
