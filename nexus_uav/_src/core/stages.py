@@ -1,8 +1,8 @@
 """The ring of stages one control tick runs, and its partition into captured segments.
 
 A tick is an ordered ring of stages, per docs/design/execution.md. :func:`build_ring` lays every
-component's stages out in the canonical order: the clock, ``clear`` -> the command elements -> the actuators
--> the force elements -> ``step`` per physics substep, ``state``, then the sensors, the estimator, the guidance and the
+component's stages out in the canonical order: the clock, ``clear`` -> the command elements -> the force
+elements -> ``step`` per physics substep, ``state``, then the sensors, the estimator, the guidance and the
 controller over the state the step left, then the loop end of each declared peer's inputs, then record. So the
 physics step opens a tick, as a fixed-step
 simulator's does, and every row the tick records describes the state at the tick's time. :func:`partition`

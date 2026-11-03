@@ -3,7 +3,7 @@
 Owns the model build + solver + double-buffered step + the settle after
 placing the vehicle. Consumes a per-body Wrench at the shared ``state.body_f`` buffer, which the force
 elements add to before ``step``, and the control inputs the command elements write into the model's
-``newton.Control``; ``step`` runs the solver over both.
+``newton.Control``; ``step`` steps every Newton actuator the vehicle declares, then the solver.
 
 **The solver is configurable** via ``cfg["physics"]["solver"]``: ``mujoco``, the default, is the
 high-fidelity contact solver the Software In The Loop (SITL) path uses and the determinism authority
@@ -16,7 +16,7 @@ state_out, control, contacts, dt)`` signature, so only the constructor differs.
 standalone Model Predictive Control (MPC) examples drive the same ``reset``, ``clear_forces`` and ``step``:
 
 * *Production*, the default: build the model from ``vehicle_usd`` + ``cfg``, with ground plane, scene,
-  and its declared components, settle on the ground at ``reset``, contacts on, MuJoCo solver. The SITL
+  and the USD-authored motors, settle on the ground at ``reset``, contacts on, MuJoCo solver. The SITL
   path.
 * *Free articulated*, with ``spawn`` set and contacts optional: the real multi-body vehicle placed in free
   flight at ``spawn['pos']`` with no ground-settle, rotors pre-spun to hover via ``prespin: 'hover'``. The
@@ -30,9 +30,9 @@ coordinates, ``joint_q``, + the joint control buffer. Vehicle USDs follow FRD au
 and spawned free they sit upright; see ``docs/design/conventions.md``.
 
 Two device stages, ``clear`` and ``step``: the collide + solver.step + double-buffer ping-pong
-is a static launch over persistent buffers, so it joins a CUDA graph with the command, actuator and force
-stages between them. ``clear`` zeroes the bodies' wrenches and the joints' efforts, ``control.joint_f``, which
-the actuators, the rotors' motors, add their torque into in their stages; ``step`` runs the solver.
+is a static launch over persistent buffers, so it joins a CUDA graph with the command and force stages
+between them. ``step`` first steps the vehicle's motors, :class:`~nexus_uav._src.physics.motors.Motors`,
+into ``control.joint_f``, then the solver.
 """
 
 from __future__ import annotations
@@ -99,8 +99,9 @@ class NewtonPhysics:
             # from any PhysicsScene the USD holds, authored or not, so it is set after the last add.
             builder.gravity = -GRAVITY
             world.derive(builder)
-            # The rotors' motors are components the vehicle declares, which step their own Newton actuator in their
-            # stage; the build fails a NewtonActuator prim, so the model parses none.
+            # The vehicle USD authors the motors as NewtonActuator prims on the actuator joints, and add_usd
+            # parses them onto model.actuators, which step() steps before the solver. A collapsed single
+            # body has no joints, so no motors.
             self.model = builder.finalize()
             if vehicle_usd is not None:
                 vehicle_usd.model_debug_print(self.model)
