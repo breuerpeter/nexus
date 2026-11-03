@@ -1,10 +1,10 @@
 """The rotor chain of many copies of one vehicle in one model: the plant the RL task trains on.
 
-A run's loop steps the rotor chain around each solver step: each rotor's ESC writes its terminal voltage, each
-motor turns it into the torque on its rotor's joint, each propeller adds its rotor's thrust and drag to its body,
-and physics steps the model's own Newton actuators, a servo's. :class:`RotorChain` runs the same core parts in the
-same order for a model that holds one copy of the vehicle per environment, as the RL task's model does, so
-training flies the plant every run flies, each rotor with its own values.
+A run's loop steps the rotor chain around each solver step: each rotor's ESC sets its Newton motor's speed
+target and drag feedforward, each propeller adds its rotor's thrust and drag to its body, and physics steps the
+Newton motors into the rotor joints' torque. :class:`RotorChain` runs the same core parts in the same order for a
+model that holds one copy of the vehicle per environment, as the RL task's model does, so training flies the
+plant every run flies, each rotor with its own values.
 """
 
 from __future__ import annotations
@@ -59,11 +59,12 @@ def vehicle_rotors(model, joints) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
 
 class RotorChain:
-    """The rotor chain of every copy of one vehicle in a model: the core's ESCs, motors and propellers, then the
-    model's own Newton actuators, stepped in the order a run steps them, each rotor with its own values.
+    """The rotor chain of every copy of one vehicle in a model: the core's ESCs, propellers and Newton motors,
+    stepped in the order a run steps them, each rotor with its own values.
 
     Args:
-        model: The finalized model, one copy of the vehicle per environment.
+        model: The finalized model, one copy of the vehicle per environment, with each copy's Newton motors on
+            ``model.actuators``.
         rotors: The rotors the vehicle's USD file declares, in channel order,
             :func:`~nexus_uav.examples._lib.single_body.rotors`: each with its joint, its channel and its ESC's,
             its motor's and its propeller's values. Each rotor's loaded speed at full command is in ``rpm_max``,
