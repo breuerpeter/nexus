@@ -91,7 +91,7 @@ class ArticulatedRollout:
         self.hover_speed = np.sqrt(self.mass * GRAVITY / len(self.rotor_dofs) / kf)  # (nr,) rad/s, each rotor's
 
     def reset(self) -> None:
-        """Put the vehicle back at its start, at rest with each rotor at its hover speed."""
+        """Put the vehicle back at its start, at rest with each rotor at its hover speed, and its motors' state at zero."""
         joint_q = self.model.joint_q.numpy()
         joint_qd = np.zeros_like(self.model.joint_qd.numpy())
         joint_qd[self.rotor_dofs] = self.hover_speed

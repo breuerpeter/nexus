@@ -50,8 +50,7 @@ def _summed_wrench(
     omega_next: wp.array2d(dtype=float),  # (·, nr) motor-speed state, output
 ) -> wp.spatial_vector:
     """The motor + propeller + coupling: per-rotor command → motor lag → propeller, with airflow, →
-    forward ``B`` plus each rotor's speed-change reaction → world wrench. ``Ω_cmd`` is the steady speed the
-    clamped command holds, along the rotor's command line.
+    forward ``B`` plus each rotor's speed-change reaction → world wrench. ``Ω_cmd = clamp(u, 0, 1)·Ω_max``.
     Reads ``omega_prev[n]`` and writes the updated speeds into ``omega_next[n]``, distinct per-step arrays for
     a clean differentiable recurrence.
     """
