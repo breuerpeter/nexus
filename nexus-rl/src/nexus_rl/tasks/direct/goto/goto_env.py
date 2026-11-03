@@ -81,7 +81,8 @@ class GoToEnv(QuadcopterNewtonEnv):
     """The GoTo task on the articulated vehicle: CTBR action → inner rate loop → ``B⁻¹`` → each rotor's command →
     the rotor chain, before each solver step. Reuses the base env's CTBR params, obs including the last action,
     reward, NaN-robustness and start-state randomization. The env reads the rotors and each one's values, its
-    channel, ct, cd and rpm_max, from the vehicle's USD file, so it carries no per-vehicle constants.
+    channel, ct, cd, its ESC's duty map and its motor's constants, from the vehicle's USD file, so it carries no
+    per-vehicle constants.
     """
 
     def __init__(self, cfg, render_mode=None, **kwargs):
@@ -92,11 +93,10 @@ class GoToEnv(QuadcopterNewtonEnv):
         if self._chain.copies != self.num_envs:
             raise ValueError(f"the model holds {self._chain.copies} copies of the vehicle for {self.num_envs} envs")
         self._nr = self._chain.nr
-        # Each rotor's thrust = kf·Ω², with Ω in rad/s, and its speed at full command [rad/s]
+        # Each rotor's thrust = kf·Ω², with Ω in rad/s, and its command line, the command that holds a speed
         kf = np.array([rotor.propeller["ct"] for rotor in declared], dtype=np.float32) * RPM_PER_RADS**2
-        omega_max = self._chain.rpm_max.astype(np.float32) / RPM_PER_RADS
         self._kf = wp.array(kf, dtype=float, device=self.device)
-        self._omega_max = wp.array(omega_max, dtype=float, device=self.device)
+        self._lines = wp.array(self._chain.command_lines.astype(np.float32), dtype=wp.vec3, device=self.device)
         # The mixer's B⁻¹, from the first env's rest-pose rotor geometry, through the one allocation builder the
         # deploy mixer builds from.
         body_q = NewtonManager.get_state_0().body_q.numpy()
@@ -143,7 +143,7 @@ class GoToEnv(QuadcopterNewtonEnv):
                 self._omega_w,
                 self._B_inv,
                 self._kf,
-                self._omega_max,
+                self._lines,
                 self._nr,
             ),
             outputs=(self._cmd,),

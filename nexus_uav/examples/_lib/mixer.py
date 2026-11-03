@@ -36,7 +36,7 @@ from typing import Any
 import numpy as np
 import warp as wp
 
-from nexus_uav._src.vehicle.rotors import RPM_PER_RADS, quat_to_R, rotor_of, rotor_speeds
+from nexus_uav._src.vehicle.rotors import RPM_PER_RADS, command_lines, quat_to_R, rotor_of, rotor_speeds
 
 
 @dataclass(slots=True)
@@ -126,27 +126,48 @@ def ctbr_rate_loop(action: wp.vec4, omega_b: wp.vec3, p: CtbrParams) -> wp.vec4:
 
 
 @wp.func
+def command_of_speed(omega: float, line: wp.vec3) -> float:
+    """The command that holds a rotor at the steady speed ``omega`` [rad/s]: ``u = a·Ω + b·Ω² − c`` along the
+    rotor's command line ``(a, b, c)``, which the ESC's duty map, the motor's torque and the propeller's drag
+    give; the rotors' ESCs clamp it to ``[0, 1]``.
+    """
+    return line[0] * omega + line[1] * omega * omega - line[2]
+
+
+@wp.func
+def speed_of_command(u: float, line: wp.vec3) -> float:
+    """The steady speed [rad/s] a command ``u`` holds a rotor at: the positive root of ``b·Ω² + a·Ω − (u + c) = 0``
+    along the rotor's command line ``(a, b, c)``, the inverse of :func:`command_of_speed`.
+    """
+    a = line[0]
+    b = line[1]
+    rhs = u + line[2]
+    if b > 0.0:
+        return (wp.sqrt(a * a + 4.0 * b * rhs) - a) / (2.0 * b)
+    return rhs / a
+
+
+@wp.func
 def wrench_to_cmd(
     wrench_des: wp.vec4,  # target base-frame wrench [T, τx, τy, τz]
     B_inv: wp.array2d(dtype=float),  # (nr, 4) mixer: wrench → per-rotor thrust
     kf: wp.array(dtype=float),  # (nr,) each rotor's thrust = kf·Ω², with Ω in rad/s
-    omega_max_motor: wp.array(dtype=float),  # (nr,) each rotor's speed saturation [rad/s]
+    lines: wp.array(dtype=wp.vec3),  # (nr,) each rotor's command line, u = a·Ω + b·Ω² − c
     nr: int,
     n: int,  # output row: env or rollout, single-body 0
     out_cmd: wp.array2d(dtype=float),  # (·, nr) → normalized per-rotor command u
 ):
-    """The shared mixer tail: target wrench → ``B⁻¹`` → per-rotor thrust → **normalized rotor-speed
-    command** ``u = √(max(f, 0)/kf) / Ω_max``. The rotors' command element clamps ``u`` to
+    """The shared mixer tail: target wrench → ``B⁻¹`` → per-rotor thrust → the speed that makes it, ``√(max(f,
+    0)/kf)`` → the **command that holds that speed**, :func:`command_of_speed`. The rotors' ESCs clamp ``u`` to
     ``[0, 1]``, the single saturation authority, and the motors bring the rotors to speed, so this op carries only
-    the differentiable allocation + thrust-map inverse, with no rate loop and no motor state, keeping a
-    clean full-horizon gradient for the moment-input design-opt path. Splitting it out of the old single
-    kernel is exact: ``clamp(u, 0, 1)·Ω_max = min(√(f/kf), Ω_max)`` reproduces the old in-kernel saturation.
+    the differentiable allocation + thrust-map inverse, with no rate loop and no motor state, keeping a clean
+    full-horizon gradient for the moment-input design-opt path.
     """
     for i in range(nr):
         f = B_inv[i, 0] * wrench_des[0] + B_inv[i, 1] * wrench_des[1]
         f = f + B_inv[i, 2] * wrench_des[2] + B_inv[i, 3] * wrench_des[3]
         f = wp.max(f, 0.0)  # per-rotor thrusts are non-negative
-        out_cmd[n, i] = wp.sqrt(f / kf[i]) / omega_max_motor[i]  # rotor-speed fraction; the rotor's ESC clamps it
+        out_cmd[n, i] = command_of_speed(wp.sqrt(f / kf[i]), lines[i])  # the rotor's ESC clamps it
 
 
 @wp.kernel
@@ -157,7 +178,7 @@ def ctbr_to_cmd_batched(
     omega_w: wp.array(dtype=wp.vec3),  # (N,) world-frame angular velocity
     B_inv: wp.array2d(dtype=float),  # (nr, 4) mixer
     kf: wp.array(dtype=float),  # (nr,) each rotor's thrust map
-    omega_max_motor: wp.array(dtype=float),  # (nr,) each rotor's speed saturation [rad/s]
+    lines: wp.array(dtype=wp.vec3),  # (nr,) each rotor's command line
     nr: int,
     out_cmd: wp.array2d(dtype=float),  # (N, nr) → normalized per-rotor command
 ):
@@ -169,7 +190,7 @@ def ctbr_to_cmd_batched(
     n = wp.tid()
     omega_b = wp.quat_rotate_inv(quat[n], omega_w[n])  # world ω → body
     wrench_des = ctbr_rate_loop(action[n], omega_b, p)  # [T, τx, τy, τz] target
-    wrench_to_cmd(wrench_des, B_inv, kf, omega_max_motor, nr, n, out_cmd)
+    wrench_to_cmd(wrench_des, B_inv, kf, lines, nr, n, out_cmd)
 
 
 @wp.kernel
@@ -180,7 +201,7 @@ def moment_to_cmd_batched(
     moment_scale: float,  # scales the moment command [N·m per unit action]
     B_inv: wp.array2d(dtype=float),  # (nr, 4) mixer
     kf: wp.array(dtype=float),  # (nr,) each rotor's thrust map
-    omega_max_motor: wp.array(dtype=float),  # (nr,) each rotor's speed saturation [rad/s]
+    lines: wp.array(dtype=wp.vec3),  # (nr,) each rotor's command line
     nr: int,
     out_cmd: wp.array2d(dtype=float),  # (N, nr) → normalized per-rotor command
 ):
@@ -194,7 +215,7 @@ def moment_to_cmd_batched(
     a4 = action[n]
     thrust = thrust_to_weight * weight * (wp.clamp(a4[0], -1.0, 1.0) + 1.0) * 0.5  # collective [N]
     wrench_des = wp.vec4(thrust, moment_scale * a4[1], moment_scale * a4[2], moment_scale * a4[3])
-    wrench_to_cmd(wrench_des, B_inv, kf, omega_max_motor, nr, n, out_cmd)
+    wrench_to_cmd(wrench_des, B_inv, kf, lines, nr, n, out_cmd)
 
 
 @wp.kernel
@@ -217,7 +238,8 @@ class RotorMixer:
     B_inv: np.ndarray  # (nr, 4) mixer, the controller's allocation
     spins: np.ndarray  # (nr,) cw/ccw sign per rotor, the sign of its reaction on the airframe
     kf: np.ndarray  # (nr,) each rotor's thrust = kf·Ω², with Ω in rad/s
-    omega_max_motor: np.ndarray  # (nr,) each rotor's speed saturation [rad/s]
+    omega_max_motor: np.ndarray  # (nr,) each rotor's loaded speed at full command [rad/s], its saturation
+    lines: np.ndarray  # (nr, 3) each rotor's command line, u = a·Ω + b·Ω² − c
     kappa: np.ndarray  # (nr,) each rotor's κ = cd, the yaw reaction-torque / thrust ratio
     nr: int  # rotor count
     base: int  # base/airframe body index, where the summed wrench acts
@@ -231,12 +253,15 @@ class RotorMixer:
         return math.fsum(self.kf * self.omega_max_motor**2) / (float(mass) * 9.81)  # the exact sum, rounded once
 
 
-def _thrust_map(ct, rpm_max, cd) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Each rotor's ``kf``, ``Ω_max`` [rad/s] and ``κ`` from its ``ct`` [N/rpm²], ``rpm_max`` [rpm] and ``cd``."""
+def _thrust_map(rotors) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Each rotor's ``kf``, ``Ω_max`` [rad/s], ``κ`` and command line from its declaration: ``ct`` [N/rpm²] and
+    ``cd`` from its propeller, and the loaded speed at full command and the command line from all three parts.
+    """
     return (
-        np.asarray(ct, dtype=np.float64) * RPM_PER_RADS**2,
-        np.asarray(rpm_max, dtype=np.float64) / RPM_PER_RADS,
-        np.asarray(cd, dtype=np.float64),
+        np.array([r.propeller["ct"] for r in rotors], dtype=np.float64) * RPM_PER_RADS**2,
+        rotor_speeds(rotors) / RPM_PER_RADS,
+        np.array([r.propeller["cd"] for r in rotors], dtype=np.float64),
+        command_lines(rotors),
     )
 
 
@@ -249,9 +274,7 @@ def build_rotor_mixer_from_model(model, rotors, rest_body_q) -> RotorMixer:
     """
     found = [rotor_of(model, rotor.body) for rotor in rotors]  # each rotor's dof, coord, body and airframe
     bodies, base = [body for _dof, _coord, body, _base in found], found[0][3]
-    kf, omega_max, kappa = _thrust_map(
-        [r.propeller["ct"] for r in rotors], rotor_speeds(model, rotors), [r.propeller["cd"] for r in rotors]
-    )
+    kf, omega_max, kappa, lines = _thrust_map(rotors)
     bq = np.asarray(rest_body_q, dtype=np.float32)
     B, B_inv, spins = build_allocation(bq[:, :3], bq[:, 3:7], base, bodies, kappa)
     Rb = quat_to_R(bq[base, 3:7])
@@ -262,6 +285,7 @@ def build_rotor_mixer_from_model(model, rotors, rest_body_q) -> RotorMixer:
         spins=spins,
         kf=kf,
         omega_max_motor=omega_max,
+        lines=lines,
         kappa=kappa,
         nr=len(bodies),
         base=int(base),
@@ -269,16 +293,16 @@ def build_rotor_mixer_from_model(model, rotors, rest_body_q) -> RotorMixer:
     )
 
 
-def build_rotor_mixer_from_layout(rotor_offsets, turning_dirs, *, ct, cd, rpm_max, thrust_sign: float = -1.0) -> RotorMixer:  # fmt: skip
-    """Build the :class:`RotorMixer` from an explicit rotor layout, base-frame offsets + cw/ccw spins, and each
-    rotor's ``ct``, ``cd`` and ``rpm_max``: the single-body proxy path, since the sampling Model Predictive
-    Control (MPC) example has no model rotor joints. Forward ``B`` follows the same physical,
-    ``thrust_sign``-carrying convention as :func:`build_allocation`. ``base = 0``: each proxy body is its own
-    airframe.
+def build_rotor_mixer_from_layout(rotor_offsets, turning_dirs, *, rotors, thrust_sign: float = -1.0) -> RotorMixer:
+    """Build the :class:`RotorMixer` from an explicit rotor layout, base-frame offsets + cw/ccw spins, and the
+    rotors the vehicle declares, in the layout's order, each with its own values: the single-body proxy path,
+    since the sampling Model Predictive Control (MPC) example has no model rotor joints. Forward ``B`` follows
+    the same physical, ``thrust_sign``-carrying convention as :func:`build_allocation`. ``base = 0``: each proxy
+    body is its own airframe.
     """
     off = np.asarray(rotor_offsets, dtype=np.float64)
     dirs = np.asarray(turning_dirs, dtype=np.float64)
-    kf, omega_max, kappa = _thrust_map(ct, rpm_max, cd)
+    kf, omega_max, kappa, lines = _thrust_map(rotors)
     nr = len(dirs)
     B = np.zeros((4, nr))
     B[0, :] = 1.0  # total thrust
@@ -291,6 +315,7 @@ def build_rotor_mixer_from_layout(rotor_offsets, turning_dirs, *, ct, cd, rpm_ma
         spins=dirs,
         kf=kf,
         omega_max_motor=omega_max,
+        lines=lines,
         kappa=kappa,
         nr=nr,
         base=0,
@@ -313,7 +338,7 @@ class CtbrMixer:
         self.nr = int(mixer.nr)
         self.p = ctbr_params
         self.kf = wp.array(np.asarray(mixer.kf, dtype=np.float32), dtype=float)
-        self.omega_max_motor = wp.array(np.asarray(mixer.omega_max_motor, dtype=np.float32), dtype=float)
+        self.lines = wp.array(np.asarray(mixer.lines, dtype=np.float32), dtype=wp.vec3)
         self._B_inv = wp.array(np.asarray(mixer.B_inv, dtype=np.float32), dtype=float)
         self._action = wp.zeros(1, dtype=wp.vec4)
         self._quat = wp.zeros(1, dtype=wp.quat)
@@ -338,7 +363,7 @@ class CtbrMixer:
                 self._omega_w,
                 self._B_inv,
                 self.kf,
-                self.omega_max_motor,
+                self.lines,
                 self.nr,
             ),
             outputs=(self._cmd,),
@@ -359,7 +384,7 @@ class MomentMixer:
         self.weight = float(weight)  # m · g [N]
         self.moment_scale = float(moment_scale)
         self.kf = wp.array(np.asarray(mixer.kf, dtype=np.float32), dtype=float)
-        self.omega_max_motor = wp.array(np.asarray(mixer.omega_max_motor, dtype=np.float32), dtype=float)
+        self.lines = wp.array(np.asarray(mixer.lines, dtype=np.float32), dtype=wp.vec3)
         self._B_inv = wp.array(np.asarray(mixer.B_inv, dtype=np.float32), dtype=float)
         self._act4 = wp.zeros(1, dtype=wp.vec4)
         self._cmd = wp.zeros((1, self.nr), dtype=float)
@@ -380,7 +405,7 @@ class MomentMixer:
                 self.moment_scale,
                 self._B_inv,
                 self.kf,
-                self.omega_max_motor,
+                self.lines,
                 self.nr,
             ),
             outputs=(self._cmd if out is None else out,),

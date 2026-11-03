@@ -1,10 +1,9 @@
-"""Each rotor declares its propeller on its rigid body, beside Newton's motor, and the run finds its
-rotors by that declaration.
+"""Each rotor declares its ESC, its motor and its propeller on its rigid body, and the run finds its rotors by
+that declaration.
 
-Real builds on the Warp CPU backend: a quad authored per test, four rotor bodies on revolute joints
-under one airframe, each body carrying the nexus propeller schema and each joint driven by a
-``NewtonActuator`` prim with Newton's velocity servo and DC motor clamp, and a stand-in controller that
-commands full throttle, from ``tests/vehicle/quad.py``. Skipped without newton or pxr.
+Real builds on the Warp CPU backend: a quad authored per test, four rotor bodies on revolute joints under one
+airframe, each body carrying the three rotor schemas, and a stand-in controller that commands full throttle, from
+``tests/vehicle/quad.py``. Skipped without newton or pxr.
 """
 
 import math
@@ -131,28 +130,12 @@ def test_a_vehicle_that_still_authors_propeller_joint_attributes_fails_the_build
     assert f"{ROOT}/rotor_0_joint" in message and "propeller:ct" in message
 
 
-def test_newton_still_builds_each_rotors_motor_from_its_actuator_prim(tmp_path):
-    """Newton still builds each rotor's motor from its `NewtonActuator` prim.
-
-    Given the fixture, when built, then `model.actuators` holds, per rotor, one
-    Proportional Integral Derivative (PID) controlled, DC-clamped motor.
-    """
-    with wp.ScopedDevice("cpu"):
-        model = _build(_author(tmp_path / "quad.usda")).physics.model
-    motors = [
-        (type(a.controller).__name__, tuple(type(c).__name__ for c in a.clamping))
-        for a in model.actuators
-        for _ in range(a.num_actuators)
-    ]
-    assert motors == [("ControllerPID", ("ClampingDCMotor",))] * 4
-
-
 def test_the_rotor_reader_returns_each_rotor_with_its_own_values_in_channel_order(tmp_path):
     """The rotor reader returns each rotor with its own values, in channel order.
 
     Given the fixture with its ESCs on channels 3, 2, 1 and 0 and rotor 2's `ct` twice the others', when read,
     then the rotors come in channel order, rotor 3 first, each with its body, its joint, the airframe, its
-    channel and its own propeller values.
+    channel and its own ESC, motor and propeller values.
     """
     read = rotors(_author(tmp_path / "quad.usda", odd_ct=2 * LIFT_CT, channels=(3, 2, 1, 0)))
     expected = [
@@ -161,6 +144,8 @@ def test_the_rotor_reader_returns_each_rotor_with_its_own_values_in_channel_orde
             joint=f"{ROOT}/rotor_{i}_joint",
             parent=f"{ROOT}/body",
             channel=3 - i,
+            esc={"idle_duty": 0.1, "max_duty": 1.0, "bus_voltage": 24.0},
+            motor={"kv": 160.0, "resistance": 0.28, "current_limit": 130.0},
             propeller={"ct": 2 * LIFT_CT if i == 2 else LIFT_CT, "cd": 0.05, "aero_h": 0.0, "aero_hforce": 0.0},
         )
         for i in (3, 2, 1, 0)
@@ -168,7 +153,10 @@ def test_the_rotor_reader_returns_each_rotor_with_its_own_values_in_channel_orde
     assert [(r.body, r.joint, r.parent, r.channel) for r in read] == [
         (r.body, r.joint, r.parent, r.channel) for r in expected
     ]
-    assert [r.propeller for r in read] == [pytest.approx(r.propeller, rel=1e-5) for r in expected]
+    assert [(r.esc, r.motor, r.propeller) for r in read] == [
+        (pytest.approx(r.esc, rel=1e-5), pytest.approx(r.motor, rel=1e-5), pytest.approx(r.propeller, rel=1e-5))
+        for r in expected
+    ]
 
 
 def test_a_rotor_that_declares_a_propeller_and_no_esc_fails_the_build_and_names_the_prim(tmp_path):

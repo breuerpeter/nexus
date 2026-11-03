@@ -3,7 +3,7 @@
 Owns the model build + solver + double-buffered step + the settle after
 placing the vehicle. Consumes a per-body Wrench at the shared ``state.body_f`` buffer, which the force
 elements add to before ``step``, and the control inputs the command elements write into the model's
-``newton.Control``; ``step`` steps every Newton actuator the vehicle declares, then the solver.
+``newton.Control``; ``step`` steps the Newton actuators the model holds, a servo's, then the solver.
 
 **The solver is configurable** via ``cfg["physics"]["solver"]``: ``mujoco``, the default, is the
 high-fidelity contact solver the Software In The Loop (SITL) path uses and the determinism authority
@@ -16,7 +16,7 @@ state_out, control, contacts, dt)`` signature, so only the constructor differs.
 standalone Model Predictive Control (MPC) examples drive the same ``reset``, ``clear_forces`` and ``step``:
 
 * *Production*, the default: build the model from ``vehicle_usd`` + ``cfg``, with ground plane, scene,
-  and the USD-authored motors, settle on the ground at ``reset``, contacts on, MuJoCo solver. The SITL
+  and the actuators the vehicle's file authors, settle on the ground at ``reset``, contacts on, MuJoCo solver. The SITL
   path.
 * *Free articulated*, with ``spawn`` set and contacts optional: the real multi-body vehicle placed in free
   flight at ``spawn['pos']`` with no ground-settle, rotors pre-spun to hover via ``prespin: 'hover'``. The
@@ -31,8 +31,9 @@ and spawned free they sit upright; see ``docs/design/conventions.md``.
 
 Two device stages, ``clear`` and ``step``: the collide + solver.step + double-buffer ping-pong
 is a static launch over persistent buffers, so it joins a CUDA graph with the command and force stages
-between them. ``step`` first steps the vehicle's motors, :class:`~nexus_uav._src.physics.motors.Motors`,
-into ``control.joint_f``, then the solver.
+between them. ``clear`` zeroes the bodies' wrenches and the joints' efforts, ``control.joint_f``, which the
+rotors' motors add their torque into in their stages; ``step`` adds the model's own Newton actuators',
+:class:`~nexus_uav._src.physics.actuators.Actuators`, then runs the solver.
 """
 
 from __future__ import annotations
@@ -49,7 +50,7 @@ from nexus_uav._src.vehicle.rotors import RPM_PER_RADS, find_rotor_joints, rotor
 from ..scene import world
 from ..scene.ingest import add_scene  # ingestion only: the handlers are the renderer's side
 from ..scene.world import GRAVITY
-from .motors import Motors
+from .actuators import Actuators
 from .outputs import Outputs
 from .vehicle import NoRotor
 
@@ -100,9 +101,8 @@ class NewtonPhysics:
             # from any PhysicsScene the USD holds, authored or not, so it is set after the last add.
             builder.gravity = -GRAVITY
             world.derive(builder)
-            # The vehicle USD authors the motors as NewtonActuator prims on the actuator joints, and add_usd
-            # parses them onto model.actuators, which step() steps before the solver. A collapsed single
-            # body has no joints, so no motors.
+            # add_usd parses a NewtonActuator prim the vehicle's file authors, a servo's, onto model.actuators,
+            # which step() steps before the solver; the rotors' motors are components the vehicle declares.
             self.model = builder.finalize()
             if vehicle_usd is not None:
                 vehicle_usd.model_debug_print(self.model)
@@ -120,8 +120,8 @@ class NewtonPhysics:
         self.control = self.model.control() if self.articulated else None
         # The plant's outputs, a PoseTwist per body and a struct per joint, which the state stage writes.
         self.outputs = Outputs(self.model, self.state0)
-        # Every Newton motor the vehicle declares, rotor motor or not, stepped before the solver.
-        self.motors = Motors(self.model)
+        # Every Newton actuator the model holds, a servo's, stepped before the solver.
+        self.actuators = Actuators(self.model)
         self.contacts = self.model.collide(self.state0) if self.contacts_on else None
         self.base_index = self._find_base()
         # The base body's label, the leaf of its model label when unique: Sim's default vehicle entity,
@@ -179,13 +179,18 @@ class NewtonPhysics:
             return 0  # single body, no rotor joints: body 0 is the base body
 
     def clear_forces(self, state) -> None:
+        """Zero the forces the substep's elements accumulate: the bodies' wrenches in ``state`` and the joints'
+        efforts in the control, which the rotors' motors and the model's actuators add their torque into.
+        """
         state.clear_forces()
+        if self.control is not None:
+            self.control.joint_f.zero_()
 
     def step(self, state, dt):
-        """Step the vehicle's motors into ``control.joint_f``, then the solver, which consumes ``joint_f`` and
-        the force elements' ``body_f`` in one solve.
+        """Step the model's Newton actuators into ``control.joint_f``, then the solver, which consumes ``joint_f``
+        and the force elements' ``body_f`` in one solve.
         """
-        self.motors.step(state, self.control, dt)
+        self.actuators.step(state, self.control, dt)
         contacts = self.model.collide(state) if self.contacts_on else None
         self.solver.step(state, self.state1, self.control, contacts, dt)
         state.assign(self.state1)

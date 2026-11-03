@@ -1,5 +1,5 @@
-"""The vehicle's motors write their joints' torque, and a reset zeroes the state of the motors on the degrees of
-freedom it names, and of no other.
+"""The model's Newton actuators add their joints' torque, and a reset zeroes the state of the actuators on the
+degrees of freedom it names, and of no other.
 
 Real Newton builds on the Warp CPU backend: two links on revolute joints off the world, each held off its zero
 target and driven by a Newton motor with an integral term alone, whose torque shows the motor's state.
@@ -14,7 +14,7 @@ import newton
 import warp as wp
 from newton.actuators import Actuator, ControllerPID
 
-from nexus_uav._src.physics.motors import Motors
+from nexus_uav._src.physics.actuators import Actuators
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")
 
@@ -64,32 +64,35 @@ def test_a_reset_zeroes_the_state_of_the_motors_it_names_alone():
     """A reset zeroes the state of the motors it names, and of no other.
 
     Given two joints 0.5 rad off their targets, each under an integral-only motor of gain 2, when the motors step
-    twice, the second joint's motor resets, and they step once more, then the first joint's torque is three
-    steps' integral, -0.03 N·m, and the second's one step's, -0.01 N·m.
+    twice, the second joint's motor resets, and they step once more, each step over a zeroed joint torque as the
+    physics clear stage leaves it, then the first joint's torque is three steps' integral, -0.03 N·m, and the
+    second's one step's, -0.01 N·m.
     """
     model, state, control, dofs = _two_joints()
-    motors = Motors(model)
+    motors = Actuators(model)
     mask = np.zeros(model.joint_dof_count, dtype=bool)
     mask[dofs[1]] = True
 
-    motors.step(state, control, DT)
-    motors.step(state, control, DT)
-    motors.reset(wp.array(mask, dtype=wp.bool))
-    motors.step(state, control, DT)
+    for reset in (False, False, True):
+        if reset:
+            motors.reset(wp.array(mask, dtype=wp.bool))
+        control.joint_f.zero_()
+        motors.step(state, control, DT)
 
     torque = control.joint_f.numpy()[dofs]
     np.testing.assert_allclose(torque, [-3 * KI * ANGLE * DT, -KI * ANGLE * DT], rtol=1e-5)
 
 
-def test_the_motors_overwrite_the_torque_a_step_before_left():
-    """The motors overwrite the torque a step before left, so no step's torque carries into the next.
+def test_the_actuators_add_their_torque_to_what_the_joint_torque_holds():
+    """The actuators add their torque to what the joint torque holds, so a rotor's motor and a servo on one
+    model accumulate into it, and the physics clear stage alone zeroes it.
 
-    Given two joints under integral-only motors and a joint torque of 5 N·m left on both, when the motors step
-    once, then each joint's torque is one step's integral, -0.01 N·m.
+    Given two joints under integral-only motors and a joint torque of 5 N·m left on both, when the actuators
+    step once, then each joint's torque is 5 N·m plus one step's integral, 4.99 N·m.
     """
     model, state, control, dofs = _two_joints()
     control.joint_f.fill_(5.0)
 
-    Motors(model).step(state, control, DT)
+    Actuators(model).step(state, control, DT)
 
-    np.testing.assert_allclose(control.joint_f.numpy()[dofs], [-KI * ANGLE * DT] * 2, rtol=1e-5)
+    np.testing.assert_allclose(control.joint_f.numpy()[dofs], [5.0 - KI * ANGLE * DT] * 2, rtol=1e-5)

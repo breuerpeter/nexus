@@ -9,24 +9,26 @@ from nexus_uav._src.usd.reader import read_declarations
 
 PROPELLER_SCHEMA = "NexusPropellerAPI"  # the schema a rotor's rigid body applies to declare its propeller
 ESC_SCHEMA = "NexusEscAPI"  # the schema a rotor's rigid body applies to declare its ESC, beside its propeller
+MOTOR_SCHEMA = "NexusMotorAPI"  # the schema a rotor's rigid body applies to declare its motor, beside the two
+ROTOR_SCHEMAS = (ESC_SCHEMA, MOTOR_SCHEMA, PROPELLER_SCHEMA)  # the three parts of a rotor, each on its body
 
 
 class NoRotor(ValueError):
-    """The vehicle declares no rotor: no body applies the ESC's or the propeller's schema."""
+    """The vehicle declares no rotor: no body applies the ESC's, the motor's or the propeller's schema."""
 
 
 @dataclass(frozen=True)
 class Rotor:
-    """One rotor the vehicle declares: an Electronic Speed Controller (ESC) and a propeller on one rigid body.
-
-    The rotor's motor is Newton's, on the body's joint, and the model is its one source: its no-load speed, the
-    rotor speed at full command, comes from :func:`~nexus_uav._src.vehicle.rotors.motor_speed`.
+    """One rotor the vehicle declares: an Electronic Speed Controller (ESC), a motor and a propeller on one rigid
+    body, each from its own schema's attributes.
 
     Attributes:
         body: The rigid body's prim path.
         joint: The path of the revolute joint that has the body as its child.
         parent: The joint's parent body, the airframe.
         channel: The entry of the controls the ESC reads.
+        esc: The ESC's values: ``idle_duty``, ``max_duty`` and ``bus_voltage``.
+        motor: The motor's values: ``kv``, ``resistance`` and ``current_limit``.
         propeller: The propeller's values: ``ct``, ``cd``, ``aero_h`` and ``aero_hforce``.
     """
 
@@ -34,30 +36,33 @@ class Rotor:
     joint: str
     parent: str
     channel: int
+    esc: dict
+    motor: dict
     propeller: dict
 
 
 def rotors(usd_path: str | Path) -> list[Rotor]:
     """Read the rotors the vehicle's Universal Scene Description (USD) file declares, in channel order.
 
-    A rotor is a rigid body that applies ``NexusEscAPI`` and ``NexusPropellerAPI``. Its joint is the revolute
-    joint that has it as child body. Its motor is Newton's on that joint, which the ESC reads from the model, so
-    a rotor whose joint no motor drives fails the build there. Each rotor flies its own propeller's values.
+    A rotor is a rigid body that applies ``NexusEscAPI``, ``NexusMotorAPI`` and ``NexusPropellerAPI``. Its joint
+    is the revolute joint that has it as child body, which its motor drives, so no ``NewtonActuator`` prim targets
+    it. Each rotor flies its own values.
 
     Returns:
         One :class:`Rotor` per rotor, ordered by channel.
 
     Raises:
         NoRotor: The vehicle declares no rotor; the message names the vehicle's root prim.
-        ValueError: An ESC or a propeller sits on a prim that isn't the child body of a revolute joint; a body
-            applies one of the two schemas without the other; two ESCs declare one channel; the rotors don't
-            share one parent body; or a prim still authors a ``propeller:*`` attribute, which the schema
-            replaces. The message names the prim.
+        ValueError: A rotor's schema sits on a prim that isn't the child body of a revolute joint; a body applies
+            one or two of the three schemas without the rest; a ``NewtonActuator`` prim targets a rotor's joint;
+            two ESCs declare one channel; the rotors don't share one parent body; or a prim still authors a
+            ``propeller:*`` attribute, which the schema replaces. The message names the prim.
     """
     from pxr import Usd
 
     stage = Usd.Stage.Open(str(usd_path), Usd.Stage.LoadAll)
     joint_of = {}  # a child body's revolute joint
+    driven: dict[str, str] = {}  # the NewtonActuator prim that targets each joint, by the joint's path
     for prim in stage.Traverse(Usd.TraverseInstanceProxies()):
         if legacy := [prop.GetName() for prop in prim.GetAuthoredPropertiesInNamespace("propeller")]:
             raise ValueError(
@@ -67,22 +72,32 @@ def rotors(usd_path: str | Path) -> list[Rotor]:
         if prim.GetTypeName() == "PhysicsRevoluteJoint":
             for body in prim.GetRelationship("physics:body1").GetTargets():
                 joint_of[str(body)] = prim
+        if prim.GetTypeName() == "NewtonActuator":
+            for joint in prim.GetRelationship("newton:targets").GetTargets():
+                driven[str(joint)] = str(prim.GetPath())
 
     declared: dict[str, dict[str, dict]] = {}  # each body's declarations, by schema
     for body, schema, kwargs in read_declarations(usd_path):
-        if schema in (PROPELLER_SCHEMA, ESC_SCHEMA):
+        if schema in ROTOR_SCHEMAS:
             declared.setdefault(body, {})[schema] = kwargs
     found = []
     for body, schemas in declared.items():
-        for schema in (ESC_SCHEMA, PROPELLER_SCHEMA):
-            if schema not in schemas:
-                other = PROPELLER_SCHEMA if schema == ESC_SCHEMA else ESC_SCHEMA
-                raise ValueError(f"{body}: {other} declares a rotor's part, and the body applies no {schema} beside it")
+        if missing := [schema for schema in ROTOR_SCHEMAS if schema not in schemas]:
+            applied = " and ".join(schema for schema in ROTOR_SCHEMAS if schema in schemas)
+            raise ValueError(
+                f"{body}: {applied} declares a rotor's part, and the body applies no {' and no '.join(missing)} "
+                "beside it; a rotor's body applies all three"
+            )
         joint = joint_of.get(body)
         if joint is None:
             raise ValueError(
-                f"{body}: {ESC_SCHEMA} and {PROPELLER_SCHEMA} sit on a prim that isn't the child body of a revolute "
-                "joint; apply them to a rotor's rigid body"
+                f"{body}: {', '.join(ROTOR_SCHEMAS)} sit on a prim that isn't the child body of a revolute joint; "
+                "apply them to a rotor's rigid body"
+            )
+        if actuator := driven.get(str(joint.GetPath())):
+            raise ValueError(
+                f"{actuator}: a NewtonActuator prim targets the rotor joint {joint.GetPath()}, which the motor on "
+                f"{body} drives; a rotor's joint takes no NewtonActuator prim"
             )
         parent = next(iter(joint.GetRelationship("physics:body0").GetTargets()), None)
         found.append(
@@ -91,6 +106,8 @@ def rotors(usd_path: str | Path) -> list[Rotor]:
                 joint=str(joint.GetPath()),
                 parent=str(parent),
                 channel=int(schemas[ESC_SCHEMA]["channel"]),
+                esc={k: float(v) for k, v in schemas[ESC_SCHEMA].items() if k != "channel"},
+                motor={k: float(v) for k, v in schemas[MOTOR_SCHEMA].items()},
                 propeller={k: float(v) for k, v in schemas[PROPELLER_SCHEMA].items()},
             )
         )
@@ -98,7 +115,7 @@ def rotors(usd_path: str | Path) -> list[Rotor]:
     if not found:
         root = stage.GetDefaultPrim().GetPath() if stage.GetDefaultPrim() else usd_path
         raise NoRotor(
-            f"{root}: the vehicle declares no rotor; apply {ESC_SCHEMA} and {PROPELLER_SCHEMA} to each rotor's rigid body"
+            f"{root}: the vehicle declares no rotor; apply {', '.join(ROTOR_SCHEMAS)} to each rotor's rigid body"
         )
     if len({rotor.parent for rotor in found}) > 1:
         placed = ", ".join(f"{rotor.body} on {rotor.parent}" for rotor in found)
@@ -127,9 +144,9 @@ class VehicleUsd:
 
     USD support needs ``usd-core`` to parse and ``newton-usd-schemas`` for the schema resolvers: newton's
     ``importers`` deps *minus* the open3d remesh and convex-decomp stack the lean runtime skips, see the
-    pyproject. Each rotor declares its ESC and its propeller with the ``NexusEscAPI`` and ``NexusPropellerAPI``
-    schemas on its rigid body, which :func:`rotors` reads at build time, beside the ``NewtonActuator`` prim that
-    declares its motor, which Newton's importer parses onto the model.
+    pyproject. Each rotor declares its ESC, its motor and its propeller with the ``NexusEscAPI``,
+    ``NexusMotorAPI`` and ``NexusPropellerAPI`` schemas on its rigid body, which :func:`rotors` reads at build
+    time; the registry builds each as a component.
 
     Start pose: ``cfg['spawn_pos']``; the default is support-height placement, where the lowest point
     of the USD bounds, in the start attitude, lands 1 cm off the ground, so no more 2 m settle drop.
@@ -163,6 +180,8 @@ class VehicleUsd:
             root = stage.GetDefaultPrim() or stage.GetPseudoRoot()
             cache = UsdGeom.BBoxCache(Usd.TimeCode.Default(), ["default", "render"])
             rng = cache.ComputeWorldBound(root).ComputeAlignedRange()
+            if rng.IsEmpty():  # no boundable prim of a rendered purpose: as unreadable bounds
+                return (0.0, 0.0, 2.0)
             lo, hi = rng.GetMin(), rng.GetMax()
             rot = Gf.Rotation(Gf.Quatd(float(att[3]), float(att[0]), float(att[1]), float(att[2])))
             min_z = min(

@@ -23,7 +23,7 @@ from typing import Any
 import warp as wp
 
 from nexus_uav._src.core import Clock, Loop, SeedTree, logger
-from nexus_uav._src.core.components import resolve_components, run_keywords, sibling_keywords
+from nexus_uav._src.core.components import check_siblings, resolve_components, run_keywords
 from nexus_uav._src.core.peer_inputs import PeerInputs
 from nexus_uav._src.physics import NewtonPhysics
 from nexus_uav._src.recording import Recorder
@@ -40,29 +40,28 @@ class Assembly:
     sensors: list
     controller: Any
     logger: Any  # the Rerun sink, or None for no recording
-    prims: dict  # each declared component by the path of its prim, for the vehicle's connections
+    prims: dict  # the declared components on each prim, by the prim's path, for the vehicle's connections
 
 
 def declared_elements(physics, usd_path, components, instance: int) -> list[tuple]:
     """Every command element and force element the vehicle declares, built through the registry as a sensor is:
-    the model and its prim's path, then the schema's attributes, the run's values its class states it needs, and
-    the attributes of each schema beside its own that its class names in ``siblings``. Returns each spec with its
-    component, in the order of the prims.
+    the model and its prim's path, then the schema's attributes and the run's values its class states it needs.
+    Returns each spec with its component, in the order of the prims.
+
+    Raises:
+        ValueError: A class names another schema in ``siblings``, since a component reads only its own schema's
+            attributes; the message names the prim and both schemas.
     """
     elements = [spec for spec in resolve_components(usd_path, components) if spec.role in ("command", "force")]
-    return [
-        (
-            spec,
-            spec.cls(
-                physics.model,
-                spec.prim,
-                **spec.kwargs,
-                **run_keywords(spec.cls, instance),
-                **sibling_keywords(spec, elements),
-            ),
-        )
-        for spec in elements
-    ]
+    built = []
+    for spec in elements:
+        check_siblings(spec)
+        component = spec.cls(physics.model, spec.prim, **spec.kwargs, **run_keywords(spec.cls, instance))
+        # The instance name, the leaf of the prim's path, as a sensor's: a rotor's ESC, motor and propeller share
+        # their body's, so each one's rows sit under it, `vehicle/commands/rotor_1/voltage`.
+        component.name = spec.prim.rsplit("/", 1)[-1].lower()
+        built.append((spec, component))
+    return built
 
 
 def elements(physics, vehicle_usd, components=None, instance: int = 0) -> tuple[list, list]:
@@ -141,11 +140,23 @@ def assemble(
         sensors=sensors,
         controller=controller,
         logger=sink,
-        prims={
-            **dict(zip([spec.prim for spec in specs], sensors, strict=True)),
-            **{spec.prim: component for spec, component in built},
-        },
+        prims=_by_prim([*zip([spec.prim for spec in specs], sensors, strict=True), *((s.prim, c) for s, c in built)]),
     )
+
+
+def _by_prim(placed) -> dict[str, list]:
+    """The components on each prim, by the prim's path, from `placed`, pairs of a prim's path and its component in
+    build order: a rotor's body holds its ESC, its motor and its propeller.
+    """
+    out: dict[str, list] = {}
+    for prim, component in placed:
+        out.setdefault(prim, []).append(component)
+    return out
+
+
+def _writer(by_prim: dict, prim: str, signal: str):
+    """The component on `prim` whose stages write `signal`, or ``None``: the one a connection to that prim names."""
+    return next((c for c in by_prim.get(prim, []) if _output(c, signal) is not None), None)
 
 
 # Default scenario. No sensor entry, by design: the scene's PhysicsScene authors its geodetic origin
@@ -153,9 +164,9 @@ def assemble(
 # noise/mount params, lives in the vehicle USD as applied sensor schemas, the same as the rotors.
 DEFAULT_SCENARIO = {
     "physics": {"enabled": True, "dt": 0.004, "force_cpu": False, "rtf": 0, "solver": "mujoco"},
-    # No rotor entry, by design. Each rotor's values, its channel, its ct, cd, aero_h and aero_hforce, and its
-    # motor's no-load speed, live in the vehicle USD, declared on its body and its motor, and VehicleUsd.rotors()
-    # reads them; since the USD is content-hashed, the vehicle hash pins the rotors, not any config.
+    # No rotor entry, by design. Each rotor's values, its channel, its ESC's duty map and bus, its motor's
+    # constants and its propeller's coefficients, live in the vehicle USD, declared on its body, and
+    # VehicleUsd.rotors() reads them; since the USD is content-hashed, the vehicle hash pins the rotors, not any config.
 }
 
 
@@ -178,10 +189,10 @@ def _link_ends(peers: dict, connections: dict, by_prim: dict) -> dict:
         for signal, targets in connections.get(prim, {}).items():
             outputs = []
             for target in targets:
-                component = by_prim.get(target)
+                component = _writer(by_prim, target, signal)
                 output = _output(component, signal) if component is not None else None
                 if output is None:
-                    what = "declares no component" if component is None else f"writes no {signal!r}"
+                    what = "declares no component" if target not in by_prim else f"writes no {signal!r}"
                     raise ValueError(
                         f"{prim} connects {signal!r} to {target}, which {what}: a peer's input targets the prims "
                         "whose components write the signal"
@@ -196,6 +207,11 @@ def _link_ends(peers: dict, connections: dict, by_prim: dict) -> dict:
 def _output(component, name: str):
     """The signal `name` among the outputs the stages of `component` declare, or ``None``."""
     return next((signal for stage in component.stages() for signal in stage.writes if signal.name == name), None)
+
+
+def _reads(component, name: str) -> bool:
+    """Whether a stage of `component` reads the signal `name`."""
+    return any(signal.name == name for stage in component.stages() for signal in stage.reads)
 
 
 def resolve_device(cfg: dict) -> str:
@@ -272,9 +288,9 @@ def build_loop(
         controller=controller, rerun=rerun, viewer=viewer, debug=debug, components=components, settings=settings,
         record_to_rrd=record_to_rrd, instance=instance,
     )  # fmt: skip
-    by_prim = {**a.prims, **(prims or {})}
+    by_prim = {**a.prims, **{prim: [component] for prim, component in (prims or {}).items()}}
     ends = _link_ends(peer_inputs or {}, connections or {}, by_prim)
-    by_prim.update(ends)
+    by_prim.update({prim: [end] for prim, end in ends.items()})
     links = []
     for reader, inputs in (connections or {}).items():
         for signal, writers in inputs.items():
@@ -282,15 +298,21 @@ def build_loop(
                 raise ValueError(
                     f"{reader} connects {signal!r} to {' and '.join(writers)}, and declares no component itself"
                 )
+            # The component on the reader's prim that reads the signal, else the prim's first, which the error names.
+            reading = next((c for c in by_prim[reader] if _reads(c, signal)), by_prim[reader][0])
             for writer in writers:
-                # A body's or a joint's prim names the plant's output of it, even where an element sits on that
-                # prim, as a rotor's ESC and propeller sit on its body: an element writes no pose.
-                if writer in physics.outputs.by_label:
-                    links.append((by_prim[reader], signal, physics, physics.outputs.by_label[writer].name))
+                # The component on the target that writes the signal, a rotor body's ESC for `voltage`; else, for a
+                # body's or a joint's prim, the plant's output of it, its pose, which no element writes; else the
+                # prim's first component, so the loop names the component and the signal in its error.
+                component = _writer(by_prim, writer, signal)
+                if component is not None:
+                    links.append((reading, signal, component, signal))
+                elif writer in physics.outputs.by_label:
+                    links.append((reading, signal, physics, physics.outputs.by_label[writer].name))
                 elif writer in by_prim:
-                    links.append((by_prim[reader], signal, by_prim[writer], signal))
+                    links.append((reading, signal, by_prim[writer][0], signal))
                 else:
-                    who = type(by_prim[reader]).__name__
+                    who = type(reading).__name__
                     raise ValueError(
                         f"{who} on {reader} connects {signal!r} to {writer}, which declares no component and is no "
                         "body or joint of the model"

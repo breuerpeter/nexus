@@ -1,9 +1,9 @@
 """The fixture quad the tests of the rotor chain share, and the helpers that fly it.
 
 A quad authored per test: four rotor bodies on revolute joints under one airframe, each body carrying the
-nexus propeller schema and, with ``motor="nexus"``, the ESC's duty map and the motor's constants, so a rotor's
-no-load speed at full command is ``busVoltage·maxDuty / Ke``, 402 rad/s; else a ``NewtonActuator`` prim
-with Newton's velocity servo and DC motor clamp drives each joint, with a no-load speed of 398 rad/s. A
+propeller's schema, the ESC's with its duty map and bus and the motor's with its constants, so a rotor's no-load
+speed at full command is ``busVoltage·maxDuty / Ke``, 402 rad/s. With ``motor="newton"`` a ``NewtonActuator``
+prim with Newton's velocity servo and DC motor clamp drives each joint instead, the shape the run refuses. A
 test flies it on the Warp CPU backend around a stand-in controller that sends one fixed command every tick.
 """
 
@@ -26,9 +26,10 @@ WEAK_CT = 1e-7  # N/rpm²: four rotors at full command make about half its weigh
 FLIGHT_STEPS = 125  # 0.5 s at the default 4 ms tick
 PROPELLER = {"nexus:cd": 0.05, "nexus:aeroH": 0.0, "nexus:aeroHforce": 0.0}
 # The ESC's duty map and bus, and the motor's constants, as the sheets give them: the no-load speed at full
-# command is then 402 rad/s, and the torque law matches the Newton motor's kd of 0.025 within 2 %.
+# command is then 402 rad/s, and the torque falls with speed at kd = Ke²/R = 0.0127 N·m·s, so a rotor of 1e-4
+# kg·m² lags by 8 ms, two ticks, which the solver's explicit step holds without overshoot.
 ESC = {"nexus:idleDuty": 0.1, "nexus:maxDuty": 1.0, "nexus:busVoltage": 24.0}
-MOTOR = {"nexus:kv": 160.0, "nexus:resistance": 0.14, "nexus:currentLimit": 130.0}
+MOTOR = {"nexus:kv": 160.0, "nexus:resistance": 0.28, "nexus:currentLimit": 130.0}
 GIMBAL_JOINT = f"{ROOT}/gimbal_joint"  # the fifth revolute joint, with `gimbal` or `servo`
 
 
@@ -43,14 +44,13 @@ def author(
     gimbal=False,
     reparent=False,
     servo=False,
-    no_motor=None,
     channels=(0, 1, 2, 3),
-    motor="newton",
+    motor="nexus",
     no_motor_schema=None,
     newton_motor=None,
     zero=None,
 ):
-    """A quad whose rotor bodies each declare the propeller schema, with Newton's motor on each rotor joint.
+    """A quad whose rotor bodies each declare the propeller's, the ESC's and the motor's schema.
 
     Args:
         path: Where to write the vehicle.
@@ -62,11 +62,10 @@ def author(
         gimbal: Add a fifth body on a revolute joint that applies no propeller schema.
         reparent: Hang rotor 3's joint off rotor 0's body instead of the airframe.
         servo: Add the gimbal joint and a `NewtonActuator` position servo on it, with its target at 0.
-        no_motor: The index of a rotor whose joint gets no `NewtonActuator` prim.
         channels: The controls channel each rotor's ESC declares, `NexusEscAPI` on the rotor's body, in
             rotor order; `None` declares no ESC.
-        motor: `"newton"` drives each rotor joint with a `NewtonActuator` prim; `"nexus"` declares the motor
-            with `NexusMotorAPI` on the rotor's body, its ESC's duty map and bus beside it, and no actuator prim.
+        motor: `"nexus"` declares the motor with `NexusMotorAPI` on the rotor's body, its ESC's duty map and bus
+            beside it, and no actuator prim; `"newton"` drives each rotor joint with a `NewtonActuator` prim.
         no_motor_schema: With `motor="nexus"`, the index of a rotor whose body applies no `NexusMotorAPI`.
         newton_motor: With `motor="nexus"`, the index of a rotor whose joint keeps a `NewtonActuator` prim too.
         zero: With `motor="nexus"`, `(index, attribute)`: the rotor whose ESC's or motor's attribute the fixture authors as 0.
@@ -123,7 +122,7 @@ def author(
         joint = revolute(f"rotor_{i}_joint", parent, rotor.GetPath(), offset, flipped)
         if legacy_attr and i == 0:
             joint.CreateAttribute("propeller:ct", Sdf.ValueTypeNames.Float, custom=True).Set(ct)
-        if (motor == "newton" and i != no_motor) or i == newton_motor:
+        if motor == "newton" or i == newton_motor:
             prim = stage.DefinePrim(f"{ROOT}/rotor_{i}_motor", "NewtonActuator")
             prim.CreateRelationship("newton:targets").SetTargets([joint.GetPath()])
             prim.ApplyAPI("NewtonPIDControlAPI")
@@ -138,7 +137,7 @@ def author(
             rotor.GetPrim().AddAppliedSchema("NexusEscAPI")
             rotor.GetPrim().CreateAttribute("nexus:channel", Sdf.ValueTypeNames.Int).Set(int(channels[i]))
         if motor == "nexus":
-            values = dict(ESC)
+            values = dict(ESC) if channels is not None else {}
             if i != no_motor_schema:
                 rotor.GetPrim().AddAppliedSchema("NexusMotorAPI")
                 values.update(MOTOR)

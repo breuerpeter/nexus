@@ -13,7 +13,7 @@ import nexus_uav  # noqa: F401  # registers the nexus schema plugin
 
 
 def author(out: Path) -> None:
-    """Write the fixture to `out`: PX4 and its Software In The Loop (SITL) peer each on a scope of its own under the default prim, one body under it with an Inertial Measurement Unit (IMU) on a lever arm and one prim for each other sensor schema, each analytic sensor a sphere of 1 cm, and one rotor body with a propeller and an ESC."""
+    """Write the fixture to `out`: PX4 and its Software In The Loop (SITL) peer each on a scope of its own under the default prim, one body under it with an Inertial Measurement Unit (IMU) on a lever arm and one prim for each other sensor schema, each analytic sensor a sphere of 1 cm, and one rotor body with a propeller, an ESC and a motor."""
     stage = Usd.Stage.CreateNew(str(out))
     UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
     UsdGeom.SetStageMetersPerUnit(stage, 1.0)
@@ -44,6 +44,10 @@ def author(out: Path) -> None:
     rotor.GetAttribute("nexus:ct").Set(3.463e-6)
     rotor.ApplyAPI("NexusEscAPI")
     rotor.GetAttribute("nexus:channel").Set(0)
+    rotor.GetAttribute("nexus:busVoltage").Set(25.2)
+    rotor.ApplyAPI("NexusMotorAPI")
+    for name, value in (("nexus:kv", 151.0), ("nexus:resistance", 0.16), ("nexus:currentLimit", 126.0)):
+        rotor.GetAttribute(name).Set(value)
     stage.GetRootLayer().Save()
 
 

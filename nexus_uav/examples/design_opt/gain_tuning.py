@@ -120,7 +120,7 @@ class AstroMaxWaypointRollout:
         )
         self.B_inv_wp = wp.array(mixer.B_inv.astype(np.float32), dtype=float)  # mixer B^-1, the allocation
         self.kf = wp.array(mixer.kf.astype(np.float32), dtype=float)  # each rotor's thrust map
-        self.omega_max_motor = wp.array(mixer.omega_max_motor.astype(np.float32), dtype=float)
+        self.lines = wp.array(mixer.lines.astype(np.float32), dtype=wp.vec3)  # each rotor's command line
 
         # Reused loop components + full tape history, one array per tick.
         self.obs_sensor = WarpObservationSensor(goal_w=goal, body_index=self.rollout.base)
@@ -160,7 +160,7 @@ class AstroMaxWaypointRollout:
                 self.moment_scale,
                 self.B_inv_wp,
                 self.kf,
-                self.omega_max_motor,
+                self.lines,
                 self.nr,
             ),
             outputs=(self.cmd[t],),

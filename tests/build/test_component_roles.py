@@ -453,12 +453,30 @@ class _StandInEsc(Component):
 
     ticks: ClassVar[dict] = {}
 
-    def __init__(self, model, path, *, channel: int = 0):
+    def __init__(self, model, path, *, channel: int = 0, **_duty_map):
         self.path = path
         self.controls = Signal("controls", wp.float32, shape=(1, int(channel) + 1))
 
     def stages(self):
         return [Stage("esc", "device", self._run, reads=(self.controls,))]
+
+    def _run(self, tick):
+        type(self).ticks[self.path] = type(self).ticks.get(self.path, 0) + 1
+
+
+class _StandInMotor(Component):
+    """A command element a rotor's body declares, `NexusMotorAPI`: its device stage reads the voltage its ESC
+    writes and writes nothing; the class counts in `ticks` how often each instance's stage ran, by its prim.
+    """
+
+    ticks: ClassVar[dict] = {}
+
+    def __init__(self, model, path, *, kv: float = 0.0, resistance: float = 0.0, current_limit: float = 0.0):
+        self.path = path
+        self.voltage = Signal("voltage", wp.float32, shape=(1,), default=[0.0])
+
+    def stages(self):
+        return [Stage("motor", "device", self._run, reads=(self.voltage,))]
 
     def _run(self, tick):
         type(self).ticks[self.path] = type(self).ticks.get(self.path, 0) + 1
@@ -524,7 +542,7 @@ def test_every_class_a_run_flies_comes_from_the_registry_and_the_builder_names_n
     """Every class a run flies comes from the registry, and the builder names none.
 
     Given a registry that maps every schema the fixture vehicle applies, each sensor's, the propeller's, the
-    rotor's command's, the controller's, the estimator's, the guidance's and the PX4 SITL peer's, to a stand-in,
+    ESC's, the motor's, the controller's, the estimator's, the guidance's and the PX4 SITL peer's, to a stand-in,
     when `Sim(registry=...)` steps 5 ticks, then the receipt names the stand-in for every declaration and each
     tick's stages are the stand-ins' alone.
     """
@@ -534,12 +552,14 @@ def test_every_class_a_run_flies_comes_from_the_registry_and_the_builder_names_n
     guidance = sv.prim("Guidance", "StandInGuidanceAPI", "float3 nexus:setpoint = (1, 2, 3)", kind="Scope")
     path = sv.vehicle(tmp_path, sensor + ROTOR_COMMANDS, root=ESTIMATOR + guidance, px4=True)
     esc = type("Esc", (_StandInEsc,), {"ticks": {}})
+    motor = type("Motor", (_StandInMotor,), {"ticks": {}})
     propeller = type("Propeller", (_StandInPropeller,), {"ticks": {}})
     registry = Registry(
         {
             "NexusPx4API_1": _setpoint_reader(),
             "NexusPropellerAPI": propeller,
             "NexusEscAPI": esc,
+            "NexusMotorAPI": motor,
             "StandInSensorAPI": _ConnectingSensor,
             "StandInEstimatorAPI": StandInEstimator,
             "StandInGuidanceAPI": _FixedGuidance,
@@ -568,16 +588,17 @@ def test_every_class_a_run_flies_comes_from_the_registry_and_the_builder_names_n
         ("/vehicle/Px4Sitl", "NexusPx4SitlAPI"): "KeepingFake",
         **{(prim, "NexusPropellerAPI"): "Propeller" for prim in rotors},
         **{(prim, "NexusEscAPI"): "Esc" for prim in rotors},
+        **{(prim, "NexusMotorAPI"): "Motor" for prim in rotors},
     }
     stages = {
         name
         for part in plan.removeprefix("stage plan: ").split(") ")
         for name in part.split("(")[-1].rstrip(")").split(" -> ")
     }
-    ran = (esc.ticks, propeller.ticks)
+    ran = (esc.ticks, motor.ticks, propeller.ticks)
     assert (resolved, stages - RUN_STAGES, ran, ticks) == (
         expected,
-        {"stand_in", "estimate", "guide", "exchange", "esc", "propeller"},
-        (dict.fromkeys(rotors, 5), dict.fromkeys(rotors, 5)),
+        {"stand_in", "estimate", "guide", "exchange", "esc", "motor", "propeller"},
+        (dict.fromkeys(rotors, 5), dict.fromkeys(rotors, 5), dict.fromkeys(rotors, 5)),
         5,
     )

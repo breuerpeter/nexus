@@ -17,6 +17,7 @@ layered over the same component semantics.
 from __future__ import annotations
 
 import time
+import typing
 from typing import TYPE_CHECKING
 
 import warp as wp
@@ -324,20 +325,36 @@ class Loop:
                     self.recorder.tap(path, signal, source=type(bound.component).__name__)
 
     def _default_links(self, ring: list[Bound]) -> list[tuple]:
-        """A link for each input of the vehicle's pose type that no component writes and no connection names:
-        the plant's base body output, ``body/<label>``. So a component that reads the vehicle's pose, the
-        passthrough estimator or PX4's ground truth, needs no connection on its prim, and a run that hands its
-        estimator over with no prim, as the examples do, reads the base body.
+        """The links a reader with no connection takes by default: for an input of the vehicle's pose type that
+        no component writes, the plant's base body output, ``body/<label>``, so a component that reads the
+        vehicle's pose, the passthrough estimator or PX4's ground truth, needs no connection on its prim, and a
+        run that hands its estimator over with no prim, as the examples do, reads the base body; and for an input
+        of one value that a component on the reader's own path writes, that writer, so a rotor's motor reads the
+        voltage of the ESC on its body and the file authors nothing. A connection on the reader's prim overrides
+        either.
         """
         writes, reads = _declared(ring)
         named = {(id(reader), name) for reader, name, *_ in self.connections}
-        return [
+        links = [
             (bound.component, name, self.physics, f"body/{self.physics.base_body}")
             for name, readers in reads.items()
             if name not in writes
             for bound, signal in readers
             if signal.type is PoseTwist and (id(bound.component), name) not in named
         ]
+        for name, readers in reads.items():
+            for bound, signal in readers:
+                if (id(bound.component), name) in named or typing.get_origin(signal.type) is list:
+                    continue
+                own = _instance(bound.component)  # the leaf of the reader's prim, which the builder names it by
+                beside = [
+                    w.component
+                    for w, _ in writes.get(name, [])
+                    if w.component is not bound.component and _instance(w.component) == own
+                ]
+                if beside:
+                    links.append((bound.component, name, beside[0], name))
+        return links
 
     def _record_tick(self) -> None:
         """The record stage: the Recorder snapshots every tapped signal into its history, stamped with the

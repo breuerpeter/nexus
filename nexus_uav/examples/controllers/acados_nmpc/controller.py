@@ -40,6 +40,7 @@ import warp as wp
 from nexus_uav._src.core.interfaces import Component, Stage
 from nexus_uav._src.core.schema import PoseTwist, ReferenceTrajectory
 from nexus_uav._src.core.signals import Signal
+from nexus_uav._src.vehicle.rotors import RPM_PER_RADS, command_lines, rotor_speeds
 
 GRAVITY = 9.81
 DEFAULT_CODEGEN_DIR = os.path.expanduser("~/.cache/nexus/acados_codegen/quad_nmpc")  # generated C, out of the repo
@@ -150,8 +151,7 @@ class AcadosNMPCController(Component):
         inertia,
         rotor_offsets,
         turning_dirs,
-        ct,
-        rpm_max,
+        rotors,
         dt,
         horizon=20,  # N=20 shooting nodes
         tf=1.0,  # horizon length [s] → node dt = tf/N = 50 ms
@@ -168,10 +168,12 @@ class AcadosNMPCController(Component):
         self.dt = float(dt)
         self.N = int(horizon)
         self.node_dt = float(tf) / self.N
-        # Each rotor's thrust map, in channel order: ct [N/rpm²] and the speed at full command [rpm].
-        self.ct = np.asarray(ct, dtype=np.float64)
-        self.rpm_max = np.asarray(rpm_max, dtype=np.float64)
-        self.t_max = self.ct * self.rpm_max * self.rpm_max  # each rotor's max thrust [N] = its clamp at throttle 1
+        # Each rotor's thrust map, in channel order: kf [N·s²], the loaded speed at full command [rad/s] and the
+        # command line, u = a·Ω + b·Ω² − c, the throttle that holds a speed.
+        self.kf = np.array([rotor.propeller["ct"] for rotor in rotors], dtype=np.float64) * RPM_PER_RADS**2
+        self.omega_max = rotor_speeds(rotors) / RPM_PER_RADS
+        self.lines = command_lines(rotors)
+        self.t_max = self.kf * self.omega_max**2  # each rotor's max thrust [N] = its clamp at throttle 1
         self.hover = float(mass) * GRAVITY / self.n
         # The setpoint the guidance writes, a ReferenceTrajectory on the host, and the one this controller
         # last read, so it notices a new reference by its identity.
@@ -286,10 +288,17 @@ class AcadosNMPCController(Component):
     def reference_path(self, n: int = 300) -> np.ndarray:
         return self.reference.reference_path(n) if self.reference is not None else np.zeros((0, 3))
 
+    def _throttle(self, thrust) -> np.ndarray:
+        """Each rotor's throttle for the thrust [N] it must make: the speed that makes it, ``√(thrust/kf)``, then
+        the command that holds that speed along the rotor's command line.
+        """
+        omega = np.sqrt(np.clip(thrust, 0.0, self.t_max) / self.kf)
+        a, b, c = self.lines.T
+        return (a * omega + b * omega**2 - c).astype(np.float32)
+
     def _hover_throttle(self) -> np.ndarray:
         """Per-rotor hover throttle, held until the guidance writes a reference."""
-        throttle = np.sqrt(np.clip(self.hover, 0.0, self.t_max) / self.ct) / self.rpm_max
-        return throttle.astype(np.float32)
+        return self._throttle(np.full(self.n, self.hover))
 
     def exchange(self, t, timeout=None):
         from nexus_uav.examples._lib.mixer import Controls
@@ -346,8 +355,7 @@ class AcadosNMPCController(Component):
         self._solver.solve()
         self.solve_time_total += float(self._solver.get_stats("time_tot"))
         u0 = self._solver.get(0, "u")  # per-rotor thrust [N]
-        # thrust [N] → actuator throttle: thrust = ct·(throttle·rpm_max)² ⇒ throttle = √(thrust/ct)/rpm_max
-        throttle = np.sqrt(np.clip(u0, 0.0, self.t_max) / self.ct) / self.rpm_max
+        throttle = self._throttle(u0)
 
         # Component-owned horizon viz, event-driven: when recording, emit the predicted NMPC horizon to
         # its row ``horizon`` every snapshot_every ticks; the newest entry at each time means scrubbing

@@ -273,7 +273,7 @@ class _Writer(Component):
     the signal `voltage`, so its value names each rotor's writer.
     """
 
-    def __init__(self, model, path, *, channel: int = 0):
+    def __init__(self, model, path, *, channel: int = 0, **_duty_map):
         self.value = float(channel + 1)
         self.voltage = Signal("voltage", wp.float32, shape=(1,))
 

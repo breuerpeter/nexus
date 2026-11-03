@@ -14,12 +14,11 @@ pytest.importorskip("pxr")
 import newton
 import warp as wp
 
-from nexus_uav._src.physics.motors import Motors
 from nexus_uav._src.physics.vehicle import VehicleUsd
 from nexus_uav._src.scene.world import GRAVITY
-from nexus_uav._src.vehicle.commands import Escs
+from nexus_uav._src.vehicle.commands import Escs, Motors
 from nexus_uav._src.vehicle.forces import Propellers
-from nexus_uav._src.vehicle.rotors import rotor_of, rotor_speeds
+from nexus_uav._src.vehicle.rotors import rotor_of
 from nexus_uav.examples._lib.rotor_chain import RotorChain, vehicle_rotors
 from tests.vehicle import quad
 
@@ -59,20 +58,27 @@ def _alone(path, place, command):
     found = [rotor_of(model, rotor.body) for rotor in rotors]  # each rotor's dof, coord, body and airframe
     dofs, bodies, base = [f[0] for f in found], [f[2] for f in found], found[0][3]
     values = {key: [rotor.propeller[key] for rotor in rotors] for key in ("ct", "cd", "aero_h", "aero_hforce")}
+    voltage, current = wp.zeros((1, len(rotors)), dtype=float), wp.zeros((1, len(rotors)), dtype=float)
     Escs(
-        rotor_vel_dofs=wp.array([dofs], dtype=wp.int32),
         channels=[rotor.channel for rotor in rotors],
-        ct=values["ct"],
-        cd=values["cd"],
-        rpm_max=rotor_speeds(model, rotors),
-    ).write(wp.array([command], dtype=float), control)
+        idle_duty=[rotor.esc["idle_duty"] for rotor in rotors],
+        max_duty=[rotor.esc["max_duty"] for rotor in rotors],
+    ).write(
+        wp.array([command], dtype=float),
+        wp.array([[rotor.esc["bus_voltage"] for rotor in rotors]], dtype=float),
+        voltage,
+    )
+    control.joint_f.zero_()
+    Motors(
+        rotor_vel_dofs=wp.array([dofs], dtype=wp.int32),
+        **{key: [rotor.motor[key] for rotor in rotors] for key in ("kv", "resistance", "current_limit")},
+    ).step(voltage, state, control, DT, current)
     Propellers(
         rotor_vel_dofs=wp.array(dofs, dtype=wp.int32),
         rotor_bodies=wp.array(bodies, dtype=wp.int32),
         rotor_bases=wp.array([base] * len(found), dtype=wp.int32),
         **values,
     ).add(state)
-    Motors(model).step(state, control, DT)
     return control.joint_f.numpy()[dofs], state.body_f.numpy()[bodies]
 
 
@@ -81,7 +87,7 @@ def test_each_copy_flies_its_rotor_chain_as_the_core_flies_the_vehicle_alone(tmp
 
     Given two copies of the quad 3 m apart, every rotor at 300 rad/s, each copy under its own commands, when the
     rotor chain steps them once, then each copy's rotor torques and rotor body wrenches equal those the core's
-    command element, propellers and motors give the vehicle alone under its commands.
+    ESCs, motors and propellers give the vehicle alone under its commands.
     """
     path = tmp_path / "quad.usda"
     quad.author(path)

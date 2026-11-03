@@ -21,8 +21,8 @@ from nexus_uav._src.config import LaunchConfig
 from nexus_uav._src.core.schema import SimTime
 from nexus_uav._src.core.signals import wire
 from nexus_uav._src.core.stages import Bound
-from nexus_uav._src.vehicle.commands import Escs
-from nexus_uav._src.vehicle.rotors import rotor_of, rotor_speeds
+from nexus_uav._src.vehicle.commands import Escs, Motors
+from nexus_uav._src.vehicle.rotors import rotor_of
 from nexus_uav.examples._lib import build_rotor_mixer_from_model
 from nexus_uav.examples._lib.observation import WarpObservationSensor
 from nexus_uav.examples.controllers.pid import PidController
@@ -65,17 +65,21 @@ def test_a_warp_observation_keeps_the_pid_path_on_the_device(tmp_path):
     assert _is_warp_array(controls.command)
     assert controls.command.numpy().reshape(-1).shape == (mixer.nr,)
 
-    # 3. the rotors' ESCs write the Warp command buffer into the motors' targets directly, no H2D
+    # 3. the rotors' ESCs and motors take the Warp command buffer to the actuators' targets directly, no H2D
     control = model.control()
     dofs = [rotor_of(model, rotor.body)[0] for rotor in rotors]
+    voltage, current = wp.zeros((1, mixer.nr), dtype=float), wp.zeros((1, mixer.nr), dtype=float)
     escs = Escs(
-        rotor_vel_dofs=wp.array([dofs], dtype=wp.int32),
         channels=[rotor.channel for rotor in rotors],
-        ct=[rotor.propeller["ct"] for rotor in rotors],
-        cd=[rotor.propeller["cd"] for rotor in rotors],
-        rpm_max=rotor_speeds(model, rotors),
+        idle_duty=[rotor.esc["idle_duty"] for rotor in rotors],
+        max_duty=[rotor.esc["max_duty"] for rotor in rotors],
     )
-    escs.write(controls.command.reshape((1, mixer.nr)), control)
+    bus = wp.array([[rotor.esc["bus_voltage"] for rotor in rotors]], dtype=float)
+    escs.write(controls.command.reshape((1, mixer.nr)), bus, voltage)
+    Motors(
+        rotor_vel_dofs=wp.array([dofs], dtype=wp.int32),
+        **{key: [rotor.motor[key] for rotor in rotors] for key in ("kv", "resistance", "current_limit")},
+    ).step(voltage, state, control, 0.004, current)
     wp.synchronize()
     targets = control.joint_target_qd.numpy()[dofs]
     assert np.isfinite(targets).all() and np.all(targets > 0.0)

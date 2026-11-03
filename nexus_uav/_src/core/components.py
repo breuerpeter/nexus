@@ -47,22 +47,18 @@ def run_keywords(cls: type, instance: int) -> dict:
 
 
 # A component reads only its own schema's attributes, and takes what it needs from another component as a signal.
-# The classes that still read another schema's attributes through `siblings`, each by its import path, until the
-# issue named closes: the ESC's drag feedforward reads its propeller's `ct` and `cd` until #386 The ESC emits a
-# terminal voltage and the motor is Newton's DC motor replaces it. `sibling_keywords` fails every other class.
-SIBLINGS_EXEMPT: tuple[str, ...] = ("nexus_uav._src.vehicle.commands.esc.Esc",)
+# A class that still read another schema's attributes through `siblings` would stand here by its import path,
+# with the issue that removes the read; none does, and `check_siblings` fails every class that declares one.
+SIBLINGS_EXEMPT: tuple[str, ...] = ()
 
 
-def sibling_keywords(spec: ComponentSpec, specs: list[ComponentSpec]) -> dict:
-    """The attributes of each schema `spec`'s class names in ``siblings``, a keyword to a schema applied on the
-    same prim, as that keyword: a rotor's ESC takes its propeller's values as ``propeller``. Only a class in
-    :data:`SIBLINGS_EXEMPT` can name one.
+def check_siblings(spec: ComponentSpec) -> None:
+    """Fail a class that names another schema in ``siblings``, unless :data:`SIBLINGS_EXEMPT` names the class.
 
     Raises:
-        ValueError: The class isn't exempt, since a component reads only its own schema's attributes; or the prim
-            applies no such schema. The message names the prim and both schemas.
+        ValueError: The class declares ``siblings`` and isn't exempt, since a component reads only its own schema's
+            attributes; the message names the prim and both schemas.
     """
-    out = {}
     siblings = getattr(spec.cls, "siblings", {})
     exempt = f"{spec.cls.__module__}.{spec.cls.__qualname__}" in SIBLINGS_EXEMPT
     if siblings and not exempt:
@@ -71,14 +67,6 @@ def sibling_keywords(spec: ComponentSpec, specs: list[ComponentSpec]) -> dict:
             f"{spec.prim}: {spec.cls.__name__} for {spec.schema} reads {read} on the same prim, and a component reads "
             "only its own schema's attributes; take what it needs from another component as a signal"
         )
-    for keyword, schema in siblings.items():
-        beside = [other for other in specs if other.prim == spec.prim and other.schema == schema]
-        if not beside:
-            raise ValueError(
-                f"{spec.prim}: {spec.schema} reads {schema} on the same prim, and the prim doesn't apply it"
-            )
-        out[keyword] = dict(beside[0].kwargs)
-    return out
 
 
 def is_peer(cls: type) -> bool:

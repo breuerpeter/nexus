@@ -236,8 +236,8 @@ def test_a_controller_whose_controls_are_narrower_than_a_reader_needs_fails_the_
     runs, and the error names both components and both widths.
 
     Given the fixture quad with four rotors and a controller whose controls hold three values, when the run
-    starts, then it fails before any stage runs, and the error names the controller, the rotors' command
-    element, 3 and 4. No stage ran, so the recording holds no history.
+    starts, then it fails before any stage runs, and the error names the controller, the command element of the
+    rotor on channel 3 by its instance name, 3 and 4. No stage ran, so the recording holds no history.
     """
     path = quad.author(tmp_path / "quad.usda")
     orch = quad.build(path, quad.FLIGHT_STEPS, _Narrow())
@@ -245,7 +245,7 @@ def test_a_controller_whose_controls_are_narrower_than_a_reader_needs_fails_the_
         with pytest.raises(ValueError) as e:
             sim.run()
         histories = len(sim)
-    named = all(re.search(rf"\b{word}\b", str(e.value)) for word in ("_Narrow", "Esc", "3", "4"))
+    named = all(re.search(rf"\b{word}\b", str(e.value)) for word in ("_Narrow", "rotor_3", "3", "4"))
     assert (named, histories) == (True, 0)
 
 
@@ -254,7 +254,7 @@ def test_an_input_no_component_writes_fails_the_run_naming_the_reader_and_the_si
     stage runs, and the error names the reader and the signal.
 
     Given the fixture quad and a controller that writes no controls, when the run starts, then it fails before
-    any stage runs, and the error names the rotors' command element and the controls. No stage ran, so the
+    any stage runs, and the error names rotor 0's command element by its instance name and the controls. No stage ran, so the
     recording holds no history.
     """
     orch = quad.build(quad.author(tmp_path / "quad.usda"), quad.FLIGHT_STEPS, _Silent())
@@ -262,17 +262,8 @@ def test_an_input_no_component_writes_fails_the_run_naming_the_reader_and_the_si
         with pytest.raises(ValueError) as e:
             sim.run()
         histories = len(sim)
-    named = all(word in str(e.value) for word in ("Esc", "controls"))
+    named = all(word in str(e.value) for word in ("rotor_0", "controls"))
     assert (named, histories) == (True, 0)
-
-
-def test_a_rotor_whose_joint_no_newton_actuator_drives_fails_the_build_naming_the_rotor(tmp_path):
-    """A rotor whose joint no Newton actuator drives fails the build, and the error names the rotor.
-
-    Given a fixture quad with the `NewtonActuator` prim of one rotor removed, when the run builds, then it
-    fails and the error names that rotor's prim.
-    """
-    assert f"{quad.ROOT}/rotor_0" in quad.build_error(quad.author(tmp_path / "quad.usda", no_motor=0))
 
 
 def test_a_newton_actuator_on_a_joint_that_is_no_rotor_still_drives_its_joint(tmp_path):
