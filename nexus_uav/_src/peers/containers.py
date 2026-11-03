@@ -43,9 +43,8 @@ def client():
     global _client
     if _client is not None:
         return _client
-    from docker.errors import DockerException
-
     import docker
+    from docker.errors import DockerException
 
     try:
         _client = docker.from_env()

@@ -715,13 +715,11 @@ class Loop:
         a peer, and a served recording has no file to append to. A peer whose rows fail must not cost
         the rest: the recording is already whole.
         """
-        rrd = self.logger.rrd_path if self.logger is not None else None
+        recording = [record for peer in self.peers if (record := getattr(peer, "record", None)) is not None]
+        rrd = self.logger.rrd_path if recording and self.logger is not None else None
         if rrd is None:
             return
-        for peer in self.peers:
-            record = getattr(peer, "record", None)
-            if record is None:
-                continue
+        for record in recording:
             try:
                 record(
                     rrd,
