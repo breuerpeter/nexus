@@ -2,13 +2,13 @@
 description: "A PX4 Software In The Loop (SITL) flight on the newton.actuators rotor motors, DC-motor servos authored in Universal Scene Description (USD) on real rotor joints, with the with-PX4 real-time factor reported."
 ---
 
-# PX4 software-in-the-loop flight on `newton.actuators` rotor motors
+# PX4 software-in-the-loop flight on the core rotor chain
 
 The Astro Max flown **closed-loop by PX4** over the decoupled SITL link, on the core
-rotor chain. Each rotor motor is a USD-authored `newton.actuators` composition:
-a `NewtonActuator` prim on the real rotor joint, made of a `ControllerPID` velocity servo and the
-`ClampingDCMotor` four-quadrant envelope. So the rotor speed Ω is a solver-integrated joint state
-with physical lag and saturation, and the props spin for real. The aerodynamics stay a Warp `body_f`
+rotor chain. Each rotor's ESC turns PX4's command into a terminal voltage from its duty map. Each
+rotor's motor, a first-order DC motor over Newton's actuator on the real rotor joint, turns that voltage
+into torque. So the rotor speed Ω is a solver-integrated joint state with physical lag, it droops
+under load, and the props spin for real. The aerodynamics stay a Warp `body_f`
 kernel over that solver-integrated Ω: airflow-aware thrust, H-force, and reaction drag, from the
 propeller each rotor's rigid body declares with `NexusPropellerAPI`. PX4 runs its real flight stack. The only thing it talks to is the
 Hardware In The Loop (HIL) link on `:4560`.
@@ -22,7 +22,7 @@ Hardware In The Loop (HIL) link on `:4560`.
 | Flight | PX4 closed-loop: `AUTO.TAKEOFF` → arm → climb → 4 yaw sweeps, the one flight profile |
 | Takeoff | **confirmed**, climbed **+5.0 m**, yawed 90/180/270/0° |
 | PX4 warnings | **0**, gated: the run fails on any `WARN` or `ERROR` line about the sim |
-| Rotor chain | Each rotor's ESC from its body's `NexusEscAPI`, USD-authored `newton.actuators` DC-motor servos on the real rotor joints, one `NewtonActuator` prim each, and each rotor's propeller from its body's `NexusPropellerAPI` |
+| Rotor chain | Each rotor's ESC from its body's `NexusEscAPI`, its motor from its `NexusMotorAPI`, a DC motor over Newton's actuator on the real rotor joint, and its propeller from its `NexusPropellerAPI` |
 | **Sim speed with PX4** | **~3.7×** real-time on the GPU with the captured strategy, RTX 5080, for the full takeoff+yaw profile with recording on |
 
 **Clean log gate.** The flight asserts **zero PX4 warnings**, the `px4_warnings` metric gated to 0.

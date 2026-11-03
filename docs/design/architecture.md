@@ -21,9 +21,9 @@ t = clock.advance()
 [estimator stages]                        # the estimate: the base body's pose and twist; none on PX4
 [guidance stage]                          # the setpoint, from the mission and the estimate; none on PX4
 [controller stages]                       # PX4: truth + exchange host stages; PID: one device stage
-[clear → command elements → force elements → step] × substeps
-                                          # command buffer → Newton's control inputs; state → per-body
-                                          # forces; step: Newton's actuators, then the solver
+[clear → command elements → actuators → force elements → step] × substeps
+                                          # controls → the ESCs' voltage → the motors' joint torque; state →
+                                          # per-body forces; step: the solver
 [state]                                   # the plant's outputs: a PoseTwist per body, a struct per joint
 [record]                                  # the recorder's device taps
 ```
@@ -155,27 +155,35 @@ client there: [`nexus_uav.px4.OffboardClient`](../reference/api/px4.md) on `sim.
 
 ## The rotor chain
 
-Each rotor's chain has three parts, split along Newton's model, so nothing in nexus overlaps
-Newton's actuator. Each rotor declares two of them on its rigid body, and the registry builds each
-from its declaration, so the builder names no rotor class.
+Each rotor's chain has three parts, the three real parts. Each part's own schema declares it on the
+rotor's rigid body, and the registry builds it from that declaration. So the builder names no rotor
+class, and no part reads the attributes of another.
 
 - The rotor's Electronic Speed Controller (ESC) is a **[command element](concepts.md#role)** the
   `NexusEscAPI` [schema](concepts.md#schema) declares. It reads one entry of the `controls`, its
-  `nexus:channel`, and scales it to a rotor-speed target, the ESC's job reduced to one multiply. It adds
-  a drag feedforward from its propeller's values.
-- The motor is **Newton's actuator**, a `NewtonActuator` prim authored in the vehicle USD: a velocity
-  servo under a torque-speed envelope on the real rotor joint. Physics steps every Newton actuator
-  the vehicle declares, rotor motor or not, before its solver. So the rotor speed is a
-  solver-integrated state with physical lag and saturation.
+  `nexus:channel`, and writes the terminal voltage its duty map switches onto the motor. The map runs
+  from `nexus:idleDuty` at command 0 to `nexus:maxDuty` at command 1, times the `bus_voltage` signal.
+  Until a battery writes that signal, the ESC's own `nexus:busVoltage` stands in.
+- The motor is an **actuator**, a [role](concepts.md#role) of its own between the command elements and the
+  force elements, the `NexusMotorAPI` schema declares, from the sheet's constants,
+  `nexus:kv`, `nexus:resistance` and `nexus:currentLimit`. It reads the `voltage` of the ESC on its own
+  body, with nothing authored, and builds Newton's actuator in code. That actuator is a first-order DC
+  motor: its torque on the real rotor joint is `(Kt/R)·(V − Ke·Ω)`, capped at the current limit, added
+  into the joint efforts physics zeroes each substep. So the rotor speed is a solver-integrated state with
+  physical lag, and it droops under load as a real drive's does. The motor emits the `current` it draws,
+  for a battery to sum. A nexus actuator is the one way to drive a joint: the build fails a
+  `NewtonActuator` prim.
 - The rotor's propeller, a **[force element](concepts.md#role)** the `NexusPropellerAPI` schema
   declares, is the airflow-aware closed form that turns rotor speed and inflow into thrust and
   in-plane force on the rotor body.
 
 The propeller's parameters, `ct`, `cd` and the aero terms, come from each rotor's own `NexusPropellerAPI`,
-so a vehicle's rotors can differ, as two propeller sizes do. The rotor speed at full command is the
-motor's no-load speed, `newton:velocityLimit`. The **mixer**, the
-Collective Thrust and Body Rates (CTBR) rate loop and the `B⁻¹` control allocation, lives in the
-*controllers*, not the rotor chain, and allocates each rotor's command from that rotor's values. So the
+so a vehicle's rotors can differ, as two propeller sizes do. The speed at full command is where the
+motor's torque at the voltage the ESC switches at command 1 meets the propeller's drag. Each rotor's
+command line, the command that holds a steady speed, follows from the three parts. A model-based
+controller inverts the plant through it. The **mixer** lives in the *controllers*, not the rotor
+chain: the Collective Thrust and Body Rates (CTBR) rate loop and the `B⁻¹` control allocation. It
+allocates each rotor's command from that rotor's values. So the
 `controls` signal is always one entry per actuator, and an ESC only ever applies the forward map. Every
 run flies this chain: PX4, each example controller, the gradient examples' recorded rollout and RL
 training. The sampling Model Predictive Control (MPC) planner plans on a single-body model of it, with

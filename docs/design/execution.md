@@ -125,7 +125,7 @@ run, fails.
 **Captured execution benefits online Software In The Loop (SITL) runs, not just batch.** The PX4
 controller states two host stages. Its `truth` stage copies the base body's true state, the ground truth
 PX4 logs. Its `exchange` stage reads each sensor's sample and runs the blocking MAVLink lockstep. The
-graph captures the clock, the command and force elements, physics, record and sensors *around* them.
+graph captures the clock, the command elements, the actuators, the force elements, physics, record and sensors *around* them.
 The only host↔device traffic per tick is then the small controls, sensor samples, and base body vectors
 the lockstep already moves. A **host solver** states the `exchange` stage. Examples are the per-tick
 optimization of an MPC controller and a torch policy. Its solve runs between replays while
