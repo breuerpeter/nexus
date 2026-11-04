@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.1](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.8.0...nexus-uav-v0.8.1) (2026-11-04)
+
+
+### Bug Fixes
+
+* **peers:** PX4 SITL leaves no root-owned .post file in the tree ([#395](https://github.com/breuerpeter/nexus/issues/395)) ([6b0d2fc](https://github.com/breuerpeter/nexus/commit/6b0d2fcad76ce92c9c7df22e5f399596fe6725d2))
+* **vehicle:** the rotors stand still until PX4 arms ([#399](https://github.com/breuerpeter/nexus/issues/399)) ([5a6b587](https://github.com/breuerpeter/nexus/commit/5a6b5872c287a4c4adebc52f908922ee92932856))
+
 ## [0.8.0](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.7.0...nexus-uav-v0.8.0) (2026-11-04)
 
 
