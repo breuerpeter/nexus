@@ -1008,7 +1008,7 @@ requires-dist = [
     { name = "scipy", specifier = ">=1.11.0" },
     { name = "torch", marker = "extra == 'policy'" },
     { name = "trimesh", specifier = ">=4.6.8" },
-    { name = "ulog-rrd", specifier = ">=0.1.0,<0.2" },
+    { name = "ulog-rrd", specifier = ">=0.2.0,<0.3" },
     { name = "usd-core", specifier = ">=25.5,<26.5" },
     { name = "warp-lang", specifier = ">=1.14.0,<1.16", index = "https://pypi.nvidia.com/" },
 ]
@@ -1711,14 +1711,14 @@ wheels = [
 
 [[package]]
 name = "ulog-rrd"
-version = "0.1.0"
+version = "0.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "rerun-sdk", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e5/47/c75baa4bdc93c7eb0105724ded712f2752af5b168bf47a4299541039a886/ulog_rrd-0.1.0.tar.gz", hash = "sha256:494b009b5c9f216b3dfa195d73ba0c85569beefad4ada58164302f1447bd46c1", size = 43387, upload-time = "2026-11-03T15:05:56.148Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a6/89/7ee6073decd0c8a10ce4e26e884bc961207d69c2add6d57c636098d53362/ulog_rrd-0.2.0.tar.gz", hash = "sha256:d2d8724db1fa3092fe61eb207edf1c3674e36273b01a3192cf3865726e49f57f", size = 43527, upload-time = "2026-11-04T07:40:30.642Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f3/0f/bc0f341819be9f801fe11d674a96c0c16c9efdd65b10d83a079d1312eeb8/ulog_rrd-0.1.0-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:3fa842fc93a674a5dd109bacad9a2beb24e39d3b065b38e52fc50c04d95d71b9", size = 2052349, upload-time = "2026-11-03T15:05:54.738Z" },
+    { url = "https://files.pythonhosted.org/packages/57/0a/d7aad0dbcc25f6948ee871bf594343ac951947785381f29520338dac1d0d/ulog_rrd-0.2.0-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:a9b6545d5445a7516960ec8a0174adbbe054609be606e7164741e050e7ca8f67", size = 2052246, upload-time = "2026-11-04T07:40:28.804Z" },
 ]
 
 [[package]]
