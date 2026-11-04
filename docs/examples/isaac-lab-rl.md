@@ -16,7 +16,7 @@ The recording replays the policy at increasing training iterations, logging the 
 meshes** for the swarm. Scrub `time` to watch the drones go from crashing to converging, and the
 hover-success and mean-distance curves climb over `train_iter`.
 
-<iframe src="https://app.rerun.io/version/0.34.1/?url=https://d2837jz4fvtxko.cloudfront.net/public/ci/logs/astromax_rl.rrd" width="100%" height="600" frameborder="0"></iframe>
+<iframe src="https://app.rerun.io/version/0.41.0/?url=https://d2837jz4fvtxko.cloudfront.net/public/ci/logs/astromax_rl.rrd" width="100%" height="600" frameborder="0"></iframe>
 
 *Early takes crash and scatter. Late takes all converge on their goals. A blank viewer means the
 recording isn't uploaded yet: run the pipeline below, then `scripts/ci/evaluate_examples.py --upload`.*
@@ -32,7 +32,7 @@ shows up only once the drone reaches the current one. **Gold** marks the active 
 **green** a reached one. This needs no policy change: the policy is goal-relative, so each
 waypoint is a fresh single-goal problem from wherever the drone is.
 
-<iframe src="https://app.rerun.io/version/0.34.1/?url=https://d2837jz4fvtxko.cloudfront.net/public/ci/logs/goto_policy.rrd" width="100%" height="600" frameborder="0"></iframe>
+<iframe src="https://app.rerun.io/version/0.41.0/?url=https://d2837jz4fvtxko.cloudfront.net/public/ci/logs/goto_policy.rrd" width="100%" height="600" frameborder="0"></iframe>
 
 *Each prop turns with its rotor joint, at the speed the simulation integrates.*
 

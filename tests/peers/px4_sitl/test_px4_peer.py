@@ -71,6 +71,9 @@ class _Container:
     def logs(self, stream=False, **kwargs):
         return iter(()) if stream else b""  # printed nothing, as a stream or whole, as the daemon gives it
 
+    def stop(self, timeout=None):
+        self._daemon.stopped.append(self.name)
+
     def remove(self, force=False):
         self._daemon.live.pop(self.name, None)
         self._daemon.removed.append(self.name)
@@ -85,6 +88,7 @@ class _Daemon:
 
     def __init__(self):
         self.runs: list[dict] = []
+        self.stopped: list[str] = []
         self.removed: list[str] = []
         self.builds: list[dict] = []
         self.live: dict[str, _Container] = {}
@@ -328,6 +332,55 @@ def test_a_managed_peer_starts_when_the_run_starts_and_stops_when_the_run_closes
     loop.close()  # entered and left without a step: the controller never connected
 
     assert (len(started), daemon.removed) == (1, started), f"started {started}, removed {daemon.removed}"
+
+
+def test_the_peer_asks_px4_to_stop_before_it_removes_the_container(daemon, run):
+    """PX4 closes its flight log on the way out, so the stop sends it the signal and waits before the
+    removal, which alone would cut the file where the last write landed.
+    """
+    loop = run()
+    (name,) = [r["name"] for r in daemon.runs if r.get("detach", True)]
+
+    loop.close()
+
+    assert (daemon.stopped, daemon.removed) == ([name], [name])
+
+
+def test_the_peer_appends_its_flight_log_to_the_recording_after_its_stop(daemon, run, monkeypatch):
+    """Given a stopped peer whose PX4 wrote a flight log into the peer's folder, when the run records it,
+    then the log goes to the converter with the recording's file and ids, under the peer's own root, in
+    the world's frame from where the vehicle started, every topic included; and with no log, nothing does.
+    """
+    from nexus_uav._src.peers.px4_sitl import runner
+
+    calls = []
+    monkeypatch.setattr(runner.ulog_rrd, "append", lambda ulog, rrd, **kw: calls.append((ulog, rrd, kw)))
+    loop = run()
+    (peer,) = [p for p in loop.peers if getattr(p, "name", None) == "px4_sitl"]
+    loop.close()
+    peer.record("run.rrd", application_id="nexus", recording_id="nexus", timeline="time", origin=(0.0, 0.0, 0.25))
+    assert calls == []
+
+    ulog = peer.dir / "2026-10-13" / "05_19_52.ulg"
+    ulog.parent.mkdir(parents=True)
+    ulog.write_bytes(b"ULog")
+    peer.record("run.rrd", application_id="nexus", recording_id="nexus", timeline="time", origin=(0.0, 0.0, 0.25))
+
+    assert calls == [
+        (
+            str(ulog),
+            "run.rrd",
+            {
+                "application_id": "nexus",
+                "recording_id": "nexus",
+                "entity_path_prefix": "px4_sitl/logs",
+                "timeline": "time",
+                "translation": (0.0, 0.0, 0.25),
+                "rotation": runner.ULOG_TO_WORLD,
+                "scalars": True,
+            },
+        )
+    ]
 
 
 def test_two_managed_runs_in_one_process_on_two_instances_keep_both_containers(daemon, run):

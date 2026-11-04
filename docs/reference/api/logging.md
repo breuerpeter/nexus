@@ -87,6 +87,6 @@ path.
 | `sim/vehicle/trajectory` | The flown path |
 | `sim/guidance/waypoints/wp_<i>`, `sim/guidance/reference` | The guidance's mission: its waypoints and its tracked reference |
 | `sim/model/shapes/…` | The scene: each shape's mesh once, posed from the bodies' histories |
-| `<peer>/logs` | A peer's log rows, under the name of its folder |
+| `<peer>/logs` | A peer's own rows, under the name of its folder. PX4's flight log, which the peer appends at teardown: `px4_sitl/logs/vehicle` and the rest of what [ulog-rrd](https://github.com/breuerpeter/ulog-rrd) draws in 3D, its text log at `px4_sitl/logs/log`, and each topic as a series under `px4_sitl/logs/timeseries` |
 
 ::: nexus_uav.logger

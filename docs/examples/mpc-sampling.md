@@ -21,7 +21,7 @@ NVIDIA's `example_diffsim_drone`.
   active waypoint advances once the drone reaches it, and the recording ends 2 s after the goal.
 - The diffsim-sampling counterpart to the analytic [`acados` NMPC](mpc-acados.md).
 
-<iframe src="https://app.rerun.io/version/0.34.1/?url=https://d2837jz4fvtxko.cloudfront.net/public/ci/logs/sampling_mpc.rrd" width="100%" height="600" frameborder="0"></iframe>
+<iframe src="https://app.rerun.io/version/0.41.0/?url=https://d2837jz4fvtxko.cloudfront.net/public/ci/logs/sampling_mpc.rrd" width="100%" height="600" frameborder="0"></iframe>
 
 *The drone weaves through the three pillars, advancing waypoint to waypoint: green start, gold
 waypoints, red goal. The orange MPC-horizon prediction updates on each re-plan and the blue trail

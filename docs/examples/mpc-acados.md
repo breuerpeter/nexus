@@ -35,7 +35,7 @@ controller.
   cost is smooth and the model analytic. It can't take the Signed Distance Field (SDF) obstacle
   cost the sampling MPC handles, though.
 
-<iframe src="https://app.rerun.io/version/0.34.1/?url=https://d2837jz4fvtxko.cloudfront.net/public/ci/logs/acados_nmpc.rrd" width="100%" height="600" frameborder="0"></iframe>
+<iframe src="https://app.rerun.io/version/0.41.0/?url=https://d2837jz4fvtxko.cloudfront.net/public/ci/logs/acados_nmpc.rrd" width="100%" height="600" frameborder="0"></iframe>
 
 *The drone flies the blue planned reference nose-first. The orange strip is the predicted `N=20`
 NMPC horizon, updating as it re-solves. The waypoint markers recolor with mission progress:

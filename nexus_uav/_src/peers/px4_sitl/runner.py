@@ -19,6 +19,12 @@ This module is the one definition of the PX4 SITL container. It used to be one o
 service and a CI shell script held their own copies, which drifted, see GH #86. So a change to the
 mounts, the user or the environment belongs here and nowhere else.
 
+PX4 keeps its own record of the flight, the ULog it writes into the peer's folder. The peer's
+``record`` adds it to the run's recording after the stop, through ``ulog_rrd``, under
+``px4_sitl/logs``: the vehicle PX4 estimated, in 3D beside the sim's, its text log and every topic
+as a series. PX4's clock is the sim's, the Hardware In The Loop (HIL) stamps, so the rows sit on the
+run's timeline unchanged.
+
 No flight logic lives here: the flight is always a script against ``nexus_uav.px4.OffboardClient``; see
 :mod:`nexus_uav.examples.controllers.px4.flight`.
 """
@@ -29,6 +35,8 @@ import os
 import shutil
 from collections.abc import Mapping
 from pathlib import Path
+
+import ulog_rrd
 
 from nexus_uav._src.core import logger
 from nexus_uav._src.peers import LABEL, containers
@@ -43,6 +51,13 @@ NAME = checkout.NAME  # the peer's kind: its label, its container's name and its
 _INSTANCE = "nexus.px4.instance"  # the label that carries the container's PX4 instance
 _OWNER = "nexus.owner"  # the label that carries the process that started the container
 IMAGE_DIR = Path(__file__).with_name("image")
+# Seconds PX4 gets to stop on its own: the logger closes the ULog on the way out, and a forced removal
+# would cut the file where the last write landed.
+STOP_GRACE_S = 10.0
+# PX4's world, north-east-down, in the sim's, north-west-up: a half turn about north, as a quaternion
+# (x, y, z, w). The sim's geodetic kernel in sensors.py maps world +x to north and +y to west. One
+# transform at the peer's root, which the viewer applies to every row below.
+ULOG_TO_WORLD = (1.0, 0.0, 0.0, 0.0)
 
 
 def _container_kwargs(tree: Path) -> dict:
@@ -122,6 +137,7 @@ class Px4Sitl(ContainerPeer):
     name = NAME
     check_pin = staticmethod(checkout.check)
     clock = "stepped"
+    stop_grace = STOP_GRACE_S
 
     def __init__(
         self,
@@ -296,6 +312,44 @@ class Px4Sitl(ContainerPeer):
         """
         ulogs = sorted(self.dir.glob("**/*.ulg"), key=lambda p: p.stat().st_mtime)
         return {"px4_log": str(self.log_path), "ulog": str(ulogs[-1]) if ulogs else None}
+
+    def record(
+        self,
+        rrd: str,
+        *,
+        application_id: str,
+        recording_id: str,
+        timeline: str,
+        origin: tuple[float, float, float] | None = None,
+    ) -> None:
+        """Append PX4's flight log to the run's recording, under ``px4_sitl/logs``: the vehicle PX4
+        estimated, in 3D in the sim's world, its text log and every topic as a series, on the run's
+        timeline. After the stop: the log is whole once PX4 has stopped.
+
+        Args:
+            rrd: The recording's file.
+            application_id: The recording's ``application_id``, which the rows carry to join it.
+            recording_id: The recording's id.
+            timeline: The recording's timeline, which PX4's stamps sit on unchanged.
+            origin: Where the vehicle started, in world metres: PX4's local frame has its origin where
+                its estimator started, which is there. ``None`` puts it at the world's origin.
+        """
+        ulog = self.artifacts()["ulog"]
+        if ulog is None:
+            logger.info("PX4 left no flight log to add to the recording")
+            return
+        ulog_rrd.append(
+            ulog,
+            rrd,
+            application_id=application_id,
+            recording_id=recording_id,
+            entity_path_prefix=f"{NAME}/logs",
+            timeline=timeline,
+            translation=origin,
+            rotation=ULOG_TO_WORLD,
+            scalars=True,
+        )
+        logger.info(f"Rerun: PX4's flight log {Path(ulog).name} added under {NAME}/logs")
 
 
 def _airframe_file(tree: Path, airframe: str) -> Path:

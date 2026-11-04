@@ -56,7 +56,11 @@ class Peer(Protocol):
     it fails at once. A peer that writes files a reader wants after the run, a console log, names
     them in ``artifacts``, which is optional. A peer that can tell its own error lines from the rest
     of its console, such as the line PX4 prints for an airframe its tree lacks, returns them from
-    ``errors``, which is optional too, and a run that fails quotes them in its ``RunError``.
+    ``errors``, which is optional too, and a run that fails quotes them in its ``RunError``. A peer that
+    keeps rows of its own for the run's recording, an autopilot's flight log, appends them to the
+    ``.rrd`` in ``record(rrd, *, application_id, recording_id, timeline, origin)``, under the name of
+    its folder and from ``origin``, where the vehicle started, which the loop calls after the peer's
+    stop, once its files are whole; also optional.
 
     ``clock`` states how the peer keeps time, one of three ways. ``stepped``: a component steps it each
     tick, as PX4 SITL runs on the sim time the lockstep link carries. ``on_request``: it answers a request

@@ -375,6 +375,22 @@ def test_write_draws_the_flown_path_as_one_segment_per_row(tmp_path):
     assert _timed_rows(rrd, f"/{TRAJECTORY_ENTITY}") == 6
 
 
+def test_the_origin_is_where_the_base_body_started(tmp_path):
+    """Where the vehicle started is the base body's first recorded position, known once the first
+    block went out, and the same after every later block: an autopilot's frame has its origin there.
+    """
+    from nexus_uav._src.logging import Logger
+
+    rl = Logger(model=None, serve=False, record_to_rrd=str(tmp_path / "origin.rrd"))
+    rl._body_labels = ["body_frd"]
+    assert rl.origin is None
+    rl.write({"vehicle/body/body_frd": _FakeHistory(rows=7)}, 0, 4)
+    rl.write({"vehicle/body/body_frd": _FakeHistory(rows=7)}, 4)
+    rl.close()
+
+    assert rl.origin == (0.0, 0.0, 1.0)
+
+
 def test_write_poses_a_body_whose_label_is_a_full_path(tmp_path):
     """Two bodies of one leaf name keep their full model labels as keys, slashes included, as the
     fixture with a mast does: the base body's rows still pose it at `sim/vehicle/body` and draw the
