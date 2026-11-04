@@ -31,7 +31,6 @@ No flight logic lives here: the flight is always a script against ``nexus_uav.px
 
 from __future__ import annotations
 
-import math
 import os
 import shutil
 from collections.abc import Mapping
@@ -55,9 +54,10 @@ IMAGE_DIR = Path(__file__).with_name("image")
 # Seconds PX4 gets to stop on its own: the logger closes the ULog on the way out, and a forced removal
 # would cut the file where the last write landed.
 STOP_GRACE_S = 10.0
-# The ULog's frame, east-north-up, in the world's, north-west-up: a quarter turn about up, as a
-# quaternion (x, y, z, w). The sim's geodetic kernel in sensors.py maps world +x to north and +y to west.
-ULOG_TO_WORLD = (0.0, 0.0, -math.sqrt(0.5), math.sqrt(0.5))
+# PX4's world, north-east-down, in the sim's, north-west-up: a half turn about north, as a quaternion
+# (x, y, z, w). The sim's geodetic kernel in sensors.py maps world +x to north and +y to west. One
+# transform at the peer's root, which the viewer applies to every row below.
+ULOG_TO_WORLD = (1.0, 0.0, 0.0, 0.0)
 
 
 def _container_kwargs(tree: Path) -> dict:
