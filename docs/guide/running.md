@@ -288,8 +288,11 @@ Everything lands in **one** recording, app ID `nexus` and recording ID
 - **the sim scene**: logged by nexus itself. The blueprint **hides** the ground plane,
   `/sim/model/shapes/shape_0`, **by default** because it occludes the vehicle.
 - **framework events**: the `nexus` logger, at `sim/logs/<module>`.
-- **PX4's own view of the flight**: not in the recording. PX4 keeps it in its console log,
-  `px4_sitl/console.log`, and in its `ULog`, `px4_sitl/<date>/<time>.ulg`, both in the run's folder and both artifacts of the run.
+- **PX4's own view of the flight**: its flight log, the `ULog`, which the peer converts with
+  [ulog-rrd](https://github.com/breuerpeter/ulog-rrd) and appends to the `.rrd` once PX4 has
+  stopped. The vehicle PX4 estimated flies beside the sim's in the Scene, its messages join the Logs
+  pane, and every topic sits under `px4_sitl/logs/timeseries`. PX4's console, `px4_sitl/console.log`,
+  and the `ULog`, `px4_sitl/<date>/<time>.ulg`, stay in the run's folder, both artifacts of the run.
 - **test and driver stages**: a driver in the sim's process logs each stage with `nx.logger.info("…")`,
   which writes to the console and, when recording, the Logs pane.
 

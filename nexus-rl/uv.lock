@@ -1075,6 +1075,7 @@ dependencies = [
     { name = "rerun-sdk", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "scipy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "trimesh", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "ulog-rrd", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "usd-core", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "warp-lang", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
 ]
@@ -1095,12 +1096,13 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.0.0" },
     { name = "pymavlink", specifier = ">=2.4.49" },
     { name = "pyyaml", specifier = ">=6.0.2" },
-    { name = "rerun-sdk", specifier = ">=0.34.1,<0.35" },
+    { name = "rerun-sdk", specifier = ">=0.41.0,<0.42" },
     { name = "ruckig", marker = "extra == 'acados'", specifier = ">=0.14" },
     { name = "ruckig", marker = "extra == 'examples'", specifier = ">=0.14" },
     { name = "scipy", specifier = ">=1.11.0" },
     { name = "torch", marker = "extra == 'policy'" },
     { name = "trimesh", specifier = ">=4.6.8" },
+    { name = "ulog-rrd", specifier = ">=0.2.0,<0.3" },
     { name = "usd-core", specifier = ">=25.5,<26.5" },
     { name = "warp-lang", specifier = ">=1.14.0,<1.16", index = "https://pypi.nvidia.com/" },
 ]
@@ -1692,7 +1694,7 @@ wheels = [
 
 [[package]]
 name = "rerun-sdk"
-version = "0.34.1"
+version = "0.41.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "attrs", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
@@ -1703,7 +1705,7 @@ dependencies = [
     { name = "typing-extensions", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/18/fa/f87899a8c0cc36901d32069072340b894654fa6f3b3a2a74913565c3661a/rerun_sdk-0.34.1-cp310-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:60c35adb49f04bd64bf1a426b59f61aeee8312fa7cc2624878b43186e817b2d4", size = 147505605, upload-time = "2026-07-07T17:43:25.397Z" },
+    { url = "https://files.pythonhosted.org/packages/f1/b4/5617efc71fb08478abf87523215e4519746a85fab79bfb4e980bb4ef6b6c/rerun_sdk-0.41.0-cp311-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:de65e3b77be909edc5fb2383fd04af73a930f6f085c2a03fd33c965061ff815e", size = 170517869, upload-time = "2026-10-28T17:42:36.071Z" },
 ]
 
 [[package]]
@@ -2026,6 +2028,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/55/e3/70399cb7dd41c10ac53367ae42139cf4b1ca5f36bb3dc6c9d33acdb43655/typing_inspection-0.4.2.tar.gz", hash = "sha256:ba561c48a67c5958007083d386c3295464928b01faa735ab8547c5692e87f464", size = 75949, upload-time = "2025-10-01T02:14:41.687Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/dc/9b/47798a6c91d8bdb567fe2698fe81e0c6b7cb7ef4d13da4114b41d239f65d/typing_inspection-0.4.2-py3-none-any.whl", hash = "sha256:4ed1cacbdc298c220f1bd249ed5287caa16f34d44ef4e9c3d0cbad5b521545e7", size = 14611, upload-time = "2025-10-01T02:14:40.154Z" },
+]
+
+[[package]]
+name = "ulog-rrd"
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "rerun-sdk", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a6/89/7ee6073decd0c8a10ce4e26e884bc961207d69c2add6d57c636098d53362/ulog_rrd-0.2.0.tar.gz", hash = "sha256:d2d8724db1fa3092fe61eb207edf1c3674e36273b01a3192cf3865726e49f57f", size = 43527, upload-time = "2026-11-04T07:40:30.642Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/57/0a/d7aad0dbcc25f6948ee871bf594343ac951947785381f29520338dac1d0d/ulog_rrd-0.2.0-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:a9b6545d5445a7516960ec8a0174adbbe054609be606e7164741e050e7ca8f67", size = 2052246, upload-time = "2026-11-04T07:40:28.804Z" },
 ]
 
 [[package]]

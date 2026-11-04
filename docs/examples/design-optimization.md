@@ -19,7 +19,7 @@ every run flies to **tune a controller**, in `gain_tuning.py`, and **recover a p
 - **Mass recovery:** gradient descent on the mass of the airframe, through an open-loop climb, recovers a
   known mass to ~0.03 %.
 
-<iframe src="https://app.rerun.io/version/0.34.1/?url=https://d2837jz4fvtxko.cloudfront.net/public/ci/logs/gain_tuning.rrd" width="100%" height="600" frameborder="0"></iframe>
+<iframe src="https://app.rerun.io/version/0.41.0/?url=https://d2837jz4fvtxko.cloudfront.net/public/ci/logs/gain_tuning.rrd" width="100%" height="600" frameborder="0"></iframe>
 
 *Both flights share one timeline, with the two paths overlaid. The **mis-tuned baseline** never
 settles and comes no closer than ~1.7 m to the waypoint. Then the **tuned** controller flies in,

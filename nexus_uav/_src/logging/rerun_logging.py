@@ -47,6 +47,7 @@ from nexus_uav._src.core.labels import leaf_keys
 
 APP_ID = "nexus"
 RECORDING_ID = "nexus"
+TIMELINE = "time"  # the one timeline, duration-typed, which every producer stamps
 GRPC_PORT = 9876
 SERVER_URI = f"rerun+http://127.0.0.1:{GRPC_PORT}/proxy"
 # The sim's root: every row this process writes sits under it. A peer writes under the name of its
@@ -454,6 +455,7 @@ class Logger:
         self._written: dict[str, bool] = {}  # the histories whose legend went out, by key
         self._axes_static_done = False
         self._trail_end: np.ndarray | None = None  # the last position written: where the next segment starts
+        self._origin: np.ndarray | None = None  # the first position written: where the vehicle started
         self._dynamic: list[tuple[str, np.ndarray, np.ndarray, np.ndarray]] = []  # batches posed per block
         # The blocks wait here for the writer thread, which encodes and sends them: a block's send takes
         # tens of milliseconds, a stall the lockstep thread must not take every drain.
@@ -498,6 +500,28 @@ class Logger:
         mutually exclusive; save a live session from the viewer.
         """
         return self._rrd_path
+
+    @property
+    def application_id(self) -> str:
+        """The recording's ``application_id``, which rows another process appends must carry to join it."""
+        return APP_ID
+
+    @property
+    def recording_id(self) -> str:
+        """The recording's id, which rows another process appends must carry to join it."""
+        return RECORDING_ID
+
+    @property
+    def timeline(self) -> str:
+        """The one timeline every row sits on."""
+        return TIMELINE
+
+    @property
+    def origin(self) -> tuple[float, float, float] | None:
+        """Where the vehicle started, in world metres: the base body's first recorded position, where
+        an autopilot's own frame has its origin. ``None`` until the first block of rows went out.
+        """
+        return None if self._origin is None else tuple(float(v) for v in self._origin)
 
     def _log_scene(self) -> None:
         """Log the scene once: each shape batch's mesh, static, at the name Newton's viewer base
@@ -968,6 +992,8 @@ class Logger:
         """
         starts = pos if self._trail_end is None else np.vstack([self._trail_end, pos])
         if self._trail_end is None:
+            if self._origin is None and len(pos):
+                self._origin = pos[0]
             starts, t, pos = pos[:-1], t[1:], pos[1:]
         else:
             starts = starts[:-1]

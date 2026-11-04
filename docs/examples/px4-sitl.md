@@ -13,7 +13,7 @@ kernel over that solver-integrated Ω: airflow-aware thrust, H-force, and reacti
 propeller each rotor's rigid body declares with `NexusPropellerAPI`. PX4 runs its real flight stack. The only thing it talks to is the
 Hardware In The Loop (HIL) link on `:4560`.
 
-<iframe src="https://app.rerun.io/version/0.34.1/?url=https://d2837jz4fvtxko.cloudfront.net/public/ci/logs/px4_sitl.rrd" width="100%" height="600" frameborder="0"></iframe>
+<iframe src="https://app.rerun.io/version/0.41.0/?url=https://d2837jz4fvtxko.cloudfront.net/public/ci/logs/px4_sitl.rrd" width="100%" height="600" frameborder="0"></iframe>
 
 ## Key stats
 
