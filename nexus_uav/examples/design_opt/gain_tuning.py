@@ -300,7 +300,7 @@ def main():
 
         # Deliberately mistuned baseline: weak altitude P, g0, + low horizontal-position P, g2, ⇒ it crawls,
         # falls short of the waypoint and never settles: a clear "before" against the tuned controller. The
-        # collective is a share of the maximum thrust, so the altitude gains, g0 and g1, sit 1.64 times below the
+        # collective is a share of the full thrust, so the altitude gains, g0 and g1, sit 1.64 times below the
         # 9.18 kg vehicle's: at 5593 g the thrust-to-weight is 1.64 times higher.
         BASE = np.array([0.0427, 0.427, 0.08, 0.35, 8.0, 2.5, 1.0], dtype=np.float32)
         LO = [0.01, 0.01, 0.01, 0.01, 1.0, 0.2, 0.1]
