@@ -47,10 +47,10 @@ SCENE = "empty"  # flat ground
 MAX_STEPS = 6000  # safety cap; the guidance ends the run on mission completion
 WAYPOINTS = [(1.5, 1.0, 1.5), (-1.5, 1.0, 2.0), (-0.5, -0.5, 1.8)]  # a small tour
 FENCE = ((-3.0, -3.0, 0.2), (3.0, 3.0, 4.0))  # the box the flight stays inside [m]; leaving it ends the run
-# The hosted default policy, content-addressed and sha-verified: the export of the RL leg's training on CI's
-# A10G, on this vehicle's articulated plant, 2048 envs over 500 iterations at seed 42. It flew the tour there
-# first; see docs/examples/isaac-lab-rl.md for the recipe.
-POLICY_ASSET = {"name": "goto_policy", "sha256": "013e3f1ab11e0bbcc6620a599820132f17fa235702e2e985f6e212c9ba3f8558"}
+# The hosted default policy, content-addressed and sha-verified: the export of the RL leg's training on an
+# RTX 5080, on this vehicle's articulated plant at 5593 g, 2048 envs over 500 iterations at seed 47. Of seeds
+# 42 to 47 it and seed 44 flew the tour 3/3 there; see docs/examples/isaac-lab-rl.md for the recipe.
+POLICY_ASSET = {"name": "goto_policy", "sha256": "eb826f0fcb8241f371489826cba6d84ead08996d98f2a4f5987a075902703e62"}
 
 
 def _resolve_policy(override: str | None, asset: dict = POLICY_ASSET) -> str:
