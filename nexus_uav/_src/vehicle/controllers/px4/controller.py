@@ -286,7 +286,12 @@ class Px4MavlinkController(Component):
         msg = self.mav.recv_match(type="HIL_ACTUATOR_CONTROLS", blocking=True, timeout=timeout)
         if msg is None:
             return None
-        return np.asarray(msg.controls, dtype=np.float32)
+        controls = np.asarray(msg.controls, dtype=np.float32)
+        # PX4 sends 0 on every channel while disarmed and at its lowest armed output alike, and only the armed flag
+        # of the mode differs. While disarmed, every channel reads NaN, no output, so no rotor turns.
+        if not msg.mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED:
+            controls[:] = np.nan
+        return controls
 
     def close(self) -> None:
         # The peer is the run's to stop; this end only closes its socket. It tolerates failure, the same
