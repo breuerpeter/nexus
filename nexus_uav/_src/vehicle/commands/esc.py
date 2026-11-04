@@ -3,7 +3,9 @@
 A brushless drive sets nothing but the fraction of its bus it switches onto the windings. The ESC reads the
 controller's normalized command ``u`` on its channel and writes the terminal voltage ``V = d(u)·V_bus``, where
 ``d(u) = idleDuty + (maxDuty − idleDuty)·clamp(u, 0, 1)`` is the duty map its own attributes state: ``idleDuty``
-is the idle a real drive spins at under command 0, and ``maxDuty`` below 1 holds back the top. ``V_bus`` is the
+is the idle a real drive spins at under command 0, and ``maxDuty`` below 1 holds back the top. A NaN command is
+an autopilot's no output, as PX4 sends while disarmed, and switches nothing: the rotor stands still, as a real
+drive does under the disarmed pulse below its start. ``V_bus`` is the
 ``bus_voltage`` signal, a battery's in flight, and the ESC's own ``busVoltage`` until a component writes it. The
 rotor's motor, :class:`~nexus_uav._src.vehicle.actuators.motor.Motor` on the same body, turns the voltage into
 torque in the actuator stage after it, so the ESC reads nothing of its propeller's or its motor's.
@@ -25,17 +27,23 @@ from nexus_uav._src.core.signals import Signal
 
 @wp.kernel
 def _terminal_voltage(
-    cmd: wp.array2d(dtype=float),  # (vehicles, n) normalized [0, 1] commands, one row per vehicle
+    cmd: wp.array2d(dtype=float),  # (vehicles, n) normalized [0, 1] commands, NaN for none, one row per vehicle
     bus: wp.array2d(dtype=float),  # (vehicles, nr) the bus voltage each rotor's ESC switches [V]
     channels: wp.array(dtype=wp.int32),  # (nr,) the entry of its vehicle's row each rotor reads
     idle_duty: wp.array(dtype=float),  # (nr,) each ESC's duty at command 0
     max_duty: wp.array(dtype=float),  # (nr,) each ESC's duty at command 1
     voltage: wp.array2d(dtype=float),  # (vehicles, nr) out: each rotor's terminal voltage [V]
 ):
-    """Normalized command → the duty the map gives → the terminal voltage, that fraction of the bus."""
+    """Normalized command → the duty the map gives → the terminal voltage, that fraction of the bus. A NaN command,
+    no output, switches 0 V.
+    """
     v, i = wp.tid()
-    u = wp.clamp(cmd[v, channels[i]], 0.0, 1.0)
-    voltage[v, i] = (idle_duty[i] + (max_duty[i] - idle_duty[i]) * u) * bus[v, i]
+    c = cmd[v, channels[i]]
+    if wp.isnan(c):
+        voltage[v, i] = 0.0
+    else:
+        u = wp.clamp(c, 0.0, 1.0)
+        voltage[v, i] = (idle_duty[i] + (max_duty[i] - idle_duty[i]) * u) * bus[v, i]
 
 
 class Escs:

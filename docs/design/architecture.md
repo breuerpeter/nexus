@@ -163,7 +163,8 @@ class, and no part reads the attributes of another.
   `NexusEscAPI` [schema](concepts.md#schema) declares. It reads one entry of the `controls`, its
   `nexus:channel`, and writes the terminal voltage its duty map switches onto the motor. The map runs
   from `nexus:idleDuty` at command 0 to `nexus:maxDuty` at command 1, times the `bus_voltage` signal.
-  Until a battery writes that signal, the ESC's own `nexus:busVoltage` stands in.
+  Until a battery writes that signal, the ESC's own `nexus:busVoltage` stands in. A `NaN` command is no
+  output, as PX4's controller writes until PX4 arms, and the ESC switches 0 V.
 - The motor is an **actuator**, a [role](concepts.md#role) of its own between the command elements and the
   force elements, the `NexusMotorAPI` schema declares, from the sheet's constants,
   `nexus:kv`, `nexus:resistance` and `nexus:currentLimit`. It reads the `voltage` of the ESC on its own

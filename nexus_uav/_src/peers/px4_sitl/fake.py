@@ -2,7 +2,7 @@
 starts no process.
 
 It dials the run's HIL port as PX4 does and answers each ``HIL_SENSOR`` with one fixed
-``HIL_ACTUATOR_CONTROLS``, over the same MAVLink lockstep. So the controller and the loop run
+``HIL_ACTUATOR_CONTROLS`` of an armed PX4, over the same MAVLink lockstep. So the controller and the loop run
 exactly as they do against PX4, and a test proves their side of the link, its encoding, its stage
 order and its error paths, with no PX4 tree, no image and no container. On each serial link the run
 hands it, it opens its end and answers a ``HEARTBEAT`` with its own, as PX4's MAVLink instance on
@@ -34,6 +34,8 @@ from . import HIL_PORT, checkout
 from .instance import hil_free
 
 HOVER = 0.5
+# The mode of each answer: an armed PX4 in a custom mode, so the controller takes the command and not no output.
+ARMED = mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED | mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED
 """The command on every channel: a fixed throttle, not tuned to the vehicle's weight."""
 
 
@@ -124,7 +126,7 @@ class Px4Fake:
                     self.received[kind] += 1
                     self.last[kind] = msg
                     if kind == "HIL_SENSOR":
-                        mav.hil_actuator_controls_send(msg.time_usec, [HOVER] * 16, 0, 0)
+                        mav.hil_actuator_controls_send(msg.time_usec, [HOVER] * 16, ARMED, 0)
         except OSError:
             pass
         finally:

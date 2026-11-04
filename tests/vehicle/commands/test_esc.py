@@ -26,3 +26,17 @@ def test_each_rotor_of_each_vehicle_takes_its_own_command_from_its_channel_with_
     )
 
     np.testing.assert_allclose(voltage.numpy(), [[24.0, 12.0], [3.9, 2.4]], rtol=1e-5)
+
+
+def test_a_nan_command_switches_no_voltage_onto_its_motor():
+    """A NaN command, an autopilot's no output, switches no voltage onto the rotor's motor, whatever its idle duty.
+
+    Given a rotor on channel 0 with a duty map from 0.1 to 1 on a 24 V bus, when the ESC writes the command NaN, then
+    the voltage is 0 V, where a command of 0 gives the idle's 2.4 V.
+    """
+    voltage = wp.zeros((1, 1), dtype=float)
+    escs = Escs(channels=[0], idle_duty=[0.1], max_duty=[1.0])
+
+    escs.write(wp.array([[np.nan]], dtype=float), wp.array([[24.0]], dtype=float), voltage)
+
+    assert voltage.numpy()[0, 0] == 0.0

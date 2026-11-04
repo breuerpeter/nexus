@@ -47,11 +47,6 @@ class _Link:
     `HIL_ACTUATOR_CONTROLS`.
     """
 
-    def __init__(self):
-        self.mav = self  # the protocol object the controller sends through
-        self.target_system = self.target_component = 0
-        self.sent: dict[str, list[tuple]] = {"HIL_SENSOR": [], "HIL_GPS": [], "HIL_STATE_QUATERNION": []}
-
     def hil_sensor_send(self, *args):
         self.sent["HIL_SENSOR"].append(args)
 
@@ -61,8 +56,16 @@ class _Link:
     def hil_state_quaternion_send(self, *args):
         self.sent["HIL_STATE_QUATERNION"].append(args)
 
+    def __init__(self, armed: bool = True):
+        self.mav = self  # the protocol object the controller sends through
+        self.target_system = self.target_component = 0
+        self.sent: dict[str, list[tuple]] = {"HIL_SENSOR": [], "HIL_GPS": [], "HIL_STATE_QUATERNION": []}
+        # PX4's HIL_ACTUATOR_CONTROLS mode: the custom-mode flag, and the armed flag once PX4 arms.
+        self.mode = 1 | (128 if armed else 0)
+        self.controls = [0.5 if armed else 0.0] * 16
+
     def recv_match(self, **kw):
-        return types.SimpleNamespace(controls=[0.5] * 16)
+        return types.SimpleNamespace(controls=self.controls, mode=self.mode)
 
     def close(self):
         pass
@@ -103,10 +106,11 @@ class _Plant(Component):
         return [Stage("state", "device", lambda tick: None, writes=(self.body,))]
 
 
-def _exchange(*sensors, ticks: int) -> None:
+def _exchange(*sensors, ticks: int):
     """Wire a PX4 controller, connected, to `sensors` as a run wires them, with the tick's sim time on the device
     in a clock's signal, and run `ticks` ticks of 4 ms from 0 s: on each, every sensor samples a body at rest,
     then the controller exchanges. The tick's time is the tick count times 4 ms, as the device clock keeps it.
+    Returns the controls of the last exchange.
     """
     clock, plant, controller = DeviceClock(0.004), _Plant(), ctrl.Px4MavlinkController()
     pairs = [
@@ -126,7 +130,8 @@ def _exchange(*sensors, ticks: int) -> None:
         clock.set(t)
         for sensor in sensors:
             sensor.sample_wp(state, t)
-        controller.exchange(t, timeout=0.1)
+        controls = controller.exchange(t, timeout=0.1)
+    return controls
 
 
 def test_hil_sensor_marks_a_sensors_fields_updated_only_on_an_exchange_with_a_new_sample_of_it(link, warp_cpu):
@@ -223,3 +228,17 @@ def test_the_px4_controller_declares_its_controls_signal_16_wide():
     written = [signal for stage in ctrl.Px4MavlinkController().stages() for signal in stage.writes]
 
     assert [(signal.name, signal.shape) for signal in written] == [("controls", (1, 16))]
+
+
+def test_while_px4_is_disarmed_every_control_reads_nan(monkeypatch, warp_cpu):
+    """While PX4 reports itself disarmed, every control reads NaN, PX4's no output, so no rotor turns.
+
+    Given a far end whose `HIL_ACTUATOR_CONTROLS` carries 0 on every channel and no armed flag in its mode, as PX4
+    sends before arming, when the controller exchanges, then all 16 controls read NaN.
+    """
+    far = _Link(armed=False)
+    monkeypatch.setattr(ctrl.mavutil, "mavlink_connection", lambda conn, **kw: far)
+
+    controls = _exchange(ticks=1)
+
+    assert np.isnan(controls).all()
