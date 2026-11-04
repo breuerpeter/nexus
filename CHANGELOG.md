@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.0](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.7.0...nexus-uav-v0.8.0) (2026-11-04)
+
+
+### Features
+
+* **px4:** PX4's flight log joins the recording at teardown ([#394](https://github.com/breuerpeter/nexus/issues/394)) ([ddf8b69](https://github.com/breuerpeter/nexus/commit/ddf8b69d01d042d78053808ae5bec00eaa4f4dd4))
+
+
+### Bug Fixes
+
+* **assets:** astro_max_base weighs the Astro Max's 5593 g ([#397](https://github.com/breuerpeter/nexus/issues/397)) ([be15a07](https://github.com/breuerpeter/nexus/commit/be15a07c6f4db36142d473eac0d5245edb872052))
+
 ## [0.7.0](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.6.1...nexus-uav-v0.7.0) (2026-11-03)
 
 

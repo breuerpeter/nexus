@@ -140,12 +140,12 @@ def test_astro_max_fpv_is_astro_max_base_plus_the_camera_layer():
     catalog = nexus_uav.Catalog.from_yaml()
     usd, layers = catalog.stack("astro_max_fpv")
     assert (usd.url, [layer.url for layer in layers]) == (
-        f"{HOSTED}/astro_max_base-17a4e6f233c7541748c8cf09770f9a027f74039be3ba81b2709dce34fce3de11.usdz",
+        f"{HOSTED}/astro_max_base-6dccac52ce508651dff30507f84dd3714f1ee350eefe6243f626d2b533446bc0.usdz",
         [f"{HOSTED_LAYERS}/fpv_camera-5cc47d56dea67f04fc3018fd8c73cc367798ec55849257603dec186eac3a6180.usdz"],
     )
 
 
-BUNDLED_ASTRO = f"{HOSTED}/astro_max_base-17a4e6f233c7541748c8cf09770f9a027f74039be3ba81b2709dce34fce3de11.usdz"
+BUNDLED_ASTRO = f"{HOSTED}/astro_max_base-6dccac52ce508651dff30507f84dd3714f1ee350eefe6243f626d2b533446bc0.usdz"
 BUNDLED_EMPTY_SHA = "6048870409ba031040676d24e56e152ae6c205807e4c1880e8b84b67e98b5947"
 REPIN_SHA = "1111111111111111111111111111111111111111111111111111111111111111"
 
@@ -281,7 +281,7 @@ def test_a_project_catalog_that_lists_only_what_it_adds_loads_on_its_own(tmp_pat
     assert list(nexus_uav.Catalog.from_yaml(catalog).vehicles) == ["my_quad"]
 
 
-BUNDLED_ASTRO_SHA = "17a4e6f233c7541748c8cf09770f9a027f74039be3ba81b2709dce34fce3de11"
+BUNDLED_ASTRO_SHA = "6dccac52ce508651dff30507f84dd3714f1ee350eefe6243f626d2b533446bc0"
 BUNDLED_FPV_LAYER_SHA = "5cc47d56dea67f04fc3018fd8c73cc367798ec55849257603dec186eac3a6180"
 
 KEYED_REPIN = f"""\

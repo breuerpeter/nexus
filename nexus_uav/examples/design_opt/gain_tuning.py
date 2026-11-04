@@ -299,14 +299,17 @@ def main():
         assert fd2["cosine_similarity"] > 0.99, "astro-max full-horizon gradient not finite-diff-correct"
 
         # Deliberately mistuned baseline: weak altitude P, g0, + low horizontal-position P, g2, ⇒ it crawls,
-        # falls short of the waypoint and never settles: a clear "before" against the tuned controller.
-        BASE = np.array([0.07, 0.7, 0.08, 0.35, 8.0, 2.5, 1.0], dtype=np.float32)
+        # falls short of the waypoint and never settles: a clear "before" against the tuned controller. The
+        # collective is a share of the full thrust, so the altitude gains, g0 and g1, sit 1.64 times below the
+        # 9.18 kg vehicle's: at 5593 g the thrust-to-weight is 1.64 times higher.
+        BASE = np.array([0.0427, 0.427, 0.08, 0.35, 8.0, 2.5, 1.0], dtype=np.float32)
         LO = [0.01, 0.01, 0.01, 0.01, 1.0, 0.2, 0.1]
         HI = [1.5, 3.0, 1.0, 2.0, 20.0, 8.0, 4.0]
         am = AstroMaxWaypointRollout(n_steps=1500, goal=GOAL, vel_weight=0.2, moment_scale=MS)  # 6 s → reach + hold
         # 30 iterations keep the run under 5 min on CI's A10G. The tuned flight's hold error isn't monotonic in
-        # them: on the RTX 5080 it holds within 0.066 m at 30, 0.527 m at 50 and 0.151 m at 80.
-        gopt, hist = am.optimize(BASE, iters=30, lr=0.04, lo=LO, hi=HI)
+        # them or in the step: on the RTX 5080 it holds within 0.020 m at 30 and a step of 0.03, 0.161 m at 30
+        # and 0.04, and 0.465 m at 40 and 0.04.
+        gopt, hist = am.optimize(BASE, iters=30, lr=0.03, lo=LO, hi=HI)
         nx.logger.info(f"gain opt: loss {hist[0]:.0f} -> min {min(hist):.0f}  gains={np.round(gopt, 3)}")
 
         # The real gate: fly both gain sets free-running on the articulated plant the tuning ran on, the PID
