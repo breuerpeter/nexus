@@ -26,11 +26,11 @@ from tests.usd import sensor_vehicle as sv
 # run the A10G's. The same two runs recorded both again when the rotor speed at full command became
 # the motor's no-load speed, a 32-bit float that reads 3e-8 below 3800 rpm, and again when the example
 # came to fly the vehicle's Newton motors, which had stood idle under its summed base wrench, and again
-# when the ESC came to emit a terminal voltage and the motor to droop under load, #386. Since the second
-# both models fly the same bytes.
+# when the ESC came to emit a terminal voltage and the motor to droop under load, #386, and again when
+# `astro_max_base` came to weigh the Astro Max's 5593 g. Since the second both models fly the same bytes.
 _MAIN_TRAJECTORY = {
-    "NVIDIA GeForce RTX 5080": "7eb38489bdb61d8b9f03b4d389a413dd0a5b7d0dd183850698fb2b1d0cb34c31",
-    "NVIDIA A10G": "7eb38489bdb61d8b9f03b4d389a413dd0a5b7d0dd183850698fb2b1d0cb34c31",
+    "NVIDIA GeForce RTX 5080": "5a9f5f1f12ba6808cc58d6823a3d6ac21aa9153f5de538bf672733a5d59c938a",
+    "NVIDIA A10G": "5a9f5f1f12ba6808cc58d6823a3d6ac21aa9153f5de538bf672733a5d59c938a",
 }
 
 

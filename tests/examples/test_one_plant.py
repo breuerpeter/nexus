@@ -24,7 +24,7 @@ from nexus_uav.examples.design_opt import gain_tuning, mass_recovery
 from tests.usd import sensor_vehicle as sv
 
 TICKS = 50  # 0.2 s at the 4 ms tick, long past a motor's spin-up of about 8 ms
-# A rotor that turns under its motor: hovering takes about 267 rad/s on `astro_max_base`, and a free rotor
+# A rotor that turns under its motor: hovering takes about 208 rad/s on `astro_max_base`, and a free rotor
 # joint turns at none.
 TURNING = 100.0  # rad/s
 

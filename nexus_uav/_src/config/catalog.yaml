@@ -27,7 +27,7 @@ assets:
 
 vehicles:
   astro_max_base:
-    usd: { name: astro_max_base, sha256: 17a4e6f233c7541748c8cf09770f9a027f74039be3ba81b2709dce34fce3de11 }
+    usd: { name: astro_max_base, sha256: 6dccac52ce508651dff30507f84dd3714f1ee350eefe6243f626d2b533446bc0 }
 
   astro_max_fpv:
     base: astro_max_base
