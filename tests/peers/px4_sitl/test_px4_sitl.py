@@ -211,6 +211,23 @@ def test_start_mounts_each_serial_lines_device_and_starts_a_mavlink_instance_on_
     assert (added, post.read_text()) == (expected, "mavlink start -d /dev/serial/Companion -b 3000000 -m onboard -x\n")
 
 
+def test_start_makes_the_post_hooks_mount_point_so_docker_makes_no_root_file_in_the_tree(daemon, tree, tmp_path, pty):
+    """The tree has no `<airframe>.post` of its own, and docker makes a missing mount point as root, so the start
+    makes it first.
+
+    Given a tree whose built startup folder holds `80000_none_astro_max` and no `.post` beside it, when a peer with a
+    serial line starts, then `80000_none_astro_max.post` is there in the tree, empty and owned by this process.
+    """
+    airframes = tree / "build" / "px4_sitl_default" / "etc" / "init.d-posix" / "airframes"
+    airframes.mkdir(parents=True)
+    (airframes / "80000_none_astro_max").write_text("# the airframe\n")
+    hook = airframes / "80000_none_astro_max.post"
+
+    _peer(tree, tmp_path, serial={"Companion": pty}).start()
+
+    assert (hook.read_text(), hook.stat().st_uid) == ("", os.getuid())
+
+
 def test_start_gives_px4s_user_each_serial_end_this_process_owns(daemon, tree, tmp_path, pty, monkeypatch):
     """The run makes each serial end as this process, and PX4 runs as the tree's owner, so when the two differ PX4
     couldn't open its end: the start gives the end to PX4's user first.

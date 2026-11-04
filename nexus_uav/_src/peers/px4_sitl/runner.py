@@ -227,7 +227,13 @@ class Px4Sitl(ContainerPeer):
             post.write_text(
                 "".join(f"mavlink start -d /dev/serial/{name} -b 3000000 -m onboard -x\n" for name in self.serial)
             )
-            kwargs["volumes"][str(post)] = {"bind": f"{_airframe_file(self.tree, self.airframe)}.post", "mode": "ro"}
+            # The tree has no `.post` of its own, so this process makes the mount point, and docker makes none as
+            # root. The start leaves one already there alone: touching a file another user owns fails.
+            hook = Path(f"{_airframe_file(self.tree, self.airframe)}.post")
+            if not hook.exists():
+                hook.parent.mkdir(parents=True, exist_ok=True)
+                hook.touch()
+            kwargs["volumes"][str(post)] = {"bind": str(hook), "mode": "ro"}
             uid = int(kwargs["user"].split(":")[0])
             for name, path in self.serial.items():
                 _give(path, uid)
