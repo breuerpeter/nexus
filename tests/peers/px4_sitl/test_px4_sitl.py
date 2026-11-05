@@ -394,3 +394,90 @@ def test_px4s_error_lines_come_whole_from_its_console_before_the_log_holds_them(
     peer.start()
 
     assert peer.errors() == ["ERROR [init] Unknown model none_astro_max"]
+
+
+def _fork(tmp_path, monkeypatch) -> str:
+    """A stand-in for the fork ``example/px4`` on GitHub: a PX4 tree with one commit in the test's folder, which
+    git fetches from in the fork's place. Returns that commit's sha.
+    """
+    repo = tmp_path / "fork"
+    repo.mkdir()
+    (repo / "Makefile").write_text("px4_sitl:\n")
+
+    def git(*args):
+        return subprocess.run(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", *args],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+
+    git("init", "-q")
+    git("add", "-A")
+    git("commit", "-q", "-m", "a PX4 tree")
+    git("config", "uploadpack.allowAnySHA1InWant", "true")  # a fetch by sha, as from GitHub
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", f"url.{repo}.insteadOf")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "https://github.com/example/px4.git")
+    return git("rev-parse", "HEAD")
+
+
+def _store(daemon) -> str:
+    """The host folder the PX4 container mounts as its instance's store."""
+    launch = next(kw for kind, kw in daemon if kind == "run" and kw.get("detach", True))
+    return next(m["Source"] for m in launch["mounts"] if m["Target"].endswith("/rootfs/0"))
+
+
+def test_with_nexus_cache_dir_set_the_px4_container_mounts_its_tree_and_store_from_under_that_root(
+    daemon, tmp_path, monkeypatch
+):
+    """With `NEXUS_CACHE_DIR` set, the PX4 container's store and tree mount from folders under that root.
+
+    Given `NEXUS_CACHE_DIR` at a folder of the test's, away from the home folder, and a pin that names a commit of a fork,
+    when the peer starts, then the container mounts the fetched tree from `<root>/px4_sitl/<sha>` and the store
+    from `<root>/px4_sitl/store/astro_max/0`, beside the run's own folder.
+    """
+    root = tmp_path / "root"
+    monkeypatch.setenv("NEXUS_CACHE_DIR", str(root))
+    sha = _fork(tmp_path, monkeypatch)
+
+    _peer(None, tmp_path, pin=PeerPin(ref=f"example/px4@{sha}", source="a test")).start()
+
+    launch = next(kw for kind, kw in daemon if kind == "run" and kw.get("detach", True))
+    assert sorted(m["Source"] for m in launch["mounts"]) == sorted(
+        [
+            str(root / "px4_sitl" / sha),
+            str(root / "px4_sitl" / "store" / "astro_max" / "0"),
+            str(tmp_path / "run" / "px4_sitl"),
+        ]
+    )
+
+
+def test_with_only_xdg_cache_home_set_the_px4_store_mounts_from_its_nexus_folder(daemon, tree, tmp_path, monkeypatch):
+    """With only `XDG_CACHE_HOME` set, the root is `$XDG_CACHE_HOME/nexus`.
+
+    Given `XDG_CACHE_HOME` at a folder of the test's and no `NEXUS_CACHE_DIR`, when the peer starts, then the
+    container mounts its store from `<xdg>/nexus/px4_sitl/store/astro_max/0`.
+    """
+    xdg = tmp_path / "xdg"
+    monkeypatch.setenv("XDG_CACHE_HOME", str(xdg))
+
+    _peer(tree, tmp_path).start()
+
+    assert _store(daemon) == str(xdg / "nexus" / "px4_sitl" / "store" / "astro_max" / "0")
+
+
+def test_with_both_set_nexus_cache_dir_wins_over_xdg_cache_home(daemon, tree, tmp_path, monkeypatch):
+    """With both set, `NEXUS_CACHE_DIR` wins.
+
+    Given `NEXUS_CACHE_DIR` and `XDG_CACHE_HOME` at two folders of the test's, when the peer starts, then the
+    container mounts its store from under `NEXUS_CACHE_DIR`, and no folder exists where `XDG_CACHE_HOME` points.
+    """
+    root, xdg = tmp_path / "root", tmp_path / "xdg"
+    monkeypatch.setenv("NEXUS_CACHE_DIR", str(root))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(xdg))
+
+    _peer(tree, tmp_path).start()
+
+    assert (_store(daemon), xdg.exists()) == (str(root / "px4_sitl" / "store" / "astro_max" / "0"), False)

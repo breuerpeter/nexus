@@ -199,3 +199,23 @@ def test_kits_console_lands_at_kit_console_log_in_the_runs_folder(daemon, tmp_pa
     peer.start()
 
     assert Path(peer.log_path) == tmp_path / "run" / "kit" / "console.log"
+
+
+def test_with_nexus_cache_dir_set_the_kit_container_mounts_its_home_and_shader_cache_from_under_that_root(
+    daemon, tmp_path, monkeypatch
+):
+    """With `NEXUS_CACHE_DIR` set, the Kit container's home and shader cache mount from folders under that root.
+
+    Given `NEXUS_CACHE_DIR` at a folder of the test's, away from the home folder, when the peer starts, then the container
+    mounts Kit's home from `<root>/kit/home` and its shader cache from `<root>/kit/cache`, both read-write.
+    """
+    root = tmp_path / "root"
+    monkeypatch.setenv("NEXUS_CACHE_DIR", str(root))
+
+    KitPeer([_usd(tmp_path / "project")], cache_dir=tmp_path / "cache", pin=PIN).start()
+
+    caches = [m for m in daemon.runs[0]["mounts"] if m["Target"] in ("/kit-home", "/isaac-sim/kit/cache")]
+    assert caches == [
+        Mount("/kit-home", str(root / "kit" / "home"), type="bind", read_only=False),
+        Mount("/isaac-sim/kit/cache", str(root / "kit" / "cache"), type="bind", read_only=False),
+    ]
