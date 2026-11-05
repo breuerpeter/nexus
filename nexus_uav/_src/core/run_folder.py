@@ -3,7 +3,7 @@ named for the peer, such as PX4's console, ``px4_sitl/console.log``, and its ULo
 ``kit/console.log``.
 
 The build picks one folder per run and hands it to each writer: the folder the caller names, or a new one
-under ``~/.cache/nexus/logs``. Picking the new one creates it, so no two runs share it, and a run that writes
+under ``logs/`` in the cache root, :func:`~.cache_root.cache_root`. Picking the new one creates it, so no two runs share it, and a run that writes
 nothing leaves an empty one. The build refuses a named folder that holds anything, so a run never mixes its
 files with an earlier run's. The caller owns a folder it names: two runs that name one folder at once both
 find it empty.
@@ -15,9 +15,11 @@ import os
 import time
 from pathlib import Path
 
+from .cache_root import cache_root
+
 
 def run_folder(path: str | os.PathLike | None = None) -> Path:
-    """The folder for one run: ``path`` when given, else a new folder ``~/.cache/nexus/logs/<stamp>-<pid>``.
+    """The folder for one run: ``path`` when given, else a new folder ``logs/<stamp>-<pid>`` in the cache root.
 
     The call creates ``path`` and its parents when missing, and takes an empty ``path`` as it stands. The
     new folder takes ``-<n>`` after its name when an earlier run holds that name: its creation fails on a
@@ -33,7 +35,7 @@ def run_folder(path: str | os.PathLike | None = None) -> Path:
         if any(folder.iterdir()):
             raise FileExistsError(f"the run's folder {folder} holds files already: name a new or empty folder")
         return folder
-    logs = Path("~/.cache/nexus/logs").expanduser()
+    logs = cache_root() / "logs"
     logs.mkdir(parents=True, exist_ok=True)
     name = f"{time.strftime('%Y%m%d-%H%M%S')}-{os.getpid()}"
     n = 1

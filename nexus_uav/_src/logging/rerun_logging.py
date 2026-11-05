@@ -43,6 +43,7 @@ from newton.viewer import ViewerBase
 from rerun.archetypes import TextLog
 
 from nexus_uav._src.core import logger
+from nexus_uav._src.core.cache_root import cache_root
 from nexus_uav._src.core.labels import leaf_keys
 
 APP_ID = "nexus"
@@ -98,10 +99,10 @@ def _default_rrd_path() -> str:
 
 
 def recording_path(name: str) -> str:
-    """Stable path for a named recording, for examples and CI artifacts, under the nexus cache, which
-    keeps ``.rrd`` files out of the working tree. ``RerunLogger`` creates the parent dir.
+    """Stable path for a named recording, for examples and CI artifacts, under ``recordings/`` in the
+    cache root, which keeps ``.rrd`` files out of the working tree. ``RerunLogger`` creates the parent dir.
     """
-    return os.path.expanduser(f"~/.cache/nexus/recordings/{name}.rrd")
+    return str(cache_root() / "recordings" / f"{name}.rrd")
 
 
 # The vehicle's mesh entity in the scene, named as Newton's viewer base class names its shape
@@ -401,7 +402,7 @@ class Logger:
         and its history draws the flown path.
     serve: ``True`` serves live on :9876; ``False`` writes the ``.rrd``.
     record_to_rrd: the ``.rrd`` path when ``serve=False``; defaults to ``nexus.rrd`` in a new run
-        folder under ``~/.cache/nexus/logs/``.
+        folder under ``logs/`` in the cache root.
     blueprint: a Rerun ``rrb.Blueprint`` for the viewer layout; the default is the standard
         scene+events layout. Pass a custom one to, for example, show only the 3D scene without the
         event-log panel: ``scene_only_blueprint``, which the blueprint-shape tests use; examples run

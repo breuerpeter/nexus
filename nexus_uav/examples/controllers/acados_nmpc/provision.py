@@ -47,11 +47,13 @@ def pin() -> tuple[str, str]:
 
 def acados_dir() -> Path:
     """The acados tree: ``$ACADOS_SOURCE_DIR``, acados' own convention, when set, else the folder
-    the example owns for the pinned commit, ``~/.cache/nexus/acados/<sha>``.
+    the example owns for the pinned commit, ``acados/<sha>`` in the cache root.
     """
     if env := os.environ.get("ACADOS_SOURCE_DIR"):
         return Path(env)
-    return Path.home() / ".cache" / "nexus" / "acados" / pin()[1]
+    from nexus_uav._src.core.cache_root import cache_root  # here, so the module imports the standard library only
+
+    return cache_root() / "acados" / pin()[1]
 
 
 def _interface(tree: Path) -> Path:

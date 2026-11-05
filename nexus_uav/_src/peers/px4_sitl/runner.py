@@ -39,6 +39,7 @@ from pathlib import Path
 import ulog_rrd
 
 from nexus_uav._src.core import logger
+from nexus_uav._src.core.cache_root import cache_root
 from nexus_uav._src.peers import LABEL, containers
 from nexus_uav._src.peers.containers import ContainerPeer, ensure_image, run_container
 from nexus_uav._src.peers.pins import PeerPin
@@ -201,7 +202,7 @@ class Px4Sitl(ContainerPeer):
         # which this run holds with the instance, so the tree keeps nothing of this run's. PX4 wipes its stored
         # parameters at a boot on another airframe, so each airframe keeps a store of its own. A clean start
         # empties the store, so a run killed before its stop leaves a clean run nothing either.
-        work = Path("~/.cache/nexus").expanduser() / NAME / "store" / self.airframe / str(self.instance)
+        work = cache_root() / NAME / "store" / self.airframe / str(self.instance)
         if self.clean:
             shutil.rmtree(work, ignore_errors=True)
         work.mkdir(parents=True, exist_ok=True)

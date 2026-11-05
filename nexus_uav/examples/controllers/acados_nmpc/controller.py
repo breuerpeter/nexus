@@ -37,13 +37,13 @@ import os
 import numpy as np
 import warp as wp
 
+from nexus_uav._src.core.cache_root import cache_root
 from nexus_uav._src.core.interfaces import Component, Stage
 from nexus_uav._src.core.schema import PoseTwist, ReferenceTrajectory
 from nexus_uav._src.core.signals import Signal
 from nexus_uav._src.vehicle.rotors import RPM_PER_RADS, command_lines, rotor_speeds
 
 GRAVITY = 9.81
-DEFAULT_CODEGEN_DIR = os.path.expanduser("~/.cache/nexus/acados_codegen/quad_nmpc")  # generated C, out of the repo
 
 
 def _quat_to_rot_ca(q):
@@ -162,7 +162,7 @@ class AcadosNMPCController(Component):
         q_omega=(5.0, 5.0, 5.0),
         r_thrust=(6.0, 6.0, 6.0, 6.0),
         snapshot_every=6,  # log the predicted horizon every Nth tick, viz only
-        codegen_dir=DEFAULT_CODEGEN_DIR,  # where acados writes the generated C solver
+        codegen_dir=None,  # where acados writes the generated C solver; None takes the cache root's, out of the repo
     ):
         self.n = len(turning_dirs)
         self.dt = float(dt)
@@ -189,7 +189,7 @@ class AcadosNMPCController(Component):
         self._logger = None  # the loop hands over the Logger, None when off; gates the horizon viz
         self.track_err = []  # per-tick ‖realized − reference‖ world position error, the evo-style APE gate
         self.snapshot_every = int(snapshot_every)
-        self.codegen_dir = str(codegen_dir)
+        self.codegen_dir = str(codegen_dir or cache_root() / "acados_codegen" / "quad_nmpc")
         self._step = 0
         self._first = True
         self.solve_time_total = 0.0  # accumulated acados solve time → mean per-tick, the realtime metric

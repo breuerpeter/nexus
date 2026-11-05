@@ -72,7 +72,8 @@ class Sim:
             files under a folder named for the peer, such as PX4's console, ``px4_sitl/console.log``, and
             its ULog beside it. The run creates it when missing and refuses it when it holds files. A
             relative path starts at the working folder.
-            ``None`` takes a new folder under ``~/.cache/nexus/logs``. A peer's container mounts the
+            ``None`` takes a new folder under ``logs/`` in the cache root, ``$NEXUS_CACHE_DIR``, else
+            ``$XDG_CACHE_HOME/nexus``, else ``~/.cache/nexus``. A peer's container mounts the
             folder at its own path, so a script inside a container that starts peers on the host's
             daemon binds it at the same path on the host.
         clean: Start every peer from nothing an earlier run stored. A peer with a store keeps it across runs,

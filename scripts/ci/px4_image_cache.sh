@@ -8,7 +8,9 @@
 #   bash scripts/ci/px4_image_cache.sh load|save
 set -euo pipefail
 
-TAR="${PX4_SITL_TAR:-$HOME/.cache/nexus/ci/px4-sitl.tar}"
+# The cache root, in the order nexus_uav/_src/core/cache_root.py reads it.
+ROOT="${NEXUS_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/nexus}"
+TAR="${PX4_SITL_TAR:-$ROOT/ci/px4-sitl.tar}"
 IMAGE=nexus-px4-sitl
 
 case "${1:-}" in

@@ -24,6 +24,8 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from nexus_uav._src.core.cache_root import cache_root
+
 # Hosted assets sit on a flat, content-addressed scheme under a catalog's base:
 # ``<base>/assets/<kind>/<name>-<sha256>.<ext>``, where ``<kind>`` is the whole folder under
 # ``assets/``: ``usd/vehicles`` and ``usd/scenes`` for the self-contained ``.usdz`` files and their
@@ -50,7 +52,7 @@ def default_cache() -> Path:
     """Local content-addressed cache; override with ``$NEXUS_ASSET_CACHE``.
 
     In a source checkout downloads land in the repo's ``assets/cache/``, gitignored, alongside
-    ``assets/local/``; an installed package with no repo tree falls back to ``~/.cache``.
+    ``assets/local/``; an installed package with no repo tree falls back to ``assets/`` in the cache root.
     """
     env = os.environ.get("NEXUS_ASSET_CACHE")
     if env:
@@ -58,7 +60,7 @@ def default_cache() -> Path:
     repo = Path(__file__).resolve().parents[3]
     if (repo / "pyproject.toml").exists():
         return repo / "assets" / "cache"
-    return Path.home() / ".cache" / "nexus" / "assets"
+    return cache_root() / "assets"
 
 
 def sha256_file(path: str | Path, _chunk: int = 1 << 20) -> str:

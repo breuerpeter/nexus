@@ -16,7 +16,7 @@ plus github-action-benchmark-style entries next to the per-cell artifacts.
 cesium cells stream Google 3D Tiles (needs ``$CESIUM_ION_TOKEN``; RTF varies with network) and are
 skipped with a note when the token is absent. RTX cells run with ``--benchmark`` so the Kit-side
 recorders (GPU frametime, VRAM, RSS, RTF stability) collect too; the peer writes their JSON,
-``kit/benchmark.json``, into the run's folder under ``~/.cache/nexus/logs``, and this runner attaches it to
+``kit/benchmark.json``, into the run's folder under ``logs/`` in nexus's cache root, and this runner attaches it to
 the cell result.
 
 CI flies one cell per GPU box, since a measured flight cannot share a GPU or PX4's fixed ports, in
@@ -45,9 +45,6 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCENES = ("empty", "powerline", "cesium")
 # The mission a scene's cell flies, when not the shared 4-waypoint square: benchmark_cell.py --mission.
 MISSIONS = {"powerline": "inspection"}
-KIT_LOGS = (
-    pathlib.Path.home() / ".cache" / "nexus" / "logs"
-)  # each run's folder, under which the Kit peer writes its benchmark JSON in `kit/`
 
 
 def _cells(only: str | None) -> list[dict]:
@@ -84,6 +81,14 @@ def _ok(result: dict) -> bool:
     return not result.get("error") and bool(result.get("mission_ok"))
 
 
+def _kit_logs() -> pathlib.Path:
+    """The run folders, under each of which the Kit peer writes its benchmark JSON in `kit/`."""
+    # Imported here, not at the top: --list and --merge run with no nexus install.
+    from nexus_uav._src.core.cache_root import cache_root
+
+    return cache_root() / "logs"
+
+
 def _kill_kit() -> None:
     """Force-remove any leftover Kit render peer: a hung cell's peer survives killing the cell's
     process and would hold the GPU the next cell renders on, misattributing its numbers.
@@ -110,7 +115,7 @@ def _run_cell(cell: dict, work: pathlib.Path, budget_s: float, cell_timeout: flo
     kit_before: set[pathlib.Path] = set()
     if cell["renders"]:
         cmd.append("--benchmark")  # the Kit peer's recorders: the shared diagnostics flag reaches it in the setup
-        kit_before = set(KIT_LOGS.glob("*/kit/benchmark.json"))
+        kit_before = set(_kit_logs().glob("*/kit/benchmark.json"))
     print(f"\n===== {_tag(cell)}: {' '.join(cmd)} =====", flush=True)
 
     result = dict(cell)
@@ -132,7 +137,7 @@ def _run_cell(cell: dict, work: pathlib.Path, budget_s: float, cell_timeout: flo
     else:
         result.setdefault("error", "cell dumped no stats")
     if cell["renders"]:
-        fresh = sorted(set(KIT_LOGS.glob("*/kit/benchmark.json")) - kit_before, key=lambda p: p.stat().st_mtime)
+        fresh = sorted(set(_kit_logs().glob("*/kit/benchmark.json")) - kit_before, key=lambda p: p.stat().st_mtime)
         if fresh:
             result["kit"] = json.loads(fresh[-1].read_text())
     return result
