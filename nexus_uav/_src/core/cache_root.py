@@ -14,9 +14,13 @@ from pathlib import Path
 
 
 def cache_root() -> Path:
-    """The cache root, read from the environment on each call, so a variable set after import still holds."""
+    """The cache root, read from the environment on each call, so a variable set after import still holds.
+
+    A relative value names a folder under the working folder, returned absolute, since the daemon refuses a
+    relative bind source.
+    """
     if root := os.environ.get("NEXUS_CACHE_DIR"):
-        return Path(root).expanduser()
+        return Path(root).expanduser().absolute()
     if xdg := os.environ.get("XDG_CACHE_HOME"):
-        return Path(xdg).expanduser() / "nexus"
+        return Path(xdg).expanduser().absolute() / "nexus"
     return Path.home() / ".cache" / "nexus"

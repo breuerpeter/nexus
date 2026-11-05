@@ -481,3 +481,20 @@ def test_with_both_set_nexus_cache_dir_wins_over_xdg_cache_home(daemon, tree, tm
     _peer(tree, tmp_path).start()
 
     assert (_store(daemon), xdg.exists()) == (str(root / "px4_sitl" / "store" / "astro_max" / "0"), False)
+
+
+def test_a_relative_nexus_cache_dir_mounts_the_px4_store_from_an_absolute_path(daemon, tree, tmp_path, monkeypatch):
+    """A relative `NEXUS_CACHE_DIR` names a folder under the working folder, and the container mounts from its
+    absolute path, since the daemon refuses a relative bind source.
+
+    Given the working folder at a folder of the test's and `NEXUS_CACHE_DIR=cache`, when the peer starts, then the
+    container mounts its store from `<work>/cache/px4_sitl/store/astro_max/0`.
+    """
+    work = tmp_path / "work"
+    work.mkdir()
+    monkeypatch.chdir(work)
+    monkeypatch.setenv("NEXUS_CACHE_DIR", "cache")
+
+    _peer(tree, tmp_path).start()
+
+    assert _store(daemon) == str(work / "cache" / "px4_sitl" / "store" / "astro_max" / "0")
