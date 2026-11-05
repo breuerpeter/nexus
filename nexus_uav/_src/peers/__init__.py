@@ -23,7 +23,7 @@ or an image, in ``pin.ref`` at the top of its folder, and its runner offers ``pr
 peer's first start does, a fetch and a build, or an image pull, for a caller that wants it outside a run's
 budget: CI before a flight or a test, or a machine's first setup. Every peer's files live under a folder named for
 the peer in the run's folder, its console as ``console.log`` there, and what a peer keeps across runs, a tree
-it built, a shader cache or the store a real device keeps across a reboot, lives under ``~/.cache/nexus/<name>/``,
+it built, a shader cache or the store a real device keeps across a reboot, lives under ``<name>/`` in the cache root,
 so CI caches a peer's box by that one rule. A peer with such a store starts from it, unless the run starts clean,
 the keyword ``clean`` among the run's values: then the peer empties it first. This folder itself holds the contract,
 :mod:`.containers`, the container peer every container peer subclasses and the image a peer builds from a

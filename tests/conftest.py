@@ -98,6 +98,15 @@ def _fresh_url_opener():
     urllib.request.install_opener(None)
 
 
+@pytest.fixture(autouse=True)
+def _cache_root_follows_home(monkeypatch):
+    """Clear the variables that move nexus's cache root, so a test that moves the home folder into its own folder finds
+    the root at `~/.cache/nexus` there, whatever the machine running the suite sets.
+    """
+    monkeypatch.delenv("NEXUS_CACHE_DIR", raising=False)
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+
+
 @pytest.fixture
 def cut_network(monkeypatch):
     """Cut the network when called: from then on, a fetch fails at once on an unreachable proxy.

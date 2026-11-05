@@ -25,7 +25,7 @@ Conventions, which the harness relies on:
   spent compiling kernels, and ``warm_wall_s``, the rest. A time gate reads ``warm_wall_s``, so a cold kernel
   cache's one-time compiles don't fail it, as a benchmark warms its just-in-time compiler before it times.
 
-Output dir: ``$NEXUS_EVAL_OUT``, which the CI harness sets, else ``~/.cache/nexus/eval``.
+Output dir: ``$NEXUS_EVAL_OUT``, which the CI harness sets, else ``eval/`` in the cache root.
 """
 
 from __future__ import annotations
@@ -38,6 +38,8 @@ from pathlib import Path
 
 import numpy as np
 import warp as wp
+
+from nexus_uav._src.core.cache_root import cache_root
 
 # How Warp reports a module it compiled, through its logger: ``Module <name> <hash> load on device '<device>'
 # took <ms> ms (compiled)``. A module it loaded from its cache ends in ``(cached)``.
@@ -96,7 +98,7 @@ class RunClock:
 
 
 def _out_dir(out_dir: str | Path | None) -> Path:
-    d = Path(out_dir or os.environ.get("NEXUS_EVAL_OUT") or Path.home() / ".cache" / "newton" / "eval")
+    d = Path(out_dir or os.environ.get("NEXUS_EVAL_OUT") or cache_root() / "eval")
     d.mkdir(parents=True, exist_ok=True)
     return d
 

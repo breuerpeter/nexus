@@ -137,3 +137,17 @@ def test_a_run_with_no_run_dir_writes_its_files_to_a_new_folder_under_the_logs_c
     logs = home / ".cache" / "nexus" / "logs"
     seen = ([(r.name, r.parent.parent, r.is_file()) for r in rrds], len({r.parent for r in rrds}))
     assert seen == ([("nexus.rrd", logs, True)] * 2, 2)
+
+
+def test_a_run_with_no_run_dir_puts_its_run_folder_under_the_cache_root(home, tmp_path, monkeypatch):
+    """A run with no `run_dir` puts its run folder under the root.
+
+    Given `NEXUS_CACHE_DIR` at a folder of the test's, away from the home folder, when a run on stand-ins closes with
+    `log=True` and no `run_dir`, then its `nexus.rrd` sits in a new folder under `<root>/logs`.
+    """
+    root = tmp_path / "root"
+    monkeypatch.setenv("NEXUS_CACHE_DIR", str(root))
+
+    rrd = Path(_fly(sv.vehicle(tmp_path))["rrd"])
+
+    assert (rrd.name, rrd.parent.parent) == ("nexus.rrd", root / "logs")

@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 
 from nexus_uav._src.assets.resolver import fetch
 from nexus_uav._src.core import logger
+from nexus_uav._src.core.cache_root import cache_root
 from nexus_uav._src.core.errors import RunError
 from nexus_uav._src.core.run_folder import run_folder
 from nexus_uav._src.peers import (
@@ -302,8 +303,8 @@ class KitPeer(ContainerPeer):
 
 def _kit_caches() -> dict:
     """Kit's own caches, created as the user first, as read-write mounts."""
-    nexus_cache = Path.home() / ".cache" / "nexus"
-    kit_home, kit_cache = nexus_cache / "kit" / "home", nexus_cache / "kit" / "cache"
+    kit = cache_root() / "kit"
+    kit_home, kit_cache = kit / "home", kit / "cache"
     for folder in (kit_home, kit_cache):
         folder.mkdir(parents=True, exist_ok=True)
     return {

@@ -5,7 +5,7 @@ package's or a project's ``nexus.px4_sitl.ref`` beside its catalog, or ``$NEXUS_
 line one is ``repo@sha``, the PX4-Autopilot tree it flies, and line two the branch ``px4-bump.yml``
 tracks. A pin is ``owner/repo@<commit>``, or the absolute path of a checkout of your own, for work on
 PX4 itself. On first use the peer fetches a pinned commit into a folder it owns,
-``~/.cache/nexus/px4_sitl/<sha>``, and the PX4 Software In The Loop (SITL) peer builds it there. A
+``px4_sitl/<sha>`` in the cache root, and the PX4 Software In The Loop (SITL) peer builds it there. A
 peer builds a checkout where it lies, and the receipt records its checked-out commit.
 
 The fetch is by commit, depth one, with submodules, and it applies the interim airframe patch the
@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from nexus_uav._src.core import logger
+from nexus_uav._src.core.cache_root import cache_root
 from nexus_uav._src.peers import pins
 from nexus_uav._src.peers.pins import PeerPin
 
@@ -143,7 +144,7 @@ def tree(pin: PeerPin | None = None, *, fetch_missing: bool = True) -> Path | No
     p = parse(pin or resolve())
     if isinstance(p, Path):
         return p
-    dest = Path.home() / ".cache" / "nexus" / "px4_sitl" / p.sha
+    dest = cache_root() / NAME / p.sha
     if not (dest / "Makefile").exists():
         if not fetch_missing:
             return None

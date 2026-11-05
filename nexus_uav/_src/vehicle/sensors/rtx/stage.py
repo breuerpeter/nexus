@@ -24,6 +24,7 @@ import numpy as np
 import warp as wp
 
 from nexus_uav._src.core import logger
+from nexus_uav._src.core.cache_root import cache_root
 
 NAME = "ovrtx"
 # The vehicle's root on the render stage: its own root prim, never under the scene's root, which carries the
@@ -33,8 +34,6 @@ RENDER_MODE = "RealTimePathTracing"
 LIDAR_SCHEMA = "NexusLidarAPI"  # the schema that declares a lidar, on an `OmniLidar` prim
 SCAN_SCHEMA = "OmniSensorGenericLidarCoreAPI"  # what the renderer needs on that prim to scan it
 EXTRA = "nexus-uav[rtx]"
-# Where the driver's shader cache lasts across runs and environments: compiling it takes about five minutes.
-DRIVER_CACHE = Path("~/.cache/nexus") / NAME / "nv_shadercache"
 # The render vars each output reads, by the name a sensor's `output` gives.
 _VARS = {
     "color": (("LdrColor", "LdrColor"),),
@@ -191,7 +190,7 @@ class RenderStage:
 
     # -- the lifecycle the build and the loop drive ---------------------------------------------
     def start(self) -> None:
-        """Open the vehicle, check every lidar can scan, keep the driver's shader cache under ``~/.cache/nexus/ovrtx``,
+        """Open the vehicle, check every lidar can scan, keep the driver's shader cache under ``ovrtx/`` in the cache root,
         create the stage and the renderer, and populate the files.
 
         Raises:
@@ -218,7 +217,8 @@ class RenderStage:
         from ovstage import population
 
         self._ovrtx, self._ovstage = ovrtx, ovstage
-        keep_driver_cache(Path(ovrtx.__file__).parent, DRIVER_CACHE.expanduser())
+        # The driver's shader cache lasts across runs and environments: compiling it takes about five minutes.
+        keep_driver_cache(Path(ovrtx.__file__).parent, cache_root() / NAME / "nv_shadercache")
         ovrtx.register_schema_paths()
         self._stage = ovstage.Stage(
             f"nexus.{os.getpid()}",

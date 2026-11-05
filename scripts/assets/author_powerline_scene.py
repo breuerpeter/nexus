@@ -12,7 +12,7 @@ The poles, plants, rocks, ground textures and sky are Poly Haven's, all CC0:
 ``modular_electricity_poles``, ``fir_tree_01``, ``pine_roots``, ``fern_02``, ``tree_stump_01``,
 ``dead_tree_trunk``, ``dry_branches_medium_01``, ``rock_moss_set_02``, ``boulder_01``,
 ``aerial_grass_rock``, ``asphalt_track`` and ``belfast_sunset_puresky``. This script fetches them
-from Poly Haven's API into ``~/.cache/nexus/polyhaven`` and strings the wires between the insulators
+from Poly Haven's API into ``polyhaven/`` in nexus's cache root and strings the wires between the insulators
 itself, since Poly Haven ships no overhead line.
 
 Unlike the other scenes, whose sky is ``scene_root.author_sky``'s plain dome, this one is lit by a
@@ -41,7 +41,9 @@ import sys
 import urllib.request
 from pathlib import Path
 
-CACHE = Path.home() / ".cache" / "nexus" / "polyhaven"
+from nexus_uav._src.core.cache_root import cache_root
+
+CACHE = cache_root() / "polyhaven"
 RES = "2k"
 PROP_RES = "1k"  # the props stand away from the camera
 
