@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.8.1...nexus-uav-v0.9.0) (2026-11-05)
+
+
+### Features
+
+* **core:** every cache path nexus keeps moves with NEXUS_CACHE_DIR ([#401](https://github.com/breuerpeter/nexus/issues/401)) ([833c034](https://github.com/breuerpeter/nexus/commit/833c0346e2047b6369ac518f6585ffc9ab0acb8e)), closes [#400](https://github.com/breuerpeter/nexus/issues/400)
+
 ## [0.8.1](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.8.0...nexus-uav-v0.8.1) (2026-11-04)
 
 
