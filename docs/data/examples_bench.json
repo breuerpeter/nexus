@@ -1,44 +1,68 @@
 {
   "_meta": {
-    "sha": "b7d6504465c6",
-    "recorded": "2026-08-16",
+    "sha": "f6b7cff532fe",
+    "recorded": "2026-11-05",
     "gpu": "NVIDIA A10G"
   },
   "entries": [
     {
-      "name": "reached[pid]",
-      "unit": "",
-      "value": 4,
-      "biggerIsBetter": true
-    },
-    {
-      "name": "final_dist_m[pid]",
+      "name": "final_dist_m[acados_nmpc]",
       "unit": "m",
-      "value": 0.2842,
+      "value": 0.0207,
       "biggerIsBetter": false
     },
     {
-      "name": "rtf[pid]",
+      "name": "track_rmse_m[acados_nmpc]",
+      "unit": "m",
+      "value": 0.0202,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "track_max_m[acados_nmpc]",
+      "unit": "m",
+      "value": 0.0642,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "max_tilt_deg[acados_nmpc]",
+      "unit": "deg",
+      "value": 16.0,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "nose_err_deg[acados_nmpc]",
+      "unit": "deg",
+      "value": 11.5,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "rtf[acados_nmpc]",
       "unit": "x realtime",
-      "value": 6.24,
+      "value": 0.447,
       "biggerIsBetter": true
     },
     {
-      "name": "ape_trans_rmse_m[pid]",
+      "name": "ape_trans_rmse_m[acados_nmpc]",
       "unit": "m",
-      "value": 0.8246764648411486,
+      "value": 0.02021164505905587,
       "biggerIsBetter": false
     },
     {
-      "name": "ape_trans_max_m[pid]",
+      "name": "ape_trans_max_m[acados_nmpc]",
       "unit": "m",
-      "value": 1.6421748981393096,
+      "value": 0.06422020111819177,
       "biggerIsBetter": false
     },
     {
-      "name": "final_err_m[pid]",
-      "unit": "m",
-      "value": 0.2841972307648455,
+      "name": "ape_rot_rmse_deg[acados_nmpc]",
+      "unit": "deg",
+      "value": 17.701041934301358,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "ape_rot_max_deg[acados_nmpc]",
+      "unit": "deg",
+      "value": 38.00478062292856,
       "biggerIsBetter": false
     },
     {
@@ -50,68 +74,230 @@
     {
       "name": "opt_hold_m[gain_tuning]",
       "unit": "m",
-      "value": 0.2716,
+      "value": 0.0194,
       "biggerIsBetter": false
     },
     {
       "name": "opt_final_m[gain_tuning]",
       "unit": "m",
-      "value": 0.2716,
+      "value": 0.0194,
       "biggerIsBetter": false
     },
     {
       "name": "base_final_m[gain_tuning]",
       "unit": "m",
-      "value": 3.1547,
+      "value": 3.4804,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "rotor_speed_min_rad_per_sec[gain_tuning]",
+      "unit": "1/s",
+      "value": 210.6,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "wall_s[gain_tuning]",
+      "unit": "s",
+      "value": 224.1,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "compile_s[gain_tuning]",
+      "unit": "s",
+      "value": 0.0,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "warm_wall_s[gain_tuning]",
+      "unit": "s",
+      "value": 224.1,
       "biggerIsBetter": false
     },
     {
       "name": "rtf[gain_tuning]",
       "unit": "x realtime",
-      "value": 5.369,
+      "value": 5.055,
       "biggerIsBetter": true
     },
     {
       "name": "ape_trans_rmse_m[gain_tuning]",
       "unit": "m",
-      "value": 0.6556907627460736,
+      "value": 0.7150024020414286,
       "biggerIsBetter": false
     },
     {
       "name": "ape_trans_max_m[gain_tuning]",
       "unit": "m",
-      "value": 1.3702082620444072,
+      "value": 1.409000591241352,
       "biggerIsBetter": false
     },
     {
       "name": "final_err_m[gain_tuning]",
       "unit": "m",
-      "value": 0.27156837830929237,
+      "value": 0.019429257925861265,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "waypoints[goto_policy]",
+      "unit": "",
+      "value": 3,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "reached[goto_policy]",
+      "unit": "",
+      "value": 3,
+      "biggerIsBetter": true
+    },
+    {
+      "name": "control_steps[goto_policy]",
+      "unit": "",
+      "value": 1712,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "deploy_steps_per_sec[goto_policy]",
+      "unit": "1/s",
+      "value": 102.3,
+      "biggerIsBetter": true
+    },
+    {
+      "name": "final_tracking_error_m[goto_policy]",
+      "unit": "m",
+      "value": 0.0172,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "rtf[goto_policy]",
+      "unit": "x realtime",
+      "value": 2.541,
+      "biggerIsBetter": true
+    },
+    {
+      "name": "ape_trans_rmse_m[goto_policy]",
+      "unit": "m",
+      "value": 0.5777907586465262,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "ape_trans_max_m[goto_policy]",
+      "unit": "m",
+      "value": 1.3607202573987394,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "final_err_m[goto_policy]",
+      "unit": "m",
+      "value": 0.017215486670932915,
       "biggerIsBetter": false
     },
     {
       "name": "mass_rel_err[mass_recovery]",
       "unit": "",
-      "value": 0.0003,
+      "value": 0.0002,
       "biggerIsBetter": false
     },
     {
       "name": "true_mass_kg[mass_recovery]",
       "unit": "",
-      "value": 12.852,
+      "value": 6.4302,
       "biggerIsBetter": false
     },
     {
       "name": "recovered_mass_kg[mass_recovery]",
       "unit": "",
-      "value": 12.8559,
+      "value": 6.4312,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "rotor_speed_min_rad_per_sec[mass_recovery]",
+      "unit": "1/s",
+      "value": 237.6,
       "biggerIsBetter": false
     },
     {
       "name": "wall_s[mass_recovery]",
       "unit": "s",
-      "value": 41.9,
+      "value": 71.7,
       "biggerIsBetter": false
+    },
+    {
+      "name": "compile_s[mass_recovery]",
+      "unit": "s",
+      "value": 0.0,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "warm_wall_s[mass_recovery]",
+      "unit": "s",
+      "value": 71.7,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "reached[pid]",
+      "unit": "",
+      "value": 4,
+      "biggerIsBetter": true
+    },
+    {
+      "name": "final_dist_m[pid]",
+      "unit": "m",
+      "value": 0.2531,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "rtf[pid]",
+      "unit": "x realtime",
+      "value": 5.006,
+      "biggerIsBetter": true
+    },
+    {
+      "name": "ape_trans_rmse_m[pid]",
+      "unit": "m",
+      "value": 0.794681335708224,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "ape_trans_max_m[pid]",
+      "unit": "m",
+      "value": 1.3319604967996628,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "final_err_m[pid]",
+      "unit": "m",
+      "value": 0.2531455922058949,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "climb_m[px4_sitl]",
+      "unit": "m",
+      "value": 5.05,
+      "biggerIsBetter": true
+    },
+    {
+      "name": "time_to_takeoff_s[px4_sitl]",
+      "unit": "s",
+      "value": 59.6,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "px4_warnings[px4_sitl]",
+      "unit": "",
+      "value": 0,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "east_err_m[px4_sitl]",
+      "unit": "m",
+      "value": 2.46,
+      "biggerIsBetter": false
+    },
+    {
+      "name": "rtf[px4_sitl]",
+      "unit": "x realtime",
+      "value": 2.327,
+      "biggerIsBetter": true
     },
     {
       "name": "reached[sampling_mpc]",
@@ -122,140 +308,56 @@
     {
       "name": "final_dist_m[sampling_mpc]",
       "unit": "m",
-      "value": 0.0023,
+      "value": 0.0034,
       "biggerIsBetter": false
     },
     {
       "name": "min_clearance_m[sampling_mpc]",
       "unit": "m",
-      "value": 0.938,
+      "value": 0.988,
       "biggerIsBetter": true
     },
     {
       "name": "max_tilt_deg[sampling_mpc]",
       "unit": "deg",
-      "value": 35.0,
+      "value": 18.3,
       "biggerIsBetter": false
     },
     {
       "name": "path_wiggle[sampling_mpc]",
       "unit": "",
-      "value": 1.258,
+      "value": 1.205,
       "biggerIsBetter": false
     },
     {
       "name": "nose_err_deg[sampling_mpc]",
       "unit": "deg",
-      "value": 16.1,
+      "value": 33.1,
       "biggerIsBetter": false
     },
     {
       "name": "rtf[sampling_mpc]",
       "unit": "x realtime",
-      "value": 0.299,
+      "value": 0.268,
       "biggerIsBetter": true
     },
     {
       "name": "ape_trans_rmse_m[sampling_mpc]",
       "unit": "m",
-      "value": 0.6064936565560548,
+      "value": 0.6672178218213096,
       "biggerIsBetter": false
     },
     {
       "name": "ape_trans_max_m[sampling_mpc]",
       "unit": "m",
-      "value": 1.1674460402715003,
+      "value": 1.3042070220191448,
       "biggerIsBetter": false
     },
     {
       "name": "final_err_m[sampling_mpc]",
       "unit": "m",
-      "value": 0.0022652226024491916,
+      "value": 0.0033624556395154275,
       "biggerIsBetter": false
-    },
-    {
-      "name": "final_dist_m[acados_nmpc]",
-      "unit": "m",
-      "value": 0.0205,
-      "biggerIsBetter": false
-    },
-    {
-      "name": "track_rmse_m[acados_nmpc]",
-      "unit": "m",
-      "value": 0.0205,
-      "biggerIsBetter": false
-    },
-    {
-      "name": "track_max_m[acados_nmpc]",
-      "unit": "m",
-      "value": 0.0623,
-      "biggerIsBetter": false
-    },
-    {
-      "name": "max_tilt_deg[acados_nmpc]",
-      "unit": "deg",
-      "value": 15.8,
-      "biggerIsBetter": false
-    },
-    {
-      "name": "nose_err_deg[acados_nmpc]",
-      "unit": "deg",
-      "value": 11.4,
-      "biggerIsBetter": false
-    },
-    {
-      "name": "rtf[acados_nmpc]",
-      "unit": "x realtime",
-      "value": 0.431,
-      "biggerIsBetter": true
-    },
-    {
-      "name": "ape_trans_rmse_m[acados_nmpc]",
-      "unit": "m",
-      "value": 0.02161809575791725,
-      "biggerIsBetter": false
-    },
-    {
-      "name": "ape_trans_max_m[acados_nmpc]",
-      "unit": "m",
-      "value": 0.05800384898846389,
-      "biggerIsBetter": false
-    },
-    {
-      "name": "ape_rot_rmse_deg[acados_nmpc]",
-      "unit": "deg",
-      "value": 17.854698902062538,
-      "biggerIsBetter": false
-    },
-    {
-      "name": "ape_rot_max_deg[acados_nmpc]",
-      "unit": "deg",
-      "value": 38.8710894576103,
-      "biggerIsBetter": false
-    },
-    {
-      "name": "climb_m[px4_sitl]",
-      "unit": "m",
-      "value": 5.04,
-      "biggerIsBetter": true
-    },
-    {
-      "name": "time_to_takeoff_s[px4_sitl]",
-      "unit": "s",
-      "value": 22.8,
-      "biggerIsBetter": false
-    },
-    {
-      "name": "px4_warnings[px4_sitl]",
-      "unit": "",
-      "value": 0,
-      "biggerIsBetter": false
-    },
-    {
-      "name": "rtf[px4_sitl]",
-      "unit": "x realtime",
-      "value": 1.942,
-      "biggerIsBetter": true
     }
   ]
 }
