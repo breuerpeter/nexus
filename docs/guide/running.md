@@ -39,7 +39,7 @@ uv run nexus run --vehicle astro_max_base --scene empty
 Builds PX4 SITL, starts the PX4 container, then the physics sim, and stops the container again
 on exit. Add `--view` to serve the Rerun recording on gRPC :9876, see [Observability in Rerun](#observability-in-rerun). The `astro_max_base` vehicle's
 Universal Scene Description (USD) file declares PX4 and its airframe. Every file a run writes lands in one folder for the run,
-`logs/<stamp>-<pid>/` in the [cache root](#the-cache-root), or the folder a script names with `Sim(run_dir=)`. It holds the recording, `nexus.rrd`, and each peer's files under a folder named for it. PX4's console is `px4_sitl/console.log`, and its `.ulg` flight log lands beside it, `px4_sitl/<date>/<time>.ulg`.
+`~/.cache/nexus/logs/<stamp>-<pid>/`, or the folder a script names with `Sim(run_dir=)`. It holds the recording, `nexus.rrd`, and each peer's files under a folder named for it. PX4's console is `px4_sitl/console.log`, and its `.ulg` flight log lands beside it, `px4_sitl/<date>/<time>.ulg`.
 
 A run that never starts, or that loses PX4 or the Kit container before it ends, stops with an error
 and exits non-zero. The message names each peer's console log and quotes the peer's own error lines,
@@ -71,7 +71,7 @@ frame, so a frame shows the tick that asked for it. A vehicle with no such prim 
   `nexus-uav[rtx]` with pip. It needs an NVIDIA GPU with RTX. A vehicle with an RTX sensor in an
   environment without the extra fails at its build, and the message names the extra.
 - The first run on a machine compiles the shaders, about five minutes, and later runs reuse them from
-  `ovrtx/` in the [cache root](#the-cache-root), which outlasts the environment. The console of ovrtx goes to
+  `~/.cache/nexus/ovrtx/`, which outlasts the environment. The console of ovrtx goes to
   `ovrtx/console.log` in the run's folder, next to the run's recording.
 - A lidar's prim applies `OmniSensorGenericLidarCoreAPI` beside its sensor schema, or the build fails
   and names the prim. The render stage sets the scan rate from the sensor's rate. Each scan reaches the
@@ -203,7 +203,7 @@ declared value or selects a variant without re-authoring the hosted vehicle.
 **Parameters and missions across runs.** PX4 keeps what it stores, the parameters set from a ground
 station and the last mission it accepted, across runs, as a real vehicle keeps them across a reboot.
 Set a parameter in QGroundControl, stop the sim, start it again, and PX4 boots with it. PX4 keeps one
-store per airframe and instance, in `px4_sitl/store/<airframe>/<instance>/` in the [cache root](#the-cache-root). A
+store per airframe and instance, in `~/.cache/nexus/px4_sitl/store/<airframe>/<instance>/`. A
 vehicle on another airframe keeps its own. A run takes the lowest free instance, so a restart finds
 the store only on the instance it flew on, which another run on the machine can hold.
 
@@ -214,7 +214,7 @@ or example flies on what an earlier run stored.
 
 **The PX4 tree.** The PX4 SITL peer pins the PX4-Autopilot commit it flies, in
 `nexus_uav/_src/peers/px4_sitl/pin.ref`, which ships in the package. The first managed run on
-a machine fetches that commit into `px4_sitl/<commit>/` in the [cache root](#the-cache-root) and builds it there, minutes
+a machine fetches that commit into `~/.cache/nexus/px4_sitl/<commit>/` and builds it there, minutes
 once. Later runs rebuild only what changed. Every peer resolves its pin the same way, so PX4 has
 the two overrides every peer has:
 
@@ -311,22 +311,6 @@ The tool refuses `--view` and `--log` together, and `Sim` raises `ValueError`. A
 records nothing: it serves nothing and writes no `.rrd`, so it runs at full headless speed.
 
 Both modes carry the same content, PX4 included: there is no second recording and no merge step.
-
-## The cache root
-
-Every file nexus keeps across runs lives in one folder, the cache root. It's `$NEXUS_CACHE_DIR` when set, else `$XDG_CACHE_HOME/nexus`, else `~/.cache/nexus`. Each kind of file has a folder under it:
-
-| Folder | What it holds |
-|---|---|
-| `logs/<stamp>-<pid>/` | each run's folder, when a script names none |
-| `px4_sitl/<commit>/` | the PX4 tree the peer fetched and built |
-| `px4_sitl/store/<airframe>/<instance>/` | what PX4 stores across runs |
-| `kit/home/`, `kit/cache/` | the Kit container's home and shader cache |
-| `ovrtx/` | the ovrtx driver's shader cache |
-| `assets/` | the asset cache of an installed package, which `$NEXUS_ASSET_CACHE` moves on its own |
-| `recordings/` | the named recordings of the examples |
-
-The PX4 and Kit containers mount the PX4 tree, the store, Kit's folders and the run's folder at the same path they have on the host. A script can run inside a container and start those containers through the host's Docker daemon. It then sets `NEXUS_CACHE_DIR` to a folder it binds at that folder's host path, so each mount's source exists on the host. The PX4 instance locks stay in `~/.cache/nexus/px4-instances/` whatever the root.
 
 ## Gotchas
 

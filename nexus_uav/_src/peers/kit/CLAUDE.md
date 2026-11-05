@@ -24,13 +24,13 @@ link from a thread in this process, for tests. The render link's host end is
   `tests/rendering/test_link.py` drives the host end against a stand-in peer that speaks through
   it too.
 - The container runs as the host user with the image's `isaac-sim` group, gid `1234`, added, since
-  only that group can read `/isaac-sim`. Kit's `HOME` is `kit/home` in the cache root, `nexus_uav/_src/core/cache_root.py`,
-  and its shader cache `kit/cache`.
+  only that group can read `/isaac-sim`. Kit's `HOME` is `~/.cache/nexus/kit/home` and its shader
+  cache `~/.cache/nexus/kit/cache`.
 - No secret goes in the peer's environment: Kit prints its whole environment into the console
   at every boot, and the console is a log file. The Cesium ion token rides the setup message.
 - The peer answers ready only after every camera product has rendered once. On a machine with a
   cold shader cache the RTX renderer comes up minutes after Kit's boot, and a ready before that
   starves the loop. The console prints the wait every 30 s.
-- The peer's files live under `kit/` in the run's folder, `logs/<stamp>-<pid>/` in the cache root or the folder `Sim(run_dir=)` names: its console, `console.log`, and its benchmark metrics. Its
+- The peer's files live under `kit/` in the run's folder, `~/.cache/nexus/logs/<stamp>-<pid>/` or the folder `Sim(run_dir=)` names: its console, `console.log`, and its benchmark metrics. Its
   own lines start `[kit]`. Every 240 frames one of them splits a frame's time into three parts:
   the wait for the host, the render, and the send.

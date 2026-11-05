@@ -44,7 +44,7 @@ in the script, and it records its flight `.rrd`. The launcher map is `_EXAMPLES`
   `nexus-rl` also imports. `eval_dump.py` holds the evaluation dump, and `origin.py` the override layer
   that moves a shipped scene's geodetic origin, which `mission.py` and the benchmark cell write.
 - The acados example provisions its own acados: `controllers/acados_nmpc/provision.py` fetches the
-  commit `acados.ref` pins and builds it under `acados/<sha>` in the cache root, on
+  commit `acados.ref` pins and builds it under `~/.cache/nexus/acados/<sha>`, on
   `python -m nexus_uav.examples acados_nmpc --provision`. The `acados` extra holds PyPI packages only.
   acados' Python interface, `acados_template`, isn't on PyPI: `provision.require()` puts it on
   `sys.path` from the built tree and loads the tree's C libraries, so nothing sets
