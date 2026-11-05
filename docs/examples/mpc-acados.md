@@ -123,7 +123,7 @@ solver with partial condensing. It runs **SQP-RTI**: a *single* SQP iteration pe
 never solved to convergence. That's sound because it warm-starts from the last tick's solution,
 already near-optimal for a problem that shifted by only one 4 ms tick. It's what makes the mean
 solve ~0.13 ms against the 4 ms control period. The first run compiles the generated solver once and caches it in
-`~/.cache/nexus/acados_codegen/`, the reason you provision acados rather than pip-install it.
+`acados_codegen/` in the [cache root](../guide/running.md#the-cache-root), the reason you provision acados rather than pip-install it.
 
 Each `exchange()` tick:
 
@@ -188,7 +188,7 @@ uv run --extra acados -m nexus_uav.examples acados_nmpc --provision   # fetches 
 uv run --extra acados -m nexus_uav.examples acados_nmpc   # flies + asserts + writes the .rrd
 ```
 
-The first command fetches the acados commit the example pins into `~/.cache/nexus/acados/`, builds
+The first command fetches the acados commit the example pins into `acados/` in the [cache root](../guide/running.md#the-cache-root), builds
 it with `cmake`, and downloads the Tera renderer that acados generates code with. `ACADOS_SOURCE_DIR`
 names another folder. A second run of it changes nothing. The `acados` extra installs the Python
 packages the example imports, and the example finds acados' own Python interface in the tree it
