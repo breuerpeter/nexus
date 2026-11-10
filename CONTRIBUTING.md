@@ -11,7 +11,6 @@ Install [`uv`](https://docs.astral.sh/uv/), then install the framework and the p
 ```bash
 uv sync
 uvx pre-commit install
-uvx pre-commit install --hook-type commit-msg
 ```
 
 [Development](docs/guide/contributing/development.md) covers the hooks and the tests.
