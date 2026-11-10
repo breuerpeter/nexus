@@ -18,7 +18,6 @@ before each commit. The hooks enforce:
   A commit that touches only `nexus-rl/` skips it, so the pull request's `lint` check catches a
   stale lock there
 - **typos**: catches common misspellings
-- **conventional-pre-commit**: enforces [conventional commit](https://www.conventionalcommits.org/) messages
 
 ### Setup
 
@@ -26,7 +25,6 @@ Install the hooks, a one-time step:
 
 ```bash
 uvx pre-commit install
-uvx pre-commit install --hook-type commit-msg
 ```
 
 ### Usage
