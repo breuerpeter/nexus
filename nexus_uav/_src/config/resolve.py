@@ -22,7 +22,7 @@ from .receipt import ResolvedLaunch, TestedConfig
 
 def _resolve_asset(ref, cache_dir) -> pathlib.Path:
     kw = {"cache_dir": cache_dir} if (cache_dir is not None and cache_dir != "") else {}
-    return _fetch(ref.model_dump(exclude_none=True), **kw)
+    return _fetch(ref.model_dump(exclude_none=True), credentials=ref.credentials, **kw)
 
 
 def _local_usd(name: str | None, kind: str) -> pathlib.Path | None:

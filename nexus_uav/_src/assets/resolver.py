@@ -6,8 +6,9 @@ the version pin, because assets are inputs to a run, so a run references {url, s
 reproducible; and the same blobs dedup. The runtime path is pure stdlib, urllib plus hashlib,
 with no Amazon Web Services (AWS) deps, so it stays light for the standalone runtime and works for a
 public-read Content Delivery Network (CDN), anonymous GET, and ``file://`` URLs alike. The one
-exception is an ``s3://`` URL, which has no CDN in front of it: boto3 fetches that, so the standard
-credential chain applies: the environment, a profile, an instance profile or ``aws sso login``. The
+exception is an ``s3://`` URL, which has no CDN in front of it: boto3 fetches that, with the credentials
+the package whose catalog lists the asset supplies, else through the standard credential chain: the
+environment, a profile, an instance profile or ``aws sso login``. The
 ``s3`` extra, ``nexus-uav[s3]``, installs boto3, and a plain install carries no AWS package.
 
 Multi-file Universal Scene Description (USD) assets ship as a single self-contained ``.usdz``, one blob
@@ -22,6 +23,7 @@ import shutil
 import tempfile
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
 
 from nexus_uav._src.core.cache_root import cache_root
@@ -71,8 +73,9 @@ def sha256_file(path: str | Path, _chunk: int = 1 << 20) -> str:
     return h.hexdigest()
 
 
-def _download_s3(url: str, dst: Path, timeout: float) -> None:
-    """Download an ``s3://`` asset with boto3, through the standard AWS credential chain.
+def _download_s3(url: str, dst: Path, timeout: float, credentials: Callable[[], dict[str, str]] | None) -> None:
+    """Download an ``s3://`` asset with boto3, with the session keyword arguments *credentials* returns, else
+    through the standard AWS credential chain.
 
     boto3 comes from the ``s3`` extra, and only this function imports it, so a plain install, whose
     assets are an ordinary web fetch, never needs it.
@@ -85,9 +88,15 @@ def _download_s3(url: str, dst: Path, timeout: float) -> None:
         raise RuntimeError(f"fetching {url} needs boto3: install `nexus-uav[s3]`") from e
     parts = urllib.parse.urlparse(url)
     config = botocore.config.Config(connect_timeout=timeout, read_timeout=timeout)
+    try:
+        session = credentials() if credentials is not None else {}
+    except Exception as e:
+        raise RuntimeError(
+            f"fetching {url} needs the credentials its catalog's package supplies, which failed: {e}"
+        ) from e
     # A session of its own per fetch: boto3's default session would keep the credentials it found
     # first for the life of the process, past a change to the environment or the profile.
-    client = boto3.session.Session().client("s3", config=config)
+    client = boto3.session.Session(**session).client("s3", config=config)
     try:
         client.download_file(parts.netloc, parts.path.lstrip("/"), str(dst))
     except botocore.exceptions.NoCredentialsError as e:
@@ -106,6 +115,7 @@ def fetch(
     cache_dir: str | Path | None = None,
     filename: str | None = None,
     timeout: float = 30.0,
+    credentials: Callable[[], dict[str, str]] | None = None,
 ) -> Path:
     """Resolve a content-addressed asset to a local path: cache-hit, else download + verify.
 
@@ -118,6 +128,9 @@ def fetch(
         filename: cached filename; defaults to the URL basename.
         timeout: per-connection socket timeout in seconds; a stalled host raises rather than
             hanging the caller, for example import-time resolution in a training app.
+        credentials: for an ``s3://`` download, a function that returns the keyword arguments of the
+            boto3 session, such as ``aws_access_key_id``; called once per download, never on a cache hit.
+            ``None`` takes the standard AWS credential chain.
 
     Returns the cached local path. Idempotent and offline after the first fetch.
     """
@@ -132,7 +145,7 @@ def fetch(
     try:
         if urllib.parse.urlparse(url).scheme == "s3":
             os.close(tmp_fd)
-            _download_s3(url, tmp, timeout)
+            _download_s3(url, tmp, timeout, credentials)
         else:
             with os.fdopen(tmp_fd, "wb") as out, urllib.request.urlopen(url, timeout=timeout) as resp:
                 shutil.copyfileobj(resp, out)

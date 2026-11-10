@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+from collections.abc import Callable
 from typing import Literal
 
 import yaml
@@ -32,6 +33,10 @@ class AssetRef(_Base):
     url: str
     sha256: str
     filename: str | None = None
+    credentials: Callable[[], dict[str, str]] | None = Field(default=None, exclude=True, repr=False)
+    """The ``s3_credentials`` of the package whose catalog lists the asset, or ``None``: an ``s3://`` fetch
+    calls it for the keyword arguments of its boto3 session. Never part of a dump or the receipt.
+    """
 
 
 class Runtime(_Base):

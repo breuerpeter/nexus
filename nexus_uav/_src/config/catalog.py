@@ -7,8 +7,10 @@ No per-key override/transform machinery: that "clever" path is on hold.
 
 from __future__ import annotations
 
+import importlib
 import importlib.resources
 import pathlib
+from collections.abc import Callable
 from importlib.metadata import entry_points
 from typing import Literal
 
@@ -252,16 +254,20 @@ class Catalog(_Base):
             ValueError: If a fetched file's sha256 differs from the catalog entry's.
         """
         blob, layers = self.stack(name)
-        path = fetch_asset(blob.model_dump(exclude_none=True))
+        path = fetch_asset(blob.model_dump(exclude_none=True), credentials=blob.credentials)
         if not layers:
             return path
-        fetched = [(fetch_asset(layer.model_dump(exclude_none=True)), layer.sha256) for layer in layers]
+        fetched = [
+            (fetch_asset(layer.model_dump(exclude_none=True), credentials=layer.credentials), layer.sha256)
+            for layer in layers
+        ]
         return stack_layers(fetched, path, blob.sha256)
 
 
 _DEFAULT_CATALOG = pathlib.Path(__file__).parent / "catalog.yaml"
 CATALOG_FILENAME = "nexus.catalog.yaml"
 CATALOG_GROUP = "nexus.catalog"  # the entry-point group whose entries name the packages that add a catalog
+CREDENTIALS_ATTRIBUTE = "s3_credentials"  # the attribute of such a package that supplies its s3:// credentials
 
 
 def discover_catalog(start: str | pathlib.Path | None = None) -> pathlib.Path | None:
@@ -294,6 +300,12 @@ class CatalogSource(_Base):
     """The package's distribution name for a package source, else the kind."""
     path: pathlib.Path
     """The source's catalog file."""
+    credentials: Callable[[], dict[str, str]] | None = Field(default=None, exclude=True, repr=False)
+    """The ``s3_credentials`` attribute of a package source's module, which its ``s3://`` assets fetch with.
+
+    ``None`` for a package that names none, and for the bundled and project sources: those fetch through
+    boto3's default credential chain.
+    """
 
     @property
     def label(self) -> str:
@@ -316,7 +328,10 @@ def _installed_sources() -> list[CatalogSource]:
                 f"the {CATALOG_GROUP} entry point {entry.name!r} of package {package} names {entry.module!r}, "
                 f"whose folder holds no {CATALOG_FILENAME}"
             )
-        sources.append(CatalogSource(kind="package", name=package, path=path))
+        # Finding the catalog file already imported the module. The load reads its attribute, and only an
+        # ``s3://`` fetch of one of this catalog's assets calls it.
+        credentials = getattr(importlib.import_module(entry.module), CREDENTIALS_ATTRIBUTE, None)
+        sources.append(CatalogSource(kind="package", name=package, path=path, credentials=credentials))
     return sources
 
 
@@ -361,6 +376,13 @@ def load_sources(sources: list[CatalogSource]) -> Catalog:
     owners |= {("scene", name): sources[0] for name in catalog.scenes}
     for source in sources[1:]:
         own = Catalog.from_yaml(source.path)
+        if source.credentials is not None:  # each of the package's own refs fetches with its credentials
+            for entry in own.vehicles.values():
+                for ref in (entry.usd, *entry.layers):
+                    if ref is not None:
+                        ref.credentials = source.credentials
+            for scene in own.scenes.values():
+                scene.usd.credentials = source.credentials
         for kind, below, entries in (
             ("vehicle", catalog.vehicles, own.vehicles),
             ("scene", catalog.scenes, own.scenes),
