@@ -115,25 +115,6 @@ chain applies: the environment, a profile named by `AWS_PROFILE`, an instance pr
 extra, so a package whose catalog lists `s3://` assets depends on `nexus-uav[s3]`, and a plain
 `nexus-uav` install carries no Amazon Web Services (AWS) package.
 
-A package whose bucket hands out credentials another way, such as a token exchange, supplies them
-itself. The module its `nexus.catalog` entry point names defines `s3_credentials`, a function with no
-arguments that returns the keyword arguments of a boto3 session:
-
-```python
-def s3_credentials() -> dict[str, str]:
-    token = exchange_token()  # the package's own way to get them
-    return {
-        "aws_access_key_id": token.key_id,
-        "aws_secret_access_key": token.secret,
-        "aws_session_token": token.session,
-    }
-```
-
-The framework calls it at each download of an `s3://` asset that the package's catalog lists. It never
-calls it at import, on a cache hit, or for another catalog's assets. An error it raises fails the fetch,
-and the message names the asset's URL. A package that defines no `s3_credentials` fetches through the
-ordinary credential chain.
-
 ## Hosting your own
 
 Any host that serves bytes over HTTPS works. This project uses a bucket behind a
