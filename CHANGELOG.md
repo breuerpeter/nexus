@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.9.0...nexus-uav-v0.10.0) (2026-11-10)
+
+
+### Features
+
+* **config:** a catalog package supplies its s3 credentials at the fetch ([#409](https://github.com/breuerpeter/nexus/issues/409)) ([460b168](https://github.com/breuerpeter/nexus/commit/460b1685f954a9e0b956ab30c6e4b30a7d707fea))
+
 ## [0.9.0](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.8.1...nexus-uav-v0.9.0) (2026-11-05)
 
 
