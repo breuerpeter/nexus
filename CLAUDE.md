@@ -111,7 +111,7 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
 
 ## Commits
 
-Conventional commits: `type(scope): description`, with the scope optional.
+Conventional commits: `type(scope): description`, with the scope required in the PR title, which the squash commit takes.
 
 With release-please enabled, commit types drive the version bump:
 - `feat` → minor: 0.1.0 → 0.2.0

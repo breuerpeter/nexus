@@ -19,8 +19,8 @@ uvx pre-commit install --hook-type commit-msg
 ## Pull requests
 
 - Title each pull request as a [conventional commit](https://www.conventionalcommits.org/):
-  `type(scope): description`. The squash commit takes the title, and the `pr-title` check
-  enforces it.
+  `type(scope): description`, with a scope. The squash commit takes the title, and the
+  `pr-title` check enforces it.
 - Run `uvx pre-commit run -a` before you commit.
 - Vale checks the prose lines you add: the Markdown, and the comments and docstrings in Python.
 - GPU CI runs once a maintainer adds the `gpu` label to the pull request.
