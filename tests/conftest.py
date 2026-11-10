@@ -1,11 +1,14 @@
 """Shared test helpers."""
 
+import hashlib
+import http.server
 import importlib
 import os
 import platform
 import re
 import subprocess
 import sys
+import threading
 import urllib.request
 from pathlib import Path
 
@@ -205,6 +208,62 @@ def install_package(tmp_path, monkeypatch):
         return folder
 
     return install
+
+
+@pytest.fixture
+def no_aws(tmp_path, monkeypatch):
+    """Drop every Amazon Web Services (AWS) setting and the user's AWS files, the instance metadata lookup and every
+    executable on PATH, so no credential and no `aws` tool reaches a fetch.
+    """
+    for key in [k for k in os.environ if k.startswith("AWS_")]:
+        monkeypatch.delenv(key)
+    monkeypatch.setenv("AWS_CONFIG_FILE", str(tmp_path / "no-config"))
+    monkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", str(tmp_path / "no-credentials"))
+    monkeypatch.setenv("AWS_EC2_METADATA_DISABLED", "true")
+    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+
+
+@pytest.fixture
+def bucket(monkeypatch, no_aws):
+    """A stand-in S3 endpoint on localhost that serves the objects put in the returned dict, keyed
+    ``<bucket>/<key>``, with test credentials in the environment and no `aws` tool on PATH.
+    """
+    objects: dict[str, bytes] = {}
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_HEAD(self):
+            self._reply(body=False)
+
+        def do_GET(self):
+            self._reply(body=True)
+
+        def _reply(self, body):
+            data = objects.get(self.path.split("?", 1)[0].lstrip("/"))
+            if data is None:
+                self.send_response(404)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("ETag", f'"{hashlib.md5(data).hexdigest()}"')
+            self.send_header("Last-Modified", "Wed, 01 Jan 2025 00:00:00 GMT")
+            self.end_headers()
+            if body:
+                self.wfile.write(data)
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    monkeypatch.setenv("AWS_ENDPOINT_URL", f"http://127.0.0.1:{server.server_port}")
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "test-key")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "test-secret")
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-west-2")
+    yield objects
+    server.shutdown()
+    server.server_close()
 
 
 @pytest.fixture
