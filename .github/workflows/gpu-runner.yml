@@ -5,7 +5,7 @@ name: gpu-runner
 # plumbing lives in one place, and a caller that fans out calls it once per cell through a matrix, one
 # box per cell, since a measured flight shares neither a GPU nor PX4's fixed ports. Ephemeral ⇒ safe
 # on any pull request (a fresh disposable box per run). Runs in
-# Freefly's AWS account (multi-region — placement discovered per run, see #26); the box boots the
+# one AWS account (multi-region — placement discovered per run, see #26); the box boots the
 # latest AWS Deep Learning Base GPU AMI
 # (NVIDIA drivers + Docker + nvidia-container-toolkit, resolved at runtime); a PX4 run builds the
 # px4-sitl image on the box the way a user's first run does, an RTX run pulls NVIDIA's Isaac Sim
@@ -179,6 +179,9 @@ jobs:
         with:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ secrets.AWS_GPU_ROLE_ARN }}
+          # The logs are public, and AWS names the account in its own messages, such as a throttled
+          # launch's "Account N has been throttled". The mask holds for the rest of the job.
+          mask-aws-account-id: true
       # Capacity via BREADTH, not retries (#26, the upstream newton pattern): discover eligible
       # placements at run time — tagged resources and each candidate region's default VPC (a subnet
       # per AZ, zero provisioning), in AWS_REGION_CANDIDATES order (us-west-2 first — colocated
@@ -459,6 +462,7 @@ jobs:
           # The instance may have launched in any discovered region — stop it where it lives.
           aws-region: ${{ needs.start-runner.outputs.region || env.AWS_REGION }}
           role-to-assume: ${{ secrets.AWS_GPU_ROLE_ARN }}
+          mask-aws-account-id: true
       - id: app-token
         if: ${{ needs.start-runner.outputs.ec2-instance-id != '' }}
         uses: actions/create-github-app-token@v3
