@@ -8,11 +8,10 @@ and assert the climb. The manual counterpart to :mod:`flight` (which flies the a
 link on :4560, starts the PX4 container against it, and kills it again on the way out. What is left
 here is a plain script against ``nexus_uav.px4.OffboardClient``, which it opens itself on the address the
 run's port map names, ``sim.ports["offboard"]``, and whose sticks are streamed by the client's own pump
-over MAVLink :14540, the *same* #69 bytes the Ground Control Station (GCS) emits from decoded Pilot Pro sticks
-(freeflycontroller ``PILOT_PRO_OUTPUTS_MAVLINK_MANUAL_CONTROL`` msg 52537 -> x/y/z/r). So this
-verifies the gap-2 manual path end-to-end in SITL without a physical Pilot Pro or an emulated companion.
-The decoder half is unit-tested; this exercises the *flight* half (does a #69 gesture arm + fly
-this PX4). This script drives the sim: every client verb returns immediately and every wait is a
+over MAVLink :14540, the *same* #69 bytes a Ground Control Station (GCS) emits from a hand
+controller's sticks. So this verifies the manual path end-to-end in SITL without a physical hand
+controller: does a #69 gesture arm + fly this PX4.
+This script drives the sim: every client verb returns immediately and every wait is a
 ``sim.wait_until``, which steps the sim until PX4's own telemetry says the verb landed.
 
 Only the client steps differ from flight.py: it flies in Altitude mode (ALTCTL), where
