@@ -26,10 +26,8 @@ with nx.Sim._from_loop(orch, guidance=guidance) as sim:
     sim.run()
 ```
 
-The guidance logs its waypoint markers at `sim/guidance/<name>/waypoints/wp_<i>` and a tracked
-reference at `sim/guidance/<name>/reference`. `<name>` is the guidance's instance name: the name of
-the prim that declares it, or the name of its class for one a flight builds itself, such as
-`MissionGuidance`.
+The guidance logs its waypoint markers at `sim/guidance/waypoints/wp_<i>` and a tracked reference at
+`sim/guidance/reference`.
 
 ::: nexus_uav._src.guidance.mission.MissionGuidance
 ::: nexus_uav._src.guidance.tracking.TrackingGuidance

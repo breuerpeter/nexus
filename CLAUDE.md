@@ -40,10 +40,8 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
 - **One contract serves every role.** A component subclasses `Component`, states its stages and
   overrides the lifecycle members it has: `connect`, `close`, `set_logger`, `attached`, `requires`,
   `needs_instance`, `ports`, `artifacts` and `name`. The loop, the builder and `Sim` read those from
-  every component and find none by name. A test stand-in subclasses `Component` too. A vehicle declares
-  one or more components of each role, and the builder names each after its prim. A controller
-  writes its own `controls` signal, as wide as its actuators, and a vehicle with two controllers authors
-  `nexus:inputs:controls` on every reader of the controls. The registry, `Registry`, maps each
+  every component and find none by name. A test stand-in subclasses `Component` too. A controller
+  writes its own `controls` signal, as wide as its actuators. The registry, `Registry`, maps each
   schema to its class, a component's or a declared peer's, and each name a class requires a peer by.
   A project registers through the `nexus.registry` entry-point group, and a test hands a run its
   stand-ins and its peers' fakes through `Sim(registry=...)`. The builder names no component and no
