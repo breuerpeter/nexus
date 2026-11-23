@@ -715,14 +715,18 @@ def test_a_vehicle_declares_two_components_of_one_role_and_each_ones_stages_run_
     assert outcome == (["first", "second"] * 5, ["/vehicle/First", "/vehicle/Second"])
 
 
-def _two_controllers(path, *, order=("Autopilot", "GimbalController"), connect: bool = True, servo: bool = True):
+def _two_controllers(
+    path, *, order=("Autopilot", "GimbalController"), connect: bool = True, servo: bool = True, wired: bool = True
+):
     """Declare on the quad at `path` two controllers, `NexusPx4API_1` on the `Scope` `Autopilot` and
-    `StandInControllerAPI` on the `Scope` `GimbalController`, defined in `order`. With `connect`, each rotor's ESC
-    reads the controls of `Autopilot`. With `servo`, the gimbal joint's stand-in actuator reads the first value of
-    `GimbalController`'s, at 1 rad per unit. Returns the path.
+    `StandInControllerAPI` on the other `Scope` `order` names, `GimbalController`, defined in `order`. With
+    `connect`, each rotor's ESC reads the controls of `Autopilot`. With `servo`, the gimbal joint applies the
+    stand-in actuator on the first controls value, at 1 rad per unit, and with `wired` its connection names the
+    other `Scope`. Returns the path.
     """
     stage = Usd.Stage.Open(str(path))
-    schemas = {"Autopilot": "NexusPx4API_1", "GimbalController": "StandInControllerAPI"}
+    (other,) = (name for name in order if name != "Autopilot")
+    schemas = {"Autopilot": "NexusPx4API_1", other: "StandInControllerAPI"}
     for name in order:
         UsdGeom.Scope.Define(stage, f"{quad.ROOT}/{name}").GetPrim().AddAppliedSchema(schemas[name])
     if connect:
@@ -734,8 +738,8 @@ def _two_controllers(path, *, order=("Autopilot", "GimbalController"), connect: 
         joint.AddAppliedSchema("StandInServoAPI")
         joint.CreateAttribute("nexus:channel", Sdf.ValueTypeNames.Int).Set(0)
         joint.CreateAttribute("nexus:scale", Sdf.ValueTypeNames.Float).Set(1.0)
-        target = f"{quad.ROOT}/GimbalController"
-        joint.CreateRelationship("nexus:inputs:controls", custom=False).SetTargets([target])
+        if wired:
+            joint.CreateRelationship("nexus:inputs:controls", custom=False).SetTargets([f"{quad.ROOT}/{other}"])
     stage.GetRootLayer().Save()
     return str(path)
 
@@ -779,6 +783,28 @@ def test_with_two_controllers_a_reader_of_the_controls_that_names_neither_fails_
     message = str(outcome["error"])
     named = [s in message for s in ("autopilot", "gimbalcontroller", "rotor_", "nexus:inputs:controls")]
     assert (type(outcome["error"]), named, autopilot.ticks, gimbal.ticks) == (ValueError, [True] * 4, 0, 0), message
+
+
+def test_a_reader_takes_no_controller_for_sharing_the_name_of_its_prim(tmp_path):
+    """A reader of the controls takes no controller for sharing the name of its prim: only a component on the
+    reader's own prim is its writer with nothing authored.
+
+    Given the fixture quad with its gimbal joint, `/Vehicle/gimbal_joint`, a controller on the `Scope`
+    `/Vehicle/Gimbal_Joint`, whose name in lower case is the joint's, a second controller, each ESC connected to
+    the second, and the joint's stand-in actuator with no connection, when the run takes its first step, then it
+    raises `ValueError` that names both controllers and `nexus:inputs:controls`, and no stage has run.
+    """
+    path = _two_controllers(
+        quad.author(tmp_path / "quad.usda", gimbal=True), order=("Autopilot", "Gimbal_Joint"), wired=False
+    )
+    autopilot, gimbal = _commanding(FULL), _commanding((0.5,))
+    registry = Registry({"NexusPx4API_1": autopilot, "StandInControllerAPI": gimbal, "StandInServoAPI": _DeclaredServo})
+
+    outcome = _fly(path, registry, ticks=5)
+
+    message = str(outcome["error"])
+    named = [s in message for s in ("autopilot", "gimbal_joint", "nexus:inputs:controls")]
+    assert (type(outcome["error"]), named, autopilot.ticks, gimbal.ticks) == (ValueError, [True] * 3, 0, 0), outcome
 
 
 class _DeviceLaw(Component):

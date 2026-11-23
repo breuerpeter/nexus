@@ -17,6 +17,7 @@ What a class requires by name, a peer's link or the render stage the RTX sensors
 from __future__ import annotations
 
 import copy
+import typing
 from dataclasses import dataclass
 from typing import Any
 
@@ -70,13 +71,14 @@ def declared_elements(physics, usd_path, components, instance: int) -> list[tupl
     return built
 
 
-def elements(physics, vehicle_usd, components=None, instance: int = 0) -> tuple[list, list, list]:
+def elements(physics, vehicle_usd, components=None, instance: int = 0) -> tuple[list, list, list, list]:
     """The command elements, the actuators and the force elements the vehicle declares, each rotor's ESC, motor
-    and propeller among them, as the three lists a loop takes: what an example's own assembly builds beside its
-    controller.
+    and propeller among them, as the three lists a loop takes, then the connections each takes from its own prim,
+    as :func:`same_prim_links` gives them: what an example's own assembly builds beside its controller.
     """
     built = declared_elements(physics, vehicle_usd.cfg["usd_path"], components, instance)
-    return tuple([component for spec, component in built if spec.role == role] for role in ELEMENT_ROLES)
+    lists = [[component for spec, component in built if spec.role == role] for role in ELEMENT_ROLES]
+    return (*lists, same_prim_links(_by_prim((spec.prim, component) for spec, component in built)))
 
 
 def assemble(
@@ -158,6 +160,36 @@ def _by_prim(placed) -> dict[str, list]:
     for prim, component in placed:
         out.setdefault(prim, []).append(component)
     return out
+
+
+def same_prim_links(by_prim: dict[str, list], authored: dict | None = None) -> list[tuple]:
+    """The connections a reader takes from its own prim with nothing authored: for each input of one value that
+    another component on the reader's prim writes, that writer, so a rotor's motor reads the voltage of the ESC on
+    its body. `by_prim` holds the components on each prim, by the prim's path, so two prims that share a name
+    stay apart. `authored` are the vehicle's connections by prim: a connection on the reader's prim wins for the
+    component it connects, the one :func:`_reader` picks.
+    """
+    links: dict[tuple[int, str], tuple] = {}
+    for prim, components in by_prim.items():
+        connected = {id(_reader(by_prim, prim, signal)): signal for signal in (authored or {}).get(prim, {})}
+        for reader in components:
+            for stage in reader.stages():
+                for signal in stage.reads:
+                    if connected.get(id(reader)) == signal.name or typing.get_origin(signal.type) is list:
+                        continue
+                    writer = next(
+                        (c for c in components if c is not reader and _output(c, signal.name) is not None), None
+                    )
+                    if writer is not None:
+                        links[id(reader), signal.name] = (reader, signal.name, writer, signal.name)
+    return list(links.values())
+
+
+def _reader(by_prim: dict, prim: str, signal: str):
+    """The component on `prim` a connection of `signal` on that prim connects: the first that reads the signal,
+    else the prim's first, which an error names.
+    """
+    return next((c for c in by_prim[prim] if _reads(c, signal)), by_prim[prim][0])
 
 
 def _writer(by_prim: dict, prim: str, signal: str):
@@ -297,15 +329,14 @@ def build_loop(
     by_prim = {**a.prims, **{prim: [component] for prim, component in (prims or {}).items()}}
     ends = _link_ends(peer_inputs or {}, connections or {}, by_prim)
     by_prim.update({prim: [end] for prim, end in ends.items()})
-    links = []
+    links = same_prim_links(by_prim, connections)
     for reader, inputs in (connections or {}).items():
         for signal, writers in inputs.items():
             if reader not in by_prim:
                 raise ValueError(
                     f"{reader} connects {signal!r} to {' and '.join(writers)}, and declares no component itself"
                 )
-            # The component on the reader's prim that reads the signal, else the prim's first, which the error names.
-            reading = next((c for c in by_prim[reader] if _reads(c, signal)), by_prim[reader][0])
+            reading = _reader(by_prim, reader, signal)
             for writer in writers:
                 # The component on the target that writes the signal, a rotor body's ESC for `voltage`; else, for a
                 # body's or a joint's prim, the plant's output of it, its pose, which no element writes; else the

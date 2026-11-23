@@ -18,7 +18,7 @@ pytest.importorskip("pxr")
 import warp as wp
 
 from nexus_uav._src.api.sim import Sim
-from nexus_uav._src.build.assembly import assemble, build_loop, resolve_device
+from nexus_uav._src.build.assembly import assemble, build_loop, resolve_device, same_prim_links
 from nexus_uav._src.build.launch import resolve_vehicle_usd
 from nexus_uav._src.config import LaunchConfig
 from nexus_uav._src.core.interfaces import Component, Stage
@@ -139,6 +139,7 @@ def _loop(path, controller, *, commands=(), forces=()):
         forces=[*a.forces, *(make(physics) for make in forces)],
         sensors=a.sensors,
         controllers=[a.controllers[0]],
+        connections=same_prim_links(a.prims),  # each motor reads the ESC on its own prim
         max_steps=quad.FLIGHT_STEPS,
     )
 
