@@ -1,4 +1,4 @@
-"""The joints' motors: each joint's current command to the torque on its joint."""
+"""The torque motors: each joint's current command to the torque on its joint."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import warp as wp
 from nexus_uav._src.core.interfaces import Component
 
 
-class JointMotors:
+class TorqueMotors:
     """The motors of joints the caller has found, over every vehicle of the model at once.
 
     Args:
@@ -25,7 +25,7 @@ class JointMotors:
         """
 
 
-class JointMotor(Component):
+class TorqueMotor(Component):
     """The motor of one joint, which the joint's prim declares.
 
     Args:
@@ -39,4 +39,4 @@ class JointMotor(Component):
     def __init__(self, model, path: str, *, torque_constant: float = 0.0, current_limit: float = 0.0, channel: int = 0): ...  # fmt: skip
 
 
-__all__ = ["JointMotor", "JointMotors"]
+__all__ = ["TorqueMotor", "TorqueMotors"]

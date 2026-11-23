@@ -1,4 +1,4 @@
-"""The joints' motors turn each joint's current command into the torque on its joint, and emit the current it draws,
+"""The torque motors turn each joint's current command into the torque on its joint, and emit the current it draws,
 for the joints of one vehicle, as a run builds them, or of many at once.
 """
 
@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 import warp as wp
 
-from nexus_uav._src.vehicle.actuators.joint_motor import JointMotor, JointMotors
+from nexus_uav._src.vehicle.actuators.torque_motor import TorqueMotor, TorqueMotors
 
 pytestmark = pytest.mark.usefixtures("warp_cpu")
 
@@ -22,9 +22,9 @@ class _Control:
         self.joint_f = wp.zeros(16, dtype=float)
 
 
-def _motors(dofs=DOFS) -> JointMotors:
+def _motors(dofs=DOFS) -> TorqueMotors:
     """Two motors per vehicle on the controls' fifth and sixth values: 0.05 N·m/A at 2 A and 0.1 N·m/A at 4 A."""
-    return JointMotors(
+    return TorqueMotors(
         joint_dofs=wp.array(dofs, dtype=wp.int32),
         channels=[4, 5],
         torque_constant=[0.05, 0.1],
@@ -32,7 +32,7 @@ def _motors(dofs=DOFS) -> JointMotors:
     )
 
 
-def _step(motors: JointMotors, commands, stale: float = 0.0) -> tuple[np.ndarray, np.ndarray]:
+def _step(motors: TorqueMotors, commands, stale: float = 0.0) -> tuple[np.ndarray, np.ndarray]:
     """Step `motors` once over `commands`, each vehicle's fifth and sixth controls values, with `stale` in the
     current's buffer from the step before. Returns each motor's joint effort and its current, in order.
     """
@@ -109,6 +109,6 @@ def test_a_constant_at_or_below_zero_or_a_channel_below_zero_fails_and_names_the
     message names the joint's prim and the attribute.
     """
     with pytest.raises(ValueError) as e:
-        JointMotor(_arm(), JOINT, **values)
+        TorqueMotor(_arm(), JOINT, **values)
 
     assert [s in str(e.value) for s in (JOINT, attribute)] == [True, True]

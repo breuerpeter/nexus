@@ -413,8 +413,8 @@ def test_an_actuator_the_vehicle_declares_builds_through_the_registry(tmp_path):
     assert settled, outcome
 
 
-# The joint's motor on the fifth controls value: 0.02 N·m/A at 0.5 A.
-JOINT_MOTOR = {
+# The torque motor on the fifth controls value: 0.02 N·m/A at 0.5 A.
+TORQUE_MOTOR = {
     "nexus:channel": (Sdf.ValueTypeNames.Int, 4),
     "nexus:torqueConstant": (Sdf.ValueTypeNames.Float, 0.02),
     "nexus:currentLimit": (Sdf.ValueTypeNames.Float, 0.5),
@@ -425,13 +425,13 @@ def test_a_joint_that_declares_the_motor_turns_at_the_rate_the_motors_torque_giv
     """A vehicle whose joint declares the motor turns that joint under a constant command at the rate
     `Kt·u·currentLimit·t/J`.
 
-    Given the fixture quad whose gimbal joint's prim applies `NexusJointMotorAPI` on the fifth controls value, at
+    Given the fixture quad whose gimbal joint's prim applies `NexusTorqueMotorAPI` on the fifth controls value, at
     0.02 N·m/A and 0.5 A, and a stand-in controller at 0.2 on that value, so the torque is 0.002 N·m on the gimbal
     body's 1e-4 kg·m², when `Sim` flies 125 ticks, 0.5 s, then the joint's recorded rate is 10 rad/s within 2 %.
     """
     path = _declare(
         quad.author(tmp_path / "quad.usda", gimbal=True),
-        applied={quad.GIMBAL_JOINT: ("NexusJointMotorAPI", JOINT_MOTOR)},
+        applied={quad.GIMBAL_JOINT: ("NexusTorqueMotorAPI", TORQUE_MOTOR)},
     )
 
     outcome = _fly(path, Registry({"NexusPx4API_1": _commanding((*FULL, 0.2))}))
@@ -439,22 +439,22 @@ def test_a_joint_that_declares_the_motor_turns_at_the_rate_the_motors_torque_giv
     assert outcome["rate"] is not None and abs(outcome["rate"] - 10.0) < 0.2, outcome
 
 
-def test_a_joint_motor_on_a_prim_that_is_no_joint_of_one_degree_of_freedom_fails_the_build(tmp_path):
+def test_a_torque_motor_on_a_prim_that_is_no_joint_of_one_degree_of_freedom_fails_the_build(tmp_path):
     """A motor declared on a prim that's no joint of one degree of freedom fails the build, naming the prim.
 
-    Given the fixture quad whose gimbal's rigid body, not its joint, applies `NexusJointMotorAPI`, when the vehicle
+    Given the fixture quad whose gimbal's rigid body, not its joint, applies `NexusTorqueMotorAPI`, when the vehicle
     builds, then it fails before any stage runs, and the message names the prim and the schema and says the schema
     sits on a joint.
     """
     body = f"{quad.ROOT}/gimbal"
     path = _declare(
-        quad.author(tmp_path / "quad.usda", gimbal=True), applied={body: ("NexusJointMotorAPI", JOINT_MOTOR)}
+        quad.author(tmp_path / "quad.usda", gimbal=True), applied={body: ("NexusTorqueMotorAPI", TORQUE_MOTOR)}
     )
 
     outcome = _fly(path, Registry({"NexusPx4API_1": _commanding((*FULL, 0.2))}), ticks=1)
 
     message = str(outcome["error"])
-    assert [s in message for s in (f"{body}:", "NexusJointMotorAPI", "Joint")] == [True] * 3, message
+    assert [s in message for s in (f"{body}:", "NexusTorqueMotorAPI", "Joint")] == [True] * 3, message
 
 
 def _plan(path, registry: Registry, caplog) -> str:
@@ -475,20 +475,20 @@ def _plan(path, registry: Registry, caplog) -> str:
     return next(m for m in (r.getMessage() for r in caplog.records) if m.startswith("stage plan:"))
 
 
-def test_the_joint_motors_stage_adds_no_host_stage_and_no_segment_to_the_tick(tmp_path, caplog):
+def test_the_torque_motors_stage_adds_no_host_stage_and_no_segment_to_the_tick(tmp_path, caplog):
     """The motor's stage runs inside the substep's captured graph: a run with the motor has no host stage and no
     graph segment more than the same run without it.
 
-    Given the fixture quad with a gimbal joint, once plain and once with `NexusJointMotorAPI` on the joint's
+    Given the fixture quad with a gimbal joint, once plain and once with `NexusTorqueMotorAPI` on the joint's
     prim, each flown by a stand-in controller, when each run starts, then the plan of the run with the motor holds
-    the motor's stage, `joint_motor`, and the two plans hold the same segments in the same order, each host stage
+    the motor's stage, `torque_motor`, and the two plans hold the same segments in the same order, each host stage
     by its name.
     """
     registry = Registry({"NexusPx4API_1": _commanding((*FULL, 0.2))})
     plain = _declare(quad.author(tmp_path / "plain.usda", gimbal=True))
     motor = _declare(
         quad.author(tmp_path / "motor.usda", gimbal=True),
-        applied={quad.GIMBAL_JOINT: ("NexusJointMotorAPI", JOINT_MOTOR)},
+        applied={quad.GIMBAL_JOINT: ("NexusTorqueMotorAPI", TORQUE_MOTOR)},
     )
 
     def segments(plan: str) -> list[str]:
@@ -498,7 +498,7 @@ def test_the_joint_motors_stage_adds_no_host_stage_and_no_segment_to_the_tick(tm
 
     with_motor, without = _plan(motor, registry, caplog), _plan(plain, registry, caplog)
 
-    assert ("joint_motor" in with_motor, segments(with_motor)) == (True, segments(without)), with_motor
+    assert ("torque_motor" in with_motor, segments(with_motor)) == (True, segments(without)), with_motor
 
 
 def test_a_force_element_the_vehicle_declares_builds_through_the_registry(tmp_path):
