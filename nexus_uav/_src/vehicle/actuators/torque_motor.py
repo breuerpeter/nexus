@@ -84,18 +84,21 @@ def _joint_dof(model, path: str) -> int:
     """The velocity degree of freedom of the joint at the prim path `path` in a built model.
 
     Raises:
-        ValueError: The model has no joint of that path, or the joint has more or fewer than one degree of
-            freedom; the message names the prim.
+        ValueError: The model has no joint of that path, or the joint has other than one angular degree of
+            freedom, as a ball joint does, or a prismatic one, which would take the torque as a force; the message
+            names the prim.
     """
     labels = [str(label) for label in model.joint_label]
     if path not in labels:
         raise ValueError(f"{path}: the model has no joint of that path, and a torque motor sits on its joint's prim")
     j = labels.index(path)
-    start = model.joint_qd_start.numpy()
-    count = int(start[j + 1] - start[j])
-    if count != 1:
-        raise ValueError(f"{path}: the joint has {count} degrees of freedom, and a torque motor drives a joint of one")
-    return int(start[j])
+    linear, angular = (int(n) for n in model.joint_dof_dim.numpy()[j])
+    if (linear, angular) != (0, 1):
+        raise ValueError(
+            f"{path}: the joint has {linear} linear and {angular} angular degrees of freedom, and a torque motor "
+            "drives a joint of one angular degree of freedom"
+        )
+    return int(model.joint_qd_start.numpy()[j])
 
 
 class TorqueMotor(Component):
@@ -111,7 +114,7 @@ class TorqueMotor(Component):
 
     Raises:
         ValueError: A constant isn't positive, ``channel`` is below 0, or the prim is no joint of the model with
-            one degree of freedom; the message names the prim, and the attribute for a value.
+            one angular degree of freedom; the message names the prim, and the attribute for a value.
     """
 
     def __init__(self, model, path: str, *, torque_constant: float = 0.0, current_limit: float = 0.0, channel: int = 0):  # fmt: skip

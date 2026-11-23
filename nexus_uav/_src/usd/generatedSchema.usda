@@ -252,7 +252,7 @@ class "NexusMotorAPI" (
 }
 
 class "NexusTorqueMotorAPI" (
-    doc = "A torque motor on its joint's prim, with its drive: a direct-drive motor under a current command. It turns one entry of a controller's controls, a signed command from -1 to 1 that the drive scales over its current limit, into torque on the joint, and emits the current it draws. Its input `controls` is the vehicle's one controller's unless the connection names another."
+    doc = "A torque motor on its joint's prim, with its drive: a direct-drive motor under a current command. The joint has one angular degree of freedom, as a revolute joint does, and the build fails any other. It turns one entry of a controller's controls, a signed command from -1 to 1 that the drive scales over its current limit, into torque on the joint, and emits the current it draws. Its input `controls` is the vehicle's one controller's unless the connection names another."
     prepend apiSchemas = ["NexusActuatorRoleAPI"]
 )
 {
