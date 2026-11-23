@@ -242,16 +242,18 @@ def _stick_positions(ulog) -> set[tuple[float, float, float, float]]:
 @pytest.mark.px4_sitl
 @pytest.mark.xdist_group("px4_ports")
 @_NEEDS_TREE
-def test_a_replayed_flight_arms_changes_mode_and_disarms_as_its_log_and_holds_the_logs_stick_rows(
+def test_a_replayed_flight_takes_each_command_arms_and_disarms_as_its_log_and_holds_the_logs_stick_rows(
     px4_vehicle, tmp_path
 ):
-    """A replayed flight arms, changes mode and disarms within 0.2 s of its log, and its ULog holds the log's stick
-    rows unchanged.
+    """A replayed flight takes each command within 0.05 s of its log, arms on its sticks within 0.3 s and disarms
+    after landing within 1 s, and its ULog holds the log's stick rows unchanged.
 
     Given the ULog of a flight the pinned PX4 flew in SITL on sticks, armed by the stick gesture in Altitude mode,
     climbed 2 m, switched to Position mode and landed, when a script replays it on the same vehicle with no PX4
-    named, then the replay's ULog holds the same arming and mode steps, each within 0.2 s of the log's, and the same
-    stick positions.
+    named, then the replay's ULog holds the same six arming and mode steps and the same stick positions. A step a
+    replayed command drives, each of the three mode changes, is within 0.05 s of the log's. The arming, which the
+    sticks drive, is within 0.3 s: the log holds the sticks at 5 Hz. The first status and the disarm after
+    touchdown, which the sim's flight produces, are within 1 s.
     """
     pytest.importorskip("pymavlink")
     import nexus_uav as nx
@@ -278,8 +280,10 @@ def test_a_replayed_flight_arms_changes_mode_and_disarms_as_its_log_and_holds_th
     replayed = replay(flown, px4_vehicle, scene=sv.SCENE, run_dir=tmp_path / "replay").get("ulog")
 
     log, again = _steps(flown), _steps(replayed) if replayed else []
-    in_step = len(log) == len(again) and all(
-        a[1:] == b[1:] and abs(a[0] - b[0]) <= 0.2 for a, b in zip(log, again, strict=True)
+    # The six steps in order: the first status, Altitude, the arming, Position, Land and the disarm.
+    bounds = (1.0, 0.05, 0.3, 0.05, 0.05, 1.0)
+    in_step = len(log) == len(again) == len(bounds) and all(
+        a[1:] == b[1:] and abs(a[0] - b[0]) <= bound for a, b, bound in zip(log, again, bounds, strict=True)
     )
     sticks = _stick_positions(replayed) if replayed else set()
     assert (in_step, sticks) == (True, _stick_positions(flown)), f"the log's steps {log}, the replay's {again}"
