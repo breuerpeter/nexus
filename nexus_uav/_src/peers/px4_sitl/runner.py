@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import os
 import shutil
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import ulog_rrd
@@ -43,6 +43,8 @@ from nexus_uav._src.core.cache_root import cache_root
 from nexus_uav._src.peers import LABEL, containers
 from nexus_uav._src.peers.containers import ContainerPeer, ensure_image, run_container
 from nexus_uav._src.peers.pins import PeerPin
+
+from nexus_uav._src.peers.xrce_agent import AGENT_PORT
 
 from . import checkout
 from .instance import hil_free
@@ -126,6 +128,8 @@ class Px4Sitl(ContainerPeer):
         serial: The path of PX4's end of each serial line a peer's prim wires to PX4's, by that prim's name. PX4
             opens each as ``/dev/serial/<name>`` and starts a MAVLink instance on it in onboard mode, the stream set
             a companion computer expects, at 3 Mbaud with MAVLink's file transfer, the link stock SITL doesn't start.
+        params: The PX4 parameters the peer sets at PX4's boot, each ``NAME=VALUE``: the ``nexus:params`` of the
+            vehicle's ``NexusPx4SitlAPI``.
         clean: Whether the run starts clean: the start empties the store of the airframe and the instance, so PX4
             boots with no parameter and no mission an earlier run stored.
         **run: The run's other values, which the peer needs none of.
@@ -149,6 +153,7 @@ class Px4Sitl(ContainerPeer):
         log_dir: Path,
         serial: Mapping[str, str] = (),
         clean: bool = False,
+        params: Sequence[str] = (),
         **run,
     ) -> None:
         if not airframe:
@@ -168,6 +173,7 @@ class Px4Sitl(ContainerPeer):
         self.airframe = airframe
         self.serial = dict(serial)
         self.clean = clean
+        self.params = _params(params)
 
     def start(self) -> None:
         """Fetch the PX4 tree, then build the image and the tree if this machine lacks them, then start
@@ -197,6 +203,8 @@ class Px4Sitl(ContainerPeer):
         # itself the way PX4's multi-instance script does. `-d` runs with no pxh shell: at the end of
         # an unattended stdin that shell spin-loops printing its prompt and starves PX4.
         kwargs["environment"]["PX4_SIM_MODEL"] = f"none_{self.airframe}"
+        # PX4's bridge client dials the agent's port of this run's instance, where a declared agent listens.
+        kwargs["environment"]["PX4_UXRCE_DDS_PORT"] = str(AGENT_PORT + self.instance)
         # PX4 works in its instance's folder of the tree, where it stores the parameters and the mission a run
         # sets and loads them at its next boot. The store of the airframe and the instance mounts there instead,
         # which this run holds with the instance, so the tree keeps nothing of this run's. PX4 wipes its stored
@@ -219,6 +227,17 @@ class Px4Sitl(ContainerPeer):
         # makes none as root.
         (work / "log").mkdir(exist_ok=True)
         kwargs["volumes"][str(self.dir)] = {"bind": str(instance_dir / "log"), "mode": "rw"}
+        if self.params:
+            # PX4's own boot hook sets each parameter before any module starts. A tree whose startup folder
+            # holds `px4-rc.params` sources that file, so a file of this run's mounts over it. Any other tree
+            # reads each `PX4_PARAM_<name>` of its environment.
+            hook = self.tree / "build" / "px4_sitl_default" / "etc" / "init.d-posix" / "px4-rc.params"
+            if hook.exists():
+                boot = work / "px4-rc.params"
+                boot.write_text("#!/bin/sh\n" + "".join(f"param set {k} {v}\n" for k, v in self.params.items()))
+                kwargs["volumes"][str(boot)] = {"bind": str(hook), "mode": "ro"}
+            else:
+                kwargs["environment"].update({f"PX4_PARAM_{k}": v for k, v in self.params.items()})
         if self.serial:
             # Each serial link's device, and PX4's own hook for commands after its airframe and its network links,
             # `<airframe>.post` beside the airframe file: a file of this run's, mounted over the tree's copy inside
@@ -357,6 +376,21 @@ class Px4Sitl(ContainerPeer):
             scalars=True,
         )
         logger.info(f"Rerun: PX4's flight log {Path(ulog).name} added under {NAME}/logs")
+
+
+def _params(authored: Sequence[str]) -> dict[str, str]:
+    """The boot parameters ``nexus:params`` authors, each ``NAME=VALUE``, by name.
+
+    Raises:
+        ValueError: An entry isn't ``NAME=VALUE``; the message names it.
+    """
+    params = {}
+    for entry in authored or ():
+        name, sep, value = entry.partition("=")
+        if not (sep and name.strip() and value.strip()):
+            raise ValueError(f"NexusPx4SitlAPI authors the nexus:params entry {entry!r}, which isn't NAME=VALUE")
+        params[name.strip()] = value.strip()
+    return params
 
 
 def _airframe_file(tree: Path, airframe: str) -> Path:

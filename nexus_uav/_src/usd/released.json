@@ -212,6 +212,11 @@
       "fallback": "",
       "type": "string",
       "units": "none"
+    },
+    "nexus:params": {
+      "fallback": "[]",
+      "type": "string[]",
+      "units": "none"
     }
   },
   "NexusSceneAPI": {
@@ -274,6 +279,13 @@
       "fallback": "0",
       "type": "float",
       "units": "N\u00b7m/A"
+    }
+  },
+  "NexusXrceAgentAPI": {
+    "nexus:transport": {
+      "fallback": "udp4",
+      "type": "string",
+      "units": "none"
     }
   }
 }

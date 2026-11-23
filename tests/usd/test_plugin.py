@@ -108,7 +108,12 @@ def test_the_conformance_fixture_applies_every_component_and_peer_schema_the_plu
     # The scene schema sits on a scene's PhysicsScene, never on a vehicle such as the fixture.
     components = set(schema_names()) - roles - {"NexusSceneAPI"}
     rotor = {"NexusPropellerAPI", "NexusEscAPI", "NexusMotorAPI"}
-    assert applied == components == sensors | rotor | {"NexusTorqueMotorAPI", "NexusPx4API_1", "NexusPx4SitlAPI"}
+    assert applied == components == sensors | rotor | {
+        "NexusTorqueMotorAPI",
+        "NexusPx4API_1",
+        "NexusPx4SitlAPI",
+        "NexusXrceAgentAPI",
+    }
 
 
 def test_the_script_beside_the_fixture_reproduces_it(tmp_path):

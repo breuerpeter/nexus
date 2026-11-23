@@ -13,7 +13,7 @@ import nexus_uav  # noqa: F401  # registers the nexus schema plugin
 
 
 def author(out: Path) -> None:
-    """Write the fixture to `out`: PX4 and its Software In The Loop (SITL) peer each on a scope of its own under the default prim, one body under it with an Inertial Measurement Unit (IMU) on a lever arm and one prim for each other sensor schema, each analytic sensor a sphere of 1 cm, one rotor body with a propeller, an ESC and a motor, and one revolute joint with a torque motor."""
+    """Write the fixture to `out`: PX4, its Software In The Loop (SITL) peer and the Micro XRCE-DDS agent peer each on a scope of its own under the default prim, one body under it with an Inertial Measurement Unit (IMU) on a lever arm and one prim for each other sensor schema, each analytic sensor a sphere of 1 cm, one rotor body with a propeller, an ESC and a motor, and one revolute joint with a torque motor."""
     stage = Usd.Stage.CreateNew(str(out))
     UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
     UsdGeom.SetStageMetersPerUnit(stage, 1.0)
@@ -24,6 +24,7 @@ def author(out: Path) -> None:
     peer = UsdGeom.Scope.Define(stage, "/Vehicle/Px4Sitl").GetPrim()
     peer.ApplyAPI("NexusPx4SitlAPI")
     peer.GetAttribute("nexus:airframe").Set("astro_max")
+    UsdGeom.Scope.Define(stage, "/Vehicle/XrceAgent").GetPrim().ApplyAPI("NexusXrceAgentAPI")
     UsdGeom.Xform.Define(stage, "/Vehicle/body")
     imu = UsdGeom.Sphere.Define(stage, "/Vehicle/body/Imu")
     imu.GetRadiusAttr().Set(0.01)
