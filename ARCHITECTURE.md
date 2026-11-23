@@ -55,6 +55,7 @@ The shape of the tree today, one line per fact, and under `## Planned` each chan
 - The Kit render peer, `peers/kit/`, the render link's host end, `rendering/`, the Kit-served sensor classes, the `cesium` scene's catalog entry and the Kit-only asset scripts move to a plugin project in this repo, `nexus-kit/`, a second `uv` project that registers through `nexus.registry`; the core keeps no Kit line.
 - The render stage hands frames back on the device, and no host copy sits on the loop's path. A frame is a device signal the Recorder keeps no history of, and the Logger copies it to the host at its own cadence.
 - The example controllers register through the registry as a project's do and fly through the one builder; no example assembles its own loop.
+- The builder hands every component and every peer its instance name, the name of the prim that declares it, and no class sets one.
 - The builder reads typed launch values and the receipt, and no scenario dict remains. `nexus plan` prints the receipt without flying.
 - A batch is a copies axis on every signal, not a second code path. The RL env builds its ring through the builder inside Isaac Lab's env, which keeps the model, the solver, the cloning and the MDP, and takes its camera observation from the framework's render stage; the framework is no Isaac Lab physics backend and imports no `isaaclab_*` package.
 - Types: `ty` in strict mode checks the core, the tests, the scripts and `nexus-rl` in its own environment, so `py.typed` is a checked claim.
