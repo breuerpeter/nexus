@@ -1,5 +1,5 @@
 ---
-description: "API reference for nexus_uav.px4: OffboardClient, the client a script opens on PX4's offboard link, and the mission plan types it uploads."
+description: "API reference for nexus_uav.px4: OffboardClient, the client a script opens on PX4's offboard link, the mission plan types it uploads, and replay, which flies PX4 on a real flight's ULog."
 ---
 
 # PX4
@@ -34,3 +34,7 @@ from nexus_uav.px4 import MissionItem, Plan, read_plan
 ::: nexus_uav.px4.Plan
 ::: nexus_uav.px4.MissionItem
 ::: nexus_uav.px4.read_plan
+
+`replay` flies PX4 on the inputs a real flight's ULog holds, see [Replaying a flight](../../guide/replaying-a-flight.md).
+
+::: nexus_uav.px4.replay
