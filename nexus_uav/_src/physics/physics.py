@@ -177,7 +177,7 @@ class NewtonPhysics:
 
     def clear_forces(self, state) -> None:
         """Zero the forces the substep's elements accumulate: the bodies' wrenches in ``state`` and the joints'
-        efforts in the control, which the actuators, the rotors' motors, add their torque into.
+        efforts in the control, which the actuators add their torque into.
         """
         state.clear_forces()
         if self.control is not None:

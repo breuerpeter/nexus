@@ -83,5 +83,14 @@ def Xform "Vehicle"
         float nexus:kv = 151
         float nexus:resistance = 0.16
     }
+
+    def PhysicsRevoluteJoint "joint" (
+        prepend apiSchemas = ["NexusTorqueMotorAPI"]
+    )
+    {
+        int nexus:channel = 4
+        float nexus:currentLimit = 2
+        float nexus:torqueConstant = 0.05
+    }
 }
 
