@@ -24,7 +24,7 @@ from typing import Any
 import warp as wp
 
 from nexus_uav._src.core import Clock, Loop, SeedTree, logger
-from nexus_uav._src.core.components import check_siblings, resolve_components, run_keywords
+from nexus_uav._src.core.components import check_siblings, instance_name, resolve_components, run_keywords
 from nexus_uav._src.core.peer_inputs import PeerInputs
 from nexus_uav._src.physics import NewtonPhysics
 from nexus_uav._src.recording import Recorder
@@ -66,7 +66,7 @@ def declared_elements(physics, usd_path, components, instance: int) -> list[tupl
         component = spec.cls(physics.model, spec.prim, **spec.kwargs, **run_keywords(spec.cls, instance))
         # The instance name, the leaf of the prim's path, as a sensor's: a rotor's ESC, motor and propeller share
         # their body's, so each one's rows sit under it, `vehicle/commands/rotor_1/voltage`.
-        component.name = spec.name
+        component.name = instance_name(spec.prim)
         built.append((spec, component))
     return built
 
