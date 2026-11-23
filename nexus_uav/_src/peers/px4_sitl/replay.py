@@ -16,6 +16,7 @@ leaves out what the bridge lacks: the switches, the gimbal command and the air t
 from __future__ import annotations
 
 import dataclasses
+import fnmatch
 import itertools
 import os
 import re
@@ -33,9 +34,14 @@ from nexus_uav._src.peers.pins import PeerPin
 from . import OFFBOARD_PORT, checkout
 
 SKIPPED = {
+    "CAL_*": "the real sensors' calibration: PX4 reports the simulated accelerometer, gyro and compass uncalibrated",
+    "SENS_*": "the real board's sensor setup: PX4 reports an attitude failure",
+    "SYS_HAS_*": "the hardware the real vehicle carries: PX4 reports a missing distance sensor",
     "COM_POWER_COUNT": "a count above 1 denies arming: SITL has one power source",
+    "UXRCE_DDS_*": "the real vehicle's bridge setup: no replayed sample reaches PX4",
+    "MAV_SYS_ID": "the real vehicle's system id: PX4 on an instance other than 0 ignores each replayed command",
 }
-"""Each parameter of a log that PX4 SITL keeps as its own, with the measured reason."""
+"""Each parameter of a log that PX4 SITL keeps as its own, a name or a pattern of names, with the measured reason."""
 
 # The bridge input each replayed topic of a log goes to, and PX4's message for that input.
 _INPUTS = {
@@ -179,7 +185,11 @@ def px4_pin(ulog: str | os.PathLike, px4: str | None, default: PeerPin) -> PeerP
 
 def log_params(log, delta: Mapping[str, float] | None) -> dict[str, float]:
     """What :func:`boot_params` answers, from a log read already."""
-    params = {name: value for name, value in log.initial_parameters.items() if name not in SKIPPED}
+    params = {
+        name: value
+        for name, value in log.initial_parameters.items()
+        if not any(fnmatch.fnmatchcase(name, pattern) for pattern in SKIPPED)
+    }
     params.update(delta or {})
     # With the sync on, PX4 shifts each incoming timestamp by an offset that drifts once the run is faster than
     # real time. It reads the parameter at boot.
@@ -323,9 +333,10 @@ def fly(run, log, px4_tree: Path) -> None:
     }
     logger.info(f"replaying {len(sent)} samples to {end:.1f} s on PX4 instance {instance}")
     due = 0
-    while run.time < end:
+    stepping = True
+    while stepping and run.time < end:
         while due < len(sent) and sent[due].time / 1e6 <= run.time:
             sample = address(sent[due], instance)
             writers[sent[due].topic].write(_message(kinds[sent[due].topic], sample.values))
             due += 1
-        run.step()
+        stepping = run.step()  # false once the run has ended, at its ``max_steps``
