@@ -320,3 +320,36 @@ def test_an_unauthored_input_takes_the_writer_on_its_own_prim_and_a_connection_t
     except ValueError as exc:
         error = str(exc)
     assert tap.seen == {ROTORS[0]: 1.0, ROTORS[1]: 2.0, ROTORS[2]: 3.0, ROTORS[3]: 1.0}, error
+
+
+def test_a_reader_with_two_authored_inputs_takes_no_automatic_link_for_either():
+    """A reader with two authored inputs takes no automatic link for either, though a component on its own prim
+    writes the first.
+
+    Given a prim that holds a reader of `voltage` and `current` and a writer of `voltage`, and connections on
+    that prim for both inputs, when the builder resolves the links a reader takes from its own prim, then it
+    gives none: each authored connection stands alone.
+    """
+    from nexus_uav._src.build.assembly import same_prim_links
+
+    class Reader(Component):
+        def __init__(self):
+            self.voltage = Signal("voltage", wp.float32, shape=(1,))
+            self.current = Signal("current", wp.float32, shape=(1,))
+
+        def stages(self):
+            return [Stage("read", "device", lambda tick: None, reads=(self.voltage, self.current))]
+
+    class Writer(Component):
+        def __init__(self):
+            self.voltage = Signal("voltage", wp.float32, shape=(1,))
+
+        def stages(self):
+            return [Stage("write", "device", lambda tick: None, writes=(self.voltage,))]
+
+    by_prim = {"/vehicle/body/rotor_1": [Writer(), Reader()]}
+    authored = {"/vehicle/body/rotor_1": {"voltage": ["/vehicle/body/rotor_2"], "current": ["/vehicle/body/rotor_2"]}}
+
+    links = same_prim_links(by_prim, authored)
+
+    assert [(type(reader).__name__, signal) for reader, signal, *_ in links] == []

@@ -171,11 +171,12 @@ def same_prim_links(by_prim: dict[str, list], authored: dict | None = None) -> l
     """
     links: dict[tuple[int, str], tuple] = {}
     for prim, components in by_prim.items():
-        connected = {id(_reader(by_prim, prim, signal)): signal for signal in (authored or {}).get(prim, {})}
+        # Each authored input by its reader, so a reader with two keeps both.
+        connected = {(id(_reader(by_prim, prim, signal)), signal) for signal in (authored or {}).get(prim, {})}
         for reader in components:
             for stage in reader.stages():
                 for signal in stage.reads:
-                    if connected.get(id(reader)) == signal.name or typing.get_origin(signal.type) is list:
+                    if (id(reader), signal.name) in connected or typing.get_origin(signal.type) is list:
                         continue
                     writer = next(
                         (c for c in components if c is not reader and _output(c, signal.name) is not None), None
