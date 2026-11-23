@@ -309,6 +309,25 @@ def test_a_vehicle_that_declares_two_controllers_fails_the_build(tmp_path, daemo
     assert (named, daemon) == ([True, True, True], [])
 
 
+def test_two_schemas_of_one_role_on_one_scope_fail_the_build(tmp_path, daemon):
+    """Two schemas of one role on one `Scope` fail the build.
+
+    Given a vehicle whose one `Scope` applies PX4's schema and the stand-in controller schema, when the run
+    builds, then it raises `ValueError` before any peer starts, and the error names the prim and both schemas.
+    """
+    from nexus_uav._src.core.registry import Registry
+
+    px4 = Registry().resolve("NexusPx4API_1")
+    components = Registry({"NexusPx4API_1": px4, "StandInControllerAPI": _StandInController})
+    both = PX4_SCOPED.replace('["NexusPx4API_1"]', '["NexusPx4API_1", "StandInControllerAPI"]')
+
+    with pytest.raises(ValueError) as err:
+        _build(tmp_path, both, components=components)
+
+    named = [s in str(err.value) for s in ("/vehicle/Controller", "NexusPx4API_1", "StandInControllerAPI")]
+    assert (named, daemon) == ([True, True, True], [])
+
+
 def test_a_px4_sitl_peer_with_no_airframe_authored_fails_the_build(tmp_path, daemon):
     """A PX4 SITL peer with no airframe authored fails the build.
 

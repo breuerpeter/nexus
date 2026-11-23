@@ -320,3 +320,39 @@ def test_an_unauthored_input_takes_the_writer_on_its_own_prim_and_a_connection_t
     except ValueError as exc:
         error = str(exc)
     assert tap.seen == {ROTORS[0]: 1.0, ROTORS[1]: 2.0, ROTORS[2]: 3.0, ROTORS[3]: 1.0}, error
+
+
+def test_every_shipped_schema_whose_class_reads_the_controls_declares_the_connection(tmp_path):
+    """Every shipped schema whose class reads the controls declares `nexus:inputs:controls`.
+
+    Given the fixture vehicle, which applies every command, actuator and force schema the plugin defines, when
+    the run builds with the shipped classes and the test reads each element's stages, then each schema whose
+    class reads `controls` defines the relationship `nexus:inputs:controls`, and the vehicle leaves out no schema
+    of those roles.
+    """
+    from pxr import Usd
+
+    from nexus_uav._src.core.components import resolve_components
+    from nexus_uav._src.usd import schema_names
+    from nexus_uav._src.usd.reader import ROLES, roles
+
+    path = sv.vehicle(tmp_path)
+    loop = sv.build(path)
+    elements = [*loop.commands, *loop.actuators, *loop.forces]
+    reading = {type(c) for c in elements if any(s.name == "controls" for stage in c.stages() for s in stage.reads)}
+    loop.close()
+    chain = {"command", "actuator", "force"}
+    specs = [spec for spec in resolve_components(path) if spec.role in chain]
+    defined = Usd.SchemaRegistry().FindAppliedAPIPrimDefinition
+    undeclared = sorted(
+        {
+            spec.schema
+            for spec in specs
+            if spec.cls in reading and "nexus:inputs:controls" not in defined(spec.schema).GetPropertyNames()
+        }
+    )
+    # A role schema states its own role, and no vehicle applies one by itself.
+    of_chain = {name for name in schema_names() if name not in ROLES and chain & set(roles(name))}
+    left_out = sorted(of_chain - {spec.schema for spec in specs})
+
+    assert (sorted(c.__name__ for c in reading) != [], undeclared, left_out) == (True, [], [])

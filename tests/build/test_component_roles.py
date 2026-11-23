@@ -623,3 +623,273 @@ def test_every_class_a_run_flies_comes_from_the_registry_and_the_builder_names_n
         (dict.fromkeys(rotors, 5), dict.fromkeys(rotors, 5), dict.fromkeys(rotors, 5)),
         5,
     )
+
+
+# --- one or more components of each role -----------------------------------------------------------
+
+# The fixture's own controller scope, dropped, so a test declares every controller of the vehicle itself.
+NO_CONTROLLER = 'over "Controller" (\n    active = false\n)\n{\n}\n'
+# Each role's stand-in schema, the attribute whose value differs on its two prims, its keyword, and the signal
+# the role writes: its name, its type and its shape. `ROLE_VALUES` holds one value of each signal.
+ROLE_SIGNALS = {
+    "controller": ("StandInControllerAPI", "float nexus:gain = {n}", "gain", ("controls", wp.float32, (1, 4))),
+    "estimator": (
+        "StandInEstimatorAPI",
+        "float3 nexus:position = ({n}, 0, 0)",
+        "position",
+        ("estimate", PoseTwist, (1,)),
+    ),
+    "guidance": ("StandInGuidanceAPI", "float3 nexus:setpoint = ({n}, 0, 0)", "setpoint", ("setpoint", wp.vec3, (1,))),
+}
+ROLE_VALUES = {
+    "controls": [[0.0, 0.0, 0.0, 0.0]],
+    "estimate": [((0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))],
+    "setpoint": [(0.0, 0.0, 0.0)],
+}
+
+
+def _escs_read(target: str) -> str:
+    """Each rotor's ESC of the fixture vehicle reads the controls of the controller on `target`."""
+    return "".join(f'over "rotor_{i}"\n{{\n    rel nexus:inputs:controls = <{target}>\n}}\n' for i in (1, 2, 3, 4))
+
+
+def _ordered(key: str, output: tuple) -> type:
+    """A stand-in class of any role, told apart by its schema's attribute `key`, 1 on the first prim and 2 on the
+    second: its host stage writes the signal `output` and keeps, in the class's `ran`, the tick's number and
+    `first` or `second`.
+
+    Each call makes a class of its own, for one run.
+    """
+    name, kind, shape = output
+
+    class Ordered(Component):
+        ran: ClassVar[list] = []
+
+        def __init__(self, **kwargs):
+            self.which = {1: "first", 2: "second"}[round(float(np.ravel(kwargs[key])[0]))]
+            self.out = Signal(name, kind, shape=shape)
+
+        def stages(self):
+            return [Stage("ordered", "host", self._run, writes=(self.out,))]
+
+        def _run(self, tick):
+            type(self).ran.append((tick.t.step_index, self.which))
+            self.out.write(ROLE_VALUES[name])
+            return True
+
+    return Ordered
+
+
+def _reading(output: tuple) -> type:
+    """A stand-in controller class whose exchange also reads the signal `output`."""
+    name, kind, shape = output
+
+    class Reading(sv.Controller):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.reads = (Signal(name, kind, shape=shape),)
+
+    return Reading
+
+
+@pytest.mark.parametrize("role", ["controller", "estimator", "guidance"])
+def test_a_vehicle_declares_two_components_of_one_role_and_each_ones_stages_run_every_tick_in_prim_order(
+    tmp_path, role
+):
+    """A vehicle declares two components of one role, a controller, an estimator or a guidance, each on a `Scope`
+    of its own under the root prim, and each one's stages run every tick, in the order of their prims.
+
+    Given the fixture vehicle with two stand-ins of the role on the `Scope`s `First` and `Second`, each reader of
+    their signal connected to the first, when the run steps 5 ticks on the CPU device, then each stand-in ran 5
+    times, the first before the second on every tick, and the receipt names both declarations. Once per role,
+    since each role has its own count check and its own slot on the loop.
+    """
+    schema, attribute, key, output = ROLE_SIGNALS[role]
+    two = "".join(
+        sv.prim(name, schema, attribute.format(n=n), kind="Scope") for n, name in ((1, "First"), (2, "Second"))
+    )
+    ordered = _ordered(key, output)
+    if role == "controller":
+        path = sv.vehicle(tmp_path, _escs_read("/vehicle/First"), root=NO_CONTROLLER + two)
+        registry = sv.components(StandInControllerAPI=ordered)
+    else:
+        connection = f"rel nexus:inputs:{output[0]} = </vehicle/First>"
+        reader = sv.prim("Reader", "StandInControllerAPI", connection, kind="Scope")
+        path = sv.vehicle(tmp_path, root=NO_CONTROLLER + two + reader)
+        registry = sv.components(**{schema: ordered, "StandInControllerAPI": _reading(output)})
+
+    try:
+        loop = sv.build(path, components=registry)
+        declared = sorted(d["prim"] for d in loop.settings["declarations"] if d["schema"] == schema)
+        sv.steps(loop, 5)
+        outcome = ([which for step, which in ordered.ran if step > 0], declared)
+    except Exception as exc:
+        outcome = exc
+
+    assert outcome == (["first", "second"] * 5, ["/vehicle/First", "/vehicle/Second"])
+
+
+def _two_controllers(path, *, order=("Autopilot", "GimbalController"), connect: bool = True, servo: bool = True):
+    """Declare on the quad at `path` two controllers, `NexusPx4API_1` on the `Scope` `Autopilot` and
+    `StandInControllerAPI` on the `Scope` `GimbalController`, defined in `order`. With `connect`, each rotor's ESC
+    reads the controls of `Autopilot`. With `servo`, the gimbal joint's stand-in actuator reads the first value of
+    `GimbalController`'s, at 1 rad per unit. Returns the path.
+    """
+    stage = Usd.Stage.Open(str(path))
+    schemas = {"Autopilot": "NexusPx4API_1", "GimbalController": "StandInControllerAPI"}
+    for name in order:
+        UsdGeom.Scope.Define(stage, f"{quad.ROOT}/{name}").GetPrim().AddAppliedSchema(schemas[name])
+    if connect:
+        for i in range(4):
+            rotor = stage.GetPrimAtPath(f"{quad.ROOT}/rotor_{i}")
+            rotor.CreateRelationship("nexus:inputs:controls", custom=False).SetTargets([f"{quad.ROOT}/Autopilot"])
+    if servo:
+        joint = stage.GetPrimAtPath(quad.GIMBAL_JOINT)
+        joint.AddAppliedSchema("StandInServoAPI")
+        joint.CreateAttribute("nexus:channel", Sdf.ValueTypeNames.Int).Set(0)
+        joint.CreateAttribute("nexus:scale", Sdf.ValueTypeNames.Float).Set(1.0)
+        target = f"{quad.ROOT}/GimbalController"
+        joint.CreateRelationship("nexus:inputs:controls", custom=False).SetTargets([target])
+    stage.GetRootLayer().Save()
+    return str(path)
+
+
+@pytest.mark.parametrize("order", [("Autopilot", "GimbalController"), ("GimbalController", "Autopilot")])
+def test_each_reader_of_the_controls_reads_the_controller_its_connection_names(tmp_path, order):
+    """Each reader of the controls reads the controller its `nexus:inputs:controls` names.
+
+    Given the fixture quad with its gimbal joint, a first controller at full command on four channels and a
+    second that sends 0.5 on one channel, each ESC connected to the first and the gimbal joint's stand-in actuator
+    to the second, when the run flies 125 ticks, then the airframe climbs more than 0.5 m and the joint settles at
+    0.5 rad; and once with the two scopes in the other order in the file, the same.
+    """
+    path = _two_controllers(quad.author(tmp_path / "quad.usda", gimbal=True), order=order)
+    registry = Registry(
+        {
+            "NexusPx4API_1": _commanding(FULL),
+            "StandInControllerAPI": _commanding((0.5,)),
+            "StandInServoAPI": _DeclaredServo,
+        }
+    )
+
+    outcome = _fly(path, registry)
+
+    climbed = outcome["climb"] is not None and outcome["climb"] > 0.5
+    settled = outcome["angle"] is not None and abs(outcome["angle"] - 0.5) < 0.02
+    assert (climbed, settled) == (True, True), outcome
+
+
+def test_with_two_controllers_a_reader_of_the_controls_that_names_neither_fails_before_any_stage_runs(tmp_path):
+    """With two controllers, a reader of the controls that names neither fails the run before any stage runs.
+
+    Given the fixture quad with two controllers and no connection on its ESCs, when the run takes its first step,
+    then it raises `ValueError` that names both controllers, the reader and `nexus:inputs:controls`.
+    """
+    path = _two_controllers(quad.author(tmp_path / "quad.usda"), connect=False, servo=False)
+    autopilot, gimbal = _commanding(FULL), _commanding((0.5,))
+
+    outcome = _fly(path, Registry({"NexusPx4API_1": autopilot, "StandInControllerAPI": gimbal}), ticks=5)
+
+    message = str(outcome["error"])
+    named = [s in message for s in ("autopilot", "gimbalcontroller", "rotor_", "nexus:inputs:controls")]
+    assert (type(outcome["error"]), named, autopilot.ticks, gimbal.ticks) == (ValueError, [True] * 4, 0, 0), message
+
+
+class _DeviceLaw(Component):
+    """A controller of one device stage, which launches nothing and writes a controls signal one wide."""
+
+    def __init__(self, **kwargs):
+        self.controls = Signal("controls", wp.float32, shape=(1, 1))
+
+    def stages(self):
+        return [Stage("law", "device", lambda tick: None, writes=(self.controls,))]
+
+
+def _segments(caplog, path, registry: Registry) -> int:
+    """How many segments the stage plan of the run of the vehicle at `path` has, or 0 when the run fails."""
+    import logging
+    import re
+
+    caplog.clear()
+    try:
+        with caplog.at_level(logging.INFO, logger="nexus"):
+            sv.steps(sv.build(path, components=registry), 1)
+    except Exception:
+        return 0
+    plan = next(m for m in (r.getMessage() for r in caplog.records) if m.startswith("stage plan:"))
+    return len(re.findall(r"(?:graph|eager|host)\(", plan))
+
+
+@pytest.mark.parametrize("device_first", [True, False])
+def test_a_second_controller_whose_stages_are_device_stages_adds_no_segment_to_the_tick(tmp_path, caplog, device_first):
+    """A second controller whose stages are device stages adds no segment to the tick.
+
+    Given the fixture vehicle with a host-stage controller and a second stand-in controller of one device stage,
+    when the run starts, then the plan has as many segments as the same run with one controller, three; once with
+    the second's scope before the first's and once after.
+    """
+    (tmp_path / "one").mkdir()
+    (tmp_path / "two").mkdir()
+    one = _segments(caplog, sv.vehicle(tmp_path / "one"), sv.components())
+    # The fixture's `Controller` scope comes first in the file: the device law sits on it, or on the scope after.
+    host = "/vehicle/Second" if device_first else "/vehicle/Controller"
+    second = sv.prim("Second", "StandInControllerAPI", kind="Scope")
+    path = sv.vehicle(tmp_path / "two", _escs_read(host), root=second)
+    classes = (_DeviceLaw, sv.Controller) if device_first else (sv.Controller, _DeviceLaw)
+    registry = Registry({"NexusPx4API_1": classes[0], "StandInControllerAPI": classes[1]})
+
+    two = _segments(caplog, path, registry)
+
+    assert (two, one) == (3, 3)
+
+
+class _HalfSetpoint(_SetpointController):
+    """A stand-in controller that reads the setpoint and sends 0.5 on its one channel."""
+
+    width = 1
+
+    def exchange(self, t, timeout=None):
+        return np.full(1, 0.5, dtype=np.float32)
+
+
+def test_a_declared_controller_estimator_or_guidance_records_under_the_name_of_its_prim(tmp_path):
+    """A declared controller, estimator or guidance records under the name of its prim, in lower case, as a
+    sensor does.
+
+    Given the fixture vehicle with controllers on the `Scope`s `Controller` and `GimbalController`, a stand-in
+    estimator on `Estimator` and a stand-in guidance on `Guidance`, when the run steps 5 ticks, then it holds the
+    histories `vehicle/controllers/controller/controls`, `vehicle/controllers/gimbalcontroller/controls`,
+    `vehicle/estimators/estimator/estimate` and `guidance/guidance/setpoint`, each with its writer's values.
+    """
+    scopes = (
+        sv.prim("GimbalController", "StandInControllerAPI", kind="Scope")
+        + ESTIMATOR
+        + sv.prim("Guidance", "StandInGuidanceAPI", "float3 nexus:setpoint = (4, 5, 6)", kind="Scope")
+    )
+    path = sv.vehicle(tmp_path, _escs_read("/vehicle/Controller"), root=scopes)
+    registry = sv.components(
+        StandInControllerAPI=_HalfSetpoint, StandInEstimatorAPI=StandInEstimator, StandInGuidanceAPI=_FixedGuidance
+    )
+    fields = {
+        "vehicle/controllers/controller/controls": "controls",
+        "vehicle/controllers/gimbalcontroller/controls": "controls",
+        "vehicle/estimators/estimator/estimate": "position",
+        "guidance/guidance/setpoint": "setpoint",
+    }
+
+    try:
+        with Sim(path, scene=sv.SCENE, device="cpu", max_steps=5, registry=registry) as sim:
+            sim.run()
+            newest = {
+                key: [float(x) for x in np.ravel(sim[key].history()[-1][field])] if key in sim else None
+                for key, field in fields.items()
+            }
+    except Exception as exc:
+        newest = exc
+
+    assert newest == {
+        "vehicle/controllers/controller/controls": [0.0, 0.0, 0.0, 0.0],
+        "vehicle/controllers/gimbalcontroller/controls": [0.5],
+        "vehicle/estimators/estimator/estimate": [1.0, 2.0, 3.0],
+        "guidance/guidance/setpoint": [4.0, 5.0, 6.0],
+    }

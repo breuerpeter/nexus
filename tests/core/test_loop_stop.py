@@ -261,3 +261,47 @@ def test_a_peer_whose_stop_fails_does_not_cost_the_recording():
     orch.run()
 
     assert closed_logs == [True]
+
+
+class _Peered(Component):
+    """A controller with one host stage, ``exchange``, that answers until the tick numbered ``gone_at``, from
+    which it gives no answer, as when it loses its peer.
+    """
+
+    def __init__(self, name: str, gone_at: int | None = None):
+        self.name = name
+        self.gone_at = gone_at
+
+    def stages(self):
+        def exchange(tick):
+            return self.gone_at is None or tick.t.step_index < self.gone_at
+
+        return [Stage("exchange", "host", exchange)]
+
+
+@pytest.mark.parametrize("lost", ["first", "second"])
+def test_a_run_ends_when_any_of_its_controllers_ends_it_and_the_error_names_that_controller(lost):
+    """A run ends when any of its controllers ends it, and the error names that controller.
+
+    Given a loop of two stand-in controllers with one host stage each, when the second's stage gives no answer on
+    its third tick, then the run raises `RunError` that names the second controller and not the first, after two
+    ticks; and once with the first giving no answer.
+    """
+    controllers = [_Peered(name, gone_at=3 if name == lost else None) for name in ("first", "second")]
+    kept = "second" if lost == "first" else "first"
+    ticks, error = 0, None
+    try:
+        loop = Loop(
+            clock=_Clock(),
+            physics=_Physics(),
+            actuators=[_Actuator()],
+            sensors=[],
+            controllers=controllers,
+            max_steps=5,
+        )
+        while loop.step():
+            ticks += 1
+    except Exception as exc:
+        error = exc
+
+    assert (type(error), ticks, lost in str(error), kept in str(error)) == (RunError, 2, True, False), error
