@@ -79,11 +79,14 @@ def test_a_nan_command_makes_no_torque_and_no_current():
     assert [*torque, *current] == [0.0, 0.0, 0.0, 0.0]
 
 
-def _arm():
-    """A model of one link on a revolute joint, labeled as the prim the tests name."""
+def _arm(ball: bool = False):
+    """A model of one link on a revolute joint, labeled as the prim the tests name, or on a ball joint with `ball`."""
     builder = newton.ModelBuilder()
     link = builder.add_link(mass=0.1, inertia=wp.mat33(np.eye(3) * 1e-4))
-    joint = builder.add_joint_revolute(parent=-1, child=link, axis=newton.Axis.Z, label=JOINT)
+    if ball:
+        joint = builder.add_joint_ball(parent=-1, child=link, label=JOINT)
+    else:
+        joint = builder.add_joint_revolute(parent=-1, child=link, axis=newton.Axis.Z, label=JOINT)
     builder.add_articulation([joint])
     return builder.finalize()
 
@@ -112,3 +115,20 @@ def test_a_constant_at_or_below_zero_or_a_channel_below_zero_fails_and_names_the
         TorqueMotor(_arm(), JOINT, **values)
 
     assert [s in str(e.value) for s in (JOINT, attribute)] == [True, True]
+
+
+@pytest.mark.parametrize(
+    ("ball", "path", "says"),
+    [(True, JOINT, "3 degrees of freedom"), (False, "/vehicle/arm", "no joint of that path")],
+    ids=["a ball joint", "a link"],
+)
+def test_a_motor_whose_prim_is_no_joint_of_one_degree_of_freedom_fails_and_names_the_prim(ball, path, says):
+    """A motor whose prim is no joint of the model with one degree of freedom fails, and the message names the prim.
+
+    Given a model of one link on a ball joint, and one of a link on a revolute joint, when the test makes the motor
+    of the ball joint, and of the link's own path, then each raises, and the message names the prim and says why.
+    """
+    with pytest.raises(ValueError) as e:
+        TorqueMotor(_arm(ball), path, torque_constant=0.05, current_limit=2.0, channel=0)
+
+    assert [s in str(e.value) for s in (f"{path}:", says)] == [True, True]

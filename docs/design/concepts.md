@@ -160,12 +160,14 @@ Recorder, and the Logger are: the framework's own, configured by settings, never
 
 ### Actuator
 
-A [role](#role): the component that turns a signal into torque on a joint, a rotor's motor. Its stage
+A [role](#role): the component that turns a signal into torque on a joint. Its stage
 runs each substep after the command elements and before the force elements, the direction the hardware
 runs. It adds its torque into the joint efforts, which [physics](#physics) zeroes when the substep
-starts. The shipped one builds Newton's actuator in code from the constants of its own schema. A nexus actuator is
-the one way to drive a joint: the build fails a `NewtonActuator` prim. The controls carry one command
-per actuator.
+starts. Two ship. A rotor's motor turns its ESC's voltage into torque, and builds Newton's actuator in
+code from the constants of its own schema. A torque motor sits on the prim of a joint that a controller
+of its own moves. It turns one command of the controls, a current command, into torque in a kernel of
+its own. A nexus actuator is the one way to drive a joint: the build fails a `NewtonActuator` prim. The
+controls carry one command per actuator.
 
 ### Peer
 

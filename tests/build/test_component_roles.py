@@ -428,6 +428,8 @@ def test_a_joint_that_declares_the_motor_turns_at_the_rate_the_motors_torque_giv
     Given the fixture quad whose gimbal joint's prim applies `NexusTorqueMotorAPI` on the fifth controls value, at
     0.02 N·m/A and 0.5 A, and a stand-in controller at 0.2 on that value, so the torque is 0.002 N·m on the gimbal
     body's 1e-4 kg·m², when `Sim` flies 125 ticks, 0.5 s, then the joint's recorded rate is 10 rad/s within 2 %.
+    The tolerance holds Newton's inertia check, which raises the body's inertia by 1 %, and the free airframe,
+    which turns the other way.
     """
     path = _declare(
         quad.author(tmp_path / "quad.usda", gimbal=True),

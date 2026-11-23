@@ -253,5 +253,27 @@
       "type": "int",
       "units": "pixels"
     }
+  },
+  "NexusTorqueMotorAPI": {
+    "nexus:channel": {
+      "fallback": "0",
+      "type": "int",
+      "units": "none"
+    },
+    "nexus:currentLimit": {
+      "fallback": "0",
+      "type": "float",
+      "units": "A"
+    },
+    "nexus:inputs:controls": {
+      "fallback": null,
+      "type": "relationship",
+      "units": ""
+    },
+    "nexus:torqueConstant": {
+      "fallback": "0",
+      "type": "float",
+      "units": "N\u00b7m/A"
+    }
   }
 }
