@@ -32,6 +32,7 @@ No flight logic lives here: the flight is always a script against ``nexus_uav.px
 from __future__ import annotations
 
 import os
+import re
 import shutil
 from collections.abc import Mapping
 from pathlib import Path
@@ -214,11 +215,12 @@ class Px4Sitl(ContainerPeer):
         instance_dir = self.tree / "build" / "px4_sitl_default" / "rootfs" / str(self.instance)
         instance_dir.mkdir(parents=True, exist_ok=True)
         kwargs["volumes"][str(work)] = {"bind": str(instance_dir), "mode": "rw"}
-        # PX4 writes its ULog to ./log there, as <date>/<time>.ulg. The peer's folder mounts there in turn, so
-        # it holds this run's ULog alone, beside the console. This process makes each mount point, so docker
-        # makes none as root.
-        (work / "log").mkdir(exist_ok=True)
-        kwargs["volumes"][str(self.dir)] = {"bind": str(instance_dir / "log"), "mode": "rw"}
+        # PX4 writes its ULog to the log folder of its storage root there, as <date>/<time>.ulg. The peer's
+        # folder mounts there in turn, so it holds this run's ULog alone, beside the console. This process makes
+        # each mount point, so docker makes none as root.
+        log = Path(_storage_root(self.tree)) / "log"
+        (work / log).mkdir(parents=True, exist_ok=True)
+        kwargs["volumes"][str(self.dir)] = {"bind": str(instance_dir / log), "mode": "rw"}
         if self.serial:
             # Each serial link's device, and PX4's own hook for commands after its airframe and its network links,
             # `<airframe>.post` beside the airframe file: a file of this run's, mounted over the tree's copy inside
@@ -357,6 +359,19 @@ class Px4Sitl(ContainerPeer):
             scalars=True,
         )
         logger.info(f"Rerun: PX4's flight log {Path(ulog).name} added under {NAME}/logs")
+
+
+def _storage_root(tree: Path) -> str:
+    """PX4's storage root inside its working folder, where it keeps its logs and its parameters: the
+    ``CONFIG_BOARD_ROOT_PATH`` the built tree's board states, ``.`` or ``./fs`` by the PX4 commit; ``.`` when the
+    tree states none.
+    """
+    try:
+        board = (tree / "build" / "px4_sitl_default" / "boardconfig").read_text()
+    except FileNotFoundError:
+        return "."
+    stated = re.search(r'^CONFIG_BOARD_ROOT_PATH="(.*)"$', board, re.MULTILINE)
+    return stated.group(1) if stated else "."
 
 
 def _airframe_file(tree: Path, airframe: str) -> Path:

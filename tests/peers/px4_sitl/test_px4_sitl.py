@@ -183,6 +183,27 @@ def test_start_runs_px4_with_the_runs_instance_and_airframe(daemon, tree, tmp_pa
     } and launch["image"].startswith(f"{IMAGE}:")
 
 
+def test_start_mounts_the_runs_folder_at_the_log_folder_of_the_storage_root_the_built_tree_states(
+    daemon, tree, tmp_path
+):
+    """PX4 writes its ULog under its storage root, which a built tree states, so the run's folder mounts there.
+
+    Given a tree whose built `boardconfig` holds `CONFIG_BOARD_ROOT_PATH="./fs"`, when the peer starts, then the
+    container binds the run's `px4_sitl` folder at `rootfs/0/fs/log` and at no other place, and the store holds
+    that mount point, `fs/log`.
+    """
+    built = tree / "build" / "px4_sitl_default"
+    built.mkdir(parents=True)
+    (built / "boardconfig").write_text('CONFIG_BOARD_ROOT_PATH="./fs"\nCONFIG_BOARD_FS_ROOT_PATH="."\n')
+    store = tmp_path / "home" / ".cache" / "nexus" / "px4_sitl" / "store" / "astro_max" / "0"
+
+    _peer(tree, tmp_path).start()
+
+    launch = next(kw for kind, kw in daemon if kind == "run" and kw.get("detach", True))
+    targets = [m["Target"] for m in launch["mounts"] if m["Source"] == str(tmp_path / "run" / "px4_sitl")]
+    assert (targets, (store / "fs" / "log").is_dir()) == ([str(built / "rootfs" / "0" / "fs" / "log")], True)
+
+
 def test_start_mounts_each_serial_lines_device_and_starts_a_mavlink_instance_on_it_from_px4s_post_hook(
     daemon, tree, tmp_path, pty
 ):

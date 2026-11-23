@@ -11,6 +11,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ca-certificates \
+        ccache \
         cmake \
         g++ \
         git \
@@ -23,12 +24,15 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 # PX4 build-time Python deps. `future` is required by pymavlink's C generator; the rest are the
 # minimal POSIX-build set. (No numpy/packaging/toml/etc. — not needed for a SITL build.)
+# A SITL board with Zenoh builds PX4's CDR message code: its build names `ccache`, above, as the compiler
+# launcher with no fallback, and its message parser imports `lark`.
 RUN uv pip install --system --break-system-packages --no-cache \
     "empy>=3.3,<4" \
     "jinja2>=2.8" \
     future \
     jsonschema \
     kconfiglib \
+    lark \
     pyros-genmsg \
     pyyaml
 
