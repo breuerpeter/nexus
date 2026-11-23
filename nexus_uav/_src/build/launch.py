@@ -11,7 +11,8 @@ the render stage an RTX sensor requires, it makes and starts once, by that name.
 A component's schema attributes are its class's keyword arguments, and so are a peer's. What only the run
 knows reaches a peer as keywords beside them: its pin, the run's instance, the run's folder, the files the
 run reads, the vehicle's and the scene's root files by role and the scene's start, the asset cache, whether the
-run starts clean and, for a peer with a serial line, the path of each of its ends. A component whose
+run starts clean, for a peer with a serial line, the path of each of its ends and, for a peer with an input,
+each input's writers. A component whose
 class states ``needs_instance`` takes the instance too. The run claims one instance on this machine when it
 starts a declared peer, which every address its peers use counts from, and instance 0 when it starts none,
 for an autopilot started elsewhere.
@@ -23,6 +24,11 @@ the link as it owns every port: it makes one :class:`~nexus_uav._src.peers.seria
 any peer starts, hands each of the two peers the path of its end in the keyword ``serial``, the declaring peer
 by the line's name and the other by the declaring prim's name, and stops the links with the peers at the run's
 end.
+
+A peer's input, a relationship ``nexus:inputs:<signal>``, is wiring on the vehicle too. The build hands a peer
+whose prim wires one the keyword ``inputs``: each input's signal to its writers' instance names, in the order
+the relationship targets them. ``take`` later hands the peer the same names, so the peer knows its writers
+before it starts and before any of them writes.
 
 Before any peer starts, the build resolves and checks the pin of each peer it starts, through
 :mod:`nexus_uav._src.peers.pins` and the peer's own ``check_pin``, and the receipt records each started
@@ -39,7 +45,7 @@ import warp as wp
 from nexus_uav._src.assets.resolver import default_cache
 from nexus_uav._src.config import Catalog, LaunchConfig, ResolvedLaunch, Runtime, resolve
 from nexus_uav._src.core import Loop
-from nexus_uav._src.core.components import ComponentSpec, PeerSpec, resolve_declarations, run_keywords
+from nexus_uav._src.core.components import ComponentSpec, PeerSpec, instance_name, resolve_declarations, run_keywords
 from nexus_uav._src.core.errors import RunError
 from nexus_uav._src.core.registry import Registry
 from nexus_uav._src.core.run_folder import run_folder
@@ -196,8 +202,12 @@ def build_from_launch(
     try:
         # Every serial link exists before any peer starts, so each end's path is a device when its peer opens it.
         links, ends = _serial_links(declared, read_serial_lines(usd))
+        connections = read_connections(usd)
         # The build makes each peer before any starts, so a peer that fails its own check fails the run first.
-        made = [_peer(spec.cls, spec.kwargs, peer_pins[spec.cls.name], run, spec.prim, ends) for spec in declared]
+        made = [
+            _peer(spec.cls, spec.kwargs, peer_pins[spec.cls.name], run, spec.prim, ends, connections.get(spec.prim, {}))
+            for spec in declared
+        ]
         needed = {name: _peer(cls, {}, peer_pins[cls.name], run, None, ends) for name, cls in required.items()}
         # What a class requires starts first: the render stage populates while the declared peers build and the
         # physics compiles.
@@ -222,7 +232,7 @@ def build_from_launch(
             peers=[*started, *links, *([claim] if claim is not None else [])],
             peer_links=needed,
             peer_inputs={spec.prim: peer for spec, peer in zip(declared, made, strict=True)},
-            connections=read_connections(usd),
+            connections=connections,
             prims={roles[role].prim: component for role, component in built.items()},
             rerun=launch.output.log or launch.output.view,
             viewer=launch.output.view,
@@ -419,16 +429,28 @@ def _start(peer, started: list) -> None:
     started.append(peer)
 
 
-def _peer(cls: type, kwargs: dict, pin, run: dict, prim: str | None, ends: dict[str, dict[str, str]]):
-    """The peer `cls` makes from its schema's attributes, `kwargs`, its checked `pin`, the run's values and, when
-    `prim` has an end of a serial line, the keyword ``serial``, its ends by name.
+def _peer(
+    cls: type,
+    kwargs: dict,
+    pin,
+    run: dict,
+    prim: str | None,
+    ends: dict[str, dict[str, str]],
+    wired: dict[str, list[str]] | None = None,
+):
+    """The peer `cls` makes from its schema's attributes, `kwargs`, its checked `pin`, the run's values, when
+    `prim` has an end of a serial line, the keyword ``serial``, its ends by name, and when `prim` wires inputs,
+    `wired` by signal, the keyword ``inputs``, each input's writers by instance name in the order its
+    relationship targets them.
 
     Raises:
         ValueError: The peer fails its own check of its values; the message names its prim.
     """
     serial = {"serial": ends[prim]} if prim in ends else {}
+    names = {signal: tuple(instance_name(target) for target in targets) for signal, targets in (wired or {}).items()}
+    inputs = {"inputs": names} if names else {}
     try:
-        return cls(**kwargs, pin=pin, **run, **serial)
+        return cls(**kwargs, pin=pin, **run, **serial, **inputs)
     except ValueError as exc:
         raise ValueError(f"{prim}: {exc}" if prim else str(exc)) from exc
 
