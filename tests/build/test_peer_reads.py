@@ -189,3 +189,55 @@ def test_a_frame_the_link_cant_take_fails_the_run_and_the_error_names_the_peer(d
         _fly(path, registry, tmp_path / "run")
 
     assert ("companion" in str(raised.value), peer.events) == (True, ["start", "stop"]), str(raised.value)
+
+
+def test_the_build_makes_a_peer_with_each_inputs_writer_names_in_the_order_the_vehicle_lists_them(daemon, tmp_path):
+    """The build makes a peer whose prim wires inputs with each input's writer names, in the order the vehicle's
+    relationship lists its targets, one entry per input.
+
+    Given the fixture vehicle with cameras `Cam` and `Cam2` and an IMU `Imu0`, and a stand-in peer whose
+    `nexus:inputs:camera` targets `[Cam2, Cam]` and whose `nexus:inputs:imu` targets `Imu0`, when the run builds,
+    then the build made the peer with `camera` → `("cam2", "cam")` and `imu` → `("imu0",)`.
+    """
+    peer = _companion()
+    inputs = {"camera": [CAM_2, CAM], "imu": IMU_0}
+    path = sv.vehicle(tmp_path, pins.CAMERA + CAMERA_2 + IMU, root=sv.companion(inputs=inputs))
+    registry = sv.components(StandInPeerAPI=peer, ovrtx=RenderStageFake)
+
+    _fly(path, registry, tmp_path / "run", ticks=0)
+
+    made = [run.get("inputs") for run in peer.built]
+    assert made == [{"camera": ("cam2", "cam"), "imu": ("imu0",)}], made
+
+
+def test_the_writer_names_a_peer_is_made_with_are_the_names_take_hands_it(daemon, tmp_path):
+    """The build makes the peer with the names `take` later hands it.
+
+    Given the fixture vehicle with cameras `Cam` and `Cam2` and a stand-in peer whose `nexus:inputs:camera` targets
+    `[Cam2, Cam]`, when the run steps 1 s, then the set of writers `take` got for `camera` equals the names the build
+    made the peer with.
+    """
+    peer = _companion()
+    path = sv.vehicle(tmp_path, pins.CAMERA + CAMERA_2, root=sv.companion(inputs={"camera": [CAM_2, CAM]}))
+    registry = sv.components(StandInPeerAPI=peer, ovrtx=RenderStageFake)
+
+    _fly(path, registry, tmp_path / "run")
+
+    made = set(peer.built[0].get("inputs", {}).get("camera", ())) if peer.built else set()
+    took = {writer for signal, writer, _ in peer.took if signal == "camera"}
+    assert took == made, (took, made)
+
+
+def test_a_peer_whose_prim_wires_no_input_is_made_without_its_inputs_writer_names(daemon, tmp_path):
+    """The build makes a peer whose prim wires no input without that keyword, as today, so a peer class that takes
+    none, such as PX4's or Kit's, still builds.
+
+    Given a stand-in peer with no `nexus:inputs:*`, when the run builds, then its keywords hold no inputs entry.
+    """
+    peer = sv.radio()
+    path = sv.vehicle(tmp_path, root=sv.companion())
+    registry = sv.components(StandInPeerAPI=peer)
+
+    _fly(path, registry, tmp_path / "run", ticks=0)
+
+    assert ["inputs" in run for run in peer.built] == [False], peer.built

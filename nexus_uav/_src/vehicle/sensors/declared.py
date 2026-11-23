@@ -17,7 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
-from nexus_uav._src.core.components import ComponentSpec, resolve_components, run_keywords
+from nexus_uav._src.core.components import ComponentSpec, instance_name, resolve_components, run_keywords
 from nexus_uav._src.core.registry import Registry
 
 
@@ -99,8 +99,6 @@ def build_sensors(specs: list[ComponentSpec], *, usd_path: str | Path, model, se
         sensor = spec.cls(
             model, spec.prim, seed=seedtree.seed_for(spec.prim), **spec.kwargs, **run_keywords(spec.cls, instance)
         )
-        # The instance is the prim that declares it: its name, in lower case, ends a recorded row's path
-        # and keys the Recorder's history.
-        sensor.name = spec.prim.rsplit("/", 1)[-1].lower()
+        sensor.name = instance_name(spec.prim)
         sensors.append(sensor)
     return sensors
