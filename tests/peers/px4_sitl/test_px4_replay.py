@@ -226,7 +226,7 @@ def _steps(ulog) -> list[tuple[float, int, int]]:
     steps = []
     for t, arming, nav in zip(status["timestamp"], status["arming_state"], status["nav_state"], strict=True):
         if not steps or steps[-1][1:] != (int(arming), int(nav)):
-            steps.append((t / 1e6, int(arming), int(nav)))
+            steps.append((round(float(t) / 1e6, 3), int(arming), int(nav)))
     return steps
 
 
@@ -282,4 +282,4 @@ def test_a_replayed_flight_arms_changes_mode_and_disarms_as_its_log_and_holds_th
         a[1:] == b[1:] and abs(a[0] - b[0]) <= 0.2 for a, b in zip(log, again, strict=True)
     )
     sticks = _stick_positions(replayed) if replayed else set()
-    assert (in_step, sticks) == (True, _stick_positions(flown)), (log, again)
+    assert (in_step, sticks) == (True, _stick_positions(flown)), f"the log's steps {log}, the replay's {again}"

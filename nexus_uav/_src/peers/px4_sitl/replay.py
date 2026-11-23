@@ -22,12 +22,14 @@ import os
 import re
 import statistics
 import subprocess
+import time
 import types
 from collections.abc import Mapping
 from pathlib import Path
 from typing import NamedTuple
 
 from nexus_uav._src.core import logger
+from nexus_uav._src.core.errors import RunError
 from nexus_uav._src.peers import pins
 from nexus_uav._src.peers.pins import PeerPin
 
@@ -53,6 +55,7 @@ _MESSAGES = dict(_INPUTS.values())
 _PEER_SCHEMA = "NexusPx4SitlAPI"
 _AGENT_SCHEMA = "NexusXrceAgentAPI"
 _FROM_LOG = "ver_sw"  # the end of the source of a pin the log names
+_MATCH_HOLD_S = 2.0  # wall seconds the run holds for a due sample whose writer no reader has matched
 _EXTRA = "the replay needs the extra nexus-uav[replay], which installs pyulog and cyclonedds"
 
 
@@ -315,6 +318,7 @@ def fly(run, log, px4_tree: Path) -> None:
 
     Raises:
         ImportError: The extra that writes to DDS isn't installed; the message names it.
+        RunError: No sample reached PX4, since no reader ever matched a writer.
     """
     try:
         from cyclonedds.domain import DomainParticipant
@@ -333,10 +337,28 @@ def fly(run, log, px4_tree: Path) -> None:
     }
     logger.info(f"replaying {len(sent)} samples to {end:.1f} s on PX4 instance {instance}")
     due = 0
+    waited = -1  # the sample this loop has held the run for, so one sample holds it once
     stepping = True
     while stepping and run.time < end:
         while due < len(sent) and sent[due].time / 1e6 <= run.time:
+            writer = writers[sent[due].topic]
+            # DDS drops a sample a writer sends before a reader matches it. The agent makes its readers once
+            # PX4's client starts, and the match then takes wall time, not PX4's. So the run holds for a due
+            # sample once, and a sample with no reader yet goes out late, at the match.
+            if not writer.get_matched_subscriptions():
+                if waited < due:
+                    waited = due
+                    deadline = time.monotonic() + _MATCH_HOLD_S
+                    while not writer.get_matched_subscriptions() and time.monotonic() < deadline:
+                        time.sleep(0.01)
+                if not writer.get_matched_subscriptions():
+                    break
             sample = address(sent[due], instance)
-            writers[sent[due].topic].write(_message(kinds[sent[due].topic], sample.values))
+            writer.write(_message(kinds[sent[due].topic], sample.values))
             due += 1
         stepping = run.step()  # false once the run has ended, at its ``max_steps``
+    if sent and not due:
+        raise RunError(
+            f"no sample of the replay reached PX4: no reader matched {address(sent[0], instance).topic}; "
+            "is the Micro XRCE-DDS agent peer running?"
+        )
