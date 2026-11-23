@@ -43,7 +43,6 @@ from nexus_uav._src.core.cache_root import cache_root
 from nexus_uav._src.peers import LABEL, containers
 from nexus_uav._src.peers.containers import ContainerPeer, ensure_image, run_container
 from nexus_uav._src.peers.pins import PeerPin
-
 from nexus_uav._src.peers.xrce_agent import AGENT_PORT
 
 from . import checkout
@@ -128,7 +127,7 @@ class Px4Sitl(ContainerPeer):
         serial: The path of PX4's end of each serial line a peer's prim wires to PX4's, by that prim's name. PX4
             opens each as ``/dev/serial/<name>`` and starts a MAVLink instance on it in onboard mode, the stream set
             a companion computer expects, at 3 Mbaud with MAVLink's file transfer, the link stock SITL doesn't start.
-        params: The PX4 parameters the peer sets at PX4's boot, each ``NAME=VALUE``: the ``nexus:params`` of the
+        params: The PX4 parameters the peer sets at PX4's boot, each ``name=value``: the ``nexus:params`` of the
             vehicle's ``NexusPx4SitlAPI``.
         clean: Whether the run starts clean: the start empties the store of the airframe and the instance, so PX4
             boots with no parameter and no mission an earlier run stored.
@@ -379,16 +378,16 @@ class Px4Sitl(ContainerPeer):
 
 
 def _params(authored: Sequence[str]) -> dict[str, str]:
-    """The boot parameters ``nexus:params`` authors, each ``NAME=VALUE``, by name.
+    """The boot parameters ``nexus:params`` authors, each ``name=value``, by name.
 
     Raises:
-        ValueError: An entry isn't ``NAME=VALUE``; the message names it.
+        ValueError: An entry isn't ``name=value``; the message names it.
     """
     params = {}
     for entry in authored or ():
         name, sep, value = entry.partition("=")
         if not (sep and name.strip() and value.strip()):
-            raise ValueError(f"NexusPx4SitlAPI authors the nexus:params entry {entry!r}, which isn't NAME=VALUE")
+            raise ValueError(f"NexusPx4SitlAPI authors the nexus:params entry {entry!r}, which isn't name=value")
         params[name.strip()] = value.strip()
     return params
 

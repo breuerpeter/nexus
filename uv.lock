@@ -321,6 +321,18 @@ wheels = [
 ]
 
 [[package]]
+name = "cyclonedds"
+version = "11.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "rich-click", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8a/01/0037ab0b885e97fd13950a78807a98d7628b6b9ae4eae6300b83a176de80/cyclonedds-11.1.0.tar.gz", hash = "sha256:28dc2b38e222e7a162506c8d58accf2c32cdeb23283da9de60200ac938cf0c7d", size = 194976, upload-time = "2026-11-09T15:13:50.97Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5c/1e/352c939e1e2e86494a1f79dc378c224034b84f6f943716a3bc156b238783/cyclonedds-11.1.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:7651d6db1ce31e547894dc678fbb30dd3f0ba1131cc845499b0181a38873c401", size = 8335220, upload-time = "2026-11-09T15:14:10.386Z" },
+]
+
+[[package]]
 name = "defusedxml"
 version = "0.7.1"
 source = { registry = "https://pypi.org/simple" }
@@ -915,6 +927,10 @@ examples = [
 policy = [
     { name = "torch", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
 ]
+replay = [
+    { name = "cyclonedds", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "pyulog", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+]
 rtx = [
     { name = "ovrtx", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "ovstage", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
@@ -929,11 +945,10 @@ ci = [
 ]
 dev = [
     { name = "import-linter", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nexus-uav", extra = ["s3"], marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "nexus-uav", extra = ["replay", "s3"], marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "pytest", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "pytest-cov", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "pytest-xdist", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pyulog", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
 ]
 docs = [
     { name = "brotli", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
@@ -948,6 +963,7 @@ docs = [
 requires-dist = [
     { name = "boto3", marker = "extra == 's3'", specifier = ">=1.28" },
     { name = "casadi", marker = "extra == 'acados'", specifier = ">=3.6,<=3.8.1" },
+    { name = "cyclonedds", marker = "extra == 'replay'", specifier = ">=0.10.5" },
     { name = "deprecated", marker = "extra == 'acados'" },
     { name = "docker", specifier = ">=7.1.0" },
     { name = "matplotlib", marker = "extra == 'acados'" },
@@ -959,6 +975,7 @@ requires-dist = [
     { name = "ovstage", marker = "extra == 'rtx'", specifier = "==0.2.1.385922", index = "https://pypi.nvidia.com/" },
     { name = "pydantic", specifier = ">=2.0.0" },
     { name = "pymavlink", specifier = ">=2.4.49" },
+    { name = "pyulog", marker = "extra == 'replay'", specifier = ">=1.2" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "rerun-sdk", specifier = ">=0.41.0,<0.42" },
     { name = "ruckig", marker = "extra == 'acados'", specifier = ">=0.14" },
@@ -970,17 +987,16 @@ requires-dist = [
     { name = "usd-core", specifier = ">=25.5,<26.5" },
     { name = "warp-lang", specifier = ">=1.14.0,<1.16", index = "https://pypi.nvidia.com/" },
 ]
-provides-extras = ["policy", "examples", "acados", "s3", "rtx", "all"]
+provides-extras = ["policy", "examples", "acados", "replay", "s3", "rtx", "all"]
 
 [package.metadata.requires-dev]
 ci = [{ name = "evo", specifier = ">=1.36" }]
 dev = [
     { name = "import-linter", specifier = ">=2.15" },
-    { name = "nexus-uav", extras = ["s3"] },
+    { name = "nexus-uav", extras = ["s3", "replay"] },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "pytest-xdist", specifier = ">=3.8" },
-    { name = "pyulog", specifier = ">=1.2" },
 ]
 docs = [
     { name = "brotli", specifier = ">=1.1" },
@@ -1478,6 +1494,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/c0/8f/0722ca900cc807c13a6a0c696dacf35430f72e0ec571c4275d2371fca3e9/rich-15.0.0.tar.gz", hash = "sha256:edd07a4824c6b40189fb7ac9bc4c52536e9780fbbfbddf6f1e2502c31b068c36", size = 230680, upload-time = "2026-04-12T08:24:00.75Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/82/3b/64d4899d73f91ba49a8c18a8ff3f0ea8f1c1d75481760df8c68ef5235bf5/rich-15.0.0-py3-none-any.whl", hash = "sha256:33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb", size = 310654, upload-time = "2026-04-12T08:24:02.83Z" },
+]
+
+[[package]]
+name = "rich-click"
+version = "1.9.9"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "rich", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/96/3e/5688fdd83aea416de336582a274f2bc8236b5c261b04c11e17bc262786ad/rich_click-1.9.9.tar.gz", hash = "sha256:324cba7513cd4187ee92b2eef21f071714e45be062458c8b157bd7e0c81103e3", size = 75866, upload-time = "2026-09-05T19:20:14.799Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b5/51/b2b91aec091e86bc961e5164f00207d89f133cc82b5ddad541d2132ea819/rich_click-1.9.9-py3-none-any.whl", hash = "sha256:365e7a9d0adb42e41ea832a0a12e02c44c079a26536dee688125eb9814f97274", size = 71910, upload-time = "2026-09-05T19:20:13.587Z" },
 ]
 
 [[package]]

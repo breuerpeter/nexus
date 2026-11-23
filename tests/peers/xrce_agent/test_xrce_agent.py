@@ -65,7 +65,7 @@ def test_a_declared_agent_listens_on_the_port_of_the_runs_instance_which_px4_dia
     run, and PX4 dials that port.
 
     Given the agent peer and the PX4 peer of one run, each on instance 2, when they start, then the agent's command
-    listens on UDP 8890 and PX4's environment holds `PX4_UXRCE_DDS_PORT` 8890. When the agent stops, then the
+    listens on port 8890 and PX4's environment holds `PX4_UXRCE_DDS_PORT` 8890. When the agent stops, then the
     daemon removes its container.
     """
     runs, removed = daemon

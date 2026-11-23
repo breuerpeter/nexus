@@ -1,8 +1,8 @@
 """The runner of the Micro XRCE-DDS agent peer: one agent in a container, for one run.
 
 The image builds the agent from the commit the pin names, once per machine and per pin. The container runs on
-host networking, as PX4's does, so PX4 reaches the agent on the loopback address and a DDS writer on the host
-finds the agent's topics.
+host networking, as PX4's does, so PX4 reaches the agent on the loopback address, and a writer on the host
+finds the agent's topics on the Data Distribution Service (DDS).
 """
 
 from __future__ import annotations

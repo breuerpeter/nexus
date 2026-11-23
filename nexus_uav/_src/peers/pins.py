@@ -11,7 +11,7 @@ its source. The peer states the form the value takes and checks it.
 from __future__ import annotations
 
 import os
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -38,6 +38,10 @@ class PeerPin(BaseModel):
     commit: str | None = None
 
 
+RUN = "the run's pins"
+"""The source of a pin the run names."""
+
+
 def variable(name: str) -> str:
     """The variable that overrides peer ``name``'s pin: ``NEXUS_KIT_REF`` for ``kit``."""
     return f"NEXUS_{name.upper()}_REF"
@@ -53,20 +57,23 @@ def _pin_folders(sources: Sequence[CatalogSource]) -> list[CatalogSource]:
     return [source for source in sources if source.kind != "bundled"]
 
 
-def resolve(name: str, sources: Sequence[CatalogSource] = ()) -> PeerPin | None:
-    """Peer ``name``'s pin and its source: the variable, else the pin file of the top source that holds one,
-    else the pin file the peer ships, or ``None`` for a peer, a project's own, that no source pins. The variable
-    wins whenever the environment holds it, empty or not, so the peer's form check fails on it rather than fly a
-    pin the variable meant to replace.
+def resolve(name: str, sources: Sequence[CatalogSource] = (), named: Mapping[str, str] | None = None) -> PeerPin | None:
+    """Peer ``name``'s pin and its source: the pin the run names, else the variable, else the pin file of the top
+    source that holds one, else the pin file the peer ships, or ``None`` for a peer, a project's own, that no
+    source pins. The variable wins over the files whenever the environment holds it, empty or not, so the peer's
+    form check fails on it rather than fly a pin the variable meant to replace.
 
     Args:
         name: The peer's folder name, such as ``px4_sitl``.
         sources: The catalog sources the run loaded, in load order; none for a run handed its catalog.
+        named: The pins the run names, by peer, the launch's ``pins``.
 
     Raises:
         ValueError: Two installed packages ship a pin file for the peer and neither a project file nor the
             variable picks one; the message names the peer and the packages.
     """
+    if named and name in named:
+        return PeerPin(ref=named[name].strip(), source=RUN)
     if (value := os.environ.get(variable(name))) is not None:
         return PeerPin(ref=value.strip(), source=variable(name))
     filename = f"nexus.{name}.ref"

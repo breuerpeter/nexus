@@ -304,7 +304,7 @@ def test_start_hands_the_boot_parameters_the_peers_prim_authors_to_px4s_boot_hoo
     """The PX4 peer hands the boot parameters its prim authors to PX4's boot hook.
 
     The values a vehicle layer authors on the peer's prim, `nexus:params`, reach the peer as the keyword `params`,
-    each as `NAME=VALUE`. Given a peer with `MPC_XY_VEL_MAX=5.5` and `UXRCE_DDS_SYNCT=0`, when it starts, then the
+    each as `name=value`. Given a peer with `MPC_XY_VEL_MAX=5.5` and `UXRCE_DDS_SYNCT=0`, when it starts, then the
     container's environment holds `PX4_PARAM_MPC_XY_VEL_MAX` and `PX4_PARAM_UXRCE_DDS_SYNCT` with those values.
     Given a tree that sources `px4-rc.params`, then the container mounts a file over it that sets both.
     """
