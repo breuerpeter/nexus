@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.0](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.10.0...nexus-uav-v0.11.0) (2026-11-23)
+
+
+### Features
+
+* **actuators:** a joint motor turns a commanded current into torque ([#425](https://github.com/breuerpeter/nexus/issues/425)) ([8709712](https://github.com/breuerpeter/nexus/commit/8709712aa017c8219885f2007f96ef4b412f379c))
+* **build:** a peer gets its inputs' writer names when it is made ([#435](https://github.com/breuerpeter/nexus/issues/435)) ([95a1a85](https://github.com/breuerpeter/nexus/commit/95a1a8538b3b43eb088a98bad44f2e9bd8433ada))
+
 ## [0.10.0](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.9.0...nexus-uav-v0.10.0) (2026-11-10)
 
 
