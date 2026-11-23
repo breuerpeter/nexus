@@ -137,6 +137,7 @@ dev = [
     "pytest-cov>=7.1.0",
     "pytest-xdist>=3.8",
     "nexus-uav[s3]",  # the resolver tests fetch `s3://` assets from a stand-in bucket
+    "pyulog>=1.2",
 ]
 docs = [
     "mkdocs-awesome-pages-plugin>=2.10.1",

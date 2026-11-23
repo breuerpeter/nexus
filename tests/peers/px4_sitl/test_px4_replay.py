@@ -1,0 +1,285 @@
+"""The replay of a flight's ULog into PX4 Software In The Loop (SITL), #429: the rows it sends, the hold across a
+gap in the stick rows, the PX4 it flies, the topics of an instance, the parameters PX4 boots on, and a whole
+replayed flight.
+
+The unit tests read a ULog the test writes, `ulog_file`. The test marked ``px4_sitl`` flies through ``nx.Sim``,
+which builds and launches PX4 from the tree on this machine, so it needs docker and a PX4 tree carrying the
+airframe the sim flies; it skips without one.
+"""
+
+import subprocess
+
+import pytest
+
+import nexus_uav._src.peers.containers as containers
+from nexus_uav._src.peers.pins import PeerPin
+from nexus_uav._src.peers.px4_sitl import checkout
+from nexus_uav._src.peers.px4_sitl.replay import Sample, address, boot_params, px4_pin, samples
+from nexus_uav.px4 import replay
+from tests.peers.px4_sitl import ulog_file
+
+_STICK = [
+    ("uint64_t", "timestamp"),
+    ("uint64_t", "timestamp_sample"),
+    ("float", "roll"),
+    ("float", "pitch"),
+    ("float", "yaw"),
+    ("float", "throttle"),
+    ("bool", "valid"),
+    ("uint8_t", "data_source"),
+]
+_COMMAND = [
+    ("uint64_t", "timestamp"),
+    ("float", "param1"),
+    ("uint32_t", "command"),
+    ("uint8_t", "target_system"),
+    ("uint8_t", "source_system"),
+    ("bool", "from_external"),
+]
+_LINK = [("uint64_t", "timestamp"), ("uint8_t", "type"), ("bool", "heartbeat_type_gcs")]
+
+
+def _stick(t: int, roll: float, valid: bool = True) -> tuple:
+    """A stick row at `t` microseconds with `roll`, the other axes at rest, from a MAVLink source."""
+    return (t, t, roll, 0.0, 0.0, 0.5, valid, 2)
+
+
+def _stick_values(t: int, roll: float) -> dict:
+    """The fields of `_stick(t, roll)` by name."""
+    return {
+        "timestamp": t,
+        "timestamp_sample": t,
+        "roll": roll,
+        "pitch": 0.0,
+        "yaw": 0.0,
+        "throttle": 0.5,
+        "valid": True,
+        "data_source": 2,
+    }
+
+
+def test_a_replay_sends_each_valid_stick_row_external_command_and_link_status_row_and_nothing_else(tmp_path):
+    """A replay sends each valid stick row, each external command and each link status row of the log, and nothing
+    else; a topic the log lacks sends nothing.
+
+    Given a ULog with a valid and an invalid stick row, an external and an internal command, and a link status row,
+    then the samples hold the valid row, the external command and the status row, each with its logged content and
+    time. Given a ULog with no stick topic, then the samples hold the command and the status row alone.
+    """
+    commands = (_COMMAND, [(3_000_000, 1.0, 176, 1, 255, True), (3_500_000, 0.0, 512, 1, 1, False)])
+    links = (_LINK, [(4_000_000, 3, True)])
+    sticks = (_STICK, [_stick(1_000_000, 0.25), _stick(2_000_000, 0.5, valid=False)])
+    whole = ulog_file.write(
+        tmp_path / "whole.ulg",
+        topics={"manual_control_setpoint": sticks, "vehicle_command": commands, "telemetry_status": links},
+    )
+    stickless = ulog_file.write(
+        tmp_path / "stickless.ulg", topics={"vehicle_command": commands, "telemetry_status": links}
+    )
+
+    command = Sample(
+        3_000_000,
+        "vehicle_command",
+        {
+            "timestamp": 3_000_000,
+            "param1": 1.0,
+            "command": 176,
+            "target_system": 1,
+            "source_system": 255,
+            "from_external": True,
+        },
+    )
+    link = Sample(4_000_000, "telemetry_status", {"timestamp": 4_000_000, "type": 3, "heartbeat_type_gcs": True})
+    stick = Sample(1_000_000, "manual_control_input", _stick_values(1_000_000, 0.25))
+    assert (samples(whole), samples(stickless)) == ([stick, command, link], [command, link])
+
+
+def test_a_replay_holds_the_last_stick_sample_across_a_gap_while_the_next_row_is_valid(tmp_path):
+    """Across a gap in the stick rows, the replay holds the last sample while the next row is valid, and sends
+    nothing more when the next row is invalid.
+
+    Given stick rows at 1.0, 1.2 and 1.4 s and the next at 2.4 s, valid, then copies of the row at 1.4 s fill the
+    gap at the rows' own period, 1.6 to 2.2 s, each with its own time. Given the row at 2.4 s invalid, then no
+    copy.
+    """
+    before = [_stick(1_000_000, 0.0), _stick(1_200_000, 0.0), _stick(1_400_000, 0.25)]
+    held = ulog_file.write(
+        tmp_path / "held.ulg", topics={"manual_control_setpoint": (_STICK, [*before, _stick(2_400_000, 0.5)])}
+    )
+    lost = ulog_file.write(
+        tmp_path / "lost.ulg",
+        topics={"manual_control_setpoint": (_STICK, [*before, _stick(2_400_000, 0.5, valid=False)])},
+    )
+
+    def sent(ulog):
+        return [(s.time, s.values["timestamp"], s.values["roll"]) for s in samples(ulog)]
+
+    rows = [(1_000_000, 1_000_000, 0.0), (1_200_000, 1_200_000, 0.0), (1_400_000, 1_400_000, 0.25)]
+    copies = [(t, t, 0.25) for t in (1_600_000, 1_800_000, 2_000_000, 2_200_000)]
+    assert (sent(held), sent(lost)) == ([*rows, *copies, (2_400_000, 2_400_000, 0.5)], rows)
+
+
+def test_a_replay_flies_the_px4_commit_the_log_names_or_the_px4_the_caller_names(tmp_path):
+    """The replay flies the PX4 commit the log names, or the PX4 the caller names.
+
+    Given a ULog whose `ver_sw` is commit `b…b`, a vehicle pinned to `PX4/PX4-Autopilot@a…a` and no PX4 named, then
+    the pin is `PX4/PX4-Autopilot@b…b`. Given the PX4 `example/px4@c…c` named, then the pin is that one.
+    """
+    ulog = ulog_file.write(tmp_path / "flight.ulg", info={"ver_sw": "b" * 40})
+    default = PeerPin(ref=f"PX4/PX4-Autopilot@{'a' * 40}", source="a test")
+
+    pins = (px4_pin(ulog, None, default).ref, px4_pin(ulog, f"example/px4@{'c' * 40}", default).ref)
+
+    assert pins == (f"PX4/PX4-Autopilot@{'b' * 40}", f"example/px4@{'c' * 40}")
+
+
+@pytest.mark.usefixtures("warp_cpu")
+def test_a_log_whose_commit_the_pins_repo_lacks_fails_before_any_peer_starts(tmp_path, monkeypatch):
+    """A log whose commit the pin's repo lacks fails before any peer starts.
+
+    Given a ULog whose `ver_sw` no fetch finds, when a script replays it on the fixture vehicle, then an error names
+    the commit and says how to name a tree, the keyword `px4`, and no container started.
+    """
+    pytest.importorskip("newton")
+    pytest.importorskip("pxr")
+    from tests.usd import sensor_vehicle as sv
+
+    commit = "0123456789abcdef0123456789abcdef01234567"
+    ulog = ulog_file.write(tmp_path / "flight.ulg", info={"ver_sw": commit})
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))  # a cache that holds no PX4 tree
+    monkeypatch.delenv("NEXUS_CACHE_DIR", raising=False)
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+    monkeypatch.delenv("NEXUS_PX4_SITL_REF", raising=False)
+    run = subprocess.run
+
+    def no_such_commit(args, *a, **kw):
+        """The network's answer to a fetch of a commit no repository holds; every other command runs."""
+        if args[0] == "git" and "fetch" in args:
+            raise subprocess.CalledProcessError(128, args, stderr="fatal: remote error: not our ref")
+        return run(args, *a, **kw)
+
+    monkeypatch.setattr(subprocess, "run", no_such_commit)
+    daemon_calls = []
+
+    def daemon():
+        daemon_calls.append("client")
+        raise RuntimeError("the test's docker daemon starts no container")
+
+    monkeypatch.setattr(containers, "client", daemon)
+
+    error = None
+    try:
+        replay(ulog, sv.vehicle(tmp_path, px4=True), scene=sv.SCENE, device="cpu", run_dir=tmp_path / "run")
+    except Exception as exc:  # the test reads which error the replay raised
+        error = exc
+
+    assert (commit in str(error), "px4" in str(error), daemon_calls) == (True, True, []), error
+
+
+def test_a_sample_for_another_instance_goes_to_its_topics_and_a_command_targets_its_system_id():
+    """On an instance other than 0, each sample goes to that instance's topics and each command targets its system
+    id.
+
+    Given a mode command whose logged target is system 1, when it goes to instance 2, then its topic is
+    `px4_2/fmu/in/vehicle_command` and its `target_system` is 3.
+    """
+    command = Sample(3_000_000, "vehicle_command", {"timestamp": 3_000_000, "command": 176, "target_system": 1})
+
+    out = address(command, 2)
+
+    assert (out.topic.removeprefix("rt/"), out.values["target_system"]) == ("px4_2/fmu/in/vehicle_command", 3)
+
+
+def test_px4_boots_on_the_logs_parameters_without_the_skipped_ones_with_the_callers_delta_on_top(tmp_path):
+    """PX4 boots on the log's parameters, minus the skipped ones, plus the caller's delta, with `UXRCE_DDS_SYNCT`
+    0; the delta wins over the log.
+
+    Given a ULog with `MPC_XY_VEL_MAX` 12, `MPC_Z_VEL_MAX_UP` 3, `UXRCE_DDS_SYNCT` 1 and `COM_POWER_COUNT` 2,
+    which denies arming on SITL's one power source, and a delta of `MPC_XY_VEL_MAX` 5, then the boot parameters
+    are `MPC_XY_VEL_MAX` 5, `MPC_Z_VEL_MAX_UP` 3 and `UXRCE_DDS_SYNCT` 0.
+    """
+    ulog = ulog_file.write(
+        tmp_path / "flight.ulg",
+        params={"MPC_XY_VEL_MAX": 12.0, "MPC_Z_VEL_MAX_UP": 3.0, "UXRCE_DDS_SYNCT": 1, "COM_POWER_COUNT": 2},
+    )
+
+    booted = boot_params(ulog, {"MPC_XY_VEL_MAX": 5.0})
+
+    assert booted == {"MPC_XY_VEL_MAX": 5.0, "MPC_Z_VEL_MAX_UP": 3.0, "UXRCE_DDS_SYNCT": 0}
+
+
+# The tree the run would fly, with no fetch: the checkout the pin names, or the pinned tree once a run fetched it.
+_TREE = checkout.tree(fetch_missing=False)
+# A skip mark, not a skip at import, so a run that deselects `px4_sitl` lists no such test.
+_NEEDS_TREE = pytest.mark.skipif(
+    _TREE is None
+    or not list((_TREE / "ROMFS" / "px4fmu_common" / "init.d-posix" / "airframes").glob("*_none_astro_max")),
+    reason="needs docker and a PX4 tree on this machine, the pinned checkout or commit, carrying the none_astro_max airframe",
+)
+
+
+def _steps(ulog) -> list[tuple[float, int, int]]:
+    """Each change of PX4's arming state or mode in `ulog`: its time in seconds, then the two states."""
+    from pyulog import ULog
+
+    status = ULog(ulog, ["vehicle_status"]).get_dataset("vehicle_status").data
+    steps = []
+    for t, arming, nav in zip(status["timestamp"], status["arming_state"], status["nav_state"], strict=True):
+        if not steps or steps[-1][1:] != (int(arming), int(nav)):
+            steps.append((t / 1e6, int(arming), int(nav)))
+    return steps
+
+
+def _stick_positions(ulog) -> set[tuple[float, float, float, float]]:
+    """The stick positions `ulog` holds in its valid rows: roll, pitch, yaw and throttle."""
+    from pyulog import ULog
+
+    sticks = ULog(ulog, ["manual_control_setpoint"]).get_dataset("manual_control_setpoint").data
+    axes = zip(sticks["roll"], sticks["pitch"], sticks["yaw"], sticks["throttle"], sticks["valid"], strict=True)
+    return {tuple(round(float(v), 3) for v in row[:4]) for row in axes if row[4]}
+
+
+@pytest.mark.px4_sitl
+@pytest.mark.xdist_group("px4_ports")
+@_NEEDS_TREE
+def test_a_replayed_flight_arms_changes_mode_and_disarms_as_its_log_and_holds_the_logs_stick_rows(
+    px4_vehicle, tmp_path
+):
+    """A replayed flight arms, changes mode and disarms within 0.2 s of its log, and its ULog holds the log's stick
+    rows unchanged.
+
+    Given the ULog of a flight the pinned PX4 flew in SITL on sticks, armed by the stick gesture in Altitude mode,
+    climbed 2 m, switched to Position mode and landed, when a script replays it on the same vehicle with no PX4
+    named, then the replay's ULog holds the same arming and mode steps, each within 0.2 s of the log's, and the same
+    stick positions.
+    """
+    pytest.importorskip("pymavlink")
+    import nexus_uav as nx
+    from nexus_uav.px4 import OffboardClient
+    from tests.usd import sensor_vehicle as sv
+
+    with nx.Sim(px4_vehicle, scene=sv.SCENE, clean=True) as sim:
+        sim.start(timeout=120.0)
+        with OffboardClient.connect(sim, 30.0) as op:
+            op.set_mode("Altitude")
+            op.arm(gesture=True)
+            sim.wait_until(op.is_armed, sim_timeout=120.0)
+            ground = op.relative_altitude() or 0.0
+            op.set_rc(throttle=0.8)
+            sim.wait_until(lambda: (op.relative_altitude() or ground) - ground >= 2.0, sim_timeout=60.0)
+            op.set_rc(throttle=0.5)
+            op.set_mode("Position")
+            sim.sleep(2.0)
+            op.land()
+            sim.wait_until(lambda: not op.is_armed(), sim_timeout=120.0)
+            sim.sleep(1.0)
+    flown = sim.artifacts()["ulog"]
+
+    replayed = replay(flown, px4_vehicle, scene=sv.SCENE, run_dir=tmp_path / "replay").get("ulog")
+
+    log, again = _steps(flown), _steps(replayed) if replayed else []
+    in_step = len(log) == len(again) and all(
+        a[1:] == b[1:] and abs(a[0] - b[0]) <= 0.2 for a, b in zip(log, again, strict=True)
+    )
+    sticks = _stick_positions(replayed) if replayed else set()
+    assert (in_step, sticks) == (True, _stick_positions(flown)), (log, again)
