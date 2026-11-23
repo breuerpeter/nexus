@@ -40,6 +40,7 @@ SKIPPED = {
     "SENS_*": "the real board's sensor setup: PX4 reports an attitude failure",
     "SYS_HAS_*": "the hardware the real vehicle carries: PX4 reports a missing distance sensor",
     "COM_POWER_COUNT": "a count above 1 denies arming: SITL has one power source",
+    "CBRK_SUPPLY_CHK": "the real vehicle's supply check: PX4 reports the system power unavailable",
     "UXRCE_DDS_*": "the real vehicle's bridge setup: no replayed sample reaches PX4",
     "MAV_SYS_ID": "the real vehicle's system id: PX4 on an instance other than 0 ignores each replayed command",
 }
