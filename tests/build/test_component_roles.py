@@ -332,7 +332,8 @@ def _declare(path, *, controller: str = "NexusPx4API_1", applied: dict | None = 
 
 def _fly(path, registry: Registry, ticks: int = quad.FLIGHT_STEPS) -> dict:
     """Fly the vehicle at `path` through `Sim` with `registry` for `ticks` ticks on the CPU device. Returns the
-    airframe's climb [m], the gimbal joint's last angle [rad] when it has one, and the error the run raised.
+    airframe's climb [m], the gimbal joint's last angle [rad] and rate [rad/s] when it has one, and the error the
+    run raised.
     """
     try:
         with Sim(str(path), scene=sv.SCENE, device="cpu", max_steps=ticks, registry=registry) as sim:
@@ -340,9 +341,10 @@ def _fly(path, registry: Registry, ticks: int = quad.FLIGHT_STEPS) -> dict:
             rows = sim["vehicle/body/body"].history_arrays()["position"]
             gimbal = sim["vehicle/joints/gimbal_joint"] if "vehicle/joints/gimbal_joint" in sim else None
             angle = float(gimbal.history()[-1]["q"][0]) if gimbal is not None else None
+            rate = float(gimbal.history()[-1]["qd"][0]) if gimbal is not None else None
     except Exception as exc:
-        return {"climb": None, "angle": None, "error": exc}
-    return {"climb": float(rows[-1][2] - rows[0][2]), "angle": angle, "error": None}
+        return {"climb": None, "angle": None, "rate": None, "error": exc}
+    return {"climb": float(rows[-1][2] - rows[0][2]), "angle": angle, "rate": rate, "error": None}
 
 
 def test_a_vehicle_that_declares_a_controller_other_than_px4_builds_and_flies_through_sim(tmp_path):
@@ -395,6 +397,96 @@ def test_an_actuator_the_vehicle_declares_builds_through_the_registry(tmp_path):
 
     settled = outcome["angle"] is not None and abs(outcome["angle"] - 0.5) < 0.02
     assert settled, outcome
+
+
+# The torque motor on the fifth controls value: 0.02 N·m/A at 0.5 A.
+TORQUE_MOTOR = {
+    "nexus:channel": (Sdf.ValueTypeNames.Int, 4),
+    "nexus:torqueConstant": (Sdf.ValueTypeNames.Float, 0.02),
+    "nexus:currentLimit": (Sdf.ValueTypeNames.Float, 0.5),
+}
+
+
+def test_a_joint_that_declares_the_motor_turns_at_the_rate_the_motors_torque_gives(tmp_path):
+    """A vehicle whose joint declares the motor turns that joint under a constant command at the rate
+    `Kt·u·currentLimit·t/J`.
+
+    Given the fixture quad whose gimbal joint's prim applies `NexusTorqueMotorAPI` on the fifth controls value, at
+    0.02 N·m/A and 0.5 A, and a stand-in controller at 0.2 on that value, so the torque is 0.002 N·m on the gimbal
+    body's 1e-4 kg·m², when `Sim` flies 125 ticks, 0.5 s, then the joint's recorded rate is 10 rad/s within 2 %.
+    The tolerance holds Newton's inertia check, which raises the body's inertia by 1 %, and the free airframe,
+    which turns the other way.
+    """
+    path = _declare(
+        quad.author(tmp_path / "quad.usda", gimbal=True),
+        applied={quad.GIMBAL_JOINT: ("NexusTorqueMotorAPI", TORQUE_MOTOR)},
+    )
+
+    outcome = _fly(path, Registry({"NexusPx4API_1": _commanding((*FULL, 0.2))}))
+
+    assert outcome["rate"] is not None and abs(outcome["rate"] - 10.0) < 0.2, outcome
+
+
+def test_a_torque_motor_on_a_prim_that_is_no_joint_of_one_degree_of_freedom_fails_the_build(tmp_path):
+    """A motor declared on a prim that's no joint of one degree of freedom fails the build, naming the prim.
+
+    Given the fixture quad whose gimbal's rigid body, not its joint, applies `NexusTorqueMotorAPI`, when the vehicle
+    builds, then it fails before any stage runs, and the message names the prim and the schema and says the schema
+    sits on a joint.
+    """
+    body = f"{quad.ROOT}/gimbal"
+    path = _declare(
+        quad.author(tmp_path / "quad.usda", gimbal=True), applied={body: ("NexusTorqueMotorAPI", TORQUE_MOTOR)}
+    )
+
+    outcome = _fly(path, Registry({"NexusPx4API_1": _commanding((*FULL, 0.2))}), ticks=1)
+
+    message = str(outcome["error"])
+    assert [s in message for s in (f"{body}:", "NexusTorqueMotorAPI", "Joint")] == [True] * 3, message
+
+
+def _plan(path, registry: Registry, caplog) -> str:
+    """The stage plan the run of the vehicle at `path` logs at its start, or, for a run that fails to build, a plan
+    of one host stage that holds the error.
+    """
+    import logging
+
+    caplog.clear()
+    try:
+        with (
+            caplog.at_level(logging.INFO, logger="nexus"),
+            Sim(str(path), scene=sv.SCENE, device="cpu", max_steps=2, registry=registry) as sim,
+        ):
+            sim.run()
+    except ValueError as exc:
+        return f"stage plan: host({exc})"
+    return next(m for m in (r.getMessage() for r in caplog.records) if m.startswith("stage plan:"))
+
+
+def test_the_torque_motors_stage_adds_no_host_stage_and_no_segment_to_the_tick(tmp_path, caplog):
+    """The motor's stage runs inside the substep's captured graph: a run with the motor has no host stage and no
+    graph segment more than the same run without it.
+
+    Given the fixture quad with a gimbal joint, once plain and once with `NexusTorqueMotorAPI` on the joint's
+    prim, each flown by a stand-in controller, when each run starts, then the plan of the run with the motor holds
+    the motor's stage, `torque_motor`, and the two plans hold the same segments in the same order, each host stage
+    by its name.
+    """
+    registry = Registry({"NexusPx4API_1": _commanding((*FULL, 0.2))})
+    plain = _declare(quad.author(tmp_path / "plain.usda", gimbal=True))
+    motor = _declare(
+        quad.author(tmp_path / "motor.usda", gimbal=True),
+        applied={quad.GIMBAL_JOINT: ("NexusTorqueMotorAPI", TORQUE_MOTOR)},
+    )
+
+    def segments(plan: str) -> list[str]:
+        """Each segment of `plan` in order: a host stage by its name, a device segment by its kind alone."""
+        parts = [part.rstrip(")") for part in plan.removeprefix("stage plan: ").split(") ")]
+        return [part if part.startswith("host(") else part.split("(")[0] for part in parts]
+
+    with_motor, without = _plan(motor, registry, caplog), _plan(plain, registry, caplog)
+
+    assert ("torque_motor" in with_motor, segments(with_motor)) == (True, segments(without)), with_motor
 
 
 def test_a_force_element_the_vehicle_declares_builds_through_the_registry(tmp_path):
@@ -783,6 +875,43 @@ def test_with_two_controllers_a_reader_of_the_controls_that_names_neither_fails_
     message = str(outcome["error"])
     named = [s in message for s in ("autopilot", "gimbalcontroller", "rotor_", "nexus:inputs:controls")]
     assert (type(outcome["error"]), named, autopilot.ticks, gimbal.ticks) == (ValueError, [True] * 4, 0, 0), message
+
+
+def test_every_shipped_schema_whose_class_reads_the_controls_declares_the_connection(tmp_path):
+    """Every shipped schema whose class reads the controls declares `nexus:inputs:controls`.
+
+    Given the fixture quad with the torque motor on its gimbal joint, which applies every command, actuator and
+    force schema the plugin defines, when the run builds with the shipped classes and the test reads each
+    element's stages, then each schema whose class reads `controls` defines the relationship
+    `nexus:inputs:controls`, and the vehicle leaves out no schema of those roles.
+    """
+    from nexus_uav._src.core.components import resolve_components
+    from nexus_uav._src.usd import schema_names
+    from nexus_uav._src.usd.reader import ROLES, roles
+
+    path = _declare(
+        quad.author(tmp_path / "quad.usda", gimbal=True),
+        applied={quad.GIMBAL_JOINT: ("NexusTorqueMotorAPI", TORQUE_MOTOR)},
+    )
+    loop = quad.build(path, controller=quad.Commands((*FULL, 0.0)))
+    elements = [*loop.commands, *loop.actuators, *loop.forces]
+    reading = {type(c) for c in elements if any(s.name == "controls" for stage in c.stages() for s in stage.reads)}
+    loop.close()
+    chain = {"command", "actuator", "force"}
+    specs = [spec for spec in resolve_components(path) if spec.role in chain]
+    defined = Usd.SchemaRegistry().FindAppliedAPIPrimDefinition
+    undeclared = sorted(
+        {
+            spec.schema
+            for spec in specs
+            if spec.cls in reading and "nexus:inputs:controls" not in defined(spec.schema).GetPropertyNames()
+        }
+    )
+    # A role schema states its own role, and no vehicle applies one by itself.
+    of_chain = {name for name in schema_names() if name not in ROLES and chain & set(roles(name))}
+    left_out = sorted(of_chain - {spec.schema for spec in specs})
+
+    assert (sorted(c.__name__ for c in reading), undeclared, left_out) == (["Esc", "TorqueMotor"], [], [])
 
 
 def test_a_reader_takes_no_controller_for_sharing_the_name_of_its_prim(tmp_path):

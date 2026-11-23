@@ -29,8 +29,14 @@ from nexus_uav._src.core.interfaces import Component, Stage
 from nexus_uav._src.core.signals import Signal
 from nexus_uav._src.vehicle.rotors import RPM_PER_RADS, rotor_of
 
-# The attributes a motor's class takes, each of which must be positive: the sheet's constants.
-_ATTRIBUTES = {"kv": "nexus:kv", "resistance": "nexus:resistance", "current_limit": "nexus:currentLimit"}
+# The attributes a motor's class takes, the rotor's or a joint's, each of which must be positive: the sheet's
+# constants.
+_ATTRIBUTES = {
+    "kv": "nexus:kv",
+    "resistance": "nexus:resistance",
+    "current_limit": "nexus:currentLimit",
+    "torque_constant": "nexus:torqueConstant",
+}
 
 
 def motor_constant(kv: float) -> float:
@@ -43,14 +49,15 @@ def check_constants(path: str, **values: float) -> None:
 
     Args:
         path: The prim the error names.
-        **values: ``kv``, ``resistance`` and ``current_limit``.
+        **values: The constants a motor's class takes, by keyword: ``kv``, ``resistance`` and ``current_limit``
+            for the rotor's motor, ``torque_constant`` and ``current_limit`` for a torque motor.
 
     Raises:
         ValueError: A value isn't positive; the message names the prim and the attribute.
     """
-    for keyword, attribute in _ATTRIBUTES.items():
-        if not values[keyword] > 0.0:
-            raise ValueError(f"{path}: {attribute} is {values[keyword]:g}, and a motor's constant must be positive")
+    for keyword, value in values.items():
+        if not value > 0.0:
+            raise ValueError(f"{path}: {_ATTRIBUTES[keyword]} is {value:g}, and a motor's constant must be positive")
 
 
 @wp.kernel
