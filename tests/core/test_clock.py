@@ -83,7 +83,7 @@ def test_the_sim_time_is_the_tick_count_times_the_tick_on_the_host_and_on_the_de
     with wp.ScopedDevice(device):
         stamper = _Stamper()
         keeper = _Keeper(stamper)
-        orch = Loop(clock=Clock(0.004), physics=_Physics(), sensors=[stamper], controller=keeper)
+        orch = Loop(clock=Clock(0.004), physics=_Physics(), sensors=[stamper], controllers=[keeper])
         for _ in range(10):
             orch.step()
         orch.close()

@@ -117,8 +117,8 @@ def build_pid_loop(
         actuators=actuators,
         forces=forces,
         sensors=sensors,
-        estimator=GroundTruthEstimator(),  # the guidance reads its estimate
-        controller=controller,
+        estimators=[GroundTruthEstimator()],  # the guidance reads its estimate
+        controllers=[controller],
         links=required,  # each RTX sensor takes the render stage at connect
         peers=started,
         logger=sink,

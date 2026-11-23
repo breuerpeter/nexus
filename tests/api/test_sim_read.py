@@ -1,7 +1,7 @@
 """A script reads a signal's live value by its path, typed by the signal, and the run's sim time, #280.
 
 Real builds of the fixture vehicle in ``tests/usd/sensor_vehicle.py`` on the Warp CPU backend, flown by a
-stand-in controller named ``stand_in`` and hosted by ``Sim``. Skipped without newton or pxr.
+stand-in controller on the scope ``Controller`` and hosted by ``Sim``. Skipped without newton or pxr.
 """
 
 import numpy as np
@@ -22,8 +22,8 @@ NOTE = {"mode": "hover"}  # the object the stand-in writes to its host signal
 
 
 class _Named(sv.Controller):
-    """The stand-in controller, named `stand_in`: it writes `COMMAND` to its controls and `NOTE` to the host
-    signal `note`, so its signals sit at `vehicle/controllers/stand_in/<signal>`.
+    """The stand-in controller on the scope `Controller`: it writes `COMMAND` to its controls and `NOTE` to the
+    host signal `note`, so its signals sit at `vehicle/controllers/controller/<signal>`.
     """
 
     name = "stand_in"
@@ -69,7 +69,7 @@ def test_a_value_signal_reads_without_its_leading_axis_of_one(tmp_path):
     """
     with _sim(tmp_path) as sim:
         sim.step()
-        value = sim.read("vehicle/controllers/stand_in/controls")
+        value = sim.read("vehicle/controllers/controller/controls")
 
     assert np.asarray(value).tolist() == [0.25, 0.5, 0.75, 1.0]
 
@@ -82,7 +82,7 @@ def test_a_host_signal_reads_by_its_path_though_it_keeps_no_history(tmp_path):
     """
     with _sim(tmp_path) as sim:
         sim.step()
-        value = sim.read("vehicle/controllers/stand_in/note")
+        value = sim.read("vehicle/controllers/controller/note")
 
     assert value == {"mode": "hover"}
 

@@ -288,27 +288,6 @@ class _StandInController(Component):
         return []
 
 
-def test_a_vehicle_that_declares_two_controllers_fails_the_build(tmp_path, daemon):
-    """A vehicle that declares two controllers fails the build.
-
-    Given a vehicle USD whose controller's scope applies PX4's schema and whose child `Xform` applies a
-    stand-in controller schema, when a run builds, then it raises before any peer starts, and the error
-    names the vehicle's root prim and both schemas.
-    """
-    from nexus_uav._src.core.registry import Registry
-
-    components = Registry({"NexusPx4API_1": Registry().resolve("NexusPx4API_1"), "StandInAPI": _StandInController})
-    # The stand-in schema applies to an Xformable prim, so it sits on an Xform of its own.
-    stand_in = '    def Xform "StandIn" (\n        prepend apiSchemas = ["StandInAPI"]\n    )\n    {\n    }\n}\n'
-    two = PX4_SCOPED.removesuffix("}\n") + stand_in
-
-    with pytest.raises(ValueError) as err:
-        _build(tmp_path, two, components=components)
-
-    named = [s in str(err.value) for s in ("/vehicle", "NexusPx4API_1", "StandInAPI")]
-    assert (named, daemon) == ([True, True, True], [])
-
-
 def test_two_schemas_of_one_role_on_one_scope_fail_the_build(tmp_path, daemon):
     """Two schemas of one role on one `Scope` fail the build.
 
@@ -427,7 +406,7 @@ def test_a_vehicle_that_declares_px4_on_a_scope_flies_px4_and_starts_the_peer(tm
     kw = _build(tmp_path, vehicle, components=Registry({"NexusPx4SitlAPI": _Px4Peer}))
 
     peers = [p.airframe for p in kw["peers"] if isinstance(p, _Px4Peer)]
-    assert (type(kw["controller"]).__name__, peers) == ("Px4MavlinkController", ["foo"])
+    assert (type(kw["controllers"][0]).__name__, peers) == ("Px4MavlinkController", ["foo"])
 
 
 @pytest.mark.parametrize(
@@ -632,7 +611,7 @@ def test_a_run_with_no_layer_builds_and_records_as_today(tmp_path, monkeypatch, 
 
     loop = L.build_from_launch(launch, preroll_timeout=10.0, components=Registry({"NexusPx4SitlAPI": Px4Fake}))
     built = (
-        type(loop.controller).__name__,
+        type(loop.controllers[0]).__name__,
         [type(s).__name__ for s in loop.sensors],
         [type(p).__name__ for p in loop.peers if isinstance(p, Px4Fake)],
     )

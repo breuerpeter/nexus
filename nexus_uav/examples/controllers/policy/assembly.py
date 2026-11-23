@@ -127,8 +127,8 @@ def build_policy_loop(
         sensors=sensors,
         # The controller builds its own obs from the estimate, the single obs source; no observation
         # sensor, no per-tick torch in the graph.
-        estimator=GroundTruthEstimator(),
-        controller=controller,
+        estimators=[GroundTruthEstimator()],
+        controllers=[controller],
         links=required,  # each RTX sensor takes the render stage at connect
         peers=started,
         logger=sink,

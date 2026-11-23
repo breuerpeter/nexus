@@ -83,7 +83,7 @@ def _orch(sensors=(), **kw):
         physics=_Physics(),
         actuators=[_Actuator()],
         sensors=list(sensors),
-        controller=_Controller(),
+        controllers=[_Controller()],
         **kw,
     )
 
@@ -98,7 +98,7 @@ def test_step_drives_the_loop_and_stop_ends_it():
     assert orch.step() is True
     orch.stop()
     assert orch.step() is False, "stop() must end the steady loop"
-    assert orch.controller.closed, "controller.close() runs in finally"
+    assert orch.controllers[0].closed, "controller.close() runs in finally"
 
 
 def test_a_controller_that_raises_on_close_still_finalizes_the_recording():
@@ -112,7 +112,7 @@ def test_a_controller_that_raises_on_close_still_finalizes_the_recording():
         raise RuntimeError("docker daemon went away")
 
     orch = _orch(max_steps=1)
-    orch.controller.close = boom
+    orch.controllers[0].close = boom
     orch._close_logs = lambda: closed_logs.append(True)
 
     with pytest.raises(RuntimeError, match="docker daemon went away"):
@@ -159,7 +159,7 @@ def test_a_sensor_whose_renderer_fails_mid_flight_ends_the_run_with_its_error_af
     with pytest.raises(RunError, match="render stage"):
         orch.run()
 
-    assert (peer.stopped, orch.controller.closed) == (1, True)
+    assert (peer.stopped, orch.controllers[0].closed) == (1, True)
 
 
 class _Peer:

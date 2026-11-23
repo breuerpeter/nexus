@@ -130,7 +130,7 @@ def _loop(path, controller, *, commands=(), forces=()):
     resolve_device(cfg)
     vehicle_usd = VehicleUsd({"usd_path": str(path)})
     physics = NewtonPhysics(vehicle_usd=vehicle_usd, cfg=cfg)
-    a = assemble(physics, vehicle_usd, cfg, controller=controller)
+    a = assemble(physics, vehicle_usd, cfg, controllers=[controller])
     return Loop(
         clock=a.clock,
         physics=a.physics,
@@ -138,7 +138,7 @@ def _loop(path, controller, *, commands=(), forces=()):
         actuators=a.actuators,
         forces=[*a.forces, *(make(physics) for make in forces)],
         sensors=a.sensors,
-        controller=a.controller,
+        controllers=[a.controllers[0]],
         max_steps=quad.FLIGHT_STEPS,
     )
 
@@ -160,7 +160,7 @@ def fly_shipped(steps: int = STREAM_TICKS) -> np.ndarray:
     cfg = scenario()
     cfg["physics"]["force_cpu"] = True
     vehicle_usd, _ = resolve_vehicle_usd(LaunchConfig().set_vehicle("astro_max_base").set_scene("empty"))
-    orch = build_loop("astro_max_base", cfg, vehicle_usd, controller=_Stream(), max_steps=steps)
+    orch = build_loop("astro_max_base", cfg, vehicle_usd, controllers=[_Stream()], max_steps=steps)
     poses = []
     orch.on_tick = lambda view, t, n: poses.append(orch.physics.state0.body_q.numpy().copy())
     orch.run()

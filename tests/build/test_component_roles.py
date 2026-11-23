@@ -122,7 +122,7 @@ def test_an_estimator_the_vehicle_declares_runs_in_the_estimators_place_and_the_
     registry = sv.components(NexusPx4API_1=_SetpointController, StandInEstimatorAPI=StandInEstimator)
     loop = sv.build(path, components=registry)
     guidance = _EstimateGuidance()
-    loop.guidance = guidance
+    loop.guidances.append(guidance)
     sv.steps(loop, 3)
     pose = [1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     assert guidance.seen == [pose, pose, pose, pose]
@@ -140,7 +140,7 @@ def test_a_component_builds_in_the_role_its_schema_states_whatever_methods_its_c
     reader = sv.estimator(Signal("gain", Gain, shape=(1,)))
     path = sv.vehicle(tmp_path, sv.prim("Own", "StandInSensorAPI", "float nexus:gain = 2.5"), estimator="")
     loop = sv.build(path, components=sv.components(StandInSensorAPI=_ConnectingSensor, StandInEstimatorAPI=reader))
-    controller = loop.controller
+    controller = loop.controllers[0]
     sv.steps(loop, 2)
     gains = [float(gain.value) for _, gain in reader.kept]
     assert (gains, type(controller)) == ([0.0, 2.5, 2.5], sv.Controller)
@@ -191,20 +191,6 @@ def test_an_estimator_off_its_scope_fails_the_build_and_says_where_an_estimator_
         sv.build(path, components=sv.components(StandInEstimatorAPI=StandInEstimator))
     named = [s in str(e.value) for s in (prim, "StandInEstimatorAPI", "estimator", "Scope")]
     assert named == [True] * 4
-
-
-def test_a_vehicle_that_declares_two_estimators_fails_the_build_and_names_both(tmp_path):
-    """A vehicle that declares two estimators fails the build and names both.
-
-    Given the fixture vehicle with the stand-in estimator schema on two prims, when the vehicle builds, then it
-    fails before any stage runs, and the error names both prims and says a vehicle declares one estimator.
-    """
-    backup = sv.prim("Backup", "StandInEstimatorAPI", kind="Scope")
-    path = sv.vehicle(tmp_path, root=ESTIMATOR + backup)
-    with pytest.raises(ValueError) as e:
-        sv.build(path, components=sv.components(StandInEstimatorAPI=StandInEstimator))
-    named = [s in str(e.value) for s in ("/vehicle/Estimator", "/vehicle/Backup", "one estimator")]
-    assert named == [True] * 3
 
 
 # The quad's four rotors at full command.

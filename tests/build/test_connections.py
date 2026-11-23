@@ -65,8 +65,8 @@ def _stopped(tmp_path, body: str, reader: type, *, estimator: str = "") -> str:
 
 
 def _names(message: str, signal: str) -> bool:
-    """Whether `message` names the stand-in estimator and the signal `signal`."""
-    return "StandInEstimator" in message and re.search(rf"\b{signal}\b", message) is not None
+    """Whether `message` names the stand-in estimator, by its prim, and the signal `signal`."""
+    return "estimator" in message.lower() and re.search(rf"\b{signal}\b", message) is not None
 
 
 def test_of_two_imus_a_reader_reads_the_one_that_a_connection_on_its_prim_names(tmp_path):
@@ -147,7 +147,7 @@ def test_two_magnetometers_that_a_reader_reads_through_neither_a_connection_nor_
     """
     reader = sv.estimator(Signal("mag", MagSample, shape=(1,)))
     message = _stopped(tmp_path, MAGS, reader)
-    named = ["maga" in message, "magb" in message, "StandInEstimator" in message]
+    named = ["maga" in message, "magb" in message, "estimator" in message]
 
     assert (named, "connection" in message, reader.runs) == ([True, True, True], True, 0), message
 

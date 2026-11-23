@@ -28,6 +28,13 @@ class ComponentSpec:
     kwargs: dict
     role: str
 
+    @property
+    def name(self) -> str:
+        """The instance name of the component: the name of the prim that declares it, in lower case, which ends
+        a recorded row's path and keys the Recorder's history.
+        """
+        return self.prim.rsplit("/", 1)[-1].lower()
+
 
 @dataclass(frozen=True)
 class PeerSpec:

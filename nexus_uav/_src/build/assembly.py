@@ -4,9 +4,9 @@ Controller-agnostic by construction: the assembly wires the plant, ``NewtonPhysi
 own ModelBuilder + solvers, every command element and force element the vehicle declares, each rotor's ESC and
 propeller among them, around the Newton motors physics steps, the sensor suite authored in
 Universal Scene Description (USD) over the model's sites and world values, and the Rerun sink around a
-**caller-supplied controller**. The registry builds each of them from its declaration; the assembly names no
-class. Which controller flies is a decision one layer up: the run's builder
-builds the controller the vehicle USD declares, and the example controllers self-assemble beside their flight
+**caller-supplied controllers**. The registry builds each of them from its declaration; the assembly names no
+class. Which controllers fly is a decision one layer up: the run's builder
+builds each controller the vehicle USD declares, and the example controllers self-assemble beside their flight
 scripts in ``nexus_uav/examples/controllers/*/assembly.py``, reusing the helpers here,
 ``build_scenario`` / ``resolve_device``.
 
@@ -39,7 +39,7 @@ class Assembly:
     actuators: list  # the actuators the vehicle declares, each rotor's motor among them
     forces: list  # the force elements the vehicle declares, each rotor's propeller among them
     sensors: list
-    controller: Any
+    controllers: list
     logger: Any  # the Rerun sink, or None for no recording
     prims: dict  # the declared components on each prim, by the prim's path, for the vehicle's connections
 
@@ -65,7 +65,7 @@ def declared_elements(physics, usd_path, components, instance: int) -> list[tupl
         component = spec.cls(physics.model, spec.prim, **spec.kwargs, **run_keywords(spec.cls, instance))
         # The instance name, the leaf of the prim's path, as a sensor's: a rotor's ESC, motor and propeller share
         # their body's, so each one's rows sit under it, `vehicle/commands/rotor_1/voltage`.
-        component.name = spec.prim.rsplit("/", 1)[-1].lower()
+        component.name = spec.name
         built.append((spec, component))
     return built
 
@@ -84,7 +84,7 @@ def assemble(
     vehicle_usd,
     cfg: dict,
     *,
-    controller,
+    controllers,
     rerun: bool = False,
     viewer: bool = True,
     debug: bool = False,
@@ -94,7 +94,7 @@ def assemble(
     instance: int = 0,
 ) -> Assembly:
     """Assemble the shared core components around the constructed ``physics`` and the
-    caller-supplied ``controller``; which controller flies is the launch layer's decision.
+    caller-supplied ``controllers``; which controllers fly is the launch layer's decision.
     ``components`` is the registry that resolves each sensor's schema, ``None`` for the default one.
     ``settings`` is the run's effective configuration for the viewer's Settings tab; the launch
     glue passes the tested-config receipt. ``record_to_rrd`` is where the recording goes when the run
@@ -144,7 +144,7 @@ def assemble(
         actuators=actuators,
         forces=forces,
         sensors=sensors,
-        controller=controller,
+        controllers=list(controllers),
         logger=sink,
         prims=_by_prim([*zip([spec.prim for spec in specs], sensors, strict=True), *((s.prim, c) for s, c in built)]),
     )
@@ -240,9 +240,9 @@ def build_loop(
     cfg: dict,
     vehicle_usd=None,
     *,
-    controller,
-    estimator=None,
-    guidance=None,
+    controllers,
+    estimators=(),
+    guidances=(),
     rerun: bool = False,
     viewer: bool = True,
     debug: bool = False,
@@ -259,7 +259,7 @@ def build_loop(
     instance: int = 0,
 ) -> Loop:
     """The core loop: the one ``NewtonPhysics`` + the one shared assembly around the
-    caller-supplied ``controller``, ``estimator`` and ``guidance``, ``None`` for none.
+    caller-supplied ``controllers``, ``estimators`` and ``guidances``, each a list in the order its components run.
 
     ``components`` resolves each sensor's schema to its class.
     ``peers`` are what the build started for this run, which the loop stops when the run ends.
@@ -270,7 +270,7 @@ def build_loop(
     ``connections`` are the vehicle's, by prim: for a reader's prim, each signal it reads and the prims
     whose components write it, one for a component's input and one or more for a peer's, or the body's or joint's
     prim whose output the plant writes; ``prims`` names
-    the controller, the estimator and the guidance by their prims, as the assembly names each sensor and
+    each controller, estimator and guidance by its prim, as the assembly names each sensor and
     element, so the loop takes each
     connection between the two components, or between the reader and the plant's output.
     ``settings`` is the run's effective configuration, which the loop keeps for a caller to read back
@@ -291,7 +291,7 @@ def build_loop(
     physics = NewtonPhysics(vehicle_usd=vehicle_usd, cfg=cfg)
     a = assemble(
         physics, vehicle_usd, cfg,
-        controller=controller, rerun=rerun, viewer=viewer, debug=debug, components=components, settings=settings,
+        controllers=controllers, rerun=rerun, viewer=viewer, debug=debug, components=components, settings=settings,
         record_to_rrd=record_to_rrd, instance=instance,
     )  # fmt: skip
     by_prim = {**a.prims, **{prim: [component] for prim, component in (prims or {}).items()}}
@@ -330,9 +330,9 @@ def build_loop(
         actuators=a.actuators,
         forces=a.forces,
         sensors=a.sensors,
-        controller=a.controller,
-        estimator=estimator,
-        guidance=guidance,
+        controllers=a.controllers,
+        estimators=estimators,
+        guidances=guidances,
         logger=a.logger,
         recorder=Recorder(),
         links=dict(peer_links or {}),

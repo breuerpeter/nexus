@@ -96,8 +96,8 @@ def build_acados_loop(
         actuators=actuators,
         forces=forces,
         sensors=extra_sensors,
-        estimator=GroundTruthEstimator(),
-        controller=controller,
+        estimators=[GroundTruthEstimator()],
+        controllers=[controller],
         links=required,  # each RTX sensor takes the render stage at connect
         peers=started,
         logger=sink,
