@@ -254,6 +254,34 @@ class "NexusMotorAPI" (
     )
 }
 
+class "NexusTorqueMotorAPI" (
+    doc = "A torque motor on its joint's prim, with its drive: a direct-drive motor under a current command. The joint has one angular degree of freedom, as a revolute joint does, and the build fails any other. It turns one entry of a controller's controls, a signed command from -1 to 1 that the drive scales over its current limit, into torque on the joint, and emits the current it draws. Its input `controls` is the vehicle's one controller's unless the connection names another."
+    prepend apiSchemas = ["NexusActuatorRoleAPI"]
+)
+{
+    int nexus:channel = 0 (
+        doc = """The entry of the controls this motor reads, counted from 0. The command there runs from -1 to 1, and the drive holds one beyond that range at the end of it. The build fails a value below 0.
+
+        Range: [0, inf)
+        Units: none"""
+    )
+    float nexus:torqueConstant = 0 (
+        doc = """The motor's torque constant, Kt: the torque per ampere, what a bench measurement gives. The torque on the joint is Kt times the current. The build fails a value that is not positive.
+
+        Range: (0, inf)
+        Units: N·m/A"""
+    )
+    float nexus:currentLimit = 0 (
+        doc = """The current the drive holds at a command of 1, the motor's or the drive's limit, whichever is lower: the torque is capped at Kt times this. The build fails a value that is not positive.
+
+        Range: (0, inf)
+        Units: A"""
+    )
+    rel nexus:inputs:controls (
+        doc = "The prim whose controller writes the controls this motor reads. Unauthored, the vehicle's one controller."
+    )
+}
+
 class "NexusPx4API_1" (
     doc = "PX4 flies the vehicle over its Software In The Loop (SITL) link, on the controller's `Scope`, a child of the vehicle's root prim named `Controller` by convention. Version 1 leaves the airframe to the PX4 SITL peer, `NexusPx4SitlAPI`."
     prepend apiSchemas = ["NexusControllerRoleAPI"]

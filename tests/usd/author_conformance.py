@@ -7,13 +7,13 @@ pass an output path. A test checks that the committed file matches this script's
 import sys
 from pathlib import Path
 
-from pxr import Gf, Usd, UsdGeom
+from pxr import Gf, Usd, UsdGeom, UsdPhysics
 
 import nexus_uav  # noqa: F401  # registers the nexus schema plugin
 
 
 def author(out: Path) -> None:
-    """Write the fixture to `out`: PX4 and its Software In The Loop (SITL) peer each on a scope of its own under the default prim, one body under it with an Inertial Measurement Unit (IMU) on a lever arm and one prim for each other sensor schema, each analytic sensor a sphere of 1 cm, and one rotor body with a propeller, an ESC and a motor."""
+    """Write the fixture to `out`: PX4 and its Software In The Loop (SITL) peer each on a scope of its own under the default prim, one body under it with an Inertial Measurement Unit (IMU) on a lever arm and one prim for each other sensor schema, each analytic sensor a sphere of 1 cm, one rotor body with a propeller, an ESC and a motor, and one revolute joint with a torque motor."""
     stage = Usd.Stage.CreateNew(str(out))
     UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
     UsdGeom.SetStageMetersPerUnit(stage, 1.0)
@@ -48,6 +48,10 @@ def author(out: Path) -> None:
     rotor.ApplyAPI("NexusMotorAPI")
     for name, value in (("nexus:kv", 151.0), ("nexus:resistance", 0.16), ("nexus:currentLimit", 126.0)):
         rotor.GetAttribute(name).Set(value)
+    joint = UsdPhysics.RevoluteJoint.Define(stage, "/Vehicle/joint").GetPrim()
+    joint.ApplyAPI("NexusTorqueMotorAPI")
+    for name, value in (("nexus:channel", 4), ("nexus:torqueConstant", 0.05), ("nexus:currentLimit", 2.0)):
+        joint.GetAttribute(name).Set(value)
     stage.GetRootLayer().Save()
 
 
