@@ -13,7 +13,6 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
   command, the `nexus:` schema attributes and the logger. Prose writes `nexus` in lowercase and
   starts no sentence with it. `docs/design/conventions.md` states the rule, and the `Project` Vale
   style in `.vale/styles/Project/` checks the prose.
-- **A replay flies PX4 on a real flight's ULog.** `nexus_uav.px4.replay` builds its own run over `Sim`, and its parts live in `nexus_uav/_src/peers/px4_sitl/replay.py`. It needs the extra `nexus-uav[replay]`. Its layer declares the Micro XRCE-DDS agent peer, `nexus_uav/_src/peers/xrce_agent/`, whose first start builds its image. `docs/guide/replaying-a-flight.md` states what it sends and leaves out.
 - **PX4 is the one first-class controller**, living in `nexus_uav/_src/`. Every other controller,
   `pid`, `policy`, `sampling_mpc`, and `acados_nmpc`, is a self-contained, **zero-arg** example
   under `nexus_uav/examples/controllers/<name>/`. Shared example machinery lives in

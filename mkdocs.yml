@@ -140,7 +140,6 @@ nav:
     - guide/index.md
     - Quickstart: guide/quickstart.md
     - Running: guide/running.md
-    - Replaying a flight: guide/replaying-a-flight.md
     - Converting scenes: guide/convert-scenes.md
     - Bringing your own assets: guide/your-own-assets.md
     - Bringing your own component: guide/your-own-component.md

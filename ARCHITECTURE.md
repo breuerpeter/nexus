@@ -19,7 +19,7 @@ The shape of the tree today, one line per fact, and under `## Planned` each chan
 - `vehicle/sensors/`, `estimators/`, `commands/`, `actuators/`, `forces/` and `controllers/`: the shipped components, one folder per role. `controllers/px4/` holds the one shipped controller.
 - `vehicle/sensors/rtx/` holds the RTX sensors and the one render stage they require, which the build makes once per run by the name `ovrtx` and hands each sensor at `connect`.
 - `guidance/`: the shipped guidance components. `scene/`: the world values the scene's `PhysicsScene` authors or the build derives.
-- `peers/`: the peer contract at the top, then one folder per peer, `peers/<name>/`, with its runner, `pin.ref`, `image/` or `peer-src/` and its fake. A link's host end sits with the component that speaks it. The offboard client, which no component speaks, sits in the PX4 peer's folder, and so do the parts of the replay. The peers are PX4 SITL, the Kit render peer and the Micro XRCE-DDS agent, `peers/xrce_agent/`, which bridges PX4's topics to the Data Distribution Service (DDS).
+- `peers/`: the peer contract at the top, then one folder per peer, `peers/<name>/`, with its runner, `pin.ref`, `image/` or `peer-src/` and its fake. A link's host end sits with the component that speaks it. The offboard client, which no component speaks, sits in the PX4 peer's folder.
 - `recording/`: the Recorder. `logging/`: the Logger. `config/`: the catalog, the typed `LaunchConfig` and the receipt. `assets/`: the content-addressed resolver.
 - `api/`: `Sim`, the one public entry. `cli/`: the `nexus` command. `nexus_uav/__init__.py` re-exports the public names lazily, and `nexus_uav.px4` is the one public namespace that names PX4.
 - `.importlinter` holds the layers, keeps the examples out of the core, keeps PX4 out of every generic part, keeps Kit out of every tier, and keeps `ovrtx` and `ovstage` in the render stage.
@@ -34,7 +34,6 @@ The shape of the tree today, one line per fact, and under `## Planned` each chan
 - The vehicle's USD declares each peer with a counterpart on the real vehicle. A component's class requires, by name, what the build makes once per run and hands it at `connect`: a peer with no counterpart, or an in-process service such as the render stage. Every peer ships a fake that speaks its links.
 - The render stage takes poses from `body_q` on the device through DLPack, one write per frame.
 - Every path nexus keeps across runs joins a folder name to one cache root, which `core/cache_root.py` reads from `NEXUS_CACHE_DIR`, then `XDG_CACHE_HOME`, then the home folder. A container peer mounts what it keeps from there at the same path.
-- A run names what a peer runs through the launch's `pins`, which wins over the peer's variable and every pin file. The replay, `nexus_uav.px4.replay`, builds its own run over `Sim`. It pins PX4 to the commit the log names. Its override layer sets the PX4 peer's boot parameters and declares the agent peer.
 - The run owns every address. The builder builds a link's end inside the run, and an end outside the run reads `sim.ports`.
 - A wire on the vehicle is a USD relationship: `nexus:inputs:<signal>` for a signal, `nexus:serial:<line>` for a serial line. An input the file leaves empty takes the writer of its signal on the reader's own prim, else the vehicle's one writer. So a rotor's motor reads its own ESC with nothing authored.
 - The clock, the physics, the Recorder and the Logger take settings, and nothing declares them. The Recorder keeps a history of every device signal, and the Logger writes the histories in blocks. A script reads `sim[path]` and `sim.read(path)`, and `Sim` has no accessor for a role.
@@ -61,4 +60,3 @@ The shape of the tree today, one line per fact, and under `## Planned` each chan
 - The shared GPU box flies the examples against the fakes.
 - The workflows pin each action to a commit hash and pass `actionlint` and `zizmor`; one update bot bumps the locks and the image bases; the examples harness scores in numpy and scipy, and no GPLv3 package enters any group.
 - Vale checks heading case too, and the heading-case script goes. The docs site keeps each release's docs.
-- The Micro XRCE-DDS agent peer ships a fake that binds its port and relays to the fake PX4. A CPU test then flies the replay's loop, which only the real-PX4 leg flies today.
