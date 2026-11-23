@@ -39,6 +39,14 @@ class PeerSpec:
     kwargs: dict
 
 
+def instance_name(prim: str) -> str:
+    """The instance name of what the prim at path `prim` declares: the prim's name in lower case.
+
+    It ends a recorded row's path, keys the Recorder's history and names a writer to its readers.
+    """
+    return prim.rsplit("/", 1)[-1].lower()
+
+
 def run_keywords(cls: type, instance: int) -> dict:
     """The run's values `cls` takes beside its schema's attributes: the run's instance, as ``instance``, when the
     class states ``needs_instance``.
