@@ -64,7 +64,11 @@ tries. A signal one component writes reaches every reader by its name. A signal 
 component writes, as four ESCs write `voltage`, reaches a reader through the relationship its schema
 declares, `nexus:inputs:<signal>`. When the file leaves that relationship empty, the input takes the
 writer on the reader's own prim. So a rotor's motor finds its ESC with nothing in the file, and the
-vehicle authors the relationship only where the pairing isn't the prim. The `controls` signal of a controller is as wide as its actuators,
+vehicle authors the relationship only where the pairing isn't the prim. A vehicle declares one or more
+components of each role, each controller, estimator and guidance on a `Scope` of its own. A vehicle with
+two controllers, a flight controller and a gimbal controller, has two writers of `controls`. It authors
+`nexus:inputs:controls` on every ESC and actuator that reads them, and the relationship targets the
+controller's `Scope`. The `controls` signal of a controller is as wide as its actuators,
 and the command elements read the leading part of it.
 
 The contract has eight more members. `connect` opens what the component needs for the run, a port or
@@ -76,7 +80,8 @@ instance, the number the run's peers number their ports from, as the keyword `in
 the links the component knows of that leave the run, which `sim.ports` lists. `artifacts` names the
 files the component leaves for a reader. `set_logger` takes the Logger the loop hands over, scoped to the component's
 path, for a value with no fixed width such as a camera's frame. The Recorder keeps every fixed-width
-signal itself, and a script reads it by path, `sim["vehicle/controllers/<name>/controls"]`.
+signal itself, and a script reads it by path, `sim["vehicle/controllers/<name>/controls"]`, where
+`<name>` is the name of the controller's prim in lower case.
 
 `Px4MavlinkController`, PX4's controller, is the shape to copy for a component with a peer. It binds
 the Hardware In The Loop (HIL) port in `connect` and reads `attached` from the link. One host stage
