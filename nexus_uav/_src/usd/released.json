@@ -47,6 +47,11 @@
       "type": "float",
       "units": "none"
     },
+    "nexus:inputs:controls": {
+      "fallback": null,
+      "type": "relationship",
+      "units": ""
+    },
     "nexus:maxDuty": {
       "fallback": "1",
       "type": "float",

@@ -221,6 +221,9 @@ class "NexusEscAPI" (
         Range: (0, inf)
         Units: V"""
     )
+    rel nexus:inputs:controls (
+        doc = "The prim whose controller writes the controls this ESC reads. Unauthored, the vehicle's one controller; a vehicle with two or more controllers authors it on every ESC."
+    )
 }
 
 class "NexusMotorAPI" (

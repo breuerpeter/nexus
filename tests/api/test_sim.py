@@ -167,7 +167,8 @@ class _SetpointOrch:
 
     def __init__(self):
         self.sensors = []
-        self.controller = _FakeController()
+        self.controllers = [_FakeController()]
+        self.guidances = []
         self.physics = _FakePhysics()
         self.clock = _FakeClock()
         self.logger = None
@@ -209,7 +210,7 @@ def test_sim_hands_the_flights_guidance_to_the_loop_and_runs():
 
     # A self-assembled loop enters via _from_loop, the examples' entry, with its guidance.
     with sim_mod.Sim._from_loop(fake, guidance=guidance) as sim:
-        assert fake.guidance is guidance  # the guidance joins the loop
+        assert fake.guidances == [guidance]  # the guidance joins the loop
         assert fake.on_tick is None  # the hook stays the caller's: the guidance rides a stage
         guidance.set_mission([(0.0, 0.0, 4.0)])
         assert tuple(guidance.active_setpoint.pos) == (0.0, 0.0, 4.0)  # its stage writes it, not Sim

@@ -54,6 +54,6 @@ def test_a_controller_declares_its_controls_signal_with_its_own_width(tmp_path):
     """
     loop = sv.build(sv.vehicle(tmp_path), components=sv.components(NexusPx4API_1=_Wide))
     ran = sv.steps(loop, TICKS)
-    rows = loop.recorder.histories["vehicle/controllers/wide/controls"].history()
+    rows = loop.recorder.histories["vehicle/controllers/controller/controls"].history()
 
     assert (ran, np.asarray(rows["controls"]).shape[-1]) == (TICKS, WIDTH)

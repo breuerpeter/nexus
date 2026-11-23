@@ -80,7 +80,7 @@ def _settled(launch, catalog):
         builder, resolved, cfg = resolve_scenario(launch, catalog=catalog)
         cfg["physics"]["force_cpu"] = True
         controller = _Controller()
-        orch = build_loop(resolved.tested_config.vehicle, cfg, builder, controller=controller, max_steps=0)
+        orch = build_loop(resolved.tested_config.vehicle, cfg, builder, controllers=[controller], max_steps=0)
         orch.run()
     return orch, controller.samples
 

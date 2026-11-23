@@ -63,7 +63,7 @@ class _Sensor(Component):
 
 
 def _loop(sensor, **kw):
-    return Loop(clock=_Clock(), physics=_Physics(), sensors=[sensor], controller=_Controller(), **kw)
+    return Loop(clock=_Clock(), physics=_Physics(), sensors=[sensor], controllers=[_Controller()], **kw)
 
 
 def test_a_component_takes_the_link_of_each_peer_it_requires_at_connect():

@@ -89,7 +89,7 @@ def assembly(monkeypatch, tmp_path):
             physics=_Physics(),
             actuators=[_Actuator()],
             sensors=[],
-            controller=kw["controller"],
+            controllers=[kw["controllers"][0]],
             exchange_timeout=0.5,
             preroll_timeout=kw.get("preroll_timeout", 2.0),
             **run,

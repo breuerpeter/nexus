@@ -77,7 +77,7 @@ def flight_paths(tmp_path_factory, rrd_entities):
             physics=NewtonPhysics(model=model, cfg=cfg),
             actuators=[_Actuator()],
             sensors=[],
-            controller=_Controller(),
+            controllers=[_Controller()],
             logger=Logger(model, serve=False, record_to_rrd=rrd),
             recorder=Recorder(),
             max_steps=STEPS,

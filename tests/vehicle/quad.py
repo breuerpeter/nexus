@@ -192,7 +192,7 @@ def build(path, steps=0, controller=None):
     cfg = scenario()
     cfg["physics"]["force_cpu"] = True
     return build_loop(
-        "quad", cfg, VehicleUsd({"usd_path": str(path)}), controller=controller or Commands(), max_steps=steps
+        "quad", cfg, VehicleUsd({"usd_path": str(path)}), controllers=[controller or Commands()], max_steps=steps
     )
 
 
