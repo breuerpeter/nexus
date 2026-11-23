@@ -26,27 +26,16 @@ class _Calls(list):
         super().__init__()
         self.held: list[_Held] = []
         self.console = b""
-        self.exited = ""
-        """A word of a command: a container the peer starts whose command holds it has exited."""
 
 
 class _Started:
     """A container the peer started on the stand-in daemon, which has printed its daemon's ``console``."""
 
-    def __init__(self, calls, command=()):
+    def __init__(self, calls):
         self._calls = calls
-        self._command = [str(word) for word in command]
 
     def logs(self, **kwargs):
         return self._calls.console
-
-    def reload(self):
-        pass
-
-    @property
-    def status(self):
-        exited = self._calls.exited and any(self._calls.exited in word for word in self._command)
-        return "exited" if exited else "running"
 
 
 class _Held:
@@ -86,7 +75,7 @@ def daemon(monkeypatch, tmp_path):
     class Containers:
         def run(self, image, **kwargs):
             calls.append(("run", {"image": image, **kwargs}))
-            return b"" if not kwargs.get("detach", True) else _Started(calls, kwargs.get("command") or ())
+            return b"" if not kwargs.get("detach", True) else _Started(calls)
 
         def get(self, name):
             calls.append(("get", name))
@@ -160,7 +149,8 @@ def test_start_runs_px4_with_the_runs_instance_and_airframe(daemon, tree, tmp_pa
     instance; ``-d`` runs with no pxh shell, which at the end of an unattended stdin spin-loops
     printing its prompt and starves PX4. The store of the airframe and the instance mounts over the
     instance's folder of the tree, so the tree keeps no state of the run's, and the run's folder mounts over
-    PX4's log root inside it, so PX4 writes the run's ULog there and leaves none in the tree. The container
+    PX4's log root inside it, so PX4 writes the run's ULog there and leaves none in the tree. PX4's bridge client
+    dials the agent's port of the run's instance, 8888 plus 2. The container
     doesn't remove itself, so a PX4 that exits at once leaves its console for the log.
     """
     _peer(tree, tmp_path, instance=2).start()
@@ -172,7 +162,7 @@ def test_start_runs_px4_with_the_runs_instance_and_airframe(daemon, tree, tmp_pa
         "name": f"nexus-px4_sitl-{os.getpid()}-2",
         "detach": True,
         "user": f"{os.getuid()}:{os.getgid()}",
-        "environment": {"HOME": "/tmp", "PX4_SIM_MODEL": "none_astro_max"},
+        "environment": {"HOME": "/tmp", "PX4_SIM_MODEL": "none_astro_max", "PX4_UXRCE_DDS_PORT": "8890"},
         "working_dir": str(tree),
         "mounts": [
             Mount(str(tree), str(tree), type="bind", read_only=False),
@@ -313,20 +303,21 @@ def _hook_values(launch: dict, tree) -> dict[str, float]:
 def test_start_hands_the_boot_parameters_the_peers_prim_authors_to_px4s_boot_hook(daemon, tree, tmp_path):
     """The PX4 peer hands the boot parameters its prim authors to PX4's boot hook.
 
-    The values a vehicle layer authors on the peer's prim reach the peer as the keyword `params`. Given a peer
-    with `MPC_XY_VEL_MAX` 5.5 and `UXRCE_DDS_SYNCT` 0, when it starts, then the container's environment holds
-    `PX4_PARAM_MPC_XY_VEL_MAX` and `PX4_PARAM_UXRCE_DDS_SYNCT` with those values. Given a tree that sources
-    `px4-rc.params`, then the container mounts a file over it that sets both.
+    The values a vehicle layer authors on the peer's prim, `nexus:params`, reach the peer as the keyword `params`,
+    each as `NAME=VALUE`. Given a peer with `MPC_XY_VEL_MAX=5.5` and `UXRCE_DDS_SYNCT=0`, when it starts, then the
+    container's environment holds `PX4_PARAM_MPC_XY_VEL_MAX` and `PX4_PARAM_UXRCE_DDS_SYNCT` with those values.
+    Given a tree that sources `px4-rc.params`, then the container mounts a file over it that sets both.
     """
     params = {"MPC_XY_VEL_MAX": 5.5, "UXRCE_DDS_SYNCT": 0}
-    _peer(tree, tmp_path, params=params).start()
+    authored = ["MPC_XY_VEL_MAX=5.5", "UXRCE_DDS_SYNCT=0"]
+    _peer(tree, tmp_path, params=authored).start()
     by_environment = next(kw for kind, kw in daemon if kind == "run" and kw.get("detach", True))
     daemon.clear()
     for startup in ("ROMFS/px4fmu_common/init.d-posix", "build/px4_sitl_default/etc/init.d-posix"):
         (tree / startup).mkdir(parents=True)
         (tree / startup / "px4-rc.params").write_text("#!/bin/sh\n")
 
-    _peer(tree, tmp_path, params=params).start()
+    _peer(tree, tmp_path, params=authored).start()
 
     by_file = next(kw for kind, kw in daemon if kind == "run" and kw.get("detach", True))
     in_environment = {k for k in by_environment["environment"] if k.startswith("PX4_PARAM_")}
@@ -349,35 +340,6 @@ def test_a_peer_with_no_boot_parameter_starts_px4_alone_and_hands_it_none(daemon
     commands = [kw["command"] for kw in launches]
     handed = [k for kw in launches for k in kw["environment"] if k.startswith("PX4_PARAM_")]
     assert (commands, handed) == ([["build/px4_sitl_default/bin/px4", "-i", "0", "-d"]], [])
-
-
-def test_a_replays_peer_starts_the_agent_before_px4_stops_it_with_px4_and_reads_dead_when_it_exits(
-    daemon, tree, tmp_path
-):
-    """A replay starts the pinned agent before PX4 and stops it with the run; an agent that exits fails the run
-    with its name.
-
-    A replay's layer asks the peer for the Micro XRCE-DDS agent, the keyword `dds_agent`. Given such a peer, when
-    it starts, then it starts the agent's container and then PX4's, and its stop removes both. Given an agent that
-    has exited, then the peer reads dead and its error lines name the agent, which the run quotes in its
-    `RunError`.
-    """
-    daemon.exited = "MicroXRCEAgent"
-    peer = _peer(tree, tmp_path, dds_agent=True)
-    peer.start()
-    started = [
-        "agent" if "MicroXRCEAgent" in " ".join(kw["command"]) else "px4"
-        for kind, kw in daemon
-        if kind == "run" and kw.get("detach", True)
-    ]
-    alive = peer.alive()
-    named = any("agent" in line.lower() for line in peer.errors())
-    daemon.clear()
-
-    peer.stop()
-
-    removed = len([call for call in daemon if call[0] == "get"])
-    assert (started, removed, alive, named) == (["agent", "px4"], 2, False, True)
 
 
 def test_start_builds_the_tree_before_it_launches(daemon, tree, tmp_path):
