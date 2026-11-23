@@ -28,13 +28,6 @@ class ComponentSpec:
     kwargs: dict
     role: str
 
-    @property
-    def name(self) -> str:
-        """The instance name of the component: the name of the prim that declares it, in lower case, which ends
-        a recorded row's path and keys the Recorder's history.
-        """
-        return self.prim.rsplit("/", 1)[-1].lower()
-
 
 @dataclass(frozen=True)
 class PeerSpec:
@@ -44,6 +37,14 @@ class PeerSpec:
     schema: str
     cls: type
     kwargs: dict
+
+
+def instance_name(prim: str) -> str:
+    """The instance name of what the prim at path `prim` declares: the prim's name in lower case.
+
+    It ends a recorded row's path, keys the Recorder's history and names a writer to its readers.
+    """
+    return prim.rsplit("/", 1)[-1].lower()
 
 
 def run_keywords(cls: type, instance: int) -> dict:
