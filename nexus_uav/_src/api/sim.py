@@ -222,7 +222,8 @@ class Sim:
             if self._guidance is not None:
                 # The flight's guidance joins the loop's ring: its stage runs before the controller's.
                 # The loop builds its ring at the first step, so handing it over here is in time.
-                self._orch.guidance = self._guidance
+                if not any(g is self._guidance for g in self._orch.guidances):
+                    self._orch.guidances.append(self._guidance)
         else:
             # A vehicle that authors RTX sensors makes its render stage here, in this process.
             self._orch = build_from_launch(
@@ -347,8 +348,8 @@ class Sim:
         """The recorded history at ``path``, its path below the run's root, as the recording names it.
 
         ``sim["vehicle/sensors/imu/imu"]`` is the Inertial Measurement Unit (IMU)'s sample stream,
-        ``sim["vehicle/controllers/px4/controls"]``
-        the controls PX4 wrote, ``sim["vehicle/body/body_frd"]`` the base body's pose and twist and
+        ``sim["vehicle/controllers/controller/controls"]``
+        the controls the controller on the scope ``Controller`` wrote, ``sim["vehicle/body/body_frd"]`` the base body's pose and twist and
         ``sim["vehicle/joints/rotor_1_joint"]`` a joint's, ground truth in the world frame, Z-up FLU. Each is a
         :class:`~nexus_uav._src.recording.History`, with ``.history()`` and ``.arrays()``.
         Every history reads one way: a row is a record of ``t``, the tick's sim time, then the fields the
@@ -380,7 +381,7 @@ class Sim:
         ``path`` is the writer's path below the run's root then the signal's name, as a history's key, and a
         signal that keeps no history, a camera's frame say, has one too. ``sim.read(f"vehicle/body/{sim.base_body}")``
         is the base body's :class:`~nexus_uav.PoseTwist`, so ``.position[2]`` is its height, and
-        ``sim.read("vehicle/controllers/px4/controls")`` the 16 controls PX4 wrote, one array. A device signal
+        ``sim.read("vehicle/controllers/controller/controls")`` the 16 controls PX4 wrote, one array. A device signal
         reads without its leading axis of one, as an instance of its struct or an array of its other axes, and
         a host signal as the object its writer wrote. The value is a copy, which later ticks leave alone.
 

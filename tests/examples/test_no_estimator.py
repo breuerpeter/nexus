@@ -71,7 +71,7 @@ def test_a_reader_of_the_estimate_on_a_run_with_no_estimator_fails_before_any_st
     No stage ran, so the recording holds no history.
     """
     orch, guidance = build(torchscript_policy)
-    orch.estimator = None
+    orch.estimators.clear()
     with Sim._from_loop(orch, guidance=guidance) as sim:
         with pytest.raises(ValueError) as e:
             sim.run()

@@ -56,7 +56,7 @@ def build_acados_loop(
     # The core rotor chain, the same one PX4 flies: each rotor's ESC, the USD-authored newton.actuators rotor
     # motors physics steps, and each propeller's airflow-aware force element from the solver-integrated Ω. Real
     # motor lag, spinning props.
-    commands, actuators, forces = elements(physics, vehicle_usd)
+    commands, actuators, forces, connections = elements(physics, vehicle_usd)
 
     # NMPC rigid-body params, read from the real model in the NMPC's upright frame. Spawned at FRD, the NMPC
     # frame coincides with world, q_nmpc = identity, so the body-frame moment arms = the world-frame rotor
@@ -95,9 +95,10 @@ def build_acados_loop(
         commands=commands,
         actuators=actuators,
         forces=forces,
+        connections=connections,  # each motor reads the ESC on its own prim
         sensors=extra_sensors,
-        estimator=GroundTruthEstimator(),
-        controller=controller,
+        estimators=[GroundTruthEstimator()],
+        controllers=[controller],
         links=required,  # each RTX sensor takes the render stage at connect
         peers=started,
         logger=sink,

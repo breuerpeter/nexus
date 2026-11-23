@@ -205,7 +205,7 @@ class _CountReader(Component):
 
 
 def _orch(sensors, controller, **kw):
-    return Loop(clock=_Clock(), physics=_Physics(), sensors=sensors, controller=controller, **kw)
+    return Loop(clock=_Clock(), physics=_Physics(), sensors=sensors, controllers=[controller], **kw)
 
 
 def _stopped(tmp_path, controller, *, sensors=(), guidance=None) -> tuple[str, int]:
@@ -229,15 +229,15 @@ def _stopped(tmp_path, controller, *, sensors=(), guidance=None) -> tuple[str, i
     resolve_device(cfg)
     vehicle_usd = VehicleUsd({"usd_path": str(quad.author(tmp_path / "quad.usda"))})
     physics = NewtonPhysics(vehicle_usd=vehicle_usd, cfg=cfg)
-    a = assemble(physics, vehicle_usd, cfg, controller=controller)
+    a = assemble(physics, vehicle_usd, cfg, controllers=[controller])
     orch = Loop(
         clock=a.clock,
         physics=a.physics,
         commands=a.commands,
         forces=a.forces,
         sensors=[*a.sensors, *sensors],
-        estimator=GroundTruthEstimator(),
-        controller=a.controller,
+        estimators=[GroundTruthEstimator()],
+        controllers=[a.controllers[0]],
         max_steps=quad.FLIGHT_STEPS,
     )
     with Sim._from_loop(orch, guidance=guidance) as sim:

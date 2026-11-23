@@ -223,8 +223,8 @@ def _orch(controller, physics, **kw):
         physics=physics,
         actuators=[_Actuator()],
         sensors=[_Sensor()],
-        estimator=_Estimator(),
-        controller=controller,
+        estimators=[_Estimator()],
+        controllers=[controller],
         **kw,
     )
 
@@ -238,7 +238,7 @@ def test_a_controller_reads_the_next_goal_on_the_tick_the_vehicle_arrives():
         controller = _ExchangeController(physics.state)
         guidance = MissionGuidance(reached_m=0.3)
         guidance.set_mission(GOALS)
-        orch = _orch(controller, physics, guidance=guidance)
+        orch = _orch(controller, physics, guidances=[guidance])
         for _ in range(3):
             orch.step()
         orch.close()
@@ -258,7 +258,7 @@ def test_a_controller_holds_the_first_goal_before_its_own_first_stage():
         controller = _DeviceController()
         guidance = MissionGuidance()
         guidance.set_mission(GOALS)
-        orch = _orch(controller, _Physics([(0.0, 0.0, 0.0)]), guidance=guidance)
+        orch = _orch(controller, _Physics([(0.0, 0.0, 0.0)]), guidances=[guidance])
         orch.step()
         orch.close()
     held = [tuple(float(v) for v in sp) for sp in controller.held]
@@ -279,7 +279,7 @@ def test_a_tracking_controller_holds_its_planned_reference_from_its_first_exchan
         controller = _ExchangeController(physics.state, ReferenceTrajectory)
         guidance = TrackingGuidance(planner=lambda waypoints: reference)
         guidance.set_mission([(2.0, 0.5, 3.5), (3.0, 2.0, 4.0)])
-        orch = _orch(controller, physics, guidance=guidance)
+        orch = _orch(controller, physics, guidances=[guidance])
         orch.step()
         orch.close()
     sim_time, _, setpoint = controller.exchanges[0]
@@ -296,7 +296,7 @@ def test_a_device_controller_with_a_host_guidance_runs_in_two_captured_segments(
         controller = _DeviceController()
         guidance = MissionGuidance()
         guidance.set_mission(GOALS)
-        orch = _orch(controller, _Physics([(0.0, 0.0, 0.0)]), guidance=guidance)
+        orch = _orch(controller, _Physics([(0.0, 0.0, 0.0)]), guidances=[guidance])
         orch.step()
         orch.close()
     plan = next(m for m in (r.getMessage() for r in caplog.records) if m.startswith("stage plan:"))
@@ -313,7 +313,7 @@ def test_a_runs_on_tick_hook_and_its_guidance_both_run():
         guidance = MissionGuidance(reached_m=0.3)
         guidance.set_mission(GOALS)
         orch = _orch(
-            controller, physics, guidance=guidance, on_tick=lambda state, t, steps: ticks.append(steps), max_steps=6
+            controller, physics, guidances=[guidance], on_tick=lambda state, t, steps: ticks.append(steps), max_steps=6
         )
         while orch.step():
             pass
@@ -335,7 +335,7 @@ def test_a_mission_that_is_over_ends_the_run():
         guidance = MissionGuidance(reached_m=0.3, final_hold_s=0.0)
         guidance.set_mission(GOALS[:1])
         orch = _orch(
-            controller, physics, guidance=guidance, on_tick=lambda state, t, steps: ticks.append(steps), max_steps=50
+            controller, physics, guidances=[guidance], on_tick=lambda state, t, steps: ticks.append(steps), max_steps=50
         )
         orch.run()
         orch.close()
@@ -352,7 +352,7 @@ def test_a_run_whose_controller_takes_no_setpoint_refuses_a_guidance():
     with wp.ScopedDevice("cpu"):
         guidance = MissionGuidance()
         guidance.set_mission(GOALS)
-        orch = _orch(_NoSetpointController(), _Physics([(0.0, 0.0, 0.0)]), guidance=guidance)
+        orch = _orch(_NoSetpointController(), _Physics([(0.0, 0.0, 0.0)]), guidances=[guidance])
         with pytest.raises(TypeError, match="_NoSetpointController"):
             orch.step()
         orch.close()
@@ -383,9 +383,9 @@ def test_a_run_whose_controller_reads_no_setpoint_refuses_a_guidance_that_anothe
             physics=_Physics([(0.0, 0.0, 0.0)]),
             actuators=[_Actuator()],
             sensors=[_SetpointSensor()],
-            estimator=_Estimator(),
-            controller=_NoSetpointController(),
-            guidance=guidance,
+            estimators=[_Estimator()],
+            controllers=[_NoSetpointController()],
+            guidances=[guidance],
         )
         with pytest.raises(TypeError, match="_NoSetpointController"):
             orch.step()
@@ -393,26 +393,30 @@ def test_a_run_whose_controller_reads_no_setpoint_refuses_a_guidance_that_anothe
 
 
 def test_the_mission_markers_and_the_tracked_reference_sit_under_guidance_in_the_recording():
-    """The mission markers and the tracked reference sit under `guidance/` in the recording."""
+    """The mission markers and the tracked reference sit under `guidance/`, then the guidance's name, in the
+    recording: its class's name for a guidance a flight hands the loop with none.
+    """
     recording = _Recording()
     with wp.ScopedDevice("cpu"):
         physics = _Physics([(0.0, 0.0, 2.0)])
         controller = _ExchangeController(physics.state)
         mission = MissionGuidance()
         mission.set_mission([(1.0, 0.0, 2.0), (2.0, 0.0, 2.0), (3.0, 0.0, 2.0)])
-        orch = _orch(controller, physics, guidance=mission, logger=recording)
+        orch = _orch(controller, physics, guidances=[mission], logger=recording)
         orch.step()
         orch.close()
         physics = _Physics([(0.0, 0.0, 2.0)])
         controller = _ExchangeController(physics.state, ReferenceTrajectory)
         tracking = TrackingGuidance(planner=lambda waypoints: _Reference())
         tracking.set_mission([(2.0, 0.5, 3.5), (3.0, 2.0, 4.0)])
-        orch = _orch(controller, physics, guidance=tracking, logger=recording)
+        orch = _orch(controller, physics, guidances=[tracking], logger=recording)
         orch.step()
         orch.close()
     assert sorted(set(recording.entities)) == [
-        "guidance/reference",
-        "guidance/waypoints/wp_0",
-        "guidance/waypoints/wp_1",
-        "guidance/waypoints/wp_2",
+        "guidance/MissionGuidance/waypoints/wp_0",
+        "guidance/MissionGuidance/waypoints/wp_1",
+        "guidance/MissionGuidance/waypoints/wp_2",
+        "guidance/TrackingGuidance/reference",
+        "guidance/TrackingGuidance/waypoints/wp_0",
+        "guidance/TrackingGuidance/waypoints/wp_1",
     ]

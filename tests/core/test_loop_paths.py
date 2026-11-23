@@ -60,7 +60,7 @@ def _loop(logger, *, sensors=()):
         physics=physics,
         actuators=[actuator],
         sensors=list(sensors),
-        controller=controller,
+        controllers=[controller],
         logger=logger,
     )
     return loop, physics, actuator, controller
@@ -93,7 +93,7 @@ def test_the_loop_hands_a_command_element_and_a_force_element_a_logger_scoped_to
         commands=[command],
         forces=[force],
         sensors=[],
-        controller=_Component("pid"),
+        controllers=[_Component("pid")],
         logger=_Sink(),
     )
 

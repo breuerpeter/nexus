@@ -3,7 +3,7 @@
 Resolves the launch against the catalog, sha-verifying every asset, wraps the vehicle Universal Scene
 Description (USD) file in a :class:`VehicleUsd`, threads the resolved scene, its USD plus start, into the
 scenario cfg, and builds the run from the vehicle's declarations. The registry maps each applied schema to its
-class, so the builder names no component and no peer: it builds the controller, the estimator and the guidance
+class, so the builder names no component and no peer: it builds each controller, estimator and guidance
 by the role their schemas state, the sensors, the command elements, the actuators and the force elements in the assembly, and each
 peer the vehicle declares, a schema whose class is a peer. What a component's class requires by name, such as
 the render stage an RTX sensor requires, it makes and starts once, by that name.
@@ -57,7 +57,7 @@ from nexus_uav._src.usd import peer_names
 from nexus_uav._src.usd.reader import read_connections, read_serial_lines
 
 from .assembly import build_loop, build_scenario
-from .components import declared_controller, declared_estimator, declared_guidance
+from .components import SCOPE_ROLES, scope_specs
 
 
 def resolve_vehicle_usd(
@@ -135,7 +135,7 @@ def build_from_launch(
     components: Registry | None = None,
     run_dir: str | pathlib.Path | None = None,
 ) -> Loop:
-    """Resolve *launch* and build the run the vehicle declares around its one controller.
+    """Resolve *launch* and build the run the vehicle declares around its controllers.
 
     ``components`` is the registry that resolves each name the run resolves to its class: each schema the
     vehicle applies, a component's or a peer's, and the name a class requires a peer by. Its own rows answer
@@ -144,8 +144,8 @@ def build_from_launch(
     :func:`~nexus_uav._src.core.run_folder.run_folder`; ``None`` takes a new one.
 
     Raises:
-        ValueError: The vehicle declares no controller or two, two estimators or guidances, one off its
-            ``Scope``, a schema no class claims, a component schema that states no role or two, a peer that
+        ValueError: The vehicle declares no controller, a controller, an estimator or a guidance off its
+            ``Scope`` or two on one, a schema no class claims, a component schema that states no role or two, a peer that
             fails its own check of the values its schema authors, or a class requires a peer no class
             claims, or a peer's serial line targets a prim that declares no other peer, or two lines reach one
             peer from prims of one name, or a pin file beside a catalog names no peer, or a peer's pin isn't in
@@ -163,11 +163,7 @@ def build_from_launch(
     registry = components if components is not None else Registry()
     usd = resolved.vehicle_usd_path
     specs, declared = resolve_declarations(usd, registry)
-    roles = {
-        "controller": declared_controller(usd, registry),
-        "estimator": declared_estimator(usd, registry),
-        "guidance": declared_guidance(usd, registry),
-    }
+    roles = {role: scope_specs(usd, role, registry) for role in SCOPE_ROLES}
     required = _required(specs, registry)
     # Every pin file beside a catalog names a peer the install knows, one shipped, one whose schema the registry
     # maps, or one the run starts, and the pin of each peer the run starts is in its form, before any peer starts,
@@ -213,7 +209,7 @@ def build_from_launch(
         # physics compiles.
         for peer in needed.values():
             _start(peer, started)
-        built = {role: _component(spec, run["instance"]) for role, spec in roles.items() if spec is not None}
+        built = {role: [_component(spec, run["instance"]) for spec in specs] for role, specs in roles.items()}
         # A declared peer starts here, before the assembly: PX4's start builds PX4 incrementally, which must
         # stay outside the sim's preroll window, GH #39, and PX4 boots while the physics compiles.
         for peer in made:
@@ -223,17 +219,21 @@ def build_from_launch(
             label,
             cfg,
             vehicle_usd=vehicle_usd,
-            controller=built["controller"],
+            controllers=built["controller"],
             instance=run["instance"],
-            estimator=built.get("estimator"),
-            guidance=built.get("guidance"),
+            estimators=built["estimator"],
+            guidances=built["guidance"],
             # The serial links close with the peers, and the run's instance stays held until the loop has stopped
             # every peer.
             peers=[*started, *links, *([claim] if claim is not None else [])],
             peer_links=needed,
             peer_inputs={spec.prim: peer for spec, peer in zip(declared, made, strict=True)},
             connections=connections,
-            prims={roles[role].prim: component for role, component in built.items()},
+            prims={
+                spec.prim: component
+                for role, specs in roles.items()
+                for spec, component in zip(specs, built[role], strict=True)
+            },
             rerun=launch.output.log or launch.output.view,
             viewer=launch.output.view,
             debug=launch.output.debug,
@@ -457,9 +457,11 @@ def _peer(
 
 def _component(spec: ComponentSpec, run_instance: int):
     """The component `spec` declares: its class with its schema's attributes, and the run's instance when the
-    class needs it.
+    class needs it, named after its prim.
     """
-    return spec.cls(**spec.kwargs, **run_keywords(spec.cls, run_instance))
+    component = spec.cls(**spec.kwargs, **run_keywords(spec.cls, run_instance))
+    component.name = instance_name(spec.prim)
+    return component
 
 
 def _declaration(spec: ComponentSpec | PeerSpec) -> dict:

@@ -212,7 +212,7 @@ def _loop(controller, **kw):
         physics=_Physics(),
         actuators=[_Actuator()],
         sensors=[],
-        controller=controller,
+        controllers=[controller],
         exchange_timeout=0.5,
         **kw,
     )
@@ -226,7 +226,7 @@ def assembly(monkeypatch):
 
     def assemble(label, cfg, **kw):
         peers = {"peers": kw["peers"]} if "peers" in kw else {}
-        return _loop(kw["controller"], preroll_timeout=kw.get("preroll_timeout", 2.0), **peers)
+        return _loop(kw["controllers"][0], preroll_timeout=kw.get("preroll_timeout", 2.0), **peers)
 
     monkeypatch.setattr(launch_mod, "build_loop", assemble)
 
@@ -712,7 +712,7 @@ def test_the_controller_gets_the_fake_px4s_hover_command_every_tick(daemon, cata
             physics=_Physics(),
             actuators=[commands],
             sensors=[],
-            controller=kw["controller"],
+            controllers=[kw["controllers"][0]],
             exchange_timeout=0.5,
             preroll_timeout=kw.get("preroll_timeout", 2.0),
             peers=kw["peers"],
@@ -779,7 +779,7 @@ def test_a_fake_px4_whose_link_dies_fails_the_run_as_a_real_peers_death_does(dae
         message = str(exc)
     after = loop.step()
 
-    named = message is not None and "Px4MavlinkController lost its peer" in message
+    named = message is not None and "controller (Px4MavlinkController) lost its peer" in message
     assert (answered, named, after) == (100, True, False), message
 
 
@@ -1122,7 +1122,7 @@ def test_a_run_whose_px4_stops_answering_after_lockstep_exits_non_zero_naming_th
     code, said = _nexus_run(monkeypatch, "--vehicle", vehicle, "--scene", sv.SCENE)
     autopilot.join(timeout=5.0)
 
-    assert (code != 0, "Px4MavlinkController lost its peer" in said) == (True, True), said
+    assert (code != 0, "controller (Px4MavlinkController) lost its peer" in said) == (True, True), said
 
 
 def test_a_failed_start_closes_the_recording_and_stops_px4(daemon, brief_preroll, monkeypatch, tmp_path, warp_cpu):
