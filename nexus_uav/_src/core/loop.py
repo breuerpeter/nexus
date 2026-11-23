@@ -265,7 +265,7 @@ class Loop:
         self._stepped = False  # a first step() ran, or close() tore down a run that never stepped
         self.preroll_timeout = preroll_timeout
         self.exchange_timeout = exchange_timeout
-        # Bound the steady loop; None = run until the controller ends it, the PX4 default.
+        # Bound the steady loop; None = run until a controller ends it, the PX4 default.
         # A controller with no peer, for example the trained policy, never returns None, so a
         # finite run, test/demo/episode, sets this.
         self.max_steps = max_steps

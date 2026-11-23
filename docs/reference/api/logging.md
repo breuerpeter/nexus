@@ -56,7 +56,8 @@ A row's entity path names who wrote it. It has three parts, in this order:
 1. The process: `sim`, or the name of a peer's folder under `nexus_uav/_src/peers/`.
 2. The component's role folder, as the source tree names it: `vehicle/sensors`,
    `vehicle/controllers` or `guidance`.
-3. The instance: the name of the prim that declares it.
+3. The instance: the name of the prim that declares it, in lower case. A component a script builds
+   with no prim goes by its own `name`, else by the name of its class.
 
 For example, `sim/vehicle/sensors/imu` says that the sim wrote the row, that a sensor produced it,
 and that the instance is `imu`. A vehicle's Universal Scene Description (USD) file, the source tree,
@@ -85,7 +86,7 @@ path.
 | `sim/vehicle/sensors/<name>/camera`, `.../thermal_camera`, `.../lidar` | A camera's frames, a thermal camera's frames, or a lidar's points: the signal logged live |
 | `sim/vehicle/controllers/<name>/<row>` | A controller's own rows, such as its `horizon` |
 | `sim/vehicle/trajectory` | The flown path |
-| `sim/guidance/waypoints/wp_<i>`, `sim/guidance/reference` | The guidance's mission: its waypoints and its tracked reference |
+| `sim/guidance/<name>/waypoints/wp_<i>`, `sim/guidance/<name>/reference` | A guidance's mission: its waypoints and its tracked reference |
 | `sim/model/shapes/…` | The scene: each shape's mesh once, posed from the bodies' histories |
 | `<peer>/logs` | A peer's own rows, under the name of its folder. PX4's flight log, which the peer appends at teardown: `px4_sitl/logs/vehicle` and the rest of what [ulog-rrd](https://github.com/breuerpeter/ulog-rrd) draws in 3D, its text log at `px4_sitl/logs/log`, and each topic as a series under `px4_sitl/logs/timeseries` |
 
