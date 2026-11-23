@@ -27,6 +27,7 @@ import os
 import tempfile
 from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 from nexus_uav._src.peers import pins as _pins
 from nexus_uav._src.peers.px4_sitl import checkout as _checkout
@@ -62,7 +63,7 @@ def replay(
     scene: str,
     params: Mapping[str, float] | None = None,
     px4: str | None = None,
-    **sim,
+    **sim: Any,
 ) -> dict[str, str]:
     """Replay the flight ``ulog`` holds into PX4 SITL on ``vehicle`` in ``scene``, to the log's end.
 
