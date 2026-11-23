@@ -99,11 +99,7 @@ declares its propeller with `NexusPropellerAPI`, its ESC with `NexusEscAPI` and 
 its `nexus:idleDuty`, `nexus:maxDuty` and `nexus:busVoltage` the duty map and the bus it switches, and
 the motor's `nexus:kv`, `nexus:resistance` and `nexus:currentLimit` the sheet's constants. No
 `NewtonActuator` prim drives a rotor's joint. Each rotor carries its own values, so two propeller
-sizes can fly on one vehicle. A joint that a controller of its own moves, such as a gimbal joint,
-declares a torque motor with `NexusTorqueMotorAPI` on the joint's prim. Its `nexus:torqueConstant` is
-the torque per ampere, its `nexus:currentLimit` the current at a command of 1, and its `nexus:channel`
-the entry of the controls it reads. The
-[schema reference](../reference/schemas.md) lists the attributes.
+sizes can fly on one vehicle. The [schema reference](../reference/schemas.md) lists the attributes.
 
 An entry's `usd`, and each of a composed entry's layers, either carries a full `url` or a compact
 `{name, sha256}` that its own catalog's `assets.base` completes into
