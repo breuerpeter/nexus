@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.12.0](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.11.0...nexus-uav-v0.12.0) (2026-11-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* **build:** a vehicle declares several components of one role ([#426](https://github.com/breuerpeter/nexus/issues/426))
+
+### Features
+
+* **build:** a vehicle declares several components of one role ([#426](https://github.com/breuerpeter/nexus/issues/426)) ([eefb073](https://github.com/breuerpeter/nexus/commit/eefb073b500bccd72bf6dd62f79bd9fc6c43c5f4))
+
+
+### Bug Fixes
+
+* **px4:** a run builds and flies PX4 main and keeps its flight log ([#441](https://github.com/breuerpeter/nexus/issues/441)) ([0f862f9](https://github.com/breuerpeter/nexus/commit/0f862f9aa2fecf3c859d4b63ec636256b420d353))
+
 ## [0.11.0](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.10.0...nexus-uav-v0.11.0) (2026-11-23)
 
 
