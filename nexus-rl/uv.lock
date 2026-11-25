@@ -1062,7 +1062,7 @@ dev = [
 
 [[package]]
 name = "nexus-uav"
-version = "0.10.0"
+version = "0.12.0"
 source = { editable = "../" }
 dependencies = [
     { name = "docker", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
@@ -1104,7 +1104,7 @@ requires-dist = [
     { name = "scipy", specifier = ">=1.11.0" },
     { name = "torch", marker = "extra == 'policy'" },
     { name = "trimesh", specifier = ">=4.6.8" },
-    { name = "ulog-rrd", specifier = ">=0.2.0,<0.3" },
+    { name = "ulog-rrd", specifier = ">=0.2.1,<0.3" },
     { name = "usd-core", specifier = ">=25.5,<26.5" },
     { name = "warp-lang", specifier = ">=1.14.0,<1.16", index = "https://pypi.nvidia.com/" },
 ]
@@ -2034,14 +2034,14 @@ wheels = [
 
 [[package]]
 name = "ulog-rrd"
-version = "0.2.0"
+version = "0.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "rerun-sdk", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a6/89/7ee6073decd0c8a10ce4e26e884bc961207d69c2add6d57c636098d53362/ulog_rrd-0.2.0.tar.gz", hash = "sha256:d2d8724db1fa3092fe61eb207edf1c3674e36273b01a3192cf3865726e49f57f", size = 43527, upload-time = "2026-11-04T07:40:30.642Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/cd/7e/b28ab7df900af45d50454d5a52c9bb206928323c043eb00aa323c9becd39/ulog_rrd-0.2.1.tar.gz", hash = "sha256:683a438ddc414d34891f9d99ee87e934da2d7a4a6b95730db56591ca68b29816", size = 55410, upload-time = "2026-11-23T16:05:22.57Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/57/0a/d7aad0dbcc25f6948ee871bf594343ac951947785381f29520338dac1d0d/ulog_rrd-0.2.0-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:a9b6545d5445a7516960ec8a0174adbbe054609be606e7164741e050e7ca8f67", size = 2052246, upload-time = "2026-11-04T07:40:28.804Z" },
+    { url = "https://files.pythonhosted.org/packages/d5/58/487bb71bafde3d2e8da33c39e798e382678e0669dd074e3a6a1aa44869ee/ulog_rrd-0.2.1-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:567810c9582301bdb0792e84354951712519bfa1bd4c455b299fc8986348091c", size = 2151181, upload-time = "2026-11-23T16:05:21.146Z" },
 ]
 
 [[package]]

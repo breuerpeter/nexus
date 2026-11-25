@@ -190,13 +190,26 @@ run flies this chain: PX4, each example controller, the gradient examples' recor
 training. The sampling Model Predictive Control (MPC) planner plans on a single-body model of it, with
 the motors' lag and spin-up reaction.
 
+## The torque motor
+
+A joint that a controller of its own moves, a camera gimbal joint first, carries a **torque motor**: a
+direct-drive motor with its drive, which holds a commanded current. It's an
+[actuator](concepts.md#actuator) the `NexusTorqueMotorAPI` schema declares on the joint's prim, from
+`nexus:torqueConstant`, `nexus:currentLimit` and `nexus:channel`. It reads one entry of the `controls`,
+a command `u` from −1 to 1, and adds the torque `Kt·clamp(u, −1, 1)·currentLimit` into the joint
+efforts, in one kernel of its own. A negative command brakes, and a `NaN` command is no output and makes
+no torque. The drive cancels the back electromotive force, so the torque doesn't fall with speed as a
+rotor's motor's does. No command element sits before it, and it builds no Newton actuator. It emits
+the `current` it draws, as a rotor's motor does. Its `controls` are the vehicle's one controller's
+unless its connection, `nexus:inputs:controls`, names another.
+
 ## Observability and recording
 
 Observability is cross-cutting, split into a **write** side and a **read** side:
 
 - **One central Rerun sink.** A single [Logger](concepts.md#logger), handed to every component,
   owns the one Rerun recording. Each row's entity path names its process, its component and its instance, such
-  as `sim/vehicle/sensors/imu` or `sim/guidance/reference`, on a shared `sim_time` timeline. The
+  as `sim/vehicle/sensors/imu` or `sim/guidance/<name>/reference`, on a shared `sim_time` timeline. The
   [logging reference](../reference/api/logging.md#entity-paths) states the rule. It can serve a live
   viewer over gRPC on port `9876` or write a durable `.rrd`. A peer writes under its own root, the
   name of its folder, so one recording can hold more than one producer. Today the camera sensors log the

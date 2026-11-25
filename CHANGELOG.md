@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.12.0](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.11.0...nexus-uav-v0.12.0) (2026-11-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* **build:** a vehicle declares several components of one role ([#426](https://github.com/breuerpeter/nexus/issues/426))
+
+### Features
+
+* **build:** a vehicle declares several components of one role ([#426](https://github.com/breuerpeter/nexus/issues/426)) ([eefb073](https://github.com/breuerpeter/nexus/commit/eefb073b500bccd72bf6dd62f79bd9fc6c43c5f4))
+
+
+### Bug Fixes
+
+* **px4:** a run builds and flies PX4 main and keeps its flight log ([#441](https://github.com/breuerpeter/nexus/issues/441)) ([0f862f9](https://github.com/breuerpeter/nexus/commit/0f862f9aa2fecf3c859d4b63ec636256b420d353))
+
+## [0.11.0](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.10.0...nexus-uav-v0.11.0) (2026-11-23)
+
+
+### Features
+
+* **actuators:** a joint motor turns a commanded current into torque ([#425](https://github.com/breuerpeter/nexus/issues/425)) ([8709712](https://github.com/breuerpeter/nexus/commit/8709712aa017c8219885f2007f96ef4b412f379c))
+* **build:** a peer gets its inputs' writer names when it is made ([#435](https://github.com/breuerpeter/nexus/issues/435)) ([95a1a85](https://github.com/breuerpeter/nexus/commit/95a1a8538b3b43eb088a98bad44f2e9bd8433ada))
+
 ## [0.10.0](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.9.0...nexus-uav-v0.10.0) (2026-11-10)
 
 

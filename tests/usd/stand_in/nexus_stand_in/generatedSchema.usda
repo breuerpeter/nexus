@@ -116,6 +116,12 @@ class "StandInControllerAPI" (
         Range: [0, inf)
         Units: dimensionless"""
     )
+    rel nexus:inputs:estimate (
+        doc = "The estimator whose estimate the stand-in controller reads, of the ones the vehicle declares."
+    )
+    rel nexus:inputs:setpoint (
+        doc = "The guidance whose setpoint the stand-in controller reads, of the ones the vehicle declares."
+    )
 }
 
 class "StandInGuidanceAPI" (
@@ -147,6 +153,9 @@ class "StandInServoAPI" (
 
         Range: (-inf, inf)
         Units: rad"""
+    )
+    rel nexus:inputs:controls (
+        doc = "The controller whose controls the stand-in reads, of the ones the vehicle declares."
     )
 }
 

@@ -17,7 +17,6 @@ layered over the same component semantics.
 from __future__ import annotations
 
 import time
-import typing
 from typing import TYPE_CHECKING
 
 import warp as wp
@@ -57,29 +56,30 @@ def _instance(component) -> str:
     return str(component.name or type(component).__name__)
 
 
+def _label(component) -> str:
+    """How an error names a component: its instance name, then its class when the two differ, as
+    ``controller (Px4MavlinkController)``.
+    """
+    name, cls = _instance(component), type(component).__name__
+    return name if name == cls else f"{name} ({cls})"
+
+
 def _peer_name(peer) -> str:
     """A peer's name, which is optional: its ``name``, else its class's name."""
     return str(getattr(peer, "name", None) or type(peer).__name__)
 
 
-def _sensor_names(sensors: list) -> list[str]:
-    """Each sensor's instance name, in order.
-
-    Raises:
-        ValueError: Two sensors share a name; the message names the class of each. The builder checks the
-            same for the sensors a vehicle declares, and names their prims.
-    """
-    first: dict[str, object] = {}
-    for sensor in sensors:
-        name = _instance(sensor)
-        if name in first:
-            declared = [type(s).__name__ for s in (first[name], sensor)]
-            raise ValueError(
-                f"sensors {declared[0]} and {declared[1]} share the name {name!r}: a recorded row's path "
-                "ends in its sensor's name, so name one apart"
-            )
-        first[name] = sensor
-    return [_instance(sensor) for sensor in sensors]
+# The folder each role's components record under, below the sim's root, as the source tree names it: a
+# component's path is its role's folder, then its instance name. The loop end of a peer's inputs records nothing.
+ROLE_FOLDERS = {
+    "command": "vehicle/commands",
+    "actuator": "vehicle/actuators",
+    "force": "vehicle/forces",
+    "estimator": "vehicle/estimators",
+    "guidance": "guidance",
+    "controller": "vehicle/controllers",
+    "sensor": "vehicle/sensors",
+}
 
 
 class Loop:
@@ -108,9 +108,9 @@ class Loop:
         clock: Clock,
         physics: Physics,
         sensors: Iterable[Component],
-        controller: Component,
-        estimator: Component | None = None,
-        guidance: Component | None = None,
+        controllers: Iterable[Component],
+        estimators: Iterable[Component] = (),
+        guidances: Iterable[Component] = (),
         commands: Iterable[Component] = (),
         forces: Iterable[Component] = (),
         actuators: Iterable[Component] = (),
@@ -139,23 +139,24 @@ class Loop:
                 + double-buffer.
             sensors: Iterable of sensors, each a device stage that writes its sample to a signal of its
                 own type, or a host stage for a sensor whose work leaves the process. Stored as a list.
-            controller: The controller: its stages write the controls the command elements read. One with
-                a peer reads ``attached`` false until the peer dials in, which holds the sim clock, as any
-                component that waits on a peer does.
-            estimator: Optional estimator, for a guidance or a controller that reads the vehicle's state:
-                its stages run each tick after the sensors' and before the guidance's, and write the
-                estimate, the base body's pose and twist, which the guidance and the controller read in
+            controllers: The controllers, one or more, in the order their stages run: each one's stages write
+                its own controls, which a command element or an actuator reads. With two or more, each reader
+                names its controller by a connection. One with a peer reads ``attached`` false until the peer
+                dials in, which holds the sim clock, as any component that waits on a peer does.
+            estimators: The estimators, for a guidance or a controller that reads the vehicle's state:
+                their stages run each tick after the sensors' and before the guidances', and each writes
+                its estimate, the base body's pose and twist, which a guidance and a controller read in
                 place of the physics state. A run whose guidance or controller reads the estimate fails
-                without one. The loop reads the attribute when it builds the ring, at the first step.
-                ``None`` for PX4, whose estimator runs in its peer.
-            guidance: Optional guidance, for a controller that reads a setpoint: its stages run each
-                tick after the estimator's and before the controller's, and read the vehicle's
-                position from the estimate. It holds no controller: its
-                stage writes the setpoint signal the controller reads, so the controller reads a new
+                without one. The loop reads the list when it builds the ring, at the first step, so a flight
+                can add one before then. Empty for PX4, whose estimator runs in its peer.
+            guidances: The guidances, for a controller that reads a setpoint: their stages run each
+                tick after the estimators' and before the controllers', and read the vehicle's
+                position from the estimate. A guidance holds no controller: its
+                stage writes the setpoint signal a controller reads, so the controller reads a new
                 setpoint on the tick the guidance writes it. Its stage marks the tick done when its
-                mission is over, which ends the run. A flight can also set the ``guidance`` attribute
-                before the first step. ``None`` for PX4, which flies its own missions.
-            commands: The command elements: each turns the controls the controller writes into a signal
+                mission is over, which ends the run. A flight can also add one to the list
+                before the first step. Empty for PX4, which flies its own missions.
+            commands: The command elements: each turns the controls a controller writes into a signal
                 the chain takes on, the rotors' ESCs' terminal voltage, in its device stages.
             actuators: The actuators: each turns a signal into torque on a joint, the rotors' motors into
                 ``control.joint_f``, in its device stages, after the command elements.
@@ -195,7 +196,7 @@ class Loop:
             exchange_timeout: Per-tick timeout in seconds for the blocking
                 ``controller.exchange`` in the steady loop.
             max_steps: Bound on control steps for the steady loop. ``None`` runs until
-                the controller ends the run, the PX4 default, or a guidance's mission is over; a
+                a controller ends the run, the PX4 default, or a guidance's mission is over; a
                 finite run, test/demo/episode, sets it.
             physics_substeps: Physics steps per control exchange, zero-order-hold over
                 finer physics, cf. multi-rate. ``1`` is lockstep, the PX4 default;
@@ -210,9 +211,10 @@ class Loop:
         self.actuators = list(actuators)
         self.forces = list(forces)
         self.sensors = list(sensors)
-        self.controller = controller
-        self.estimator = estimator  # the loop reads it when it builds the ring, at the first step
-        self.guidance = guidance  # the loop reads it when it builds the ring, at the first step
+        self.controllers = list(controllers)
+        # The loop reads both lists when it builds the ring, at the first step, so a flight can add to them.
+        self.estimators = list(estimators)
+        self.guidances = list(guidances)
         self.links = dict(links or {})
         self.peers = list(peers)
         self.peer_inputs = list(peer_inputs)
@@ -222,33 +224,18 @@ class Loop:
         # The single logging switch: a `Logger`, the recording sink + the shared log calls, or None.
         # None ⇒ no recording → max benchmark/CI speed.
         self.logger = logger
-        # Each component's path under the sim's root, resolved once, here, where the loop wires it:
-        # its role folder, then its instance name. A recorded row's path starts with it, a signal's
-        # history sits under it, so two sensors that share one fail the build.
-        wired = [
-            (physics, "vehicle"),
-            *((c, f"vehicle/commands/{_instance(c)}") for c in self.commands),
-            *((a, f"vehicle/actuators/{_instance(a)}") for a in self.actuators),
-            *((f, f"vehicle/forces/{_instance(f)}") for f in self.forces),
-            *([(estimator, f"vehicle/estimators/{_instance(estimator)}")] if estimator is not None else []),
-            (controller, f"vehicle/controllers/{_instance(controller)}"),
-            *(
-                (s, f"vehicle/sensors/{name}")
-                for s, name in zip(self.sensors, _sensor_names(self.sensors), strict=True)
-            ),
-        ]
-        self._paths = {id(c): path for c, path in wired}
+        # Each component's path under the sim's root, resolved once, where the loop wires it: its role's
+        # folder, then its instance name. A recorded row's path starts with it, a signal's history sits
+        # under it, so two components of one role that share a name fail the build. Physics is a fixed
+        # part, not a component: the plant's outputs sit under `vehicle`, and it logs nothing itself.
+        self._paths = {id(physics): "vehicle"}
         # The loop hands each component a view of the one Logger scoped to the component's path, so no
         # call site names an entity; None when off, the single switch. A component logs a value with no
-        # fixed width live, in its own code: the guidance its markers at a mission event, an MPC
-        # controller its horizon when it refreshes, a camera its frames; the guidance via `add_loggable`
-        # when the loop builds its ring, since a flight can hand it over after construction. The scene
-        # and every fixed-width value come from the Recorder's histories, which the loop writes a block
-        # at a time. Physics is a fixed part, not a component: it logs nothing itself.
-        self._loggables = [c for c, _ in wired if c is not physics]
-        for c, path in wired:
-            if c is not physics:
-                c.set_logger(self._scoped(path))
+        # fixed width live, in its own code: a guidance its markers at a mission event, an MPC
+        # controller its horizon when it refreshes, a camera its frames. The scene and every fixed-width
+        # value come from the Recorder's histories, which the loop writes a block at a time.
+        self._loggables: list = []
+        self._wire_paths()
         # Live-RTF anchors, wall and sim: a rolling window the width of the ~1 s emission interval.
         # Distinct from _last_log_t, the sim-time scene decimation, and from run_stats' post-hoc RTF.
         self._rtf_wall_prev: float | None = None
@@ -278,7 +265,7 @@ class Loop:
         self._stepped = False  # a first step() ran, or close() tore down a run that never stepped
         self.preroll_timeout = preroll_timeout
         self.exchange_timeout = exchange_timeout
-        # Bound the steady loop; None = run until the controller ends it, the PX4 default.
+        # Bound the steady loop; None = run until a controller ends it, the PX4 default.
         # A controller with no peer, for example the trained policy, never returns None, so a
         # finite run, test/demo/episode, sets this.
         self.max_steps = max_steps
@@ -295,10 +282,34 @@ class Loop:
         """The Logger's view for the component at ``path`` under the sim's root; None when off."""
         return self.logger.scoped(path) if self.logger is not None else None
 
+    def _wire_paths(self) -> None:
+        """Resolve the path of each component the loop hasn't wired yet, its role's folder then its instance
+        name, and hand it its scoped Logger. At construction, and again at the first step, since a flight can
+        add an estimator or a guidance after construction.
+
+        Raises:
+            ValueError: Two sensors, estimators, guidances or controllers share a name; the message names the
+                role and the class of each. The builder checks the same for the sensors a vehicle declares, and
+                names their prims. The elements of a substep role on one body share its name by design.
+        """
+        roles = self.roles()
+        for role, folder in ROLE_FOLDERS.items():
+            first: dict[str, object] = {}
+            for component in roles[role]:
+                name = _instance(component)
+                if name in first and role not in SUBSTEP_ROLES:
+                    declared = [type(c).__name__ for c in (first[name], component)]
+                    raise ValueError(
+                        f"{role}s {declared[0]} and {declared[1]} share the name {name!r}: a recorded row's path "
+                        f"ends in its {role}'s name, so name one apart"
+                    )
+                first[name] = component
+                if id(component) not in self._paths:
+                    self.add_loggable(component, f"{folder}/{name}")
+
     def add_loggable(self, component, path: str) -> None:
-        """Register a logging component handed over after construction, the guidance, and hand it the
-        Logger scoped to ``path``, the component's path under the sim's root: ``_logger``, None when off,
-        the gate for its event-driven logging. Idempotent.
+        """Register a logging component and hand it the Logger scoped to ``path``, the component's path
+        under the sim's root: ``_logger``, None when off, the gate for its event-driven logging. Idempotent.
         """
         if component not in self._loggables:
             self._loggables.append(component)
@@ -327,33 +338,19 @@ class Loop:
         """The links a reader with no connection takes by default: for an input of the vehicle's pose type that
         no component writes, the plant's base body output, ``body/<label>``, so a component that reads the
         vehicle's pose, the passthrough estimator or PX4's ground truth, needs no connection on its prim, and a
-        run that hands its estimator over with no prim, as the examples do, reads the base body; and for an input
-        of one value that a component on the reader's own path writes, that writer, so a rotor's motor reads the
-        voltage of the ESC on its body and the file authors nothing. A connection on the reader's prim overrides
-        either.
+        run that hands its estimator over with no prim, as the examples do, reads the base body. A connection on
+        the reader's prim overrides it. The builder resolves the writer on a reader's own prim, since the loop
+        knows no prim.
         """
         writes, reads = _declared(ring)
         named = {(id(reader), name) for reader, name, *_ in self.connections}
-        links = [
+        return [
             (bound.component, name, self.physics, f"body/{self.physics.base_body}")
             for name, readers in reads.items()
             if name not in writes
             for bound, signal in readers
             if signal.type is PoseTwist and (id(bound.component), name) not in named
         ]
-        for name, readers in reads.items():
-            for bound, signal in readers:
-                if (id(bound.component), name) in named or typing.get_origin(signal.type) is list:
-                    continue
-                own = _instance(bound.component)  # the leaf of the reader's prim, which the builder names it by
-                beside = [
-                    w.component
-                    for w, _ in writes.get(name, [])
-                    if w.component is not bound.component and _instance(w.component) == own
-                ]
-                if beside:
-                    links.append((bound.component, name, beside[0], name))
-        return links
 
     def _record_tick(self) -> None:
         """The record stage: the Recorder snapshots every tapped signal into its history, stamped with the
@@ -496,12 +493,7 @@ class Loop:
             # a live peer too, the PX4 container it launches.
             state = self.physics.reset()  # build + settle the vehicle at the NED origin
             record = Stage("record", "device", lambda tick: self._record_tick())
-            if self.estimator is not None and id(self.estimator) not in self._paths:
-                # Handed over after construction, as a flight can do: the loop resolves its path here.
-                self._paths[id(self.estimator)] = f"vehicle/estimators/{_instance(self.estimator)}"
-            if self.guidance is not None:
-                # Here, since a flight can hand the guidance over after construction.
-                self.add_loggable(self.guidance, "guidance")
+            self._wire_paths()  # here too, since a flight can add an estimator or a guidance after construction
             ring = build_ring(
                 clock=self._device_clock,
                 physics=self.physics,
@@ -621,12 +613,11 @@ class Loop:
 
     def roles(self) -> dict[str, list]:
         """Each role's components, by role, each list in the order its components run."""
-        one = lambda c: [c] if c is not None else []  # noqa: E731
         return {
             "sensor": list(self.sensors),
-            "estimator": one(self.estimator),
-            "guidance": one(self.guidance),
-            "controller": one(self.controller),
+            "estimator": list(self.estimators),
+            "guidance": list(self.guidances),
+            "controller": list(self.controllers),
             "link": list(self.peer_inputs),
             "command": list(self.commands),
             "actuator": list(self.actuators),
@@ -634,7 +625,7 @@ class Loop:
         }
 
     def components(self) -> list:
-        """Every component of the run, in ring order: the sensors, the estimator, the guidance, the controller,
+        """Every component of the run, in ring order: the sensors, the estimators, the guidances, the controllers,
         the loop end of each declared peer's inputs, the command elements, the actuators and the force
         elements.
         """
@@ -658,10 +649,6 @@ class Loop:
 
         close(0)
 
-    def _controller_name(self) -> str:
-        """The controller's class, so a run's end names the peer that left it: ``Px4MavlinkController``."""
-        return type(self.controller).__name__
-
     def _check_estimator(self, ring) -> None:
         """Check that the run has an estimator when a guidance or a controller reads the estimate: a run takes
         an estimator for a guidance or a controller that reads the vehicle's state, and the estimate is the
@@ -683,19 +670,20 @@ class Loop:
             )
 
     def _check_guidance(self, ring) -> None:
-        """Check that the controller reads a signal the guidance writes, when the run has a guidance: a
+        """Check that a controller reads a signal a guidance writes, when the run has a guidance: a
         run takes a guidance only for a controller that reads a setpoint.
 
         Raises:
-            TypeError: The controller reads nothing the guidance writes, as on a PX4 run, whose controller
-                reads no setpoint, whatever other component reads it. The message names the controller.
+            TypeError: No controller reads what a guidance writes, as on a PX4 run, whose controller
+                reads no setpoint, whatever other component reads it. The message names each controller's class.
         """
-        if self.guidance is None:
+        if not self.guidances:
             return
         written = {s.name for b in ring if b.role == "guidance" for s in b.stage.writes}
         if not written & {s.name for b in ring if b.role == "controller" for s in b.stage.reads}:
+            names = " and ".join(dict.fromkeys(type(c).__name__ for c in self.controllers))
             raise TypeError(
-                f"{self._controller_name()} reads no setpoint, so this run takes no guidance: a guidance "
+                f"{names} reads no setpoint, so this run takes no guidance: a guidance "
                 "writes the setpoint a controller reads, and PX4 flies its own missions"
             )
 
@@ -741,7 +729,7 @@ class Loop:
         """
         if not waiting:
             return
-        names = " and ".join(_instance(c) for c in waiting)
+        names = " and ".join(_label(c) for c in waiting)
         logger.info(f"Waiting for {names} to attach...")
         tick.timeout = 0.05
         polls = [b.stage for b in ring if b.stage.kind == "host" and any(b.component is c for c in waiting)]
@@ -823,7 +811,7 @@ class Loop:
                             answered = False
                             if not prerolling:  # the peer stopped answering: the run lost it
                                 count -= 1  # the lost tick didn't advance the sim
-                                owner = _instance(self._owners.get(id(st), self.controller))
+                                owner = _label(self._owners[id(st)])
                                 raise RunError(
                                     f"{owner} lost its peer: no answer in its {st.name} stage within "
                                     f"{tick.timeout}s{self._peer_report()}"
@@ -850,7 +838,7 @@ class Loop:
                 prof.mark("log")
                 prof.tick_end()
                 if prerolling:
-                    names = " and ".join(_instance(c) for c in waiting)
+                    names = " and ".join(_label(c) for c in waiting)
                     if not answered:
                         if time.monotonic() > deadline:
                             raise RunError(

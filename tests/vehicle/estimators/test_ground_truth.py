@@ -97,8 +97,8 @@ def test_each_reader_gets_the_base_bodys_true_pose_and_twist_with_no_noise_and_n
                 vehicle_usd=VehicleUsd({"usd_path": str(quad.author(tmp_path / "quad.usda"))}), cfg=cfg
             ),
             sensors=[],
-            estimator=GroundTruthEstimator(),
-            controller=controller,
+            estimators=[GroundTruthEstimator()],
+            controllers=[controller],
             max_steps=TICKS,
         )
         with Sim._from_loop(orch, guidance=guidance) as sim:

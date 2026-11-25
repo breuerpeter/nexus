@@ -554,7 +554,7 @@ def fly_recorded(
                 "fixture",
                 cfg,
                 vehicle_usd=vehicle_usd,
-                controller=controller,
+                controllers=[controller],
                 rerun=True,
                 viewer=False,
                 debug=debug,
@@ -566,7 +566,7 @@ def fly_recorded(
             for peer in started:
                 peer.stop()  # the loop never took them over, so they stop here
             raise
-        orch.estimator = GroundTruthEstimator()  # the guidance reads the vehicle's position from its estimate
+        orch.estimators.append(GroundTruthEstimator())  # the guidance reads the vehicle's position from its estimate
         guidance = TrackingGuidance(planner=StandInReference)
         with nx.Sim._from_loop(orch, guidance=guidance) as sim:
             guidance.set_mission([(1.0, 0.0, 2.0), (2.0, 0.0, 2.0)])

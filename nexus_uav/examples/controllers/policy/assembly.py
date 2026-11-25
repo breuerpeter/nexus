@@ -81,7 +81,7 @@ def build_policy_loop(
     # hash-pinned and not in cfg: the controller runs the CTBR mixer, rate loop → B⁻¹, and the rotor chain PX4
     # flies, each rotor's ESC and propeller, takes its commands.
     mixer = build_rotor_mixer_from_model(physics.model, vehicle_usd.rotors(), physics.state0.body_q.numpy())
-    commands, actuators, forces = elements(physics, vehicle_usd)
+    commands, actuators, forces, connections = elements(physics, vehicle_usd)
     # CTBR rate-loop params for the controller's mixer, the values the policy trained with. Inertia read from
     # the model so the loop is inertia-correct, exactly as training reads it. The controller owns the mixer.
     ctbr_params = CtbrParams()
@@ -124,11 +124,12 @@ def build_policy_loop(
         commands=commands,
         actuators=actuators,
         forces=forces,
+        connections=connections,  # each motor reads the ESC on its own prim
         sensors=sensors,
         # The controller builds its own obs from the estimate, the single obs source; no observation
         # sensor, no per-tick torch in the graph.
-        estimator=GroundTruthEstimator(),
-        controller=controller,
+        estimators=[GroundTruthEstimator()],
+        controllers=[controller],
         links=required,  # each RTX sensor takes the render stage at connect
         peers=started,
         logger=sink,

@@ -109,7 +109,7 @@ def build(
         physics=NewtonPhysics(model=model, cfg=cfg),
         actuators=[Actuator()],
         sensors=[],
-        controller=controller or Controller(),
+        controllers=[controller or Controller()],
         logger=Logger(model, serve=False, record_to_rrd=rrd),
         peers=list(peers),
         max_steps=max_steps,

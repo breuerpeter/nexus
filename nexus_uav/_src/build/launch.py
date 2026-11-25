@@ -3,7 +3,7 @@
 Resolves the launch against the catalog, sha-verifying every asset, wraps the vehicle Universal Scene
 Description (USD) file in a :class:`VehicleUsd`, threads the resolved scene, its USD plus start, into the
 scenario cfg, and builds the run from the vehicle's declarations. The registry maps each applied schema to its
-class, so the builder names no component and no peer: it builds the controller, the estimator and the guidance
+class, so the builder names no component and no peer: it builds each controller, estimator and guidance
 by the role their schemas state, the sensors, the command elements, the actuators and the force elements in the assembly, and each
 peer the vehicle declares, a schema whose class is a peer. What a component's class requires by name, such as
 the render stage an RTX sensor requires, it makes and starts once, by that name.
@@ -11,7 +11,8 @@ the render stage an RTX sensor requires, it makes and starts once, by that name.
 A component's schema attributes are its class's keyword arguments, and so are a peer's. What only the run
 knows reaches a peer as keywords beside them: its pin, the run's instance, the run's folder, the files the
 run reads, the vehicle's and the scene's root files by role and the scene's start, the asset cache, whether the
-run starts clean and, for a peer with a serial line, the path of each of its ends. A component whose
+run starts clean, for a peer with a serial line, the path of each of its ends and, for a peer with an input,
+each input's writers. A component whose
 class states ``needs_instance`` takes the instance too. The run claims one instance on this machine when it
 starts a declared peer, which every address its peers use counts from, and instance 0 when it starts none,
 for an autopilot started elsewhere.
@@ -23,6 +24,11 @@ the link as it owns every port: it makes one :class:`~nexus_uav._src.peers.seria
 any peer starts, hands each of the two peers the path of its end in the keyword ``serial``, the declaring peer
 by the line's name and the other by the declaring prim's name, and stops the links with the peers at the run's
 end.
+
+A peer's input, a relationship ``nexus:inputs:<signal>``, is wiring on the vehicle too. The build hands a peer
+whose prim wires one the keyword ``inputs``: each input's signal to its writers' instance names, in the order
+the relationship targets them. ``take`` later hands the peer the same names, so the peer knows its writers
+before it starts and before any of them writes.
 
 Before any peer starts, the build resolves and checks the pin of each peer it starts, through
 :mod:`nexus_uav._src.peers.pins` and the peer's own ``check_pin``, and the receipt records each started
@@ -39,7 +45,7 @@ import warp as wp
 from nexus_uav._src.assets.resolver import default_cache
 from nexus_uav._src.config import Catalog, LaunchConfig, ResolvedLaunch, Runtime, resolve
 from nexus_uav._src.core import Loop
-from nexus_uav._src.core.components import ComponentSpec, PeerSpec, resolve_declarations, run_keywords
+from nexus_uav._src.core.components import ComponentSpec, PeerSpec, instance_name, resolve_declarations, run_keywords
 from nexus_uav._src.core.errors import RunError
 from nexus_uav._src.core.registry import Registry
 from nexus_uav._src.core.run_folder import run_folder
@@ -51,7 +57,7 @@ from nexus_uav._src.usd import peer_names
 from nexus_uav._src.usd.reader import read_connections, read_serial_lines
 
 from .assembly import build_loop, build_scenario
-from .components import declared_controller, declared_estimator, declared_guidance
+from .components import SCOPE_ROLES, scope_specs
 
 
 def resolve_vehicle_usd(
@@ -129,7 +135,7 @@ def build_from_launch(
     components: Registry | None = None,
     run_dir: str | pathlib.Path | None = None,
 ) -> Loop:
-    """Resolve *launch* and build the run the vehicle declares around its one controller.
+    """Resolve *launch* and build the run the vehicle declares around its controllers.
 
     ``components`` is the registry that resolves each name the run resolves to its class: each schema the
     vehicle applies, a component's or a peer's, and the name a class requires a peer by. Its own rows answer
@@ -138,8 +144,8 @@ def build_from_launch(
     :func:`~nexus_uav._src.core.run_folder.run_folder`; ``None`` takes a new one.
 
     Raises:
-        ValueError: The vehicle declares no controller or two, two estimators or guidances, one off its
-            ``Scope``, a schema no class claims, a component schema that states no role or two, a peer that
+        ValueError: The vehicle declares no controller, a controller, an estimator or a guidance off its
+            ``Scope`` or two on one, a schema no class claims, a component schema that states no role or two, a peer that
             fails its own check of the values its schema authors, or a class requires a peer no class
             claims, or a peer's serial line targets a prim that declares no other peer, or two lines reach one
             peer from prims of one name, or a pin file beside a catalog names no peer, or a peer's pin isn't in
@@ -157,11 +163,7 @@ def build_from_launch(
     registry = components if components is not None else Registry()
     usd = resolved.vehicle_usd_path
     specs, declared = resolve_declarations(usd, registry)
-    roles = {
-        "controller": declared_controller(usd, registry),
-        "estimator": declared_estimator(usd, registry),
-        "guidance": declared_guidance(usd, registry),
-    }
+    roles = {role: scope_specs(usd, role, registry) for role in SCOPE_ROLES}
     required = _required(specs, registry)
     # Every pin file beside a catalog names a peer the install knows, one shipped, one whose schema the registry
     # maps, or one the run starts, and the pin of each peer the run starts is in its form, before any peer starts,
@@ -196,14 +198,18 @@ def build_from_launch(
     try:
         # Every serial link exists before any peer starts, so each end's path is a device when its peer opens it.
         links, ends = _serial_links(declared, read_serial_lines(usd))
+        connections = read_connections(usd)
         # The build makes each peer before any starts, so a peer that fails its own check fails the run first.
-        made = [_peer(spec.cls, spec.kwargs, peer_pins[spec.cls.name], run, spec.prim, ends) for spec in declared]
+        made = [
+            _peer(spec.cls, spec.kwargs, peer_pins[spec.cls.name], run, spec.prim, ends, connections.get(spec.prim, {}))
+            for spec in declared
+        ]
         needed = {name: _peer(cls, {}, peer_pins[cls.name], run, None, ends) for name, cls in required.items()}
         # What a class requires starts first: the render stage populates while the declared peers build and the
         # physics compiles.
         for peer in needed.values():
             _start(peer, started)
-        built = {role: _component(spec, run["instance"]) for role, spec in roles.items() if spec is not None}
+        built = {role: [_component(spec, run["instance"]) for spec in specs] for role, specs in roles.items()}
         # A declared peer starts here, before the assembly: PX4's start builds PX4 incrementally, which must
         # stay outside the sim's preroll window, GH #39, and PX4 boots while the physics compiles.
         for peer in made:
@@ -213,17 +219,21 @@ def build_from_launch(
             label,
             cfg,
             vehicle_usd=vehicle_usd,
-            controller=built["controller"],
+            controllers=built["controller"],
             instance=run["instance"],
-            estimator=built.get("estimator"),
-            guidance=built.get("guidance"),
+            estimators=built["estimator"],
+            guidances=built["guidance"],
             # The serial links close with the peers, and the run's instance stays held until the loop has stopped
             # every peer.
             peers=[*started, *links, *([claim] if claim is not None else [])],
             peer_links=needed,
             peer_inputs={spec.prim: peer for spec, peer in zip(declared, made, strict=True)},
-            connections=read_connections(usd),
-            prims={roles[role].prim: component for role, component in built.items()},
+            connections=connections,
+            prims={
+                spec.prim: component
+                for role, specs in roles.items()
+                for spec, component in zip(specs, built[role], strict=True)
+            },
             rerun=launch.output.log or launch.output.view,
             viewer=launch.output.view,
             debug=launch.output.debug,
@@ -419,25 +429,39 @@ def _start(peer, started: list) -> None:
     started.append(peer)
 
 
-def _peer(cls: type, kwargs: dict, pin, run: dict, prim: str | None, ends: dict[str, dict[str, str]]):
-    """The peer `cls` makes from its schema's attributes, `kwargs`, its checked `pin`, the run's values and, when
-    `prim` has an end of a serial line, the keyword ``serial``, its ends by name.
+def _peer(
+    cls: type,
+    kwargs: dict,
+    pin,
+    run: dict,
+    prim: str | None,
+    ends: dict[str, dict[str, str]],
+    wired: dict[str, list[str]] | None = None,
+):
+    """The peer `cls` makes from its schema's attributes, `kwargs`, its checked `pin`, the run's values, when
+    `prim` has an end of a serial line, the keyword ``serial``, its ends by name, and when `prim` wires inputs,
+    `wired` by signal, the keyword ``inputs``, each input's writers by instance name in the order its
+    relationship targets them.
 
     Raises:
         ValueError: The peer fails its own check of its values; the message names its prim.
     """
     serial = {"serial": ends[prim]} if prim in ends else {}
+    names = {signal: tuple(instance_name(target) for target in targets) for signal, targets in (wired or {}).items()}
+    inputs = {"inputs": names} if names else {}
     try:
-        return cls(**kwargs, pin=pin, **run, **serial)
+        return cls(**kwargs, pin=pin, **run, **serial, **inputs)
     except ValueError as exc:
         raise ValueError(f"{prim}: {exc}" if prim else str(exc)) from exc
 
 
 def _component(spec: ComponentSpec, run_instance: int):
     """The component `spec` declares: its class with its schema's attributes, and the run's instance when the
-    class needs it.
+    class needs it, named after its prim.
     """
-    return spec.cls(**spec.kwargs, **run_keywords(spec.cls, run_instance))
+    component = spec.cls(**spec.kwargs, **run_keywords(spec.cls, run_instance))
+    component.name = instance_name(spec.prim)
+    return component
 
 
 def _declaration(spec: ComponentSpec | PeerSpec) -> dict:

@@ -20,9 +20,7 @@ TICKS = 5
 
 
 class _Named(sv.Controller):
-    """The stand-in controller, named `stand_in`, so its rows land under `vehicle/controllers/stand_in`."""
-
-    name = "stand_in"
+    """The stand-in controller on the scope `Controller`, so its rows land under `vehicle/controllers/controller`."""
 
 
 def _build(tmp_path):
@@ -36,7 +34,7 @@ def test_a_script_reads_any_history_by_indexing_the_run_with_its_path(tmp_path):
     path below the run's root.
 
     Given a recorded run on the fixture vehicle, when it ends, then `sim["vehicle/sensors/imu/imu"]` is the IMU's
-    history, `sim["vehicle/controllers/stand_in/controls"]` the controller's and `sim["vehicle/body/body"]` the base
+    history, `sim["vehicle/controllers/controller/controls"]` the controller's and `sim["vehicle/body/body"]` the base
     body's, each read by its newest row and by all its rows: the IMU's newest row is the last tick's, and the controls and
     the body each hold the start's row and one row per tick.
     """
@@ -45,7 +43,7 @@ def test_a_script_reads_any_history_by_indexing_the_run_with_its_path(tmp_path):
             sim.step()
         imu, controls, body = (
             sim[path]
-            for path in ("vehicle/sensors/imu/imu", "vehicle/controllers/stand_in/controls", "vehicle/body/body")
+            for path in ("vehicle/sensors/imu/imu", "vehicle/controllers/controller/controls", "vehicle/body/body")
         )
         read = None not in (imu, controls, body) and (
             float(imu.history()[-1]["t"]),
