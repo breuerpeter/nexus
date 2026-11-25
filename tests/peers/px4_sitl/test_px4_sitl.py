@@ -233,8 +233,8 @@ def test_start_mounts_each_serial_lines_device_and_starts_a_mavlink_instance_on_
 
 
 def test_start_starts_each_serial_line_with_forwarding(daemon, tree, tmp_path, pty):
-    """The PX4 peer starts each serial line with forwarding, so a ground station on the line sees each device
-    behind PX4.
+    """The PX4 peer starts each serial line with forwarding, so a ground station on the line gets the messages of
+    each device behind PX4.
 
     Given a peer with the serial line `Companion`, when it starts, then the run's `serial.post` holds
     `mavlink start -d /dev/serial/Companion -b 3000000 -m onboard -x -f`.
