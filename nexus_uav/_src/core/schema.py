@@ -10,6 +10,7 @@ component boundaries on the host.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import cache
 from typing import Any
 
 import numpy as np
@@ -119,6 +120,20 @@ class GpsSample:
     """The horizontal speed, m/s."""
     fix_type: wp.int32
     """The fix, as MAVLink's ``GPS_FIX_TYPE`` numbers it: 3 is a 3D fix."""
+
+
+@cache
+def joint_struct(nq: int, nqd: int) -> type:
+    """The Warp struct of a joint with ``nq`` coordinates and ``nqd`` velocities, what the plant writes per joint
+    as the signal ``joints/<label>`` of shape ``(1,)``: ``q`` and ``qd`` as fixed vectors of float32. One type
+    per width, so two joints of one width share it and its kernel, and a reader of a revolute joint declares
+    ``joint_struct(1, 1)``.
+    """
+    fields = {
+        "q": wp.types.vector(length=nq, dtype=wp.float32),
+        "qd": wp.types.vector(length=nqd, dtype=wp.float32),
+    }
+    return wp.struct(type(f"Joint_{nq}_{nqd}", (), {"__annotations__": fields, "__module__": __name__}))
 
 
 @dataclass(slots=True)

@@ -513,6 +513,7 @@ class Loop:
                 state=state,
                 t=self.clock.now(),
                 dt=self.clock.dt / self.physics_substeps,
+                period=self.clock.dt,
                 timeout=self.exchange_timeout,  # the start's host stages wait on a peer no longer than a tick's
                 base=getattr(self.physics, "base_index", 0),  # a physics that finds none has body 0 as base
                 control=getattr(self.physics, "control", None),  # the control inputs a command element writes
