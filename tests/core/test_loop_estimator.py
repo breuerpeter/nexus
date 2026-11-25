@@ -149,8 +149,8 @@ def test_the_controller_reads_an_estimate_made_from_that_ticks_sensor_values(dev
             clock=_Clock(),
             physics=_Physics(),
             sensors=[_Counter()],
-            estimator=_CountingEstimator(),
-            controller=controller,
+            estimators=[_CountingEstimator()],
+            controllers=[controller],
         )
         seen = []
         for _ in range(3):
@@ -184,7 +184,7 @@ def test_a_sensor_that_writes_the_estimate_does_not_stand_in_for_the_estimator()
     names the controller and the estimator.
     """
     sensor = _EstimateSensor()
-    orch = Loop(clock=_Clock(), physics=_Physics(), sensors=[sensor], controller=_EstimateReader())
+    orch = Loop(clock=_Clock(), physics=_Physics(), sensors=[sensor], controllers=[_EstimateReader()])
     with pytest.raises(ValueError) as e:
         orch.step()
     orch.close()

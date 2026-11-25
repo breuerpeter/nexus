@@ -142,7 +142,7 @@ def _build(tmp_path, body: str, *, device: str = "cpu", controller=None, estimat
     """
     registry = sv.components() if controller is None else sv.components(NexusPx4API_1=controller)
     loop = sv.build(sv.vehicle(tmp_path, body), device=device, components=registry, fall_from=fall_from)
-    loop.estimator = GroundTruthEstimator() if estimator is None else estimator
+    loop.estimators.append(GroundTruthEstimator() if estimator is None else estimator)
     return loop
 
 
@@ -261,7 +261,7 @@ def test_a_recorded_rows_t_is_the_sim_time_of_the_tick_that_wrote_it_from_the_st
     loop = _build(tmp_path, IMU, controller=_Stamping)
     with _flown(loop, 25) as sim:
         rows = _column(_structured(sim[f"vehicle/body/{sim.base_body}"].history()), "t").tolist()
-    stamps = loop.controller.stamps
+    stamps = loop.controllers[0].stamps
 
     assert rows == stamps == pytest.approx([k * DT for k in range(26)])
 
@@ -307,7 +307,7 @@ def test_a_historys_key_is_its_writers_path_then_the_signals_name_and_the_clock_
         [
             *currents,
             *voltages,
-            "vehicle/controllers/standin/controls",
+            "vehicle/controllers/controller/controls",
             "vehicle/estimators/truth/estimate",
             "vehicle/estimators/truth/wind",
             "vehicle/sensors/imu/imu",

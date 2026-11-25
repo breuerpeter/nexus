@@ -54,11 +54,12 @@ _NO_BARO = [(math.nan, 1013.25, 0.0, 25.0)]
 _NO_GPS = [(math.nan, 0.0, 0.0, 0.0, (0.0, 0.0, 0.0), 0.0, 0)]
 
 # The bits of HIL_SENSOR's fields_updated that each sensor's sample fills, as MAVLink's HIL_SENSOR_UPDATED_FLAGS
-# number them: the IMU's accelerometer and gyroscope, the magnetometer, and the barometer's absolute and
-# differential pressure, pressure altitude and temperature. With all four new, the mask is 0x1FFF.
+# number them: the IMU's accelerometer and gyroscope, the magnetometer, and the barometer's absolute pressure,
+# pressure altitude and temperature. No sensor sets bit 10, differential pressure: PX4 takes it for an airspeed
+# sensor's sample, and no vehicle has one. With all three new, the mask is 0x1BFF.
 _IMU_FIELDS = 0x003F
 _MAG_FIELDS = 0x01C0
-_BARO_FIELDS = 0x1E00
+_BARO_FIELDS = 0x1A00
 
 # The accelerations PX4's SITL can hold, m/s^2. It stores each accel sample of the first accelerometer as an
 # int16 count of g/2048 in standard gravity, src/modules/simulation/simulator_mavlink/SimulatorMavlink.cpp:207-224,

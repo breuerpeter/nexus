@@ -194,3 +194,51 @@ def test_a_component_names_only_its_own_row_and_the_row_lands_under_the_componen
     strips = sorted({entity for entity, _, _ in rrd_rows(recorded_flight) if entity.endswith("/horizon")})
 
     assert strips == ["/sim/vehicle/controllers/standin/horizon"]
+
+
+def test_a_guidances_own_rows_sit_under_its_instance_so_two_guidances_record_apart(tmp_path, rrd_rows):
+    """A guidance's own rows sit under its instance, so two guidances record apart.
+
+    Given a recorded flight with a `MissionGuidance` named `survey` and a second named `backup`, when the flight
+    ends, then the `.rrd` holds `/sim/guidance/survey/waypoints/wp_0` and `/sim/guidance/backup/waypoints/wp_0`,
+    and no row at `/sim/guidance/waypoints`.
+    """
+    import warp as wp
+
+    from nexus_uav._src.core.interfaces import Component, Stage
+    from nexus_uav._src.core.signals import Signal
+    from nexus_uav._src.guidance import MissionGuidance
+    from nexus_uav._src.vehicle.estimators import GroundTruthEstimator
+    from tests.recording import _flight
+
+    class GoalReader(Component):
+        """A controller that commands nothing and reads a position goal as its setpoint."""
+
+        name = "standin"
+
+        def __init__(self):
+            self.setpoint = Signal("setpoint", wp.vec3, shape=(1,))
+            self.controls = Signal("controls", wp.float32, shape=(1, 4))
+
+        def stages(self):
+            return [Stage("act", "host", lambda tick: True, reads=(self.setpoint,), writes=(self.controls,))]
+
+    controller = GoalReader()
+    guidances = []
+    for name in ("survey", "backup"):
+        guidance = MissionGuidance()
+        guidance.name = name
+        guidance.set_mission([(1.0, 0.0, 5.0)])
+        guidances.append(guidance)
+    try:
+        with wp.ScopedDevice("cpu"):
+            loop, rrd = _flight.build(tmp_path, staging=None, max_steps=3, controller=controller)
+            loop.estimators.append(GroundTruthEstimator())  # each guidance reads the vehicle's position from it
+            loop.guidances.extend(guidances)
+            loop.connections.append((controller, "setpoint", guidances[0], "setpoint"))
+            loop.run()
+        waypoints = sorted({e for e, _, _ in rrd_rows(rrd) if e.startswith("/sim/guidance/") and "waypoints" in e})
+    except Exception as exc:
+        waypoints = exc
+
+    assert waypoints == ["/sim/guidance/backup/waypoints/wp_0", "/sim/guidance/survey/waypoints/wp_0"]

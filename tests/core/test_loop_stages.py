@@ -251,7 +251,7 @@ def _orch(controller, *, sensors=(), physics=None, **kw):
         physics=physics or _Physics(),
         actuators=[_Actuator()],
         sensors=[_GraphSensor(), *sensors],
-        controller=controller,
+        controllers=[controller],
         **kw,
     )
 
@@ -488,7 +488,7 @@ def test_a_tick_runs_clear_the_command_elements_the_force_elements_and_step_once
             commands=[_CommandElement(notes)],
             forces=[_ForceElement(notes)],
             sensors=[_GraphSensor()],
-            controller=_DeviceController(),
+            controllers=[_DeviceController()],
             physics_substeps=2,
         )
         orch.step()
@@ -508,7 +508,7 @@ def test_a_command_element_or_a_force_element_that_states_no_stages_fails_the_bu
             clock=_Clock(),
             physics=_Physics(),
             sensors=[_GraphSensor()],
-            controller=_DeviceController(),
+            controllers=[_DeviceController()],
             **{role: [_Stageless()]},
         ).step()
 

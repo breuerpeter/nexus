@@ -97,7 +97,7 @@ def test_a_peer_that_dials_in_late_gets_its_first_stamp_near_zero():
         physics=_Physics(),
         actuators=[_Actuator()],
         sensors=[],
-        controller=controller,
+        controllers=[controller],
     )
     orch.step()
     assert controller.stamps[0] < 0.010

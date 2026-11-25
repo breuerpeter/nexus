@@ -32,6 +32,7 @@ No flight logic lives here: the flight is always a script against ``nexus_uav.px
 from __future__ import annotations
 
 import os
+import re
 import shutil
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -221,11 +222,12 @@ class Px4Sitl(ContainerPeer):
         instance_dir = self.tree / "build" / "px4_sitl_default" / "rootfs" / str(self.instance)
         instance_dir.mkdir(parents=True, exist_ok=True)
         kwargs["volumes"][str(work)] = {"bind": str(instance_dir), "mode": "rw"}
-        # PX4 writes its ULog to ./log there, as <date>/<time>.ulg. The peer's folder mounts there in turn, so
-        # it holds this run's ULog alone, beside the console. This process makes each mount point, so docker
-        # makes none as root.
-        (work / "log").mkdir(exist_ok=True)
-        kwargs["volumes"][str(self.dir)] = {"bind": str(instance_dir / "log"), "mode": "rw"}
+        # PX4 writes its ULog to the log folder of its storage root there, as <date>/<time>.ulg. The peer's
+        # folder mounts there in turn, so it holds this run's ULog alone, beside the console. This process makes
+        # each mount point, so docker makes none as root.
+        log = Path(_storage_root(self.tree)) / "log"
+        (work / log).mkdir(parents=True, exist_ok=True)
+        kwargs["volumes"][str(self.dir)] = {"bind": str(instance_dir / log), "mode": "rw"}
         if self.params:
             # PX4's own boot hook sets each parameter before any module starts. A tree whose startup folder
             # holds `px4-rc.params` sources that file, so a file of this run's mounts over it. Any other tree
@@ -390,6 +392,19 @@ def _params(authored: Sequence[str]) -> dict[str, str]:
             raise ValueError(f"NexusPx4SitlAPI authors the nexus:params entry {entry!r}, which isn't name=value")
         params[name.strip()] = value.strip()
     return params
+
+
+def _storage_root(tree: Path) -> str:
+    """PX4's storage root inside its working folder, where it keeps its logs and its parameters: the
+    ``CONFIG_BOARD_ROOT_PATH`` the built tree's board states, ``.`` or ``./fs`` by the PX4 commit; ``.`` when the
+    tree states none.
+    """
+    try:
+        board = (tree / "build" / "px4_sitl_default" / "boardconfig").read_text()
+    except FileNotFoundError:
+        return "."
+    stated = re.search(r'^CONFIG_BOARD_ROOT_PATH="(.*)"$', board, re.MULTILINE)
+    return stated.group(1) if stated else "."
 
 
 def _airframe_file(tree: Path, airframe: str) -> Path:

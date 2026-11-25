@@ -127,7 +127,11 @@ component from the schema the vehicle's USD applies.
 ### Role
 
 What a component does in the tick. The role fixes where the component's stages run in the ring and
-who declares it. The contract is the same for every role. The vehicle's USD declares every role. The
+who declares it. The contract is the same for every role. The vehicle's USD declares every role. A
+vehicle declares one or more components of a role, and at least one controller: a drone that carries a
+flight controller and a gimbal controller declares two. The components of a role run in the order of
+their prims. Where two components write one signal, as two controllers each write `controls`, each
+reader names its writer with a connection on its prim. The
 schema of a declared component states its role: it includes a role schema, such as
 `NexusSensorRoleAPI`, as a built-in. The builder places the component by that role, never by the
 methods of its class. The [schema reference](../reference/schemas.md) lists the role of each schema.
@@ -137,7 +141,7 @@ methods of its class. The [schema reference](../reference/schemas.md) lists the 
 | Sensor | samples the plant and writes its sample, a signal of its own type stamped with its sim time: an Inertial Measurement Unit (IMU), a Global Positioning System (GPS) receiver, a camera |
 | Estimator | turns the sensors' values into the estimate, the vehicle's pose and twist that the guidance and the controller read in place of the physics state. The one that ships, `GroundTruthEstimator`, hands on the true pose and twist the plant writes for the base body, or for the body a connection on its prim names |
 | Guidance | turns a mission into the setpoint a controller tracks |
-| Controller | turns the estimate, or the sensors' samples, into the controls, one command per actuator |
+| Controller | turns the estimate, or the sensors' samples, into its controls, one command per actuator it drives |
 | Command element | turns the controls into Newton's control inputs, such as the rotors' speed targets |
 | Force element | adds body wrenches to the shared `body_f` buffer from the current state, such as the propellers' thrust. It adds and never assigns, so two on one body both act |
 
@@ -160,12 +164,14 @@ Recorder, and the Logger are: the framework's own, configured by settings, never
 
 ### Actuator
 
-A [role](#role): the component that turns a signal into torque on a joint, a rotor's motor. Its stage
+A [role](#role): the component that turns a signal into torque on a joint. Its stage
 runs each substep after the command elements and before the force elements, the direction the hardware
 runs. It adds its torque into the joint efforts, which [physics](#physics) zeroes when the substep
-starts. The shipped one builds Newton's actuator in code from the constants of its own schema. A nexus actuator is
-the one way to drive a joint: the build fails a `NewtonActuator` prim. The controls carry one command
-per actuator.
+starts. Two ship. A rotor's motor turns its ESC's voltage into torque, and builds Newton's actuator in
+code from the constants of its own schema. A torque motor sits on the prim of a joint that a controller
+of its own moves. It turns one command of the controls, a current command, into torque in a kernel of
+its own. A nexus actuator is the one way to drive a joint: the build fails a `NewtonActuator` prim. The
+controls carry one command per actuator.
 
 ### Peer
 

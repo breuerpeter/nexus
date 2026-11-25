@@ -117,7 +117,7 @@ def test_the_loop_runs_a_tick_on_contracts_that_take_no_env():
         physics=_Physics(),
         actuators=[_Actuator()],
         sensors=[_Sensor()],
-        controller=controller,
+        controllers=[controller],
         max_steps=2,
     )
 
