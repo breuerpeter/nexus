@@ -253,6 +253,24 @@ def test_yaw_holds_against_north_or_the_vehicles_heading_and_roll_and_pitch_agai
     np.testing.assert_allclose(controls, expected, atol=ATOL)
 
 
+def test_a_camera_that_points_straight_down_follows_the_vehicles_heading_through_the_pan_motor():
+    """A camera that points straight down still follows the vehicle's heading: the target is one quaternion, so
+    the law splits no attitude into angles there.
+
+    Given a target of straight down with yaw unlocked, a camera that points straight down, and a vehicle turned
+    0.2 rad in heading under it, so the pan joint sits at −0.2 rad and the tilt joint at −90°, when the law steps
+    once, then the pan motor, whose axis is the camera's x axis there, gets the rate gain times the attitude gain
+    times `2·sin(0.1)`, and the others get 0.
+    """
+    down = _quat(Y, -math.pi / 2.0)
+    law = _law()
+    law.write([down], [(0.0, 0.0, 0.0)], [FOLLOWS])
+
+    controls = _step(law, attitude=[down], angles=[[-0.2, 0.0, -math.pi / 2.0]])[-1]
+
+    np.testing.assert_allclose(controls, [[RATE_GAIN[PAN] * ATTITUDE_GAIN * 2.0 * math.sin(0.1), 0.0, 0.0]], atol=ATOL)
+
+
 def test_the_setpoints_rate_moves_the_target_each_tick_and_adds_to_the_rate_command():
     """The setpoint's rate moves the target each tick and adds to the rate command.
 
