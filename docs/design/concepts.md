@@ -100,7 +100,7 @@ A named, typed value that one component writes and others read on the tick, a `S
 stage declares the signals it reads and writes. Before any stage runs, the loop wires each input
 to an output of its name and hands the writer and each reader one buffer. Where more than one
 component writes a signal, a reader takes the one a [connection](#connection) names, and a list input
-takes every writer's. A device stage reads a list input too, one device buffer per writer.
+takes every writer's.
 [Execution](execution.md#signals) says where a signal's buffer lives and what the loop checks.
 
 ### Connection
@@ -169,8 +169,8 @@ runs each substep after the command elements and before the force elements, the 
 runs. It adds its torque into the joint efforts, which [physics](#physics) zeroes when the substep
 starts. Two ship. A rotor's motor turns its ESC's voltage into torque, and builds Newton's actuator in
 code from the constants of its own schema. A torque motor sits on the prim of a joint that a controller
-of its own moves, as the gimbal controller moves the three joints of a camera gimbal. It turns one command
-of the controls, a current command, into torque in a kernel of its own. A nexus actuator is the one way to drive a joint: the build fails a `NewtonActuator` prim. The
+of its own moves. It turns one command of the controls, a current command, into torque in a kernel of
+its own. A nexus actuator is the one way to drive a joint: the build fails a `NewtonActuator` prim. The
 controls carry one command per actuator.
 
 ### Peer

@@ -13,16 +13,14 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
   command, the `nexus:` schema attributes and the logger. Prose writes `nexus` in lowercase and
   starts no sentence with it. `docs/design/conventions.md` states the rule, and the `Project` Vale
   style in `.vale/styles/Project/` checks the prose.
-- **PX4 is the one first-class flight controller**, living in `nexus_uav/_src/`. Every other flight controller,
+- **PX4 is the one first-class controller**, living in `nexus_uav/_src/`. Every other controller,
   `pid`, `policy`, `sampling_mpc`, and `acados_nmpc`, is a self-contained, **zero-arg** example
   under `nexus_uav/examples/controllers/<name>/`. Shared example machinery lives in
   `nexus_uav/examples/_lib/`. It ships in the wheel, and `nexus-rl` imports from it. `nexus-rl`
   imports nothing from `nexus_uav._src`, a ruff banned-import rule in `pyproject.toml`. Core must
   never import `nexus_uav.examples`, an import-linter contract in `.importlinter`. Run any
   example with `uv run -m nexus_uav.examples <name>`. Read `nexus_uav/examples/CLAUDE.md`
-  before adding or changing an example. A gimbal controller ships beside PX4's,
-  `nexus_uav/_src/vehicle/controllers/gimbal.py`: it flies nothing, and holds a camera's attitude through
-  the torque motors of three joints.
+  before adding or changing an example.
 - **No generic part names PX4.** PX4's folders are `nexus_uav/_src/peers/px4_sitl/` and
   `nexus_uav/_src/vehicle/controllers/px4/`. Nothing else under `nexus_uav/_src/` imports them or
   `nexus_uav.px4`, an import-linter contract in `.importlinter`. Its `ignore_imports` lists the one
@@ -41,7 +39,7 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
   registers. Read `nexus_uav/_src/usd/CLAUDE.md` before adding or changing a schema.
 - **One contract serves every role.** A component subclasses `Component`, states its stages and
   overrides the lifecycle members it has: `connect`, `close`, `set_logger`, `attached`, `requires`,
-  `needs_instance`, `needs_model`, `ports`, `artifacts` and `name`. The loop, the builder and `Sim` read those from
+  `needs_instance`, `ports`, `artifacts` and `name`. The loop, the builder and `Sim` read those from
   every component and find none by name. A test stand-in subclasses `Component` too. A vehicle declares
   one or more components of each role, and the builder names each after its prim. A controller
   writes its own `controls` signal, as wide as its actuators, and a vehicle with two controllers authors
