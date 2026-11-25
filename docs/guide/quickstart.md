@@ -48,8 +48,8 @@ no second terminal. It needs Docker and nothing else: the first run fetches the 
 commit the framework pins into `~/.cache/nexus/px4_sitl/`, in the [cache root](running.md#the-cache-root), and builds it there, which takes minutes once,
 and builds the small `px4-sitl` image. Set `NEXUS_PX4_SITL_REF` to the path of a PX4 checkout of your
 own to fly it instead.
-Pick a different vehicle with `--vehicle`. PX4 is the first-class controller, and the other
-controllers are self-contained examples.
+Pick a different vehicle with `--vehicle`. PX4 is the first-class flight controller, and the other
+flight controllers are self-contained examples.
 
 ## Run an example
 

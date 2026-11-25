@@ -203,6 +203,28 @@ rotor's motor's does. No command element sits before it, and it builds no Newton
 the `current` it draws, as a rotor's motor does. Its `controls` are the vehicle's one controller's
 unless its connection, `nexus:inputs:controls`, names another.
 
+## The gimbal controller
+
+A camera gimbal is three revolute joints with a torque motor on each, and a
+[controller](concepts.md#role) of its own, which the `NexusGimbalControllerAPI` schema declares on a
+`Scope` under the vehicle's root prim. It's a second controller beside the one that flies the vehicle.
+Its connection `nexus:inputs:camera` names the camera's rigid body, and `nexus:inputs:joints` names the
+three joints in order from the vehicle to the camera. It reads what a real gimbal controller measures,
+the camera's rate, its attitude and the three joint angles, which the plant writes today. Entry `i` of
+its `controls` is the current command of joint `i`, so each joint's motor reads that entry.
+
+The law is a cascade. The attitude error goes through `nexus:attitudeGain` to a rate command in the
+camera's frame, which the law cuts to `nexus:rateLimit` as a vector. The rate error goes onto each
+joint's axis, one dot product per joint, which is the Jacobian transpose of the chain. A gain and an
+integral per motor, `nexus:rateGain` and `nexus:integralGain`, then give each command, from −1 to 1.
+The law reads each joint's axis from the model, so it serves any chain of three revolute joints. It
+runs as one kernel inside the captured graph, one thread per vehicle, and adds no segment to the tick.
+
+The setpoint is a target attitude, a rate, and a yaw lock bit. Roll and pitch always hold against the
+horizon. Yaw holds against North with the lock, and follows the vehicle's heading without it. A written
+attitude replaces the target, and the rate moves it each tick. Until something writes a setpoint, the camera
+stays level and follows the vehicle's heading.
+
 ## Observability and recording
 
 Observability is cross-cutting, split into a **write** side and a **read** side:
