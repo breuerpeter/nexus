@@ -30,11 +30,12 @@ class GimbalLaw:
         """Write each vehicle's setpoint, once: an event, not a level the law reads again.
 
         Args:
-            attitude: ``(vehicles, 4)`` the attitude that replaces the target, a quaternion ``(x, y, z, w)``. Each
-                locked axis's angle is against the horizon or North, and each unlocked one's against the vehicle.
-                NaN leaves the target where the rate has taken it.
-            rate: ``(vehicles, 3)`` the roll, pitch and yaw rate that moves the target each tick [rad/s].
-            locked: ``(vehicles, 3)`` whether roll, pitch and yaw hold against the horizon or North, not the vehicle.
+            attitude: ``(vehicles, 4)`` the attitude that replaces the target, a quaternion ``(x, y, z, w)``. Its
+                heading is against North with the yaw lock, and against the vehicle's heading without it. NaN
+                leaves the target where the rate has taken it.
+            rate: ``(vehicles, 3)`` the rate that moves the target each tick [rad/s]: its z part turns the target
+                about the vertical, and its x and y parts about the camera's own axes.
+            locked: ``(vehicles,)`` the yaw lock bit: whether yaw holds against North, not the vehicle's heading.
         """
 
     def step(self, rate, attitude, angles, dt, controls) -> None:
@@ -83,7 +84,7 @@ class GimbalController(Component):
 
     def write(self, attitude, rate, locked) -> None:
         """Write the setpoint, once, as :meth:`GimbalLaw.write` takes it for one vehicle: the attitude
-        ``(x, y, z, w)``, NaN to keep the target, the roll, pitch and yaw rate [rad/s], and each axis's lock bit.
+        ``(x, y, z, w)``, NaN to keep the target, the rate [rad/s], and the yaw lock bit.
         """
 
 

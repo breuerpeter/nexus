@@ -158,7 +158,7 @@ def test_the_camera_turns_to_a_written_attitude_and_a_setpoint_written_during_a_
     `gpu`, on a CUDA device, where the loop captures the graph before the write.
     """
     half = math.radians(-30.0) / 2.0  # a pitch of −30° turns the view down
-    setpoint = ([(0.0, math.sin(half), 0.0, math.cos(half))], [(0.0, 0.0, 0.0)], [(True, True, False)])
+    setpoint = ([(0.0, math.sin(half), 0.0, math.cos(half))], [(0.0, 0.0, 0.0)], [False])
 
     flown = _fly(tmp_path, FULL, 150, device=device, write=(25, setpoint))
 

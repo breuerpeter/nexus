@@ -21,13 +21,13 @@ pytestmark = pytest.mark.usefixtures("warp_cpu")
 X, Y, Z = (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)
 SQUARE = (Z, X, Y)  # a pan, a roll and a tilt joint, from the vehicle to the camera
 PAN, ROLL, TILT = 0, 1, 2  # each joint's place in the square chain, and its entry of the controls
-# Each axis's lock bit, the joint of the square chain that turns about it, and its camera axis.
-AXES = {"roll": (0, ROLL, X), "pitch": (1, TILT, Y), "yaw": (2, PAN, Z)}
+# Each camera axis and the joint of the square chain that turns about it.
+AXES = {"roll": (ROLL, X), "pitch": (TILT, Y), "yaw": (PAN, Z)}
 ATTITUDE_GAIN = 5.0  # 1/s
 RATE_GAIN = (0.5, 0.4, 0.2)  # the pan, roll and tilt motor's, s/rad
 DT = 0.004  # s
 LEVEL = (0.0, 0.0, 0.0, 1.0)  # a level camera that faces North
-ALL = (True, True, True)  # every axis locked
+LOCKED, FOLLOWS = True, False  # the yaw lock bit: yaw against North, or against the vehicle's heading
 ATOL = 1e-5  # the kernels compute in float32
 
 
@@ -115,14 +115,14 @@ def test_the_attitude_error_taken_the_short_way_round_commands_each_motor_in_pro
     """The attitude error, taken the short way round, commands each motor in proportion, for many vehicles in one
     step.
 
-    Given two vehicles with square axes at zero joint angles, every axis locked, no rate, no integral gain, a
+    Given two vehicles with square axes at zero joint angles, yaw locked, no rate, no integral gain, a
     target 0.1 rad about one camera axis on the first and 350° about it on the second, when the law steps once,
     then the motor on that axis gets the rate gain times the attitude gain times `2·sin(0.05)` on the first, and
     on the second the turn of −10°, `2·sin(−5°)`, and the others get 0. Once per camera axis.
     """
-    _, joint, about = AXES[axis]
+    joint, about = AXES[axis]
     law = _law(2)
-    law.write([_quat(about, 0.1), _quat(about, math.radians(350.0))], [(0.0, 0.0, 0.0)] * 2, [ALL] * 2)
+    law.write([_quat(about, 0.1), _quat(about, math.radians(350.0))], [(0.0, 0.0, 0.0)] * 2, [LOCKED] * 2)
 
     controls = _step(law, 2)[-1]
 
@@ -141,7 +141,7 @@ def test_a_rate_command_above_the_limit_is_cut_to_the_limit_as_a_vector():
     limit, and the pan motor's is 0.
     """
     law = _law(rate_limit=2.0)
-    law.write([_quat((0.6, 0.8, 0.0), 1.0)], [(0.0, 0.0, 0.0)], [ALL])
+    law.write([_quat((0.6, 0.8, 0.0), 1.0)], [(0.0, 0.0, 0.0)], [LOCKED])
 
     controls = _step(law)[-1]
 
@@ -183,7 +183,7 @@ def test_the_rate_error_reaches_each_motor_as_its_joints_axis_dotted_with_the_er
         rate_gain=RATE_GAIN,
         integral_gain=(0.0, 0.0, 0.0),
     )
-    law.write([LEVEL] * 2, [(0.0, 0.0, 0.0)] * 2, [ALL] * 2)
+    law.write([LEVEL] * 2, [(0.0, 0.0, 0.0)] * 2, [LOCKED] * 2)
 
     controls = _step(law, 2, rate=[tuple(-error)] * 2, angles=angles)[-1]
 
@@ -232,38 +232,36 @@ def test_a_motors_command_stays_within_one_and_so_does_its_integral():
     assert (bool(np.all(held == 1.0)), float(free), float(back)) == (True, 1.0, pytest.approx(0.592, abs=ATOL))
 
 
-@pytest.mark.parametrize("axis", ["roll", "pitch", "yaw"])
-def test_a_locked_axis_holds_against_the_horizon_or_north_and_an_unlocked_one_against_the_vehicle(axis):
-    """A locked axis holds its target against the horizon or North, and an unlocked axis holds it against the
-    vehicle's angle on that axis.
+def test_yaw_holds_against_north_or_the_vehicles_heading_and_roll_and_pitch_against_the_horizon():
+    """With yaw locked the camera holds its heading against North, with yaw unlocked against the vehicle's heading,
+    and roll and pitch hold against the horizon either way.
 
-    Given a level camera that faces North with no rate and a target of 0, over a vehicle turned 0.2 rad about one
-    axis, on two vehicles, the first with that axis unlocked and the second with it locked, when the law steps
-    once, then on the first that axis's motor gets the rate gain times the attitude gain times `2·sin(0.1)`,
-    toward the vehicle's angle, and the others get 0, and on the second every motor gets 0. Once per axis, since
-    each axis reads a different angle of the vehicle.
+    Given four level cameras that face North with no rate and a target of 0, the first two over a vehicle turned
+    0.2 rad in heading, with yaw unlocked and locked, the last two over a vehicle rolled and pitched 0.2 rad, with
+    yaw unlocked, when the law steps once, then on the first the pan motor gets the rate gain times the attitude
+    gain times `2·sin(0.1)`, toward the vehicle's heading, and the others get 0, and on the other three every
+    motor gets 0.
     """
-    bit, joint, _ = AXES[axis]
-    unlocked = tuple(i != bit for i in range(3))
-    law = _law(2)
-    law.write([LEVEL] * 2, [(0.0, 0.0, 0.0)] * 2, [unlocked, ALL])
+    law = _law(4)
+    law.write([LEVEL] * 4, [(0.0, 0.0, 0.0)] * 4, [FOLLOWS, LOCKED, FOLLOWS, FOLLOWS])
+    angles = [_turned(PAN, 0.2), _turned(PAN, 0.2), _turned(ROLL, 0.2), _turned(TILT, 0.2)]
 
-    controls = _step(law, 2, angles=[_turned(joint, 0.2)] * 2)[-1]
+    controls = _step(law, 4, angles=angles)[-1]
 
-    expected = np.zeros((2, 3))
-    expected[0, joint] = RATE_GAIN[joint] * ATTITUDE_GAIN * 2.0 * math.sin(0.1)
+    expected = np.zeros((4, 3))
+    expected[0, PAN] = RATE_GAIN[PAN] * ATTITUDE_GAIN * 2.0 * math.sin(0.1)
     np.testing.assert_allclose(controls, expected, atol=ATOL)
 
 
 def test_the_setpoints_rate_moves_the_target_each_tick_and_adds_to_the_rate_command():
     """The setpoint's rate moves the target each tick and adds to the rate command.
 
-    Given a setpoint of 0.5 rad/s about pitch, a locked axis, with a NaN attitude, no measured rate, a 4 ms tick
-    and the camera held at its start, when the law steps 25 times, then the tilt motor gets the rate gain times
+    Given a setpoint of 0.5 rad/s about pitch with a NaN attitude, no measured rate, a 4 ms tick and the camera
+    held at its start, when the law steps 25 times, then the tilt motor gets the rate gain times
     the sum of 0.5 and the attitude gain times `2·sin(0.025)`, the target 0.05 rad on, and the others get 0.
     """
     law = _law()
-    law.write([(math.nan,) * 4], [(0.0, 0.5, 0.0)], [ALL])
+    law.write([(math.nan,) * 4], [(0.0, 0.5, 0.0)], [LOCKED])
 
     controls = _step(law, steps=25)[-1]
 
@@ -282,12 +280,12 @@ def test_a_written_attitude_replaces_the_target_and_a_nan_attitude_leaves_it():
     of 0.5 and the attitude gain times `2·sin(0.025)`.
     """
     law = _law()
-    law.write([(math.nan,) * 4], [(0.0, 0.5, 0.0)], [ALL])
+    law.write([(math.nan,) * 4], [(0.0, 0.5, 0.0)], [LOCKED])
     _step(law, steps=25)
 
-    law.write([(math.nan,) * 4], [(0.0, 0.0, 0.0)], [ALL])
+    law.write([(math.nan,) * 4], [(0.0, 0.0, 0.0)], [LOCKED])
     kept = _step(law)[-1, 0, TILT]
-    law.write([LEVEL], [(0.0, 0.5, 0.0)], [ALL])
+    law.write([LEVEL], [(0.0, 0.5, 0.0)], [LOCKED])
     replaced = _step(law, steps=25)[-1, 0, TILT]
 
     error = ATTITUDE_GAIN * 2.0 * math.sin(0.025)
@@ -295,33 +293,29 @@ def test_a_written_attitude_replaces_the_target_and_a_nan_attitude_leaves_it():
     np.testing.assert_allclose((kept, replaced), expected, atol=ATOL)
 
 
-@pytest.mark.parametrize("axis", ["roll", "pitch", "yaw"])
-def test_a_lock_bit_that_changes_with_a_nan_attitude_leaves_the_camera_where_it_points(axis):
-    """A lock bit that changes with a NaN attitude leaves the camera where it points, and the target then rides
-    the new frame.
+def test_a_yaw_lock_bit_that_changes_with_a_nan_attitude_leaves_the_camera_where_it_points():
+    """A yaw lock bit that changes with a NaN attitude leaves the camera where it points, and the target then
+    rides the new frame.
 
-    Given two cameras at their targets with no rate, each over a vehicle turned 0.2 rad about one axis, the first
-    with that axis locked and level, the second with it unlocked and turned with its vehicle, when a write flips
-    the axis on both with a NaN attitude and the law steps once, then every motor gets 0; and when each vehicle
-    then turns 0.1 rad more, then on the first, now unlocked, that axis's motor gets the rate gain times the
-    attitude gain times `2·sin(0.05)`, toward the vehicle, and on the second, now locked, every motor still gets
-    0. Once per axis, since each axis reads a different angle of the vehicle.
+    Given two cameras at their targets with no rate, each over a vehicle turned 0.2 rad in heading, the first with
+    yaw locked and facing North, the second with yaw unlocked and turned with its vehicle, when a write flips the
+    bit on both with a NaN attitude and the law steps once, then every motor gets 0; and when each vehicle then
+    turns 0.1 rad more, then on the first, now unlocked, the pan motor gets the rate gain times the attitude gain
+    times `2·sin(0.05)`, toward the vehicle, and on the second, now locked, every motor still gets 0.
     """
-    bit, joint, about = AXES[axis]
-    unlocked = tuple(i != bit for i in range(3))
     still, nan = [(0.0, 0.0, 0.0)] * 2, [(math.nan,) * 4] * 2
     # The second camera follows its vehicle's 0.2 rad, so its joints sit at 0.
-    attitude = [LEVEL, _quat(about, 0.2)]
+    attitude = [LEVEL, _quat(Z, 0.2)]
     law = _law(2)
-    law.write([LEVEL] * 2, still, [ALL, unlocked])
-    _step(law, 2, attitude=attitude, angles=[_turned(joint, 0.2), _turned(joint, 0.0)])
+    law.write([LEVEL] * 2, still, [LOCKED, FOLLOWS])
+    _step(law, 2, attitude=attitude, angles=[_turned(PAN, 0.2), _turned(PAN, 0.0)])
 
-    law.write(nan, still, [unlocked, ALL])
-    at_change = _step(law, 2, attitude=attitude, angles=[_turned(joint, 0.2), _turned(joint, 0.0)])[-1]
-    after_turn = _step(law, 2, attitude=attitude, angles=[_turned(joint, 0.3), _turned(joint, 0.1)])[-1]
+    law.write(nan, still, [FOLLOWS, LOCKED])
+    at_change = _step(law, 2, attitude=attitude, angles=[_turned(PAN, 0.2), _turned(PAN, 0.0)])[-1]
+    after_turn = _step(law, 2, attitude=attitude, angles=[_turned(PAN, 0.3), _turned(PAN, 0.1)])[-1]
 
     expected = np.zeros((2, 2, 3))
-    expected[1, 0, joint] = RATE_GAIN[joint] * ATTITUDE_GAIN * 2.0 * math.sin(0.05)
+    expected[1, 0, PAN] = RATE_GAIN[PAN] * ATTITUDE_GAIN * 2.0 * math.sin(0.05)
     np.testing.assert_allclose([at_change, after_turn], expected, atol=ATOL)
 
 
