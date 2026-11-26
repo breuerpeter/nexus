@@ -302,6 +302,7 @@ def test_a_replay_sends_the_samples_due_at_the_last_step_before_it_ends(tmp_path
 
     Given a ULog whose last row, a command, is at 3.0 s, and a run that steps 0.5 s, then the command goes out.
     Given a ULog whose last row is at 3.2 s, then the run's last step reaches 3.5 s and the command goes out.
+    In both, the replay steps the run on 0.5 s past the log's end, so PX4 takes the final command before it stops.
     """
     from nexus_uav._src.peers.px4_sitl import replay as module
 
@@ -317,9 +318,9 @@ def test_a_replay_sends_the_samples_due_at_the_last_step_before_it_ends(tmp_path
             )
         )
         module.fly(run, log, tmp_path)
-        sent.append(len(written))
+        sent.append((len(written), run.time >= end / 1e6 + 0.5))
 
-    assert sent == [2, 2]
+    assert sent == [(2, True), (2, True)]
 
 
 def test_a_replays_layer_holds_the_callers_layer_by_its_absolute_path(tmp_path, monkeypatch):

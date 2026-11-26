@@ -58,6 +58,7 @@ _PEER_SCHEMA = "NexusPx4SitlAPI"
 _AGENT_SCHEMA = "NexusXrceAgentAPI"
 _FROM_LOG = "ver_sw"  # the end of the source of a pin the log names
 _MATCH_HOLD_S = 2.0  # wall seconds the run holds for a due sample whose writer no reader has matched
+_DRAIN_S = 0.5  # seconds of the run's time it steps on after the last send, so PX4 takes the final samples
 _EXTRA = "the replay needs the extra nexus-uav[replay], which installs pyulog and cyclonedds"
 
 
@@ -406,3 +407,6 @@ def fly(run, log, px4_tree: Path) -> None:
             f"{address(sent[due], instance, version[sent[due].topic]).topic}; is the Micro XRCE-DDS agent peer running, and does this PX4's "
             "bridge list the topic?"
         )
+    drained = run.time + _DRAIN_S
+    while stepping and run.time < drained:
+        stepping = run.step()
