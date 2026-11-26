@@ -215,7 +215,7 @@ def test_start_mounts_each_serial_lines_device_and_starts_a_mavlink_instance_on_
     Given a peer whose end of the line from `Companion` is a pseudo-terminal of the test's, over a tree whose built
     startup folder holds the airframe `80000_none_astro_max`, when it starts, then the container binds that terminal
     at `/dev/serial/Companion` read-write, and the run's `serial.post` read-only at `80000_none_astro_max.post`
-    beside the airframe, holding `mavlink start -d /dev/serial/Companion -b 3000000 -m onboard -x`.
+    beside the airframe.
     """
     airframes = tree / "build" / "px4_sitl_default" / "etc" / "init.d-posix" / "airframes"
     airframes.mkdir(parents=True)
@@ -230,7 +230,24 @@ def test_start_mounts_each_serial_lines_device_and_starts_a_mavlink_instance_on_
         Mount(f"{airframes}/80000_none_astro_max.post", str(post), type="bind", read_only=True),
         Mount("/dev/serial/Companion", pty, type="bind", read_only=False),
     ]
-    assert (added, post.read_text()) == (expected, "mavlink start -d /dev/serial/Companion -b 3000000 -m onboard -x\n")
+    assert added == expected
+
+
+def test_start_starts_each_serial_line_with_forwarding(daemon, tree, tmp_path, pty):
+    """The PX4 peer starts each serial line with forwarding, so a ground station on the line gets the messages of
+    each device behind PX4.
+
+    Given a peer with the serial line `Companion`, when it starts, then the run's `serial.post` holds
+    `mavlink start -d /dev/serial/Companion -b 3000000 -m onboard -x -f`.
+    """
+    airframes = tree / "build" / "px4_sitl_default" / "etc" / "init.d-posix" / "airframes"
+    airframes.mkdir(parents=True)
+    (airframes / "80000_none_astro_max").write_text("# the airframe\n")
+    post = tmp_path / "home" / ".cache" / "nexus" / "px4_sitl" / "store" / "astro_max" / "0" / "serial.post"
+
+    _peer(tree, tmp_path, serial={"Companion": pty}).start()
+
+    assert post.read_text() == "mavlink start -d /dev/serial/Companion -b 3000000 -m onboard -x -f\n"
 
 
 def test_start_makes_the_post_hooks_mount_point_so_docker_makes_no_root_file_in_the_tree(daemon, tree, tmp_path, pty):

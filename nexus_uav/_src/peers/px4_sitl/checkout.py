@@ -8,10 +8,11 @@ PX4 itself. On first use the peer fetches a pinned commit into a folder it owns,
 ``px4_sitl/<sha>`` in the cache root, and the PX4 Software In The Loop (SITL) peer builds it there. A
 peer builds a checkout where it lies, and the receipt records its checked-out commit.
 
-The fetch is by commit, depth one, with submodules, and it applies the interim airframe patch the
-pinned branch doesn't carry yet: ``EKF2_MAG_TYPE 6`` on ``80000_none_astro_max``, heading from the
+The fetch is by commit, depth one, with submodules, and it applies the interim airframe patch to a
+commit that doesn't carry it: ``EKF2_MAG_TYPE 6`` on ``80000_none_astro_max``, heading from the
 magnetometer at initialization only, so the sim's magnetometer doesn't fault continuous fusion,
-see #87 and PX4 PR #27706. A tree that carries the line already keeps it as it stands.
+see #87 and PX4 PR #27706. The shipped pin's airframe carries the line, and a tree that carries it
+keeps it as it stands.
 """
 
 from __future__ import annotations
