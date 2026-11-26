@@ -358,6 +358,30 @@ def test_a_yaw_lock_bit_that_changes_with_a_nan_attitude_leaves_the_camera_where
     np.testing.assert_allclose([at_change, after_turn], expected, atol=ATOL)
 
 
+def test_an_attitude_in_one_frame_under_the_other_frames_lock_points_the_camera_there_and_holds_as_the_lock_says():
+    """An attitude written in one frame under the other frame's lock points the camera where the attitude says,
+    and the target then holds as the lock says.
+
+    Given two level cameras that face North, each over a vehicle turned 0.2 rad, when a write sets the null
+    attitude on the first in the vehicle's frame with yaw locked, and on the second in the earth frame with yaw
+    unlocked, and the law steps, then the first's pan motor gets the rate gain times the attitude gain times
+    `2·sin(0.1)`, toward the vehicle's heading, and every motor of the second gets 0; and when each vehicle then
+    turns 0.1 rad more, then the first's command stays, its target held against North, and the second's pan motor
+    gets the gains times `2·sin(0.05)`, toward its vehicle.
+    """
+    vehicle, earth = False, True
+    law = _law(2)
+
+    law.write([LEVEL] * 2, [(0.0, 0.0, 0.0)] * 2, [LOCKED, FOLLOWS], [vehicle, earth])
+    at_write = _step(law, 2, angles=[_turned(PAN, 0.2)] * 2)[-1]
+    after_turn = _step(law, 2, angles=[_turned(PAN, 0.3)] * 2)[-1]
+
+    expected = np.zeros((2, 2, 3))
+    expected[:, 0, PAN] = RATE_GAIN[PAN] * ATTITUDE_GAIN * 2.0 * math.sin(0.1)
+    expected[1, 1, PAN] = RATE_GAIN[PAN] * ATTITUDE_GAIN * 2.0 * math.sin(0.05)
+    np.testing.assert_allclose([at_write, after_turn], expected, atol=ATOL)
+
+
 PRIM = "/vehicle/GimbalController"
 CAMERA = "/vehicle/camera"
 JOINTS = ["/vehicle/pan_joint", "/vehicle/roll_joint", "/vehicle/tilt_joint"]

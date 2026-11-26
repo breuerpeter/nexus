@@ -5,10 +5,16 @@ a roll and a tilt joint, its center of mass 2 cm off each joint's axis, a torque
 the gimbal controller's controls, and a first controller, a stand-in at fixed rotor commands, that flies the
 airframe. A flight starts in free flight 2 m up, so the camera starts level and at rest. The world's x axis
 points North and its z axis up, and a body's frame has x forward and z down. Skipped without newton or pxr.
+
+The gimbal's controller is a MAVLink gimbal device too, on port 13280 of the User Datagram Protocol (UDP) plus the run's instance, so every run here
+binds that port, and a stand-in gimbal manager, a socket of the test's own, talks to it.
 """
 
+import contextlib
+import itertools
 import logging
 import math
+import socket
 from typing import ClassVar
 
 import pytest
@@ -18,14 +24,18 @@ pytest.importorskip("pxr")
 
 import numpy as np
 import warp as wp
+from pymavlink.dialects.v20 import common as mavlink
 
 from nexus_uav._src.api.sim import Sim
+from nexus_uav._src.core.errors import RunError
 from nexus_uav._src.core.registry import Registry
 from nexus_uav._src.vehicle.controllers.gimbal import GimbalController
+from nexus_uav._src.vehicle.controllers.gimbal_device import PORT
 from tests.usd import sensor_vehicle as sv
 from tests.vehicle import quad
 
-pytestmark = pytest.mark.usefixtures("warp_cpu")
+# Every run binds the device's port, which is the machine's, so the tests run on one worker, one at a time.
+pytestmark = [pytest.mark.usefixtures("warp_cpu"), pytest.mark.xdist_group("px4_ports")]
 
 FULL = (1.0, 1.0, 1.0, 1.0)  # the airframe climbs and turns nothing
 TIP = (1.0, 0.975, 1.0, 0.975)  # more thrust in front: the airframe pitches up
@@ -212,6 +222,184 @@ def test_a_declaration_that_is_no_camera_behind_three_revolute_joints_fails_the_
     assert (type(error), all(names), autopilot.ticks) == (ValueError, True, 0), error
 
 
+SYSTEM = 3  # the stand-in manager's MAVLink system
+GIMBAL = 154  # the component id of a gimbal device, MAV_COMP_ID_GIMBAL
+IN_VEHICLE = 32  # GIMBAL_DEVICE_FLAGS_YAW_IN_VEHICLE_FRAME: the yaw is against the vehicle's heading
+DOWN_30_WXYZ = (0.9659258, 0.0, -0.2588190, 0.0)  # a pitch of −30°, as MAVLink orders a quaternion
+
+
+class _Manager:
+    """A stand-in gimbal manager: a socket of its own that speaks MAVLink, as the autopilot of system 3, to the
+    device of the run at `instance`.
+    """
+
+    def __init__(self, instance: int = 0):
+        self._device = ("127.0.0.1", PORT + instance)
+        self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._socket.bind(("127.0.0.1", 0))
+        self._socket.setblocking(False)
+        self._mav = mavlink.MAVLink(None, srcSystem=SYSTEM, srcComponent=1)
+
+    def send(self, message) -> None:
+        """Send `message` to the device's port."""
+        self._socket.sendto(message.pack(self._mav), self._device)
+
+    def heartbeat(self) -> None:
+        """Send the autopilot's `HEARTBEAT`."""
+        self.send(mavlink.MAVLink_heartbeat_message(mavlink.MAV_TYPE_QUADROTOR, mavlink.MAV_AUTOPILOT_PX4, 0, 0, 0, 3))
+
+    def heard(self) -> list:
+        """Every message the socket has received since the last call, in order."""
+        messages = []
+        while True:
+            try:
+                datagram = self._socket.recv(65535)
+            except BlockingIOError:
+                return messages
+            messages += mavlink.MAVLink(None).parse_buffer(datagram) or []
+
+    def close(self) -> None:
+        self._socket.close()
+
+
+@pytest.fixture
+def manager():
+    """Makes a stand-in manager for the run at an instance, and closes each one's socket after the test."""
+    made = []
+
+    def make(instance: int = 0) -> _Manager:
+        made.append(_Manager(instance))
+        return made[-1]
+
+    yield make
+    for one in made:
+        one.close()
+
+
+def _at(instance: int) -> type:
+    """The gimbal controller's class for a run at `instance`, the number a run takes when it starts a peer."""
+
+    class At(GimbalController):
+        def __init__(self, **kwargs):
+            super().__init__(**{**kwargs, "instance": instance})
+
+    return At
+
+
+@contextlib.contextmanager
+def _run(tmp_path, *, instance: int = 0, autopilot=None):
+    """A run of the fixture quad with its camera gimbal at `instance`, on the CPU device, its airframe climbing
+    straight under `autopilot`, a stand-in at full command by default.
+    """
+    path = quad.declare_gimbal(quad.author(tmp_path / f"quad_{instance}.usda", camera=True, diagonal=True))
+    registry = Registry({"NexusPx4API_1": autopilot or _commanding(FULL), "NexusGimbalControllerAPI": _at(instance)})
+    with wp.ScopedDevice("cpu"):
+        loop = sv.build(path, components=registry, device="cpu", fall_from=(0.0, 0.0, 2.0))
+        with Sim._from_loop(loop) as sim:
+            yield sim
+
+
+def _steps(sim, ticks: int) -> None:
+    """Step `sim` `ticks` ticks."""
+    for _ in range(ticks):
+        sim.step()
+
+
+def _heartbeats(messages) -> list[tuple]:
+    """Each `HEARTBEAT` among `messages`: its sender's system and component, and the type it states."""
+    return [(m.get_srcSystem(), m.get_srcComponent(), m.type) for m in messages if m.get_type() == "HEARTBEAT"]
+
+
+def test_the_device_listens_on_its_port_and_answers_the_latest_sender(tmp_path, manager):
+    """The device listens on UDP 13280 plus the run's instance and answers the address its last message came
+    from, as component 154 of the sender's system.
+
+    Given the fixture quad with its camera gimbal at instance 0 and at instance 2, and a stand-in manager of
+    system 3 on a socket of its own, when it sends a `HEARTBEAT` and the run steps, then that socket receives a
+    `HEARTBEAT` of type `MAV_TYPE_GIMBAL` from system 3, component 154; and when a second socket then sends, the
+    device's next messages go to it.
+    """
+    seen = []
+    for instance in (0, 2):
+        first, second = manager(instance), manager(instance)
+        with _run(tmp_path, instance=instance) as sim:
+            first.heartbeat()
+            _steps(sim, 5)
+            answered = _heartbeats(first.heard())
+            second.heartbeat()
+            _steps(sim, 300)  # 1.2 s: the device's next heartbeat falls due
+            seen.append((answered[:1], _heartbeats(second.heard())[:1], first.heard()))
+
+    gimbal = [(SYSTEM, GIMBAL, mavlink.MAV_TYPE_GIMBAL)]
+    assert seen == [(gimbal, gimbal, [])] * 2
+
+
+def test_the_device_sends_its_heartbeat_and_status_at_their_rates_of_sim_time(tmp_path, manager):
+    """The device sends `HEARTBEAT` at 1 Hz and `GIMBAL_DEVICE_ATTITUDE_STATUS` at 20 Hz of sim time, and nothing
+    before a message arrives.
+
+    Given the fixture at a 4 ms tick, when the run steps 250 ticks with no sender, then no socket receives
+    anything; and when a manager sends one message and the run steps 500 ticks more, then it receives 2 heartbeats
+    and 40 statuses, each one more or less, and two statuses in a row differ by 50 ms in `time_boot_ms`, within
+    one tick.
+    """
+    listener = manager()
+    with _run(tmp_path) as sim:
+        _steps(sim, 250)
+        before = listener.heard()
+        listener.heartbeat()
+        _steps(sim, 500)
+        after = listener.heard()
+
+    heartbeats = len(_heartbeats(after))
+    times = [m.time_boot_ms for m in after if m.get_type() == "GIMBAL_DEVICE_ATTITUDE_STATUS"]
+    apart = [later - earlier for earlier, later in itertools.pairwise(times)]
+    rates = (abs(heartbeats - 2) <= 1, abs(len(times) - 40) <= 1, bool(apart) and max(abs(d - 50) for d in apart) <= 4)
+    assert (before, rates) == ([], (True, True, True)), (heartbeats, len(times), apart)
+
+
+def test_the_camera_turns_to_a_setpoint_a_manager_sends(tmp_path, manager):
+    """The camera turns to a setpoint a manager sends.
+
+    Given the fixture climbing straight and a manager that sends 30° down with yaw following after tick 25, when
+    the run flies 150 ticks, then the camera stays level before, never passes 33° down, and is within 1° of 30°
+    down from tick 125 on.
+    """
+    sender = manager()
+    setpoint = mavlink.MAVLink_gimbal_device_set_attitude_message(
+        SYSTEM, GIMBAL, IN_VEHICLE, list(DOWN_30_WXYZ), math.nan, math.nan, math.nan
+    )
+    with _run(tmp_path) as sim:
+        _steps(sim, 25)
+        sender.send(setpoint)
+        _steps(sim, 125)
+        down = [_down(q) for q in np.array(sim["vehicle/body/camera"].history_arrays()["orientation"])]
+
+    before = max(abs(d) for d in down[:25]) < 1.0
+    most = max(down) < 33.0
+    settled = max(abs(d - 30.0) for d in down[125:]) < 1.0
+    assert (before, most, settled) == (True, True, True), down[124:]
+
+
+def test_a_port_another_process_holds_fails_the_run_at_its_start_and_the_error_names_the_port(tmp_path):
+    """A port another process holds fails the run at its start, and the error names the port.
+
+    Given a socket bound to UDP 13280, when a run of the fixture at instance 0 starts, then it raises `RunError`
+    before the first tick, and the message names UDP 13280.
+    """
+    autopilot = _commanding(FULL)
+    error = None
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as held:
+        held.bind(("0.0.0.0", PORT))
+        try:
+            with _run(tmp_path, autopilot=autopilot) as sim:
+                sim.step()
+        except Exception as exc:
+            error = exc
+
+    assert (type(error), "UDP 13280" in str(error), autopilot.ticks) == (RunError, True, 0), error
+
+
 def _plan(path, registry: Registry, caplog) -> str:
     """The stage plan the run of the vehicle at `path` logs at its start, or, for a run that fails to build, a plan
     of one host stage that holds the error.
@@ -228,14 +416,14 @@ def _plan(path, registry: Registry, caplog) -> str:
     return next(m for m in (r.getMessage() for r in caplog.records) if m.startswith("stage plan:"))
 
 
-def test_the_gimbals_law_adds_no_host_stage_and_no_segment_to_the_tick(tmp_path, caplog):
-    """The law runs inside the captured graph: a run with the gimbal's controller has no host stage and no graph
-    segment more than the same run without it.
+def test_the_devices_end_is_one_host_stage_beside_the_first_controllers_and_the_tick_gains_no_graph_segment(
+    tmp_path, caplog
+):
+    """The device's end is one host stage beside the first controller's, and the tick gains no graph segment.
 
-    Given the fixture quad with its camera gimbal and a host-stage first controller, once with the gimbal's
-    controller and its motors and once without them, when each run starts, then the plan of the run with the
-    controller holds its stage, `gimbal_law`, and the two plans hold the same segments in the same order, each
-    host stage by its name.
+    Given the fixture with a host-stage first controller declared before the gimbal's, with and without the
+    gimbal's controller, when each run starts, then the plan with it holds one host stage more, right after the
+    first controller's, and the same count of graph segments. The law, `gimbal_law`, runs inside a graph.
     """
     registry = Registry({"NexusPx4API_1": _commanding(FULL)})
     drawn = [quad.author(tmp_path / name, camera=True, diagonal=True) for name in ("with.usda", "without.usda")]
@@ -249,4 +437,8 @@ def test_the_gimbals_law_adds_no_host_stage_and_no_segment_to_the_tick(tmp_path,
 
     plans = _plan(with_law, registry, caplog), _plan(without, registry, caplog)
 
-    assert ("gimbal_law" in plans[0], segments(plans[0])) == (True, segments(plans[1])), plans[0]
+    with_device, plain = segments(plans[0]), segments(plans[1])
+    added = [i for i, segment in enumerate(with_device) if segment.startswith("host(") and segment not in plain]
+    beside = [with_device[i - 1].startswith("host(") for i in added]
+    rest = [segment for i, segment in enumerate(with_device) if i not in added]
+    assert ("gimbal_law" in plans[0], len(added), beside, rest) == (True, 1, [True], plain), plans[0]

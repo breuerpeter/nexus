@@ -204,7 +204,7 @@ class GimbalLaw:
         self._rate = wp.zeros(self.vehicles, dtype=wp.vec3, device=device)
         self._integral = wp.zeros(self.vehicles, dtype=wp.vec3, device=device)
 
-    def write(self, attitude, rate, locked) -> None:
+    def write(self, attitude, rate, locked, earth=None) -> None:
         """Write each vehicle's setpoint, once: an event, not a level the law reads again.
 
         Args:
@@ -214,6 +214,8 @@ class GimbalLaw:
             rate: ``(vehicles, 3)`` the rate that moves the target each tick [rad/s]: its z part turns the target
                 about the vertical, and its x and y parts about the target's own axes.
             locked: ``(vehicles,)`` the yaw lock bit: whether yaw holds against North, not the vehicle's heading.
+            earth: ``(vehicles,)`` whether each attitude's heading is against North, not the vehicle's heading;
+                ``None`` takes the frame the lock bit names.
         """
         device = self._target.device
         wp.launch(
@@ -295,6 +297,20 @@ _GAINS = {
 }
 
 
+def axis_limits(model, joints) -> dict:
+    """The lowest and the highest angle the gimbal reaches about each camera axis [rad], from its joints' limits.
+
+    Args:
+        model: The finalized articulated model.
+        joints: The gimbal's three revolute joints in the model, from the vehicle to the camera.
+
+    Returns:
+        ``roll``, ``pitch`` and ``yaw``, each a lowest and a highest angle, NaN for an axis whose joint turns
+        without end.
+    """
+    return dict.fromkeys(("roll", "pitch", "yaw"), (math.nan, math.nan))
+
+
 def _chain(model, path: str, inputs: dict) -> list[int]:
     """The three joints the connections of the controller at `path` name, as their indices in the model, from the
     vehicle to the camera.
@@ -351,6 +367,7 @@ class GimbalController(Component):
     Args:
         model: The finalized articulated model, in which the controller finds its joints.
         path: The controller's own prim, which its errors name.
+        instance: The run's instance, which the device's port counts from.
         inputs: The prims its connections target, by input: ``camera``, the camera's body, and ``joints``, the
             three joints from the vehicle to the camera.
         attitude_gain: The rate command per attitude error [1/s], ``nexus:attitudeGain``.
@@ -364,6 +381,7 @@ class GimbalController(Component):
     """
 
     needs_model = True
+    needs_instance = True  # the device's port counts from the run's instance
 
     def __init__(
         self,
@@ -371,6 +389,7 @@ class GimbalController(Component):
         model,
         path: str,
         inputs: dict,
+        instance: int = 0,
         attitude_gain: float = 0.0,
         rate_limit: float = 0.0,
         rate_gain=(0.0, 0.0, 0.0),
@@ -403,11 +422,11 @@ class GimbalController(Component):
         self._attitude = wp.zeros(1, dtype=wp.quat, device=device)
         self._angles = wp.zeros((1, 3), dtype=float, device=device)
 
-    def write(self, attitude, rate, locked) -> None:
+    def write(self, attitude, rate, locked, earth=None) -> None:
         """Write the setpoint, once, as :meth:`GimbalLaw.write` takes it for one vehicle: the attitude
-        ``(x, y, z, w)``, NaN to keep the target, the rate [rad/s], and the yaw lock bit.
+        ``(x, y, z, w)``, NaN to keep the target, the rate [rad/s], the yaw lock bit, and the attitude's frame.
         """
-        self._law.write(attitude, rate, locked)
+        self._law.write(attitude, rate, locked, earth)
 
     def _step(self, tick) -> None:
         """The stage's work: the plant's outputs to the law's inputs, then the law, into the controls' buffer."""
@@ -425,4 +444,4 @@ class GimbalController(Component):
         return [Stage("gimbal_law", "device", self._step, reads=(self.camera, self.joints), writes=(self.controls,))]
 
 
-__all__ = ["GimbalController", "GimbalLaw"]
+__all__ = ["GimbalController", "GimbalLaw", "axis_limits"]
