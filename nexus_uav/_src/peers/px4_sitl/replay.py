@@ -33,7 +33,7 @@ from nexus_uav._src.core.errors import RunError
 from nexus_uav._src.peers import pins
 from nexus_uav._src.peers.pins import PeerPin
 
-from . import OFFBOARD_PORT, checkout
+from . import OFFBOARD_PORT, check_param, checkout
 
 SKIPPED = {
     "CAL_*": "the real sensors' calibration: PX4 reports the simulated accelerometer, gyro and compass uncalibrated",
@@ -190,13 +190,19 @@ def px4_pin(ulog: str | os.PathLike, px4: str | None, default: PeerPin) -> PeerP
 
 
 def log_params(log, delta: Mapping[str, float] | None) -> dict[str, float]:
-    """What :func:`boot_params` answers, from a log read already."""
+    """What :func:`boot_params` answers, from a log read already.
+
+    Raises:
+        ValueError: A name or value isn't one PX4 takes, :func:`check_param`; the message names it.
+    """
     params = {
         name: value
         for name, value in log.initial_parameters.items()
         if not any(fnmatch.fnmatchcase(name, pattern) for pattern in SKIPPED)
     }
     params.update(delta or {})
+    for name, value in params.items():
+        check_param(name, value)
     # With the sync on, PX4 shifts each incoming timestamp by an offset that drifts once the run is faster than
     # real time. It reads the parameter at boot.
     params["UXRCE_DDS_SYNCT"] = 0
@@ -371,7 +377,7 @@ def fly(run, log, px4_tree: Path) -> None:
     waited = -1  # the sample this loop has held the run for, so one sample holds it once
     blocked = False  # whether the last pass left a due sample unsent, its writer matched by no reader
     stepping = True
-    while stepping and run.time < end:
+    while True:  # sends what is due, then steps; the pass after the last step sends the samples due at the end
         blocked = False
         while due < len(sent) and sent[due].time / 1e6 <= run.time:
             writer = writers[sent[due].topic]
@@ -390,6 +396,8 @@ def fly(run, log, px4_tree: Path) -> None:
             sample = address(sent[due], instance)
             writer.write(_message(kinds[sent[due].topic], sample.values))
             due += 1
+        if not stepping or run.time >= end:
+            break
         stepping = run.step()  # false once the run has ended, at its ``max_steps``
     if blocked:
         unsent = sum(1 for sample in sent[due:] if sample.time / 1e6 <= run.time)

@@ -218,18 +218,14 @@ _NEEDS_TREE = pytest.mark.skipif(
 )
 
 
-def test_a_replay_fails_when_a_due_sample_never_reaches_px4(tmp_path, monkeypatch):
-    """A replay whose later topic no reader ever matches fails, and names the topic and the unsent samples.
-
-    Given a ULog with a stick row at 1 s, then a command at 2 s and a link status row at 3 s, and a bridge that
-    reads the sticks alone, when the replay flies to the log's end, then it raises a run error that names the
-    command's topic and 2 unsent samples of 3, and the stick row alone went out.
+def _stand_in_dds(monkeypatch, *, matched: tuple[str, ...], tick: float):
+    """Stand in for the Data Distribution Service and the run: a writer whose topic ends in a name of `matched`
+    has a reader, and the run's step advances `tick` seconds. Return the topics written, in order, and the run.
     """
     import cyclonedds.domain
     import cyclonedds.pub
     import cyclonedds.topic
 
-    from nexus_uav import RunError
     from nexus_uav._src.peers.px4_sitl import OFFBOARD_PORT
     from nexus_uav._src.peers.px4_sitl import replay as module
 
@@ -244,7 +240,7 @@ def test_a_replay_fails_when_a_due_sample_never_reaches_px4(tmp_path, monkeypatc
             self.topic = topic.name
 
         def get_matched_subscriptions(self):
-            return [object()] if self.topic.endswith("manual_control_input") else []
+            return [object()] if self.topic.endswith(matched) else []
 
         def write(self, message):
             written.append(self.topic)
@@ -255,7 +251,7 @@ def test_a_replay_fails_when_a_due_sample_never_reaches_px4(tmp_path, monkeypatc
             self.ports = {"offboard": {"port": OFFBOARD_PORT}}
 
         def step(self):
-            self.time += 0.5
+            self.time += tick
             return True
 
     monkeypatch.setattr(cyclonedds.domain, "DomainParticipant", lambda domain: object())
@@ -265,6 +261,20 @@ def test_a_replay_fails_when_a_due_sample_never_reaches_px4(tmp_path, monkeypatc
     monkeypatch.setattr(module, "versions", lambda tree: dict.fromkeys(module._MESSAGES, 0))
     monkeypatch.setattr(module, "_message", lambda kind, values: values)
     monkeypatch.setattr(module, "_MATCH_HOLD_S", 0.0)
+    return written, Run()
+
+
+def test_a_replay_fails_when_a_due_sample_never_reaches_px4(tmp_path, monkeypatch):
+    """A replay whose later topic no reader ever matches fails, and names the topic and the unsent samples.
+
+    Given a ULog with a stick row at 1 s, then a command at 2 s and a link status row at 3 s, and a bridge that
+    reads the sticks alone, when the replay flies to the log's end, then it raises a run error that names the
+    command's topic and 2 unsent samples of 3, and the stick row alone went out.
+    """
+    from nexus_uav import RunError
+    from nexus_uav._src.peers.px4_sitl import replay as module
+
+    written, run = _stand_in_dds(monkeypatch, matched=("manual_control_input",), tick=0.5)
     log = module.read(
         ulog_file.write(
             tmp_path / "flight.ulg",
@@ -277,7 +287,7 @@ def test_a_replay_fails_when_a_due_sample_never_reaches_px4(tmp_path, monkeypatc
     )
 
     with pytest.raises(RunError) as failure:
-        module.fly(Run(), log, tmp_path)
+        module.fly(run, log, tmp_path)
 
     message = str(failure.value)
     assert (written, "rt/fmu/in/vehicle_command" in message, "2 of the replay's 3 samples" in message) == (
@@ -285,6 +295,31 @@ def test_a_replay_fails_when_a_due_sample_never_reaches_px4(tmp_path, monkeypatc
         True,
         True,
     )
+
+
+def test_a_replay_sends_the_samples_due_at_the_last_step_before_it_ends(tmp_path, monkeypatch):
+    """A replay sends a sample due exactly at the log's end and one due between its last two ticks.
+
+    Given a ULog whose last row, a command, is at 3.0 s, and a run that steps 0.5 s, then the command goes out.
+    Given a ULog whose last row is at 3.2 s, then the run's last step reaches 3.5 s and the command goes out.
+    """
+    from nexus_uav._src.peers.px4_sitl import replay as module
+
+    sent = []
+    for end in (3_000_000, 3_200_000):
+        written, run = _stand_in_dds(monkeypatch, matched=("vehicle_command",), tick=0.5)
+        log = module.read(
+            ulog_file.write(
+                tmp_path / f"flight{end}.ulg",
+                topics={
+                    "vehicle_command": (_COMMAND, [(1_000_000, 1.0, 176, 1, 255, True), (end, 0.0, 400, 1, 255, True)])
+                },
+            )
+        )
+        module.fly(run, log, tmp_path)
+        sent.append(len(written))
+
+    assert sent == [2, 2]
 
 
 def test_a_replays_layer_holds_the_callers_layer_by_its_absolute_path(tmp_path, monkeypatch):
@@ -379,6 +414,20 @@ def test_a_sample_goes_to_the_topic_of_the_message_version_the_px4_tree_states(t
         "rt/fmu/in/telemetry_status",
         "rt/fmu/in/vehicle_command",
     ]
+
+
+def test_a_log_parameter_outside_px4s_identifier_syntax_stops_the_replay_before_any_run(tmp_path):
+    """A log whose parameter name isn't PX4's identifier syntax stops the replay's boot parameters, and names it.
+
+    Given a ULog with a parameter named `X$(id)`, when the replay answers its boot parameters, then a value error
+    names the parameter.
+    """
+    ulog = ulog_file.write(tmp_path / "flight.ulg", params={"MPC_XY_VEL_MAX": 12.0, "X$(id)": 1.0})
+
+    with pytest.raises(ValueError) as refused:
+        boot_params(ulog)
+
+    assert "X$(id)" in str(refused.value)
 
 
 def _steps(ulog) -> list[tuple[float, int, int]]:

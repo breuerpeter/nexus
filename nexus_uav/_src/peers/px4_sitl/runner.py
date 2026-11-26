@@ -46,7 +46,7 @@ from nexus_uav._src.peers.containers import ContainerPeer, ensure_image, run_con
 from nexus_uav._src.peers.pins import PeerPin
 from nexus_uav._src.peers.xrce_agent import AGENT_PORT
 
-from . import checkout
+from . import check_param, checkout
 from .instance import hil_free
 
 IMAGE = "nexus-px4-sitl"
@@ -389,13 +389,15 @@ def _params(authored: Sequence[str]) -> dict[str, str]:
     """The boot parameters ``nexus:params`` authors, each ``name=value``, by name.
 
     Raises:
-        ValueError: An entry isn't ``name=value``; the message names it.
+        ValueError: An entry isn't ``name=value``, or its name or value isn't one PX4 takes, :func:`check_param`;
+            the message names it.
     """
     params = {}
     for entry in authored or ():
         name, sep, value = entry.partition("=")
         if not (sep and name.strip() and value.strip()):
             raise ValueError(f"NexusPx4SitlAPI authors the nexus:params entry {entry!r}, which isn't name=value")
+        check_param(name.strip(), value.strip())
         params[name.strip()] = value.strip()
     return params
 
