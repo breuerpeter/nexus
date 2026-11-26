@@ -20,6 +20,14 @@ print(artifacts["ulog"])  # PX4's own log of the replayed flight
 
 Install the extra first: `uv add "nexus-uav[replay]"`. It brings `pyulog`, which reads the log, and `cyclonedds`, which writes the inputs.
 
+## How it differs from PX4's own replay
+
+PX4 ships a replay of its own, which publishes a log's topics back into a PX4 with no vehicle behind it. The logged sensor rows are fixed, so they don't react to what PX4 does with them. That suits a question about the estimator: the same sensor rows, another estimator parameter. It can't answer how the flight would have gone, since a changed controller moves no vehicle.
+
+This replay sends only what reached the vehicle from outside it, and the sim's vehicle answers PX4. So a changed parameter changes the flight, and the replay's log shows it.
+
+Two more facts keep PX4's replay out of a sim run. It sets PX4's lockstep clock itself, so no simulator can step PX4 beside it. And it needs a PX4 build of its own, where this replay flies the log's own commit unchanged.
+
 ## What the replay sends
 
 The ULog is the only source of what the replay sends. Each input goes back into PX4 as the topic the log holds, with its logged content and at its logged time, through PX4's bridge to the Data Distribution Service (DDS). The replay changes nothing in PX4.
