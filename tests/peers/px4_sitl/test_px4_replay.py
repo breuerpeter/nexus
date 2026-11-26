@@ -262,6 +262,7 @@ def test_a_replay_fails_when_a_due_sample_never_reaches_px4(tmp_path, monkeypatc
     monkeypatch.setattr(cyclonedds.pub, "DataWriter", Writer)
     monkeypatch.setattr(cyclonedds.topic, "Topic", Topic)
     monkeypatch.setattr(module, "_message_type", lambda tree, name: name)
+    monkeypatch.setattr(module, "versions", lambda tree: dict.fromkeys(module._MESSAGES, 0))
     monkeypatch.setattr(module, "_message", lambda kind, values: values)
     monkeypatch.setattr(module, "_MATCH_HOLD_S", 0.0)
     log = module.read(
@@ -353,6 +354,31 @@ def test_a_replay_starts_px4_clean_unless_the_caller_keeps_the_store(tmp_path, m
     replay(ulog, vehicle, scene=sv.SCENE, px4=str(px4), clean=False)
 
     assert started == [True, False]
+
+
+def test_a_sample_goes_to_the_topic_of_the_message_version_the_px4_tree_states(tmp_path):
+    """A sample goes to the topic PX4 names for its message's version: `_v<version>` after the name, and no
+    ending for version 0 or a definition that states none.
+
+    Given a PX4 tree whose stick message states `MESSAGE_VERSION` 2, whose command message states 0 and whose link
+    status message states none, then the stick topic ends `_v2` and the other two end with their names.
+    """
+    from nexus_uav._src.peers.px4_sitl.replay import versions
+
+    (tmp_path / "msg" / "versioned").mkdir(parents=True)
+    (tmp_path / "msg" / "versioned" / "ManualControlSetpoint.msg").write_text(
+        "uint32 MESSAGE_VERSION = 2\nuint64 timestamp\n"
+    )
+    (tmp_path / "msg" / "versioned" / "VehicleCommand.msg").write_text("uint32 MESSAGE_VERSION = 0\nuint64 timestamp\n")
+    (tmp_path / "msg" / "TelemetryStatus.msg").write_text("uint64 timestamp\n")
+
+    stated = versions(tmp_path)
+
+    assert [address(Sample(0, topic, {}), 0, stated[topic]).topic for topic in sorted(stated)] == [
+        "rt/fmu/in/manual_control_input_v2",
+        "rt/fmu/in/telemetry_status",
+        "rt/fmu/in/vehicle_command",
+    ]
 
 
 def _steps(ulog) -> list[tuple[float, int, int]]:
