@@ -23,8 +23,8 @@ components state, in the loop's fixed order. Device stages include the [physics]
 force elements, a sensor's sampling kernel, the record taps, and the Proportional Integral
 Derivative (PID) law. On CUDA a device stage replays as part of a CUDA graph. On a CPU device it
 runs stage by stage, the bit-exact determinism authority. Host stages include PX4's `truth` and
-`exchange`, a Model Predictive Control (MPC) solve, a torch policy's inference, and an RTX
-sensor's frame exchange with the Kit peer. A host stage runs on the host between graph replays. A
+`exchange`, the gimbal controller's `gimbal_device`, a Model Predictive Control (MPC) solve, a torch
+policy's inference, and an RTX sensor's frame exchange with the Kit peer. A host stage runs on the host between graph replays. A
 differentiable rollout, for design optimization, records the whole loop on a Warp tape, the PID
 law included, and a loss back-propagates through it.
 
@@ -159,9 +159,10 @@ Interfaces are the contract. Representation isn't mandated. **Inside a captured 
 region** all components share one device representation, Warp by default, and any
 CUDA-array-interface or DLPack framework can join zero-copy. **At a host stage** a component can
 be any language, process, or device, at the cost of a per-tick copy and no capture or automatic
-differentiation across that stage. For the current stack there are **two** kinds: the PX4
-controller's `truth` and `exchange`, every tick, and the RTX sensors' frame exchange, at their render
-rate. Each talks to a [peer](concepts.md#peer) over a [link](concepts.md#link). The Kit render peer runs in a
+differentiation across that stage. For the current stack there are **three** kinds. The PX4
+controller's `truth` and `exchange` run every tick, and the RTX sensors' frame exchange at their render
+rate. The gimbal controller's `gimbal_device` reads its port with no wait every tick. Each
+talks to a [peer](concepts.md#peer) over a [link](concepts.md#link). The Kit render peer runs in a
 process of its own. At a frame's due tick the host copies the body poses and sends them, a few
 hundred bytes. It takes the frame on a later tick, so the loop waits only when the peer falls a full
 frame behind.
