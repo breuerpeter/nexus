@@ -58,7 +58,7 @@ A commit the pin's repository lacks fails before any peer starts, and the error 
 
 ## The parameters PX4 boots on
 
-PX4 boots on the log's parameters, then on yours, `params`. The replay skips a parameter only when it denies a SITL flight, such as `COM_POWER_COUNT`, which asks for a second power source. It sets `UXRCE_DDS_SYNCT` to 0, so PX4 takes each sample's time as sent when the run is faster than real time.
+PX4 starts from nothing an earlier run stored, then boots on the log's parameters, then on yours, `params`. Pass `clean=False` to keep what the last run stored. The replay skips a parameter only when it denies a SITL flight, such as `COM_POWER_COUNT`, which asks for a second power source. It sets `UXRCE_DDS_SYNCT` to 0, so PX4 takes each sample's time as sent when the run is faster than real time.
 
 ## What the run starts
 
