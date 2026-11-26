@@ -228,7 +228,9 @@ def test_a_runs_px4_keeps_its_store_under_the_px4_peers_cache_folder_and_nothing
     store = cache / "px4_sitl" / "store" / "astro_max" / str(instance)
     in_tree = _TREE / "build" / "px4_sitl_default" / "rootfs" / str(instance)
     elsewhere = _written_since(in_tree, began) + _written_since(cache / "px4-work", began)
-    assert ("parameters.bson" in _written_since(store, began), elsewhere) == (True, [])
+    # PX4 keeps the file at its storage root, the store's top folder or `fs/` in it by the PX4 commit.
+    written = [Path(path).name for path in _written_since(store, began)]
+    assert ("parameters.bson" in written, elsewhere) == (True, [])
 
 
 def test_a_kept_store_boots_on_a_px4_tree_other_than_the_one_that_filled_it(px4_vehicle, tmp_path):

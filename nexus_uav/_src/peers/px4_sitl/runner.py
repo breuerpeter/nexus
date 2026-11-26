@@ -128,6 +128,8 @@ class Px4Sitl(ContainerPeer):
         serial: The path of PX4's end of each serial line a peer's prim wires to PX4's, by that prim's name. PX4
             opens each as ``/dev/serial/<name>`` and starts a MAVLink instance on it in onboard mode, the stream set
             a companion computer expects, at 3 Mbaud with MAVLink's file transfer, the link stock SITL doesn't start.
+            The instance forwards, as PX4's network links do, so a ground station on the line gets the messages of
+            each device behind PX4, such as a gimbal, once it has sent PX4 a message of its own.
         params: The PX4 parameters the peer sets at PX4's boot, each ``name=value``: the ``nexus:params`` of the
             vehicle's ``NexusPx4SitlAPI``.
         clean: Whether the run starts clean: the start empties the store of the airframe and the instance, so PX4
@@ -246,7 +248,7 @@ class Px4Sitl(ContainerPeer):
             # kernel's lookup of the pseudo-terminal, which a device node made inside the container would lose.
             post = work / "serial.post"
             post.write_text(
-                "".join(f"mavlink start -d /dev/serial/{name} -b 3000000 -m onboard -x\n" for name in self.serial)
+                "".join(f"mavlink start -d /dev/serial/{name} -b 3000000 -m onboard -x -f\n" for name in self.serial)
             )
             # The tree has no `.post` of its own, so this process makes the mount point, and docker makes none as
             # root. The start leaves one already there alone: touching a file another user owns fails.
