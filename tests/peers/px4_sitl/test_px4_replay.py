@@ -194,13 +194,19 @@ def test_px4_boots_on_the_logs_parameters_without_the_skipped_ones_with_the_call
     """PX4 boots on the log's parameters, minus the skipped ones, plus the caller's delta, with `UXRCE_DDS_SYNCT`
     0; the delta wins over the log.
 
-    Given a ULog with `MPC_XY_VEL_MAX` 12, `MPC_Z_VEL_MAX_UP` 3, `UXRCE_DDS_SYNCT` 1 and `COM_POWER_COUNT` 2,
-    which denies arming on SITL's one power source, and a delta of `MPC_XY_VEL_MAX` 5, then the boot parameters
+    Given a ULog with `MPC_XY_VEL_MAX` 12, `MPC_Z_VEL_MAX_UP` 3, `UXRCE_DDS_SYNCT` 1, `COM_POWER_COUNT` 2,
+    which denies arming on SITL's one power source, and `ZENOH_ENABLE` 1, which starts Zenoh and no DDS bridge, and a delta of `MPC_XY_VEL_MAX` 5, then the boot parameters
     are `MPC_XY_VEL_MAX` 5, `MPC_Z_VEL_MAX_UP` 3 and `UXRCE_DDS_SYNCT` 0.
     """
     ulog = ulog_file.write(
         tmp_path / "flight.ulg",
-        params={"MPC_XY_VEL_MAX": 12.0, "MPC_Z_VEL_MAX_UP": 3.0, "UXRCE_DDS_SYNCT": 1, "COM_POWER_COUNT": 2},
+        params={
+            "MPC_XY_VEL_MAX": 12.0,
+            "MPC_Z_VEL_MAX_UP": 3.0,
+            "UXRCE_DDS_SYNCT": 1,
+            "COM_POWER_COUNT": 2,
+            "ZENOH_ENABLE": 1,
+        },
     )
 
     booted = boot_params(ulog, {"MPC_XY_VEL_MAX": 5.0})
