@@ -333,7 +333,7 @@ def test_a_run_asked_to_start_clean_empties_the_store_even_after_a_run_killed_be
 def test_a_boot_parameter_outside_px4s_identifier_syntax_or_a_non_number_never_reaches_the_boot_hook(
     daemon, tree, tmp_path
 ):
-    """A boot parameter whose name isn't PX4's identifier syntax, or whose value isn't a number, is refused.
+    """The peer refuses a boot parameter whose name isn't PX4's identifier syntax or whose value isn't a number.
 
     Given a tree that sources `px4-rc.params` and a peer whose entry names `X$(id)`, or whose value is
     `1; id`, when it starts, then it raises a value error that names the entry, and no container started.
