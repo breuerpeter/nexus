@@ -434,6 +434,32 @@ def test_physics_substeps_run_that_many_physics_steps_per_tick_when_captured():
     assert delta == 10
 
 
+class _TickKeeper(Component):
+    """A controller whose host stage keeps each tick's substep, `dt`, and its control timestep, `period`."""
+
+    def __init__(self):
+        self.kept = []
+
+    def stages(self):
+        return [Stage("keep", "host", self._keep)]
+
+    def _keep(self, tick):
+        self.kept.append((tick.dt, tick.period))
+        return True
+
+
+def test_a_tick_carries_the_control_timestep_beside_the_substep():
+    """A tick carries the control timestep, `period`, beside one physics substep, `dt`: with two substeps on a
+    4 ms clock, a stage that runs once per tick reads a substep of 2 ms and a period of 4 ms.
+    """
+    with wp.ScopedDevice("cpu"):
+        keeper = _TickKeeper()
+        orch = _orch(keeper, physics_substeps=2)
+        orch.step()
+        orch.close()
+    assert keeper.kept[-1] == (0.002, 0.004)
+
+
 class _Noting(_Physics):
     """Device physics whose ``clear``, ``step`` and ``state`` note when they run."""
 

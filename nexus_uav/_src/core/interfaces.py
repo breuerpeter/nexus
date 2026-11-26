@@ -27,7 +27,8 @@ class Tick:
     """The context one control tick hands every stage: the loop's own state, which a stage reads and
     writes in place. A value between two components is a signal the stages declare, not a field here, a
     sensor's sample among them. ``dt`` is one physics step, the control timestep over
-    ``physics_substeps``. ``timeout`` bounds a host stage's wait on its peer. ``base`` is the index of the
+    ``physics_substeps``, and ``period`` is the control timestep itself, what a stage that runs once per tick
+    integrates over. ``timeout`` bounds a host stage's wait on its peer. ``base`` is the index of the
     vehicle's base body, its airframe, in ``state``: a stage that reads the vehicle's true state reads that
     row. ``control`` is Newton's control the physics steps with, whose inputs a command element writes.
 
@@ -42,6 +43,7 @@ class Tick:
     base: int = 0
     done: bool = False
     control: Any = None
+    period: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +83,10 @@ class Component:
         needs_instance: Whether the class takes the run's instance, the number the run's peers number their
             ports from, as the keyword ``instance``: ``True`` for a controller whose peer it talks to numbers its
             links so. The builder passes it beside the schema's attributes.
+        needs_model: Whether the class takes the finalized model, as the keyword ``model``, with its own prim's
+            path, ``path``, and the prims its connections target, by input, ``inputs``: ``True`` for a controller,
+            an estimator or a guidance that finds a body or a joint in the model by the path its connection
+            names. The builder then makes the physics before any declared peer starts.
         attached: Whether the component's peer has dialed in. ``True`` for a component with no peer, the
             default. A component that reads ``False`` before it connects waits on a peer: the loop connects
             it after the graph capture, so a peer that dials in early waits on no kernel load, holds the sim
@@ -90,6 +96,7 @@ class Component:
     name: str | None = None
     requires: tuple[str, ...] = ()
     needs_instance: bool = False
+    needs_model: bool = False
     attached: bool = True
 
     def stages(self) -> list[Stage]:

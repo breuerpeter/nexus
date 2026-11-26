@@ -423,6 +423,35 @@ def test_a_list_input_reads_every_writers_value_in_the_order_of_the_ring():
     assert [int(value.n) for value in read] == [1, 2]
 
 
+class _DeviceListReader(_Reader):
+    """An estimator whose device stage reads the signal `count` as a list."""
+
+    def __init__(self):
+        super().__init__(list[Count])
+
+    def stages(self):
+        return [Stage("read", "device", lambda tick: None, reads=(self.count,))]
+
+
+@pytest.mark.usefixtures("warp_cpu")
+def test_a_device_stage_reads_a_list_of_device_signals_one_buffer_per_writer():
+    """A device stage reads a list input whose type lives on the device: one device buffer per writer.
+
+    Given two stand-in sensors on the prims `A` and `B` that write 1 and 2 to the device signal `count`, and a
+    reader whose device stage reads `count` as a list, when the loop wires them, then the reader holds two Warp
+    arrays, which hold 1 and 2.
+    """
+    writers = [_Writer("/vehicle/body/A", 1), _Writer("/vehicle/body/B", 2)]
+    reader = _DeviceListReader()
+    try:
+        _read(writers, reader)
+        held = [(type(buffer), int(buffer.numpy()[0]["n"])) for buffer in reader.count.buffer]
+    except ValueError as exc:
+        held = exc
+
+    assert held == [(wp.array, 1), (wp.array, 2)]
+
+
 @pytest.mark.usefixtures("warp_cpu")
 def test_a_list_input_with_connections_reads_the_writers_they_name_in_ring_order_and_learns_their_names():
     """A list input with connections reads the writers they name, in the order of the ring, and learns their

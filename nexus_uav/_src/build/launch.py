@@ -56,7 +56,7 @@ from nexus_uav._src.physics import VehicleUsd
 from nexus_uav._src.usd import peer_names
 from nexus_uav._src.usd.reader import read_connections, read_serial_lines
 
-from .assembly import build_loop, build_scenario
+from .assembly import build_loop, build_physics, build_scenario
 from .components import SCOPE_ROLES, scope_specs
 
 
@@ -209,7 +209,15 @@ def build_from_launch(
         # physics compiles.
         for peer in needed.values():
             _start(peer, started)
-        built = {role: [_component(spec, run["instance"]) for spec in specs] for role, specs in roles.items()}
+        # A declared class that needs the model has the physics built here, before any declared peer starts, so
+        # a declaration the model fails stops the run before PX4 boots. A run with no such class builds the
+        # physics in the assembly, while its peers boot.
+        modelled = any(_needs_model(spec) for specs in roles.values() for spec in specs)
+        physics = build_physics(label, cfg, vehicle_usd) if modelled else None
+        built = {
+            role: [_component(spec, run["instance"], physics, connections) for spec in specs]
+            for role, specs in roles.items()
+        }
         # A declared peer starts here, before the assembly: PX4's start builds PX4 incrementally, which must
         # stay outside the sim's preroll window, GH #39, and PX4 boots while the physics compiles.
         for peer in made:
@@ -244,6 +252,7 @@ def build_from_launch(
             settings=resolved.tested_config.model_dump(mode="json"),
             components=registry,
             record_to_rrd=str(logs / "nexus.rrd"),
+            physics=physics,
         )
     except BaseException:
         # The loop never took the peers over, so they stop here, and the instance is free again.
@@ -455,11 +464,20 @@ def _peer(
         raise ValueError(f"{prim}: {exc}" if prim else str(exc)) from exc
 
 
-def _component(spec: ComponentSpec, run_instance: int):
-    """The component `spec` declares: its class with its schema's attributes, and the run's instance when the
-    class needs it, named after its prim.
+def _needs_model(spec: ComponentSpec) -> bool:
+    """Whether the class of `spec` states ``needs_model``."""
+    return bool(getattr(spec.cls, "needs_model", False))
+
+
+def _component(spec: ComponentSpec, run_instance: int, physics=None, connections: dict | None = None):
+    """The component `spec` declares: its class with its schema's attributes, the run's instance when the class
+    needs it, and, when the class needs the model, the model of `physics`, its own prim's path and the prims its
+    connections target, by input, from `connections`. Named after its prim.
     """
-    component = spec.cls(**spec.kwargs, **run_keywords(spec.cls, run_instance))
+    keywords = run_keywords(spec.cls, run_instance)
+    if _needs_model(spec):
+        keywords |= {"model": physics.model, "path": spec.prim, "inputs": (connections or {}).get(spec.prim, {})}
+    component = spec.cls(**spec.kwargs, **keywords)
     component.name = instance_name(spec.prim)
     return component
 
