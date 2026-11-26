@@ -32,6 +32,7 @@ No flight logic lives here: the flight is always a script against ``nexus_uav.px
 from __future__ import annotations
 
 import os
+import re
 import shutil
 from collections.abc import Mapping
 from pathlib import Path
@@ -126,6 +127,8 @@ class Px4Sitl(ContainerPeer):
         serial: The path of PX4's end of each serial line a peer's prim wires to PX4's, by that prim's name. PX4
             opens each as ``/dev/serial/<name>`` and starts a MAVLink instance on it in onboard mode, the stream set
             a companion computer expects, at 3 Mbaud with MAVLink's file transfer, the link stock SITL doesn't start.
+            The instance forwards, as PX4's network links do, so a ground station on the line gets the messages of
+            each device behind PX4, such as a gimbal, once it has sent PX4 a message of its own.
         clean: Whether the run starts clean: the start empties the store of the airframe and the instance, so PX4
             boots with no parameter and no mission an earlier run stored.
         **run: The run's other values, which the peer needs none of.
@@ -214,11 +217,12 @@ class Px4Sitl(ContainerPeer):
         instance_dir = self.tree / "build" / "px4_sitl_default" / "rootfs" / str(self.instance)
         instance_dir.mkdir(parents=True, exist_ok=True)
         kwargs["volumes"][str(work)] = {"bind": str(instance_dir), "mode": "rw"}
-        # PX4 writes its ULog to ./log there, as <date>/<time>.ulg. The peer's folder mounts there in turn, so
-        # it holds this run's ULog alone, beside the console. This process makes each mount point, so docker
-        # makes none as root.
-        (work / "log").mkdir(exist_ok=True)
-        kwargs["volumes"][str(self.dir)] = {"bind": str(instance_dir / "log"), "mode": "rw"}
+        # PX4 writes its ULog to the log folder of its storage root there, as <date>/<time>.ulg. The peer's
+        # folder mounts there in turn, so it holds this run's ULog alone, beside the console. This process makes
+        # each mount point, so docker makes none as root.
+        log = Path(_storage_root(self.tree)) / "log"
+        (work / log).mkdir(parents=True, exist_ok=True)
+        kwargs["volumes"][str(self.dir)] = {"bind": str(instance_dir / log), "mode": "rw"}
         if self.serial:
             # Each serial link's device, and PX4's own hook for commands after its airframe and its network links,
             # `<airframe>.post` beside the airframe file: a file of this run's, mounted over the tree's copy inside
@@ -226,7 +230,7 @@ class Px4Sitl(ContainerPeer):
             # kernel's lookup of the pseudo-terminal, which a device node made inside the container would lose.
             post = work / "serial.post"
             post.write_text(
-                "".join(f"mavlink start -d /dev/serial/{name} -b 3000000 -m onboard -x\n" for name in self.serial)
+                "".join(f"mavlink start -d /dev/serial/{name} -b 3000000 -m onboard -x -f\n" for name in self.serial)
             )
             # The tree has no `.post` of its own, so this process makes the mount point, and docker makes none as
             # root. The start leaves one already there alone: touching a file another user owns fails.
@@ -357,6 +361,19 @@ class Px4Sitl(ContainerPeer):
             scalars=True,
         )
         logger.info(f"Rerun: PX4's flight log {Path(ulog).name} added under {NAME}/logs")
+
+
+def _storage_root(tree: Path) -> str:
+    """PX4's storage root inside its working folder, where it keeps its logs and its parameters: the
+    ``CONFIG_BOARD_ROOT_PATH`` the built tree's board states, ``.`` or ``./fs`` by the PX4 commit; ``.`` when the
+    tree states none.
+    """
+    try:
+        board = (tree / "build" / "px4_sitl_default" / "boardconfig").read_text()
+    except FileNotFoundError:
+        return "."
+    stated = re.search(r'^CONFIG_BOARD_ROOT_PATH="(.*)"$', board, re.MULTILINE)
+    return stated.group(1) if stated else "."
 
 
 def _airframe_file(tree: Path, airframe: str) -> Path:

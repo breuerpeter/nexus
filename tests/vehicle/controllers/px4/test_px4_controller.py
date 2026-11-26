@@ -140,11 +140,11 @@ def test_hil_sensor_marks_a_sensors_fields_updated_only_on_an_exchange_with_a_ne
     Given the controller wired to an Inertial Measurement Unit (IMU) that samples every tick and a barometer at
     125 Hz, and no magnetometer, when four 4 ms ticks each sample the sensors and exchange, then the four
     `HIL_SENSOR` mark the IMU's fields updated on each, and the barometer's pressure fields on the first and
-    the third: `0x1E3F, 0x3F, 0x1E3F, 0x3F`.
+    the third: `0x1A3F, 0x3F, 0x1A3F, 0x3F`.
     """
     _exchange(ImuSensor(*_on()), BaroSensor(*_on(), rate=125.0), ticks=4)
 
-    assert [args[-2] for args in link.sent["HIL_SENSOR"]] == [0x1E3F, 0x3F, 0x1E3F, 0x3F]
+    assert [args[-2] for args in link.sent["HIL_SENSOR"]] == [0x1A3F, 0x3F, 0x1A3F, 0x3F]
 
 
 def test_hil_gps_and_the_true_state_go_out_with_each_new_gps_sample_and_on_no_other_exchange(link, warp_cpu):

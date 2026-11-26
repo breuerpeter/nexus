@@ -22,7 +22,8 @@ pytestmark = [pytest.mark.usefixtures("warp_cpu"), pytest.mark.xdist_group("px4_
 IMU = 0b0000000111111
 MAG = 0b0000111000000
 BARO = 0b1101000000000
-EVERY_FIELD = 0x1FFF
+# Every bit of the three sensors. Bit 10, `DIFF_PRESSURE`, is an airspeed sensor's, and no vehicle has one.
+EVERY_SENSOR_FIELD = 0x1BFF
 # The ticks a run steps before and after the ones a test counts, so the fake has read every message of the window.
 MARGIN = 10
 
@@ -68,19 +69,18 @@ def test_hil_sensor_sets_a_sensors_bits_only_on_a_tick_where_that_sensor_has_a_n
     assert (len(masks), _with(masks, BARO), _with(masks, MAG), _with(masks, IMU)) == (250, 50, 100, 250)
 
 
-def test_with_no_rate_declared_every_hil_sensor_sets_every_bit(tmp_path):
-    """With no rate declared, every `HIL_SENSOR` sets every bit, as today.
+def test_hil_sensor_never_flags_differential_pressure(tmp_path):
+    """`HIL_SENSOR` never flags differential pressure, so a vehicle with no airspeed sensor gives PX4 none.
 
-    Given the fake PX4 peer and a fixture vehicle that authors no `nexus:rate`, when the run steps 100
-    ticks, then all 100 `HIL_SENSOR` carry `fields_updated = 0x1FFF`.
+    Given the fake PX4 peer and a fixture vehicle with an IMU, a magnetometer and a barometer that declares
+    no rate, when the run steps 100 ticks, then every `HIL_SENSOR` carries `fields_updated = 0x1BFF` and none
+    sets bit 10, `DIFF_PRESSURE`.
     """
-    prims = (
-        IMU_PRIM + sv.prim("Mag0", "NexusMagAPI") + sv.prim("Baro0", "NexusBaroAPI") + sv.prim("Gps0", "NexusGpsAPI")
-    )
+    prims = IMU_PRIM + sv.prim("Mag0", "NexusMagAPI") + sv.prim("Baro0", "NexusBaroAPI")
 
     masks, _ = _receive(tmp_path, prims, 100)
 
-    assert masks == [EVERY_FIELD] * 100
+    assert masks == [EVERY_SENSOR_FIELD] * 100
 
 
 def test_hil_gps_goes_out_once_per_new_gps_sample(tmp_path):
