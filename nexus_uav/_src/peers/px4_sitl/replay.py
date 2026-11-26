@@ -377,7 +377,7 @@ def fly(run, log, px4_tree: Path) -> None:
     waited = -1  # the sample this loop has held the run for, so one sample holds it once
     blocked = False  # whether the last pass left a due sample unsent, its writer matched by no reader
     stepping = True
-    while stepping and run.time < end:
+    while True:  # sends what is due, then steps; the pass after the last step sends the samples due at the end
         blocked = False
         while due < len(sent) and sent[due].time / 1e6 <= run.time:
             writer = writers[sent[due].topic]
@@ -396,6 +396,8 @@ def fly(run, log, px4_tree: Path) -> None:
             sample = address(sent[due], instance)
             writer.write(_message(kinds[sent[due].topic], sample.values))
             due += 1
+        if not stepping or run.time >= end:
+            break
         stepping = run.step()  # false once the run has ended, at its ``max_steps``
     if blocked:
         unsent = sum(1 for sample in sent[due:] if sample.time / 1e6 <= run.time)
