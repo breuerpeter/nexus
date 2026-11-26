@@ -16,19 +16,26 @@ first joint hangs from, and the law finds its heading from the camera's attitude
 
 :class:`GimbalLaw` runs the law over the gimbals of many vehicles at once, one kernel thread per vehicle. A
 `Scope` of the vehicle declares one gimbal's controller with the ``NexusGimbalControllerAPI`` schema, and the
-registry builds it as :class:`GimbalController`, a controller with one device stage, ``gimbal_law``.
+registry builds it as :class:`GimbalController`, a controller with a device stage, ``gimbal_law``, and a host
+stage, ``gimbal_device``. The host stage is the gimbal's MAVLink end: the controller is a MAVLink gimbal device
+on a port of its own, which a gimbal manager, an autopilot, sends its setpoints to.
 """
 
 from __future__ import annotations
 
+import errno
 import math
+import socket
+import struct
 
 import numpy as np
 import warp as wp
 
+from nexus_uav._src.core.errors import RunError
 from nexus_uav._src.core.interfaces import Component, Stage
 from nexus_uav._src.core.schema import PoseTwist, joint_struct
 from nexus_uav._src.core.signals import Signal
+from nexus_uav._src.vehicle.controllers.gimbal_device import PORT, GimbalDevice
 
 # What the plant writes for a revolute joint: one angle and one rate.
 Revolute = joint_struct(1, 1)
@@ -154,22 +161,24 @@ def _law(
 
 @wp.kernel
 def _write(
-    attitude: wp.array(dtype=wp.quat),  # (vehicles,) the written attitude, NaN to keep the target
-    rate: wp.array(dtype=wp.vec3),  # (vehicles,) the written rate
-    lock: wp.array(dtype=wp.int32),  # (vehicles,) the written yaw lock bit
+    # (vehicles, 9) the written setpoint: the attitude, NaN to keep the target, the rate, the yaw lock bit, and
+    # whether the attitude's heading is against North. One array, so a write costs one copy to the device.
+    setpoint: wp.array2d(dtype=float),
     target: wp.array(dtype=wp.quat),
     frame: wp.array(dtype=wp.int32),
     setpoint_rate: wp.array(dtype=wp.vec3),
     locked: wp.array(dtype=wp.int32),
 ):
-    """A written setpoint: the attitude replaces the target, in the frame its lock bit names, unless it's NaN."""
+    """A written setpoint: the attitude replaces the target, in the frame the setpoint names, unless it's NaN.
+    The law's step turns a target that stands in the other frame than the lock's into the lock's.
+    """
     v = wp.tid()
-    a = attitude[v]
+    a = wp.quat(setpoint[v, 0], setpoint[v, 1], setpoint[v, 2], setpoint[v, 3])
     if not (wp.isnan(a[0]) or wp.isnan(a[1]) or wp.isnan(a[2]) or wp.isnan(a[3])):
         target[v] = wp.normalize(a)
-        frame[v] = lock[v]
-    setpoint_rate[v] = rate[v]
-    locked[v] = lock[v]
+        frame[v] = int(setpoint[v, 8])
+    setpoint_rate[v] = wp.vec3(setpoint[v, 4], setpoint[v, 5], setpoint[v, 6])
+    locked[v] = int(setpoint[v, 7])
 
 
 class GimbalLaw:
@@ -204,26 +213,28 @@ class GimbalLaw:
         self._rate = wp.zeros(self.vehicles, dtype=wp.vec3, device=device)
         self._integral = wp.zeros(self.vehicles, dtype=wp.vec3, device=device)
 
-    def write(self, attitude, rate, locked) -> None:
+    def write(self, attitude, rate, locked, earth=None) -> None:
         """Write each vehicle's setpoint, once: an event, not a level the law reads again.
 
         Args:
-            attitude: ``(vehicles, 4)`` the attitude that replaces the target, a quaternion ``(x, y, z, w)``. Its
-                heading is against North with the yaw lock, and against the vehicle's heading without it. NaN
+            attitude: ``(vehicles, 4)`` the attitude that replaces the target, a quaternion ``(x, y, z, w)``. NaN
                 leaves the target where the rate has taken it.
             rate: ``(vehicles, 3)`` the rate that moves the target each tick [rad/s]: its z part turns the target
                 about the vertical, and its x and y parts about the target's own axes.
             locked: ``(vehicles,)`` the yaw lock bit: whether yaw holds against North, not the vehicle's heading.
+            earth: ``(vehicles,)`` whether each attitude's heading is against North, not the vehicle's heading.
+                ``None`` takes the frame the lock bit names. An attitude in the other frame than the lock's
+                points the camera where it says at the next step, and the target then holds as the lock says.
         """
         device = self._target.device
+        setpoint = np.empty((self.vehicles, 9), dtype=np.float32)
+        setpoint[:, :4], setpoint[:, 4:7] = attitude, rate
+        setpoint[:, 7] = locked
+        setpoint[:, 8] = locked if earth is None else earth
         wp.launch(
             _write,
             dim=self.vehicles,
-            inputs=(
-                wp.array(np.asarray(attitude, dtype=np.float32), dtype=wp.quat, device=device),
-                wp.array(np.asarray(rate, dtype=np.float32), dtype=wp.vec3, device=device),
-                wp.array(np.asarray(locked, dtype=np.int32), dtype=wp.int32, device=device),
-            ),
+            inputs=(wp.array(setpoint, dtype=float, device=device),),
             outputs=(self._target, self._frame, self._rate, self._locked),
             device=device,
         )
@@ -276,13 +287,20 @@ def _measure(
     rate: wp.array(dtype=wp.vec3),  # out: the camera's rate in its own frame
     attitude: wp.array(dtype=wp.quat),  # out: the camera's attitude against North, East, Down
     angles: wp.array2d(dtype=float),  # out: the three joint angles
+    measured: wp.array(dtype=float),  # (7,) out: the attitude, then the rate, which the device's status reads
 ):
     """The plant's outputs as what a gimbal's controller measures. The world's x axis points North and its z
     axis up, so a half turn about x takes it to North, East, Down.
     """
     body = camera[0]
-    rate[0] = wp.quat_rotate_inv(body.orientation, body.angular_velocity)
-    attitude[0] = wp.quat(1.0, 0.0, 0.0, 0.0) * body.orientation
+    w = wp.quat_rotate_inv(body.orientation, body.angular_velocity)
+    q = wp.quat(1.0, 0.0, 0.0, 0.0) * body.orientation
+    rate[0] = w
+    attitude[0] = q
+    for i in range(4):
+        measured[i] = q[i]
+    for i in range(3):
+        measured[4 + i] = w[i]
     angles[0, 0] = joint_0[0].q[0]
     angles[0, 1] = joint_1[0].q[0]
     angles[0, 2] = joint_2[0].q[0]
@@ -293,6 +311,36 @@ _GAINS = {
     "rate_gain": "nexus:rateGain",
     "integral_gain": "nexus:integralGain",
 }
+
+
+def axis_limits(model, joints) -> dict:
+    """The lowest and the highest angle the gimbal reaches about each camera axis [rad], from its joints' limits.
+
+    Args:
+        model: The finalized articulated model.
+        joints: The gimbal's three revolute joints in the model, from the vehicle to the camera.
+
+    Returns:
+        ``roll``, ``pitch`` and ``yaw``, each a lowest and a highest angle, NaN for an axis whose joint turns a
+        full turn or more, or that no joint turns about. A joint counts for the camera axis its own axis lies
+        nearest to at zero joint angles, and its limits swap and change sign when it points the other way.
+    """
+    starts = model.joint_qd_start.numpy()
+    axes, lower, upper = model.joint_axis.numpy(), model.joint_limit_lower.numpy(), model.joint_limit_upper.numpy()
+    on_parent, on_child = model.joint_X_p.numpy(), model.joint_X_c.numpy()
+    limits = dict.fromkeys(("roll", "pitch", "yaw"), (math.nan, math.nan))
+    to_camera = wp.quat_identity()  # from the frame of the joint's child body to the camera's, at zero angles
+    for joint in reversed([int(j) for j in joints]):
+        dof = int(starts[joint])
+        child = wp.quat(*on_child[joint][3:])
+        axis = np.array(wp.quat_rotate(to_camera, wp.quat_rotate(child, wp.vec3(*axes[dof]))))
+        to_camera = to_camera * child * wp.quat_inverse(wp.quat(*on_parent[joint][3:]))
+        about = int(np.argmax(np.abs(axis)))
+        low, high = float(lower[dof]), float(upper[dof])
+        if high - low >= 2.0 * math.pi:
+            continue
+        limits[("roll", "pitch", "yaw")[about]] = (low, high) if axis[about] > 0.0 else (-high, -low)
+    return limits
 
 
 def _chain(model, path: str, inputs: dict) -> list[int]:
@@ -343,14 +391,27 @@ def _chain(model, path: str, inputs: dict) -> list[int]:
     return joints
 
 
+# How often the device sends its heartbeat and its status, in nanoseconds of sim time: 1 Hz and 20 Hz.
+_HEARTBEAT_PERIOD = 1_000_000_000
+_STATUS_PERIOD = 50_000_000
+
+
 class GimbalController(Component):
     """The controller of one camera gimbal, which a `Scope` of the vehicle declares with
     ``NexusGimbalControllerAPI``: the camera's pose and the three joints' angles to one current command per joint
     motor, entry ``i`` of its ``controls`` for joint ``i``.
 
+    It's a MAVLink gimbal device too, :class:`~nexus_uav._src.vehicle.controllers.gimbal_device.GimbalDevice`, on
+    port 13280 of the User Datagram Protocol (UDP) plus the run's instance. Its host stage reads the port without a
+    wait, writes the law each setpoint that arrives, and answers the address its last message came from, its
+    gimbal manager's: a heartbeat at 1 Hz and its status at 20 Hz of sim time, and its information on request. It
+    sends nothing before a message arrives. Declared after the controller that flies the vehicle, its host stage
+    sits beside that one's, and the tick gains no graph segment.
+
     Args:
         model: The finalized articulated model, in which the controller finds its joints.
         path: The controller's own prim, which its errors name.
+        instance: The run's instance, which the device's port counts from.
         inputs: The prims its connections target, by input: ``camera``, the camera's body, and ``joints``, the
             three joints from the vehicle to the camera.
         attitude_gain: The rate command per attitude error [1/s], ``nexus:attitudeGain``.
@@ -361,9 +422,11 @@ class GimbalController(Component):
     Raises:
         ValueError: A gain is below 0, NaN or infinite, the rate limit isn't positive and finite, or the declaration isn't a camera's body
             behind a chain of three revolute joints; the message names the prim, and the attribute or the input.
+        RunError: At ``connect``, another process holds the device's port; the message names the prim and the port.
     """
 
     needs_model = True
+    needs_instance = True  # the device's port counts from the run's instance
 
     def __init__(
         self,
@@ -371,6 +434,7 @@ class GimbalController(Component):
         model,
         path: str,
         inputs: dict,
+        instance: int = 0,
         attitude_gain: float = 0.0,
         rate_limit: float = 0.0,
         rate_gain=(0.0, 0.0, 0.0),
@@ -387,9 +451,10 @@ class GimbalController(Component):
                 "above 0"
             )
         device = model.device
+        joints = _chain(model, path, inputs)
         self._law = GimbalLaw(
             model,
-            [_chain(model, path, inputs)],
+            [joints],
             attitude_gain=attitude_gain,
             rate_limit=rate_limit,
             rate_gain=rate_gain,
@@ -402,12 +467,50 @@ class GimbalController(Component):
         self._rate = wp.zeros(1, dtype=wp.vec3, device=device)
         self._attitude = wp.zeros(1, dtype=wp.quat, device=device)
         self._angles = wp.zeros((1, 3), dtype=float, device=device)
+        # The measured attitude and rate in one array, so the device's status costs one copy to the host.
+        self._measured = wp.zeros(7, dtype=float, device=device)
+        # The MAVLink end: the device, its socket, and when it next sends.
+        self._path = path
+        self._port = PORT + int(instance)
+        self._device = GimbalDevice(**axis_limits(model, joints))
+        self._socket: socket.socket | None = None
+        self._heartbeat_due = self._status_due = 0
+        # The last setpoint the link wrote, while a repeat of it would change nothing: a manager repeats its
+        # setpoint many times a second, and a write costs a copy to the device and a kernel.
+        self._written: bytes | None = None
 
-    def write(self, attitude, rate, locked) -> None:
-        """Write the setpoint, once, as :meth:`GimbalLaw.write` takes it for one vehicle: the attitude
-        ``(x, y, z, w)``, NaN to keep the target, the rate [rad/s], and the yaw lock bit.
+    def connect(self, links) -> None:
+        """Bind the device's port, for the run.
+
+        Raises:
+            RunError: Another process holds the port.
         """
-        self._law.write(attitude, rate, locked)
+        link = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            link.bind(("0.0.0.0", self._port))
+        except OSError as exc:
+            link.close()
+            if exc.errno != errno.EADDRINUSE:
+                raise
+            raise RunError(
+                f"{self._path}: UDP {self._port}, the gimbal device's port, is in use: another run or process on "
+                "this machine holds it"
+            ) from exc
+        link.setblocking(False)
+        self._socket = link
+
+    def close(self) -> None:
+        """Close the device's port. Idempotent."""
+        if self._socket is not None:
+            self._socket.close()
+            self._socket = None
+
+    def write(self, attitude, rate, locked, earth=None) -> None:
+        """Write the setpoint, once, as :meth:`GimbalLaw.write` takes it for one vehicle: the attitude
+        ``(x, y, z, w)``, NaN to keep the target, the rate [rad/s], the yaw lock bit, and the attitude's frame.
+        """
+        self._written = None  # the link's next setpoint writes again, a repeat included
+        self._law.write(attitude, rate, locked, earth)
 
     def _step(self, tick) -> None:
         """The stage's work: the plant's outputs to the law's inputs, then the law, into the controls' buffer."""
@@ -416,13 +519,68 @@ class GimbalController(Component):
             _measure,
             dim=1,
             inputs=(self.camera.buffer, joints[0], joints[1], joints[2]),
-            outputs=(self._rate, self._attitude, self._angles),
+            outputs=(self._rate, self._attitude, self._angles, self._measured),
         )
         self._law.step(self._rate, self._attitude, self._angles, tick.period, self.controls.buffer)
 
+    def _link(self, tick) -> None:
+        """The device's stage: take every datagram that waits, with no wait of its own, write the law each
+        setpoint, answer the sender, and send the heartbeat and the status when each is due.
+        """
+        link = self._socket
+        if link is None:
+            return
+        now = tick.t.time_ns
+        while True:
+            try:
+                datagram, sender = link.recvfrom(65535)
+            except BlockingIOError:
+                break
+            setpoints, replies = self._device.handle(datagram, now // 1_000_000, sender)
+            for setpoint in setpoints:
+                self._take(setpoint)
+            for reply in replies:
+                link.sendto(reply, sender)
+        if self._device.system is None:
+            return
+        if now >= self._heartbeat_due:
+            link.sendto(self._device.heartbeat(), self._device.manager)
+            self._heartbeat_due = _next(self._heartbeat_due, _HEARTBEAT_PERIOD, now)
+        if now >= self._status_due:
+            # What the law measured at its last step, one tick back.
+            measured = self._measured.numpy()
+            link.sendto(self._device.status(now // 1_000_000, measured[:4], measured[4:]), self._device.manager)
+            self._status_due = _next(self._status_due, _STATUS_PERIOD, now)
+
+    def _take(self, setpoint) -> None:
+        """Write the law a setpoint off the link, unless it repeats the last one written and a second write would
+        change nothing. That holds for a setpoint that keeps the target, and for one whose attitude has no rate
+        and stands in the lock's own frame. An attitude with a rate takes the target back each time, and an
+        attitude in the other frame points the camera again, so the law takes each repeat of those.
+        """
+        attitude, rate, locked, earth = setpoint
+        repeat = struct.pack("7f2?", *attitude, *rate, locked, earth)
+        if repeat != self._written:
+            self._law.write([attitude], [rate], [locked], [earth])
+        settles = math.isnan(attitude[0]) or (not any(rate) and earth == locked)
+        self._written = repeat if settles else None
+
     def stages(self) -> list[Stage]:
-        """One device stage, ``gimbal_law``, reading the camera's pose and the joints, and writing the controls."""
-        return [Stage("gimbal_law", "device", self._step, reads=(self.camera, self.joints), writes=(self.controls,))]
+        """A host stage, ``gimbal_device``, the MAVLink end, then a device stage, ``gimbal_law``, reading the
+        camera's pose and the joints, and writing the controls.
+        """
+        return [
+            Stage("gimbal_device", "host", self._link),
+            Stage("gimbal_law", "device", self._step, reads=(self.camera, self.joints), writes=(self.controls,)),
+        ]
 
 
-__all__ = ["GimbalController", "GimbalLaw"]
+def _next(due: int, period: int, now: int) -> int:
+    """When a message that was due at `due` and went out at `now` is next due [ns]: the first goes out at once,
+    and each later one a whole number of periods after it, as a sensor's samples do.
+    """
+    first = due if due else now
+    return first + ((now - first) // period + 1) * period
+
+
+__all__ = ["GimbalController", "GimbalLaw", "axis_limits"]
