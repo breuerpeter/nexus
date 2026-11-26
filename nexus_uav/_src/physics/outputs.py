@@ -12,26 +12,13 @@ struct's fields have fixed widths. A joint with no coordinate, a fixed joint, wr
 
 from __future__ import annotations
 
-from functools import cache
 from typing import Any
 
 import warp as wp
 
 from nexus_uav._src.core.labels import leaf_keys
-from nexus_uav._src.core.schema import PoseTwist
+from nexus_uav._src.core.schema import PoseTwist, joint_struct
 from nexus_uav._src.core.signals import Signal
-
-
-@cache
-def joint_struct(nq: int, nqd: int) -> type:
-    """The Warp struct of a joint with ``nq`` coordinates and ``nqd`` velocities: ``q`` and ``qd`` as fixed
-    vectors of float32. One type per width, so two joints of one width share it and its kernel.
-    """
-    fields = {
-        "q": wp.types.vector(length=nq, dtype=wp.float32),
-        "qd": wp.types.vector(length=nqd, dtype=wp.float32),
-    }
-    return wp.struct(type(f"Joint_{nq}_{nqd}", (), {"__annotations__": fields, "__module__": __name__}))
 
 
 @wp.kernel

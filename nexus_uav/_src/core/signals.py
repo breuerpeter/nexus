@@ -6,7 +6,8 @@ and each reader one buffer. Where more than one component writes a signal, a rea
 connection on its prim names, or every writer as a list. A signal whose type is Warp's own, a struct or a value type
 such as ``wp.float32`` or ``wp.vec3``, lives on the device: its buffer is a Warp array, which device stages
 read and write in their kernels and a host stage reads with a copy. Any other type is a host type, whose
-buffer holds one object.
+buffer holds one object. A device stage reads a list input too, when the list's type is a device type: it takes
+one device buffer per writer.
 """
 
 from __future__ import annotations
@@ -109,6 +110,16 @@ def _value(buffer: Any) -> Any:
     return buffer.numpy()[0].copy()
 
 
+def _device_list(signal: Signal) -> bool:
+    """Whether the signal is a list input of a device type: each buffer it takes lives on the device, so a device
+    stage reads it, one array per writer.
+    """
+    if typing.get_origin(signal.type) is not list:
+        return False
+    (element,) = typing.get_args(signal.type)
+    return wp.types.type_is_struct(element) or wp.types.type_is_value(element)
+
+
 def _name(component: object) -> str:
     """The instance name of a component, its ``name``, else its class's name, as for a fixed part."""
     name = component.name if isinstance(component, Component) else None
@@ -189,7 +200,7 @@ def _declared(ring: list[Bound]) -> tuple[dict, dict]:
         seen.add(id(bound))
         for verb, table, signals in (("reads", reads, bound.stage.reads), ("writes", writes, bound.stage.writes)):
             for signal in signals:
-                if bound.stage.kind == "device" and not signal.device:
+                if bound.stage.kind == "device" and not (signal.device or _device_list(signal)):
                     raise ValueError(
                         f"{_owner(bound)}'s device stage {bound.stage.name!r} {verb} {signal.name!r}, a "
                         f"{_type(signal.type)}, which lives on the host: a device stage reads and writes device "

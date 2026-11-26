@@ -98,5 +98,13 @@ def Xform "Vehicle"
         float nexus:currentLimit = 2
         float nexus:torqueConstant = 0.05
     }
+
+    def Scope "GimbalController" (
+        prepend apiSchemas = ["NexusGimbalControllerAPI"]
+    )
+    {
+        float nexus:attitudeGain = 40
+        float nexus:rateLimit = 2.5
+    }
 }
 
