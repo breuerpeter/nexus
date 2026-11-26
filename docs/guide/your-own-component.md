@@ -7,7 +7,7 @@ description: "Ship a component of your own: its schema plugin, its class on the 
 A project beside nexus adds a component the way the framework adds its own. It ships three things. A
 schema declares the component in a vehicle's Universal Scene Description (USD) file. A class fills
 the one component contract. An entry maps the schema to the class. Nothing in nexus changes,
-and the project patches nothing. PX4 is the worked example throughout. It's the one controller nexus
+and the project patches nothing. PX4 is the worked example throughout. It's the flight controller nexus
 ships, and it lives in its own folders as a project's component would.
 
 ## The schema
@@ -71,12 +71,15 @@ two controllers, a flight controller and a gimbal controller, has two writers of
 controller's `Scope`. The `controls` signal of a controller is as wide as its actuators,
 and the command elements read the leading part of it.
 
-The contract has eight more members. `connect` opens what the component needs for the run, a port or
+The contract has nine more members. `connect` opens what the component needs for the run, a port or
 a model, and takes the link of each peer the class requires, keyed by the peer's name. `close`
 releases what `connect` opened. `attached` reads false until the peer the component waits on has
 dialed in, so the loop connects it after the capture and holds the sim clock until then. `requires`
 names the peers the class needs, which the builder starts. `needs_instance` asks for the run's
-instance, the number the run's peers number their ports from, as the keyword `instance`. `ports` names
+instance, the number the run's peers number their ports from, as the keyword `instance`. `needs_model`
+asks for the finalized model, as the keyword `model`, with the component's own prim's path, `path`, and
+the prims its connections target by input, `inputs`. A prim's path is its label in the model, so a
+controller finds a joint by the path its connection names, as the gimbal controller does. `ports` names
 the links the component knows of that leave the run, which `sim.ports` lists. `artifacts` names the
 files the component leaves for a reader. `set_logger` takes the Logger the loop hands over, scoped to the component's
 path, for a value with no fixed width such as a camera's frame. The Recorder keeps every fixed-width
