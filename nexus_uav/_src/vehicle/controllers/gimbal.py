@@ -26,6 +26,7 @@ from __future__ import annotations
 import errno
 import math
 import socket
+import struct
 
 import numpy as np
 import warp as wp
@@ -475,6 +476,9 @@ class GimbalController(Component):
         self._socket: socket.socket | None = None
         self._manager = None
         self._heartbeat_due = self._status_due = 0
+        # The last setpoint the link wrote, while a repeat of it would change nothing: a manager repeats its
+        # setpoint many times a second, and a write costs a copy to the device and a kernel.
+        self._written: bytes | None = None
 
     def connect(self, links) -> None:
         """Bind the device's port, for the run.
@@ -506,6 +510,7 @@ class GimbalController(Component):
         """Write the setpoint, once, as :meth:`GimbalLaw.write` takes it for one vehicle: the attitude
         ``(x, y, z, w)``, NaN to keep the target, the rate [rad/s], the yaw lock bit, and the attitude's frame.
         """
+        self._written = None  # the link's next setpoint writes again, a repeat included
         self._law.write(attitude, rate, locked, earth)
 
     def _step(self, tick) -> None:
@@ -535,7 +540,7 @@ class GimbalController(Component):
             self._manager = sender
             setpoint, replies = self._device.handle(datagram, now // 1_000_000)
             if setpoint is not None:
-                self._law.write([setpoint.attitude], [setpoint.rate], [setpoint.locked], [setpoint.earth])
+                self._take(setpoint)
             for reply in replies:
                 link.sendto(reply, sender)
         if self._device.system is None:
@@ -548,6 +553,19 @@ class GimbalController(Component):
             measured = self._measured.numpy()
             link.sendto(self._device.status(now // 1_000_000, measured[:4], measured[4:]), self._manager)
             self._status_due = _next(self._status_due, _STATUS_PERIOD, now)
+
+    def _take(self, setpoint) -> None:
+        """Write the law a setpoint off the link, unless it repeats the last one written and a second write would
+        change nothing. That holds for a setpoint that keeps the target, and for one whose attitude has no rate
+        and stands in the lock's own frame. An attitude with a rate takes the target back each time, and an
+        attitude in the other frame points the camera again, so the law takes each repeat of those.
+        """
+        attitude, rate, locked, earth = setpoint
+        repeat = struct.pack("7f2?", *attitude, *rate, locked, earth)
+        if repeat != self._written:
+            self._law.write([attitude], [rate], [locked], [earth])
+        settles = math.isnan(attitude[0]) or (not any(rate) and earth == locked)
+        self._written = repeat if settles else None
 
     def stages(self) -> list[Stage]:
         """A host stage, ``gimbal_device``, the MAVLink end, then a device stage, ``gimbal_law``, reading the
