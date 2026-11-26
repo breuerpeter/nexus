@@ -150,7 +150,7 @@ def test_start_runs_px4_with_the_runs_instance_and_airframe(daemon, tree, tmp_pa
     printing its prompt and starves PX4. The store of the airframe and the instance mounts over the
     instance's folder of the tree, so the tree keeps no state of the run's, and the run's folder mounts over
     PX4's log root inside it, so PX4 writes the run's ULog there and leaves none in the tree. PX4's bridge client
-    dials the agent's port of the run's instance, 8888 plus 2. The container
+    dials the agent's port of the run's instance, 8888 plus 2, and names its topic prefix `px4_2`. The container
     doesn't remove itself, so a PX4 that exits at once leaves its console for the log.
     """
     _peer(tree, tmp_path, instance=2).start()
@@ -162,7 +162,12 @@ def test_start_runs_px4_with_the_runs_instance_and_airframe(daemon, tree, tmp_pa
         "name": f"nexus-px4_sitl-{os.getpid()}-2",
         "detach": True,
         "user": f"{os.getuid()}:{os.getgid()}",
-        "environment": {"HOME": "/tmp", "PX4_SIM_MODEL": "none_astro_max", "PX4_UXRCE_DDS_PORT": "8890"},
+        "environment": {
+            "HOME": "/tmp",
+            "PX4_SIM_MODEL": "none_astro_max",
+            "PX4_UXRCE_DDS_PORT": "8890",
+            "PX4_UXRCE_DDS_NS": "px4_2",
+        },
         "working_dir": str(tree),
         "mounts": [
             Mount(str(tree), str(tree), type="bind", read_only=False),
