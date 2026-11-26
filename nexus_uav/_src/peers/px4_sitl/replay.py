@@ -40,6 +40,7 @@ SKIPPED = {
     "SENS_*": "the real board's sensor setup: PX4 reports an attitude failure",
     "SYS_HAS_*": "the hardware the real vehicle carries: PX4 reports a missing distance sensor",
     "COM_POWER_COUNT": "a count above 1 denies arming: SITL has one power source",
+    "ZENOH_ENABLE": "the real vehicle's middleware: PX4 starts Zenoh, not the DDS bridge, and no replayed sample reaches PX4",
     "COM_CPU_MAX": "the real board's load limit: PX4 reports the CPU load too high in a run faster than real time",
     "CBRK_SUPPLY_CHK": "the real vehicle's supply check: PX4 reports the system power unavailable",
     "UXRCE_DDS_*": "the real vehicle's bridge setup: no replayed sample reaches PX4",
