@@ -195,7 +195,7 @@ def test_px4_boots_on_the_logs_parameters_without_the_skipped_ones_with_the_call
     0; the delta wins over the log.
 
     Given a ULog with `MPC_XY_VEL_MAX` 12, `MPC_Z_VEL_MAX_UP` 3, `UXRCE_DDS_SYNCT` 1, `COM_POWER_COUNT` 2,
-    which denies arming on SITL's one power source, and `ZENOH_ENABLE` 1, which starts Zenoh and no DDS bridge, and a delta of `MPC_XY_VEL_MAX` 5, then the boot parameters
+    which denies arming on SITL's one power source, and `ZENOH_ENABLE` 1, which starts Zenoh in place of the bridge, and a delta of `MPC_XY_VEL_MAX` 5, then the boot parameters
     are `MPC_XY_VEL_MAX` 5, `MPC_Z_VEL_MAX_UP` 3 and `UXRCE_DDS_SYNCT` 0.
     """
     ulog = ulog_file.write(
