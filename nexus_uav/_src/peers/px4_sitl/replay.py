@@ -146,18 +146,19 @@ def samples(ulog: str | os.PathLike) -> list[Sample]:
     return log_samples(read(ulog))
 
 
-def address(sample: Sample, instance: int) -> Sample:
+def address(sample: Sample, instance: int, version: int = 0) -> Sample:
     """``sample`` as PX4 instance ``instance`` takes it: on that instance's topic, and a command with that
     instance's system id as its target.
 
     PX4 prefixes the topics of an instance other than 0 with ``px4_<instance>``, and takes ``instance + 1`` as
-    its system id.
+    its system id. It ends the topic of a message whose ``version`` isn't 0 with ``_v<version>``.
     """
     prefix = f"px4_{instance}/" if instance else ""
+    suffix = f"_v{version}" if version else ""
     values = sample.values
     if sample.topic == "vehicle_command":
         values = {**values, "target_system": instance + 1}
-    return Sample(sample.time, f"rt/{prefix}fmu/in/{sample.topic}", values)
+    return Sample(sample.time, f"rt/{prefix}fmu/in/{sample.topic}{suffix}", values)
 
 
 def log_pin(log, ulog, px4: str | None, default: PeerPin) -> PeerPin:
@@ -267,6 +268,25 @@ def layer(folder: Path, vehicle_file: str, params: Mapping[str, float], under: s
     return str(path)
 
 
+def _definition(px4_tree: Path, name: str) -> str:
+    """The text of the tree's definition of PX4's message ``name``, which sits in ``msg/`` or ``msg/versioned/``."""
+    source = px4_tree / "msg" / f"{name}.msg"
+    if not source.exists():
+        source = px4_tree / "msg" / "versioned" / f"{name}.msg"
+    return source.read_text()
+
+
+def versions(px4_tree: Path) -> dict[str, int]:
+    """The version the tree's PX4 gives each topic the replay sends on: the ``MESSAGE_VERSION`` its message's
+    definition states, and 0 for a definition that states none.
+    """
+    stated = {}
+    for topic, message in _MESSAGES.items():
+        found = re.search(r"^uint32 MESSAGE_VERSION\s*=\s*(\d+)", _definition(px4_tree, message), re.MULTILINE)
+        stated[topic] = int(found[1]) if found else 0
+    return stated
+
+
 def _message_type(px4_tree: Path, name: str):
     """PX4's message ``name`` as a DDS struct, from the tree's definition, its fields in the file's order."""
     from cyclonedds.idl import IdlStruct
@@ -279,11 +299,8 @@ def _message_type(px4_tree: Path, name: str):
         "float64": T.float64,
         **{f"{sign}int{bits}": getattr(T, f"{sign}int{bits}") for sign in ("", "u") for bits in (8, 16, 32, 64)},
     }
-    source = px4_tree / "msg" / f"{name}.msg"
-    if not source.exists():
-        source = px4_tree / "msg" / "versioned" / f"{name}.msg"
     fields = []
-    for line in source.read_text().splitlines():
+    for line in _definition(px4_tree, name).splitlines():
         statement = line.split("#")[0].strip()
         if not statement or "=" in statement:  # a comment or a constant
             continue
@@ -342,8 +359,11 @@ def fly(run, log, px4_tree: Path) -> None:
     instance = run.ports["offboard"]["port"] - OFFBOARD_PORT
     participant = DomainParticipant(0)
     kinds = {topic: _message_type(px4_tree, message) for topic, message in _MESSAGES.items()}
+    version = versions(px4_tree)
     writers = {
-        topic: DataWriter(participant, Topic(participant, address(Sample(0, topic, {}), instance).topic, kind))
+        topic: DataWriter(
+            participant, Topic(participant, address(Sample(0, topic, {}), instance, version[topic]).topic, kind)
+        )
         for topic, kind in kinds.items()
     }
     logger.info(f"replaying {len(sent)} samples to {end:.1f} s on PX4 instance {instance}")
@@ -375,6 +395,6 @@ def fly(run, log, px4_tree: Path) -> None:
         unsent = sum(1 for sample in sent[due:] if sample.time / 1e6 <= run.time)
         raise RunError(
             f"{unsent} of the replay's {len(sent)} samples never reached PX4: no reader matched "
-            f"{address(sent[due], instance).topic}; is the Micro XRCE-DDS agent peer running, and does this PX4's "
+            f"{address(sent[due], instance, version[sent[due].topic]).topic}; is the Micro XRCE-DDS agent peer running, and does this PX4's "
             "bridge list the topic?"
         )
