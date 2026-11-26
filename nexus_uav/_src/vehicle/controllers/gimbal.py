@@ -160,25 +160,24 @@ def _law(
 
 @wp.kernel
 def _write(
-    attitude: wp.array(dtype=wp.quat),  # (vehicles,) the written attitude, NaN to keep the target
-    rate: wp.array(dtype=wp.vec3),  # (vehicles,) the written rate
-    lock: wp.array(dtype=wp.int32),  # (vehicles,) the written yaw lock bit
-    earth: wp.array(dtype=wp.int32),  # (vehicles,) whether the written attitude's heading is against North
+    # (vehicles, 9) the written setpoint: the attitude, NaN to keep the target, the rate, the yaw lock bit, and
+    # whether the attitude's heading is against North. One array, so a write costs one copy to the device.
+    setpoint: wp.array2d(dtype=float),
     target: wp.array(dtype=wp.quat),
     frame: wp.array(dtype=wp.int32),
     setpoint_rate: wp.array(dtype=wp.vec3),
     locked: wp.array(dtype=wp.int32),
 ):
-    """A written setpoint: the attitude replaces the target, in the frame `earth` names, unless it's NaN. The
-    law's step turns a target that stands in the other frame than the lock's into the lock's.
+    """A written setpoint: the attitude replaces the target, in the frame the setpoint names, unless it's NaN.
+    The law's step turns a target that stands in the other frame than the lock's into the lock's.
     """
     v = wp.tid()
-    a = attitude[v]
+    a = wp.quat(setpoint[v, 0], setpoint[v, 1], setpoint[v, 2], setpoint[v, 3])
     if not (wp.isnan(a[0]) or wp.isnan(a[1]) or wp.isnan(a[2]) or wp.isnan(a[3])):
         target[v] = wp.normalize(a)
-        frame[v] = earth[v]
-    setpoint_rate[v] = rate[v]
-    locked[v] = lock[v]
+        frame[v] = int(setpoint[v, 8])
+    setpoint_rate[v] = wp.vec3(setpoint[v, 4], setpoint[v, 5], setpoint[v, 6])
+    locked[v] = int(setpoint[v, 7])
 
 
 class GimbalLaw:
@@ -227,16 +226,14 @@ class GimbalLaw:
                 points the camera where it says at the next step, and the target then holds as the lock says.
         """
         device = self._target.device
-        frames = locked if earth is None else earth
+        setpoint = np.empty((self.vehicles, 9), dtype=np.float32)
+        setpoint[:, :4], setpoint[:, 4:7] = attitude, rate
+        setpoint[:, 7] = locked
+        setpoint[:, 8] = locked if earth is None else earth
         wp.launch(
             _write,
             dim=self.vehicles,
-            inputs=(
-                wp.array(np.asarray(attitude, dtype=np.float32), dtype=wp.quat, device=device),
-                wp.array(np.asarray(rate, dtype=np.float32), dtype=wp.vec3, device=device),
-                wp.array(np.asarray(locked, dtype=np.int32), dtype=wp.int32, device=device),
-                wp.array(np.asarray(frames, dtype=np.int32), dtype=wp.int32, device=device),
-            ),
+            inputs=(wp.array(setpoint, dtype=float, device=device),),
             outputs=(self._target, self._frame, self._rate, self._locked),
             device=device,
         )
@@ -289,13 +286,20 @@ def _measure(
     rate: wp.array(dtype=wp.vec3),  # out: the camera's rate in its own frame
     attitude: wp.array(dtype=wp.quat),  # out: the camera's attitude against North, East, Down
     angles: wp.array2d(dtype=float),  # out: the three joint angles
+    measured: wp.array(dtype=float),  # (7,) out: the attitude, then the rate, which the device's status reads
 ):
     """The plant's outputs as what a gimbal's controller measures. The world's x axis points North and its z
     axis up, so a half turn about x takes it to North, East, Down.
     """
     body = camera[0]
-    rate[0] = wp.quat_rotate_inv(body.orientation, body.angular_velocity)
-    attitude[0] = wp.quat(1.0, 0.0, 0.0, 0.0) * body.orientation
+    w = wp.quat_rotate_inv(body.orientation, body.angular_velocity)
+    q = wp.quat(1.0, 0.0, 0.0, 0.0) * body.orientation
+    rate[0] = w
+    attitude[0] = q
+    for i in range(4):
+        measured[i] = q[i]
+    for i in range(3):
+        measured[4 + i] = w[i]
     angles[0, 0] = joint_0[0].q[0]
     angles[0, 1] = joint_1[0].q[0]
     angles[0, 2] = joint_2[0].q[0]
@@ -462,6 +466,8 @@ class GimbalController(Component):
         self._rate = wp.zeros(1, dtype=wp.vec3, device=device)
         self._attitude = wp.zeros(1, dtype=wp.quat, device=device)
         self._angles = wp.zeros((1, 3), dtype=float, device=device)
+        # The measured attitude and rate in one array, so the device's status costs one copy to the host.
+        self._measured = wp.zeros(7, dtype=float, device=device)
         # The MAVLink end: the device, its socket, the address of its manager, and when it next sends.
         self._path = path
         self._port = PORT + int(instance)
@@ -509,7 +515,7 @@ class GimbalController(Component):
             _measure,
             dim=1,
             inputs=(self.camera.buffer, joints[0], joints[1], joints[2]),
-            outputs=(self._rate, self._attitude, self._angles),
+            outputs=(self._rate, self._attitude, self._angles, self._measured),
         )
         self._law.step(self._rate, self._attitude, self._angles, tick.period, self.controls.buffer)
 
@@ -539,8 +545,8 @@ class GimbalController(Component):
             self._heartbeat_due = _next(self._heartbeat_due, _HEARTBEAT_PERIOD, now)
         if now >= self._status_due:
             # What the law measured at its last step, one tick back.
-            attitude, rate = self._attitude.numpy()[0], self._rate.numpy()[0]
-            link.sendto(self._device.status(now // 1_000_000, attitude, rate), self._manager)
+            measured = self._measured.numpy()
+            link.sendto(self._device.status(now // 1_000_000, measured[:4], measured[4:]), self._manager)
             self._status_due = _next(self._status_due, _STATUS_PERIOD, now)
 
     def stages(self) -> list[Stage]:

@@ -225,6 +225,7 @@ def test_a_declaration_that_is_no_camera_behind_three_revolute_joints_fails_the_
 SYSTEM = 3  # the stand-in manager's MAVLink system
 GIMBAL = 154  # the component id of a gimbal device, MAV_COMP_ID_GIMBAL
 IN_VEHICLE = 32  # GIMBAL_DEVICE_FLAGS_YAW_IN_VEHICLE_FRAME: the yaw is against the vehicle's heading
+YAW_LOCK = 16  # GIMBAL_DEVICE_FLAGS_YAW_LOCK: yaw holds against North
 DOWN_30_WXYZ = (0.9659258, 0.0, -0.2588190, 0.0)  # a pitch of −30°, as MAVLink orders a quaternion
 
 
@@ -380,6 +381,41 @@ def test_the_camera_turns_to_a_setpoint_a_manager_sends(tmp_path, manager):
     most = max(down) < 33.0
     settled = max(abs(d - 30.0) for d in down[125:]) < 1.0
     assert (before, most, settled) == (True, True, True), down[124:]
+
+
+@pytest.mark.parametrize("case", ["an attitude with a rate", "an attitude in the other frame than the lock's"])
+def test_a_repeated_setpoint_is_written_again_when_it_changes_something(tmp_path, manager, case):
+    """The device writes a repeated setpoint again when it changes something: an attitude with a rate, or an
+    attitude in the other frame than the lock's.
+
+    Given a manager that sends one setpoint every 5 ticks from tick 25 on, when the run flies 150 ticks, then,
+    for 30° down with a rate of 0.5 rad/s up over an airframe that climbs straight, the camera is within 3° of
+    30° down from tick 125 on, each repeat taking the target back; and, for the null attitude in the vehicle's
+    frame with yaw locked over an airframe whose heading turns more than 30°, the camera's heading stays within
+    10° of the airframe's, each repeat pointing it at the airframe's heading again. A setpoint written once would
+    hold the camera's heading against North, more than 30° off.
+    """
+    sender = manager()
+    if case == "an attitude with a rate":
+        commands, flags, q, rate = FULL, IN_VEHICLE, DOWN_30_WXYZ, (0.0, 0.5, 0.0)
+    else:
+        commands, flags, q, rate = TURN, YAW_LOCK | IN_VEHICLE, (1.0, 0.0, 0.0, 0.0), (math.nan,) * 3
+    setpoint = mavlink.MAVLink_gimbal_device_set_attitude_message(SYSTEM, GIMBAL, flags, list(q), *rate)
+    with _run(tmp_path, autopilot=_commanding(commands)) as sim:
+        _steps(sim, 25)
+        for _ in range(25):
+            sender.send(setpoint)
+            _steps(sim, 5)
+        camera = np.array(sim["vehicle/body/camera"].history_arrays()["orientation"])
+        airframe = np.array(sim["vehicle/body/body"].history_arrays()["orientation"])
+
+    if case == "an attitude with a rate":
+        held = max(abs(_down(q) - 30.0) for q in camera[125:]) < 3.0
+    else:
+        turned = _apart(_heading(airframe[-1]), _heading(airframe[0])) > 30.0
+        apart = max(_apart(_heading(c), _heading(a)) for c, a in zip(camera[25:], airframe[25:], strict=True))
+        held = turned and apart < 10.0
+    assert held, [round(_down(q), 1) for q in camera[125::5]]
 
 
 def test_a_port_another_process_holds_fails_the_run_at_its_start_and_the_error_names_the_port(tmp_path):
