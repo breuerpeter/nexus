@@ -250,8 +250,9 @@ def test_a_replay_fails_when_a_due_sample_never_reaches_px4(tmp_path, monkeypatc
             written.append(self.topic)
 
     class Run:
-        time = 0.0
-        ports = {"offboard": {"port": OFFBOARD_PORT}}
+        def __init__(self):
+            self.time = 0.0
+            self.ports = {"offboard": {"port": OFFBOARD_PORT}}
 
         def step(self):
             self.time += 0.5
