@@ -130,7 +130,10 @@ class GimbalDevice:
         """
         if command.target_component not in (0, COMPONENT):
             return []
-        requested = round(command.param1) if command.command == mavlink.MAV_CMD_REQUEST_MESSAGE else None
+        requested = None
+        # A NaN or infinite message id names no message.
+        if command.command == mavlink.MAV_CMD_REQUEST_MESSAGE and math.isfinite(command.param1):
+            requested = round(command.param1)
         if requested == mavlink.MAVLINK_MSG_ID_GIMBAL_DEVICE_INFORMATION:
             return [self._ack(command, mavlink.MAV_RESULT_ACCEPTED), self._information(time_ms)]
         if command.target_component == COMPONENT:

@@ -177,6 +177,26 @@ def test_a_command_the_device_does_not_serve_is_unsupported_only_when_it_names_t
     assert answers == [*unsupported, [], []]
 
 
+def test_a_request_whose_message_id_is_no_number_is_a_command_the_device_does_not_serve():
+    """A request for a message whose id is NaN or infinite is a command the device doesn't serve: it raises
+    nothing.
+
+    Given a `MAV_CMD_REQUEST_MESSAGE` for component 154 with a `param1` of, in turn, NaN, infinity and minus
+    infinity, when the device handles each, then each reply is one `COMMAND_ACK` `MAV_RESULT_UNSUPPORTED`.
+    """
+    device = GimbalDevice()
+
+    answers = []
+    for param1 in (NAN, math.inf, -math.inf):
+        try:
+            replies = _decode(device.handle(_command(REQUEST_MESSAGE, param1))[1])
+            answers.append([(m.get_type(), m.result) for m in replies])
+        except Exception as exc:
+            answers.append(exc)
+
+    assert answers == [[("COMMAND_ACK", UNSUPPORTED)]] * 3
+
+
 def test_a_datagram_the_device_does_not_act_on_gives_no_setpoint_and_no_reply():
     """A datagram the device doesn't act on gives no setpoint and no reply.
 
