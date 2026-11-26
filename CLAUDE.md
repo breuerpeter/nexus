@@ -22,7 +22,8 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
   example with `uv run -m nexus_uav.examples <name>`. Read `nexus_uav/examples/CLAUDE.md`
   before adding or changing an example. A gimbal controller ships beside PX4's,
   `nexus_uav/_src/vehicle/controllers/gimbal.py`: it flies nothing, and holds a camera's attitude through
-  the torque motors of three joints.
+  the torque motors of three joints. It's a MAVLink gimbal device too, `gimbal_device.py` beside it: every run of a vehicle
+  with one binds port 13280 of the User Datagram Protocol (UDP) plus the run's instance.
 - **No generic part names PX4.** PX4's folders are `nexus_uav/_src/peers/px4_sitl/` and
   `nexus_uav/_src/vehicle/controllers/px4/`. Nothing else under `nexus_uav/_src/` imports them or
   `nexus_uav.px4`, an import-linter contract in `.importlinter`. Its `ignore_imports` lists the one
@@ -93,7 +94,7 @@ prerelease-pinned Isaac Lab stack out of the core environment. Run it with
 - **Lint and format:** `uvx pre-commit run -a`, which runs ruff. Config in
   `.pre-commit-config.yaml` and `[tool.ruff]` in `pyproject.toml`. The `extend-exclude` entry
   keeps `docs/` out of lint. `uv run lint-imports` checks the import contracts in `.importlinter`.
-- **Tests:** `uv run --extra policy pytest -q`, which runs one worker per logical CPU, fewer when the free memory holds fewer at 3 GiB each. A test that binds or dials a PX4 port carries `pytest.mark.xdist_group("px4_ports")`. A test that needs a CUDA device carries the `gpu` marker and no skip of its own, and one that flies real PX4 the `px4_sitl` marker. `docs/guide/contributing/development.md` says which CI leg runs each. The test tree mirrors the source
+- **Tests:** `uv run --extra policy pytest -q`, which runs one worker per logical CPU, fewer when the free memory holds fewer at 3 GiB each. A test that binds or dials a PX4 port carries `pytest.mark.xdist_group("px4_ports")`, and so does a test that runs a vehicle with a gimbal controller, which binds UDP 13280. A test that needs a CUDA device carries the `gpu` marker and no skip of its own, and one that flies real PX4 the `px4_sitl` marker. `docs/guide/contributing/development.md` says which CI leg runs each. The test tree mirrors the source
   tree: the tests of `nexus_uav/_src/<path>/` sit in `tests/<path>/`, and none sits at the root of
   `tests/`. A test that mirrors no source folder sits in a folder named for its kind, `ci`, `docs`,
   `examples`, `packaging` or `suite`. `tests/suite/test_layout.py` fails on any other folder.
