@@ -310,6 +310,50 @@ def test_a_replays_layer_holds_the_callers_layer_by_its_absolute_path(tmp_path, 
     )
 
 
+def test_a_replay_starts_px4_clean_unless_the_caller_keeps_the_store(tmp_path, monkeypatch):
+    """A replay starts PX4 from nothing an earlier run stored, and keeps the store when the caller asks.
+
+    Given a ULog and a PX4 tree named, when a script replays it with no `clean`, then the run it starts is clean.
+    When the script passes `clean=False`, then the run keeps the store.
+    """
+    pytest.importorskip("newton")
+    pytest.importorskip("pxr")
+    import nexus_uav._src.api.sim as api
+    from nexus_uav._src.peers.px4_sitl import replay as module
+    from tests.usd import sensor_vehicle as sv
+
+    started = []
+
+    class Run:
+        def __init__(self, vehicle, **keywords):
+            started.append(keywords["clean"])
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def start(self):
+            pass
+
+        def artifacts(self):
+            return {}
+
+    px4 = tmp_path / "px4"
+    px4.mkdir()
+    (px4 / "Makefile").write_text("px4_sitl:\n")
+    monkeypatch.setattr(api, "Sim", Run)
+    monkeypatch.setattr(module, "fly", lambda run, log, tree: None)
+    ulog = ulog_file.write(tmp_path / "flight.ulg", info={"ver_sw": "0" * 40})
+    vehicle = sv.vehicle(tmp_path, px4=True)
+
+    replay(ulog, vehicle, scene=sv.SCENE, px4=str(px4))
+    replay(ulog, vehicle, scene=sv.SCENE, px4=str(px4), clean=False)
+
+    assert started == [True, False]
+
+
 def _steps(ulog) -> list[tuple[float, int, int]]:
     """Each change of PX4's arming state or mode in `ulog`: its time in seconds, then the two states."""
     from pyulog import ULog
