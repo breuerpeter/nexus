@@ -83,7 +83,8 @@ def replay(
         scene: The scene the run flies in.
         params: PX4 parameters that differ from the log's, by name.
         px4: The PX4 to fly, ``repo@sha`` or a checkout's path; the log's own commit when ``None``.
-        **sim: More keywords of :class:`nexus_uav.Sim`, such as ``run_dir`` or ``layer``.
+        **sim: More keywords of :class:`nexus_uav.Sim`, such as ``run_dir`` or ``layer``. The run starts PX4 from
+            nothing an earlier run stored, unless ``clean`` is ``False``.
 
     Returns:
         The run's artifacts, PX4's own ULog among them as ``ulog``.
@@ -98,6 +99,7 @@ def replay(
     from nexus_uav._src.config import LaunchConfig, resolve
     from nexus_uav._src.config.catalog import catalog_sources
 
+    sim.setdefault("clean", True)  # what an earlier run stored would boot PX4 on other parameters than the log's
     log = _replay.read(ulog)
     launch = LaunchConfig()
     launch.set_vehicle(vehicle)

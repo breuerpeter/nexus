@@ -229,14 +229,22 @@ def tree(pin: PeerPin) -> Path:
         ) from exc
 
 
-def layer(folder: Path, vehicle_file: str, params: Mapping[str, float], under: str | None) -> str:
+def layer(folder: Path, vehicle_file: str, params: Mapping[str, float], under: str | os.PathLike | None) -> str:
     """Write the replay's override layer in ``folder`` and return its path: the boot parameters on the
-    vehicle's PX4 peer, and the agent peer on a scope of its own when the vehicle declares none.
+    vehicle's PX4 peer, and the agent peer on a scope of its own when the vehicle declares none. The caller's
+    layer ``under`` goes below it by its absolute path, since a relative one would resolve against ``folder``.
 
     Raises:
         ValueError: The vehicle declares no PX4 peer.
+        FileNotFoundError: No file is at ``under``; the message names it.
     """
     from nexus_uav._src.usd.reader import read_declarations
+
+    if under is not None:
+        under = Path(under).expanduser()
+        if not under.is_file():
+            raise FileNotFoundError(f"override layer not found: {under}")
+        under = under.resolve()
 
     declared = {schema: prim for prim, schema, _ in read_declarations(vehicle_file)}
     if _PEER_SCHEMA not in declared:
@@ -320,7 +328,8 @@ def fly(run, log, px4_tree: Path) -> None:
 
     Raises:
         ImportError: The extra that writes to DDS isn't installed; the message names it.
-        RunError: No sample reached PX4, since no reader ever matched a writer.
+        RunError: A due sample never reached PX4, since no reader matched its writer; the message names the topic
+            and the count of unsent samples.
     """
     try:
         from cyclonedds.domain import DomainParticipant
@@ -340,8 +349,10 @@ def fly(run, log, px4_tree: Path) -> None:
     logger.info(f"replaying {len(sent)} samples to {end:.1f} s on PX4 instance {instance}")
     due = 0
     waited = -1  # the sample this loop has held the run for, so one sample holds it once
+    blocked = False  # whether the last pass left a due sample unsent, its writer matched by no reader
     stepping = True
     while stepping and run.time < end:
+        blocked = False
         while due < len(sent) and sent[due].time / 1e6 <= run.time:
             writer = writers[sent[due].topic]
             # DDS drops a sample a writer sends before a reader matches it. The agent makes its readers once
@@ -354,13 +365,16 @@ def fly(run, log, px4_tree: Path) -> None:
                     while not writer.get_matched_subscriptions() and time.monotonic() < deadline:
                         time.sleep(0.01)
                 if not writer.get_matched_subscriptions():
+                    blocked = True
                     break
             sample = address(sent[due], instance)
             writer.write(_message(kinds[sent[due].topic], sample.values))
             due += 1
         stepping = run.step()  # false once the run has ended, at its ``max_steps``
-    if sent and not due:
+    if blocked:
+        unsent = sum(1 for sample in sent[due:] if sample.time / 1e6 <= run.time)
         raise RunError(
-            f"no sample of the replay reached PX4: no reader matched {address(sent[0], instance).topic}; "
-            "is the Micro XRCE-DDS agent peer running?"
+            f"{unsent} of the replay's {len(sent)} samples never reached PX4: no reader matched "
+            f"{address(sent[due], instance).topic}; is the Micro XRCE-DDS agent peer running, and does this PX4's "
+            "bridge list the topic?"
         )
