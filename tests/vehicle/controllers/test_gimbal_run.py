@@ -314,15 +314,16 @@ def test_the_device_listens_on_its_port_and_answers_the_latest_sender(tmp_path, 
     """The device listens on UDP 13280 plus the run's instance and answers the address its last message came
     from, as component 154 of the sender's system.
 
-    Given the fixture quad with its camera gimbal at instance 0 and at instance 2, and a stand-in manager of
-    system 3 on a socket of its own, when it sends a `HEARTBEAT` and the run steps, then that socket receives a
-    `HEARTBEAT` of type `MAV_TYPE_GIMBAL` from system 3, component 154; and when a second socket then sends, the
-    device's next messages go to it.
+    Given a started run of the fixture quad with its camera gimbal at instance 0 and at instance 2, and a stand-in
+    manager of system 3 on a socket of its own, when it sends a `HEARTBEAT` and the run steps, then that socket
+    receives a `HEARTBEAT` of type `MAV_TYPE_GIMBAL` from system 3, component 154; and when a second socket then
+    sends, the device's next messages go to it.
     """
     seen = []
     for instance in (0, 2):
         first, second = manager(instance), manager(instance)
         with _run(tmp_path, instance=instance) as sim:
+            _steps(sim, 1)  # the run binds its port at its start
             first.heartbeat()
             _steps(sim, 5)
             answered = _heartbeats(first.heard())
