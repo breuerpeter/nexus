@@ -95,7 +95,8 @@ def Scope "Estimator" (
 ```
 
 A reader that takes every writer declares the signal's type as a list, such as `list[ImuSample]`, and
-reads one sample per writer, in the order the vehicle declares them. A reader's default fills the buffer
+reads one sample per writer, in the order the vehicle declares them. A device stage reads such a list
+too, when its type lives on the device: it takes one device buffer per writer. A reader's default fills the buffer
 it takes until its writer first writes, and an input that no component writes reads its default. The run
 stops before any stage runs, with an error that names both ends, when:
 
