@@ -65,3 +65,4 @@ The shape of the tree today, one line per fact, and under `## Planned` each chan
 - The workflows pin each action to a commit hash and pass `actionlint` and `zizmor`; one update bot bumps the locks and the image bases; the examples harness scores in numpy and scipy, and no GPLv3 package enters any group.
 - Vale checks heading case too, and the heading-case script goes. The docs site keeps each release's docs.
 - The Micro XRCE-DDS agent peer ships a fake that binds its port and relays to the fake PX4. A CPU test then flies the replay's loop, which only the real-PX4 leg flies today.
+- A replay's Data Distribution Service (DDS) traffic stays on its host: both ends of the bridge take a loopback-only configuration, so two machines on one network can each replay on instance 0 and meet nowhere.
