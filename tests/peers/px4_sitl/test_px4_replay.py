@@ -218,6 +218,73 @@ _NEEDS_TREE = pytest.mark.skipif(
 )
 
 
+def test_a_replay_fails_when_a_due_sample_never_reaches_px4(tmp_path, monkeypatch):
+    """A replay whose later topic no reader ever matches fails, and names the topic and the unsent samples.
+
+    Given a ULog with a stick row at 1 s, then a command at 2 s and a link status row at 3 s, and a bridge that
+    reads the sticks alone, when the replay flies to the log's end, then it raises a run error that names the
+    command's topic and 2 unsent samples of 3, and the stick row alone went out.
+    """
+    import cyclonedds.domain
+    import cyclonedds.pub
+    import cyclonedds.topic
+
+    from nexus_uav import RunError
+    from nexus_uav._src.peers.px4_sitl import OFFBOARD_PORT
+    from nexus_uav._src.peers.px4_sitl import replay as module
+
+    written = []
+
+    class Topic:
+        def __init__(self, participant, name, kind):
+            self.name = name
+
+    class Writer:
+        def __init__(self, participant, topic):
+            self.topic = topic.name
+
+        def get_matched_subscriptions(self):
+            return [object()] if self.topic.endswith("manual_control_input") else []
+
+        def write(self, message):
+            written.append(self.topic)
+
+    class Run:
+        time = 0.0
+        ports = {"offboard": {"port": OFFBOARD_PORT}}
+
+        def step(self):
+            self.time += 0.5
+            return True
+
+    monkeypatch.setattr(cyclonedds.domain, "DomainParticipant", lambda domain: object())
+    monkeypatch.setattr(cyclonedds.pub, "DataWriter", Writer)
+    monkeypatch.setattr(cyclonedds.topic, "Topic", Topic)
+    monkeypatch.setattr(module, "_message_type", lambda tree, name: name)
+    monkeypatch.setattr(module, "_message", lambda kind, values: values)
+    monkeypatch.setattr(module, "_MATCH_HOLD_S", 0.0)
+    log = module.read(
+        ulog_file.write(
+            tmp_path / "flight.ulg",
+            topics={
+                "manual_control_setpoint": (_STICK, [_stick(1_000_000, 0.25)]),
+                "vehicle_command": (_COMMAND, [(2_000_000, 1.0, 176, 1, 255, True)]),
+                "telemetry_status": (_LINK, [(3_000_000, 3, True)]),
+            },
+        )
+    )
+
+    with pytest.raises(RunError) as failure:
+        module.fly(Run(), log, tmp_path)
+
+    message = str(failure.value)
+    assert (written, "rt/fmu/in/vehicle_command" in message, "2 of the replay's 3 samples" in message) == (
+        ["rt/fmu/in/manual_control_input"],
+        True,
+        True,
+    )
+
+
 def _steps(ulog) -> list[tuple[float, int, int]]:
     """Each change of PX4's arming state or mode in `ulog`: its time in seconds, then the two states."""
     from pyulog import ULog

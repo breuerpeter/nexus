@@ -320,7 +320,8 @@ def fly(run, log, px4_tree: Path) -> None:
 
     Raises:
         ImportError: The extra that writes to DDS isn't installed; the message names it.
-        RunError: No sample reached PX4, since no reader ever matched a writer.
+        RunError: A due sample never reached PX4, since no reader matched its writer; the message names the topic
+            and the count of unsent samples.
     """
     try:
         from cyclonedds.domain import DomainParticipant
@@ -340,8 +341,10 @@ def fly(run, log, px4_tree: Path) -> None:
     logger.info(f"replaying {len(sent)} samples to {end:.1f} s on PX4 instance {instance}")
     due = 0
     waited = -1  # the sample this loop has held the run for, so one sample holds it once
+    blocked = False  # whether the last pass left a due sample unsent, its writer matched by no reader
     stepping = True
     while stepping and run.time < end:
+        blocked = False
         while due < len(sent) and sent[due].time / 1e6 <= run.time:
             writer = writers[sent[due].topic]
             # DDS drops a sample a writer sends before a reader matches it. The agent makes its readers once
@@ -354,13 +357,16 @@ def fly(run, log, px4_tree: Path) -> None:
                     while not writer.get_matched_subscriptions() and time.monotonic() < deadline:
                         time.sleep(0.01)
                 if not writer.get_matched_subscriptions():
+                    blocked = True
                     break
             sample = address(sent[due], instance)
             writer.write(_message(kinds[sent[due].topic], sample.values))
             due += 1
         stepping = run.step()  # false once the run has ended, at its ``max_steps``
-    if sent and not due:
+    if blocked:
+        unsent = sum(1 for sample in sent[due:] if sample.time / 1e6 <= run.time)
         raise RunError(
-            f"no sample of the replay reached PX4: no reader matched {address(sent[0], instance).topic}; "
-            "is the Micro XRCE-DDS agent peer running?"
+            f"{unsent} of the replay's {len(sent)} samples never reached PX4: no reader matched "
+            f"{address(sent[due], instance).topic}; is the Micro XRCE-DDS agent peer running, and does this PX4's "
+            "bridge list the topic?"
         )
