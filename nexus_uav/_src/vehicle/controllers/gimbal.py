@@ -403,7 +403,7 @@ class GimbalController(Component):
 
     It's a MAVLink gimbal device too, :class:`~nexus_uav._src.vehicle.controllers.gimbal_device.GimbalDevice`, on
     port 13280 of the User Datagram Protocol (UDP) plus the run's instance. Its host stage reads the port without a
-    wait, writes the law each setpoint that arrives, and answers the address its last datagram came from, its
+    wait, writes the law each setpoint that arrives, and answers the address its last message came from, its
     gimbal manager's: a heartbeat at 1 Hz and its status at 20 Hz of sim time, and its information on request. It
     sends nothing before a message arrives. Declared after the controller that flies the vehicle, its host stage
     sits beside that one's, and the tick gains no graph segment.
@@ -469,12 +469,11 @@ class GimbalController(Component):
         self._angles = wp.zeros((1, 3), dtype=float, device=device)
         # The measured attitude and rate in one array, so the device's status costs one copy to the host.
         self._measured = wp.zeros(7, dtype=float, device=device)
-        # The MAVLink end: the device, its socket, the address of its manager, and when it next sends.
+        # The MAVLink end: the device, its socket, and when it next sends.
         self._path = path
         self._port = PORT + int(instance)
         self._device = GimbalDevice(**axis_limits(model, joints))
         self._socket: socket.socket | None = None
-        self._manager = None
         self._heartbeat_due = self._status_due = 0
         # The last setpoint the link wrote, while a repeat of it would change nothing: a manager repeats its
         # setpoint many times a second, and a write costs a copy to the device and a kernel.
@@ -537,8 +536,7 @@ class GimbalController(Component):
                 datagram, sender = link.recvfrom(65535)
             except BlockingIOError:
                 break
-            self._manager = sender
-            setpoint, replies = self._device.handle(datagram, now // 1_000_000)
+            setpoint, replies = self._device.handle(datagram, now // 1_000_000, sender)
             if setpoint is not None:
                 self._take(setpoint)
             for reply in replies:
@@ -546,12 +544,12 @@ class GimbalController(Component):
         if self._device.system is None:
             return
         if now >= self._heartbeat_due:
-            link.sendto(self._device.heartbeat(), self._manager)
+            link.sendto(self._device.heartbeat(), self._device.manager)
             self._heartbeat_due = _next(self._heartbeat_due, _HEARTBEAT_PERIOD, now)
         if now >= self._status_due:
             # What the law measured at its last step, one tick back.
             measured = self._measured.numpy()
-            link.sendto(self._device.status(now // 1_000_000, measured[:4], measured[4:]), self._manager)
+            link.sendto(self._device.status(now // 1_000_000, measured[:4], measured[4:]), self._device.manager)
             self._status_due = _next(self._status_due, _STATUS_PERIOD, now)
 
     def _take(self, setpoint) -> None:

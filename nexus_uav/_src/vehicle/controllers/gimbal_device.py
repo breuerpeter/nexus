@@ -70,6 +70,8 @@ class GimbalDevice:
     Attributes:
         system: The MAVLink system the device is a component of, its manager's: the system of the first message
             it took. ``None`` until a message arrives, and the device has nothing to send before.
+        manager: The address the device answers, its manager's: the sender of the last datagram that held a
+            MAVLink message. Bytes that are no MAVLink move it nowhere. ``None`` until a message arrives.
         locked: The yaw lock bit in force, from the last setpoint, which the status reports.
     """
 
@@ -77,14 +79,16 @@ class GimbalDevice:
         self._limits = tuple(float(angle) for axis in (roll, pitch, yaw) for angle in axis)
         self._mav = mavlink.MAVLink(None, srcSystem=0, srcComponent=COMPONENT)
         self.system: int | None = None
+        self.manager = None
         self.locked = False
 
-    def handle(self, datagram: bytes, time_ms: int = 0) -> tuple[Setpoint | None, list[bytes]]:
+    def handle(self, datagram: bytes, time_ms: int = 0, sender=None) -> tuple[Setpoint | None, list[bytes]]:
         """Take one datagram off the link.
 
         Args:
             datagram: The bytes of one UDP datagram.
             time_ms: The sim time [ms], which the device's information carries.
+            sender: The address the datagram came from, which becomes the manager's when it holds a message.
 
         Returns:
             The setpoint the datagram carries, the last one when it carries more than one and ``None`` when it
@@ -100,6 +104,7 @@ class GimbalDevice:
                 continue
             if self.system is None:
                 self.system = self._mav.srcSystem = message.get_srcSystem()
+            self.manager = sender
             if kind == "GIMBAL_DEVICE_SET_ATTITUDE" and self._addressed(message):
                 setpoint = self._setpoint(message)
             elif kind == "COMMAND_LONG" and message.target_system in (0, self.system):

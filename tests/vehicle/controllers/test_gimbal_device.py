@@ -225,6 +225,26 @@ def test_a_datagram_the_device_does_not_act_on_gives_no_setpoint_and_no_reply():
     assert (own is not None, outcomes) == (True, [(None, [])] * 5)
 
 
+def test_only_a_message_moves_the_address_the_device_answers():
+    """The device answers the address its last message came from, and bytes that are no MAVLink move it nowhere.
+
+    Given a device whose manager spoke from one address, when bytes that are no MAVLink and an empty datagram
+    arrive from a second address, then the device still answers the first; and when a `HEARTBEAT` then arrives
+    from the second, the device answers the second.
+    """
+    device = GimbalDevice()
+    first, second = ("127.0.0.1", 50001), ("127.0.0.1", 50002)
+    beat = _pack(mavlink.MAVLink_heartbeat_message(mavlink.MAV_TYPE_QUADROTOR, mavlink.MAV_AUTOPILOT_PX4, 0, 0, 0, 3))
+
+    device.handle(beat, sender=first)
+    device.handle(b"\xfdnot MAVLink at all", sender=second)
+    device.handle(b"", sender=second)
+    kept = device.manager
+    device.handle(beat, sender=second)
+
+    assert (kept, device.manager) == (first, second)
+
+
 def test_the_status_carries_the_cameras_attitude_its_rate_and_the_locks_in_force():
     """The status carries the camera's attitude against North, East, Down and its rate, with the roll and pitch
     locks set, the yaw lock in force, and the yaw frame named as earth and accepted.
