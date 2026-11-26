@@ -288,25 +288,25 @@ class "NexusGimbalControllerAPI" (
 )
 {
     float nexus:attitudeGain = 0 (
-        doc = """The rate command per attitude error: the stiffness of the outer loop. The build fails a value below 0.
+        doc = """The rate command per attitude error: the stiffness of the outer loop. The build fails a value below 0, NaN or infinite.
 
         Range: [0, inf)
         Units: 1/s"""
     )
     float nexus:rateLimit = 0 (
-        doc = """The size the law cuts the rate command to, as a vector: the fastest the gimbal turns the camera. The build fails a value that is not positive.
+        doc = """The size the law cuts the rate command to, as a vector: the fastest the gimbal turns the camera. The build fails a value that is not positive and finite.
 
         Range: (0, inf)
         Units: rad/s"""
     )
     float3 nexus:rateGain = (0, 0, 0) (
-        doc = """Each motor's command per rate error on its joint's axis, in the order of `nexus:inputs:joints`. The command runs from -1 to 1. The build fails a value below 0.
+        doc = """Each motor's command per rate error on its joint's axis, in the order of `nexus:inputs:joints`. The command runs from -1 to 1. The build fails a value below 0, NaN or infinite.
 
         Range: [0, inf)
         Units: s/rad"""
     )
     float3 nexus:integralGain = (0, 0, 0) (
-        doc = """Each motor's command per rate error per second, in the order of `nexus:inputs:joints`. The integral stays within -1 to 1. The build fails a value below 0.
+        doc = """Each motor's command per rate error per second, in the order of `nexus:inputs:joints`. The integral stays within -1 to 1. The build fails a value below 0, NaN or infinite.
 
         Range: [0, inf)
         Units: 1/rad"""

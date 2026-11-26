@@ -385,6 +385,12 @@ def _vehicle():
         ({"rate_limit": -1.0}, "nexus:rateLimit"),
         ({"rate_gain": (0.5, -0.1, 0.5)}, "nexus:rateGain"),
         ({"integral_gain": (0.0, 0.0, -2.0)}, "nexus:integralGain"),
+        ({"attitude_gain": math.nan}, "nexus:attitudeGain"),
+        ({"attitude_gain": math.inf}, "nexus:attitudeGain"),
+        ({"rate_limit": math.nan}, "nexus:rateLimit"),
+        ({"rate_limit": math.inf}, "nexus:rateLimit"),
+        ({"rate_gain": (0.5, math.nan, 0.5)}, "nexus:rateGain"),
+        ({"integral_gain": (0.0, math.inf, 0.0)}, "nexus:integralGain"),
     ],
 )
 def test_a_gain_below_zero_or_a_rate_limit_at_or_below_zero_fails_and_names_the_prim_and_the_attribute(bad, attribute):
@@ -392,8 +398,9 @@ def test_a_gain_below_zero_or_a_rate_limit_at_or_below_zero_fails_and_names_the_
     attribute.
 
     Given a vehicle's square chain and each bad value in turn, an attitude gain of −1, a rate limit of 0 and of −1,
-    a rate gain of −0.1 on one motor and an integral gain of −2 on one motor, when the test makes the controller, then it
-    raises `ValueError`, and the message names the controller's prim and the attribute.
+    a rate gain of −0.1 on one motor, an integral gain of −2 on one motor, and a NaN or an infinity for each of the
+    four values, when the test makes the controller, then it raises `ValueError`, and the message names the
+    controller's prim and the attribute.
     """
     values = {
         "attitude_gain": ATTITUDE_GAIN,

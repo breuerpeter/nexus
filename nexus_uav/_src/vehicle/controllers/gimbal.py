@@ -21,6 +21,8 @@ registry builds it as :class:`GimbalController`, a controller with one device st
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import warp as wp
 
@@ -357,7 +359,7 @@ class GimbalController(Component):
         integral_gain: ``(3,)`` each motor's command per rate error per second [1/rad], ``nexus:integralGain``.
 
     Raises:
-        ValueError: A gain is below 0, the rate limit isn't positive, or the declaration isn't a camera's body
+        ValueError: A gain is below 0, NaN or infinite, the rate limit isn't positive and finite, or the declaration isn't a camera's body
             behind a chain of three revolute joints; the message names the prim, and the attribute or the input.
     """
 
@@ -376,12 +378,13 @@ class GimbalController(Component):
     ):
         gains = {"attitude_gain": (attitude_gain,), "rate_gain": rate_gain, "integral_gain": integral_gain}
         for keyword, values in gains.items():
-            if any(float(x) < 0.0 for x in values):
+            if not all(math.isfinite(float(x)) and float(x) >= 0.0 for x in values):
                 shown = ", ".join(f"{float(x):g}" for x in values)
-                raise ValueError(f"{path}: {_GAINS[keyword]} is {shown}, and a gain is 0 or above")
-        if not float(rate_limit) > 0.0:
+                raise ValueError(f"{path}: {_GAINS[keyword]} is {shown}, and a gain is finite and 0 or above")
+        if not (math.isfinite(float(rate_limit)) and float(rate_limit) > 0.0):
             raise ValueError(
-                f"{path}: nexus:rateLimit is {float(rate_limit):g}, and the limit of the rate command is above 0"
+                f"{path}: nexus:rateLimit is {float(rate_limit):g}, and the limit of the rate command is finite and "
+                "above 0"
             )
         device = model.device
         self._law = GimbalLaw(
