@@ -381,6 +381,20 @@ def test_a_sample_goes_to_the_topic_of_the_message_version_the_px4_tree_states(t
     ]
 
 
+def test_a_log_parameter_outside_px4s_identifier_syntax_stops_the_replay_before_any_run(tmp_path):
+    """A log whose parameter name isn't PX4's identifier syntax stops the replay's boot parameters, and names it.
+
+    Given a ULog with a parameter named `X$(id)`, when the replay answers its boot parameters, then a value error
+    names the parameter.
+    """
+    ulog = ulog_file.write(tmp_path / "flight.ulg", params={"MPC_XY_VEL_MAX": 12.0, "X$(id)": 1.0})
+
+    with pytest.raises(ValueError) as refused:
+        boot_params(ulog)
+
+    assert "X$(id)" in str(refused.value)
+
+
 def _steps(ulog) -> list[tuple[float, int, int]]:
     """Each change of PX4's arming state or mode in `ulog`: its time in seconds, then the two states."""
     from pyulog import ULog

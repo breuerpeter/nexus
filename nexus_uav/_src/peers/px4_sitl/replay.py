@@ -33,7 +33,7 @@ from nexus_uav._src.core.errors import RunError
 from nexus_uav._src.peers import pins
 from nexus_uav._src.peers.pins import PeerPin
 
-from . import OFFBOARD_PORT, checkout
+from . import OFFBOARD_PORT, check_param, checkout
 
 SKIPPED = {
     "CAL_*": "the real sensors' calibration: PX4 reports the simulated accelerometer, gyro and compass uncalibrated",
@@ -190,13 +190,19 @@ def px4_pin(ulog: str | os.PathLike, px4: str | None, default: PeerPin) -> PeerP
 
 
 def log_params(log, delta: Mapping[str, float] | None) -> dict[str, float]:
-    """What :func:`boot_params` answers, from a log read already."""
+    """What :func:`boot_params` answers, from a log read already.
+
+    Raises:
+        ValueError: A name or value isn't one PX4 takes, :func:`check_param`; the message names it.
+    """
     params = {
         name: value
         for name, value in log.initial_parameters.items()
         if not any(fnmatch.fnmatchcase(name, pattern) for pattern in SKIPPED)
     }
     params.update(delta or {})
+    for name, value in params.items():
+        check_param(name, value)
     # With the sync on, PX4 shifts each incoming timestamp by an offset that drifts once the run is faster than
     # real time. It reads the parameter at boot.
     params["UXRCE_DDS_SYNCT"] = 0

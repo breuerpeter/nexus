@@ -330,6 +330,29 @@ def test_a_run_asked_to_start_clean_empties_the_store_even_after_a_run_killed_be
     assert sorted(p.name for p in store.iterdir()) == ["log"]
 
 
+def test_a_boot_parameter_outside_px4s_identifier_syntax_or_a_non_number_never_reaches_the_boot_hook(
+    daemon, tree, tmp_path
+):
+    """A boot parameter whose name isn't PX4's identifier syntax, or whose value isn't a number, is refused.
+
+    Given a tree that sources `px4-rc.params` and a peer whose entry names `X$(id)`, or whose value is
+    `1; id`, when it starts, then it raises a value error that names the entry, and no container started.
+    """
+    startup = tree / "build/px4_sitl_default/etc/init.d-posix"
+    startup.mkdir(parents=True)
+    (startup / "px4-rc.params").write_text("#!/bin/sh\n")
+
+    errors = []
+    for entry in ("X$(id)=1", "MPC_XY_VEL_MAX=1; id"):
+        try:
+            _peer(tree, tmp_path, params=[entry]).start()
+        except ValueError as exc:
+            errors.append(str(exc))
+
+    launched = [kw for kind, kw in daemon if kind == "run" and kw.get("detach", True)]
+    assert (len(errors), "X$(id)" in errors[0], "1; id" in errors[1], launched) == (2, True, True, [])
+
+
 def _hook_values(launch: dict, tree) -> dict[str, float]:
     """The parameters a launch hands PX4's boot hook: each `PX4_PARAM_<name>` of its environment, or each
     `param set` line of the file it mounts over the tree's `px4-rc.params`.
