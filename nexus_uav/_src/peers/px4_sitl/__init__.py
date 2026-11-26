@@ -33,7 +33,7 @@ _PARAM_NAME = re.compile(r"[A-Za-z0-9_]{1,16}")
 def check_param(name: str, value: object) -> None:
     """Check one PX4 boot parameter: a name in PX4's identifier syntax and a number for its value.
 
-    Both go into a shell line and a USD string, so a name or value outside that form never reaches either.
+    Both go into a shell line and a Universal Scene Description (USD) string, so a name or value outside that form never reaches either.
 
     Raises:
         ValueError: The name isn't 1 to 16 letters, digits and underscores, or the value isn't a number; the

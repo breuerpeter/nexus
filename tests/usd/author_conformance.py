@@ -13,7 +13,7 @@ import nexus_uav  # noqa: F401  # registers the nexus schema plugin
 
 
 def author(out: Path) -> None:
-    """Write the fixture to `out`: PX4, its Software In The Loop (SITL) peer and the Micro XRCE-DDS agent peer each on a scope of its own under the default prim, one body under it with an Inertial Measurement Unit (IMU) on a lever arm and one prim for each other sensor schema, each analytic sensor a sphere of 1 cm, one rotor body with a propeller, an ESC and a motor, and one revolute joint with a torque motor."""
+    """Write the fixture to `out`: PX4, its Software In The Loop (SITL) peer and the Micro XRCE-DDS agent peer each on a scope of its own under the default prim, one body under it with an Inertial Measurement Unit (IMU) on a lever arm and one prim for each other sensor schema, each analytic sensor a sphere of 1 cm, one rotor body with a propeller, an ESC and a motor, one revolute joint with a torque motor, and a gimbal's controller on a scope of its own."""
     stage = Usd.Stage.CreateNew(str(out))
     UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
     UsdGeom.SetStageMetersPerUnit(stage, 1.0)
@@ -53,6 +53,10 @@ def author(out: Path) -> None:
     joint.ApplyAPI("NexusTorqueMotorAPI")
     for name, value in (("nexus:channel", 4), ("nexus:torqueConstant", 0.05), ("nexus:currentLimit", 2.0)):
         joint.GetAttribute(name).Set(value)
+    gimbal = UsdGeom.Scope.Define(stage, "/Vehicle/GimbalController").GetPrim()
+    gimbal.ApplyAPI("NexusGimbalControllerAPI")
+    gimbal.GetAttribute("nexus:attitudeGain").Set(40.0)
+    gimbal.GetAttribute("nexus:rateLimit").Set(2.5)
     stage.GetRootLayer().Save()
 
 

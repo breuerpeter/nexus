@@ -60,6 +60,38 @@
   },
   "NexusEstimatorRoleAPI": {},
   "NexusForceRoleAPI": {},
+  "NexusGimbalControllerAPI": {
+    "nexus:attitudeGain": {
+      "fallback": "0",
+      "type": "float",
+      "units": "1/s"
+    },
+    "nexus:inputs:camera": {
+      "fallback": null,
+      "type": "relationship",
+      "units": ""
+    },
+    "nexus:inputs:joints": {
+      "fallback": null,
+      "type": "relationship",
+      "units": ""
+    },
+    "nexus:integralGain": {
+      "fallback": "(0, 0, 0)",
+      "type": "float3",
+      "units": "1/rad"
+    },
+    "nexus:rateGain": {
+      "fallback": "(0, 0, 0)",
+      "type": "float3",
+      "units": "s/rad"
+    },
+    "nexus:rateLimit": {
+      "fallback": "0",
+      "type": "float",
+      "units": "rad/s"
+    }
+  },
   "NexusGpsAPI": {
     "nexus:fixType": {
       "fallback": "3",

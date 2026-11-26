@@ -268,6 +268,19 @@ def resolve_device(cfg: dict) -> str:
     return "cuda:0"
 
 
+def build_physics(vehicle: str, cfg: dict, vehicle_usd):
+    """Select the Warp device and build the plant of `vehicle` from its resolved USD: what :func:`build_loop`
+    builds first, and what the run's builder builds before it for a declared class that needs the model.
+
+    Raises:
+        ValueError: `vehicle_usd` is ``None``.
+    """
+    logger.info(f"device: {resolve_device(cfg)}")
+    if vehicle_usd is None:
+        raise ValueError(f"vehicle_usd is required for {vehicle!r} (resolve it with resolve_vehicle_usd)")
+    return NewtonPhysics(vehicle_usd=vehicle_usd, cfg=cfg)
+
+
 def build_loop(
     vehicle: str,
     cfg: dict,
@@ -290,6 +303,7 @@ def build_loop(
     components=None,
     record_to_rrd: str | None = None,
     instance: int = 0,
+    physics=None,
 ) -> Loop:
     """The core loop: the one ``NewtonPhysics`` + the one shared assembly around the
     caller-supplied ``controllers``, ``estimators`` and ``guidances``, each a list in the order its components run.
@@ -312,16 +326,15 @@ def build_loop(
     ``nexus.rrd`` in the run's folder, and ``None`` takes a new run folder.
     ``preroll_timeout`` covers the boot of a controller with a peer, since an autopilot in a container
     needs a generous window. ``instance`` is the run's instance, which each declared component built here takes
-    when its class states ``needs_instance``.
+    when its class states ``needs_instance``. ``physics`` is the plant, when the caller built it with
+    :func:`build_physics` for a controller that needs the model; ``None`` builds it here.
 
     Raises:
         ValueError: A connection names a prim that declares no component and is no body or joint of the
             model; the message names both prims.
     """
-    logger.info(f"device: {resolve_device(cfg)}")
-    if vehicle_usd is None:
-        raise ValueError(f"vehicle_usd is required for {vehicle!r} (resolve it with resolve_vehicle_usd)")
-    physics = NewtonPhysics(vehicle_usd=vehicle_usd, cfg=cfg)
+    if physics is None:
+        physics = build_physics(vehicle, cfg, vehicle_usd)
     a = assemble(
         physics, vehicle_usd, cfg,
         controllers=controllers, rerun=rerun, viewer=viewer, debug=debug, components=components, settings=settings,

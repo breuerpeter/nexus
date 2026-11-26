@@ -282,6 +282,43 @@ class "NexusTorqueMotorAPI" (
     )
 }
 
+class "NexusGimbalControllerAPI" (
+    doc = "The controller of a camera gimbal, on a `Scope` of its own under the vehicle's root prim. It holds the camera's attitude through the torque motors of three revolute joints: the attitude error through a gain to a rate command, the rate error onto each joint's axis, then a gain and an integral per motor. Entry `i` of its controls is the current command of joint `i` of `nexus:inputs:joints`, so each joint's torque motor reads that entry and names this prim in its `nexus:inputs:controls`. Until a setpoint is written, it holds the camera level and follows the vehicle's heading."
+    prepend apiSchemas = ["NexusControllerRoleAPI"]
+)
+{
+    float nexus:attitudeGain = 0 (
+        doc = """The rate command per attitude error: the stiffness of the outer loop. The build fails a value below 0, NaN or infinite.
+
+        Range: [0, inf)
+        Units: 1/s"""
+    )
+    float nexus:rateLimit = 0 (
+        doc = """The size the law cuts the rate command to, as a vector: the fastest the gimbal turns the camera. The build fails a value that is not positive and finite.
+
+        Range: (0, inf)
+        Units: rad/s"""
+    )
+    float3 nexus:rateGain = (0, 0, 0) (
+        doc = """Each motor's command per rate error on its joint's axis, in the order of `nexus:inputs:joints`. The command runs from -1 to 1. The build fails a value below 0, NaN or infinite.
+
+        Range: [0, inf)
+        Units: s/rad"""
+    )
+    float3 nexus:integralGain = (0, 0, 0) (
+        doc = """Each motor's command per rate error per second, in the order of `nexus:inputs:joints`. The integral stays within -1 to 1. The build fails a value below 0, NaN or infinite.
+
+        Range: [0, inf)
+        Units: 1/rad"""
+    )
+    rel nexus:inputs:camera (
+        doc = "The camera's rigid body, whose pose and rate the controller reads: the body behind the last joint."
+    )
+    rel nexus:inputs:joints (
+        doc = "The gimbal's three revolute joints, in order from the vehicle to the camera, whose angles the controller reads and whose axes it takes from the model."
+    )
+}
+
 class "NexusPx4API_1" (
     doc = "PX4 flies the vehicle over its Software In The Loop (SITL) link, on the controller's `Scope`, a child of the vehicle's root prim named `Controller` by convention. Version 1 leaves the airframe to the PX4 SITL peer, `NexusPx4SitlAPI`."
     prepend apiSchemas = ["NexusControllerRoleAPI"]

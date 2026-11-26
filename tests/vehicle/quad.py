@@ -31,6 +31,22 @@ PROPELLER = {"nexus:cd": 0.05, "nexus:aeroH": 0.0, "nexus:aeroHforce": 0.0}
 ESC = {"nexus:idleDuty": 0.1, "nexus:maxDuty": 1.0, "nexus:busVoltage": 24.0}
 MOTOR = {"nexus:kv": 160.0, "nexus:resistance": 0.28, "nexus:currentLimit": 130.0}
 GIMBAL_JOINT = f"{ROOT}/gimbal_joint"  # the fifth revolute joint, with `gimbal` or `servo`
+# The camera gimbal, with `camera`: a pan joint about z, a roll joint about x and a tilt joint about y, in that
+# order from the airframe, through one point under it, and the camera's body behind the tilt joint.
+CAMERA = f"{ROOT}/camera"
+CAMERA_JOINTS = (f"{ROOT}/pan_joint", f"{ROOT}/roll_joint", f"{ROOT}/tilt_joint")
+AUTOPILOT = f"{ROOT}/Autopilot"  # the first controller's `Scope`, which flies the rotors
+GIMBAL_CONTROLLER = f"{ROOT}/GimbalController"  # the gimbal's controller's `Scope`
+# Each gimbal joint's motor: 0.1 N·m at a command of 1.
+CAMERA_MOTOR = {"nexus:torqueConstant": 0.05, "nexus:currentLimit": 2.0}
+# The gimbal's law, tuned on this fixture at the 4 ms tick: the rate and integral gains are the pan, the roll and
+# the tilt motor's.
+GIMBAL_GAINS = {
+    "nexus:attitudeGain": (Sdf.ValueTypeNames.Float, 40.0),
+    "nexus:rateLimit": (Sdf.ValueTypeNames.Float, 2.5),
+    "nexus:rateGain": (Sdf.ValueTypeNames.Float3, Gf.Vec3f(1.2, 1.0, 1.0)),
+    "nexus:integralGain": (Sdf.ValueTypeNames.Float3, Gf.Vec3f(30.0, 30.0, 30.0)),
+}
 
 
 def author(
@@ -51,6 +67,9 @@ def author(
     zero=None,
     motor_first=False,
     esc=None,
+    camera=False,
+    prismatic=None,
+    diagonal=False,
 ):
     """A quad whose rotor bodies each declare the propeller's, the ESC's and the motor's schema.
 
@@ -74,6 +93,13 @@ def author(
         zero: With `motor="nexus"`, `(index, attribute)`: the rotor whose ESC's or motor's attribute the fixture authors as 0.
         motor_first: Apply the motor's schema before the ESC's on each rotor body, the reverse of the usual order.
         esc: Values of the ESC's attributes that replace the fixture's on every rotor, by attribute name.
+        camera: Add the camera gimbal under the airframe: two links and the camera's body on the three revolute
+            joints of `CAMERA_JOINTS`. The camera weighs 0.1 kg, and its center of mass sits 2 cm off each joint's
+            axis.
+        prismatic: With `camera`, the index of the gimbal joint to author as prismatic, not revolute.
+        diagonal: The rotors on one diagonal turn the same way, as a real quad's do, so unequal commands on the
+            two diagonals turn the airframe's heading and tip nothing, and unequal commands front and back tip it
+            and turn nothing. Without it, rotors 1 and 3 turn against rotors 0 and 2.
     """
     stage = Usd.Stage.CreateNew(str(path))
     UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
@@ -89,7 +115,7 @@ def author(
     imu = UsdGeom.Xform.Define(stage, f"{ROOT}/body/Imu").GetPrim()
     imu.CreateAttribute("sensor:type", Sdf.ValueTypeNames.Token, custom=True).Set("imu")
 
-    def child_body(name, offset, flipped=False):
+    def child_body(name, offset, flipped=False, mass=0.02, inertia=(5e-5, 5e-5, 1e-4), com=None):
         prim = UsdGeom.Cylinder.Define(stage, f"{ROOT}/{name}")
         prim.GetRadiusAttr().Set(0.1)
         prim.GetHeightAttr().Set(0.01)
@@ -97,20 +123,22 @@ def author(
         if flipped:  # the spin axis points the other way: the rotor turns the other way for the same command
             prim.AddRotateXOp().Set(180.0)
         UsdPhysics.RigidBodyAPI.Apply(prim.GetPrim())
-        mass = UsdPhysics.MassAPI.Apply(prim.GetPrim())
-        mass.GetMassAttr().Set(0.02)
-        mass.GetDiagonalInertiaAttr().Set(Gf.Vec3f(5e-5, 5e-5, 1e-4))
+        api = UsdPhysics.MassAPI.Apply(prim.GetPrim())
+        api.GetMassAttr().Set(mass)
+        api.GetDiagonalInertiaAttr().Set(Gf.Vec3f(*inertia))
+        if com is not None:
+            api.GetCenterOfMassAttr().Set(Gf.Vec3f(*com))
         return prim
 
-    def revolute(name, parent, child, offset, flipped=False):
-        joint = UsdPhysics.RevoluteJoint.Define(stage, f"{ROOT}/{name}")
+    def revolute(name, parent, child, offset, flipped=False, axis="Z", kind=UsdPhysics.RevoluteJoint):
+        joint = kind.Define(stage, f"{ROOT}/{name}")
         joint.CreateBody0Rel().SetTargets([parent])
         joint.CreateBody1Rel().SetTargets([child])
         joint.CreateLocalPos0Attr().Set(Gf.Vec3f(*offset))
         joint.CreateLocalPos1Attr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
         if flipped:
             joint.CreateLocalRot0Attr().Set(Gf.Quatf(0.0, 1.0, 0.0, 0.0))
-        joint.CreateAxisAttr().Set("Z")
+        joint.CreateAxisAttr().Set(axis)
         return joint.GetPrim()
 
     def apply_propeller(prim, rotor_ct):
@@ -121,7 +149,7 @@ def author(
 
     for i, (x, y) in enumerate([(ARM, ARM), (-ARM, -ARM), (ARM, -ARM), (-ARM, ARM)]):
         offset = (x, y, -0.12)  # rotors on the airframe's -z, up once the run spawns it upright
-        flipped = bool(i % 2)
+        flipped = i >= 2 if diagonal else bool(i % 2)
         rotor = child_body(f"rotor_{i}", offset, flipped)
         parent = f"{ROOT}/rotor_0" if reparent and i == 3 else f"{ROOT}/body"
         joint = revolute(f"rotor_{i}_joint", parent, rotor.GetPath(), offset, flipped)
@@ -163,6 +191,17 @@ def author(
         motor.ApplyAPI("NewtonPDControlAPI")  # critically damped at the 4 ms tick for the body's 1e-4 kg·m²
         motor.GetAttribute("newton:kp").Set(0.5)
         motor.GetAttribute("newton:kd").Set(0.01)
+    if camera:
+        under = (0.0, 0.0, 0.12)  # under the airframe, whose +z points down
+        parent, offset = f"{ROOT}/body", under
+        for i, (joint_path, axis) in enumerate(zip(CAMERA_JOINTS, "ZXY", strict=True)):
+            if i == 2:  # 2 cm off each joint's axis: 1.414 cm along each
+                link = child_body("camera", under, mass=0.1, inertia=(1e-3, 1e-3, 1e-3), com=(0.01414,) * 3)
+            else:
+                link = child_body(f"gimbal_link_{i}", under, inertia=(5e-5, 5e-5, 5e-5))
+            kind = UsdPhysics.PrismaticJoint if i == prismatic else UsdPhysics.RevoluteJoint
+            revolute(joint_path.rsplit("/", 1)[-1], parent, link.GetPath(), offset, axis=axis, kind=kind)
+            parent, offset = link.GetPath(), (0.0, 0.0, 0.0)
     if pod:
         offset = (0.0, 0.0, -0.12)
         fixed = UsdPhysics.FixedJoint.Define(stage, f"{ROOT}/pod_joint")
@@ -173,6 +212,41 @@ def author(
         apply_propeller(stage.GetPrimAtPath(f"{ROOT}/pod"), ct)
     stage.GetRootLayer().Save()
     return path
+
+
+def declare_gimbal(path, *, camera=CAMERA, joints=CAMERA_JOINTS, motors=True, controller=True, gains=None):
+    """Declare on the quad at `path`, authored with `camera`, its two controllers and the gimbal's motors.
+
+    `NexusPx4API_1` sits on the `Scope` `Autopilot`, for a run that maps it to a stand-in, and each rotor's ESC
+    reads its controls. With `controller`, `NexusGimbalControllerAPI` sits on the `Scope` `GimbalController` with
+    the gains `GIMBAL_GAINS`, or `gains` in their place, its `nexus:inputs:camera` targets `camera`, none for
+    `None`, and its `nexus:inputs:joints` targets `joints` in order. With `motors` too, each joint of
+    `CAMERA_JOINTS` applies `NexusTorqueMotorAPI`, on the controls entry of its place in the chain, and reads the
+    gimbal controller's controls. Returns the path.
+    """
+    stage = Usd.Stage.Open(str(path))
+    UsdGeom.Scope.Define(stage, AUTOPILOT).GetPrim().AddAppliedSchema("NexusPx4API_1")
+    for i in range(4):
+        rotor = stage.GetPrimAtPath(f"{ROOT}/rotor_{i}")
+        rotor.CreateRelationship("nexus:inputs:controls", custom=False).SetTargets([AUTOPILOT])
+    if controller:
+        scope = UsdGeom.Scope.Define(stage, GIMBAL_CONTROLLER).GetPrim()
+        scope.AddAppliedSchema("NexusGimbalControllerAPI")
+        for name, (kind, value) in (gains or GIMBAL_GAINS).items():
+            scope.CreateAttribute(name, kind).Set(value)
+        if camera is not None:
+            scope.CreateRelationship("nexus:inputs:camera", custom=False).SetTargets([camera])
+        scope.CreateRelationship("nexus:inputs:joints", custom=False).SetTargets(list(joints))
+    if controller and motors:
+        for channel, joint_path in enumerate(CAMERA_JOINTS):
+            joint = stage.GetPrimAtPath(joint_path)
+            joint.AddAppliedSchema("NexusTorqueMotorAPI")
+            joint.CreateAttribute("nexus:channel", Sdf.ValueTypeNames.Int).Set(channel)
+            for name, value in CAMERA_MOTOR.items():
+                joint.CreateAttribute(name, Sdf.ValueTypeNames.Float).Set(value)
+            joint.CreateRelationship("nexus:inputs:controls", custom=False).SetTargets([GIMBAL_CONTROLLER])
+    stage.GetRootLayer().Save()
+    return str(path)
 
 
 class Commands(HostController):

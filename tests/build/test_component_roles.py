@@ -936,6 +936,45 @@ def test_a_reader_takes_no_controller_for_sharing_the_name_of_its_prim(tmp_path)
     assert (type(outcome["error"]), named, autopilot.ticks, gimbal.ticks) == (ValueError, [True] * 3, 0, 0), outcome
 
 
+def _modelled() -> type:
+    """A stand-in controller class that states `needs_model` and keeps, in the class's `got`, what the build
+    handed it: the model's body labels, its own prim's path and its connections' targets.
+
+    Each call makes a class of its own, for one run.
+    """
+
+    class Modelled(sv.Controller):
+        needs_model = True
+        got: ClassVar[dict] = {}
+
+        def __init__(self, *, model, path, inputs, **kwargs):
+            super().__init__(**kwargs)
+            type(self).got = {"bodies": [str(label) for label in model.body_label], "path": path, "inputs": inputs}
+
+    return Modelled
+
+
+def test_a_scope_component_that_states_needs_model_takes_the_model_its_prim_and_its_connections_targets(tmp_path):
+    """A component on a `Scope` whose class states `needs_model` takes the finalized model, its own prim's path
+    and the prims its connections target, by input.
+
+    Given the fixture vehicle whose one controller, on the `Scope` `Modelled`, connects its input `estimate` to
+    the base body's prim, and a class for it that states `needs_model`, when the run builds, then the class got
+    a model that holds the base body, the path `/vehicle/Modelled` and the base body's prim under `estimate`.
+    """
+    scope = sv.prim("Modelled", "StandInControllerAPI", f"rel nexus:inputs:estimate = <{sv.BODY}>", kind="Scope")
+    path = sv.vehicle(tmp_path, root=NO_CONTROLLER + scope)
+    modelled = _modelled()
+
+    try:
+        sv.build(path, components=sv.components(StandInControllerAPI=modelled)).close()
+        got = {**modelled.got, "bodies": sv.BODY in modelled.got.get("bodies", ())}
+    except Exception as exc:
+        got = exc
+
+    assert got == {"bodies": True, "path": "/vehicle/Modelled", "inputs": {"estimate": [sv.BODY]}}
+
+
 class _DeviceLaw(Component):
     """A controller of one device stage, which launches nothing and writes a controls signal one wide."""
 
