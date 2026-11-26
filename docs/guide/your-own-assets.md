@@ -102,7 +102,12 @@ the motor's `nexus:kv`, `nexus:resistance` and `nexus:currentLimit` the sheet's 
 sizes can fly on one vehicle. A joint that a controller of its own moves, such as a gimbal joint,
 declares a torque motor with `NexusTorqueMotorAPI` on the joint's prim. Its `nexus:torqueConstant` is
 the torque per ampere, its `nexus:currentLimit` the current at a command of 1, and its `nexus:channel`
-the entry of the controls it reads. The
+the entry of the controls it reads. A camera gimbal declares its controller with
+`NexusGimbalControllerAPI` on a `Scope` of its own under the root prim. Its `nexus:inputs:camera`
+targets the camera's rigid body, and its `nexus:inputs:joints` the three joints in order from the
+vehicle to the camera. Each joint's torque motor then reads the controls entry of its joint's place in
+that order, which is 0, 1, or 2. It names the controller's `Scope` in its `nexus:inputs:controls`, as each
+rotor's ESC names the flight controller's. The
 [schema reference](../reference/schemas.md) lists the attributes.
 
 An entry's `usd`, and each of a composed entry's layers, either carries a full `url` or a compact
