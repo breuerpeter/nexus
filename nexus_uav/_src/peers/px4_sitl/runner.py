@@ -207,6 +207,10 @@ class Px4Sitl(ContainerPeer):
         kwargs["environment"]["PX4_SIM_MODEL"] = f"none_{self.airframe}"
         # PX4's bridge client dials the agent's port of this run's instance, where a declared agent listens.
         kwargs["environment"]["PX4_UXRCE_DDS_PORT"] = str(AGENT_PORT + self.instance)
+        # PX4 names the topic prefix of an instance other than 0 itself, `px4_<instance>` on one commit and
+        # `uav_<instance>` on another. The peer names it, so a writer on the bridge finds the topics by one name.
+        if self.instance:
+            kwargs["environment"]["PX4_UXRCE_DDS_NS"] = f"px4_{self.instance}"
         # PX4 works in its instance's folder of the tree, where it stores the parameters and the mission a run
         # sets and loads them at its next boot. The store of the airframe and the instance mounts there instead,
         # which this run holds with the instance, so the tree keeps nothing of this run's. PX4 wipes its stored
