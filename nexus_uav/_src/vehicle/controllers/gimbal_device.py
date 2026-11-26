@@ -1,8 +1,8 @@
 """The MAVLink end of a gimbal device: what a datagram on the gimbal's link means, and what the device sends.
 
 :class:`GimbalDevice` speaks the MAVLink gimbal protocol, version 2, as a gimbal device, over the
-User Datagram Protocol (UDP). It opens no socket and reads no clock: it takes a datagram and gives the setpoint and
-the reply datagrams, and it builds the heartbeat and the status the gimbal's controller sends at their rates.
+User Datagram Protocol (UDP). It opens no socket and reads no clock: it takes a datagram and gives its setpoints
+and the reply datagrams, and it builds the heartbeat and the status the gimbal's controller sends at their rates.
 
 The device is component 154 of the system that first speaks to it, its gimbal manager's. It takes
 ``GIMBAL_DEVICE_SET_ATTITUDE`` and a ``COMMAND_LONG`` that requests its ``GIMBAL_DEVICE_INFORMATION``, and acts on
@@ -82,7 +82,7 @@ class GimbalDevice:
         self.manager = None
         self.locked = False
 
-    def handle(self, datagram: bytes, time_ms: int = 0, sender=None) -> tuple[Setpoint | None, list[bytes]]:
+    def handle(self, datagram: bytes, time_ms: int = 0, sender=None) -> tuple[list[Setpoint], list[bytes]]:
         """Take one datagram off the link.
 
         Args:
@@ -91,10 +91,10 @@ class GimbalDevice:
             sender: The address the datagram came from, which becomes the manager's when it holds a message.
 
         Returns:
-            The setpoint the datagram carries, the last one when it carries more than one and ``None`` when it
-            carries none, and the datagrams to answer with.
+            Each setpoint the datagram carries, in the order of its messages, and the datagrams to answer with.
+            A write to the law is an event, so a caller writes each one.
         """
-        setpoint, replies = None, []
+        setpoints, replies = [], []
         # A parser per datagram: a datagram holds whole messages, so bytes that are no MAVLink end with it.
         parser = mavlink.MAVLink(None)
         parser.robust_parsing = True
@@ -106,10 +106,10 @@ class GimbalDevice:
                 self.system = self._mav.srcSystem = message.get_srcSystem()
             self.manager = sender
             if kind == "GIMBAL_DEVICE_SET_ATTITUDE" and self._addressed(message):
-                setpoint = self._setpoint(message)
+                setpoints.append(self._setpoint(message))
             elif kind == "COMMAND_LONG" and message.target_system in (0, self.system):
                 replies += self._answer(message, time_ms)
-        return setpoint, replies
+        return setpoints, replies
 
     def _addressed(self, message) -> bool:
         """Whether `message` names this device: its system or every system, and its component or every one."""

@@ -536,8 +536,8 @@ class GimbalController(Component):
                 datagram, sender = link.recvfrom(65535)
             except BlockingIOError:
                 break
-            setpoint, replies = self._device.handle(datagram, now // 1_000_000, sender)
-            if setpoint is not None:
+            setpoints, replies = self._device.handle(datagram, now // 1_000_000, sender)
+            for setpoint in setpoints:
                 self._take(setpoint)
             for reply in replies:
                 link.sendto(reply, sender)

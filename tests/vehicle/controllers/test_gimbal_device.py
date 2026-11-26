@@ -58,6 +58,11 @@ def _row(setpoint) -> list[float]:
     return [*setpoint.attitude, *setpoint.rate, float(setpoint.locked)]
 
 
+def _only(setpoints):
+    """The one setpoint among `setpoints`, what a datagram of one message gives; `None` for none or more."""
+    return setpoints[0] if len(setpoints) == 1 else None
+
+
 def _square_chain(limits):
     """A pan joint about z, a roll joint about x and a tilt joint about y on a fixed base, as the fixture quad's
     gimbal has them, each with its lowest and highest angle [rad] from `limits`, `None` for no limit. Returns the
@@ -93,7 +98,7 @@ def test_each_set_attitude_gives_the_laws_whole_setpoint():
         _set_attitude(DOWN_30_WXYZ, RATE, YAW_LOCK | IN_EARTH),
     ]
 
-    rows = [_row(device.handle(datagram)[0]) for datagram in datagrams]
+    rows = [_row(_only(device.handle(datagram)[0])) for datagram in datagrams]
 
     expected = [
         [*DOWN_30, *RATE, 1.0],
@@ -102,6 +107,24 @@ def test_each_set_attitude_gives_the_laws_whole_setpoint():
         [*DOWN_30, *RATE, 1.0],
     ]
     np.testing.assert_allclose(rows, expected, atol=1e-6, equal_nan=True)
+
+
+def test_two_setpoints_in_one_datagram_both_reach_the_law_in_their_order():
+    """Each `GIMBAL_DEVICE_SET_ATTITUDE` gives a setpoint, also when one datagram holds two: a write is an event,
+    so the second doesn't replace the first.
+
+    Given one datagram that holds a `q` of 30° down with no rate and then a NaN `q` with a rate of
+    (0.1, 0.2, 0.3), both with `YAW_LOCK` and `YAW_IN_EARTH_FRAME`, when the device handles it, then it gives the
+    attitude with a rate of 0 and then a NaN attitude with the rate, in that order.
+    """
+    device = GimbalDevice()
+    flags = YAW_LOCK | IN_EARTH
+    datagram = _set_attitude(DOWN_30_WXYZ, (NAN,) * 3, flags) + _set_attitude((NAN,) * 4, RATE, flags)
+
+    rows = [_row(setpoint) for setpoint in device.handle(datagram)[0]]
+
+    expected = [[*DOWN_30, 0.0, 0.0, 0.0, 1.0], [NAN, NAN, NAN, NAN, *RATE, 1.0]]
+    np.testing.assert_equal(np.round(rows, 6).tolist() if len(rows) == 2 else rows, np.round(expected, 6).tolist())
 
 
 def test_the_yaw_frame_flags_name_the_frame_of_the_attitudes_heading():
@@ -115,7 +138,7 @@ def test_the_yaw_frame_flags_name_the_frame_of_the_attitudes_heading():
     device = GimbalDevice()
     flags = [YAW_LOCK | IN_VEHICLE, IN_EARTH, YAW_LOCK, 0, YAW_LOCK | IN_VEHICLE | IN_EARTH]
 
-    setpoints = [device.handle(_set_attitude(DOWN_30_WXYZ, (0.0, 0.0, 0.0), flag))[0] for flag in flags]
+    setpoints = [_only(device.handle(_set_attitude(DOWN_30_WXYZ, (0.0, 0.0, 0.0), flag))[0]) for flag in flags]
 
     frames = [(s.locked, s.earth) if s is not None else None for s in setpoints]
     assert frames == [(True, False), (False, True), (True, True), (False, False), (True, True)]
@@ -214,7 +237,7 @@ def test_a_datagram_the_device_does_not_act_on_gives_no_setpoint_and_no_reply():
     other = _set_attitude(DOWN_30_WXYZ, RATE, YAW_LOCK | IN_EARTH, component=1)
     ignored = [_pack(state), _pack(heartbeat), _pack(attitude), other, b"\xfdnot MAVLink at all"]
 
-    own = device.handle(_set_attitude(DOWN_30_WXYZ, RATE, YAW_LOCK | IN_EARTH))[0]
+    own = _only(device.handle(_set_attitude(DOWN_30_WXYZ, RATE, YAW_LOCK | IN_EARTH))[0])
     outcomes = []
     for datagram in ignored:
         try:
@@ -222,7 +245,7 @@ def test_a_datagram_the_device_does_not_act_on_gives_no_setpoint_and_no_reply():
         except Exception as exc:
             outcomes.append(exc)
 
-    assert (own is not None, outcomes) == (True, [(None, [])] * 5)
+    assert (own is not None, outcomes) == (True, [([], [])] * 5)
 
 
 def test_only_a_message_moves_the_address_the_device_answers():
