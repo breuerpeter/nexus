@@ -72,13 +72,15 @@ def _model(*chains):
     return builder.finalize(), joints
 
 
-def _law(vehicles: int = 1, *, rate_limit: float = 10.0, integral_gain: float = 0.0) -> GimbalLaw:
+def _law(
+    vehicles: int = 1, *, attitude_gain: float = ATTITUDE_GAIN, rate_limit: float = 10.0, integral_gain: float = 0.0
+) -> GimbalLaw:
     """The law over `vehicles` square chains, with the tests' gains and one integral gain for every motor."""
     model, joints = _model(*[(SQUARE, 0.0)] * vehicles)
     return GimbalLaw(
         model,
         wp.array(joints, dtype=wp.int32),
-        attitude_gain=ATTITUDE_GAIN,
+        attitude_gain=attitude_gain,
         rate_limit=rate_limit,
         rate_gain=RATE_GAIN,
         integral_gain=(integral_gain,) * 3,
@@ -285,6 +287,25 @@ def test_the_setpoints_rate_moves_the_target_each_tick_and_adds_to_the_rate_comm
 
     tilt = RATE_GAIN[TILT] * (0.5 + ATTITUDE_GAIN * 2.0 * math.sin(0.025))
     np.testing.assert_allclose(controls, [[0.0, 0.0, tilt]], atol=ATOL)
+
+
+def test_the_setpoints_rate_adds_to_the_rate_command_in_the_cameras_frame_while_the_camera_is_off_its_target():
+    """The setpoint's rate adds to the rate command in the camera's frame, also while the camera is off its target.
+
+    Given two level cameras that face North, an attitude gain of 0 and yaw locked, the first with a target 30° down
+    and a rate of 0.5 rad/s about the vertical, the second with a target turned 90° in heading and a rate of
+    0.5 rad/s about the target's y axis, which points along the camera's −x there, when the law steps once, then
+    the first's pan motor gets the rate gain times 0.5, the second's roll motor gets minus the rate gain times
+    0.5, and the others get 0.
+    """
+    law = _law(2, attitude_gain=0.0)
+    targets = [_quat(Y, math.radians(-30.0)), _quat(Z, math.pi / 2.0)]
+    law.write(targets, [(0.0, 0.0, 0.5), (0.0, 0.5, 0.0)], [LOCKED] * 2)
+
+    controls = _step(law, 2)[-1]
+
+    expected = [[RATE_GAIN[PAN] * 0.5, 0.0, 0.0], [0.0, -RATE_GAIN[ROLL] * 0.5, 0.0]]
+    np.testing.assert_allclose(controls, expected, atol=ATOL)
 
 
 def test_a_written_attitude_replaces_the_target_and_a_nan_attitude_leaves_it():

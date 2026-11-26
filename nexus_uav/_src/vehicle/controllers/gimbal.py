@@ -128,7 +128,9 @@ def _law(
     if e[3] < 0.0:
         sign = -2.0
     command = attitude_gain * sign * wp.vec3(e[0], e[1], e[2])
-    command += wp.vec3(r[0], r[1], 0.0) + wp.quat_rotate_inv(world, wp.vec3(0.0, 0.0, r[2]))
+    # The setpoint's rate in the camera's frame: its z part from North, East, Down, its x and y parts from the
+    # target's frame, which `e` turns into the camera's.
+    command += wp.quat_rotate_inv(q, wp.vec3(0.0, 0.0, r[2])) + wp.quat_rotate(e, wp.vec3(r[0], r[1], 0.0))
     size = wp.length(command)
     if size > rate_limit:
         command *= rate_limit / size
@@ -208,7 +210,7 @@ class GimbalLaw:
                 heading is against North with the yaw lock, and against the vehicle's heading without it. NaN
                 leaves the target where the rate has taken it.
             rate: ``(vehicles, 3)`` the rate that moves the target each tick [rad/s]: its z part turns the target
-                about the vertical, and its x and y parts about the camera's own axes.
+                about the vertical, and its x and y parts about the target's own axes.
             locked: ``(vehicles,)`` the yaw lock bit: whether yaw holds against North, not the vehicle's heading.
         """
         device = self._target.device
