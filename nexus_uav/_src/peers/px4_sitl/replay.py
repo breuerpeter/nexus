@@ -229,14 +229,22 @@ def tree(pin: PeerPin) -> Path:
         ) from exc
 
 
-def layer(folder: Path, vehicle_file: str, params: Mapping[str, float], under: str | None) -> str:
+def layer(folder: Path, vehicle_file: str, params: Mapping[str, float], under: str | os.PathLike | None) -> str:
     """Write the replay's override layer in ``folder`` and return its path: the boot parameters on the
-    vehicle's PX4 peer, and the agent peer on a scope of its own when the vehicle declares none.
+    vehicle's PX4 peer, and the agent peer on a scope of its own when the vehicle declares none. The caller's
+    layer ``under`` goes below it by its absolute path, since a relative one would resolve against ``folder``.
 
     Raises:
         ValueError: The vehicle declares no PX4 peer.
+        FileNotFoundError: No file is at ``under``; the message names it.
     """
     from nexus_uav._src.usd.reader import read_declarations
+
+    if under is not None:
+        under = Path(under).expanduser()
+        if not under.is_file():
+            raise FileNotFoundError(f"override layer not found: {under}")
+        under = under.resolve()
 
     declared = {schema: prim for prim, schema, _ in read_declarations(vehicle_file)}
     if _PEER_SCHEMA not in declared:

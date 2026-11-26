@@ -285,6 +285,31 @@ def test_a_replay_fails_when_a_due_sample_never_reaches_px4(tmp_path, monkeypatc
     )
 
 
+def test_a_replays_layer_holds_the_callers_layer_by_its_absolute_path(tmp_path, monkeypatch):
+    """The replay's layer names the caller's layer by its absolute path, and fails on a path with no file.
+
+    Given a caller's layer named `./overrides.usda` from its own folder, when the replay writes its layer in
+    another folder, then the sublayer is the file's absolute path. Given a path with no file, then an error names it.
+    """
+    pytest.importorskip("pxr")
+    from nexus_uav._src.peers.px4_sitl.replay import layer
+    from tests.usd import sensor_vehicle as sv
+
+    vehicle = sv.vehicle(tmp_path, px4=True)
+    (tmp_path / "overrides.usda").write_text("#usda 1.0\n")
+    (tmp_path / "replay").mkdir()
+    monkeypatch.chdir(tmp_path)
+
+    written = open(layer(tmp_path / "replay", vehicle, {}, "./overrides.usda")).read()
+    with pytest.raises(FileNotFoundError) as missing:
+        layer(tmp_path / "replay", vehicle, {}, "./none.usda")
+
+    assert (f"subLayers = [@{tmp_path / 'overrides.usda'}@]" in written, "none.usda" in str(missing.value)) == (
+        True,
+        True,
+    )
+
+
 def _steps(ulog) -> list[tuple[float, int, int]]:
     """Each change of PX4's arming state or mode in `ulog`: its time in seconds, then the two states."""
     from pyulog import ULog
