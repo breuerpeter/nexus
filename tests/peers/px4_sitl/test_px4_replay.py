@@ -351,7 +351,7 @@ def test_a_replay_whose_run_ends_before_the_logs_end_fails_unless_the_caller_cap
             },
         )
     )
-    written, run = _stand_in_dds(monkeypatch, matched=("vehicle_command",), tick=0.5, ends=2.0)
+    _, run = _stand_in_dds(monkeypatch, matched=("vehicle_command",), tick=0.5, ends=2.0)
     with pytest.raises(RunError) as early:
         module.fly(run, log, tmp_path)
     written_capped, run = _stand_in_dds(monkeypatch, matched=("vehicle_command",), tick=0.5, ends=2.0)
