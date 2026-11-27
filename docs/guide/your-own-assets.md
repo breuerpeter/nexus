@@ -107,7 +107,10 @@ the entry of the controls it reads. A camera gimbal declares its controller with
 targets the camera's rigid body, and its `nexus:inputs:joints` the three joints in order from the
 vehicle to the camera. Each joint's torque motor then reads the controls entry of its joint's place in
 that order, which is 0, 1, or 2. It names the controller's `Scope` in its `nexus:inputs:controls`, as each
-rotor's ESC names the flight controller's. The
+rotor's ESC names the flight controller's. Define the gimbal controller's `Scope` after the flight
+controller's. The gimbal controller is a MAVLink gimbal device, which PX4's gimbal manager commands. It
+listens on port 13280 of the User Datagram Protocol (UDP) plus the run's instance, and a vehicle carries
+one. The
 [schema reference](../reference/schemas.md) lists the attributes.
 
 An entry's `usd`, and each of a composed entry's layers, either carries a full `url` or a compact
