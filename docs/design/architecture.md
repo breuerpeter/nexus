@@ -225,6 +225,21 @@ horizon. Yaw holds against North with the lock, and follows the vehicle's headin
 attitude replaces the target, and the rate moves it each tick. Until something writes a setpoint, the camera
 stays level and follows the vehicle's heading.
 
+The controller is a **MAVLink gimbal device** too, component 154, so an autopilot's gimbal manager, and a
+ground station behind it, command the camera as they command a real gimbal. It listens on port 13280 of
+the User Datagram Protocol (UDP) plus the run's instance, the port the gimbal link of PX4 SITL sends to.
+It answers the address its last message came from. From each `GIMBAL_DEVICE_SET_ATTITUDE` it writes the law's setpoint: the attitude, the rate and
+the yaw lock. A yaw frame flag names the frame of the attitude's heading, and with neither flag the lock
+names it. It answers a request for its `GIMBAL_DEVICE_INFORMATION` with each axis's limits from its
+joint. It sends a `HEARTBEAT` at 1 Hz and its `GIMBAL_DEVICE_ATTITUDE_STATUS` at 20 Hz of sim time, and
+nothing before a message arrives.
+
+This end is one [host stage](execution.md#stages-and-segments), `gimbal_device`. It reads the port with
+no wait, and it skips a setpoint that repeats the last one when a second write would change nothing.
+Declare the gimbal controller's `Scope` after the flight controller's: its host stage then sits beside
+that one's, and the tick gains no graph segment. A vehicle carries one gimbal device, since a second
+one's port is the first one's.
+
 ## Observability and recording
 
 Observability is cross-cutting, split into a **write** side and a **read** side:
