@@ -224,9 +224,10 @@ _NEEDS_TREE = pytest.mark.skipif(
 )
 
 
-def _stand_in_dds(monkeypatch, *, matched: tuple[str, ...], tick: float):
+def _stand_in_dds(monkeypatch, *, matched: tuple[str, ...], tick: float, ends: float = float("inf")):
     """Stand in for the Data Distribution Service and the run: a writer whose topic ends in a name of `matched`
-    has a reader, and the run's step advances `tick` seconds. Return the topics written, in order, and the run.
+    has a reader, and the run's step advances `tick` seconds and answers false once the run reaches `ends`. Return the
+    topics written, in order, and the run.
     """
     import cyclonedds.domain
     import cyclonedds.pub
@@ -258,7 +259,7 @@ def _stand_in_dds(monkeypatch, *, matched: tuple[str, ...], tick: float):
 
         def step(self):
             self.time += tick
-            return True
+            return self.time < ends
 
     monkeypatch.setattr(cyclonedds.domain, "DomainParticipant", lambda domain: object())
     monkeypatch.setattr(cyclonedds.pub, "DataWriter", Writer)
@@ -329,6 +330,40 @@ def test_a_replay_sends_the_samples_due_at_the_last_step_before_it_ends(tmp_path
     assert sent == [(2, True), (2, True)]
 
 
+def test_a_replay_whose_run_ends_before_the_logs_end_fails_unless_the_caller_capped_the_steps(tmp_path, monkeypatch):
+    """A run that ends before the log's end fails the replay, unless the caller capped the run's steps.
+
+    Given a ULog with a command at 1 s and another at 5 s, and a run that ends at 2 s, when the replay flies, then
+    it raises a run error that names the end, 2.0 s, and 1 unsent sample of 2. Given the caller capped the steps,
+    then it returns, and the first command alone went out.
+    """
+    from nexus_uav import RunError
+    from nexus_uav._src.peers.px4_sitl import replay as module
+
+    log = module.read(
+        ulog_file.write(
+            tmp_path / "flight.ulg",
+            topics={
+                "vehicle_command": (
+                    _COMMAND,
+                    [(1_000_000, 1.0, 176, 1, 255, True), (5_000_000, 0.0, 400, 1, 255, True)],
+                )
+            },
+        )
+    )
+    _, run = _stand_in_dds(monkeypatch, matched=("vehicle_command",), tick=0.5, ends=2.0)
+    with pytest.raises(RunError) as early:
+        module.fly(run, log, tmp_path)
+    written_capped, run = _stand_in_dds(monkeypatch, matched=("vehicle_command",), tick=0.5, ends=2.0)
+    module.fly(run, log, tmp_path, capped=True)
+
+    assert ("2.0 s" in str(early.value), "1 of 2 samples unsent" in str(early.value), len(written_capped)) == (
+        True,
+        True,
+        1,
+    )
+
+
 def test_a_replays_layer_holds_the_callers_layer_by_its_absolute_path(tmp_path, monkeypatch):
     """The replay's layer names the caller's layer by its absolute path, and fails on a path with no file.
 
@@ -388,7 +423,7 @@ def test_a_replay_starts_px4_clean_unless_the_caller_keeps_the_store(tmp_path, m
     px4.mkdir()
     (px4 / "Makefile").write_text("px4_sitl:\n")
     monkeypatch.setattr(api, "Sim", Run)
-    monkeypatch.setattr(module, "fly", lambda run, log, tree: None)
+    monkeypatch.setattr(module, "fly", lambda run, log, tree, **kw: None)
     ulog = ulog_file.write(tmp_path / "flight.ulg", info={"ver_sw": "0" * 40})
     vehicle = sv.vehicle(tmp_path, px4=True)
 
@@ -478,7 +513,7 @@ def test_a_replay_reads_the_vehicle_with_the_callers_layer_and_flies_the_px4_it_
     px4.mkdir()
     (px4 / "Makefile").write_text("px4_sitl:\n")
     monkeypatch.setattr(api, "Sim", Run)
-    monkeypatch.setattr(module, "fly", lambda run, log, tree: None)
+    monkeypatch.setattr(module, "fly", lambda run, log, tree, **kw: None)
     monkeypatch.delenv("NEXUS_PX4_SITL_REF", raising=False)
     callers = tmp_path / "callers.usda"
     callers.write_text(

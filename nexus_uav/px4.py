@@ -119,7 +119,7 @@ def replay(
             layer = _replay.layer(Path(folder), vehicle_file, _replay.log_params(log, params), under)
             with Sim(vehicle, scene=scene, layer=layer, **sim) as run:
                 run.start()
-                _replay.fly(run, log, tree)
+                _replay.fly(run, log, tree, capped=sim.get("max_steps") is not None)
             return run.artifacts()
     finally:
         if before is None:
