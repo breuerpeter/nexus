@@ -257,7 +257,7 @@ def test_the_receipt_records_the_airframe_the_vehicle_usd_declares(tmp_path, mon
     receipt = _build(tmp_path, PX4_SITL_SCOPED)["settings"]
 
     (peer,) = [d for d in receipt["declarations"] if d["schema"] == "NexusPx4SitlAPI"]
-    assert peer["values"] == {"airframe": "foo"}
+    assert peer["values"] == {"airframe": "foo", "params": []}
 
 
 def test_a_vehicle_that_declares_no_controller_fails_the_build(tmp_path, daemon):
@@ -623,7 +623,7 @@ def test_a_run_with_no_layer_builds_and_records_as_today(tmp_path, monkeypatch, 
     assert (built, recorded, peer["values"]) == (
         ("Px4MavlinkController", ["ImuSensor", "MagSensor", "BaroSensor", "GpsSensor"], ["Px4Fake"]),
         {"vehicle": "astro_max_base", "layer": None, "scene": "empty", "scene_start": None},
-        {"airframe": "astro_max"},
+        {"airframe": "astro_max", "params": []},
     )
 
 

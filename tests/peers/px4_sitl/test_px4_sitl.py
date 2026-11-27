@@ -149,7 +149,8 @@ def test_start_runs_px4_with_the_runs_instance_and_airframe(daemon, tree, tmp_pa
     instance; ``-d`` runs with no pxh shell, which at the end of an unattended stdin spin-loops
     printing its prompt and starves PX4. The store of the airframe and the instance mounts over the
     instance's folder of the tree, so the tree keeps no state of the run's, and the run's folder mounts over
-    PX4's log root inside it, so PX4 writes the run's ULog there and leaves none in the tree. The container
+    PX4's log root inside it, so PX4 writes the run's ULog there and leaves none in the tree. PX4's bridge client
+    dials the agent's port of the run's instance, 8888 plus 2, and names its topic prefix `px4_2`. The container
     doesn't remove itself, so a PX4 that exits at once leaves its console for the log.
     """
     _peer(tree, tmp_path, instance=2).start()
@@ -161,7 +162,12 @@ def test_start_runs_px4_with_the_runs_instance_and_airframe(daemon, tree, tmp_pa
         "name": f"nexus-px4_sitl-{os.getpid()}-2",
         "detach": True,
         "user": f"{os.getuid()}:{os.getgid()}",
-        "environment": {"HOME": "/tmp", "PX4_SIM_MODEL": "none_astro_max"},
+        "environment": {
+            "HOME": "/tmp",
+            "PX4_SIM_MODEL": "none_astro_max",
+            "PX4_UXRCE_DDS_PORT": "8890",
+            "PX4_UXRCE_DDS_NS": "px4_2",
+        },
         "working_dir": str(tree),
         "mounts": [
             Mount(str(tree), str(tree), type="bind", read_only=False),
@@ -322,6 +328,84 @@ def test_a_run_asked_to_start_clean_empties_the_store_even_after_a_run_killed_be
     _peer(tree, tmp_path, clean=True).start()
 
     assert sorted(p.name for p in store.iterdir()) == ["log"]
+
+
+def test_a_boot_parameter_outside_px4s_identifier_syntax_or_a_non_number_never_reaches_the_boot_hook(
+    daemon, tree, tmp_path
+):
+    """The peer refuses a boot parameter whose name isn't PX4's identifier syntax or whose value isn't a number.
+
+    Given a tree that sources `px4-rc.params` and a peer whose entry names `X$(id)`, or whose value is
+    `1; id`, when it starts, then it raises a value error that names the entry, and no container started.
+    """
+    startup = tree / "build/px4_sitl_default/etc/init.d-posix"
+    startup.mkdir(parents=True)
+    (startup / "px4-rc.params").write_text("#!/bin/sh\n")
+
+    errors = []
+    for entry in ("X$(id)=1", "MPC_XY_VEL_MAX=1; id"):
+        try:
+            _peer(tree, tmp_path, params=[entry]).start()
+        except ValueError as exc:
+            errors.append(str(exc))
+
+    launched = [kw for kind, kw in daemon if kind == "run" and kw.get("detach", True)]
+    assert (len(errors), "X$(id)" in errors[0], "1; id" in errors[1], launched) == (2, True, True, [])
+
+
+def _hook_values(launch: dict, tree) -> dict[str, float]:
+    """The parameters a launch hands PX4's boot hook: each `PX4_PARAM_<name>` of its environment, or each
+    `param set` line of the file it mounts over the tree's `px4-rc.params`.
+    """
+    prefix = "PX4_PARAM_"
+    values = {k.removeprefix(prefix): float(v) for k, v in launch["environment"].items() if k.startswith(prefix)}
+    for mount in launch["mounts"]:
+        if mount["Target"].endswith("/px4-rc.params"):
+            lines = [line.split() for line in open(mount["Source"]).read().splitlines()]
+            values.update({words[2]: float(words[3]) for words in lines if words[:2] == ["param", "set"]})
+    return values
+
+
+def test_start_hands_the_boot_parameters_the_peers_prim_authors_to_px4s_boot_hook(daemon, tree, tmp_path):
+    """The PX4 peer hands the boot parameters its prim authors to PX4's boot hook.
+
+    The values a vehicle layer authors on the peer's prim, `nexus:params`, reach the peer as the keyword `params`,
+    each as `name=value`. Given a peer with `MPC_XY_VEL_MAX=5.5` and `UXRCE_DDS_SYNCT=0`, when it starts, then the
+    container's environment holds `PX4_PARAM_MPC_XY_VEL_MAX` and `PX4_PARAM_UXRCE_DDS_SYNCT` with those values.
+    Given a tree that sources `px4-rc.params`, then the container mounts a file over it that sets both.
+    """
+    params = {"MPC_XY_VEL_MAX": 5.5, "UXRCE_DDS_SYNCT": 0}
+    authored = ["MPC_XY_VEL_MAX=5.5", "UXRCE_DDS_SYNCT=0"]
+    _peer(tree, tmp_path, params=authored).start()
+    by_environment = next(kw for kind, kw in daemon if kind == "run" and kw.get("detach", True))
+    daemon.clear()
+    for startup in ("ROMFS/px4fmu_common/init.d-posix", "build/px4_sitl_default/etc/init.d-posix"):
+        (tree / startup).mkdir(parents=True)
+        (tree / startup / "px4-rc.params").write_text("#!/bin/sh\n")
+
+    _peer(tree, tmp_path, params=authored).start()
+
+    by_file = next(kw for kind, kw in daemon if kind == "run" and kw.get("detach", True))
+    in_environment = {k for k in by_environment["environment"] if k.startswith("PX4_PARAM_")}
+    assert (in_environment, _hook_values(by_environment, tree), _hook_values(by_file, tree)) == (
+        {"PX4_PARAM_MPC_XY_VEL_MAX", "PX4_PARAM_UXRCE_DDS_SYNCT"},
+        params,
+        params,
+    )
+
+
+def test_a_peer_with_no_boot_parameter_starts_px4_alone_and_hands_it_none(daemon, tree, tmp_path):
+    """A run whose vehicle authors no boot parameter starts PX4 as it does today, and starts no agent.
+
+    Given a peer of `astro_max` with no boot parameter, when it starts, then the one container it starts runs PX4's
+    binary, and its environment holds no `PX4_PARAM_` entry.
+    """
+    _peer(tree, tmp_path).start()
+
+    launches = [kw for kind, kw in daemon if kind == "run" and kw.get("detach", True)]
+    commands = [kw["command"] for kw in launches]
+    handed = [k for kw in launches for k in kw["environment"] if k.startswith("PX4_PARAM_")]
+    assert (commands, handed) == ([["build/px4_sitl_default/bin/px4", "-i", "0", "-d"]], [])
 
 
 def test_start_builds_the_tree_before_it_launches(daemon, tree, tmp_path):

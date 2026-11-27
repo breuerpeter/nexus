@@ -348,6 +348,25 @@ class "NexusPx4SitlAPI" (
         Range: a PX4 SITL airframe name
         Units: none"""
     )
+    string[] nexus:params = [] (
+        doc = """The PX4 parameters the peer sets at PX4's boot, before any module starts, each as `NAME=VALUE`, such as `MPC_XY_VEL_MAX=5`. PX4 boots with its own defaults when it is empty.
+
+        Range: PX4 parameter names, each with a value of its type
+        Units: none"""
+    )
+}
+
+
+class "NexusXrceAgentAPI" (
+    doc = """The Micro XRCE-DDS agent peer, on a `Scope` of its own under the vehicle's root prim, named `XrceAgent` by convention: the run starts one agent, the bridge between PX4's topics and the Data Distribution Service (DDS), on the port of the run's instance, and stops it with the run."""
+)
+{
+    string nexus:transport = "udp4" (
+        doc = """The transport the agent listens on, which PX4's client dials: `udp4` or `udp6`. The build fails any other value, before any peer starts.
+
+        Range: udp4, udp6
+        Units: none"""
+    )
 }
 
 class "NexusSceneAPI" (

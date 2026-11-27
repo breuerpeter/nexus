@@ -62,9 +62,9 @@ def test_a_path_under_a_peers_folder_touches_that_peer_alone():
 
 def test_a_path_in_the_peers_folder_itself_touches_every_peer():
     """A path in `peers/` itself names every peer: given `nexus_uav/_src/peers/instance.py`, when the leg
-    computes the touched peers, then `kit` and `px4_sitl`.
+    computes the touched peers, then `kit`, `px4_sitl` and `xrce_agent`.
     """
-    assert peer_legs.touched(["nexus_uav/_src/peers/instance.py"], ROOT) == ["kit", "px4_sitl"]
+    assert peer_legs.touched(["nexus_uav/_src/peers/instance.py"], ROOT) == ["kit", "px4_sitl", "xrce_agent"]
 
 
 def test_a_path_outside_the_peers_folder_touches_no_peer():

@@ -109,7 +109,8 @@ def test_the_conformance_fixture_applies_every_component_and_peer_schema_the_plu
     components = set(schema_names()) - roles - {"NexusSceneAPI"}
     rotor = {"NexusPropellerAPI", "NexusEscAPI", "NexusMotorAPI"}
     controllers = {"NexusPx4API_1", "NexusGimbalControllerAPI"}
-    assert applied == components == sensors | rotor | controllers | {"NexusTorqueMotorAPI", "NexusPx4SitlAPI"}
+    peers = {"NexusPx4SitlAPI", "NexusXrceAgentAPI"}
+    assert applied == components == sensors | rotor | controllers | peers | {"NexusTorqueMotorAPI"}
 
 
 def test_the_script_beside_the_fixture_reproduces_it(tmp_path):

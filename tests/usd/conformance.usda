@@ -20,6 +20,12 @@ def Xform "Vehicle"
         string nexus:airframe = "astro_max"
     }
 
+    def Scope "XrceAgent" (
+        prepend apiSchemas = ["NexusXrceAgentAPI"]
+    )
+    {
+    }
+
     def Xform "body"
     {
         def Sphere "Imu" (

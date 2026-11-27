@@ -9,6 +9,8 @@ Freefly Systems
 nexus
 Newton
 Isaac Lab
+Micro XRCE-DDS
+ULog
 Isaac Sim
 Rerun
 PX4

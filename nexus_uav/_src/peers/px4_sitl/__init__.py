@@ -18,6 +18,8 @@ builder names the offboard link's address in the run's port map, ``sim.ports``, 
 that opens it.
 """
 
+import re
+
 HIL_PORT = 4560
 """The TCP port of instance 0's HIL link: the sim listens, PX4 dials."""
 OFFBOARD_PORT = 14540
@@ -25,4 +27,24 @@ OFFBOARD_PORT = 14540
 GCS_PORT = 18570
 """The UDP port instance 0 sends its ground-station link from."""
 
-__all__ = ["GCS_PORT", "HIL_PORT", "OFFBOARD_PORT"]
+_PARAM_NAME = re.compile(r"[A-Za-z0-9_]{1,16}")
+
+
+def check_param(name: str, value: object) -> None:
+    """Check one PX4 boot parameter: a name in PX4's identifier syntax and a number for its value.
+
+    Both go into a shell line and a Universal Scene Description (USD) string, so a name or value outside that form never reaches either.
+
+    Raises:
+        ValueError: The name isn't 1 to 16 letters, digits and underscores, or the value isn't a number; the
+            message names the entry.
+    """
+    if not _PARAM_NAME.fullmatch(str(name)):
+        raise ValueError(f"the PX4 parameter name {name!r} isn't 1 to 16 letters, digits and underscores")
+    try:
+        float(str(value))
+    except ValueError:
+        raise ValueError(f"the value {value!r} of the PX4 parameter {name} isn't a number") from None
+
+
+__all__ = ["GCS_PORT", "HIL_PORT", "OFFBOARD_PORT", "check_param"]

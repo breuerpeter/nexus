@@ -18,6 +18,7 @@ import hashlib
 import os
 import sys
 import threading
+from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -162,13 +163,16 @@ def _build_files(root: Path) -> list[Path]:
     )
 
 
-def image_tag(root: Path, name: str) -> str:
-    """The tag of the image built from ``root``: ``name:`` and a hash of the files the build reads.
+def image_tag(root: Path, name: str, buildargs: Mapping[str, str] | None = None) -> str:
+    """The tag of the image built from ``root``: ``name:`` and a hash of the files the build reads and of the
+    build arguments, ``buildargs``.
 
     An installed package and a checkout hold the same folder at different paths, so the hash covers
     each file's relative path and content, never its location.
     """
     h = hashlib.sha256()
+    for key, value in sorted((buildargs or {}).items()):
+        h.update(f"{key}\0{value}\0".encode())
     for path in _build_files(root):
         data = path.read_bytes()
         h.update(f"{path.relative_to(root).as_posix()}\0{len(data)}\0".encode())
@@ -176,17 +180,18 @@ def image_tag(root: Path, name: str) -> str:
     return f"{name}:{h.hexdigest()[:12]}"
 
 
-def ensure_image(root: Path, name: str) -> str:
+def ensure_image(root: Path, name: str, buildargs: Mapping[str, str] | None = None) -> str:
     """Build the image from ``root`` when this machine lacks its tag, and return the tag.
 
-    The build prints its own output as it goes.
+    The build prints its own output as it goes. ``buildargs`` are the build arguments the folder's Dockerfile
+    takes, such as the commit a peer's pin names, and the tag changes with them.
 
     Raises:
         RuntimeError: The build failed, with the build's own error, or the daemon is unreachable.
     """
     from docker.errors import ImageNotFound
 
-    tag = image_tag(root, name)
+    tag = image_tag(root, name, buildargs)
     c = client()
     try:
         c.images.get(tag)
@@ -194,7 +199,7 @@ def ensure_image(root: Path, name: str) -> str:
     except ImageNotFound:
         pass
     logger.info(f"building the image {tag} from {root}: once per machine and per change to that folder")
-    for chunk in c.api.build(path=str(root), tag=tag, rm=True, decode=True):
+    for chunk in c.api.build(path=str(root), tag=tag, rm=True, decode=True, buildargs=dict(buildargs or {})):
         if "error" in chunk:
             raise RuntimeError(f"building the image {tag} failed: {chunk['error'].strip()}")
         line = chunk.get("stream")
