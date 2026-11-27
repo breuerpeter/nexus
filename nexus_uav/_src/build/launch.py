@@ -172,7 +172,7 @@ def build_from_launch(
     classes = [spec.cls for spec in declared] + list(required.values())
     registered = {peer for schema, peer in peer_names().items() if schema in registry}
     pins.check(layers, sorted({*pins.shipped(), *registered, *(cls.name for cls in classes)}))
-    found = {cls.name: (cls, pins.resolve(cls.name, layers, launch.pins)) for cls in classes}
+    found = {cls.name: (cls, pins.resolve(cls.name, layers)) for cls in classes}
     peer_pins = {name: cls.check_pin(pin) if pin is not None else None for name, (cls, pin) in found.items()}
     _check_clocks(classes, launch.runtime.rtf)
     # Every file the run writes lands in one folder: the recording and each peer's logs.

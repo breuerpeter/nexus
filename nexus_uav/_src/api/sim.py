@@ -80,8 +80,6 @@ class Sim:
             as a real vehicle does across a reboot: PX4 boots with the parameters and the mission an earlier
             run on the same airframe and instance stored. ``True`` empties each store first; ``None`` takes
             ``$NEXUS_CLEAN``, where ``1`` means clean, and else keeps the store.
-        pins: What a peer of this run runs, by the peer's folder name, in the form the peer's pin file takes.
-            It wins over the peer's variable and every pin file, and the receipt records it.
 
     Raises:
         FileExistsError: On entry, ``run_dir`` holds files already; raised before any peer starts.
@@ -113,13 +111,11 @@ class Sim:
         registry: Registry | None = None,
         run_dir: str | os.PathLike | None = None,
         clean: bool | None = None,
-        pins: Mapping[str, str] | None = None,
     ):
         self._registry = registry  # the registry the build resolves each schema with, or None for the default
         self._launch = LaunchConfig()
         self._launch.set_vehicle(vehicle)  # a catalog *name* or a local .usd path
         self._launch.layer = layer  # an override layer the run composes over the vehicle and the scene, or None
-        self._launch.pins = dict(pins or {})  # the pin of each peer this run names, over every other source
         self._launch.catalog = catalog  # None: the run finds its own catalog, see load_catalog
         if solver is not None:  # physics integrator override: mujoco | semi_implicit | featherstone
             self._launch.runtime.solver = solver

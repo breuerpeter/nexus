@@ -108,10 +108,21 @@ def replay(
     default = _checkout.check(_pins.resolve(_checkout.NAME, catalog_sources(launch.catalog)))
     pin = _replay.log_pin(log, ulog, px4, default)
     tree = _replay.tree(pin)  # the fetch of the log's commit fails here, before any peer starts
-    with tempfile.TemporaryDirectory(prefix="nexus-replay-") as folder:
-        vehicle_file = resolve(launch, cache_dir=sim.get("cache_dir")).vehicle_usd_path
-        layer = _replay.layer(Path(folder), vehicle_file, _replay.log_params(log, params), sim.pop("layer", None))
-        with Sim(vehicle, scene=scene, layer=layer, pins={_checkout.NAME: pin.ref}, **sim) as run:
-            run.start()
-            _replay.fly(run, log, tree)
-        return run.artifacts()
+    under = sim.pop("layer", None)
+    launch.layer = under  # the vehicle the replay reads is the one the run builds: the caller's layer stacked over it
+    variable = _pins.variable(_checkout.NAME)
+    before = os.environ.get(variable)
+    os.environ[variable] = pin.ref  # the PX4 the run flies, which the peer reads as it reads any caller's choice
+    try:
+        with tempfile.TemporaryDirectory(prefix="nexus-replay-") as folder:
+            vehicle_file = resolve(launch, cache_dir=sim.get("cache_dir")).vehicle_usd_path
+            layer = _replay.layer(Path(folder), vehicle_file, _replay.log_params(log, params), under)
+            with Sim(vehicle, scene=scene, layer=layer, **sim) as run:
+                run.start()
+                _replay.fly(run, log, tree)
+            return run.artifacts()
+    finally:
+        if before is None:
+            os.environ.pop(variable, None)
+        else:
+            os.environ[variable] = before

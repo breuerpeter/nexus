@@ -113,10 +113,6 @@ class LaunchConfig(_Base):
     elsewhere, or moves the scene's geodetic origin on its ``PhysicsScene`` prim. The receipt records
     its sha256 beside the vehicle's. ``None`` flies the vehicle and the scene as their files declare them.
     """
-    pins: dict[str, str] = Field(default_factory=dict)
-    """The pin of each peer this run names, by the peer's folder name, such as ``px4_sitl``: what the peer runs,
-    in the form its pin file takes. It wins over the peer's variable and every pin file."""
-
     runtime: Runtime = Field(default_factory=Runtime)
     """Solver, device, timestep, and seed settings for the run.
 

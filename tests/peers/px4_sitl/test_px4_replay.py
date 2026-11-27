@@ -437,6 +437,65 @@ def test_a_log_parameter_outside_px4s_identifier_syntax_stops_the_replay_before_
     assert "X$(id)" in str(refused.value)
 
 
+def test_a_replay_reads_the_vehicle_with_the_callers_layer_and_flies_the_px4_it_picked_only_for_its_run(
+    tmp_path, monkeypatch
+):
+    """A replay adds its agent only when no layer declares one, and names its PX4 through the variable for its
+    run alone.
+
+    Given a caller's layer that declares the agent on a prim of its own, when a script replays on a vehicle that
+    declares none, then the replay's layer adds no second agent. While the run builds, `NEXUS_PX4_SITL_REF` names
+    the PX4 the replay picked, and after the replay it holds what it held before.
+    """
+    pytest.importorskip("newton")
+    pytest.importorskip("pxr")
+    import os
+
+    import nexus_uav._src.api.sim as api
+    from nexus_uav._src.peers.px4_sitl import replay as module
+    from tests.usd import sensor_vehicle as sv
+
+    seen = {}
+
+    class Run:
+        def __init__(self, vehicle, **keywords):
+            seen["layer"] = open(keywords["layer"]).read()
+            seen["variable"] = os.environ.get("NEXUS_PX4_SITL_REF")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def start(self):
+            pass
+
+        def artifacts(self):
+            return {}
+
+    px4 = tmp_path / "px4"
+    px4.mkdir()
+    (px4 / "Makefile").write_text("px4_sitl:\n")
+    monkeypatch.setattr(api, "Sim", Run)
+    monkeypatch.setattr(module, "fly", lambda run, log, tree: None)
+    monkeypatch.delenv("NEXUS_PX4_SITL_REF", raising=False)
+    callers = tmp_path / "callers.usda"
+    callers.write_text(
+        '#usda 1.0\nover "vehicle"\n{\n    def Scope "Bridge" (\n'
+        '        prepend apiSchemas = ["NexusXrceAgentAPI"]\n    )\n    {\n    }\n}\n'
+    )
+    ulog = ulog_file.write(tmp_path / "flight.ulg", info={"ver_sw": "0" * 40})
+
+    replay(ulog, sv.vehicle(tmp_path, px4=True), scene=sv.SCENE, px4=str(px4), layer=str(callers))
+
+    assert ('def Scope "XrceAgent"' in seen["layer"], seen["variable"], os.environ.get("NEXUS_PX4_SITL_REF")) == (
+        False,
+        str(px4),
+        None,
+    )
+
+
 def _steps(ulog) -> list[tuple[float, int, int]]:
     """Each change of PX4's arming state or mode in `ulog`: its time in seconds, then the two states."""
     from pyulog import ULog
