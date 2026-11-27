@@ -72,3 +72,4 @@ The shape of the tree today, one line per fact, and under `## Planned` each chan
 - Vale checks heading case too, and the heading-case script goes. The docs site keeps each release's docs.
 - The Micro XRCE-DDS agent peer ships a fake that binds its port and relays to the fake PX4. A CPU test then flies the replay's loop, which only the real-PX4 leg flies today.
 - A replay's Data Distribution Service (DDS) traffic stays on its host: both ends of the bridge take a loopback-only configuration, so two machines on one network can each replay on instance 0 and meet nowhere.
+- The replay names its PX4 as an attribute on the PX4 peer's prim, which its override layer authors, and no process-wide variable carries it, so two replays in one process can overlap.

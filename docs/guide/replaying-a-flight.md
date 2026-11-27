@@ -62,6 +62,6 @@ PX4 starts from nothing an earlier run stored, then boots on the log's parameter
 
 ## What the run starts
 
-The replay authors an override layer over the vehicle. The layer sets `nexus:params` on the vehicle's PX4 SITL peer, and declares the Micro XRCE-DDS agent peer, `NexusXrceAgentAPI`, the bridge's other end. The agent listens on the User Datagram Protocol (UDP) port 8888 plus the run's instance, and PX4 dials the same port, so two replays on one machine don't meet. The first run builds the agent's image, which takes a few minutes.
+The replay authors an override layer over the vehicle. The layer sets `nexus:params` on the vehicle's PX4 SITL peer, and declares the Micro XRCE-DDS agent peer, `NexusXrceAgentAPI`, the bridge's other end. The agent listens on the User Datagram Protocol (UDP) port 8888 plus the run's instance, and PX4 dials the same port, so two replays on one machine don't meet. The first run builds the agent's image, which takes a few minutes. A process flies one replay at a time, since the replay names its PX4 through `NEXUS_PX4_SITL_REF` for the length of its run. To fly two at once, start two processes.
 
 The replay's DDS traffic uses domain 0 and names its topics by the run's instance. Two machines on one network that both replay on instance 0 can feed each other's PX4, so replay on one machine of a network at a time. A loopback-only configuration is planned.
