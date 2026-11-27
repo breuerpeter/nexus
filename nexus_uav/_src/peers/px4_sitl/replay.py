@@ -343,18 +343,19 @@ def _index(key: str) -> int:
     return int(found[1]) if found else 0
 
 
-def fly(run, log, px4_tree: Path) -> None:
+def fly(run, log, px4_tree: Path, *, capped: bool = False) -> None:
     """Step the started run ``run`` to the end of ``log``, and send each sample once the run reaches its time.
 
     Args:
         run: The started ``Sim`` whose PX4 the replay feeds.
         log: The log, from :func:`read`.
         px4_tree: The PX4 tree the run flies, which defines the messages.
+        capped: Whether the caller capped the run, with ``max_steps``: a run that ends early then is no failure.
 
     Raises:
         ImportError: The extra that writes to DDS isn't installed; the message names it.
         RunError: A due sample never reached PX4, since no reader matched its writer; the message names the topic
-            and the count of unsent samples.
+            and the count of unsent samples. Or the run ended before the log's end and the caller capped no step count.
     """
     try:
         from cyclonedds.domain import DomainParticipant
@@ -407,6 +408,11 @@ def fly(run, log, px4_tree: Path) -> None:
             f"{unsent} of the replay's {len(sent)} samples never reached PX4: no reader matched "
             f"{address(sent[due], instance, version[sent[due].topic]).topic}; is the Micro XRCE-DDS agent peer running, and does this PX4's "
             "bridge list the topic?"
+        )
+    if not stepping and run.time < end and not capped:
+        raise RunError(
+            f"the run ended at {run.time:.1f} s, before the log's end at {end:.1f} s, with {len(sent) - due} of "
+            f"{len(sent)} samples unsent"
         )
     drained = run.time + _DRAIN_S
     while stepping and run.time < drained:
