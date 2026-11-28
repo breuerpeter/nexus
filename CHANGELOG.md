@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.13.0](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.12.0...nexus-uav-v0.13.0) (2026-11-28)
+
+
+### Features
+
+* **controllers:** a gimbal controller holds its camera's attitude ([#452](https://github.com/breuerpeter/nexus/issues/452)) ([21edec9](https://github.com/breuerpeter/nexus/commit/21edec91294eb84a19e00e8705da037faada0515))
+* **controllers:** the gimbal controller is a MAVLink gimbal device ([#456](https://github.com/breuerpeter/nexus/issues/456)) ([f629852](https://github.com/breuerpeter/nexus/commit/f6298525baa7cf9df343cf4c5cdc11dc45d5c680))
+* **px4:** a replay feeds a flight's ULog inputs to PX4 SITL as topics ([#440](https://github.com/breuerpeter/nexus/issues/440)) ([c580d86](https://github.com/breuerpeter/nexus/commit/c580d8633b837e1fa2c038969107bfcd74d24351))
+* **px4:** PX4 runs its gimbal manager, and every serial line forwards ([#447](https://github.com/breuerpeter/nexus/issues/447)) ([1e3d694](https://github.com/breuerpeter/nexus/commit/1e3d694b16a38b656ef8dc2caacc6608be34c449))
+
+
+### Bug Fixes
+
+* **deps:** ulog-rrd&gt;=0.2.1, so Pulsar reads the PX4 log in a recording ([#450](https://github.com/breuerpeter/nexus/issues/450)) ([c28a2e5](https://github.com/breuerpeter/nexus/commit/c28a2e5a4ef1e857cd8d58ecbdfa8c01ef69e963))
+
 ## [0.12.0](https://github.com/breuerpeter/nexus/compare/nexus-uav-v0.11.0...nexus-uav-v0.12.0) (2026-11-23)
 
 
